@@ -1,5 +1,3 @@
-import CoreGraphics
-
 public enum AuthenticationState: Sendable, Equatable {
     case signedOut
     case restoring
@@ -25,7 +23,6 @@ public protocol AuthenticationServicing: Sendable {
     func requestQRCode() async -> AuthenticationState
     func pollOnce() async -> AuthenticationState
     func finalizeLogin() async -> AuthenticationState
-    func makeQRCodeImage(scale: Int) async throws -> CGImage?
     func cancelLogin() async -> AuthenticationState
     func logout() async -> AuthenticationState
 }

@@ -113,7 +113,7 @@ M3 第 4 步的代码与自动化边界已经落地：
 M3 第 5 步已经按本决策接入真实 App：
 
 - `BiliApplication` 只公开非秘密认证状态与 `AuthenticationServicing` 用户意图 port；Cookie、QR key、完整 QR URL、Keychain 类型和 endpoint DTO 均未越过 adapter 边界。
-- `BiliAuthenticationService` actor 将现有 Web QR session 与请求授权器编排为恢复、请求二维码、单次轮询、最终提交、取消和登出；Feature 只取得进程内二维码图像投影。
+- `BiliAuthenticationService` actor 将现有 Web QR session 与请求授权器编排为恢复、请求二维码、单次轮询、最终提交、取消和登出；认证状态走 Application port，二维码图像走 Auth Feature 定义的窄 Presentation port，两者由 composition root 注入同一个具体 Auth adapter。`CGImage` 不进入 Application。
 - `BiliAuthFeature` 只依赖 Application；`@MainActor` ViewModel 拥有两秒轮询 Task 与界面代次，旧任务、取消或新登录意图不能覆盖当前状态。
 - App composition root 创建唯一认证服务并注入账号 sheet，不让游客 Feature、播放器或 App shell 持有认证材料。
 - 登出依次取消认证任务、清除二维码、删除 Keychain item、失效 Web QR 与授权 session、重建空 session，最后发布未登录。若 Keychain 删除失败，则保持安全错误且后续取消也不能伪装成已退出。

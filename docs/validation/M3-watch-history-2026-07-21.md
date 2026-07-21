@@ -1,6 +1,6 @@
 # M3 观看历史纵向闭环与最终实机验证（2026-07-21）
 
-> 结论：观看历史已按 Domain → Application → Feature MVVM → App composition root 接入；当前 macOS 的真实扫码、历史读取、详情/播放器跳转、进程重启恢复、界面登出与游客回退全部通过。远程 macOS 15 CI 结果仍以本次推送后的 Actions 为准。
+> 结论：观看历史已按 Domain → Application → Feature MVVM → App composition root 接入；当前 macOS 的真实扫码、历史读取、详情/播放器跳转、进程重启恢复、界面登出与游客回退全部通过，随后 macOS 15/26 CI 也已通过。本记录证明当时纵向链路；后续独立审查发现的安全与状态机阻断仍须另行整改。
 
 ## 1. 选择范围
 
@@ -63,4 +63,5 @@ M3 的首个个性化功能选择“观看历史”，理由是它是只读 GET 
 
 - 观看历史是未公开 Web endpoint，字段和风控策略可能漂移；真实响应异常时必须经 adapter 映射为安全错误，不得把 body 打进日志。
 - 当前只映射普通视频 archive，不承诺番剧、直播、课程或其他业务类型。
-- 本记录证明当前 macOS 的本地 Gate。远程 macOS 15 CI 必须继续通过 Package、架构、秘密扫描与 App 无签名构建，才能把 M3 的跨环境 Gate 视为全部关闭。
+- 本记录对应的 macOS 15/26 Package、架构、秘密扫描与 App 无签名构建随后通过；无签名 CI 不覆盖真实 Keychain entitlement。
+- 2026-07-21 后续独立审查发现：媒体 URL/重定向来源策略不足、恢复失败无清除坏凭据出口、QR 轮询无本地总时限，以及 archive 过滤后的空首页隐藏分页入口。它们不否定本记录中的实机观察，但在修复与回归前阻止 M3 关闭。

@@ -125,6 +125,7 @@ public struct HTTPRangeAttempt: Sendable, Equatable {
 }
 
 public enum HTTPRangeAttemptFailure: Sendable, Equatable {
+    case disallowedURL
     case statusCode(Int)
     case missingContentRange
     case invalidContentRange
@@ -141,9 +142,28 @@ public enum HTTPRangeClientError: Error, Sendable, Equatable {
 
 public struct HTTPRangeClient: Sendable {
     private let transport: any HTTPTransport
+    private let urlPolicy: PublicHTTPSURLPolicy
 
-    public init(transport: any HTTPTransport = URLSessionTransport()) {
+    public init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        self.init(
+            transport: URLSessionTransport(
+                configuration: configuration,
+                redirectPolicy: .reject
+            )
+        )
+    }
+
+    public init(
+        transport: any HTTPTransport,
+        urlPolicy: PublicHTTPSURLPolicy = PublicHTTPSURLPolicy()
+    ) {
         self.transport = transport
+        self.urlPolicy = urlPolicy
     }
 
     public func fetch(
@@ -159,6 +179,13 @@ public struct HTTPRangeClient: Sendable {
         var attempts: [HTTPRangeAttempt] = []
         for url in candidateURLs {
             try Task.checkCancellation()
+
+            guard urlPolicy.allows(url) else {
+                attempts.append(
+                    HTTPRangeAttempt(url: url, failure: .disallowedURL)
+                )
+                continue
+            }
 
             let request = HTTPRequest(
                 url: url,

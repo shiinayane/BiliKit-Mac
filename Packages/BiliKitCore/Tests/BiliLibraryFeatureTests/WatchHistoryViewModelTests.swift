@@ -2,29 +2,25 @@ import BiliApplication
 import BiliModels
 import Foundation
 import Testing
-@testable import BiliHistoryFeature
+@testable import BiliLibraryFeature
 
 struct WatchHistoryViewModelTests {
     @Test
     @MainActor
     func loadsAndPaginatesWithoutDuplicatingBVIDs() async throws {
-        let cursor = WatchHistoryCursor(
-            maximum: 100,
-            viewedAt: 200,
-            business: "archive"
-        )
+        let continuation = token(100)
         let repository = HistoryRepositoryStub(
             results: [
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryA1")],
-                        nextCursor: cursor
+                        continuation: continuation
                     )
                 ),
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryA1"), item("BV1HistoryB2")],
-                        nextCursor: nil
+                        continuation: nil
                     )
                 ),
             ]
@@ -38,14 +34,14 @@ struct WatchHistoryViewModelTests {
         model.loadMore()
         await model.waitForCurrentTask()
 
-        guard case let .loaded(items, nextCursor, error) = model.state else {
+        guard case let .loaded(items, nextContinuation, error) = model.state else {
             Issue.record("历史状态不是 loaded")
             return
         }
         #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
-        #expect(nextCursor == nil)
+        #expect(nextContinuation == nil)
         #expect(error == nil)
-        #expect(await repository.observedCursors() == [nil, cursor])
+        #expect(await repository.observedContinuations() == [nil, continuation])
     }
 
     @Test
@@ -67,11 +63,43 @@ struct WatchHistoryViewModelTests {
 
     @Test
     @MainActor
+    func initialFilteredEmptyPageContinuesUntilDisplayableItems() async throws {
+        let continuation = token(100)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(WatchHistoryPage(items: [], continuation: continuation)),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: nil
+                    )
+                ),
+            ]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+
+        guard case let .loaded(items, nextContinuation, error) = model.state else {
+            Issue.record("历史状态不是 loaded")
+            return
+        }
+        #expect(items.map(\.bvid) == ["BV1HistoryA1"])
+        #expect(nextContinuation == nil)
+        #expect(error == nil)
+        #expect(await repository.observedContinuations() == [nil, continuation])
+    }
+
+    @Test
+    @MainActor
     func reloadPreventsOlderResultFromOverwritingNewIntent() async throws {
         let repository = HistoryRepositoryStub(
             results: [
-                .success(WatchHistoryPage(items: [item("BV1HistoryA1")], nextCursor: nil)),
-                .success(WatchHistoryPage(items: [item("BV1HistoryB2")], nextCursor: nil)),
+                .success(WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil)),
+                .success(WatchHistoryPage(items: [item("BV1HistoryB2")], continuation: nil)),
             ],
             firstDelay: .milliseconds(50)
         )
@@ -100,7 +128,7 @@ struct WatchHistoryViewModelTests {
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryA1")],
-                        nextCursor: nil
+                        continuation: nil
                     )
                 ),
             ]
@@ -124,7 +152,7 @@ struct WatchHistoryViewModelTests {
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryA1")],
-                        nextCursor: nil
+                        continuation: nil
                     )
                 ),
             ],
@@ -143,6 +171,10 @@ struct WatchHistoryViewModelTests {
     }
 }
 
+private func token(_ value: Int) -> WatchHistoryContinuation {
+    WatchHistoryContinuation(rawValue: "fixture-\(value)")
+}
+
 private func item(_ bvid: String) -> WatchHistoryItem {
     WatchHistoryItem(
         bvid: bvid,
@@ -159,7 +191,7 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
     private var results: [Result<WatchHistoryPage, WatchHistoryError>]
     private let firstDelay: Duration?
     private var callCount = 0
-    private var cursors: [WatchHistoryCursor?] = []
+    private var continuations: [WatchHistoryContinuation?] = []
 
     init(
         results: [Result<WatchHistoryPage, WatchHistoryError>],
@@ -170,12 +202,12 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
     }
 
     func watchHistory(
-        after cursor: WatchHistoryCursor?,
+        after continuation: WatchHistoryContinuation?,
         pageSize: Int
     ) async throws -> WatchHistoryPage {
         callCount += 1
         let currentCall = callCount
-        cursors.append(cursor)
+        continuations.append(continuation)
         guard !results.isEmpty else { throw WatchHistoryError.invalidResponse }
         let result = results.removeFirst()
         if currentCall == 1, let firstDelay {
@@ -184,7 +216,7 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
         return try result.get()
     }
 
-    func observedCursors() -> [WatchHistoryCursor?] {
-        cursors
+    func observedContinuations() -> [WatchHistoryContinuation?] {
+        continuations
     }
 }

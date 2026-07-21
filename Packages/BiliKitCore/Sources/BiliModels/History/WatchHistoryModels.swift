@@ -29,28 +29,3 @@ public struct WatchHistoryItem: Identifiable, Sendable, Equatable {
         self.viewedAt = viewedAt
     }
 }
-
-public struct WatchHistoryCursor: Sendable, Equatable {
-    public let maximum: Int64
-    public let viewedAt: Int64
-    public let business: String
-
-    public init(maximum: Int64, viewedAt: Int64, business: String) {
-        self.maximum = maximum
-        self.viewedAt = viewedAt
-        self.business = business
-    }
-}
-
-public struct WatchHistoryPage: Sendable, Equatable {
-    public let items: [WatchHistoryItem]
-    public let nextCursor: WatchHistoryCursor?
-
-    public init(
-        items: [WatchHistoryItem],
-        nextCursor: WatchHistoryCursor?
-    ) {
-        self.items = items
-        self.nextCursor = nextCursor
-    }
-}

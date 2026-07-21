@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliModels
 import Foundation
 
@@ -222,9 +223,7 @@ struct DASHRepresentationPayload: Decodable, Sendable {
 
     private static func validMediaURL(_ value: String) -> URL? {
         guard let url = URL(string: value),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http",
-              url.host != nil
+              BiliMediaURLPolicy().allows(url)
         else {
             return nil
         }
@@ -304,20 +303,26 @@ struct WatchHistoryPayload: Decodable, Sendable {
             guard let item = try payload.model() else { return nil }
             return seen.insert(item.bvid).inserted ? item : nil
         }
-        let nextCursor: WatchHistoryCursor?
+        let continuation: WatchHistoryContinuation?
         if list.count >= pageSize, let cursor {
-            nextCursor = try cursor.model()
+            continuation = try cursor.continuation()
         } else {
-            nextCursor = nil
+            continuation = nil
         }
-        return WatchHistoryPage(items: items, nextCursor: nextCursor)
+        return WatchHistoryPage(items: items, continuation: continuation)
     }
 }
 
-struct WatchHistoryCursorPayload: Decodable, Sendable {
+struct WatchHistoryCursorPayload: Codable, Sendable {
     let maximum: Int64
     let viewedAt: Int64
     let business: String
+
+    static let initial = WatchHistoryCursorPayload(
+        maximum: 0,
+        viewedAt: 0,
+        business: ""
+    )
 
     private enum CodingKeys: String, CodingKey {
         case maximum = "max"
@@ -325,15 +330,36 @@ struct WatchHistoryCursorPayload: Decodable, Sendable {
         case business
     }
 
-    func model() throws -> WatchHistoryCursor {
-        guard maximum >= 0, viewedAt >= 0, business.count <= 64 else {
+    init(maximum: Int64, viewedAt: Int64, business: String) {
+        self.maximum = maximum
+        self.viewedAt = viewedAt
+        self.business = business
+    }
+
+    init(_ continuation: WatchHistoryContinuation) throws {
+        guard let data = Data(base64Encoded: continuation.rawValue),
+              let cursor = try? JSONDecoder().decode(Self.self, from: data)
+        else {
+            throw BiliAPIError.invalidRequest
+        }
+        self = cursor
+        try validate(as: .invalidRequest)
+    }
+
+    func continuation() throws -> WatchHistoryContinuation {
+        try validate(as: .decodingFailed)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(self) else {
             throw BiliAPIError.decodingFailed
         }
-        return WatchHistoryCursor(
-            maximum: maximum,
-            viewedAt: viewedAt,
-            business: business
-        )
+        return WatchHistoryContinuation(rawValue: data.base64EncodedString())
+    }
+
+    private func validate(as error: BiliAPIError) throws {
+        guard maximum >= 0, viewedAt >= 0, business.count <= 64 else {
+            throw error
+        }
     }
 }
 

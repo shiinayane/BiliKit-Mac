@@ -6,7 +6,7 @@
 //
 
 import BiliApplication
-import BiliGuestFeature
+import BiliBrowseFeature
 import BiliModels
 import Foundation
 import Testing

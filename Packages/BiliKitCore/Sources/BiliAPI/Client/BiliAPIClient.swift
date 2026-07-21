@@ -13,7 +13,7 @@ public protocol BiliAPIService: Sendable {
 
 public protocol BiliWatchHistoryService: Sendable {
     func watchHistory(
-        after cursor: WatchHistoryCursor?,
+        after continuation: WatchHistoryContinuation?,
         pageSize: Int
     ) async throws -> WatchHistoryPage
 }
@@ -175,17 +175,18 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     }
 
     public func watchHistory(
-        after cursor: WatchHistoryCursor? = nil,
+        after continuation: WatchHistoryContinuation? = nil,
         pageSize: Int = 20
     ) async throws -> WatchHistoryPage {
         guard (1...50).contains(pageSize) else {
             throw BiliAPIError.invalidRequest
         }
-        let cursor = cursor ?? WatchHistoryCursor(
-            maximum: 0,
-            viewedAt: 0,
-            business: ""
-        )
+        let cursor: WatchHistoryCursorPayload
+        if let continuation {
+            cursor = try WatchHistoryCursorPayload(continuation)
+        } else {
+            cursor = .initial
+        }
         let payload: WatchHistoryPayload = try await get(
             path: "/x/web-interface/history/cursor",
             queryItems: [

@@ -9,12 +9,12 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
     }
 
     public func watchHistory(
-        after cursor: WatchHistoryCursor?,
+        after continuation: WatchHistoryContinuation?,
         pageSize: Int
     ) async throws -> WatchHistoryPage {
         do {
             return try await service.watchHistory(
-                after: cursor,
+                after: continuation,
                 pageSize: pageSize
             )
         } catch is CancellationError {

@@ -1,6 +1,6 @@
 # M3 Web QR 登录威胁模型
 
-> 状态：M3 安全基线、观看历史只读闭环和当前 macOS 最终实机验收已完成；远程 macOS 15 CI 待本次推送确认
+> 状态：M3 安全基线与观看历史只读闭环已完成；恢复失败出口、QR 本地总超时和媒体来源审查项已在本地整改，等待当前变更集的 macOS 15/26 CI 确认
 >
 > 日期：2026-07-21（Asia/Tokyo）
 >
@@ -129,7 +129,7 @@ signedIn
 - 真实扫码、App 重启恢复、观看历史读取、详情/播放器跳转与界面登出已通过；第二次重启保持未登录，未登录历史入口回退账号 sheet。
 - 历史 sheet 关闭与登出会取消任务并清空个性化列表；验证记录不包含账号身份、历史标题、BVID 或秘密值。
 
-远程 macOS 15 CI 仍须通过本次新增的 Package、架构、秘密扫描与 App 无签名构建，M3 跨环境 Gate 才全部关闭。完整记录见 [`../validation/M3-watch-history-2026-07-21.md`](../validation/M3-watch-history-2026-07-21.md)。
+此前远程 macOS 15/26 CI 已通过 Package、架构、秘密扫描与 App 无签名构建；无签名 CI 不覆盖真实 Keychain entitlement。独立审查发现的 Feature 轮询本地总时限和恢复失败清除出口均已补齐：轮询同时受 180 秒与 90 次上限约束，超限会取消 challenge 并清除内存二维码；恢复失败页可显式执行完整本地登出。媒体 URL 现在使用用途专属 HTTPS 主机策略，Range session 拒绝重定向并在发起请求前重复校验候选。当前变更集的本地证据见 [`../validation/M3-audit-remediation-2026-07-22.md`](../validation/M3-audit-remediation-2026-07-22.md)；待提交后的 macOS 15/26 CI 重新确认后关闭 M3。
 
 ## 7. 剩余风险
 

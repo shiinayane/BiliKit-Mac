@@ -1,4 +1,5 @@
 import BiliAPI
+import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
@@ -227,9 +228,36 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func playURLRejectsRepresentationsWithoutTrustedMediaOrigin() async throws {
+        let fixture = try fixtureResponse("playurl")
+        let unsafeBody = String(decoding: fixture.body, as: UTF8.self)
+            .replacingOccurrences(of: "media.example.invalid", with: "127.0.0.1")
+            .replacingOccurrences(of: "backup.example.invalid", with: "localhost")
+        let response = HTTPResponse(
+            statusCode: fixture.statusCode,
+            headers: fixture.headers,
+            body: Data(unsafeBody.utf8)
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.invalidMediaData) {
+            try await client.playback(
+                for: "BV1FixtureA1",
+                cid: 900_001,
+                quality: 32
+            )
+        }
+    }
+
+    @Test
     func historyUsesExplicitAuthorizationAndMapsOnlyPlayableArchives() async throws {
         let transport = RecordingTransport(
-            responses: [try fixtureResponse("history")]
+            responses: [
+                try fixtureResponse("history"),
+                try fixtureResponse("history"),
+            ]
         )
         let authorizer = RecordingRequestAuthorizer()
         let client = BiliAPIClient(
@@ -243,9 +271,14 @@ struct BiliAPIClientTests {
         #expect(page.items[0].progressSeconds == 125)
         #expect(page.items[1].progressSeconds == 300)
         #expect(page.items[0].coverURL?.scheme == "https")
-        #expect(page.nextCursor?.maximum == 1_700_000_001)
+        let continuation = try #require(page.continuation)
+        _ = try await client.watchHistory(
+            after: continuation,
+            pageSize: 2
+        )
 
-        let request = try #require(await transport.capturedRequests().first)
+        let requests = await transport.capturedRequests()
+        let request = try #require(requests.first)
         #expect(request.url.path == "/x/web-interface/history/cursor")
         #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
         #expect(request.headers["Referer"] == "https://www.bilibili.com/account/history")
@@ -255,7 +288,22 @@ struct BiliAPIClientTests {
         )?.queryItems
         #expect(query?.contains(URLQueryItem(name: "max", value: "0")) == true)
         #expect(query?.contains(URLQueryItem(name: "ps", value: "2")) == true)
+        let continuationQuery = URLComponents(
+            url: requests[1].url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(
+            continuationQuery?.contains(
+                URLQueryItem(name: "max", value: "1700000001")
+            ) == true
+        )
+        #expect(
+            continuationQuery?.contains(
+                URLQueryItem(name: "business", value: "archive")
+            ) == true
+        )
         #expect(await authorizer.capturedPaths() == [
+            "/x/web-interface/history/cursor",
             "/x/web-interface/history/cursor",
         ])
     }
@@ -282,6 +330,23 @@ struct BiliAPIClientTests {
 
         await #expect(throws: BiliAPIError.authorizationRequired) {
             try await client.watchHistory(pageSize: 20)
+        }
+        #expect(await transport.capturedRequests().isEmpty)
+    }
+
+    @Test
+    func historyRejectsMalformedContinuationBeforeTransport() async {
+        let transport = RecordingTransport(responses: [])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.invalidRequest) {
+            try await client.watchHistory(
+                after: WatchHistoryContinuation(rawValue: "not-a-valid-token"),
+                pageSize: 20
+            )
         }
         #expect(await transport.capturedRequests().isEmpty)
     }

@@ -14,9 +14,9 @@ let package = Package(
         .library(name: "BiliAuth", targets: ["BiliAuth"]),
         .library(name: "BiliAPI", targets: ["BiliAPI"]),
         .library(name: "BiliPlayback", targets: ["BiliPlayback"]),
-        .library(name: "BiliGuestFeature", targets: ["BiliGuestFeature"]),
+        .library(name: "BiliBrowseFeature", targets: ["BiliBrowseFeature"]),
         .library(name: "BiliAuthFeature", targets: ["BiliAuthFeature"]),
-        .library(name: "BiliHistoryFeature", targets: ["BiliHistoryFeature"]),
+        .library(name: "BiliLibraryFeature", targets: ["BiliLibraryFeature"]),
         .executable(name: "BiliAPIProbe", targets: ["BiliAPIProbe"]),
         .executable(name: "BiliAuthProbe", targets: ["BiliAuthProbe"]),
         .executable(name: "BiliPlaybackProbe", targets: ["BiliPlaybackProbe"]),
@@ -41,7 +41,7 @@ let package = Package(
             dependencies: ["BiliApplication", "BiliModels", "BiliNetworking"]
         ),
         .target(
-            name: "BiliGuestFeature",
+            name: "BiliBrowseFeature",
             dependencies: ["BiliApplication", "BiliModels"]
         ),
         .target(
@@ -49,7 +49,7 @@ let package = Package(
             dependencies: ["BiliApplication"]
         ),
         .target(
-            name: "BiliHistoryFeature",
+            name: "BiliLibraryFeature",
             dependencies: ["BiliApplication", "BiliModels"]
         ),
         .executableTarget(
@@ -98,16 +98,16 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "BiliGuestFeatureTests",
-            dependencies: ["BiliApplication", "BiliGuestFeature", "BiliModels"]
+            name: "BiliBrowseFeatureTests",
+            dependencies: ["BiliApplication", "BiliBrowseFeature", "BiliModels"]
         ),
         .testTarget(
             name: "BiliAuthFeatureTests",
             dependencies: ["BiliApplication", "BiliAuthFeature"]
         ),
         .testTarget(
-            name: "BiliHistoryFeatureTests",
-            dependencies: ["BiliApplication", "BiliHistoryFeature", "BiliModels"]
+            name: "BiliLibraryFeatureTests",
+            dependencies: ["BiliApplication", "BiliLibraryFeature", "BiliModels"]
         ),
     ]
 )

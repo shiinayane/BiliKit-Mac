@@ -21,6 +21,7 @@
 - [`adr/0003-raise-minimum-macos-to-15.md`](./adr/0003-raise-minimum-macos-to-15.md)
 - [`adr/0004-mvvm-clean-architecture.md`](./adr/0004-mvvm-clean-architecture.md)
 - [`adr/0005-web-qr-authentication-boundary.md`](./adr/0005-web-qr-authentication-boundary.md)
+- [`adr/0006-product-domain-feature-targets.md`](./adr/0006-product-domain-feature-targets.md)
 
 当前安全基线：
 
@@ -32,3 +33,5 @@
 - [`validation/M3-keychain-authorization-2026-07-21.md`](./validation/M3-keychain-authorization-2026-07-21.md)：Keychain envelope、请求授权与未签名环境边界。
 - [`validation/M3-auth-feature-2026-07-21.md`](./validation/M3-auth-feature-2026-07-21.md)：认证 Application/Feature、完整本地登出与最小 UI smoke。
 - [`validation/M3-watch-history-2026-07-21.md`](./validation/M3-watch-history-2026-07-21.md)：观看历史纵向闭环、真实扫码、重启恢复、登出与游客回退。
+- [`validation/M3-pre-M4-architecture-review-2026-07-21.md`](./validation/M3-pre-M4-architecture-review-2026-07-21.md)：进入 M4 前的独立代码审查、领域 Feature 整理、阻断项与本地验证。
+- [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)：独立审查整改、真实播放回归、工程静态契约和 M3 关闭边界。

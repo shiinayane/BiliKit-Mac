@@ -1,7 +1,7 @@
 import BiliApplication
 import BiliAuthFeature
-import BiliGuestFeature
-import BiliHistoryFeature
+import BiliBrowseFeature
+import BiliLibraryFeature
 import Testing
 @testable import BiliKit
 

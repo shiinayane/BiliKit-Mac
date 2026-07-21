@@ -8,12 +8,12 @@ public enum WatchHistoryState: Sendable, Equatable {
     case loading
     case loaded(
         items: [WatchHistoryItem],
-        nextCursor: WatchHistoryCursor?,
+        continuation: WatchHistoryContinuation?,
         loadMoreError: WatchHistoryError?
     )
     case loadingMore(
         items: [WatchHistoryItem],
-        cursor: WatchHistoryCursor
+        continuation: WatchHistoryContinuation
     )
     case failed(WatchHistoryError)
 }
@@ -54,7 +54,7 @@ public final class WatchHistoryViewModel {
                 apply(
                     .loaded(
                         items: page.items,
-                        nextCursor: page.nextCursor,
+                        continuation: page.continuation,
                         loadMoreError: nil
                     ),
                     generation: operationGeneration
@@ -70,14 +70,14 @@ public final class WatchHistoryViewModel {
     }
 
     public func loadMore() {
-        guard case let .loaded(items, .some(cursor), _) = state else { return }
+        guard case let .loaded(items, .some(continuation), _) = state else { return }
         begin(
-            state: .loadingMore(items: items, cursor: cursor),
+            state: .loadingMore(items: items, continuation: continuation),
             clearExistingTask: false
         ) { [weak self] operationGeneration in
             guard let self else { return }
             do {
-                let page = try await useCase.load(after: cursor)
+                let page = try await useCase.load(after: continuation)
                 var seen = Set(items.map(\.bvid))
                 let merged = items + page.items.filter {
                     seen.insert($0.bvid).inserted
@@ -85,7 +85,7 @@ public final class WatchHistoryViewModel {
                 apply(
                     .loaded(
                         items: merged,
-                        nextCursor: page.nextCursor,
+                        continuation: page.continuation,
                         loadMoreError: nil
                     ),
                     generation: operationGeneration
@@ -96,7 +96,7 @@ public final class WatchHistoryViewModel {
                 apply(
                     .loaded(
                         items: items,
-                        nextCursor: cursor,
+                        continuation: continuation,
                         loadMoreError: error
                     ),
                     generation: operationGeneration
@@ -105,7 +105,7 @@ public final class WatchHistoryViewModel {
                 apply(
                     .loaded(
                         items: items,
-                        nextCursor: cursor,
+                        continuation: continuation,
                         loadMoreError: .transportFailure
                     ),
                     generation: operationGeneration

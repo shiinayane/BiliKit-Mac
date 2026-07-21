@@ -2,10 +2,11 @@ import BiliApplication
 import BiliAPI
 import BiliAuth
 import BiliAuthFeature
-import BiliGuestFeature
-import BiliHistoryFeature
+import BiliBrowseFeature
+import BiliLibraryFeature
 import BiliNetworking
 import BiliPlayback
+import CoreGraphics
 import Foundation
 import SwiftUI
 
@@ -15,17 +16,20 @@ struct AppEnvironment {
     private let repository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
     private let authenticationService: any AuthenticationServicing
+    private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
     init(
         repository: any GuestContentRepository,
         historyRepository: any WatchHistoryRepository,
         playerEngine: AVPlayerEngine,
-        authenticationService: any AuthenticationServicing
+        authenticationService: any AuthenticationServicing,
+        authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
         self.repository = repository
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.authenticationService = authenticationService
+        self.authenticationQRCodeProvider = authenticationQRCodeProvider
     }
 
     func makeFeedViewModel() -> GuestFeedViewModel {
@@ -46,7 +50,10 @@ struct AppEnvironment {
     }
 
     func makeAuthenticationViewModel() -> AuthenticationViewModel {
-        AuthenticationViewModel(service: authenticationService)
+        AuthenticationViewModel(
+            service: authenticationService,
+            qrCodeProvider: authenticationQRCodeProvider
+        )
     }
 
     func makeWatchHistoryViewModel() -> WatchHistoryViewModel {
@@ -74,13 +81,25 @@ struct AppEnvironment {
             requestAuthorizer: requestAuthorizer,
             transportFactory: transportFactory
         )
+        let authenticationService = BiliAuthenticationService(
+            additionalSessionInvalidators: [api]
+        )
         return AppEnvironment(
             repository: BiliGuestRepository(service: api),
             historyRepository: BiliWatchHistoryRepository(service: api),
             playerEngine: AVPlayerEngine(),
-            authenticationService: BiliAuthenticationService(
-                additionalSessionInvalidators: [api]
+            authenticationService: authenticationService,
+            authenticationQRCodeProvider: AuthenticationQRCodeProvider(
+                service: authenticationService
             )
         )
     }()
+}
+
+private struct AuthenticationQRCodeProvider: AuthenticationQRCodeProviding {
+    let service: BiliAuthenticationService
+
+    func makeQRCodeImage(scale: Int) async throws -> CGImage? {
+        try await service.makeQRCodeImage(scale: scale)
+    }
 }

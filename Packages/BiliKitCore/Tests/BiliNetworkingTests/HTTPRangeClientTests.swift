@@ -118,6 +118,41 @@ struct HTTPRangeClientTests {
         #expect(await transport.wasCancelled)
         #expect(await transport.requests.count == 1)
     }
+
+    @Test
+    func rejectsUnsafeCandidatesBeforeTransportAndUsesSafeBackup() async throws {
+        let local = try #require(URL(string: "https://127.0.0.1/media"))
+        let integerLocal = try #require(URL(string: "https://2130706433/media"))
+        let octalLocal = try #require(URL(string: "https://0177.0.0.1/media"))
+        let hexadecimalLocal = try #require(URL(string: "https://0x7f000001/media"))
+        let plaintext = try #require(URL(string: "http://cdn.example/media"))
+        let safe = try #require(URL(string: "https://cdn.example/media"))
+        let transport = RangeStubTransport(
+            responses: [
+                HTTPResponse(
+                    statusCode: 206,
+                    headers: ["Content-Range": "bytes 0-2/100"],
+                    body: Data([0, 1, 2])
+                ),
+            ]
+        )
+        let client = HTTPRangeClient(transport: transport)
+
+        let result = try await client.fetch(
+            from: [
+                local,
+                integerLocal,
+                octalLocal,
+                hexadecimalLocal,
+                plaintext,
+                safe,
+            ],
+            range: try HTTPByteRange(start: 0, endInclusive: 2)
+        )
+
+        #expect(result.sourceURL == safe)
+        #expect(await transport.requests.map(\.url) == [safe])
+    }
 }
 
 private actor RangeStubTransport: HTTPTransport {

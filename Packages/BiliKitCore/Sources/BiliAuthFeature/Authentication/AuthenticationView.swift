@@ -132,6 +132,12 @@ public struct AuthenticationView: View {
             Text(detail)
         } actions: {
             HStack {
+                if model.canClearLocalCredentials {
+                    Button("清除本机登录状态", role: .destructive) {
+                        model.clearLocalCredentials()
+                    }
+                    .accessibilityIdentifier("auth.clear-local-credentials")
+                }
                 if model.canCancelFailure {
                     Button("取消", role: .cancel) {
                         model.cancelLogin()

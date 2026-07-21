@@ -6,8 +6,8 @@
 //
 
 import BiliAuthFeature
-import BiliGuestFeature
-import BiliHistoryFeature
+import BiliBrowseFeature
+import BiliLibraryFeature
 import SwiftUI
 
 struct ContentView: View {
@@ -33,7 +33,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        GuestNavigationView(
+        BrowseNavigationView(
             feedModel: feedModel,
             videoModel: videoModel,
             requestedBVID: $requestedBVID

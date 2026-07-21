@@ -15,6 +15,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -38,6 +39,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -59,6 +61,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -82,6 +85,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -97,6 +101,57 @@ struct AuthenticationViewModelTests {
 
     @Test
     @MainActor
+    func restoreFailureCanExplicitlyClearLocalCredentials() async {
+        let service = AuthenticationServiceStub(
+            restoreState: .failed(.network),
+            logoutState: .signedOut
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+        #expect(model.canClearLocalCredentials)
+
+        model.clearLocalCredentials()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedOut)
+        #expect(!model.canClearLocalCredentials)
+        #expect(await service.observedCalls() == ["restore", "logout"])
+    }
+
+    @Test
+    @MainActor
+    func localPollingLimitCancelsChallengeAndExpires() async {
+        let service = AuthenticationServiceStub(
+            requestStates: [.awaitingScan],
+            pollStates: [.awaitingScan, .awaitingScan],
+            cancelState: .signedOut
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero,
+            maximumPollAttempts: 2
+        )
+
+        model.startLogin()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .expired)
+        #expect(model.qrCodeImage == nil)
+        #expect(
+            await service.observedCalls()
+                == ["request", "image", "poll", "image", "poll", "image", "cancel"]
+        )
+    }
+
+    @Test
+    @MainActor
     func logoutFailureRetriesLogoutAndCannotBeCancelledAsLogin() async {
         let service = AuthenticationServiceStub(
             restoreState: .signedIn,
@@ -104,6 +159,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -131,6 +187,7 @@ struct AuthenticationViewModelTests {
         )
         let model = AuthenticationViewModel(
             service: service,
+            qrCodeProvider: service,
             pollInterval: .zero
         )
 
@@ -146,7 +203,9 @@ struct AuthenticationViewModelTests {
     }
 }
 
-private actor AuthenticationServiceStub: AuthenticationServicing {
+private actor AuthenticationServiceStub: AuthenticationServicing,
+    AuthenticationQRCodeProviding
+{
     private var requestStates: [AuthenticationState]
     private var pollStates: [AuthenticationState]
     private let restoreState: AuthenticationState

@@ -21,23 +21,46 @@ public final class AuthenticationViewModel {
         retryAction == .logout ? "重试退出" : "重试"
     }
 
+    public var canClearLocalCredentials: Bool {
+        if case .failed = state {
+            return retryAction == .restore
+        }
+        return false
+    }
+
     @ObservationIgnored private let service: any AuthenticationServicing
+    @ObservationIgnored private let qrCodeProvider:
+        any AuthenticationQRCodeProviding
     @ObservationIgnored private let pollInterval: Duration
+    @ObservationIgnored private let pollTimeout: Duration
+    @ObservationIgnored private let maximumPollAttempts: Int
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var retryAction: RetryAction = .login
 
-    public init(service: any AuthenticationServicing) {
+    public init(
+        service: any AuthenticationServicing,
+        qrCodeProvider: any AuthenticationQRCodeProviding
+    ) {
         self.service = service
+        self.qrCodeProvider = qrCodeProvider
         pollInterval = .seconds(2)
+        pollTimeout = .seconds(180)
+        maximumPollAttempts = 90
     }
 
     init(
         service: any AuthenticationServicing,
-        pollInterval: Duration
+        qrCodeProvider: any AuthenticationQRCodeProviding,
+        pollInterval: Duration,
+        pollTimeout: Duration = .seconds(180),
+        maximumPollAttempts: Int = 90
     ) {
         self.service = service
+        self.qrCodeProvider = qrCodeProvider
         self.pollInterval = pollInterval
+        self.pollTimeout = pollTimeout
+        self.maximumPollAttempts = maximumPollAttempts
     }
 
     public func restoreIfNeeded() {
@@ -105,6 +128,11 @@ public final class AuthenticationViewModel {
         }
     }
 
+    public func clearLocalCredentials() {
+        guard canClearLocalCredentials else { return }
+        logout()
+    }
+
     public func cancelTransientWork() {
         switch state {
         case .restoring, .requestingQRCode, .awaitingScan, .awaitingConfirmation,
@@ -144,16 +172,32 @@ public final class AuthenticationViewModel {
     }
 
     private func pollUntilTerminal(generation operationGeneration: Int) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: pollTimeout)
+        var attempts = 0
+
         while generation == operationGeneration,
               state == .awaitingScan || state == .awaitingConfirmation {
+            if attempts >= maximumPollAttempts || clock.now >= deadline {
+                await expireLocalChallenge(generation: operationGeneration)
+                return
+            }
+
             do {
-                try await Task.sleep(for: pollInterval)
+                let remaining = clock.now.duration(to: deadline)
+                try await Task.sleep(for: min(pollInterval, remaining))
                 try Task.checkCancellation()
             } catch {
                 return
             }
 
+            guard clock.now < deadline else {
+                await expireLocalChallenge(generation: operationGeneration)
+                return
+            }
+
             let polled = await service.pollOnce()
+            attempts += 1
             guard await apply(polled, generation: operationGeneration) else {
                 return
             }
@@ -163,6 +207,15 @@ public final class AuthenticationViewModel {
                 return
             }
         }
+    }
+
+    private func expireLocalChallenge(generation operationGeneration: Int) async {
+        _ = await service.cancelLogin()
+        guard generation == operationGeneration, !Task.isCancelled else {
+            return
+        }
+        state = .expired
+        qrCodeImage = nil
     }
 
     @discardableResult
@@ -177,7 +230,7 @@ public final class AuthenticationViewModel {
         switch nextState {
         case .awaitingScan, .awaitingConfirmation:
             do {
-                qrCodeImage = try await service.makeQRCodeImage(scale: 12)
+                qrCodeImage = try await qrCodeProvider.makeQRCodeImage(scale: 12)
             } catch {
                 state = .failed(.invalidResponse)
                 qrCodeImage = nil

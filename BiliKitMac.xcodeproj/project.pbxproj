@@ -10,12 +10,12 @@
 		A10000000000000000000003 /* BiliPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* BiliPlayback */; };
 		A10000000000000000000004 /* BiliAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* BiliAPI */; };
 		A10000000000000000000005 /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
-		A10000000000000000000006 /* BiliGuestFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* BiliGuestFeature */; };
+		A10000000000000000000006 /* BiliBrowseFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* BiliBrowseFeature */; };
 		A10000000000000000000007 /* BiliAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* BiliAuth */; };
 		A10000000000000000000008 /* BiliAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* BiliAuth */; };
 		A10000000000000000000009 /* BiliAuthFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000018 /* BiliAuthFeature */; };
 		A1000000000000000000000A /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
-		A1000000000000000000000B /* BiliHistoryFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000019 /* BiliHistoryFeature */; };
+		A1000000000000000000000B /* BiliLibraryFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000019 /* BiliLibraryFeature */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,10 +69,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000000000000000000000B /* BiliHistoryFeature in Frameworks */,
+				A1000000000000000000000B /* BiliLibraryFeature in Frameworks */,
 				A10000000000000000000009 /* BiliAuthFeature in Frameworks */,
 				A10000000000000000000008 /* BiliAuth in Frameworks */,
-				A10000000000000000000006 /* BiliGuestFeature in Frameworks */,
+				A10000000000000000000006 /* BiliBrowseFeature in Frameworks */,
 				A10000000000000000000005 /* BiliApplication in Frameworks */,
 				A10000000000000000000004 /* BiliAPI in Frameworks */,
 				A10000000000000000000003 /* BiliPlayback in Frameworks */,
@@ -142,8 +142,8 @@
 				A10000000000000000000015 /* BiliApplication */,
 				A10000000000000000000017 /* BiliAuth */,
 				A10000000000000000000018 /* BiliAuthFeature */,
-				A10000000000000000000019 /* BiliHistoryFeature */,
-				A10000000000000000000016 /* BiliGuestFeature */,
+				A10000000000000000000019 /* BiliLibraryFeature */,
+				A10000000000000000000016 /* BiliBrowseFeature */,
 				A10000000000000000000013 /* BiliPlayback */,
 				A10000000000000000000014 /* BiliAPI */,
 			);
@@ -642,10 +642,10 @@
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliApplication;
 		};
-		A10000000000000000000016 /* BiliGuestFeature */ = {
+		A10000000000000000000016 /* BiliBrowseFeature */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
-			productName = BiliGuestFeature;
+			productName = BiliBrowseFeature;
 		};
 		A10000000000000000000017 /* BiliAuth */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -657,10 +657,10 @@
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliAuthFeature;
 		};
-		A10000000000000000000019 /* BiliHistoryFeature */ = {
+		A10000000000000000000019 /* BiliLibraryFeature */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
-			productName = BiliHistoryFeature;
+			productName = BiliLibraryFeature;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

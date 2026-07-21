@@ -51,6 +51,9 @@ jobs:
       - name: Check repository secrets
         run: sh Scripts/check-secrets.sh
 
+      - name: Check project and entitlement contract
+        run: sh Scripts/check-project-contract.sh
+
       - name: Test core package
         run: xcrun swift test --package-path Packages/BiliKitCore
 

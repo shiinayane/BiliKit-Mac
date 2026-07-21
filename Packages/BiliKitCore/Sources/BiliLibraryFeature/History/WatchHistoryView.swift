@@ -58,18 +58,16 @@ public struct WatchHistoryView: View {
             ProgressView("正在加载观看历史…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("history.loading")
-        case let .loaded(items, nextCursor, loadMoreError):
+        case let .loaded(items, continuation, loadMoreError):
             if items.isEmpty {
-                ContentUnavailableView(
-                    "暂无观看历史",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("在哔哩哔哩观看过的视频会显示在这里。")
+                emptyHistory(
+                    canLoadMore: continuation != nil,
+                    loadMoreError: loadMoreError
                 )
-                .accessibilityIdentifier("history.empty")
             } else {
                 historyList(
                     items: items,
-                    canLoadMore: nextCursor != nil,
+                    canLoadMore: continuation != nil,
                     isLoadingMore: false,
                     loadMoreError: loadMoreError
                 )
@@ -84,6 +82,32 @@ public struct WatchHistoryView: View {
         case let .failed(error):
             failure(error)
         }
+    }
+
+    private func emptyHistory(
+        canLoadMore: Bool,
+        loadMoreError: WatchHistoryError?
+    ) -> some View {
+        ContentUnavailableView {
+            Label("暂无可显示的观看历史", systemImage: "clock.arrow.circlepath")
+        } description: {
+            if let loadMoreError {
+                Text(message(for: loadMoreError))
+            } else if canLoadMore {
+                Text("当前页没有普通视频记录，可以继续检查更早的历史。")
+            } else {
+                Text("在哔哩哔哩观看过的普通视频会显示在这里。")
+            }
+        } actions: {
+            if canLoadMore {
+                Button("加载更早的记录") {
+                    model.loadMore()
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("history.load-more")
+            }
+        }
+        .accessibilityIdentifier("history.empty")
     }
 
     private func historyList(
