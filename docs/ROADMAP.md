@@ -1,8 +1,8 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5 已完成；M3 独立审查整改已在本地完成，当前变更集仍需提交后的 macOS 15/26 CI 确认，确认前不正式关闭 M3、不开始 M4。
+> 状态：M1、M2、M2.5、M3 已完成；M4 实施计划已准备，功能代码尚未开始。
 >
-> 基线日期：2026-07-21（Asia/Tokyo）。
+> 基线日期：2026-07-22（Asia/Tokyo）。
 >
 > 本文描述当前事实、下一阶段和验收门槛；研究依据见
 > [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)。计划中的能力在通过对应验收前，不视为已经实现。
@@ -316,25 +316,88 @@ Gate：
 - Cookie 没有发送到未授权 endpoint、CDN、loopback 或跨主机重定向。
 - 未知 QR 状态、旧轮询结果与部分成功响应均不能提交凭据。
 
-证据结论：核心纵向功能与此前跨环境构建通过。观看历史已完成登录 endpoint → Application Use Case → Feature MVVM → 既有详情/播放器的纵向闭环；真实扫码、进程重启恢复、恢复后历史授权、界面登出、第二次重启未恢复和游客回退均已有受控证据。2026-07-21 独立审查提出的四项阻断，以及不透明 continuation、entitlement/PBX 静态契约两项结构清理，已于 2026-07-22 完成本地实现和回归；真实游客播放探针同时确认新媒体来源策略兼容当前 CDN。当前变更集尚未提交，因此仍等待 macOS 15/26 CI 重新确认后正式关闭 M3。整改记录见 [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)。
+Gate 结论：通过。观看历史已完成登录 endpoint → Application Use Case → Feature MVVM → 既有详情/播放器的纵向闭环；真实扫码、进程重启恢复、恢复后历史授权、界面登出、第二次重启未恢复和游客回退均已有受控证据。2026-07-21 独立审查提出的四项阻断，以及不透明 continuation、entitlement/PBX 静态契约两项结构清理，已于 2026-07-22 完成本地实现和回归；真实游客播放探针同时确认新媒体来源策略兼容当前 CDN。提交 `6236753` 的 GitHub Actions run `29843186800` 已在 macOS 15/26 完成 Package、App、架构、秘密与工程静态契约矩阵，M3 正式关闭。整改与关闭记录见 [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)。
 
 ### M4：字幕、弹幕与本地状态
 
 目标：补齐 B 站观看体验，同时保持时间轴和性能正确。
 
+#### 当前缺口与目标依赖方向
+
+当前 `PlaybackControlling` 只提供加载与暂停，Feature 不知道播放位置、速率、seek 代次或播放项目身份；仓库也没有字幕/弹幕 contract、overlay 宿主或业务持久化。M4 不能直接从“画几条弹幕”开始，必须先建立唯一时间轴和数据边界。
+
+```text
+BiliBrowseFeature/VideoDetail
+        ├──> BiliApplication（字幕/弹幕 Use Case、时间轴与缓存 port）
+        │        └──> BiliModels（SubtitleTrack/Cue、DanmakuEvent）
+        └──> App/Platform 播放与 overlay 宿主
+
+BiliAPI ───────────────> 字幕与弹幕远端 adapter
+BiliPlayback ──────────> AVPlayer 时间轴 adapter
+BiliDanmaku ───────────> 调度、过滤、轨道分配与 AppKit/Core Animation renderer
+BiliPersistence ───────> 可重建缓存与本地播放状态 adapter（出现真实调用方后才创建）
+```
+
+- Feature 不直接 import `BiliAPI`、`BiliPlayback`、`BiliDanmaku`、SwiftData、AVFoundation 或 AppKit。
+- `BiliPlayback` 是播放时间的唯一事实源；字幕和弹幕不得各自启动独立 wall-clock timer。
+- `BiliDanmaku` 是播放呈现 adapter，不是新的 Feature；第一条真实 decoder/scheduler/renderer 链路出现时才创建 target。
+- `BiliPersistence` 只有在首个缓存/播放进度纵向切片接入时才创建，不预建空 schema、Repository 或迁移层。
+- 播放 surface 与 overlay 仍由 App/Platform 组装；`BiliBrowseFeature` 只持有用户意图和平台无关状态。
+
+#### 实施步骤
+
+1. **M4.0：协议、隐私与架构 Gate**
+   - 用显式探针确认字幕目录/正文与点播弹幕分段的最小请求和响应结构、认证要求、主机、Content-Type、大小上限及错误形态；输出只保留结构、计数和状态，不保存真实字幕/弹幕内容或内容标识。
+   - 用全假值手写字幕目录、字幕正文、弹幕分段、空响应、截断/超大二进制、HTML/JSON 错误 fixture；现场观察不能替代 deterministic contract test。
+   - 接受 ADR 0007，固定时间轴 port、`BiliDanmaku` target、overlay composition 与延迟创建 `BiliPersistence`。若引入外部 protobuf 库，先审计许可证、版本固定、构建体积与 Swift 6 支持，并补充依赖决策；不在计划阶段添加依赖。
+   - 增加 M4 数据与隐私说明：字幕/弹幕缓存、BVID、播放位置均可反映观看行为，明确保留期限、容量上限、登出/手动清理和禁止写入日志/诊断的字段。
+2. **M4.1：统一播放时间轴**
+   - 在 Application 定义平台无关、可取消的播放时间轴快照/事件 port，至少表达播放项目 identity、位置、速率、播放/暂停/结束和 discontinuity generation。
+   - `BiliPlayback` 通过 AVPlayer periodic time observer 与状态观察实现该 port；替换播放项目、seek、暂停、倍速和销毁都有明确重置/移除观察点。
+   - 使用虚拟时间和假的 timeline adapter 固定暂停、倍速、前后 seek、旧项目事件隔离与订阅取消；不把 `AVPlayer`、`CMTime` 或 observer token 暴露给 Feature。
+3. **M4.2：字幕优先的第一条纵向切片**
+   - 在 Models/Application 定义字幕轨、cue 与目录/正文 port，由 `BiliAPI` 使用 endpoint DTO 和脱敏 fixture 实现；未知格式、非单调时间与越界 cue 失败关闭或按明确规则丢弃。
+   - 在 `BiliBrowseFeature/VideoDetail/Subtitle` 增加字幕 ViewModel、关闭/轨道选择和当前 cue 状态；切换视频/分 P/字幕轨时取消旧请求并用 identity 阻止旧 cue 覆盖。
+   - App/Platform 在播放器 surface 上组合轻量字幕 overlay。字幕同屏数量很小，可以使用 SwiftUI 文本；其显示只消费统一播放时间轴。
+   - 先完成无字幕、单/多轨、切轨、暂停、倍速、前后 seek 和真实样本 smoke，再进入弹幕实现。
+4. **M4.3：弹幕数据与调度内核**
+   - 创建有真实调用方的 `BiliDanmaku` target；实现 protobuf → typed event 解码、分段索引、预取窗口、去重、基础类型/关键词过滤和 seek 后游标重建。
+   - scheduler 只消费统一时间轴与 Application 弹幕分段 port；同一视频/分 P 使用 generation 隔离，网络、解码与预取 Task 有单实例、并发数和缓存上限。
+   - 用虚拟时间覆盖正向播放、暂停、2×、大幅前后 seek、分段边界、重复事件、乱序/截断输入和取消，不先依赖真实 renderer 判断正确性。
+5. **M4.4：有界 renderer 与播放 surface 集成**
+   - 使用 Core Animation layer 或可复用 NSView 池实现滚动/顶部/底部基础类型、lane allocator、碰撞预测和对象复用；不把每条弹幕建成长生命周期 SwiftUI `Text`。
+   - 明确最大同屏数、排队深度、丢弃/降级顺序、字号/透明度/密度边界；resize、全屏和容器替换时重新计算轨道而不重复喷射。
+   - 动画速度由媒体时间与播放速率推导；暂停冻结，seek/discontinuity 清空并按新时间窗重建，旧 generation 的动画和 Task 必须释放。
+6. **本地持久化纵向切片**
+   - 首个真实缓存/最近播放调用方出现后创建 `BiliPersistence`，由 Application port 隔离 SwiftData；schema 只保存可重建字幕/弹幕缓存、本机最近播放和播放进度。
+   - 不镜像服务端观看历史，不保存 Cookie/token/账号身份；缓存设置版本、过期时间、容量上限和显式清理，登出按隐私规则清除账号会话关联状态。
+   - 增加 schema round-trip、损坏/未知版本、容量淘汰、取消、登出清理和全新 store 测试；迁移策略在首次 schema 变更时再立 ADR。
+7. **M4 收口：性能与真实 Gate**
+   - 增加显式 `BiliDanmakuProbe` 或等价受控入口，记录事件/分段/同屏/复用计数、时间轴偏差与 RSS，不输出正文、用户标识或内容标识。
+   - 用自制 fixture 完成可重复的 30 分钟时间轴、连续 seek、resize 和播放器替换矩阵；再用真实点播样本做最小兼容性 smoke。
+   - Package/App/架构/秘密/工程静态契约、macOS 15/26 CI、当前 macOS 真实播放和无个人数据 UI 验证全部通过后关闭 M4。
+
 交付物：
 
-- 增加 `DanmakuKit` 与 `BiliPersistence` target。
+- 增加有真实调用方的 `BiliDanmaku` 与 `BiliPersistence` target。
 - 字幕轨选择与展示。
 - protobuf 弹幕解码、分段加载、预取、过滤、去重和 lane allocator。
 - Core Animation 或可复用 NSView 渲染，不使用大量长期存在的 SwiftUI `Text`。
 - SwiftData 只保存本机生成的弹幕/字幕缓存、shown-BVID、最近播放与播放进度；服务端观看历史继续按需读取，不建立含远端标题或账号行为的长期镜像，秘密仍只在 Keychain。
+
+明确不做：
+
+- 不在 M4 增加评论、收藏、稍后再看、直播/直播弹幕、独立播放器窗口、PiP 或复杂设置中心。
+- 不支持高级弹幕、互动弹幕、ASS 导出、下载/离线媒体或跨设备同步。
+- 不因为“以后可能使用”创建第二个 Package、公共 `Utils`、空 Feature target 或预留持久化 schema。
 
 Gate：
 
 - 30 分钟连续播放、暂停、倍速和双向 seek 后无明显漂移或重复喷射。
 - resize、全屏和播放器容器尺寸切换后弹幕轨道能恢复。
 - 内存不随弹幕段数单调增长，并有最大同屏数量与降级策略。
+- 字幕和弹幕的旧视频/旧分 P/旧 generation 数据不会覆盖当前播放项目，关闭页面后网络、时间轴观察和 renderer 对象均可归零。
+- 缓存有容量/期限/删除边界，UserDefaults、SwiftData、日志、fixture 和验证记录中不存在凭据或真实个人观看内容。
 
 ### M4.5：UI/UX 精修
 
@@ -470,11 +533,14 @@ Gate：
 - 签名 App 实测发现并补齐 App Sandbox 的 `network.client` 与 `network.server`；前者服务 API/CDN，后者只供 loopback 播放桥监听。
 - 107 项 Package 测试、20 个套件、App build-for-testing/composition、签名 Keychain smoke、架构与秘密扫描通过。
 - 当前 macOS 已完成真实扫码、历史读取、详情/播放器跳转、进程重启恢复、恢复后再次读取、界面登出、第二次重启未恢复和游客回退；详见 [`validation/M3-watch-history-2026-07-21.md`](./validation/M3-watch-history-2026-07-21.md)。
+- 完成产品领域 Feature target 整理、根 `AGENTS.md`、ADR 0006 与 M4.5 UI/UX 里程碑；三路独立审查提出的 M3 阻断和结构债已全部整改。
+- 提交 `6236753` 已推送；GitHub Actions run `29843186800` 的 macOS 15/26 Package、App、架构、秘密和工程静态契约矩阵通过，M3 Gate 正式关闭。
+- M4 已完成实施顺序与依赖边界规划；尚未创建字幕、弹幕、持久化 target 或功能代码。
 
 接下来按顺序：
 
-1. 经用户明确要求后提交并推送当前变更，在 macOS 15/26 上重新运行 Package、App、架构、秘密和工程静态契约检查。
-2. 远程 CI 通过后正式关闭 M3；真实签名 Keychain smoke 继续沿用已完成的受控 Gate，并在发布候选阶段重跑，不能由无签名 CI 替代。
-3. M3 关闭后先为 M4 写字幕、弹幕与本地状态的实施计划，不直接扩张页面或创建无调用方模块；M4 完成后进入 M4.5 UI/UX 精修。
+1. 执行 M4.0 协议、隐私与架构 Gate：先形成脱敏现场证据、全假值 fixture 和 ADR 0007，不直接创建 renderer 或 SwiftData schema。
+2. 实现 M4.1 唯一播放时间轴，并用虚拟时间固定暂停、倍速、seek、替换和取消语义。
+3. 以 M4.2 字幕纵向切片验证 API → Application → Feature → Platform overlay；字幕 Gate 通过后再进入弹幕 decoder/scheduler。
 
-当前变更集远程 CI 确认前仍不开始 SwiftData、复杂导航和视觉精修。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2 测试层修复。
+M4 期间不开始复杂导航和视觉精修；`BiliPersistence` 只在首个真实缓存/播放进度调用方出现后创建。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2 测试层修复。

@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。Presentation target 现按产品领域划分：`BiliBrowseFeature`、`BiliLibraryFeature` 与 `BiliAuthFeature` 只通过 Application/Domain 工作，`BiliAPI`、`BiliAuth` 与 `BiliPlayback` 由 composition root 注入。M3 的 Web QR、Keychain、精确 endpoint 授权、只读观看历史和真实扫码/恢复/登出已有受控证据；独立审查整改已在本地通过，等待当前变更集的 macOS 15/26 CI 后正式关闭 M3。项目尚不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理和 M3 登录/观看历史闭环已经完成。Presentation target 现按产品领域划分：`BiliBrowseFeature`、`BiliLibraryFeature` 与 `BiliAuthFeature` 只通过 Application/Domain 工作，`BiliAPI`、`BiliAuth` 与 `BiliPlayback` 由 composition root 注入。M4 将先建立统一播放时间轴和字幕纵向切片，再进入有界弹幕调度/渲染与本地缓存；功能代码尚未开始。项目尚不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6

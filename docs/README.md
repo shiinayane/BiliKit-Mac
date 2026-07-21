@@ -22,6 +22,7 @@
 - [`adr/0004-mvvm-clean-architecture.md`](./adr/0004-mvvm-clean-architecture.md)
 - [`adr/0005-web-qr-authentication-boundary.md`](./adr/0005-web-qr-authentication-boundary.md)
 - [`adr/0006-product-domain-feature-targets.md`](./adr/0006-product-domain-feature-targets.md)
+- [`adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md`](./adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md)
 
 当前安全基线：
 
