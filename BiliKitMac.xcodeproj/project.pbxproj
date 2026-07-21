@@ -11,6 +11,7 @@
 		A10000000000000000000004 /* BiliAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* BiliAPI */; };
 		A10000000000000000000005 /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
 		A10000000000000000000006 /* BiliGuestFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* BiliGuestFeature */; };
+		A10000000000000000000007 /* BiliAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* BiliAuth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +76,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000007 /* BiliAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,6 +158,7 @@
 			);
 			name = BiliKitMacTests;
 			packageProductDependencies = (
+				A10000000000000000000017 /* BiliAuth */,
 			);
 			productName = BiliKitMacTests;
 			productReference = 8DFA900E300F375600DF3E1D /* BiliKitMacTests.xctest */;
@@ -418,6 +421,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -451,6 +455,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -629,6 +634,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliGuestFeature;
+		};
+		A10000000000000000000017 /* BiliAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
+			productName = BiliAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

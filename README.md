@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已完成 Web QR 契约 Gate，以及版本化 Keychain envelope、精确 endpoint 请求授权和凭据恢复的自动化实现；签名 App 的真实 Data Protection Keychain 往返、登录 Feature 和个性化闭环尚未完成，因此仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已完成 Web QR 契约、版本化 Keychain envelope、精确 endpoint 请求授权、凭据恢复自动化和签名 App 的真实 Data Protection Keychain 往返；登录 Feature、完整登出和个性化闭环尚未完成，因此仍不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -64,6 +64,22 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 不同机器的 active developer directory 可能不同。日常开发仍建议直接在 Xcode 中打开 `BiliKitMac.xcodeproj`。
 
+签名 Keychain smoke 需要本机可用的 Apple Development 身份和自动签名 provisioning profile。它使用独立测试 service/account，并在前后清理测试项：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild \
+  -project BiliKitMac.xcodeproj \
+  -scheme BiliKitMac \
+  -configuration Debug \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath /tmp/BiliKitMac-keychain-smoke \
+  test \
+  -only-testing:BiliKitMacTests/SignedKeychainSmokeTests
+```
+
+没有 Team ID 的未签名或临时签名宿主会明确跳过此用例，不能把该结果当作真实 Data Protection Keychain 证据。
+
 ## 显式运行游客 API 探针
 
 `BiliAPIProbe` 会获取匿名 WBI key，对搜索参数签名并解码一页视频结果。它会发起真实网络请求，因此不会自动进入 CI 或 App target：
@@ -110,7 +126,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   --observe-expiry
 ```
 
-终端只输出安全状态、字段/查询/Cookie 名称、Cookie 属性和二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token 值。当前实现接受已经现场确认的 `86101` 未扫码、`86090` 已扫码待确认、`0` 待凭据校验与 `86038` 过期状态；其他状态会失败关闭。探针仍调用只校验、不持久化的入口；真实 Keychain 提交由后续签名 App 流程显式调用。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
+终端只输出安全状态、字段/查询/Cookie 名称、Cookie 属性和二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token 值。当前实现接受已经现场确认的 `86101` 未扫码、`86090` 已扫码待确认、`0` 待凭据校验与 `86038` 过期状态；其他状态会失败关闭。探针仍调用只校验、不持久化的入口；真实 Keychain store 已通过签名 App smoke，但尚未接入登录 Feature。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
 
 ## 显式运行真实播放探针
 

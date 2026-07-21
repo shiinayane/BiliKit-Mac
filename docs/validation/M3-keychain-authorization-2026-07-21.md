@@ -1,6 +1,6 @@
-# M3 Keychain 与请求授权自动化验证（2026-07-21）
+# M3 Keychain 与请求授权验证（2026-07-21）
 
-> 结论：M3 第 4 步的代码与自动化 Gate 已通过；真实 Data Protection Keychain 往返仍需签名 App 与最小 entitlement，因此本记录不关闭 M3。
+> 结论：M3 第 4 步的代码、自动化和签名 Data Protection Keychain smoke 均已通过；M3 仍需完成认证 Feature、完整登出和一个个性化闭环。
 
 ## 1. 实现范围
 
@@ -37,17 +37,23 @@
 
 现有清理测试同时覆盖 Keychain delete 失败必须上抛 store unavailable，不能伪装成已安全回退。完整 Package 为 87 项测试、16 个测试套件；全部通过。
 
-## 3. 未签名环境边界
+## 3. 签名 smoke 与未签名环境边界
 
 实现期间曾直接从未签名 SwiftPM 测试进程访问 Data Protection Keychain，store 返回 unavailable，未创建 item。该错误映射同时覆盖 `errSecMissingEntitlement` 与 `errSecNotAvailable`，因此这里不把具体原因写成已确认事实。这个进程不能提供真实持久化证据；Data Protection Keychain 仍须在具备正确签名/entitlement 的 App 上验证。
 
-因此 CI 自动测试使用窄 `KeychainOperating` 后端检查传给 SecItem 的完整查询、数据和状态分支，而不是降级到 legacy Keychain。后续签名 smoke 必须：
+因此 CI 自动测试使用窄 `KeychainOperating` 后端检查传给 SecItem 的完整查询、数据和状态分支，而不是降级到 legacy Keychain。签名 smoke 按以下门槛完成：
 
 1. 使用独立测试 service/account；
 2. 真实执行 add、duplicate→update、read、delete；
 3. 检查 Data Protection、WhenUnlockedThisDeviceOnly 与非同步属性；
 4. 在 teardown 删除测试 item；
 5. 不输出 envelope 或 Cookie 值。
+
+App target 新增标准 `keychain-access-groups` entitlement，构建时由 provisioning profile 展开为当前 Team ID 加 `com.shiinayane.BiliKitMac`。第一次在没有该 entitlement 的开发签名宿主中运行时，真实 SecItem 操作返回 `unavailable`；补齐 access group 后，同一 smoke 在 App 宿主中实际完成 add、read、duplicate→update、再次 read、属性读取、delete 和删除后 nil 检查。
+
+smoke 固定使用 `com.shiinayane.BiliKitMac.tests.signed-keychain-smoke.v1` / `web-credential`，与生产 service 隔离；测试开始前和 defer 都执行清理。它只在运行进程具有 Team ID 时执行。`CODE_SIGNING_ALLOWED=NO` 的 CI 路径会把该用例标记为 skipped，不能作为真实 Keychain 证据；其余 App composition 测试继续执行。
+
+通过后的后续复跑发生在系统已锁屏的状态，第一次 add 返回 `interactionNotAllowed`，与 `WhenUnlockedThisDeviceOnly` 的保护边界一致；这次环境受限结果不替代解锁状态下已经完成的完整往返证据。
 
 ## 4. 本地回归
 
@@ -56,7 +62,8 @@
 - 架构依赖检查：通过，新增 Networking 纯净边界已生效。
 - 秘密模式扫描：通过。
 - App：macOS 15 deployment target 无签名 `build-for-testing` 通过。
-- App composition：1 项单元测试通过，0 项失败。
+- App 未签名回归：1 项 composition 单元测试通过，签名 Keychain smoke 明确跳过。
+- App 签名 smoke：Apple Development 签名、arm64 App 测试宿主实际执行 1 项，add/update/read/delete、`WhenUnlockedThisDeviceOnly`、非同步属性和最终清理全部通过，0 项跳过、0 项失败。
 - Markdown 相对链接与 `git diff --check`：通过。
 
 远程 macOS 15/26 CI 结果在提交推送后检查；本记录不预写尚未运行的结果。
