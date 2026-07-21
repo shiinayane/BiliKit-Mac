@@ -7,14 +7,22 @@ enum BiliAuthProbe {
     @MainActor
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments.isEmpty || arguments == ["--generate-only"] else {
+        let mode: ProbeMode
+        switch arguments {
+        case []:
+            mode = .interactive
+        case ["--generate-only"]:
+            mode = .generateOnly
+        case ["--observe-expiry"]:
+            mode = .observeExpiry
+        default:
             FileHandle.standardError.write(
-                Data("用法：BiliAuthProbe [--generate-only]\n".utf8)
+                Data("用法：BiliAuthProbe [--generate-only|--observe-expiry]\n".utf8)
             )
             exit(EXIT_FAILURE)
         }
         let application = NSApplication.shared
-        let delegate = ProbeAppDelegate(generateOnly: arguments == ["--generate-only"])
+        let delegate = ProbeAppDelegate(mode: mode)
         application.delegate = delegate
         application.setActivationPolicy(.regular)
         withExtendedLifetime(delegate) {
@@ -23,15 +31,21 @@ enum BiliAuthProbe {
     }
 }
 
+private enum ProbeMode: Equatable {
+    case interactive
+    case generateOnly
+    case observeExpiry
+}
+
 @MainActor
 private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let session = WebQRLoginSession()
-    private let generateOnly: Bool
+    private let mode: ProbeMode
     private var task: Task<Void, Never>?
     private var window: NSWindow?
 
-    init(generateOnly: Bool) {
-        self.generateOnly = generateOnly
+    init(mode: ProbeMode) {
+        self.mode = mode
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -55,7 +69,7 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
                 return
             }
 
-            if generateOnly {
+            if mode == .generateOnly {
                 _ = try qrCode.makeCGImage(scale: 2)
                 print("state=qr-generated qr-host=\(qrCode.host)")
                 await session.cancel()
@@ -63,16 +77,45 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
                 return
             }
 
-            try show(qrCode)
-            print("state=awaiting-scan qr-host=\(qrCode.host)")
+            if mode == .interactive {
+                try show(qrCode)
+                print("state=awaiting-scan qr-host=\(qrCode.host)")
+            } else {
+                print("state=awaiting-expiry qr-host=\(qrCode.host)")
+            }
 
-            let deadline = ContinuousClock.now + .seconds(180)
+            let timeoutSeconds = mode == .observeExpiry ? 240 : 180
+            let deadline = ContinuousClock.now + .seconds(timeoutSeconds)
+            var reportedAwaitingConfirmation = false
             while ContinuousClock.now < deadline {
                 try await Task.sleep(for: .seconds(2))
                 let state = try await session.pollOnce()
                 switch state {
                 case .awaitingScan:
                     continue
+                case .awaitingConfirmation:
+                    if mode == .observeExpiry {
+                        await finish(with: state, exitCode: EXIT_FAILURE)
+                        return
+                    }
+                    if !reportedAwaitingConfirmation {
+                        print("state=awaiting-confirmation")
+                        reportedAwaitingConfirmation = true
+                    }
+                    continue
+                case let .awaitingCredentialValidation(observation):
+                    print("state=awaiting-credential-validation")
+                    printObservation(observation)
+                    let isLoggedIn = try await session.validatePendingCredential()
+                    print("credential-validation-is-login=\(isLoggedIn)")
+                    await session.cancel()
+                    closeAndExit(isLoggedIn ? EXIT_SUCCESS : EXIT_FAILURE)
+                    return
+                case .expired where mode == .observeExpiry:
+                    print("state=expired")
+                    await session.cancel()
+                    closeAndExit(EXIT_SUCCESS)
+                    return
                 default:
                     await finish(with: state, exitCode: EXIT_FAILURE)
                     return
@@ -142,8 +185,38 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
     private func finish(with state: WebQRLoginState, exitCode: Int32) async {
         print("state=\(state.description)")
+        if case let .failed(.unsupportedStatus(observation)) = state {
+            printObservation(observation)
+        }
         await session.cancel()
         closeAndExit(exitCode)
+    }
+
+    private func printObservation(_ observation: WebQRStatusObservation) {
+        print("data-fields=\(joined(observation.dataFieldNames))")
+        print("url-scheme=\(observation.urlScheme ?? "none")")
+        print("url-host=\(observation.urlHost ?? "none")")
+        print("url-query-names=\(joined(observation.urlQueryNames))")
+        print("refresh-token-present=\(observation.refreshTokenPresent)")
+        print("response-header-names=\(joined(observation.responseHeaderNames))")
+        print("cookie-names=\(joined(observation.cookieNames))")
+        print("cookie-attribute-names=\(joined(observation.cookieAttributeNames))")
+        for cookie in observation.cookies {
+            print(
+                "cookie-metadata="
+                    + "name:\(cookie.name),"
+                    + "domain:\(cookie.domain),"
+                    + "path:\(cookie.path),"
+                    + "secure:\(cookie.isSecure),"
+                    + "http-only:\(cookie.isHTTPOnly),"
+                    + "session-only:\(cookie.isSessionOnly),"
+                    + "has-expiry:\(cookie.hasExpiry)"
+            )
+        }
+    }
+
+    private func joined(_ values: [String]) -> String {
+        values.isEmpty ? "none" : values.joined(separator: ",")
     }
 
     private func closeAndExit(_ exitCode: Int32) {

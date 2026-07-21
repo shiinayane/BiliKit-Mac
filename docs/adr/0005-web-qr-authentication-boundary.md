@@ -77,7 +77,20 @@ M3 第 2 步已按本决策建立 `BiliAuth` 与 `BiliAuthProbe`：
 
 - 生产构造固定连接 `passport.bilibili.com`，使用独立 ephemeral session，关闭 Cookie store/cache、设置明确请求/资源超时并拒绝重定向。
 - 生成结果只接受 `https://account.bilibili.com` 精确主机；相似后缀主机失败关闭。
-- 当前只接受现场确认的 `86101` 未扫码状态，其他业务状态映射为不包含服务端 message/payload 的安全失败。
+- 首批实现只接受当时已确认的 `86101` 未扫码状态，其他业务状态映射为不包含服务端 message/payload 的安全失败。
 - QR URL 以不可直接读取的 `WebQRCode` 保存，由 Core Image 在内存生成 `CGImage`；探针不写临时图片或打印原始内容。
 - actor 使用 generation 与 poll ID 阻止旧生成/轮询结果覆盖最新意图，并传播 `CancellationError`。
-- 此实现尚未跨过人工扫码 Gate，不包含 Cookie 解析、Keychain 或登录态授权。
+- 首批实现不包含 Cookie 解析、Keychain 或登录态授权；随后通过下述人工扫码 Gate 固定成功与过期契约。
+
+## 人工扫码 Gate 结论
+
+2026-07-21 的脱敏探针确认：
+
+- `86101` 为未扫码，`86090` 为已扫码待手机确认，`0` 为成功结果，`86038` 为二维码过期。
+- 成功 JSON URL 指向 `passport.biligame.com`，查询中包含认证相关值；BiliAuth 只观察查询键名，不采集其中的值，也不导航该 URL。
+- 成功响应同时提供标准 `Set-Cookie`。权威凭据来源确定为响应 header，精确白名单是 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`；未知 Cookie 丢弃。
+- 五项 Cookie 的 domain 均为 `.bilibili.com`、path 均为 `/`、均带 `Secure` 和过期时间；`SESSDATA` 额外带 `HttpOnly`。
+- `refresh_token` 在成功结果中存在，但 M3 首版继续不采集、不存储、不使用。
+- 以上 Cookie 在短生命周期内存中组成 header，请求精确的 `https://api.bilibili.com/x/web-interface/nav`，现场得到 `isLogin=true`；验证后立即清空。
+
+因此 M3 可以进入 Keychain 与 endpoint 授权实现，但仍不能把收到 `code=0` 直接等同于持久登录成功：必须先通过 nav 校验，再原子提交 Keychain。

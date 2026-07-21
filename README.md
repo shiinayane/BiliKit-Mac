@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已建立 Web QR 基础状态机、内存二维码探针与秘密扫描，下一步需要人工扫码确认成功/过期契约；当前尚未保存凭据或提供登录 UI，也仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已完成 Web QR 未扫码、待确认、成功与过期契约验证，并用内存 Cookie 通过登录态校验；下一步是 Keychain 与请求授权，当前尚未持久化凭据或提供登录 UI，也仍不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -81,7 +81,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 显式运行 Web QR 契约探针
 
-`BiliAuthProbe` 会在内存窗口显示二维码，并每 2 秒轮询一次，最多运行 180 秒。它用于人工确认尚未固定的扫码状态，不会自动进入 CI 或 App target：
+`BiliAuthProbe` 会在内存窗口显示二维码，并每 2 秒轮询一次，最多运行 180 秒。它用于受控协议回归与必要的现场观察，不会自动进入 CI 或 App target：
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
@@ -100,7 +100,17 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   --generate-only
 ```
 
-终端只输出安全状态与二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token。当前实现只接受已经现场确认的 `86101` 未扫码状态；遇到其他状态会失败关闭并输出业务状态码，供下一轮手写脱敏 fixture。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
+不显示二维码，只轮询到服务端过期状态（最长 240 秒）：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcrun swift run \
+  --package-path Packages/BiliKitCore \
+  BiliAuthProbe \
+  --observe-expiry
+```
+
+终端只输出安全状态、字段/查询/Cookie 名称、Cookie 属性和二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token 值。当前实现接受已经现场确认的 `86101` 未扫码、`86090` 已扫码待确认、`0` 待凭据校验与 `86038` 过期状态；其他状态会失败关闭。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
 
 ## 显式运行真实播放探针
 

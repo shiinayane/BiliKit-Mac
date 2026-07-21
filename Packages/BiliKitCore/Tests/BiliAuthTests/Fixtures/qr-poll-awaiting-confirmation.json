@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "url": "",
+    "refresh_token": "",
+    "timestamp": 1700000001,
+    "code": 86090,
+    "message": "已扫码"
+  }
+}

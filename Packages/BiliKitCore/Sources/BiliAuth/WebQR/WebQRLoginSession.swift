@@ -16,6 +16,7 @@ public actor WebQRLoginSession {
     private let decoder = JSONDecoder()
     private var generation: UInt64 = 0
     private var activeChallenge: ActiveChallenge?
+    private var pendingCredential: PendingCredential?
     private var latestPollID: UInt64 = 0
 
     public init() {
@@ -36,6 +37,7 @@ public actor WebQRLoginSession {
         generation &+= 1
         let operationGeneration = generation
         activeChallenge = nil
+        pendingCredential = nil
         latestPollID = 0
         state = .requestingQRCode
 
@@ -125,12 +127,33 @@ public actor WebQRLoginSession {
             }
 
             switch data.code {
+            case 0:
+                let observation = Self.safeObservation(
+                    data: data,
+                    response: response
+                )
+                pendingCredential = Self.pendingCredential(
+                    from: response,
+                    generation: challenge.generation
+                )
+                activeChallenge = nil
+                state = .awaitingCredentialValidation(observation)
+                return state
             case 86_101:
                 state = .awaitingScan(challenge.qrCode)
                 return state
+            case 86_090:
+                state = .awaitingConfirmation(challenge.qrCode)
+                return state
+            case 86_038:
+                activeChallenge = nil
+                state = .expired
+                return state
             default:
                 return fail(
-                    .unsupportedStatus(data.code),
+                    .unsupportedStatus(
+                        Self.safeObservation(data: data, response: response)
+                    ),
                     generation: challenge.generation
                 )
             }
@@ -150,7 +173,36 @@ public actor WebQRLoginSession {
         generation &+= 1
         latestPollID &+= 1
         activeChallenge = nil
+        pendingCredential = nil
         state = .signedOut
+    }
+
+    public func validatePendingCredential() async throws -> Bool {
+        guard let pendingCredential else {
+            throw WebQRLoginFailure.incompleteCredential
+        }
+        self.pendingCredential = nil
+        guard generation == pendingCredential.generation else {
+            throw CancellationError()
+        }
+
+        let response = try await sendNavigationValidation(
+            cookieHeader: pendingCredential.cookieHeader
+        )
+        try Task.checkCancellation()
+        guard generation == pendingCredential.generation else {
+            throw CancellationError()
+        }
+        let envelope: NavigationEnvelope
+        do {
+            envelope = try decoder.decode(NavigationEnvelope.self, from: response.body)
+        } catch {
+            throw WebQRLoginFailure.invalidResponse
+        }
+        guard envelope.code == 0, let data = envelope.data else {
+            throw WebQRLoginFailure.invalidResponse
+        }
+        return data.isLogin
     }
 
     private func send(
@@ -207,6 +259,46 @@ public actor WebQRLoginSession {
             throw WebQRLoginFailure.invalidResponse
         }
         return url
+    }
+
+    private func sendNavigationValidation(
+        cookieHeader: String
+    ) async throws -> HTTPResponse {
+        let url = URL(
+            string: "https://api.bilibili.com/x/web-interface/nav"
+        )!
+        let response: HTTPResponse
+        do {
+            response = try await httpClient.send(
+                HTTPRequest(
+                    url: url,
+                    headers: [
+                        "Accept": "application/json",
+                        "Cookie": cookieHeader,
+                        "Referer": "https://www.bilibili.com/",
+                        "User-Agent": "BiliKitMac/0.1",
+                    ]
+                )
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as HTTPClientError {
+            switch error {
+            case let .unacceptableStatusCode(status):
+                throw WebQRLoginFailure.httpStatus(status)
+            case .nonHTTPResponse:
+                throw WebQRLoginFailure.network
+            }
+        } catch {
+            throw WebQRLoginFailure.network
+        }
+        guard response.body.count <= Self.maximumResponseSize else {
+            throw WebQRLoginFailure.responseTooLarge
+        }
+        guard Self.looksLikeJSON(response) else {
+            throw WebQRLoginFailure.nonJSONResponse
+        }
+        return response
     }
 
     private func requireCurrentGeneration(_ expected: UInt64) throws {
@@ -271,6 +363,81 @@ public actor WebQRLoginSession {
         return firstByte == 0x7B
     }
 
+    private static func safeObservation(
+        data: PollData,
+        response: HTTPResponse
+    ) -> WebQRStatusObservation {
+        let components = data.url.flatMap {
+            URLComponents(string: $0)
+        }
+        let cookies = HTTPCookie.cookies(
+            withResponseHeaderFields: response.headers,
+            for: productionBaseURL
+        )
+        let cookieAttributeNames = Set(
+            cookies.flatMap { cookie in
+                cookie.properties?.keys.map(\.rawValue) ?? []
+            }
+        )
+        let cookieObservations = cookies.map {
+            WebQRCookieObservation(
+                name: $0.name,
+                domain: $0.domain,
+                path: $0.path,
+                isSecure: $0.isSecure,
+                isHTTPOnly: $0.isHTTPOnly,
+                isSessionOnly: $0.isSessionOnly,
+                hasExpiry: $0.expiresDate != nil
+            )
+        }.sorted { $0.name < $1.name }
+
+        return WebQRStatusObservation(
+            code: data.code,
+            dataFieldNames: data.fieldNames.sorted(),
+            urlScheme: components?.scheme,
+            urlHost: components?.host,
+            urlQueryNames: Array(
+                Set(components?.queryItems?.map(\.name) ?? [])
+            ).sorted(),
+            refreshTokenPresent: !(data.refreshToken ?? "").isEmpty,
+            responseHeaderNames: response.headers.keys
+                .map { $0.lowercased() }
+                .sorted(),
+            cookieNames: Array(Set(cookies.map(\.name))).sorted(),
+            cookieAttributeNames: cookieAttributeNames.sorted(),
+            cookies: cookieObservations
+        )
+    }
+
+    private static func pendingCredential(
+        from response: HTTPResponse,
+        generation: UInt64
+    ) -> PendingCredential? {
+        let allowedNames = Set([
+            "DedeUserID",
+            "DedeUserID__ckMd5",
+            "SESSDATA",
+            "bili_jct",
+            "sid",
+        ])
+        let requiredNames = Set(["DedeUserID", "SESSDATA", "bili_jct"])
+        let cookies = HTTPCookie.cookies(
+            withResponseHeaderFields: response.headers,
+            for: productionBaseURL
+        ).filter { allowedNames.contains($0.name) }
+        guard requiredNames.isSubset(of: Set(cookies.map(\.name))) else {
+            return nil
+        }
+        let cookieHeader = cookies
+            .sorted { $0.name < $1.name }
+            .map { "\($0.name)=\($0.value)" }
+            .joined(separator: "; ")
+        return PendingCredential(
+            generation: generation,
+            cookieHeader: cookieHeader
+        )
+    }
+
     private static func makeProductionTransport() -> URLSessionTransport {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
@@ -292,6 +459,11 @@ private struct ActiveChallenge: Sendable {
     let generation: UInt64
     let key: String
     let qrCode: WebQRCode
+}
+
+private struct PendingCredential: Sendable {
+    let generation: UInt64
+    let cookieHeader: String
 }
 
 private struct StaleOperationError: Error {}
@@ -318,6 +490,49 @@ private struct PollEnvelope: Decodable, Sendable {
 
 private struct PollData: Decodable, Sendable {
     let code: Int
+    let url: String?
+    let refreshToken: String?
+    let fieldNames: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case url
+        case refreshToken = "refresh_token"
+    }
+
+    private struct FieldKey: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            return nil
+        }
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(Int.self, forKey: .code)
+        url = try container.decodeIfPresent(String.self, forKey: .url)
+        refreshToken = try container.decodeIfPresent(
+            String.self,
+            forKey: .refreshToken
+        )
+        let allFields = try decoder.container(keyedBy: FieldKey.self)
+        fieldNames = allFields.allKeys.map(\.stringValue)
+    }
+}
+
+private struct NavigationEnvelope: Decodable, Sendable {
+    let code: Int
+    let data: NavigationData?
+}
+
+private struct NavigationData: Decodable, Sendable {
+    let isLogin: Bool
 }
 
 private final class RejectRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

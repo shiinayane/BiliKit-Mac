@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "url": "https://passport.biligame.com/?DedeUserID=FIXTURE_VALUE&SESSDATA=FIXTURE_VALUE&bili_jct=FIXTURE_VALUE&Expires=1700000000&first_domain=.bilibili.com&gourl=https%3A%2F%2Fwww.bilibili.com%2F",
+    "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
+    "timestamp": 1700000002,
+    "code": 0,
+    "message": ""
+  }
+}
