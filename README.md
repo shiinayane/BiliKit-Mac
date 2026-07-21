@@ -70,10 +70,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   --bvid BV1h4KU66ENd \
   --play-seconds 1 \
   --forward-seek 30 \
-  --backward-seek 5
+  --backward-seek 5 \
+  --seek-cycles 1 \
+  --replacement-cycles 0
 ```
 
 游客接口和媒体 URL 都会动态变化。已记录的 BVID 可能失效，或者不再允许请求指定画质，因此一次探针失败本身不能证明播放实现发生回归。探针不会输出带签名的媒体 URL 或响应 body。当前结果见[真实播放验证记录](docs/validation/M1-real-playback-2026-07-21.md)。
+
+M1 收尾矩阵使用 30 秒连续播放、6 轮双向 seek 和 12 次播放项目替换，同时检查视频时间戳相对 AVPlayer timebase 的最大偏差，以及进程最终 RSS 增长。该矩阵只通过 GitHub Actions 的手动触发入口运行，不属于 push/PR 必过检查。
 
 ## 安全与实现边界
 

@@ -30,12 +30,24 @@ public struct DASHToHLSBridge: Sendable {
     private let indexLoader: RepresentationIndexLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
+    private let serverFactory: @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
 
     public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
+        self.init(
+            rangeClient: rangeClient,
+            serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
+        )
+    }
+
+    init(
+        rangeClient: HTTPRangeClient,
+        serverFactory: @escaping @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
+    ) {
         self.rangeClient = rangeClient
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
         masterPlaylistBuilder = HLSMasterPlaylistBuilder()
+        self.serverFactory = serverFactory
     }
 
     public func prepare(
@@ -77,7 +89,7 @@ public struct DASHToHLSBridge: Sendable {
             )
         }
 
-        let server = LoopbackPlaybackServer(rangeClient: rangeClient)
+        let server = serverFactory(rangeClient)
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")

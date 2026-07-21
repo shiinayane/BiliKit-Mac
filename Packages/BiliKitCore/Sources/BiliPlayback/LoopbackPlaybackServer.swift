@@ -61,6 +61,13 @@ public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case invalidRangeHeader
 }
 
+struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
+    let isRunning: Bool
+    let registeredRouteCount: Int
+    let activeConnectionCount: Int
+    let activeTaskCount: Int
+}
+
 public final class LoopbackPlaybackServer: @unchecked Sendable {
     private static let maximumHeaderBytes = 16 * 1_024
 
@@ -200,6 +207,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         state.0?.cancel()
         state.1.forEach { $0.cancel() }
         state.2.forEach { $0.cancel() }
+    }
+
+    func diagnosticsSnapshot() -> LoopbackPlaybackServerDiagnostics {
+        lock.withLock {
+            LoopbackPlaybackServerDiagnostics(
+                isRunning: listener != nil && port != nil,
+                registeredRouteCount: routes.count,
+                activeConnectionCount: connections.count,
+                activeTaskCount: connectionTasks.count
+            )
+        }
     }
 
     private func accept(_ connection: NWConnection) {

@@ -291,6 +291,90 @@ struct LoopbackPlaybackServerTests {
         #expect(engine.player.currentItem?.status == .readyToPlay)
     }
 
+    @Test
+    @MainActor
+    func repeatedReplacementStopsOldServersAndReleasesResources() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(URL(string: "https://fixture.example/video"))
+        let audioURL = try #require(URL(string: "https://fixture.example/audio"))
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [
+                videoURL: videoData,
+                audioURL: audioData,
+            ],
+            failingURLs: []
+        )
+        let registry = LoopbackServerRegistry()
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport),
+            serverFactory: { rangeClient in
+                registry.create(rangeClient: rangeClient)
+            }
+        )
+        var engine: AVPlayerEngine? = AVPlayerEngine(bridge: bridge)
+        engine?.player.isMuted = true
+        let request = PlaybackRequest(
+            manifest: PlaybackManifest(
+                videoRepresentations: [video],
+                audioRepresentations: [audio]
+            )
+        )
+
+        for expectedServerCount in 1...12 {
+            try await engine?.load(request)
+            let servers = registry.servers
+            #expect(servers.count == expectedServerCount)
+            for server in servers.dropLast() {
+                #expect(
+                    server.diagnosticsSnapshot()
+                        == LoopbackPlaybackServerDiagnostics(
+                            isRunning: false,
+                            registeredRouteCount: 0,
+                            activeConnectionCount: 0,
+                            activeTaskCount: 0
+                        )
+                )
+            }
+        }
+
+        engine = nil
+        for _ in 0..<100 {
+            if registry.servers.allSatisfy({ !$0.diagnosticsSnapshot().isRunning }) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        for server in registry.servers {
+            #expect(
+                server.diagnosticsSnapshot()
+                    == LoopbackPlaybackServerDiagnostics(
+                        isRunning: false,
+                        registeredRouteCount: 0,
+                        activeConnectionCount: 0,
+                        activeTaskCount: 0
+                    )
+            )
+        }
+    }
+
     private func fixtureData(named name: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -451,6 +535,23 @@ private final class PlayerItemObservationBox: @unchecked Sendable {
             return observation
         }
         observation?.invalidate()
+    }
+}
+
+private final class LoopbackServerRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [LoopbackPlaybackServer] = []
+
+    var servers: [LoopbackPlaybackServer] {
+        lock.withLock { storage }
+    }
+
+    func create(rangeClient: HTTPRangeClient) -> LoopbackPlaybackServer {
+        let server = LoopbackPlaybackServer(rangeClient: rangeClient)
+        lock.withLock {
+            storage.append(server)
+        }
+        return server
     }
 }
 

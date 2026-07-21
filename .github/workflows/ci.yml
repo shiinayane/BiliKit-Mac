@@ -3,6 +3,18 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      bvid:
+        description: 用于真实播放验证的 BVID
+        required: true
+        default: BV1h4KU66ENd
+        type: string
+      cid:
+        description: 用于真实播放验证的 CID
+        required: true
+        default: "40123826438"
+        type: string
 
 permissions:
   contents: read
@@ -58,3 +70,37 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             test-without-building \
             -only-testing:BiliKitMacTests
+
+  real-playback-macos15:
+    name: 真实播放验证（macOS 15）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      PROBE_BVID: ${{ inputs.bvid }}
+      PROBE_CID: ${{ inputs.cid }}
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v6
+
+      - name: 显示运行环境
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: 运行 M1 真实播放收尾矩阵
+        run: |
+          xcrun swift run \
+            --package-path Packages/BiliKitCore \
+            BiliPlaybackProbe \
+            --bvid "$PROBE_BVID" \
+            --cid "$PROBE_CID" \
+            --play-seconds 30 \
+            --forward-seek 30 \
+            --backward-seek 5 \
+            --seek-cycles 6 \
+            --replacement-cycles 12 \
+            --max-memory-growth-mib 64
