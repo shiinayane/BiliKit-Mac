@@ -1,16 +1,28 @@
-import BiliModels
-import BiliNetworking
+import BiliAPI
 import BiliPlayback
 
 @MainActor
 struct AppEnvironment {
-    let httpClient: HTTPClient
+    let api: any BiliAPIService
     let playerEngine: AVPlayerEngine
-    let makePlaybackRequest: @Sendable (PlaybackManifest) -> PlaybackRequest
+    let makePlaybackRequest: @Sendable (VideoPlayback) -> PlaybackRequest
+
+    func makeGuestAppModel() -> GuestAppModel {
+        GuestAppModel(
+            api: api,
+            playerEngine: playerEngine,
+            makePlaybackRequest: makePlaybackRequest
+        )
+    }
 
     static let live = AppEnvironment(
-        httpClient: HTTPClient(),
+        api: BiliAPIClient(),
         playerEngine: AVPlayerEngine(),
-        makePlaybackRequest: { PlaybackRequest(manifest: $0) }
+        makePlaybackRequest: {
+            PlaybackRequest(
+                manifest: $0.manifest,
+                mediaHeaders: $0.mediaHeaders
+            )
+        }
     )
 }

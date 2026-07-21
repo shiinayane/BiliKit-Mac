@@ -10,6 +10,7 @@
 		A10000000000000000000001 /* BiliModels in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* BiliModels */; };
 		A10000000000000000000002 /* BiliNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* BiliNetworking */; };
 		A10000000000000000000003 /* BiliPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* BiliPlayback */; };
+		A10000000000000000000004 /* BiliAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* BiliAPI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000004 /* BiliAPI in Frameworks */,
 				A10000000000000000000003 /* BiliPlayback in Frameworks */,
 				A10000000000000000000002 /* BiliNetworking in Frameworks */,
 				A10000000000000000000001 /* BiliModels in Frameworks */,
@@ -130,6 +132,7 @@
 				A10000000000000000000011 /* BiliModels */,
 				A10000000000000000000012 /* BiliNetworking */,
 				A10000000000000000000013 /* BiliPlayback */,
+				A10000000000000000000014 /* BiliAPI */,
 			);
 			productName = BiliKitMac;
 			productReference = 8DFA9001300F375500DF3E1D /* BiliKit.app */;
@@ -621,6 +624,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliPlayback;
+		};
+		A10000000000000000000014 /* BiliAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
+			productName = BiliAPI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
