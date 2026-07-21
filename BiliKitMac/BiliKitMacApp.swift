@@ -13,5 +13,6 @@ struct BiliKitMacApp: App {
         WindowGroup {
             ContentView()
         }
+        .defaultSize(width: 1_320, height: 820)
     }
 }

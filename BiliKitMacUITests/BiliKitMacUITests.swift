@@ -23,14 +23,18 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testGuestNavigationShellAppears() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        XCTAssertTrue(
+            app.descendants(matching: .any)["sidebar.popular"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["detail.empty"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     @MainActor

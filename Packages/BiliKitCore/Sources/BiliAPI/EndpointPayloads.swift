@@ -1,6 +1,26 @@
 import BiliModels
 import Foundation
 
+private enum WebImageURL {
+    static func parse(_ value: String) -> URL? {
+        let normalized: String
+        if value.hasPrefix("//") {
+            normalized = "https:\(value)"
+        } else if value.lowercased().hasPrefix("http://") {
+            normalized = "https://" + value.dropFirst("http://".count)
+        } else {
+            normalized = value
+        }
+        guard let url = URL(string: normalized),
+              url.scheme?.lowercased() == "https",
+              url.host != nil
+        else {
+            return nil
+        }
+        return url
+    }
+}
+
 struct PopularPayload: Decodable, Sendable {
     let list: [PopularVideoPayload]
 }
@@ -21,7 +41,7 @@ struct PopularVideoPayload: Decodable, Sendable {
         return PopularVideo(
             bvid: bvid,
             title: title,
-            coverURL: URL(string: pic),
+            coverURL: WebImageURL.parse(pic),
             owner: owner.model(),
             statistics: stat.model(),
             durationSeconds: duration,
@@ -36,7 +56,11 @@ struct OwnerPayload: Decodable, Sendable {
     let face: String?
 
     func model() -> VideoOwner {
-        VideoOwner(id: mid, name: name, avatarURL: face.flatMap(URL.init(string:)))
+        VideoOwner(
+            id: mid,
+            name: name,
+            avatarURL: face.flatMap(WebImageURL.parse)
+        )
     }
 }
 
@@ -69,7 +93,7 @@ struct VideoDetailPayload: Decodable, Sendable {
             bvid: bvid,
             title: title,
             summary: desc,
-            coverURL: URL(string: pic),
+            coverURL: WebImageURL.parse(pic),
             owner: owner.model(),
             statistics: stat.model(),
             durationSeconds: duration,
@@ -329,11 +353,11 @@ struct SearchVideoPayload: Decodable, Sendable {
         return SearchVideo(
             bvid: bvid,
             title: Self.strippingTags(title),
-            coverURL: Self.normalizedURL(pic),
+            coverURL: WebImageURL.parse(pic),
             owner: VideoOwner(
                 id: mid,
                 name: author,
-                avatarURL: upic.flatMap(Self.normalizedURL)
+                avatarURL: upic.flatMap(WebImageURL.parse)
             ),
             statistics: VideoStatistics(
                 viewCount: play,
@@ -343,13 +367,6 @@ struct SearchVideoPayload: Decodable, Sendable {
             durationSeconds: Self.durationSeconds(duration),
             publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate))
         )
-    }
-
-    private static func normalizedURL(_ value: String) -> URL? {
-        if value.hasPrefix("//") {
-            return URL(string: "https:\(value)")
-        }
-        return URL(string: value)
     }
 
     private static func strippingTags(_ value: String) -> String {

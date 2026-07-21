@@ -7,11 +7,11 @@
       {
         "bvid": "BV1FixtureA1",
         "title": "合成热门样本 A",
-        "pic": "https://images.example.invalid/cover-a.jpg",
+        "pic": "http://images.example.invalid/cover-a.jpg",
         "owner": {
           "mid": 10001,
           "name": "测试作者甲",
-          "face": "https://images.example.invalid/avatar-a.jpg"
+          "face": "//images.example.invalid/avatar-a.jpg"
         },
         "stat": {
           "view": 12345,

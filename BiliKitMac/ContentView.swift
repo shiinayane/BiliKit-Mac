@@ -5,7 +5,6 @@
 //  Created by shiinayane on 2026/07/21.
 //
 
-import BiliAPI
 import BiliPlayback
 import SwiftUI
 
@@ -19,27 +18,20 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack {
-            PlayerHostView(player: playerEngine.player)
-                .frame(minWidth: 640, minHeight: 360)
-            Text(statusText)
-                .foregroundStyle(.secondary)
+        GuestNavigationView(
+            model: model,
+            playerEngine: playerEngine
+        )
+        .frame(minWidth: 1_080, minHeight: 680)
+        .task {
+            guard case .idle = model.feedState else { return }
+            model.loadPopular()
+            await model.waitForFeed()
         }
-        .padding()
-    }
-
-    private var statusText: String {
-        switch model.selectionState {
-        case .idle:
-            "M2 游客数据层已就绪"
-        case .loading:
-            "正在加载视频…"
-        case .preparingPlayback:
-            "正在准备播放…"
-        case let .ready(context):
-            context.detail.title
-        case .failed:
-            "加载失败"
+        .onDisappear {
+            Task {
+                await model.cancel()
+            }
         }
     }
 }

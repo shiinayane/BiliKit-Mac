@@ -18,6 +18,8 @@ struct BiliAPIClientTests {
         #expect(page.videos[0].bvid == "BV1FixtureA1")
         #expect(page.videos[0].owner.name == "测试作者甲")
         #expect(page.videos[0].statistics.viewCount == 12_345)
+        #expect(page.videos[0].coverURL?.scheme == "https")
+        #expect(page.videos[0].owner.avatarURL?.scheme == "https")
 
         let request = try #require(await transport.capturedRequests().first)
         #expect(request.url.path == "/x/web-interface/popular")
