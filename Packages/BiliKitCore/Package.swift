@@ -29,8 +29,10 @@ let package = Package(
         ),
         .testTarget(
             name: "BiliPlaybackTests",
-            dependencies: ["BiliModels", "BiliPlayback"]
+            dependencies: ["BiliModels", "BiliNetworking", "BiliPlayback"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
     ]
 )
-

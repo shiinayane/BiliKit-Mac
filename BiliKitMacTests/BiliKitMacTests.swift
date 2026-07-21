@@ -12,6 +12,7 @@ import Testing
 
 struct BiliKitMacTests {
     @Test
+    @MainActor
     func liveEnvironmentCreatesPlaybackRequest() {
         let manifest = PlaybackManifest(
             videoRepresentations: [],

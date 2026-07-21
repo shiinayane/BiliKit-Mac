@@ -5,15 +5,22 @@
 //  Created by shiinayane on 2026/07/21.
 //
 
+import BiliPlayback
 import SwiftUI
 
 struct ContentView: View {
+    private let playerEngine: AVPlayerEngine
+
+    init(environment: AppEnvironment = .live) {
+        playerEngine = environment.playerEngine
+    }
+
     var body: some View {
         VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+            PlayerHostView(player: playerEngine.player)
+                .frame(minWidth: 640, minHeight: 360)
+            Text("M1 playback spike")
+                .foregroundStyle(.secondary)
         }
         .padding()
     }

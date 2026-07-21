@@ -6,7 +6,10 @@ BiliKit is an early-stage, native and unofficial Bilibili client for macOS. The 
 
 ## Status
 
-The repository is currently in M0: project baseline and minimal module scaffolding. It is not ready for daily use or distribution.
+The repository is currently in M1: playback feasibility validation. A synthetic
+AVC/AAC DASH-to-HLS path now reaches AVPlayer through a loopback HTTP bridge,
+but real Bilibili media and the product UI are not yet connected. It is not ready
+for daily use or distribution.
 
 - Minimum deployment target: macOS 14
 - Language: Swift 6
@@ -30,8 +33,10 @@ references/                 ignored local research checkouts
 The first package modules are:
 
 - `BiliModels`: stable cross-module value types.
-- `BiliNetworking`: transport abstraction, HTTP client, and log redaction.
-- `BiliPlayback`: player boundary and resolved playback requests.
+- `BiliNetworking`: transport abstraction, strict Range validation, CDN fallback,
+  cancellation, and log redaction.
+- `BiliPlayback`: SIDX parsing, HLS playlist generation, loopback media proxy,
+  and player boundaries.
 
 ## Build
 
@@ -67,4 +72,3 @@ The active developer directory on an individual machine may differ. Opening `Bil
 - v1 deliberately excludes downloading, live streaming, uploads, private messages, multiple accounts, and region bypassing.
 
 Third-party dependency notices are tracked in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-

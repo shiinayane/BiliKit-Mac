@@ -6,3 +6,7 @@
 
 Active documents distinguish current repository facts from target direction. Planned work is not implementation evidence until its gate has passed.
 
+Accepted decisions:
+
+- [`adr/0001-platform-naming-and-modules.md`](./adr/0001-platform-naming-and-modules.md)
+- [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)

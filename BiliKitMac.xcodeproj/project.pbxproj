@@ -219,11 +219,11 @@
 			);
 			mainGroup = 8DFA8FF8300F375500DF3E1D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8DFA9002300F375500DF3E1D /* Products */;
-			packageReferences = (
-				A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */,
-			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -606,7 +606,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */ = {
+		A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/BiliKitCore;
 		};
@@ -615,17 +615,17 @@
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000011 /* BiliModels */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliModels;
 		};
 		A10000000000000000000012 /* BiliNetworking */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliNetworking;
 		};
 		A10000000000000000000013 /* BiliPlayback */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliPlayback;
 		};
 /* End XCSwiftPackageProductDependency section */

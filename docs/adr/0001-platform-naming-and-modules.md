@@ -69,7 +69,7 @@ BiliAPI / BiliAuth / BiliPlayback / DanmakuKit / BiliPersistence → BiliModels
 ## Validation
 
 - 当前模板已在命令行覆盖 macOS 14 时通过无签名 `build-for-testing`。
-- 本地 package 已接入 App target；7 个 package tests 和 App 单元测试通过。
+- 本地 package 已接入 App target；25 个 package tests 和 App 单元测试通过。
 - `BiliKit.app` 的最低系统版本为 14.0，构建产物不包含 `docs/` 或 `references/`。
-- 编译成功不等于运行兼容；M1 必须在真实 macOS 14 环境验证 DASH→HLS、Resource Loader、AVPlayer 与 seek。
+- 编译成功不等于运行兼容；M1 必须在真实 macOS 14 环境验证 DASH→HLS、loopback HTTP bridge、AVPlayer 与 seek。媒体分段的 Resource Loader 路线已由 ADR 0002 否决。
 - CI 已配置为运行 package tests、构建全部 App test targets，并执行 App 单元测试；远程结果待首次推送验证。
