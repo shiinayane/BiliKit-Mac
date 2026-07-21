@@ -23,11 +23,6 @@ struct ContentView: View {
             playerEngine: playerEngine
         )
         .frame(minWidth: 1_080, minHeight: 680)
-        .task {
-            guard case .idle = model.feedState else { return }
-            model.loadPopular()
-            await model.waitForFeed()
-        }
         .onDisappear {
             Task {
                 await model.cancel()

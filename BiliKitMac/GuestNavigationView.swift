@@ -1,5 +1,6 @@
 import BiliAPI
 import BiliPlayback
+import Foundation
 import SwiftUI
 
 struct GuestNavigationView: View {
@@ -8,6 +9,9 @@ struct GuestNavigationView: View {
 
     @State private var selectedSection: GuestSection? = .popular
     @State private var selectedBVID: String?
+    @State private var searchText = ""
+    @State private var submittedQuery: String?
+    @State private var searchRevision = 0
 
     var body: some View {
         NavigationSplitView {
@@ -15,6 +19,9 @@ struct GuestNavigationView: View {
                 Label("热门", systemImage: "flame")
                     .tag(GuestSection.popular)
                     .accessibilityIdentifier("sidebar.popular")
+                Label("搜索", systemImage: "magnifyingglass")
+                    .tag(GuestSection.search)
+                    .accessibilityIdentifier("sidebar.search")
             }
             .navigationTitle("BiliKit")
             .navigationSplitViewColumnWidth(
@@ -24,7 +31,7 @@ struct GuestNavigationView: View {
             )
         } content: {
             feedColumn
-                .navigationTitle("热门")
+                .navigationTitle(selectedSection?.title ?? "BiliKit")
                 .navigationSplitViewColumnWidth(
                     min: 300,
                     ideal: 360,
@@ -37,24 +44,55 @@ struct GuestNavigationView: View {
             guard let bvid else { return }
             model.selectVideo(bvid)
         }
+        .task(id: feedTaskID) {
+            let intent = feedTaskID
+            selectedBVID = nil
+            await model.resetSelection()
+            guard !Task.isCancelled else { return }
+            switch intent {
+            case .popular:
+                model.loadPopular()
+                await model.waitForFeed()
+            case .search(nil, _), .none:
+                model.cancelFeed()
+            case let .search(.some(query), _):
+                model.search(query)
+                await model.waitForFeed()
+            }
+        }
     }
 
     @ViewBuilder
     private var feedColumn: some View {
+        switch selectedSection {
+        case .popular:
+            popularColumn
+        case .search:
+            searchColumn
+        case nil:
+            ContentUnavailableView(
+                "选择一个入口",
+                systemImage: "sidebar.left"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var popularColumn: some View {
         switch model.feedState {
-        case .idle, .loading:
+        case .idle, .loading(.popular(_, _)):
             ProgressView("正在加载热门视频…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("feed.loading")
-        case let .loaded(page) where page.videos.isEmpty:
+        case let .loaded(.popular(page)) where page.videos.isEmpty:
             ContentUnavailableView(
                 "暂无热门视频",
                 systemImage: "rectangle.stack",
                 description: Text("稍后重试或检查网络连接。")
             )
-        case let .loaded(page):
+        case let .loaded(.popular(page)):
             List(page.videos, selection: $selectedBVID) { video in
-                PopularVideoRow(video: video)
+                GuestVideoRow(video: video)
                     .tag(video.bvid)
             }
             .listStyle(.inset)
@@ -66,13 +104,87 @@ struct GuestNavigationView: View {
                 )
                 await model.waitForFeed()
             }
-        case let .failed(error):
+        case let .failed(request: .popular(_, _), error: error):
             GuestFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
-                retry: { model.loadPopular() }
+                retry: model.retryFeed
             )
             .accessibilityIdentifier("feed.failure")
+        default:
+            ProgressView("正在切换到热门视频…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var searchColumn: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                TextField("搜索 B 站视频", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(performSearch)
+                    .accessibilityIdentifier("search.field")
+
+                Button("搜索", action: performSearch)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(normalizedSearchText.isEmpty)
+                    .accessibilityIdentifier("search.submit")
+            }
+            .padding(12)
+
+            Divider()
+
+            searchResults
+        }
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        switch model.feedState {
+        case let .loading(.search(query, _)):
+            ProgressView("正在搜索“\(query)”…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("search.loading")
+        case let .loaded(.search(query, page)) where page.videos.isEmpty:
+            ContentUnavailableView.search(text: query)
+                .accessibilityIdentifier("search.empty")
+        case let .loaded(.search(query, page)):
+            VStack(spacing: 0) {
+                HStack {
+                    Text("“\(query)”")
+                    Spacer()
+                    Text("约 \(page.totalResults.formatted()) 条结果")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+                List(page.videos, selection: $selectedBVID) { video in
+                    GuestVideoRow(video: video)
+                        .tag(video.bvid)
+                }
+                .listStyle(.inset)
+                .accessibilityIdentifier("search.results")
+                .refreshable {
+                    model.search(query, page: page.pageNumber)
+                    await model.waitForFeed()
+                }
+            }
+        case let .failed(request: .search(_, _), error: error):
+            GuestFailureView(
+                title: error.guestTitle,
+                message: error.guestMessage,
+                retry: model.retryFeed
+            )
+            .accessibilityIdentifier("search.failure")
+        default:
+            ContentUnavailableView(
+                "搜索视频",
+                systemImage: "magnifyingglass",
+                description: Text("输入关键词后按下 Return 或点击搜索。")
+            )
+            .accessibilityIdentifier("search.prompt")
         }
     }
 
@@ -83,7 +195,7 @@ struct GuestNavigationView: View {
             ContentUnavailableView(
                 "选择一个视频",
                 systemImage: "play.rectangle",
-                description: Text("从热门列表中选择视频后，这里会显示详情与播放器。")
+                description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
             )
             .accessibilityIdentifier("detail.empty")
         case .loading:
@@ -109,10 +221,50 @@ struct GuestNavigationView: View {
             )
         }
     }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var feedTaskID: GuestFeedTaskID {
+        switch selectedSection {
+        case .popular:
+            .popular
+        case .search:
+            .search(query: submittedQuery, revision: searchRevision)
+        case nil:
+            .none
+        }
+    }
+
+    private func performSearch() {
+        let query = normalizedSearchText
+        guard !query.isEmpty else { return }
+        searchText = query
+        selectedBVID = nil
+        submittedQuery = query
+        searchRevision += 1
+    }
+}
+
+private enum GuestFeedTaskID: Hashable {
+    case popular
+    case search(query: String?, revision: Int)
+    case none
 }
 
 private enum GuestSection: String, Hashable {
     case popular
+    case search
+
+    var title: String {
+        switch self {
+        case .popular:
+            "热门"
+        case .search:
+            "搜索"
+        }
+    }
 }
 
 private struct GuestFailureView: View {

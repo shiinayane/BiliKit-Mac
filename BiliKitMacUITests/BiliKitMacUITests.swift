@@ -32,6 +32,10 @@ final class BiliKitMacUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(
+            app.descendants(matching: .any)["sidebar.search"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
             app.descendants(matching: .any)["detail.empty"]
                 .waitForExistence(timeout: 5)
         )

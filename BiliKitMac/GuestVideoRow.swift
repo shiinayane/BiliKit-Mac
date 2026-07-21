@@ -2,12 +2,32 @@ import BiliAPI
 import Foundation
 import SwiftUI
 
-struct PopularVideoRow: View {
-    let video: PopularVideo
+struct GuestVideoRow: View {
+    private let title: String
+    private let coverURL: URL?
+    private let ownerName: String
+    private let viewCount: Int64
+    private let durationSeconds: Int?
+
+    init(video: PopularVideo) {
+        title = video.title
+        coverURL = video.coverURL
+        ownerName = video.owner.name
+        viewCount = video.statistics.viewCount
+        durationSeconds = video.durationSeconds
+    }
+
+    init(video: SearchVideo) {
+        title = video.title
+        coverURL = video.coverURL
+        ownerName = video.owner.name
+        viewCount = video.statistics.viewCount
+        durationSeconds = video.durationSeconds
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: video.coverURL) { phase in
+            AsyncImage(url: coverURL) { phase in
                 switch phase {
                 case let .success(image):
                     image
@@ -26,24 +46,26 @@ struct PopularVideoRow: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(video.title)
+                Text(title)
                     .font(.headline)
                     .lineLimit(2)
 
-                Text(video.owner.name)
+                Text(ownerName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 HStack(spacing: 10) {
                     Label(
-                        video.statistics.viewCount.formatted(.number.notation(.compactName)),
+                        viewCount.formatted(.number.notation(.compactName)),
                         systemImage: "play"
                     )
-                    Label(
-                        Self.duration(video.durationSeconds),
-                        systemImage: "clock"
-                    )
+                    if let durationSeconds {
+                        Label(
+                            Self.duration(durationSeconds),
+                            systemImage: "clock"
+                        )
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.tertiary)

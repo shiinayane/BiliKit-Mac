@@ -48,10 +48,107 @@ struct BiliKitMacTests {
 
         #expect(
             model.feedState == .loaded(
-                PopularPage(
-                    videos: [fixture.popularVideo],
-                    pageNumber: 2,
-                    pageSize: 10
+                .popular(
+                    PopularPage(
+                        videos: [fixture.popularVideo],
+                        pageNumber: 2,
+                        pageSize: 10
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
+    @MainActor
+    func modelSearchesVideosWithNormalizedQuery() async {
+        let fixture = GuestFixtures()
+        let model = GuestAppModel(
+            api: GuestAPIStub(fixtures: fixture),
+            playerEngine: RecordingPlayerEngine(),
+            makePlaybackRequest: Self.playbackRequest
+        )
+
+        model.search("  macOS  ", page: 2)
+        await model.waitForFeed()
+
+        #expect(
+            model.feedState == .loaded(
+                .search(
+                    query: "macOS",
+                    page: SearchPage(
+                        videos: [fixture.searchVideo],
+                        pageNumber: 2,
+                        pageSize: 20,
+                        totalResults: 1,
+                        totalPages: 1
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
+    @MainActor
+    func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
+        let fixture = GuestFixtures()
+        let model = GuestAppModel(
+            api: FeedSwitchingAPIStub(fixtures: fixture),
+            playerEngine: RecordingPlayerEngine(),
+            makePlaybackRequest: Self.playbackRequest
+        )
+
+        model.search("旧搜索")
+        try await Task.sleep(for: .milliseconds(10))
+        model.loadPopular()
+        await model.waitForFeed()
+        try await Task.sleep(for: .milliseconds(30))
+
+        #expect(
+            model.feedState == .loaded(
+                .popular(
+                    PopularPage(
+                        videos: [fixture.popularVideo],
+                        pageNumber: 1,
+                        pageSize: 20
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
+    @MainActor
+    func failedSearchRetriesItsOriginalRequest() async {
+        let fixture = GuestFixtures()
+        let model = GuestAppModel(
+            api: RetryingSearchAPIStub(fixtures: fixture),
+            playerEngine: RecordingPlayerEngine(),
+            makePlaybackRequest: Self.playbackRequest
+        )
+
+        model.search("macOS", page: 2)
+        await model.waitForFeed()
+        #expect(
+            model.feedState == .failed(
+                request: .search(query: "macOS", page: 2),
+                error: .nonJSONResponse
+            )
+        )
+
+        model.retryFeed()
+        await model.waitForFeed()
+        #expect(
+            model.feedState == .loaded(
+                .search(
+                    query: "macOS",
+                    page: SearchPage(
+                        videos: [fixture.searchVideo],
+                        pageNumber: 2,
+                        pageSize: 20,
+                        totalResults: 1,
+                        totalPages: 1
+                    )
                 )
             )
         )
@@ -81,6 +178,25 @@ struct BiliKitMacTests {
         #expect(player.loadedRequests.count == 1)
         #expect(player.loadedRequests.first?.manifest == fixture.playback.manifest)
         #expect(player.loadedRequests.first?.mediaHeaders == fixture.playback.mediaHeaders)
+    }
+
+    @Test
+    @MainActor
+    func resettingSelectionClearsDetailAndPausesPlayer() async {
+        let fixture = GuestFixtures()
+        let player = RecordingPlayerEngine()
+        let model = GuestAppModel(
+            api: GuestAPIStub(fixtures: fixture),
+            playerEngine: player,
+            makePlaybackRequest: Self.playbackRequest
+        )
+
+        model.selectVideo(fixture.bvid)
+        await model.waitForSelection()
+        await model.resetSelection()
+
+        #expect(model.selectionState == .idle)
+        #expect(player.pauseCallCount == 1)
     }
 
     @Test
@@ -157,6 +273,18 @@ private struct GuestFixtures: Sendable {
         )
     }
 
+    var searchVideo: SearchVideo {
+        SearchVideo(
+            bvid: bvid,
+            title: title,
+            coverURL: nil,
+            owner: owner,
+            statistics: popularVideo.statistics,
+            durationSeconds: popularVideo.durationSeconds,
+            publishedAt: popularVideo.publishedAt
+        )
+    }
+
     let page = VideoPage(
         cid: 900_001,
         index: 1,
@@ -195,11 +323,101 @@ private actor GuestAPIStub: BiliAPIService {
 
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
         SearchPage(
-            videos: [],
+            videos: [fixtures.searchVideo],
             pageNumber: page,
             pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
+            totalResults: 1,
+            totalPages: 1
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [fixtures.page]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64,
+        quality: Int
+    ) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+}
+
+private actor FeedSwitchingAPIStub: BiliAPIService {
+    let fixtures: GuestFixtures
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(
+            videos: [fixtures.popularVideo],
+            pageNumber: page,
+            pageSize: pageSize
+        )
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        try? await Task.sleep(for: .milliseconds(100))
+        return SearchPage(
+            videos: [fixtures.searchVideo],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 1,
+            totalPages: 1
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [fixtures.page]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64,
+        quality: Int
+    ) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+}
+
+private actor RetryingSearchAPIStub: BiliAPIService {
+    let fixtures: GuestFixtures
+    private var searchAttempts = 0
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(
+            videos: [fixtures.popularVideo],
+            pageNumber: page,
+            pageSize: pageSize
+        )
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        searchAttempts += 1
+        if searchAttempts == 1 {
+            throw BiliAPIError.nonJSONResponse
+        }
+        return SearchPage(
+            videos: [fixtures.searchVideo],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 1,
+            totalPages: 1
         )
     }
 
@@ -276,6 +494,7 @@ private actor SwitchingGuestAPIStub: BiliAPIService {
 private final class RecordingPlayerEngine: PlayerEngine {
     let events: AsyncStream<PlayerEvent>
     private(set) var loadedRequests: [PlaybackRequest] = []
+    private(set) var pauseCallCount = 0
 
     init() {
         events = AsyncStream { $0.finish() }
@@ -286,6 +505,8 @@ private final class RecordingPlayerEngine: PlayerEngine {
     }
 
     func play() {}
-    func pause() {}
+    func pause() {
+        pauseCallCount += 1
+    }
     func seek(to time: Duration) async throws {}
 }

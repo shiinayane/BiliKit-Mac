@@ -1,12 +1,23 @@
 import BiliAPI
 import BiliPlayback
+import Foundation
 import Observation
+
+enum GuestFeedRequest: Sendable, Equatable {
+    case popular(page: Int, pageSize: Int)
+    case search(query: String, page: Int)
+}
+
+enum GuestFeedContent: Sendable, Equatable {
+    case popular(PopularPage)
+    case search(query: String, page: SearchPage)
+}
 
 enum GuestFeedState: Sendable, Equatable {
     case idle
-    case loading
-    case loaded(PopularPage)
-    case failed(BiliAPIError)
+    case loading(GuestFeedRequest)
+    case loaded(GuestFeedContent)
+    case failed(request: GuestFeedRequest, error: BiliAPIError)
 }
 
 enum GuestFlowFailure: Sendable, Equatable {
@@ -49,17 +60,61 @@ final class GuestAppModel {
     }
 
     func loadPopular(page: Int = 1, pageSize: Int = 20) {
+        loadFeed(.popular(page: page, pageSize: pageSize))
+    }
+
+    func search(_ query: String, page: Int = 1) {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = GuestFeedRequest.search(query: normalizedQuery, page: page)
+        guard !normalizedQuery.isEmpty,
+              normalizedQuery.count <= 100,
+              page > 0
+        else {
+            failFeed(request: request, error: .invalidRequest)
+            return
+        }
+        loadFeed(request)
+    }
+
+    func retryFeed() {
+        guard case let .failed(request, _) = feedState else { return }
+        loadFeed(request)
+    }
+
+    func cancelFeed() {
+        feedGeneration += 1
+        feedTask?.cancel()
+        feedTask = nil
+        feedState = .idle
+    }
+
+    func resetSelection() async {
+        selectionGeneration += 1
+        selectionTask?.cancel()
+        selectionTask = nil
+        selectionState = .idle
+        await coordinator.cancel()
+        playerEngine.pause()
+    }
+
+    private func loadFeed(_ request: GuestFeedRequest) {
         feedGeneration += 1
         let generation = feedGeneration
         feedTask?.cancel()
-        feedState = .loading
+        feedState = .loading(request)
         feedTask = Task { [weak self] in
-            await self?.performPopularLoad(
-                page: page,
-                pageSize: pageSize,
+            await self?.performFeedLoad(
+                request: request,
                 generation: generation
             )
         }
+    }
+
+    private func failFeed(request: GuestFeedRequest, error: BiliAPIError) {
+        feedGeneration += 1
+        feedTask?.cancel()
+        feedTask = nil
+        feedState = .failed(request: request, error: error)
     }
 
     func selectVideo(_ bvid: String, quality: Int = 32) {
@@ -85,37 +140,39 @@ final class GuestAppModel {
     }
 
     func cancel() async {
-        feedGeneration += 1
-        selectionGeneration += 1
-        feedTask?.cancel()
-        selectionTask?.cancel()
-        feedTask = nil
-        selectionTask = nil
-        feedState = .idle
-        selectionState = .idle
-        await coordinator.cancel()
-        playerEngine.pause()
+        cancelFeed()
+        await resetSelection()
     }
 
-    private func performPopularLoad(
-        page: Int,
-        pageSize: Int,
+    private func performFeedLoad(
+        request: GuestFeedRequest,
         generation: Int
     ) async {
         do {
-            let page = try await api.popular(page: page, pageSize: pageSize)
+            let content: GuestFeedContent
+            switch request {
+            case let .popular(page, pageSize):
+                content = .popular(
+                    try await api.popular(page: page, pageSize: pageSize)
+                )
+            case let .search(query, page):
+                content = .search(
+                    query: query,
+                    page: try await api.searchVideos(keyword: query, page: page)
+                )
+            }
             try Task.checkCancellation()
             guard feedGeneration == generation else { return }
-            feedState = .loaded(page)
+            feedState = .loaded(content)
         } catch is CancellationError {
             guard feedGeneration == generation else { return }
             feedState = .idle
         } catch let error as BiliAPIError {
             guard feedGeneration == generation else { return }
-            feedState = .failed(error)
+            feedState = .failed(request: request, error: error)
         } catch {
             guard feedGeneration == generation else { return }
-            feedState = .failed(.transportFailure)
+            feedState = .failed(request: request, error: .transportFailure)
         }
         if feedGeneration == generation {
             feedTask = nil
