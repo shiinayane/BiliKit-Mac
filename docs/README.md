@@ -2,6 +2,7 @@
 
 - [`ROADMAP.md`](./ROADMAP.md)：当前实施顺序与验收门槛。
 - [`adr/`](./adr/)：已接受的架构决策。
+- [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
 - [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
@@ -19,3 +20,8 @@
 - [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
 - [`adr/0003-raise-minimum-macos-to-15.md`](./adr/0003-raise-minimum-macos-to-15.md)
 - [`adr/0004-mvvm-clean-architecture.md`](./adr/0004-mvvm-clean-architecture.md)
+- [`adr/0005-web-qr-authentication-boundary.md`](./adr/0005-web-qr-authentication-boundary.md)
+
+当前安全基线：
+
+- [`security/M3-threat-model.md`](./security/M3-threat-model.md)

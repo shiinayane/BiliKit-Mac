@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5 已完成，M3 尚未开始。
+> 状态：M1、M2、M2.5 已完成；M3 安全设计已完成，认证实现尚未开始。
 >
 > 基线日期：2026-07-21（Asia/Tokyo）。
 >
@@ -232,19 +232,67 @@ Gate 结论：通过。游客功能已迁入 `BiliApplication` 与 `BiliGuestFea
 
 目标：建立不泄露凭据的登录闭环，并解锁一个个性化功能。
 
+#### 目标依赖方向
+
+```text
+BiliKit App（Composition Root）
+├── BiliAuthFeature（SwiftUI View + ViewModel）
+│   └── BiliApplication（非秘密认证 Use Case + Port）
+│       └── BiliModels
+├── BiliAuth（Web QR + Keychain + Request Authorizer）
+│   └── BiliApplication / BiliNetworking
+└── BiliAPI（匿名与登录 endpoint）
+    └── BiliApplication / BiliModels / BiliNetworking
+```
+
+- QR key、完整二维码 URL、Cookie 和 refresh token 只能存在于 `BiliAuth` 内部，不进入 Domain、Application、Feature 或 App 恢复状态。
+- `BiliApplication` 只暴露非秘密的登录状态、身份投影和用户意图 port；ViewModel 不取得 Cookie，也不读写 Keychain。
+- `BiliNetworking` 提供无业务语义的窄请求授权协议；`BiliAPI` 可选注入授权器，但不依赖具体 `BiliAuth`。
+- Cookie 只按 endpoint 显式附加到精确允许的 HTTPS 主机，不能进入图片/视频 CDN、loopback bridge 或跨主机重定向。
+- 使用专用 ephemeral session 与 Data Protection Keychain；本地登出不依赖网络成功。
+
+#### 实施步骤
+
+1. **安全设计与现场基线（已完成）**
+   - 现场验证匿名 QR 生成和“未扫码”轮询的最小响应结构，不记录任何秘密值。
+   - 接受 ADR 0005，固定 Auth/Application/Networking/Feature 边界、Keychain 策略和不采用方案。
+   - 建立 [`security/M3-threat-model.md`](./security/M3-threat-model.md)，覆盖 QR 泄漏、Cookie 误发、旧任务覆盖、部分持久化、登出残留和 fixture 泄密。
+2. **基础状态机与脱敏契约**
+   - 创建实际被探针调用的 `BiliAuth` target；实现生成、未扫码、取消、网络失败和未知状态的 actor 状态机。
+   - 使用全假值手写 fixture；扩充日志脱敏和源码/fixture/test output 秘密扫描。
+   - 增加显式运行的人工扫码探针，只输出状态序列、字段名、Cookie 名称/属性与主机。
+3. **成功/过期协议 Gate**
+   - 由开发者扫码，确认已扫码未确认、成功、过期状态、二维码有效期、成功凭据来源和 Cookie allowlist。
+   - 以手写假值补齐成功/过期 fixture；确认登录态校验 endpoint 与凭据失效语义。
+   - 在此 Gate 前不保存真实 Cookie，不实现 refresh token 流程。
+4. **Keychain 与请求授权**
+   - 实现版本化 generic-password credential envelope、原子 add/update/read/delete、内存清理和 Keychain 错误映射。
+   - 实现 endpoint 级请求授权器、HTTPS/精确主机白名单与重定向拒绝；游客 endpoint 默认不带 Cookie。
+   - 成功结果必须先通过登录态验证，再一次性提交 Keychain；损坏或失效凭据回退游客模式。
+5. **Feature MVVM 与完整登出**
+   - 有真实 UI 调用方时创建 `BiliAuthFeature`；二维码、等待确认、过期、取消、重试和错误状态分别可见。
+   - ViewModel 拥有轮询 Task 与代次；旧二维码结果不能覆盖新意图。
+   - 登出依次取消请求、清内存、删除 Keychain item、失效 session，再更新 UI；离线时也必须完成。
+6. **个性化纵向闭环与收尾**
+   - 在历史、收藏或登录推荐中只选一个闭环，使用登录 endpoint → Application Use Case → Feature MVVM 接入。
+   - 完成重启恢复、凭据失效、无 Keychain item、游客回退和真实 UI smoke test。
+   - 记录 macOS 15 CI 与当前 macOS 的 M3 验证证据，全部 Gate 通过后再关闭 M3。
+
 交付物：
 
-- 增加 `BiliAuth` target。
+- 增加 `BiliAuth` target；有真实界面调用方时增加 `BiliAuthFeature` target。
 - Web QR 获取、轮询、过期、取消、重试和登录态验证状态机。
 - Keychain credential store、内存副本清理与完整登出。
 - 历史、收藏或登录推荐中的一个完整闭环。
-- 凭据威胁模型与日志脱敏测试。
+- 凭据威胁模型、日志脱敏与秘密扫描测试。
 
 Gate：
 
 - 登录、重启 App、校验登录态和登出流程可重复完成。
 - 日志、UserDefaults、SwiftData、fixture 和测试失败输出中不存在 cookie/token。
 - 游客模式在没有 Keychain item 或凭据失效时仍然可用。
+- Cookie 没有发送到未授权 endpoint、CDN、loopback 或跨主机重定向。
+- 未知 QR 状态、旧轮询结果与部分成功响应均不能提交凭据。
 
 ### M4：字幕、弹幕与本地状态
 
@@ -346,11 +394,14 @@ Gate：
 - 将 `GuestAppModel` 拆为 Feed 与视频详情/播放两个 Feature ViewModel，保持取消、重试和旧结果隔离；SwiftUI View 不再导入具体 API/播放 adapter。
 - 将 App、Domain、Application、API、Networking、Playback 与 Guest Feature 文件按职责整理目录；删除旧平铺实现，不保留双轨。
 - 增加 CI 架构边界检查；54 项 Package 测试、1 项 App composition 测试、macOS 15 deployment build 和真实游客 UI smoke test 通过，M2.5 Gate 已关闭。
+- 以不输出 key、完整 URL、Cookie 或 token 的现场探针确认 Web QR 生成与 `86101` 未扫码响应结构。
+- 接受 ADR 0005 并建立 M3 威胁模型，固定认证分层、精确主机授权、ephemeral session、Data Protection Keychain 和本地登出边界。
+- 将尚未确认的扫码成功/过期状态、凭据来源、Cookie 白名单与刷新协议保留为 M3 实现前 Gate，不用第三方实现替代现场证据。
 
 接下来按顺序：
 
-1. 复核 Web QR endpoint、Cookie 生命周期和匿名/登录态边界，形成 M3 威胁模型与 ADR。
-2. 创建 `BiliAuth` target，以脱敏 fixture 固定二维码获取、轮询、过期、取消和重试状态机。
-3. 接入 Keychain credential store 与登录态验证；在此之前不把 Cookie 或 token 写入 App 状态持久化。
+1. 创建实际被探针调用的 `BiliAuth` target，以全假值 fixture 固定二维码生成、`86101` 未扫码、取消、网络失败和未知状态；同步扩充日志脱敏与秘密扫描。
+2. 运行显式人工扫码探针，确认已扫码未确认、成功、过期、凭据来源、Cookie 白名单与登录态校验契约；探针只能输出字段名、类型和状态，不输出值。
+3. 成功/过期契约 Gate 通过后，再实现 Keychain store、endpoint 级请求授权和登录 Feature；此前不持久化 Cookie 或 token。
 
 M3 期间仍不开始 SwiftData、复杂导航和视觉精修。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2 测试层修复。
