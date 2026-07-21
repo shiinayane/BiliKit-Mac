@@ -1,17 +1,16 @@
-import BiliAPI
-import BiliPlayback
+import BiliApplication
 import Foundation
 import SwiftUI
 
-struct GuestVideoDetailView: View {
+struct GuestVideoDetailView<PlayerContent: View>: View {
     let context: GuestVideoContext
-    let playerEngine: AVPlayerEngine
     let isPreparingPlayback: Bool
+    let playerContent: () -> PlayerContent
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                PlayerHostView(player: playerEngine.player)
+                playerContent()
                     .accessibilityIdentifier("player.host")
 
                 if isPreparingPlayback {

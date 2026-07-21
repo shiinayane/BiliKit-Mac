@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000001 /* BiliModels in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* BiliModels */; };
-		A10000000000000000000002 /* BiliNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* BiliNetworking */; };
 		A10000000000000000000003 /* BiliPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* BiliPlayback */; };
 		A10000000000000000000004 /* BiliAPI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* BiliAPI */; };
+		A10000000000000000000005 /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
+		A10000000000000000000006 /* BiliGuestFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* BiliGuestFeature */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,10 +64,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000006 /* BiliGuestFeature in Frameworks */,
+				A10000000000000000000005 /* BiliApplication in Frameworks */,
 				A10000000000000000000004 /* BiliAPI in Frameworks */,
 				A10000000000000000000003 /* BiliPlayback in Frameworks */,
-				A10000000000000000000002 /* BiliNetworking in Frameworks */,
-				A10000000000000000000001 /* BiliModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,8 +129,8 @@
 			);
 			name = BiliKitMac;
 			packageProductDependencies = (
-				A10000000000000000000011 /* BiliModels */,
-				A10000000000000000000012 /* BiliNetworking */,
+				A10000000000000000000015 /* BiliApplication */,
+				A10000000000000000000016 /* BiliGuestFeature */,
 				A10000000000000000000013 /* BiliPlayback */,
 				A10000000000000000000014 /* BiliAPI */,
 			);
@@ -610,16 +610,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A10000000000000000000011 /* BiliModels */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
-			productName = BiliModels;
-		};
-		A10000000000000000000012 /* BiliNetworking */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
-			productName = BiliNetworking;
-		};
 		A10000000000000000000013 /* BiliPlayback */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
@@ -629,6 +619,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliAPI;
+		};
+		A10000000000000000000015 /* BiliApplication */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
+			productName = BiliApplication;
+		};
+		A10000000000000000000016 /* BiliGuestFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
+			productName = BiliGuestFeature;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

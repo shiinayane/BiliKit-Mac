@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性和 M2 游客浏览播放闭环已经完成。`BiliAPI` 已接入匿名热门、WBI 签名搜索、视频详情、分 P 和 playurl，并使用脱敏 contract fixture 验证字段与错误边界。App 的最小三栏 `NavigationSplitView` 可在热门与搜索间切换，从列表进入详情、首个分 P 与系统播放器；统一状态模型会取消旧请求、保留媒体请求头，并按原请求重试失败操作。下一阶段是 M3 Web QR 登录与安全凭据，当前版本仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。热门、WBI 搜索、详情、首分 P、播放、重试和旧结果隔离均已回归。下一阶段是 M3 Web QR 登录与安全凭据，当前版本仍不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -19,20 +19,24 @@ M1 播放可行性和 M2 游客浏览播放闭环已经完成。`BiliAPI` 已接
 ## 仓库结构
 
 ```text
-BiliKitMac/                 macOS App shell 与功能界面
+BiliKitMac/                 App 入口、Composition Root、平台宿主与资源
 Packages/BiliKitCore/       包含核心模块的本地 Swift Package
-BiliKitMacTests/            App 集成测试
+BiliKitMacTests/            App composition 集成测试
 BiliKitMacUITests/          关键 UI 流程测试
 docs/                       路线图、ADR、验证记录与研究资料
 references/                 完全忽略的本地参考项目，不进入 Xcode 工程
 ```
 
-首批 Package 模块：
+当前 Package 模块：
 
-- `BiliModels`：稳定的跨模块值类型。
+- `BiliModels`：Domain entity 与稳定的跨模块值类型。
+- `BiliApplication`：游客 Use Case、Repository/Playback port 与应用级错误。
 - `BiliNetworking`：传输抽象、严格 Range 校验、CDN fallback、取消传播和日志脱敏。
-- `BiliAPI`：游客 endpoint、WBI 签名与 key 刷新、独立响应模型、统一错误识别、可取消会话和脱敏 contract fixture。
-- `BiliPlayback`：SIDX 解析、HLS playlist 生成、loopback 媒体代理和播放器边界。
+- `BiliAPI`：游客 endpoint、DTO 映射、WBI 签名与 Repository adapter。
+- `BiliPlayback`：SIDX、DASH→HLS、loopback 媒体代理和播放 adapter。
+- `BiliGuestFeature`：按 Feed、VideoDetail、GuestScene 组织的 SwiftUI View 与 ViewModel。
+
+依赖方向和模型分类见 [ADR 0004](docs/adr/0004-mvvm-clean-architecture.md)。CI 会运行 `Scripts/check-architecture.sh`，阻止 Presentation/Application/Domain 反向依赖具体 adapter。
 
 ## 构建
 

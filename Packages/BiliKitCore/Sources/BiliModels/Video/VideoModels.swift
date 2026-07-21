@@ -1,4 +1,3 @@
-import BiliModels
 import Foundation
 
 public struct VideoOwner: Sendable, Equatable {

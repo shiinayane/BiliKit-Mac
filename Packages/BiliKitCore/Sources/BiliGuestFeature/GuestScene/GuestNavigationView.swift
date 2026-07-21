@@ -1,11 +1,11 @@
-import BiliAPI
-import BiliPlayback
+import BiliApplication
 import Foundation
 import SwiftUI
 
-struct GuestNavigationView: View {
-    let model: GuestAppModel
-    let playerEngine: AVPlayerEngine
+public struct GuestNavigationView<PlayerContent: View>: View {
+    private let feedModel: GuestFeedViewModel
+    private let videoModel: GuestVideoViewModel
+    private let playerContent: () -> PlayerContent
 
     @State private var selectedSection: GuestSection? = .popular
     @State private var selectedBVID: String?
@@ -13,7 +13,17 @@ struct GuestNavigationView: View {
     @State private var submittedQuery: String?
     @State private var searchRevision = 0
 
-    var body: some View {
+    public init(
+        feedModel: GuestFeedViewModel,
+        videoModel: GuestVideoViewModel,
+        @ViewBuilder playerContent: @escaping () -> PlayerContent
+    ) {
+        self.feedModel = feedModel
+        self.videoModel = videoModel
+        self.playerContent = playerContent
+    }
+
+    public var body: some View {
         NavigationSplitView {
             List(selection: $selectedSection) {
                 Label("热门", systemImage: "flame")
@@ -42,22 +52,22 @@ struct GuestNavigationView: View {
         }
         .onChange(of: selectedBVID) { _, bvid in
             guard let bvid else { return }
-            model.selectVideo(bvid)
+            videoModel.selectVideo(bvid)
         }
         .task(id: feedTaskID) {
             let intent = feedTaskID
             selectedBVID = nil
-            await model.resetSelection()
+            videoModel.reset()
             guard !Task.isCancelled else { return }
             switch intent {
             case .popular:
-                model.loadPopular()
-                await model.waitForFeed()
+                feedModel.loadPopular()
+                await feedModel.waitForCurrentTask()
             case .search(nil, _), .none:
-                model.cancelFeed()
+                feedModel.cancel()
             case let .search(.some(query), _):
-                model.search(query)
-                await model.waitForFeed()
+                feedModel.search(query)
+                await feedModel.waitForCurrentTask()
             }
         }
     }
@@ -79,7 +89,7 @@ struct GuestNavigationView: View {
 
     @ViewBuilder
     private var popularColumn: some View {
-        switch model.feedState {
+        switch feedModel.state {
         case .idle, .loading(.popular(_, _)):
             ProgressView("正在加载热门视频…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -98,17 +108,17 @@ struct GuestNavigationView: View {
             .listStyle(.inset)
             .accessibilityIdentifier("feed.list")
             .refreshable {
-                model.loadPopular(
+                feedModel.loadPopular(
                     page: page.pageNumber,
                     pageSize: page.pageSize
                 )
-                await model.waitForFeed()
+                await feedModel.waitForCurrentTask()
             }
         case let .failed(request: .popular(_, _), error: error):
             GuestFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
-                retry: model.retryFeed
+                retry: feedModel.retry
             )
             .accessibilityIdentifier("feed.failure")
         default:
@@ -140,7 +150,7 @@ struct GuestNavigationView: View {
 
     @ViewBuilder
     private var searchResults: some View {
-        switch model.feedState {
+        switch feedModel.state {
         case let .loading(.search(query, _)):
             ProgressView("正在搜索“\(query)”…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -167,15 +177,15 @@ struct GuestNavigationView: View {
                 .listStyle(.inset)
                 .accessibilityIdentifier("search.results")
                 .refreshable {
-                    model.search(query, page: page.pageNumber)
-                    await model.waitForFeed()
+                    feedModel.search(query, page: page.pageNumber)
+                    await feedModel.waitForCurrentTask()
                 }
             }
         case let .failed(request: .search(_, _), error: error):
             GuestFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
-                retry: model.retryFeed
+                retry: feedModel.retry
             )
             .accessibilityIdentifier("search.failure")
         default:
@@ -190,7 +200,7 @@ struct GuestNavigationView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        switch model.selectionState {
+        switch videoModel.state {
         case .idle:
             ContentUnavailableView(
                 "选择一个视频",
@@ -204,20 +214,20 @@ struct GuestNavigationView: View {
         case let .preparingPlayback(context):
             GuestVideoDetailView(
                 context: context,
-                playerEngine: playerEngine,
-                isPreparingPlayback: true
+                isPreparingPlayback: true,
+                playerContent: playerContent
             )
         case let .ready(context):
             GuestVideoDetailView(
                 context: context,
-                playerEngine: playerEngine,
-                isPreparingPlayback: false
+                isPreparingPlayback: false,
+                playerContent: playerContent
             )
         case let .failed(bvid, failure):
             GuestFailureView(
                 title: failure.title,
                 message: failure.message,
-                retry: { model.selectVideo(bvid) }
+                retry: { videoModel.selectVideo(bvid) }
             )
         }
     }
@@ -287,7 +297,7 @@ private struct GuestFailureView: View {
 private extension GuestFlowFailure {
     var title: String {
         switch self {
-        case let .api(error):
+        case let .content(error):
             error.guestTitle
         case .playback:
             "无法准备播放"
@@ -296,7 +306,7 @@ private extension GuestFlowFailure {
 
     var message: String {
         switch self {
-        case let .api(error):
+        case let .content(error):
             error.guestMessage
         case .playback:
             "当前媒体轨道或网络响应无法交给系统播放器。"
@@ -304,12 +314,12 @@ private extension GuestFlowFailure {
     }
 }
 
-private extension BiliAPIError {
+private extension GuestApplicationError {
     var guestTitle: String {
         switch self {
-        case .nonJSONResponse, .apiRejected:
+        case .requestRestricted, .serviceRejected:
             "请求受到限制"
-        case .noAVCVideo, .noAACAudio:
+        case .unsupportedMedia:
             "没有可播放的游客轨道"
         default:
             "无法加载内容"
@@ -320,22 +330,17 @@ private extension BiliAPIError {
         switch self {
         case .invalidRequest:
             "请求参数无效，请重新选择内容。"
-        case .httpStatus(403), .apiRejected(code: -403, _):
-            "匿名请求被服务拒绝，请稍后重试。"
-        case .apiRejected(code: -412, _), .nonJSONResponse:
+        case .requestRestricted:
             "服务可能返回了风控页，请降低请求频率后重试。"
-        case let .apiRejected(code, _):
+        case let .serviceRejected(code):
             "服务暂时无法完成请求（代码 \(code)）。"
         case .transportFailure:
             "请检查网络连接后重试。"
-        case .noAVCVideo, .noAACAudio:
+        case .unsupportedMedia:
             "该视频在当前游客画质下没有 AVPlayer 可用的 AVC/AAC 轨道。"
-        case .responseTooLarge:
-            "服务响应超过安全上限。"
-        case .decodingFailed, .missingData, .invalidMediaData,
-             .invalidWBIKey, .signingFailed:
+        case .invalidResponse:
             "接口数据与当前客户端预期不一致，请稍后重试。"
-        default:
+        case .unavailable:
             "暂时无法完成请求，请稍后重试。"
         }
     }

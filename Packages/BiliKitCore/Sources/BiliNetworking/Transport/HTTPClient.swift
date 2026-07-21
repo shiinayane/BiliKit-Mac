@@ -102,4 +102,3 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         )
     }
 }
-

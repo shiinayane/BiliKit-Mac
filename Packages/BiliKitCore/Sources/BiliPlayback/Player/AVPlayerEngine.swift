@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import BiliApplication
 import BiliModels
 import Foundation
 
@@ -12,7 +13,7 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
 }
 
 @MainActor
-public final class AVPlayerEngine: PlayerEngine {
+public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
     public let player: AVPlayer
     public let events: AsyncStream<PlayerEvent>
 
@@ -52,6 +53,15 @@ public final class AVPlayerEngine: PlayerEngine {
                 self?.cancelLoad(generation: generation)
             }
         }
+    }
+
+    public func load(_ playback: VideoPlayback) async throws {
+        try await load(
+            PlaybackRequest(
+                manifest: playback.manifest,
+                mediaHeaders: playback.mediaHeaders
+            )
+        )
     }
 
     private func performLoad(

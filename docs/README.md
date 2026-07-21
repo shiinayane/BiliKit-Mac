@@ -18,3 +18,4 @@
 - [`adr/0001-platform-naming-and-modules.md`](./adr/0001-platform-naming-and-modules.md)
 - [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
 - [`adr/0003-raise-minimum-macos-to-15.md`](./adr/0003-raise-minimum-macos-to-15.md)
+- [`adr/0004-mvvm-clean-architecture.md`](./adr/0004-mvvm-clean-architecture.md)

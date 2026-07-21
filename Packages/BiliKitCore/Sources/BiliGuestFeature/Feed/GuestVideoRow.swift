@@ -1,4 +1,4 @@
-import BiliAPI
+import BiliModels
 import Foundation
 import SwiftUI
 

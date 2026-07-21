@@ -45,6 +45,9 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
+      - name: Check architecture boundaries
+        run: sh Scripts/check-architecture.sh
+
       - name: Test core package
         run: xcrun swift test --package-path Packages/BiliKitCore
 

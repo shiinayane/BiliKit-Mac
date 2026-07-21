@@ -51,4 +51,3 @@ public struct HTTPLogRedactor: Sendable {
         }
     }
 }
-
