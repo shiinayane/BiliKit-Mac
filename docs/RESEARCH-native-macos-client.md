@@ -249,7 +249,7 @@ Mac 原生能力优先级：
 - 恢复窗口位置、列表选择和播放进度。
 - 完整键盘导航、VoiceOver 标签和 Reduce Motion。
 
-Apple 的 [`NavigationSplitView` 技术说明](https://developer.apple.com/documentation/technotes/tn3154-adopting-swiftui-navigation-split-view) 表明该 API 从 macOS 13 可用。综合开发成本与现代 API，**建议最低 macOS 14**；若需要扩大用户覆盖，再通过原型数据决定是否下探 macOS 13。
+Apple 的 [`NavigationSplitView` 技术说明](https://developer.apple.com/documentation/technotes/tn3154-adopting-swiftui-navigation-split-view) 表明该 API 从 macOS 13 可用。综合开发成本、现代 API 与可持续运行验证，**当前决定最低 macOS 15**。原先的 macOS 14 建议已由 [ADR 0003](./adr/0003-raise-minimum-macos-to-15.md) 取代：项目没有对应实机，而 GitHub 的 macOS 14 runner 将于 2026-11-02 停止支持。
 
 ---
 
@@ -392,7 +392,7 @@ CDN 选择至少识别：
 
 ### M0：仓库与基础设施
 
-- 独立 Xcode repo，macOS 14+，Swift 6。
+- 独立 Xcode repo，macOS 15+，Swift 6。
 - MIT License、非官方声明、隐私说明、`THIRD_PARTY_NOTICES.md`。
 - `HTTPClient` actor、fixture test、Keychain wrapper、统一错误模型。
 - CI 至少运行 Debug build、unit tests 和 SwiftFormat/SwiftLint（若引入）。
@@ -609,7 +609,7 @@ BiliKit-Mac/
 
 建议首批 issue：
 
-1. Bootstrap macOS 14 / Swift 6 app and CI.
+1. Bootstrap macOS 15 / Swift 6 app and CI.
 2. Define credential threat model and Keychain store.
 3. Implement cancellable `HTTPClient` actor and redacted logging.
 4. Add WBI signer with fixtures.
@@ -641,7 +641,7 @@ BiliKit-Mac/
 
 - 新 repo 尚未创建。
 - repo 名、App 名、bundle id 和 license 尚未由用户最终确认。
-- macOS 14 最低版本尚未通过用户样本/覆盖率决定。
+- 最低版本已决定为 macOS 15，以匹配可持续 CI 运行验证能力。
 - AVPlayer DASH→HLS bridge 尚未在 macOS 原型中验证。
 - Developer ID、notarization、自动更新和分发渠道尚未建立。
 - B 站对第三方客户端的授权状态未解决。
@@ -650,7 +650,7 @@ BiliKit-Mac/
 
 1. 使用 `BiliKit-Mac` 还是独立品牌 `MakuDock`。
 2. 首版是否只做 GitHub Releases 直接分发。
-3. 最低系统是否接受 macOS 14。
+3. 最低系统已确定为 macOS 15；若未来下探，必须先恢复对应运行环境。
 4. 是否坚持 MIT + clean-room，还是愿意采用 GPL 以直接派生现有实现。
 
 ---
@@ -699,4 +699,4 @@ BiliKit-Mac/
 
 ## 13. 一句话立项建议
 
-单独创建 `BiliKit-Mac`，先用 macOS 14 + Swift 6 做一个 **游客可浏览、Web QR 可登录、AVPlayer 能可靠播放 AVC/AAC DASH、弹幕能正确 seek** 的小而完整原型；在这条链路被真实样本验证之前，不扩展到下载、直播和完整社交功能。
+单独创建 `BiliKit-Mac`，先用 macOS 15 + Swift 6 做一个 **游客可浏览、Web QR 可登录、AVPlayer 能可靠播放 AVC/AAC DASH、弹幕能正确 seek** 的小而完整原型；在这条链路被真实样本验证之前，不扩展到下载、直播和完整社交功能。

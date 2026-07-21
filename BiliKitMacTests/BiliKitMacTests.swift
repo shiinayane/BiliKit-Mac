@@ -24,5 +24,6 @@ struct BiliKitMacTests {
         #expect(request.manifest == manifest)
         #expect(request.preferredVideoRepresentationID == nil)
         #expect(request.preferredAudioRepresentationID == nil)
+        #expect(request.mediaHeaders.isEmpty)
     }
 }

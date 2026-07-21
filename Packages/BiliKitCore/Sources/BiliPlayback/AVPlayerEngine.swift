@@ -44,6 +44,20 @@ public final class AVPlayerEngine: PlayerEngine {
 
     public func load(_ request: PlaybackRequest) async throws {
         let generation = UUID()
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await performLoad(request, generation: generation)
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelLoad(generation: generation)
+            }
+        }
+    }
+
+    private func performLoad(
+        _ request: PlaybackRequest,
+        generation: UUID
+    ) async throws {
         loadGeneration = generation
         loadTask?.cancel()
         loadTask = nil
@@ -57,7 +71,11 @@ public final class AVPlayerEngine: PlayerEngine {
         let video = try selectedVideo(for: request)
         let audio = try selectedAudio(for: request)
         let task = Task {
-            try await bridge.prepare(video: video, audio: audio)
+            try await bridge.prepare(
+                video: video,
+                audio: audio,
+                headers: request.mediaHeaders
+            )
         }
         loadTask = task
 
@@ -109,6 +127,19 @@ public final class AVPlayerEngine: PlayerEngine {
             }
             throw error
         }
+    }
+
+    private func cancelLoad(generation: UUID) {
+        guard loadGeneration == generation else { return }
+        loadGeneration = UUID()
+        loadTask?.cancel()
+        loadTask = nil
+        readinessTask?.cancel()
+        readinessTask = nil
+        preparedAsset?.stop()
+        preparedAsset = nil
+        player.replaceCurrentItem(with: nil)
+        emit(.stateChanged(.idle))
     }
 
     public func play() {

@@ -40,6 +40,6 @@ struct PlaybackRequestTests {
         #expect(request.manifest == manifest)
         #expect(request.preferredVideoRepresentationID == 80)
         #expect(request.preferredAudioRepresentationID == 30280)
+        #expect(request.mediaHeaders.isEmpty)
     }
 }
-

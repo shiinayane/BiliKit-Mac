@@ -6,12 +6,12 @@ BiliKit is an early-stage, native and unofficial Bilibili client for macOS. The 
 
 ## Status
 
-The repository is currently in M1: playback feasibility validation. A synthetic
-AVC/AAC DASH-to-HLS path now reaches AVPlayer through a loopback HTTP bridge,
-but real Bilibili media and the product UI are not yet connected. It is not ready
-for daily use or distribution.
+The repository is currently in M1: playback feasibility validation. Synthetic
+and opt-in real AVC/AAC DASH samples now reach AVPlayer through a loopback HTTP
+bridge. The real probe is a development tool rather than product UI, and the M1
+runtime matrix is not complete. It is not ready for daily use or distribution.
 
-- Minimum deployment target: macOS 14
+- Minimum deployment target: macOS 15
 - Language: Swift 6
 - UI: SwiftUI with AppKit/AVKit bridges where appropriate
 - Playback direction: AVPlayer-first with a clean-room DASH-to-HLS bridge
@@ -62,6 +62,30 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 ```
 
 The active developer directory on an individual machine may differ. Opening `BiliKitMac.xcodeproj` in Xcode remains the normal development workflow.
+
+## Opt-in real playback probe
+
+`BiliPlaybackProbe` resolves the first part of a supplied BVID, requests a guest
+AVC/AAC DASH manifest, and checks ready-to-play, initial playback, and forward
+and backward seeks. It performs live network requests and is intentionally not
+part of CI or the App target:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcrun swift run \
+  --package-path Packages/BiliKitCore \
+  BiliPlaybackProbe \
+  --bvid BV1h4KU66ENd \
+  --play-seconds 1 \
+  --forward-seek 30 \
+  --backward-seek 5
+```
+
+The public guest endpoint and media URLs are dynamic. A previously recorded
+BVID can disappear or stop allowing the requested quality, so probe failure is
+not by itself proof of a playback regression. The probe never prints signed
+media URLs or response bodies. See the
+[current validation record](docs/validation/M1-real-playback-2026-07-21.md).
 
 ## Security and implementation boundaries
 

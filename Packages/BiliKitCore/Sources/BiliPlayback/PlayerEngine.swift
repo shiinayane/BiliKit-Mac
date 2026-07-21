@@ -5,15 +5,18 @@ public struct PlaybackRequest: Sendable, Equatable {
     public let manifest: PlaybackManifest
     public let preferredVideoRepresentationID: Int?
     public let preferredAudioRepresentationID: Int?
+    public let mediaHeaders: [String: String]
 
     public init(
         manifest: PlaybackManifest,
         preferredVideoRepresentationID: Int? = nil,
-        preferredAudioRepresentationID: Int? = nil
+        preferredAudioRepresentationID: Int? = nil,
+        mediaHeaders: [String: String] = [:]
     ) {
         self.manifest = manifest
         self.preferredVideoRepresentationID = preferredVideoRepresentationID
         self.preferredAudioRepresentationID = preferredAudioRepresentationID
+        self.mediaHeaders = mediaHeaders
     }
 }
 
@@ -40,4 +43,3 @@ public protocol PlayerEngine: AnyObject {
     func pause()
     func seek(to time: Duration) async throws
 }
-

@@ -60,4 +60,6 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 - 合法 `206/Content-Range` 但不可解析的错误页 body 会被拒绝并切换备用线路。
 - 快速替换播放项目会取消旧媒体 Range，新项目仍可进入 `readyToPlay`。
 
-仍需在 M1 Gate 前验证：真实 B 站 AVC/AAC 样本、播放项目替换后的资源释放、macOS 14 机器，以及条件允许时的 Intel Mac。
+真实 B 站 AVC/AAC 样本已在当前 Apple Silicon/macOS 26 开发机通过起播与双向 seek；记录见 [`../validation/M1-real-playback-2026-07-21.md`](../validation/M1-real-playback-2026-07-21.md)。
+
+仍需在 M1 Gate 前验证：更多真实样本与失败矩阵、播放项目替换后的资源释放、GitHub Actions `macos-15` runner，以及条件允许时的 Intel Mac。
