@@ -1,0 +1,46 @@
+{
+  "code": 0,
+  "message": "OK",
+  "ttl": 1,
+  "data": {
+    "list": [
+      {
+        "bvid": "BV1FixtureA1",
+        "title": "合成热门样本 A",
+        "pic": "https://images.example.invalid/cover-a.jpg",
+        "owner": {
+          "mid": 10001,
+          "name": "测试作者甲",
+          "face": "https://images.example.invalid/avatar-a.jpg"
+        },
+        "stat": {
+          "view": 12345,
+          "danmaku": 234,
+          "like": 3456,
+          "reply": 45
+        },
+        "duration": 321,
+        "pubdate": 1720000000,
+        "unknown_future_field": true
+      },
+      {
+        "bvid": "BV1FixtureB2",
+        "title": "合成热门样本 B",
+        "pic": "https://images.example.invalid/cover-b.jpg",
+        "owner": {
+          "mid": 10002,
+          "name": "测试作者乙",
+          "face": null
+        },
+        "stat": {
+          "view": 67890,
+          "danmaku": 567,
+          "like": 7890
+        },
+        "duration": 654,
+        "pubdate": 1720003600
+      }
+    ],
+    "no_more": false
+  }
+}

@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import BiliAPI
 import BiliModels
 import BiliPlayback
 import Darwin
@@ -15,6 +16,9 @@ struct BiliPlaybackProbe {
         } catch let error as ProbeError {
             writeError("BiliPlaybackProbe failed: \(error.description)\n")
             exit(EXIT_FAILURE)
+        } catch let error as BiliAPIError {
+            writeError("BiliPlaybackProbe failed: \(error.description)\n")
+            exit(EXIT_FAILURE)
         } catch {
             writeError(
                 "BiliPlaybackProbe failed: \(String(reflecting: type(of: error)))\n"
@@ -24,17 +28,32 @@ struct BiliPlaybackProbe {
     }
 
     private static func run(_ configuration: ProbeConfiguration) async throws {
-        let client = ProbeAPIClient(bvid: configuration.bvid)
+        let client = BiliAPIClient()
         let cid: Int64
         if let configuredCID = configuration.cid {
             cid = configuredCID
         } else {
-            cid = try await client.firstCID()
+            let pages = try await client.pages(for: configuration.bvid)
+            guard let firstPage = pages.first else {
+                throw ProbeError.invalidAPIResponse
+            }
+            cid = firstPage.cid
         }
-        let response = try await client.playURL(cid: cid)
-        let video = try response.selectedAVCVideo()
-        let audio = try response.selectedAACAudio()
-        let headers = client.mediaHeaders
+        let playback = try await client.playback(
+            for: configuration.bvid,
+            cid: cid,
+            quality: 32
+        )
+        guard let video = playback.manifest.videoRepresentations.max(
+            by: { $0.id < $1.id }
+        ) else {
+            throw ProbeError.noAVCVideo
+        }
+        guard let audio = playback.manifest.audioRepresentations.min(
+            by: { ($0.bandwidth ?? .max) < ($1.bandwidth ?? .max) }
+        ) else {
+            throw ProbeError.noAACAudio
+        }
 
         print("sample: bvid=\(configuration.bvid) cid=\(cid)")
         print(
@@ -51,7 +70,7 @@ struct BiliPlaybackProbe {
             ),
             preferredVideoRepresentationID: video.id,
             preferredAudioRepresentationID: audio.id,
-            mediaHeaders: headers
+            mediaHeaders: playback.mediaHeaders
         )
         let engine = AVPlayerEngine()
         engine.player.isMuted = true
@@ -408,244 +427,11 @@ private final class VideoTimelineSampler {
     }
 }
 
-private struct ProbeAPIClient: Sendable {
-    let bvid: String
-
-    private let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1"
-
-    var referer: String {
-        "https://www.bilibili.com/video/\(bvid)/"
-    }
-
-    var mediaHeaders: [String: String] {
-        [
-            "Referer": referer,
-            "User-Agent": userAgent,
-        ]
-    }
-
-    func firstCID() async throws -> Int64 {
-        let url = try endpoint(
-            path: "/x/player/pagelist",
-            queryItems: [URLQueryItem(name: "bvid", value: bvid)]
-        )
-        let response: PageListEnvelope = try await get(url)
-        guard response.code == 0, let cid = response.data?.first?.cid else {
-            throw ProbeError.apiRejected(response.code)
-        }
-        return cid
-    }
-
-    func playURL(cid: Int64) async throws -> PlayURLData {
-        let url = try endpoint(
-            path: "/x/player/playurl",
-            queryItems: [
-                URLQueryItem(name: "bvid", value: bvid),
-                URLQueryItem(name: "cid", value: String(cid)),
-                URLQueryItem(name: "qn", value: "32"),
-                URLQueryItem(name: "fnval", value: "16"),
-                URLQueryItem(name: "fnver", value: "0"),
-                URLQueryItem(name: "fourk", value: "0"),
-            ]
-        )
-        let response: PlayURLEnvelope = try await get(url)
-        guard response.code == 0, let data = response.data else {
-            throw ProbeError.apiRejected(response.code)
-        }
-        return data
-    }
-
-    private func get<Response: Decodable & Sendable>(
-        _ url: URL
-    ) async throws -> Response {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue(referer, forHTTPHeaderField: "Referer")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
-              data.count <= 5 * 1_024 * 1_024
-        else {
-            throw ProbeError.invalidAPIResponse
-        }
-        return try JSONDecoder().decode(Response.self, from: data)
-    }
-
-    private func endpoint(
-        path: String,
-        queryItems: [URLQueryItem]
-    ) throws -> URL {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "api.bilibili.com"
-        components.path = path
-        components.queryItems = queryItems
-        guard let url = components.url else {
-            throw ProbeError.invalidAPIResponse
-        }
-        return url
-    }
-}
-
-private struct PageListEnvelope: Decodable, Sendable {
-    let code: Int
-    let data: [Page]?
-}
-
-private struct Page: Decodable, Sendable {
-    let cid: Int64
-}
-
-private struct PlayURLEnvelope: Decodable, Sendable {
-    let code: Int
-    let data: PlayURLData?
-}
-
-private struct PlayURLData: Decodable, Sendable {
-    let dash: DASH
-
-    func selectedAVCVideo() throws -> MediaRepresentation {
-        let candidates = try dash.video
-            .filter { $0.codecid == 7 }
-            .map { try $0.mediaRepresentation(kind: .video) }
-        guard let selected = candidates.max(by: { $0.id < $1.id }) else {
-            throw ProbeError.noAVCVideo
-        }
-        return selected
-    }
-
-    func selectedAACAudio() throws -> MediaRepresentation {
-        let candidates = try dash.audio.map {
-            try $0.mediaRepresentation(kind: .audio)
-        }
-        guard let selected = candidates.min(by: {
-            ($0.bandwidth ?? .max) < ($1.bandwidth ?? .max)
-        }) else {
-            throw ProbeError.noAACAudio
-        }
-        return selected
-    }
-}
-
-private struct DASH: Decodable, Sendable {
-    let video: [DASHRepresentation]
-    let audio: [DASHRepresentation]
-}
-
-private struct DASHRepresentation: Decodable, Sendable {
-    let id: Int
-    let codecid: Int?
-    let codecs: String
-    let mimeType: String
-    let bandwidth: Int?
-    let baseURL: String
-    let backupURLs: [String]
-    let segmentBase: DASHSegmentBase
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case codecid
-        case codecs
-        case mimeType = "mime_type"
-        case mimeTypeCamel = "mimeType"
-        case bandwidth
-        case baseURL = "base_url"
-        case baseURLCamel = "baseUrl"
-        case backupURLs = "backup_url"
-        case backupURLsCamel = "backupUrl"
-        case segmentBase = "segment_base"
-        case segmentBaseCamel = "SegmentBase"
-    }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(Int.self, forKey: .id)
-        codecid = try container.decodeIfPresent(Int.self, forKey: .codecid)
-        codecs = try container.decode(String.self, forKey: .codecs)
-        mimeType = try container.decodeIfPresent(String.self, forKey: .mimeType)
-            ?? container.decode(String.self, forKey: .mimeTypeCamel)
-        bandwidth = try container.decodeIfPresent(Int.self, forKey: .bandwidth)
-        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
-            ?? container.decode(String.self, forKey: .baseURLCamel)
-        backupURLs = try container.decodeIfPresent([String].self, forKey: .backupURLs)
-            ?? container.decodeIfPresent([String].self, forKey: .backupURLsCamel)
-            ?? []
-        segmentBase = try container.decodeIfPresent(
-            DASHSegmentBase.self,
-            forKey: .segmentBase
-        ) ?? container.decode(DASHSegmentBase.self, forKey: .segmentBaseCamel)
-    }
-
-    func mediaRepresentation(kind: MediaKind) throws -> MediaRepresentation {
-        var seen = Set<URL>()
-        let urls = ([baseURL] + backupURLs)
-            .compactMap(URL.init(string:))
-            .filter { seen.insert($0).inserted }
-        guard let primaryURL = urls.first else {
-            throw ProbeError.invalidMediaURL
-        }
-        return MediaRepresentation(
-            id: id,
-            kind: kind,
-            codecs: codecs,
-            mimeType: mimeType,
-            bandwidth: bandwidth,
-            primaryURL: primaryURL,
-            backupURLs: Array(urls.dropFirst()),
-            segmentBase: try segmentBase.model()
-        )
-    }
-}
-
-private struct DASHSegmentBase: Decodable, Sendable {
-    let initialization: String
-    let indexRange: String
-
-    private enum CodingKeys: String, CodingKey {
-        case initialization
-        case indexRange = "index_range"
-        case indexRangeCamel = "indexRange"
-    }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        initialization = try container.decode(String.self, forKey: .initialization)
-        indexRange = try container.decodeIfPresent(String.self, forKey: .indexRange)
-            ?? container.decode(String.self, forKey: .indexRangeCamel)
-    }
-
-    func model() throws -> SegmentBase {
-        SegmentBase(
-            initialization: try byteRange(initialization),
-            index: try byteRange(indexRange)
-        )
-    }
-
-    private func byteRange(_ value: String) throws -> MediaByteRange {
-        let bounds = value.split(
-            separator: "-",
-            maxSplits: 1,
-            omittingEmptySubsequences: false
-        )
-        guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              let end = Int64(bounds[1])
-        else {
-            throw ProbeError.invalidSegmentBase
-        }
-        return try MediaByteRange(start: start, endInclusive: end)
-    }
-}
-
 private enum ProbeError: Error, CustomStringConvertible {
     case invalidArguments
     case invalidAPIResponse
-    case apiRejected(Int)
     case noAVCVideo
     case noAACAudio
-    case invalidMediaURL
-    case invalidSegmentBase
     case missingPlayerItem
     case invalidDuration
     case playerItemFailed
@@ -659,11 +445,8 @@ private enum ProbeError: Error, CustomStringConvertible {
         switch self {
         case .invalidArguments: "invalid-arguments"
         case .invalidAPIResponse: "invalid-api-response"
-        case let .apiRejected(code): "api-rejected-\(code)"
         case .noAVCVideo: "no-avc-video"
         case .noAACAudio: "no-aac-audio"
-        case .invalidMediaURL: "invalid-media-url"
-        case .invalidSegmentBase: "invalid-segment-base"
         case .missingPlayerItem: "missing-player-item"
         case .invalidDuration: "invalid-duration"
         case .playerItemFailed: "player-item-failed"

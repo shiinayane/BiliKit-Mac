@@ -1,0 +1,31 @@
+{
+  "code": 0,
+  "message": "OK",
+  "ttl": 1,
+  "data": [
+    {
+      "cid": 900001,
+      "page": 1,
+      "from": "vupload",
+      "part": "第一部分",
+      "duration": 120,
+      "dimension": {
+        "width": 1920,
+        "height": 1080,
+        "rotate": 0
+      }
+    },
+    {
+      "cid": 900002,
+      "page": 2,
+      "from": "vupload",
+      "part": "第二部分",
+      "duration": 240,
+      "dimension": {
+        "width": 1080,
+        "height": 1920,
+        "rotate": 0
+      }
+    }
+  ]
+}
