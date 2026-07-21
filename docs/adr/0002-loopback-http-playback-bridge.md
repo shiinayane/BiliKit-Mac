@@ -1,9 +1,9 @@
 # ADR 0002：使用 loopback HTTP bridge 向 AVPlayer 提供 HLS 媒体
 
-- 状态：Accepted
+- 状态：已接受
 - 日期：2026-07-21
 
-## Context
+## 背景
 
 M1 原计划通过自定义 URL scheme 和 `AVAssetResourceLoaderDelegate` 同时提供动态 HLS playlist 与 fMP4 媒体分段。自有 AVC/AAC fixture 的实测结果是：
 
@@ -15,10 +15,10 @@ Apple 的 Resource Loader 文档说明，delegate 负责异步请求时必须持
 
 参考：
 
-- [AVAssetResourceLoaderDelegate request handling](https://developer.apple.com/documentation/avfoundation/avassetresourceloaderdelegate/resourceloader(_:shouldwaitforloadingofrequestedresource:))
-- [Apple Developer Forums: custom-scheme HLS segment failure](https://developer.apple.com/forums/thread/113063)
+- [AVAssetResourceLoaderDelegate 请求处理文档](https://developer.apple.com/documentation/avfoundation/avassetresourceloaderdelegate/resourceloader(_:shouldwaitforloadingofrequestedresource:))
+- [Apple Developer Forums：自定义 scheme 的 HLS 分段失败](https://developer.apple.com/forums/thread/113063)
 
-## Decision
+## 决策
 
 M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Resource Loader 返回 HLS 媒体字节：
 
@@ -33,23 +33,23 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 
 不使用非公开的 AVFoundation header 注入选项。若未来 Apple 提供正式、可验证的替代 API，再通过新 ADR 调整。
 
-## Consequences
+## 影响
 
-### Positive
+### 正面影响
 
 - AVPlayer 看到的是标准 HLS/HTTP Range 资源，符合已验证的运行路径。
 - App 可以安全地添加 B 站 CDN 所需 header，而不把凭据写入 playlist URL。
 - CDN fallback、Range 校验与取消仍由自有 Swift 代码控制并可使用 fixture 测试。
 - loopback 层也能提供清晰的请求生命周期和最小诊断边界。
 
-### Negative
+### 负面影响
 
 - 需要维护一个最小 HTTP/1.1 server，并严格限制监听地址、路由、方法和 header 大小。
 - AVPlayer 请求经过一次本地转发，增加少量复制和调度开销。
 - App 睡眠、播放项目替换和异常退出时的 server 生命周期需要专项测试。
 - 不能把 `readyToPlay` 的本地 fixture 结果外推为真实 B 站 CDN 已经通过 M1 Gate。
 
-## Validation
+## 验证
 
 当前自动验证覆盖：
 

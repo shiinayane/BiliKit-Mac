@@ -2,14 +2,14 @@
 
 > 最低系统版本部分已由 [ADR 0003](./0003-raise-minimum-macos-to-15.md) 取代；命名和模块边界决策继续有效。
 
-- 状态：Accepted（最低系统版本部分已被取代）
+- 状态：已接受（最低系统版本部分已被取代）
 - 日期：2026-07-21
 
-## Context
+## 背景
 
 项目需要在原生 Mac 体验、旧设备覆盖、Swift 6 开发效率和高风险播放链路之间取得平衡。仓库已从 Xcode 模板建立，但产品名、工程名、最低系统版本和模块拆分需要在业务代码出现前固定下来。
 
-## Decision
+## 决策
 
 ### 平台
 
@@ -53,25 +53,25 @@ BiliAPI / BiliAuth / BiliPlayback / DanmakuKit / BiliPersistence → BiliModels
 - `BiliPersistence` 不保存任何 cookie 或 token。
 - 不建立无明确职责的 `Common`、`Shared` 或 `Utils` 底层模块。
 
-## Consequences
+## 影响
 
-### Positive
+### 正面影响
 
 - macOS 14 可以直接使用 Observation 与 SwiftData，同时仍覆盖 Intel 和 Apple Silicon Mac。
 - 播放与网络可以脱离 UI 使用 fixture 测试。
 - 单一 package manifest 降低早期工程维护成本，并保留清晰 target 边界。
 - 产品品牌与代码仓库关系明确。
 
-### Negative
+### 负面影响
 
 - 不支持只能运行 macOS 13 或更早版本的设备。
 - Package target 之间的 public API 需要更谨慎设计。
 - App Feature 暂时没有独立编译边界。
 
-## Validation
+## 验证
 
 - 当前模板已在命令行覆盖 macOS 14 时通过无签名 `build-for-testing`。
 - 本地 package 已接入 App target；25 个 package tests 和 App 单元测试通过。
 - `BiliKit.app` 的最低系统版本为 14.0，构建产物不包含 `docs/` 或 `references/`。
 - 编译成功不等于运行兼容；M1 必须在真实 macOS 14 环境验证 DASH→HLS、loopback HTTP bridge、AVPlayer 与 seek。媒体分段的 Resource Loader 路线已由 ADR 0002 否决。
-- CI 已配置为运行 package tests、构建全部 App test targets，并执行 App 单元测试；远程结果待首次推送验证。
+- CI 已在 macOS 15 与 macOS 26 上完成 Package 测试、全部 App 测试 target 构建和 App 单元测试。

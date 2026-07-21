@@ -1,14 +1,12 @@
-# Playback fixtures
+# 播放测试材料
 
-These fixtures are generated from synthetic sources and contain no downloaded
-media:
+这些 fixture 均由合成源生成，不包含下载的媒体内容：
 
-- `video-avc.mp4`: blue 128×72 H.264/AVC video.
-- `audio-aac.mp4`: 440 Hz AAC audio.
-- `sidx-v0-two-references.hex`: hand-authored version 0 SIDX box with two direct
-  media references.
+- `video-avc.mp4`：蓝色 128×72 H.264/AVC 视频。
+- `audio-aac.mp4`：440 Hz AAC 音频。
+- `sidx-v0-two-references.hex`：手工编写、包含两个直接媒体引用的 SIDX v0 box。
 
-The MP4 files were generated with FFmpeg 8.1.2:
+两个 MP4 文件使用 FFmpeg 8.1.2 生成：
 
 ```sh
 ffmpeg -f lavfi -i 'color=c=blue:s=128x72:r=24:d=2' \

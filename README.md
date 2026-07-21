@@ -1,46 +1,41 @@
-# BiliKit for macOS
+# BiliKit macOS 客户端
 
-BiliKit is an early-stage, native and unofficial Bilibili client for macOS. The project focuses on reliable playback, a restrained browsing experience, and interaction patterns that belong on the Mac.
+BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端。项目优先关注可靠播放、克制的浏览体验，以及符合 Mac 使用习惯的交互方式。
 
-> BiliKit is a third-party project and is not affiliated with, endorsed by, or sponsored by Bilibili. Bilibili names and trademarks belong to their respective owners.
+> BiliKit 是第三方项目，与哔哩哔哩不存在隶属、认可或赞助关系。哔哩哔哩相关名称与商标归其权利人所有。
 
-## Status
+## 当前状态
 
-The repository is currently in M1: playback feasibility validation. Synthetic
-and opt-in real AVC/AAC DASH samples now reach AVPlayer through a loopback HTTP
-bridge. The real probe is a development tool rather than product UI, and the M1
-runtime matrix is not complete. It is not ready for daily use or distribution.
+仓库目前处于 M1 播放可行性验证阶段。合成及显式运行的真实 AVC/AAC DASH 样本，已经可以通过 loopback HTTP bridge 进入 AVPlayer。真实播放探针属于开发工具，不是产品界面；M1 运行矩阵尚未全部完成，当前版本不适合日常使用或分发。
 
-- Minimum deployment target: macOS 15
-- Language: Swift 6
-- UI: SwiftUI with AppKit/AVKit bridges where appropriate
-- Playback direction: AVPlayer-first with a clean-room DASH-to-HLS bridge
-- License: MIT
+- 最低系统版本：macOS 15
+- 开发语言：Swift 6
+- 界面技术：SwiftUI，按需桥接 AppKit/AVKit
+- 播放路线：AVPlayer-first，自有 clean-room DASH→HLS bridge
+- 许可证：MIT
 
-See [the roadmap](docs/ROADMAP.md) for current milestones and acceptance gates, and [the research baseline](docs/RESEARCH-native-macos-client.md) for product and technical evidence.
+当前里程碑和验收门槛见[路线图](docs/ROADMAP.md)，产品与技术证据见[研究基线](docs/RESEARCH-native-macos-client.md)。
 
-## Repository layout
+## 仓库结构
 
 ```text
-BiliKitMac/                 macOS app shell and feature UI
-Packages/BiliKitCore/       local Swift package with core modules
-BiliKitMacTests/            app integration tests
-BiliKitMacUITests/          critical UI flow tests
-docs/                       roadmap, ADRs, and research
-references/                 ignored local research checkouts
+BiliKitMac/                 macOS App shell 与功能界面
+Packages/BiliKitCore/       包含核心模块的本地 Swift Package
+BiliKitMacTests/            App 集成测试
+BiliKitMacUITests/          关键 UI 流程测试
+docs/                       路线图、ADR、验证记录与研究资料
+references/                 完全忽略的本地参考项目，不进入 Xcode 工程
 ```
 
-The first package modules are:
+首批 Package 模块：
 
-- `BiliModels`: stable cross-module value types.
-- `BiliNetworking`: transport abstraction, strict Range validation, CDN fallback,
-  cancellation, and log redaction.
-- `BiliPlayback`: SIDX parsing, HLS playlist generation, loopback media proxy,
-  and player boundaries.
+- `BiliModels`：稳定的跨模块值类型。
+- `BiliNetworking`：传输抽象、严格 Range 校验、CDN fallback、取消传播和日志脱敏。
+- `BiliPlayback`：SIDX 解析、HLS playlist 生成、loopback 媒体代理和播放器边界。
 
-## Build
+## 构建
 
-The commands below avoid code signing and keep Derived Data outside the repository:
+以下命令关闭代码签名，并将 Derived Data 放在仓库之外：
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
@@ -54,21 +49,18 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   build-for-testing
 ```
 
-Run package tests independently:
+单独运行 Package 测试：
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcrun swift test --package-path Packages/BiliKitCore
 ```
 
-The active developer directory on an individual machine may differ. Opening `BiliKitMac.xcodeproj` in Xcode remains the normal development workflow.
+不同机器的 active developer directory 可能不同。日常开发仍建议直接在 Xcode 中打开 `BiliKitMac.xcodeproj`。
 
-## Opt-in real playback probe
+## 显式运行真实播放探针
 
-`BiliPlaybackProbe` resolves the first part of a supplied BVID, requests a guest
-AVC/AAC DASH manifest, and checks ready-to-play, initial playback, and forward
-and backward seeks. It performs live network requests and is intentionally not
-part of CI or the App target:
+`BiliPlaybackProbe` 会解析指定 BVID 的首个分 P，请求游客 AVC/AAC DASH manifest，并检查 `readyToPlay`、初始播放和双向 seek。它会发起真实网络请求，因此不会自动进入 CI 或 App target：
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
@@ -81,18 +73,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   --backward-seek 5
 ```
 
-The public guest endpoint and media URLs are dynamic. A previously recorded
-BVID can disappear or stop allowing the requested quality, so probe failure is
-not by itself proof of a playback regression. The probe never prints signed
-media URLs or response bodies. See the
-[current validation record](docs/validation/M1-real-playback-2026-07-21.md).
+游客接口和媒体 URL 都会动态变化。已记录的 BVID 可能失效，或者不再允许请求指定画质，因此一次探针失败本身不能证明播放实现发生回归。探针不会输出带签名的媒体 URL 或响应 body。当前结果见[真实播放验证记录](docs/validation/M1-real-playback-2026-07-21.md)。
 
-## Security and implementation boundaries
+## 安全与实现边界
 
-- Cookies and tokens belong in Keychain and memory only.
-- Do not put credentials in fixtures, logs, UserDefaults, SwiftData, or crash reports.
-- Community APIs are reverse-engineered and must be treated as replaceable, testable, and failure-prone.
-- GPL projects may be studied for public behavior and data formats, but their source, comments, fixtures, and assets must not be copied into this MIT repository.
-- v1 deliberately excludes downloading, live streaming, uploads, private messages, multiple accounts, and region bypassing.
+- Cookie 和 token 只能进入 Keychain 与内存。
+- 不得将凭据写入 fixture、日志、UserDefaults、SwiftData 或崩溃报告。
+- 社区 API 来自逆向分析，必须按可替换、可测试、可能失败的外部依赖处理。
+- 可以研究 GPL 项目的公开行为和数据格式，但不得把其源码、注释、fixture 或资产复制进本 MIT 仓库。
+- v1 明确不包含下载、直播、投稿、私信、多账号和区域限制绕过。
 
-Third-party dependency notices are tracked in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+第三方依赖声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。

@@ -56,11 +56,6 @@
 			path = docs;
 			sourceTree = "<group>";
 		};
-		8DFA902D300F383F00DF3E1D /* references */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = references;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,11 +89,10 @@
 		8DFA8FF8300F375500DF3E1D = {
 			isa = PBXGroup;
 			children = (
-				8DFA902D300F383F00DF3E1D /* references */,
-				8DFA902B300F37DA00DF3E1D /* docs */,
 				8DFA9003300F375500DF3E1D /* BiliKitMac */,
 				8DFA9011300F375600DF3E1D /* BiliKitMacTests */,
 				8DFA901B300F375600DF3E1D /* BiliKitMacUITests */,
+				8DFA902B300F37DA00DF3E1D /* docs */,
 				8DFA9002300F375500DF3E1D /* Products */,
 			);
 			sourceTree = "<group>";

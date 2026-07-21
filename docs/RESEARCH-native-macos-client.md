@@ -4,7 +4,7 @@
 >
 > 最近核验：2026-07-21（Asia/Tokyo）。仓库活跃度、分支、许可和平台支持会变化；继续开发前应按本文的“复核协议”重新检查动态事实。
 >
-> 当前载体：[shiinayane/BiliKit](https://github.com/shiinayane/BiliKit)。正式客户端应另开仓库；本文适合复制到新仓库的 `docs/research/`，作为后续 AI/开发者的入口文档。
+> 现行客户端仓库：[shiinayane/BiliKit-Mac](https://github.com/shiinayane/BiliKit-Mac)。本文最初形成于 [shiinayane/BiliKit](https://github.com/shiinayane/BiliKit) userscript 仓库的立项阶段；现行事实和决策以本仓库的路线图与 ADR 为准。
 
 ## 0. 给下一位 AI 的一分钟摘要
 
@@ -522,7 +522,7 @@ Apple [App Review Guidelines 5.2](https://developer.apple.com/app-store/review/g
 - repo：`BiliKit-Mac`
 - App 显示名：`BiliKit`
 - 可选 bundle id：`com.shiinayane.BiliKitMac`
-- tagline：`A native, unofficial Bilibili client for macOS.`
+- 副标题：`原生、非官方的 macOS B 站客户端。`
 
 优点：
 
@@ -537,7 +537,7 @@ Apple [App Review Guidelines 5.2](https://developer.apple.com/app-store/review/g
 
 建议仓库关系表述：
 
-> BiliKit-Mac is a separate native macOS application. The original BiliKit repository remains the browser userscript suite and research source.
+> BiliKit-Mac 是独立的原生 macOS 应用；原 BiliKit 仓库继续作为浏览器 userscript 套件和研究来源。
 
 ### 次选：`MakuDock`
 
@@ -637,7 +637,7 @@ BiliKit-Mac/
 7. 对播放功能至少检查：热门视频、冷门/PCDN 视频、多 P、seek、取消、CDN 403、音视频同步。
 8. 对 UI 至少检查：键盘、VoiceOver、深浅色、窗口 resize、全屏和 mini player。
 
-下一位 AI 不应把这些“建议”误当已完成事实：
+以下是本文形成时的历史状态，不代表当前仓库事实：
 
 - 新 repo 尚未创建。
 - repo 名、App 名、bundle id 和 license 尚未由用户最终确认。
@@ -646,7 +646,7 @@ BiliKit-Mac/
 - Developer ID、notarization、自动更新和分发渠道尚未建立。
 - B 站对第三方客户端的授权状态未解决。
 
-需要用户拍板的首要决定：
+立项时需要用户拍板的首要决定：
 
 1. 使用 `BiliKit-Mac` 还是独立品牌 `MakuDock`。
 2. 首版是否只做 GitHub Releases 直接分发。
@@ -686,17 +686,17 @@ BiliKit-Mac/
 - [HTTP Live Streaming](https://developer.apple.com/documentation/HTTP-Live-Streaming)
 - [AVAssetResourceLoader](https://developer.apple.com/documentation/avfoundation/avurlasset/resourceloader)
 - [Keychain Services](https://developer.apple.com/documentation/security/keychain-services/)
-- [TN3154: Adopting SwiftUI NavigationSplitView](https://developer.apple.com/documentation/technotes/tn3154-adopting-swiftui-navigation-split-view)
-- [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [TN3154：采用 SwiftUI NavigationSplitView](https://developer.apple.com/documentation/technotes/tn3154-adopting-swiftui-navigation-split-view)
+- [App 审核指南](https://developer.apple.com/app-store/review/guidelines/)
 
-### 本仓库已有研究
+### 原 BiliKit 仓库已有研究
 
-- [`docs/RESEARCH-feed.md`](./RESEARCH-feed.md)
-- [`docs/RESEARCH-mse-preview.md`](./RESEARCH-mse-preview.md)
-- [`docs/RESEARCH-extension-architecture.md`](./RESEARCH-extension-architecture.md)
+- [`docs/RESEARCH-feed.md`](https://github.com/shiinayane/BiliKit/blob/main/docs/RESEARCH-feed.md)
+- [`docs/RESEARCH-mse-preview.md`](https://github.com/shiinayane/BiliKit/blob/main/docs/RESEARCH-mse-preview.md)
+- [`docs/RESEARCH-extension-architecture.md`](https://github.com/shiinayane/BiliKit/blob/main/docs/RESEARCH-extension-architecture.md)
 
 ---
 
-## 13. 一句话立项建议
+## 13. 一句话立项建议（已执行）
 
-单独创建 `BiliKit-Mac`，先用 macOS 15 + Swift 6 做一个 **游客可浏览、Web QR 可登录、AVPlayer 能可靠播放 AVC/AAC DASH、弹幕能正确 seek** 的小而完整原型；在这条链路被真实样本验证之前，不扩展到下载、直播和完整社交功能。
+已按建议单独创建 `BiliKit-Mac`，当前以 macOS 15 + Swift 6 逐步实现一个 **游客可浏览、Web QR 可登录、AVPlayer 能可靠播放 AVC/AAC DASH、弹幕能正确 seek** 的小而完整原型；在这条链路被真实样本验证之前，不扩展到下载、直播和完整社交功能。
