@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性验证已经完成，仓库正在实现 M2 游客浏览到播放的纵向闭环。首批 `BiliAPI` 已接入匿名热门、分 P 和 playurl，并使用脱敏 contract fixture 验证字段与错误边界；真实 AVC/AAC DASH 样本可以继续通过 loopback HTTP bridge 进入 AVPlayer。当前还没有产品浏览界面，不适合日常使用或分发。
+M1 播放可行性验证已经完成，仓库正在实现 M2 游客浏览到播放的纵向闭环。`BiliAPI` 已接入匿名热门、视频详情、分 P 和 playurl，并使用脱敏 contract fixture 验证字段与错误边界；可取消的游客会话会隔离快速切换产生的旧结果。真实 AVC/AAC DASH 样本可以继续通过 loopback HTTP bridge 进入 AVPlayer。当前还没有产品浏览界面，不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -31,7 +31,7 @@ references/                 完全忽略的本地参考项目，不进入 Xcode 
 
 - `BiliModels`：稳定的跨模块值类型。
 - `BiliNetworking`：传输抽象、严格 Range 校验、CDN fallback、取消传播和日志脱敏。
-- `BiliAPI`：游客 endpoint、独立响应模型、统一错误识别和脱敏 contract fixture。
+- `BiliAPI`：游客 endpoint、独立响应模型、统一错误识别、可取消会话和脱敏 contract fixture。
 - `BiliPlayback`：SIDX 解析、HLS playlist 生成、loopback 媒体代理和播放器边界。
 
 ## 构建

@@ -4,6 +4,7 @@ import Foundation
 
 public protocol BiliAPIService: Sendable {
     func popular(page: Int, pageSize: Int) async throws -> PopularPage
+    func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64, quality: Int) async throws -> VideoPlayback
 }
@@ -48,6 +49,22 @@ public actor BiliAPIClient: BiliAPIService {
         )
         let videos = try payload.list.map { try $0.model() }
         return PopularPage(videos: videos, pageNumber: page, pageSize: pageSize)
+    }
+
+    public func videoDetail(for bvid: String) async throws -> VideoDetail {
+        guard Self.isValidBVID(bvid) else {
+            throw BiliAPIError.invalidRequest
+        }
+        let payload: VideoDetailPayload = try await get(
+            path: "/x/web-interface/view",
+            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            referer: Self.videoReferer(bvid)
+        )
+        let detail = try payload.model()
+        guard detail.bvid == bvid else {
+            throw BiliAPIError.decodingFailed
+        }
+        return detail
     }
 
     public func pages(for bvid: String) async throws -> [VideoPage] {

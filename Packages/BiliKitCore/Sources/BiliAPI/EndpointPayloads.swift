@@ -50,6 +50,35 @@ struct StatisticsPayload: Decodable, Sendable {
     }
 }
 
+struct VideoDetailPayload: Decodable, Sendable {
+    let bvid: String
+    let title: String
+    let desc: String
+    let pic: String
+    let owner: OwnerPayload
+    let stat: StatisticsPayload
+    let duration: Int
+    let pubdate: Int64
+    let dimension: DimensionPayload?
+
+    func model() throws -> VideoDetail {
+        guard bvid.hasPrefix("BV"), !title.isEmpty, duration >= 0, pubdate >= 0 else {
+            throw BiliAPIError.decodingFailed
+        }
+        return VideoDetail(
+            bvid: bvid,
+            title: title,
+            summary: desc,
+            coverURL: URL(string: pic),
+            owner: owner.model(),
+            statistics: stat.model(),
+            durationSeconds: duration,
+            publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate)),
+            dimension: dimension?.model()
+        )
+    }
+}
+
 struct PagePayload: Decodable, Sendable {
     let cid: Int64
     let page: Int

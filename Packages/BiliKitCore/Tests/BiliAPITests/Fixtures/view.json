@@ -1,0 +1,40 @@
+{
+  "code": 0,
+  "message": "OK",
+  "ttl": 1,
+  "data": {
+    "bvid": "BV1FixtureA1",
+    "title": "合成视频详情 A",
+    "desc": "这是手写的脱敏详情说明。",
+    "pic": "https://images.example.invalid/detail-a.jpg",
+    "duration": 360,
+    "pubdate": 1720000000,
+    "owner": {
+      "mid": 10001,
+      "name": "测试作者甲",
+      "face": "https://images.example.invalid/avatar-a.jpg"
+    },
+    "stat": {
+      "view": 12345,
+      "danmaku": 234,
+      "like": 3456,
+      "favorite": 456
+    },
+    "dimension": {
+      "width": 1920,
+      "height": 1080,
+      "rotate": 0
+    },
+    "pages": [
+      {
+        "cid": 900001,
+        "page": 1,
+        "part": "第一部分",
+        "duration": 120
+      }
+    ],
+    "unknown_future_field": {
+      "enabled": true
+    }
+  }
+}

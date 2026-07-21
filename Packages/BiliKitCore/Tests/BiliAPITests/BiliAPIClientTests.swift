@@ -44,6 +44,25 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func videoDetailDecodesSanitizedContract() async throws {
+        let transport = RecordingTransport(responses: [try fixtureResponse("view")])
+        let client = BiliAPIClient(transport: transport)
+
+        let detail = try await client.videoDetail(for: "BV1FixtureA1")
+
+        #expect(detail.bvid == "BV1FixtureA1")
+        #expect(detail.title == "合成视频详情 A")
+        #expect(detail.summary == "这是手写的脱敏详情说明。")
+        #expect(detail.owner.id == 10_001)
+        #expect(detail.statistics.likeCount == 3_456)
+        #expect(detail.dimension == VideoDimension(width: 1920, height: 1080, rotation: 0))
+
+        let request = try #require(await transport.capturedRequests().first)
+        #expect(request.url.path == "/x/web-interface/view")
+        #expect(request.headers["Referer"] == "https://www.bilibili.com/video/BV1FixtureA1/")
+    }
+
+    @Test
     func playURLMapsOnlyAVCAndAACRepresentations() async throws {
         let transport = RecordingTransport(responses: [try fixtureResponse("playurl")])
         let client = BiliAPIClient(transport: transport)

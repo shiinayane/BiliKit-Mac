@@ -67,6 +67,42 @@ public struct PopularPage: Sendable, Equatable {
     }
 }
 
+public struct VideoDetail: Identifiable, Sendable, Equatable {
+    public var id: String { bvid }
+
+    public let bvid: String
+    public let title: String
+    public let summary: String
+    public let coverURL: URL?
+    public let owner: VideoOwner
+    public let statistics: VideoStatistics
+    public let durationSeconds: Int
+    public let publishedAt: Date
+    public let dimension: VideoDimension?
+
+    public init(
+        bvid: String,
+        title: String,
+        summary: String,
+        coverURL: URL?,
+        owner: VideoOwner,
+        statistics: VideoStatistics,
+        durationSeconds: Int,
+        publishedAt: Date,
+        dimension: VideoDimension? = nil
+    ) {
+        self.bvid = bvid
+        self.title = title
+        self.summary = summary
+        self.coverURL = coverURL
+        self.owner = owner
+        self.statistics = statistics
+        self.durationSeconds = durationSeconds
+        self.publishedAt = publishedAt
+        self.dimension = dimension
+    }
+}
+
 public struct VideoDimension: Sendable, Equatable {
     public let width: Int
     public let height: Int
