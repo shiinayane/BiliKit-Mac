@@ -35,6 +35,7 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
     case nonJSONResponse
     case invalidResponse
     case incompleteCredential
+    case credentialStoreUnavailable
     case serviceRejected(Int)
     case unsupportedStatus(WebQRStatusObservation)
 
@@ -54,6 +55,8 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
             "invalid-response"
         case .incompleteCredential:
             "incomplete-credential"
+        case .credentialStoreUnavailable:
+            "credential-store-unavailable"
         case let .serviceRejected(code):
             "service-rejected-\(code)"
         case let .unsupportedStatus(observation):

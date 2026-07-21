@@ -13,6 +13,7 @@ public actor WebQRLoginSession {
 
     private let httpClient: HTTPClient
     private let baseURL: URL
+    private let credentialStore: any WebCredentialStoring
     private let decoder = JSONDecoder()
     private var generation: UInt64 = 0
     private var activeChallenge: ActiveChallenge?
@@ -22,14 +23,17 @@ public actor WebQRLoginSession {
     public init() {
         httpClient = HTTPClient(transport: Self.makeProductionTransport())
         baseURL = Self.productionBaseURL
+        credentialStore = KeychainWebCredentialStore()
     }
 
     init(
         transport: any HTTPTransport,
-        baseURL: URL = WebQRLoginSession.productionBaseURL
+        baseURL: URL = WebQRLoginSession.productionBaseURL,
+        credentialStore: any WebCredentialStoring = KeychainWebCredentialStore()
     ) {
         httpClient = HTTPClient(transport: transport)
         self.baseURL = baseURL
+        self.credentialStore = credentialStore
     }
 
     @discardableResult
@@ -178,6 +182,25 @@ public actor WebQRLoginSession {
     }
 
     public func validatePendingCredential() async throws -> Bool {
+        let pendingCredential = try takePendingCredential()
+        return try await validate(pendingCredential)
+    }
+
+    public func validateAndStorePendingCredential() async throws -> Bool {
+        let pendingCredential = try takePendingCredential()
+        guard try await validate(pendingCredential) else { return false }
+        guard !pendingCredential.credential.isExpired() else {
+            throw WebQRLoginFailure.incompleteCredential
+        }
+        do {
+            try credentialStore.save(pendingCredential.credential)
+        } catch {
+            throw WebQRLoginFailure.credentialStoreUnavailable
+        }
+        return true
+    }
+
+    private func takePendingCredential() throws -> PendingCredential {
         guard let pendingCredential else {
             throw WebQRLoginFailure.incompleteCredential
         }
@@ -185,9 +208,12 @@ public actor WebQRLoginSession {
         guard generation == pendingCredential.generation else {
             throw CancellationError()
         }
+        return pendingCredential
+    }
 
+    private func validate(_ pendingCredential: PendingCredential) async throws -> Bool {
         let response = try await sendNavigationValidation(
-            cookieHeader: pendingCredential.cookieHeader
+            cookieHeader: pendingCredential.credential.cookieHeader
         )
         try Task.checkCancellation()
         guard generation == pendingCredential.generation else {
@@ -413,28 +439,38 @@ public actor WebQRLoginSession {
         from response: HTTPResponse,
         generation: UInt64
     ) -> PendingCredential? {
-        let allowedNames = Set([
-            "DedeUserID",
-            "DedeUserID__ckMd5",
-            "SESSDATA",
-            "bili_jct",
-            "sid",
-        ])
-        let requiredNames = Set(["DedeUserID", "SESSDATA", "bili_jct"])
+        let allowedNames = Set(WebCredentialCookieName.allCases.map(\.rawValue))
         let cookies = HTTPCookie.cookies(
             withResponseHeaderFields: response.headers,
             for: productionBaseURL
         ).filter { allowedNames.contains($0.name) }
-        guard requiredNames.isSubset(of: Set(cookies.map(\.name))) else {
+        guard cookies.count == allowedNames.count,
+              Set(cookies.map(\.name)) == allowedNames
+        else {
             return nil
         }
-        let cookieHeader = cookies
-            .sorted { $0.name < $1.name }
-            .map { "\($0.name)=\($0.value)" }
-            .joined(separator: "; ")
+        let credentialCookies: [WebCredentialCookie] = cookies.compactMap { cookie in
+            guard let name = WebCredentialCookieName(rawValue: cookie.name),
+                  let expiresAt = cookie.expiresDate
+            else {
+                return nil
+            }
+            return WebCredentialCookie(
+                name: name,
+                value: cookie.value,
+                domain: cookie.domain,
+                path: cookie.path,
+                isSecure: cookie.isSecure,
+                isHTTPOnly: cookie.isHTTPOnly,
+                expiresAt: expiresAt
+            )
+        }
+        guard let credential = try? WebCredential(cookies: credentialCookies) else {
+            return nil
+        }
         return PendingCredential(
             generation: generation,
-            cookieHeader: cookieHeader
+            credential: credential
         )
     }
 
@@ -446,12 +482,10 @@ public actor WebQRLoginSession {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
-        let session = URLSession(
+        return URLSessionTransport(
             configuration: configuration,
-            delegate: RejectRedirectDelegate(),
-            delegateQueue: nil
+            redirectPolicy: .reject
         )
-        return URLSessionTransport(session: session)
     }
 }
 
@@ -463,7 +497,7 @@ private struct ActiveChallenge: Sendable {
 
 private struct PendingCredential: Sendable {
     let generation: UInt64
-    let cookieHeader: String
+    let credential: WebCredential
 }
 
 private struct StaleOperationError: Error {}
@@ -533,16 +567,4 @@ private struct NavigationEnvelope: Decodable, Sendable {
 
 private struct NavigationData: Decodable, Sendable {
     let isLogin: Bool
-}
-
-private final class RejectRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
-    }
 }

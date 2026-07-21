@@ -1,6 +1,6 @@
 # M3 Web QR 登录威胁模型
 
-> 状态：M3 实现前安全基线
+> 状态：M3 Keychain/请求授权自动化基线；签名 App smoke 与完整 UI 登出待完成
 >
 > 日期：2026-07-21（Asia/Tokyo）
 >
@@ -119,10 +119,10 @@ signedIn
 
 关闭 M3 前仍须满足：
 
-- Keychain 测试使用独立 service/account，并在 teardown 删除；测试失败消息不含 secret。
-- 游客模式在 Keychain 缺失、损坏、访问失败和远端凭据失效时均保持可用。
-- 请求授权负向测试证明 Cookie 不会发送到 CDN、loopback、非白名单 endpoint 或跨主机重定向。
-- 完整本地登出、重启恢复和凭据失效路径均清除内存并回退游客模式。
+- 在带最小 Keychain entitlement 的签名 App 测试中，使用独立 service/account 完成真实 add/update/read/delete，并在 teardown 删除；未签名 Package 测试只验证 SecItem 查询与错误映射。
+- 将已经自动覆盖的 Keychain 缺失、损坏、过期、远端失效和临时网络失败语义接入 Application/Feature，确认游客功能始终可用。
+- 为首个已登录业务 endpoint 接入授权器；当前负向测试已证明 nav 凭据不会发送到 CDN、loopback、非白名单 endpoint 或跨主机重定向。
+- 完整本地登出必须协调取消 Web QR/恢复请求、清内存、删除 Keychain item、失效 session，再发布未登录状态，并完成 UI smoke。
 
 ## 7. 剩余风险
 

@@ -94,3 +94,16 @@ M3 第 2 步已按本决策建立 `BiliAuth` 与 `BiliAuthProbe`：
 - 以上 Cookie 在短生命周期内存中组成 header，请求精确的 `https://api.bilibili.com/x/web-interface/nav`，现场得到 `isLogin=true`；验证后立即清空。
 
 因此 M3 可以进入 Keychain 与 endpoint 授权实现，但仍不能把收到 `code=0` 直接等同于持久登录成功：必须先通过 nav 校验，再原子提交 Keychain。
+
+## Keychain 与请求授权实现落点
+
+M3 第 4 步的代码与自动化边界已经落地：
+
+- 五项 Cookie 进入 schema v1 envelope；名称集合、domain、path、Secure、值字符与大小在解码后重新校验，公开描述和 Mirror 不展示值。
+- generic-password store 使用固定 service/account，每次 SecItem 操作都带 Data Protection Keychain 与非同步条件；新增使用 `WhenUnlockedThisDeviceOnly`，重复主键走单 item update。
+- `BiliNetworking` 只定义无业务语义的 `HTTPRequestAuthorizing`；BiliAuth 当前只允许经过审计的 nav endpoint，并在读取时清理损坏或过期凭据。
+- Web QR 保留“只校验”和“校验后提交”两个显式入口。提交入口在同一 actor generation 内完成 nav 校验和同步 store 写入，旧 generation、`isLogin=false` 或存储失败都不能返回持久登录成功。
+- 恢复入口重新请求 nav；远端明确失效时清理，本地缺失/损坏/过期时回退未登录，临时网络失败不误删。
+- 认证 transport 拒绝 HTTP 重定向；授权器还会独立拒绝 HTTP、相似主机、CDN、loopback、错误 path/method、userinfo、fragment 和调用方预置 Cookie。
+
+当前未签名 SwiftPM 测试进程直接执行 Data Protection Keychain SecItem 往返时返回 unavailable；该安全错误同时覆盖系统的 missing-entitlement 与 not-available 状态，因此本记录不进一步猜测具体 OSStatus。自动测试通过注入的窄 SecItem 后端验证完整查询和状态映射；真实 Security.framework 往返必须在后续具备正确签名/entitlement 的 App smoke 中单独完成，不能由模拟结果替代。

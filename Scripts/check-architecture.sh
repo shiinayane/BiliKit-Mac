@@ -24,6 +24,11 @@ check_forbidden_imports \
     "BiliApplication 只能依赖 BiliModels 与标准库"
 
 check_forbidden_imports \
+    "Packages/BiliKitCore/Sources/BiliNetworking" \
+    '^import (Bili[A-Za-z0-9_]*|Security|SwiftUI|AVFoundation|AVKit|AppKit|Network)$' \
+    "BiliNetworking 只能提供无业务语义、无秘密存储的传输边界"
+
+check_forbidden_imports \
     "Packages/BiliKitCore/Sources/BiliGuestFeature" \
     '^import (BiliAPI|BiliAuth|BiliAuthFeature|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
     "BiliGuestFeature 不能直接依赖 Data 或 Platform adapter"

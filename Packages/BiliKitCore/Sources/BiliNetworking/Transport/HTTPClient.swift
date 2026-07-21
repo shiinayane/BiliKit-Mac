@@ -75,6 +75,25 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         self.session = session
     }
 
+    public convenience init(
+        configuration: URLSessionConfiguration,
+        redirectPolicy: HTTPRedirectPolicy
+    ) {
+        let delegate: URLSessionTaskDelegate? = switch redirectPolicy {
+        case .follow:
+            nil
+        case .reject:
+            RejectHTTPRedirectDelegate()
+        }
+        self.init(
+            session: URLSession(
+                configuration: configuration,
+                delegate: delegate,
+                delegateQueue: nil
+            )
+        )
+    }
+
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method.rawValue
@@ -100,5 +119,24 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
             headers: headers,
             body: data
         )
+    }
+}
+
+public enum HTTPRedirectPolicy: Sendable {
+    case follow
+    case reject
+}
+
+final class RejectHTTPRedirectDelegate: NSObject, URLSessionTaskDelegate,
+    @unchecked Sendable
+{
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }

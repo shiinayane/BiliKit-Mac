@@ -176,6 +176,112 @@ struct WebQRLoginSessionTests {
     }
 
     @Test
+    func storesCompleteCredentialOnlyAfterSuccessfulNavigationValidation() async throws {
+        let success = try fixtureResponse(
+            "qr-poll-success",
+            headers: [
+                "Content-Type": "application/json",
+                "Set-Cookie": fixtureSetCookieHeader,
+            ]
+        )
+        let navigation = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
+        )
+        let store = MemoryWebCredentialStore()
+        let session = WebQRLoginSession(
+            transport: RecordingAuthTransport(
+                responses: [
+                    try fixtureResponse("qr-generate"),
+                    success,
+                    navigation,
+                ]
+            ),
+            credentialStore: store
+        )
+
+        _ = try await session.requestQRCode()
+        _ = try await session.pollOnce()
+        let stored = try await session.validateAndStorePendingCredential()
+
+        #expect(stored)
+        #expect(store.saveCount == 1)
+        #expect(try store.load()?.cookies.count == 5)
+    }
+
+    @Test
+    func rejectedNavigationValidationDoesNotStoreCredential() async throws {
+        let success = try fixtureResponse(
+            "qr-poll-success",
+            headers: [
+                "Content-Type": "application/json",
+                "Set-Cookie": fixtureSetCookieHeader,
+            ]
+        )
+        let navigation = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(#"{"code":0,"data":{"isLogin":false}}"#.utf8)
+        )
+        let store = MemoryWebCredentialStore()
+        let session = WebQRLoginSession(
+            transport: RecordingAuthTransport(
+                responses: [
+                    try fixtureResponse("qr-generate"),
+                    success,
+                    navigation,
+                ]
+            ),
+            credentialStore: store
+        )
+
+        _ = try await session.requestQRCode()
+        _ = try await session.pollOnce()
+        let stored = try await session.validateAndStorePendingCredential()
+
+        #expect(!stored)
+        #expect(store.saveCount == 0)
+        #expect(try store.load() == nil)
+    }
+
+    @Test
+    func keychainFailureCannotReportPersistentLoginSuccess() async throws {
+        let success = try fixtureResponse(
+            "qr-poll-success",
+            headers: [
+                "Content-Type": "application/json",
+                "Set-Cookie": fixtureSetCookieHeader,
+            ]
+        )
+        let navigation = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
+        )
+        let store = MemoryWebCredentialStore(
+            saveError: FixtureCredentialStoreError.unavailable
+        )
+        let session = WebQRLoginSession(
+            transport: RecordingAuthTransport(
+                responses: [
+                    try fixtureResponse("qr-generate"),
+                    success,
+                    navigation,
+                ]
+            ),
+            credentialStore: store
+        )
+
+        _ = try await session.requestQRCode()
+        _ = try await session.pollOnce()
+        await #expect(throws: WebQRLoginFailure.credentialStoreUnavailable) {
+            try await session.validateAndStorePendingCredential()
+        }
+        #expect(store.saveCount == 0)
+    }
+
+    @Test
     func oldCredentialValidationCannotCompleteAfterNewQRCode() async throws {
         let success = try fixtureResponse(
             "qr-poll-success",
@@ -194,11 +300,17 @@ struct WebQRLoginSessionTests {
             successResponse: success,
             navigationResponse: navigation
         )
-        let session = WebQRLoginSession(transport: transport)
+        let store = MemoryWebCredentialStore()
+        let session = WebQRLoginSession(
+            transport: transport,
+            credentialStore: store
+        )
 
         _ = try await session.requestQRCode()
         _ = try await session.pollOnce()
-        let validation = Task { try await session.validatePendingCredential() }
+        let validation = Task {
+            try await session.validateAndStorePendingCredential()
+        }
 
         while !(await transport.validationStarted) {
             await Task.yield()
@@ -211,6 +323,7 @@ struct WebQRLoginSessionTests {
             try await validation.value
         }
         #expect(await session.state.description == "awaiting-scan")
+        #expect(store.saveCount == 0)
     }
 
     @Test
@@ -549,13 +662,17 @@ private enum StubAuthError: Error {
     case missingResponse
 }
 
+private enum FixtureCredentialStoreError: Error {
+    case unavailable
+}
+
 private let fixtureSetCookieHeader = [
-    "DedeUserID=FIXTURE_USER_ID_VALUE; Domain=.bilibili.com; Path=/; Secure",
-    "DedeUserID__ckMd5=FIXTURE_USER_HASH_VALUE; Domain=.bilibili.com; Path=/; Secure",
-    "SESSDATA=FIXTURE_SESSDATA_VALUE; Domain=.bilibili.com; Path=/; Secure; HttpOnly",
-    "bili_jct=FIXTURE_BILI_JCT_VALUE; Domain=.bilibili.com; Path=/; Secure",
-    "sid=FIXTURE_SID_VALUE; Domain=.bilibili.com; Path=/; Secure",
-    "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure",
+    "DedeUserID=FIXTURE_USER_ID_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "DedeUserID__ckMd5=FIXTURE_USER_HASH_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "SESSDATA=FIXTURE_SESSDATA_VALUE; Domain=.bilibili.com; Path=/; Secure; HttpOnly; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "bili_jct=FIXTURE_BILI_JCT_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "sid=FIXTURE_SID_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
 ].joined(separator: ", ")
 
 private func fixtureResponse(
