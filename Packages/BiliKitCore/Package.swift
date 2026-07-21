@@ -11,10 +11,12 @@ let package = Package(
         .library(name: "BiliModels", targets: ["BiliModels"]),
         .library(name: "BiliApplication", targets: ["BiliApplication"]),
         .library(name: "BiliNetworking", targets: ["BiliNetworking"]),
+        .library(name: "BiliAuth", targets: ["BiliAuth"]),
         .library(name: "BiliAPI", targets: ["BiliAPI"]),
         .library(name: "BiliPlayback", targets: ["BiliPlayback"]),
         .library(name: "BiliGuestFeature", targets: ["BiliGuestFeature"]),
         .executable(name: "BiliAPIProbe", targets: ["BiliAPIProbe"]),
+        .executable(name: "BiliAuthProbe", targets: ["BiliAuthProbe"]),
         .executable(name: "BiliPlaybackProbe", targets: ["BiliPlaybackProbe"]),
     ],
     targets: [
@@ -24,6 +26,10 @@ let package = Package(
             dependencies: ["BiliModels"]
         ),
         .target(name: "BiliNetworking"),
+        .target(
+            name: "BiliAuth",
+            dependencies: ["BiliNetworking"]
+        ),
         .target(
             name: "BiliAPI",
             dependencies: ["BiliApplication", "BiliModels", "BiliNetworking"]
@@ -41,6 +47,10 @@ let package = Package(
             dependencies: ["BiliAPI", "BiliNetworking"]
         ),
         .executableTarget(
+            name: "BiliAuthProbe",
+            dependencies: ["BiliAuth"]
+        ),
+        .executableTarget(
             name: "BiliPlaybackProbe",
             dependencies: ["BiliAPI", "BiliModels", "BiliPlayback"]
         ),
@@ -55,6 +65,13 @@ let package = Package(
         .testTarget(
             name: "BiliNetworkingTests",
             dependencies: ["BiliNetworking"]
+        ),
+        .testTarget(
+            name: "BiliAuthTests",
+            dependencies: ["BiliAuth", "BiliNetworking"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
         .testTarget(
             name: "BiliAPITests",

@@ -10,6 +10,7 @@ public struct HTTPLogRedactor: Sendable {
             "access_token",
             "bili_jct",
             "csrf",
+            "qrcode_key",
             "refresh_token",
             "sessdata",
             "sign",

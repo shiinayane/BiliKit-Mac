@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。热门、WBI 搜索、详情、首分 P、播放、重试和旧结果隔离均已回归。下一阶段是 M3 Web QR 登录与安全凭据，当前版本仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已建立 Web QR 基础状态机、内存二维码探针与秘密扫描，下一步需要人工扫码确认成功/过期契约；当前尚未保存凭据或提供登录 UI，也仍不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -32,6 +32,7 @@ references/                 完全忽略的本地参考项目，不进入 Xcode 
 - `BiliModels`：Domain entity 与稳定的跨模块值类型。
 - `BiliApplication`：游客 Use Case、Repository/Playback port 与应用级错误。
 - `BiliNetworking`：传输抽象、严格 Range 校验、CDN fallback、取消传播和日志脱敏。
+- `BiliAuth`：Web QR 获取/轮询状态机、二维码内存渲染与认证专用 ephemeral transport。
 - `BiliAPI`：游客 endpoint、DTO 映射、WBI 签名与 Repository adapter。
 - `BiliPlayback`：SIDX、DASH→HLS、loopback 媒体代理和播放 adapter。
 - `BiliGuestFeature`：按 Feed、VideoDetail、GuestScene 组织的 SwiftUI View 与 ViewModel。
@@ -77,6 +78,29 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 ```
 
 探针只输出请求路径、HTTP 状态、响应大小、映射后条数和首条结果摘要，不输出签名查询、响应 body 或凭据。当前边界和运行证据见 [M2 游客 API 验证记录](docs/validation/M2-guest-api-2026-07-21.md)。
+
+## 显式运行 Web QR 契约探针
+
+`BiliAuthProbe` 会在内存窗口显示二维码，并每 2 秒轮询一次，最多运行 180 秒。它用于人工确认尚未固定的扫码状态，不会自动进入 CI 或 App target：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcrun swift run \
+  --package-path Packages/BiliKitCore \
+  BiliAuthProbe
+```
+
+只验证生成 endpoint、主机白名单和内存 QR 渲染，不显示二维码或进入轮询：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcrun swift run \
+  --package-path Packages/BiliKitCore \
+  BiliAuthProbe \
+  --generate-only
+```
+
+终端只输出安全状态与二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token。当前实现只接受已经现场确认的 `86101` 未扫码状态；遇到其他状态会失败关闭并输出业务状态码，供下一轮手写脱敏 fixture。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
 
 ## 显式运行真实播放探针
 

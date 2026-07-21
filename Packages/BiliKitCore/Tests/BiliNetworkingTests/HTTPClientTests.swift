@@ -32,7 +32,7 @@ struct HTTPClientTests {
     func redactsSensitiveRequestData() throws {
         let redactor = HTTPLogRedactor()
         let url = try #require(
-            URL(string: "https://example.com/play?bvid=BV1xx&access_key=secret&w_rid=signed")
+            URL(string: "https://example.com/play?bvid=BV1xx&access_key=secret&w_rid=signed&qrcode_key=qr-secret")
         )
 
         let redactedURL = redactor.redact(url: url)
@@ -43,6 +43,7 @@ struct HTTPClientTests {
         #expect(redactedURL.contains("bvid=BV1xx"))
         #expect(!redactedURL.contains("secret"))
         #expect(!redactedURL.contains("signed"))
+        #expect(!redactedURL.contains("qr-secret"))
         #expect(redactedHeaders["Cookie"] == "<redacted>")
         #expect(redactedHeaders["Accept"] == "application/json")
     }
@@ -55,4 +56,3 @@ private struct StubTransport: HTTPTransport {
         response
     }
 }
-

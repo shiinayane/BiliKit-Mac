@@ -20,17 +20,22 @@ check_forbidden_imports \
 
 check_forbidden_imports \
     "Packages/BiliKitCore/Sources/BiliApplication" \
-    '^import (BiliAPI|BiliNetworking|BiliPlayback|BiliGuestFeature|SwiftUI|AVFoundation|AVKit|AppKit|Network)$' \
+    '^import (BiliAPI|BiliAuth|BiliAuthFeature|BiliNetworking|BiliPlayback|BiliGuestFeature|SwiftUI|AVFoundation|AVKit|AppKit|Network)$' \
     "BiliApplication 只能依赖 BiliModels 与标准库"
 
 check_forbidden_imports \
     "Packages/BiliKitCore/Sources/BiliGuestFeature" \
-    '^import (BiliAPI|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
+    '^import (BiliAPI|BiliAuth|BiliAuthFeature|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
     "BiliGuestFeature 不能直接依赖 Data 或 Platform adapter"
 
 check_forbidden_imports \
     "BiliKitMac/App" \
-    '^import (BiliAPI|BiliApplication|BiliModels|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
+    '^import (BiliAPI|BiliApplication|BiliAuth|BiliAuthFeature|BiliModels|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
     "App shell 不能直接依赖 Data、Application 或 Platform 实现"
+
+check_forbidden_imports \
+    "Packages/BiliKitCore/Sources/BiliAuth" \
+    '^import (BiliAPI|BiliPlayback|BiliGuestFeature|SwiftUI|AVFoundation|AVKit|AppKit|Network)$' \
+    "BiliAuth 不能依赖 API、Playback 或 Presentation 实现"
 
 echo "架构依赖边界检查通过"

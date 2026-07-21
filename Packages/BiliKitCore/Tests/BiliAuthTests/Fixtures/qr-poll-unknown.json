@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "url": "TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS",
+    "refresh_token": "TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS",
+    "timestamp": 1700000001,
+    "code": 12345,
+    "message": "TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS"
+  }
+}

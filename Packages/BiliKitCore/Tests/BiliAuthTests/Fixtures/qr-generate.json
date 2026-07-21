@@ -1,0 +1,8 @@
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "url": "https://account.bilibili.com/h5-app/passport/login/scan?fixture=1",
+    "qrcode_key": "FIXTURE_QR_KEY_00000000000000000"
+  }
+}

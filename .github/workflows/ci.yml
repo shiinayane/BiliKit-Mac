@@ -48,6 +48,9 @@ jobs:
       - name: Check architecture boundaries
         run: sh Scripts/check-architecture.sh
 
+      - name: Check repository secrets
+        run: sh Scripts/check-secrets.sh
+
       - name: Test core package
         run: xcrun swift test --package-path Packages/BiliKitCore
 

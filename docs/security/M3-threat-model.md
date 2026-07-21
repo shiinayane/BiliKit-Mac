@@ -14,7 +14,7 @@
 
 | 资产 | 风险 | 处理规则 |
 | --- | --- | --- |
-| `qrcode_key` 与完整二维码 URL | 在有效期内可能代表一次待确认登录会话 | 只存在于认证 adapter 的内存；不进日志、剪贴板、持久化、崩溃附件或 fixture |
+| `qrcode_key` 与完整二维码 URL | 在有效期内可能代表一次待确认登录会话 | key 只存在于认证 adapter；URL 只通过不可读的 `WebQRCode` 交给 Presentation/探针做内存渲染；两者都不进日志、剪贴板、持久化、崩溃附件或 fixture |
 | Web Cookie 值 | 可代表用户会话，并可能包含 CSRF 与网络身份信息 | 只存在于 Keychain 和短生命周期内存快照；绝不进入 UI、Domain、UserDefaults、SwiftData 或测试输出 |
 | `refresh_token` | 可能延长或更新会话 | M3 首版不采集、不存储、不使用；以后实现刷新前必须补充协议证据并修订 ADR |
 | 登录身份与登录状态 | 可关联真实账号和使用行为 | Presentation 只消费显示所需的非秘密身份；诊断不得输出 UID、昵称与请求历史的组合 |
@@ -49,7 +49,7 @@ api.bilibili.com ◀── endpoint 级授权器 ───────┘
 - 二维码请求只允许连接 `https://passport.bilibili.com`。
 - 生成结果中待显示的二维码 URL 当前观察为 `https://account.bilibili.com/...`；实现采用精确 scheme/host 校验，变化时失败关闭并重新审计。
 - Cookie 只允许注入 `https://api.bilibili.com` 上经过显式标记的登录 endpoint。不能使用 `*.bilibili.com` 通配，也不能发往图片、视频 CDN、loopback playback bridge 或重定向后的其他主机。
-- QR 返回 URL 只作为待编码的数据和成功结果的待解析输入；App 不在 WebView/浏览器中自动导航，也不跟随其中的目标。
+- QR 返回 URL 只封装为不可直接读取的 `WebQRCode` 并在内存生成图像；App 不在 WebView/浏览器中自动导航，也不跟随其中的目标。
 
 ## 3. 威胁与控制
 

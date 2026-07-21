@@ -37,7 +37,7 @@ BiliAPI ──→ BiliNetworking.HTTPRequestAuthorizing（可选注入）
 ### Auth adapter
 
 - `BiliAuth` 保存 Web QR DTO/状态映射、轮询 actor、成功结果校验、Keychain store 和凭据 provider。
-- QR key、完整 QR URL、Cookie 和以后可能支持的 refresh token 都是 `BiliAuth` 内部类型，不进入 `BiliModels` 公共实体。
+- QR key、Cookie 和以后可能支持的 refresh token 都是 `BiliAuth` 内部类型，不进入 `BiliModels` 公共实体。完整 QR URL 只封装在 `BiliAuth.WebQRCode` 的不可公开字段中；Presentation/开发探针只能请求在内存生成图像，不能直接读取 URL。
 - 状态机只在最新 generation 的成功结果通过登录态验证后提交 Keychain；取消、过期、协议错误和身份校验失败都会清除临时秘密。
 - M3 首版不实现自动 refresh，也不保存 `refresh_token`。需要刷新时新增证据、测试并修订本 ADR。
 
@@ -70,3 +70,14 @@ BiliAPI ──→ BiliNetworking.HTTPRequestAuthorizing（可选注入）
 正面影响是秘密被限制在一个 adapter 内，游客模式与认证失败解耦，API/Feature 可以使用假 port 独立测试；主机白名单与 endpoint 声明形成双层防误发。代价是认证需要额外 target、专用 transport、Keychain 测试隔离和更显式的 composition。
 
 Web QR 协议仍可能漂移，因此 M3 的契约 fixture、脱敏现场探针和未知状态处理属于产品正确性的一部分，不是一次性研究脚本。
+
+## 首批实现落点
+
+M3 第 2 步已按本决策建立 `BiliAuth` 与 `BiliAuthProbe`：
+
+- 生产构造固定连接 `passport.bilibili.com`，使用独立 ephemeral session，关闭 Cookie store/cache、设置明确请求/资源超时并拒绝重定向。
+- 生成结果只接受 `https://account.bilibili.com` 精确主机；相似后缀主机失败关闭。
+- 当前只接受现场确认的 `86101` 未扫码状态，其他业务状态映射为不包含服务端 message/payload 的安全失败。
+- QR URL 以不可直接读取的 `WebQRCode` 保存，由 Core Image 在内存生成 `CGImage`；探针不写临时图片或打印原始内容。
+- actor 使用 generation 与 poll ID 阻止旧生成/轮询结果覆盖最新意图，并传播 `CancellationError`。
+- 此实现尚未跨过人工扫码 Gate，不包含 Cookie 解析、Keychain 或登录态授权。
