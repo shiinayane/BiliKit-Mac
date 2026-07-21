@@ -1,5 +1,6 @@
 public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case invalidRequest
+    case authorizationRequired
     case transportFailure
     case httpStatus(Int)
     case responseTooLarge(Int)
@@ -17,6 +18,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
         switch self {
         case .invalidRequest:
             "invalid-request"
+        case .authorizationRequired:
+            "authorization-required"
         case .transportFailure:
             "transport-failure"
         case let .httpStatus(status):

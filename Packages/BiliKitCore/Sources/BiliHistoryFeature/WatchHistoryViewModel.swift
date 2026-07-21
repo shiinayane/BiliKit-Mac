@@ -1,0 +1,158 @@
+import BiliApplication
+import BiliModels
+import Foundation
+import Observation
+
+public enum WatchHistoryState: Sendable, Equatable {
+    case idle
+    case loading
+    case loaded(
+        items: [WatchHistoryItem],
+        nextCursor: WatchHistoryCursor?,
+        loadMoreError: WatchHistoryError?
+    )
+    case loadingMore(
+        items: [WatchHistoryItem],
+        cursor: WatchHistoryCursor
+    )
+    case failed(WatchHistoryError)
+}
+
+@MainActor
+@Observable
+public final class WatchHistoryViewModel {
+    public private(set) var state: WatchHistoryState = .idle
+
+    public var requiresAuthentication: Bool {
+        switch state {
+        case .failed(.authenticationRequired),
+             .loaded(_, _, .authenticationRequired):
+            true
+        default:
+            false
+        }
+    }
+
+    @ObservationIgnored private let useCase: WatchHistoryUseCase
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
+
+    public init(useCase: WatchHistoryUseCase) {
+        self.useCase = useCase
+    }
+
+    public func loadIfNeeded() {
+        guard state == .idle else { return }
+        reload()
+    }
+
+    public func reload() {
+        begin(state: .loading) { [weak self] operationGeneration in
+            guard let self else { return }
+            do {
+                let page = try await useCase.load()
+                apply(
+                    .loaded(
+                        items: page.items,
+                        nextCursor: page.nextCursor,
+                        loadMoreError: nil
+                    ),
+                    generation: operationGeneration
+                )
+            } catch is CancellationError {
+                return
+            } catch let error as WatchHistoryError {
+                apply(.failed(error), generation: operationGeneration)
+            } catch {
+                apply(.failed(.transportFailure), generation: operationGeneration)
+            }
+        }
+    }
+
+    public func loadMore() {
+        guard case let .loaded(items, .some(cursor), _) = state else { return }
+        begin(
+            state: .loadingMore(items: items, cursor: cursor),
+            clearExistingTask: false
+        ) { [weak self] operationGeneration in
+            guard let self else { return }
+            do {
+                let page = try await useCase.load(after: cursor)
+                var seen = Set(items.map(\.bvid))
+                let merged = items + page.items.filter {
+                    seen.insert($0.bvid).inserted
+                }
+                apply(
+                    .loaded(
+                        items: merged,
+                        nextCursor: page.nextCursor,
+                        loadMoreError: nil
+                    ),
+                    generation: operationGeneration
+                )
+            } catch is CancellationError {
+                return
+            } catch let error as WatchHistoryError {
+                apply(
+                    .loaded(
+                        items: items,
+                        nextCursor: cursor,
+                        loadMoreError: error
+                    ),
+                    generation: operationGeneration
+                )
+            } catch {
+                apply(
+                    .loaded(
+                        items: items,
+                        nextCursor: cursor,
+                        loadMoreError: .transportFailure
+                    ),
+                    generation: operationGeneration
+                )
+            }
+        }
+    }
+
+    public func reset() {
+        generation += 1
+        task?.cancel()
+        task = nil
+        state = .idle
+    }
+
+    public func cancelTransientWork() {
+        task?.cancel()
+        task = nil
+    }
+
+    public func waitForCurrentTask() async {
+        await task?.value
+    }
+
+    private func begin(
+        state initialState: WatchHistoryState,
+        clearExistingTask: Bool = true,
+        operation: @escaping @MainActor (Int) async -> Void
+    ) {
+        generation += 1
+        let operationGeneration = generation
+        if clearExistingTask {
+            task?.cancel()
+        }
+        state = initialState
+        task = Task { [weak self] in
+            await operation(operationGeneration)
+            guard let self, generation == operationGeneration else { return }
+            task = nil
+        }
+    }
+
+    private func apply(
+        _ nextState: WatchHistoryState,
+        generation operationGeneration: Int
+    ) {
+        guard generation == operationGeneration, !Task.isCancelled else { return }
+        state = nextState
+    }
+}

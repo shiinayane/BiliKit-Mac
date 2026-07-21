@@ -227,6 +227,66 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func historyUsesExplicitAuthorizationAndMapsOnlyPlayableArchives() async throws {
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("history")]
+        )
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+
+        let page = try await client.watchHistory(pageSize: 2)
+
+        #expect(page.items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
+        #expect(page.items[0].progressSeconds == 125)
+        #expect(page.items[1].progressSeconds == 300)
+        #expect(page.items[0].coverURL?.scheme == "https")
+        #expect(page.nextCursor?.maximum == 1_700_000_001)
+
+        let request = try #require(await transport.capturedRequests().first)
+        #expect(request.url.path == "/x/web-interface/history/cursor")
+        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
+        #expect(request.headers["Referer"] == "https://www.bilibili.com/account/history")
+        let query = URLComponents(
+            url: request.url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(query?.contains(URLQueryItem(name: "max", value: "0")) == true)
+        #expect(query?.contains(URLQueryItem(name: "ps", value: "2")) == true)
+        #expect(await authorizer.capturedPaths() == [
+            "/x/web-interface/history/cursor",
+        ])
+    }
+
+    @Test
+    func guestEndpointsNeverRequestCredentialAuthorization() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try fixtureResponse("popular")]
+            ),
+            requestAuthorizer: authorizer
+        )
+
+        _ = try await client.popular(page: 1, pageSize: 20)
+
+        #expect(await authorizer.capturedPaths().isEmpty)
+    }
+
+    @Test
+    func historyFailsClosedBeforeTransportWithoutAuthorizer() async {
+        let transport = RecordingTransport(responses: [])
+        let client = BiliAPIClient(transport: transport)
+
+        await #expect(throws: BiliAPIError.authorizationRequired) {
+            try await client.watchHistory(pageSize: 20)
+        }
+        #expect(await transport.capturedRequests().isEmpty)
+    }
+
+    @Test
     func rejectsHTMLRiskControlPageBeforeDecoding() async {
         let response = HTTPResponse(
             statusCode: 200,
@@ -330,6 +390,26 @@ private actor RecordingTransport: HTTPTransport {
 
     func capturedRequests() -> [HTTPRequest] {
         requests
+    }
+}
+
+private actor RecordingRequestAuthorizer: HTTPRequestAuthorizing {
+    private var paths: [String] = []
+
+    func authorize(_ request: HTTPRequest) -> HTTPRequest {
+        paths.append(request.url.path)
+        var headers = request.headers
+        headers["Cookie"] = "FIXTURE_AUTHORIZED"
+        return HTTPRequest(
+            url: request.url,
+            method: request.method,
+            headers: headers,
+            body: request.body
+        )
+    }
+
+    func capturedPaths() -> [String] {
+        paths
     }
 }
 

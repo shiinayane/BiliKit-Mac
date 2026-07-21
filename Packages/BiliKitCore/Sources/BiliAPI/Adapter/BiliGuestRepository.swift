@@ -62,7 +62,7 @@ public struct BiliGuestRepository: GuestContentRepository {
 private extension BiliAPIError {
     var applicationError: GuestApplicationError {
         switch self {
-        case .invalidRequest:
+        case .invalidRequest, .authorizationRequired:
             .invalidRequest
         case .transportFailure:
             .transportFailure

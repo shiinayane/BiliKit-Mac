@@ -7,29 +7,35 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     private var authorizer: BiliCredentialRequestAuthorizer
     private let loginSessionFactory: @Sendable () -> WebQRLoginSession
     private let authorizerFactory: @Sendable () -> BiliCredentialRequestAuthorizer
+    private let additionalSessionInvalidators: [any AuthenticatedSessionInvalidating]
 
     private var state: AuthenticationState = .signedOut
     private var qrCode: WebQRCode?
     private var generation: UInt64 = 0
     private var requiresLogout = false
 
-    public init() {
+    public init(
+        additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
+    ) {
         loginSession = WebQRLoginSession()
         authorizer = BiliCredentialRequestAuthorizer()
         loginSessionFactory = { WebQRLoginSession() }
         authorizerFactory = { BiliCredentialRequestAuthorizer() }
+        self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 
     init(
         loginSession: WebQRLoginSession,
         authorizer: BiliCredentialRequestAuthorizer,
         loginSessionFactory: @escaping @Sendable () -> WebQRLoginSession,
-        authorizerFactory: @escaping @Sendable () -> BiliCredentialRequestAuthorizer
+        authorizerFactory: @escaping @Sendable () -> BiliCredentialRequestAuthorizer,
+        additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
         self.loginSession = loginSession
         self.authorizer = authorizer
         self.loginSessionFactory = loginSessionFactory
         self.authorizerFactory = authorizerFactory
+        self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 
     public func restore() async -> AuthenticationState {
@@ -169,6 +175,9 @@ public actor BiliAuthenticationService: AuthenticationServicing {
 
         await activeSession.invalidateSession()
         activeAuthorizer.invalidateSession()
+        for invalidator in additionalSessionInvalidators {
+            await invalidator.invalidateAuthenticatedSession()
+        }
         loginSession = loginSessionFactory()
         authorizer = authorizerFactory()
 

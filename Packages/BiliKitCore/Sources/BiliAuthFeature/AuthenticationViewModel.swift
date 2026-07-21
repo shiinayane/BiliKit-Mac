@@ -9,6 +9,10 @@ public final class AuthenticationViewModel {
     public private(set) var state: AuthenticationState = .signedOut
     public private(set) var qrCodeImage: CGImage?
 
+    public var isSignedIn: Bool {
+        state == .signedIn
+    }
+
     public var canCancelFailure: Bool {
         retryAction == .login
     }
@@ -38,6 +42,10 @@ public final class AuthenticationViewModel {
 
     public func restoreIfNeeded() {
         guard state == .signedOut else { return }
+        restore()
+    }
+
+    public func revalidate() {
         restore()
     }
 

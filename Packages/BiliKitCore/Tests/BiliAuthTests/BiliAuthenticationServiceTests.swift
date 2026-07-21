@@ -103,7 +103,10 @@ struct BiliAuthenticationServiceTests {
                     store: store,
                     transport: RecordingAuthTransport()
                 )
-            }
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events),
+            ]
         )
 
         #expect(await service.restore() == .signedIn)
@@ -114,6 +117,7 @@ struct BiliAuthenticationServiceTests {
             "credential-deleted",
             "qr-invalidated",
             "validation-invalidated",
+            "api-invalidated",
         ])
     }
 
@@ -154,7 +158,10 @@ struct BiliAuthenticationServiceTests {
                     store: store,
                     transport: RecordingAuthTransport()
                 )
-            }
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events),
+            ]
         )
 
         #expect(await service.restore() == .signedIn)
@@ -166,6 +173,7 @@ struct BiliAuthenticationServiceTests {
             "credential-delete-failed",
             "qr-invalidated",
             "validation-invalidated",
+            "api-invalidated",
         ])
     }
 
@@ -287,4 +295,18 @@ private final class RecordingInvalidatingTransport: HTTPTransport,
 private enum EventStoreError: Error {
     case unavailable
     case missingResponse
+}
+
+private actor RecordingAuthenticatedSessionInvalidator:
+    AuthenticatedSessionInvalidating
+{
+    private let events: LogoutEventRecorder
+
+    init(events: LogoutEventRecorder) {
+        self.events = events
+    }
+
+    func invalidateAuthenticatedSession() {
+        events.append("api-invalidated")
+    }
 }

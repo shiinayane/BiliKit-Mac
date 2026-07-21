@@ -39,6 +39,11 @@ check_forbidden_imports \
     "BiliAuthFeature 不能依赖业务 adapter、其他 Feature 或平台服务"
 
 check_forbidden_imports \
+    "Packages/BiliKitCore/Sources/BiliHistoryFeature" \
+    '^import (BiliAPI|BiliAuth|BiliAuthFeature|BiliGuestFeature|BiliHistoryFeature|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
+    "BiliHistoryFeature 不能依赖业务 adapter、其他 Feature 或平台服务"
+
+check_forbidden_imports \
     "BiliKitMac/App" \
     '^import (BiliAPI|BiliApplication|BiliAuth|BiliModels|BiliNetworking|BiliPlayback|AVFoundation|AVKit|AppKit|Network)$' \
     "App shell 不能直接依赖 Data、Application 或 Platform 实现"

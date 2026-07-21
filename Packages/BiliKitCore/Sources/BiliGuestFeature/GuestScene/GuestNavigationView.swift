@@ -6,6 +6,7 @@ public struct GuestNavigationView<PlayerContent: View>: View {
     private let feedModel: GuestFeedViewModel
     private let videoModel: GuestVideoViewModel
     private let playerContent: () -> PlayerContent
+    @Binding private var requestedBVID: String?
 
     @State private var selectedSection: GuestSection? = .popular
     @State private var selectedBVID: String?
@@ -16,10 +17,12 @@ public struct GuestNavigationView<PlayerContent: View>: View {
     public init(
         feedModel: GuestFeedViewModel,
         videoModel: GuestVideoViewModel,
+        requestedBVID: Binding<String?> = .constant(nil),
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.feedModel = feedModel
         self.videoModel = videoModel
+        _requestedBVID = requestedBVID
         self.playerContent = playerContent
     }
 
@@ -53,6 +56,15 @@ public struct GuestNavigationView<PlayerContent: View>: View {
         .onChange(of: selectedBVID) { _, bvid in
             guard let bvid else { return }
             videoModel.selectVideo(bvid)
+        }
+        .onChange(of: requestedBVID) { _, bvid in
+            guard let bvid else { return }
+            if selectedBVID == bvid {
+                videoModel.selectVideo(bvid)
+            } else {
+                selectedBVID = bvid
+            }
+            requestedBVID = nil
         }
         .task(id: feedTaskID) {
             let intent = feedTaskID

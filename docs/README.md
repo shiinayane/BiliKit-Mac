@@ -31,3 +31,4 @@
 - [`validation/M3-auth-state-machine-2026-07-21.md`](./validation/M3-auth-state-machine-2026-07-21.md)：Web QR 状态、成功/过期契约与脱敏探针。
 - [`validation/M3-keychain-authorization-2026-07-21.md`](./validation/M3-keychain-authorization-2026-07-21.md)：Keychain envelope、请求授权与未签名环境边界。
 - [`validation/M3-auth-feature-2026-07-21.md`](./validation/M3-auth-feature-2026-07-21.md)：认证 Application/Feature、完整本地登出与最小 UI smoke。
+- [`validation/M3-watch-history-2026-07-21.md`](./validation/M3-watch-history-2026-07-21.md)：观看历史纵向闭环、真实扫码、重启恢复、登出与游客回退。

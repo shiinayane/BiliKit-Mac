@@ -1,6 +1,6 @@
 # M3 Web QR 登录威胁模型
 
-> 状态：M3 认证 Application/Feature 与本地登出自动化基线；首个已登录业务闭环和最终实机验收待完成
+> 状态：M3 安全基线、观看历史只读闭环和当前 macOS 最终实机验收已完成；远程 macOS 15 CI 待本次推送确认
 >
 > 日期：2026-07-21（Asia/Tokyo）
 >
@@ -123,10 +123,13 @@ signedIn
 - 将已经自动覆盖的 Keychain 缺失、损坏、过期、远端失效和临时网络失败语义接入 Application/Feature，确认游客功能始终可用。
 - 完整本地登出已协调取消 Web QR/恢复请求、清内存、删除 Keychain item、失效 session，再发布未登录状态；删除失败不能发布未登录。未登录恢复、二维码显示与取消 UI smoke 已通过。
 
-关闭 M3 前仍须满足：
+以下本地 Gate 已满足：
 
-- 为首个已登录业务 endpoint 接入授权器；当前负向测试已证明 nav 凭据不会发送到 CDN、loopback、非白名单 endpoint 或跨主机重定向。
-- 使用真实扫码完成登录、App 重启恢复、个性化数据读取与界面登出，确认游客链路不受影响且 Keychain 不留残余项。
+- 观看历史 endpoint 已接入精确授权；负向测试证明游客 endpoint、CDN、loopback、非白名单 endpoint 与跨主机重定向不会得到 Cookie。
+- 真实扫码、App 重启恢复、观看历史读取、详情/播放器跳转与界面登出已通过；第二次重启保持未登录，未登录历史入口回退账号 sheet。
+- 历史 sheet 关闭与登出会取消任务并清空个性化列表；验证记录不包含账号身份、历史标题、BVID 或秘密值。
+
+远程 macOS 15 CI 仍须通过本次新增的 Package、架构、秘密扫描与 App 无签名构建，M3 跨环境 Gate 才全部关闭。完整记录见 [`../validation/M3-watch-history-2026-07-21.md`](../validation/M3-watch-history-2026-07-21.md)。
 
 ## 7. 剩余风险
 

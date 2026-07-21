@@ -143,14 +143,51 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         ) else {
             return false
         }
-        return components.scheme?.lowercased() == "https"
+        guard components.scheme?.lowercased() == "https"
             && components.host?.lowercased() == "api.bilibili.com"
             && (components.port == nil || components.port == 443)
             && components.user == nil
             && components.password == nil
             && components.fragment == nil
-            && components.path == "/x/web-interface/nav"
             && request.method == .get
+        else {
+            return false
+        }
+        switch components.path {
+        case "/x/web-interface/nav":
+            return components.queryItems?.isEmpty != false
+        case "/x/web-interface/history/cursor":
+            return isAllowedHistoryQuery(components.queryItems)
+        default:
+            return false
+        }
+    }
+
+    private static func isAllowedHistoryQuery(
+        _ queryItems: [URLQueryItem]?
+    ) -> Bool {
+        guard let queryItems, queryItems.count == 4 else { return false }
+        var values: [String: String] = [:]
+        for item in queryItems {
+            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
+                return false
+            }
+        }
+        guard values.count == 4,
+              Set(values.keys) == ["max", "view_at", "business", "ps"],
+              let maximum = values["max"].flatMap(Int64.init),
+              let viewedAt = values["view_at"].flatMap(Int64.init),
+              let pageSize = values["ps"].flatMap(Int.init),
+              maximum >= 0,
+              viewedAt >= 0,
+              (1...50).contains(pageSize),
+              let business = values["business"],
+              business.count <= 64,
+              business.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
+        else {
+            return false
+        }
+        return true
     }
 
     private func purgeStoredCredential() throws {

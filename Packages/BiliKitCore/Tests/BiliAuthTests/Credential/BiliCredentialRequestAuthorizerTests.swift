@@ -21,6 +21,16 @@ struct BiliCredentialRequestAuthorizerTests {
 
         #expect(authorized.headers["Accept"] == "application/json")
         #expect(authorized.headers["Cookie"] == credential.cookieHeader)
+
+        let historyRequest = HTTPRequest(
+            url: try #require(
+                URL(
+                    string: "https://api.bilibili.com/x/web-interface/history/cursor?max=0&view_at=0&business=&ps=20"
+                )
+            )
+        )
+        let authorizedHistory = try await authorizer.authorize(historyRequest)
+        #expect(authorizedHistory.headers["Cookie"] == credential.cookieHeader)
     }
 
     @Test
@@ -33,6 +43,10 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://i0.hdslb.com/x/web-interface/nav", .get),
             ("http://127.0.0.1:8080/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/popular", .get),
+            ("https://api.bilibili.com/x/web-interface/nav?extra=1", .get),
+            ("https://api.bilibili.com/x/web-interface/history/cursor?ps=20", .get),
+            ("https://api.bilibili.com/x/web-interface/history/cursor?max=0&view_at=0&business=&ps=20&extra=1", .get),
+            ("https://api.bilibili.com/x/web-interface/history/cursor?max=-1&view_at=0&business=&ps=20", .get),
             ("https://api.bilibili.com/x/web-interface/nav", .post),
             ("https://user@api.bilibili.com/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/nav#fragment", .get),

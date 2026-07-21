@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
@@ -10,14 +11,26 @@ public protocol BiliAPIService: Sendable {
     func playback(for bvid: String, cid: Int64, quality: Int) async throws -> VideoPlayback
 }
 
-public actor BiliAPIClient: BiliAPIService {
+public protocol BiliWatchHistoryService: Sendable {
+    func watchHistory(
+        after cursor: WatchHistoryCursor?,
+        pageSize: Int
+    ) async throws -> WatchHistoryPage
+}
+
+public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
+    AuthenticatedSessionInvalidating
+{
     public static let productionBaseURL = URL(
         string: "https://api.bilibili.com"
     )!
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
 
-    private let httpClient: HTTPClient
+    private var httpClient: HTTPClient
+    private var transport: any HTTPTransport
+    private let transportFactory: (@Sendable () -> any HTTPTransport)?
+    private let requestAuthorizer: (any HTTPRequestAuthorizing)?
     private let baseURL: URL
     private let userAgent: String
     private let decoder: JSONDecoder
@@ -27,13 +40,19 @@ public actor BiliAPIClient: BiliAPIService {
 
     public init(
         transport: any HTTPTransport = URLSessionTransport(),
+        requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
+        transportFactory: (@Sendable () -> any HTTPTransport)? = nil,
         baseURL: URL = BiliAPIClient.productionBaseURL,
         userAgent: String = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
     ) {
-        httpClient = HTTPClient(transport: transport)
+        let activeTransport = transportFactory?() ?? transport
+        self.transport = activeTransport
+        httpClient = HTTPClient(transport: activeTransport)
+        self.transportFactory = transportFactory
+        self.requestAuthorizer = requestAuthorizer
         self.baseURL = baseURL
         self.userAgent = userAgent
         self.timestampProvider = timestampProvider
@@ -155,13 +174,56 @@ public actor BiliAPIClient: BiliAPIService {
         )
     }
 
+    public func watchHistory(
+        after cursor: WatchHistoryCursor? = nil,
+        pageSize: Int = 20
+    ) async throws -> WatchHistoryPage {
+        guard (1...50).contains(pageSize) else {
+            throw BiliAPIError.invalidRequest
+        }
+        let cursor = cursor ?? WatchHistoryCursor(
+            maximum: 0,
+            viewedAt: 0,
+            business: ""
+        )
+        let payload: WatchHistoryPayload = try await get(
+            path: "/x/web-interface/history/cursor",
+            queryItems: [
+                URLQueryItem(name: "max", value: String(cursor.maximum)),
+                URLQueryItem(name: "view_at", value: String(cursor.viewedAt)),
+                URLQueryItem(name: "business", value: cursor.business),
+                URLQueryItem(name: "ps", value: String(pageSize)),
+            ],
+            referer: "https://www.bilibili.com/account/history",
+            requiresAuthentication: true
+        )
+        return try payload.model(pageSize: pageSize)
+    }
+
+    public func invalidateAuthenticatedSession() {
+        if let invalidating = transport as? any HTTPTransportInvalidating {
+            invalidating.invalidateAndCancel()
+        }
+        if let transportFactory {
+            let replacement = transportFactory()
+            transport = replacement
+            httpClient = HTTPClient(transport: replacement)
+        }
+        cachedWBIKey = nil
+    }
+
     private func get<Payload: Decodable & Sendable>(
         path: String,
         queryItems: [URLQueryItem],
-        referer: String
+        referer: String,
+        requiresAuthentication: Bool = false
     ) async throws -> Payload {
         let url = try endpoint(path: path, queryItems: queryItems)
-        return try await get(url: url, referer: referer)
+        return try await get(
+            url: url,
+            referer: referer,
+            requiresAuthentication: requiresAuthentication
+        )
     }
 
     private func get<Payload: Decodable & Sendable>(
@@ -178,9 +240,14 @@ public actor BiliAPIClient: BiliAPIService {
 
     private func get<Payload: Decodable & Sendable>(
         url: URL,
-        referer: String
+        referer: String,
+        requiresAuthentication: Bool = false
     ) async throws -> Payload {
-        let response = try await response(url: url, referer: referer)
+        let response = try await response(
+            url: url,
+            referer: referer,
+            requiresAuthentication: requiresAuthentication
+        )
 
         let status: APIStatusEnvelope
         do {
@@ -206,8 +273,12 @@ public actor BiliAPIClient: BiliAPIService {
         return payload
     }
 
-    private func response(url: URL, referer: String) async throws -> HTTPResponse {
-        let request = HTTPRequest(
+    private func response(
+        url: URL,
+        referer: String,
+        requiresAuthentication: Bool = false
+    ) async throws -> HTTPResponse {
+        let baseRequest = HTTPRequest(
             url: url,
             headers: [
                 "Accept": "application/json",
@@ -215,6 +286,21 @@ public actor BiliAPIClient: BiliAPIService {
                 "User-Agent": userAgent,
             ]
         )
+        let request: HTTPRequest
+        if requiresAuthentication {
+            guard let requestAuthorizer else {
+                throw BiliAPIError.authorizationRequired
+            }
+            do {
+                request = try await requestAuthorizer.authorize(baseRequest)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw BiliAPIError.authorizationRequired
+            }
+        } else {
+            request = baseRequest
+        }
 
         let response: HTTPResponse
         do {

@@ -29,3 +29,7 @@ public protocol AuthenticationServicing: Sendable {
     func cancelLogin() async -> AuthenticationState
     func logout() async -> AuthenticationState
 }
+
+public protocol AuthenticatedSessionInvalidating: Sendable {
+    func invalidateAuthenticatedSession() async
+}

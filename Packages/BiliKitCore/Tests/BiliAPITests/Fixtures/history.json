@@ -1,0 +1,57 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "cursor": {
+      "max": 1700000001,
+      "view_at": 1700000000,
+      "business": "archive",
+      "ps": 2
+    },
+    "list": [
+      {
+        "title": "手写历史视频甲",
+        "cover": "//i0.hdslb.com/bfs/archive/FIXTURE_HISTORY_A.jpg",
+        "author_name": "测试作者甲",
+        "author_face": "//i1.hdslb.com/bfs/face/FIXTURE_HISTORY_AUTHOR_A.jpg",
+        "author_mid": 10001,
+        "view_at": 1700000200,
+        "progress": 125,
+        "duration": 600,
+        "history": {
+          "bvid": "BV1HistoryA1",
+          "business": "archive"
+        }
+      },
+      {
+        "title": "非普通视频条目",
+        "cover": "//i0.hdslb.com/bfs/archive/FIXTURE_HISTORY_PGC.jpg",
+        "author_name": "测试剧集",
+        "author_face": null,
+        "author_mid": 0,
+        "view_at": 1700000100,
+        "progress": 20,
+        "duration": 1200,
+        "history": {
+          "bvid": null,
+          "business": "pgc"
+        }
+      },
+      {
+        "title": "手写历史视频乙",
+        "cover": "https://i0.hdslb.com/bfs/archive/FIXTURE_HISTORY_B.jpg",
+        "author_name": "测试作者乙",
+        "author_face": null,
+        "author_mid": 10002,
+        "view_at": 1700000000,
+        "progress": -1,
+        "duration": 300,
+        "history": {
+          "bvid": "BV1HistoryB2",
+          "business": "archive"
+        }
+      }
+    ]
+  }
+}

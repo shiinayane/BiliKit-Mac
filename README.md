@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已完成 Web QR 契约、版本化 Keychain envelope、精确 endpoint 请求授权、凭据恢复、签名 App 的真实 Data Protection Keychain 往返，以及登录 Feature 与完整本地登出自动化；尚缺一个个性化纵向闭环和最终登录/重启/登出实机验收，因此仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环和 M2.5 架构整理已经完成。游客功能采用 Feature 级 MVVM：`BiliGuestFeature` 只依赖 Application/Domain，`BiliAPI` 与 `BiliPlayback` 通过 port 接入，App target 只负责依赖组装和 macOS 播放器宿主。M3 已完成 Web QR、版本化 Keychain envelope、精确 endpoint 请求授权、登录 Feature、观看历史纵向闭环，以及真实扫码、重启恢复和界面登出本地验收；跨环境 Gate 仍以本次推送后的 macOS 15 CI 为准，项目尚不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -34,7 +34,8 @@ references/                 完全忽略的本地参考项目，不进入 Xcode 
 - `BiliNetworking`：传输抽象、无业务语义的请求授权协议、重定向策略、严格 Range 校验、CDN fallback、取消传播和日志脱敏。
 - `BiliAuth`：Web QR 状态机、版本化凭据、Data Protection Keychain adapter、精确请求授权器与认证专用 ephemeral transport。
 - `BiliAuthFeature`：账号 sheet、内存二维码展示与拥有轮询 Task/代次的认证 ViewModel。
-- `BiliAPI`：游客 endpoint、DTO 映射、WBI 签名与 Repository adapter。
+- `BiliHistoryFeature`：观看历史 sheet，以及拥有分页、取消、旧结果隔离和内存清理的 ViewModel。
+- `BiliAPI`：游客/观看历史 endpoint、DTO 映射、WBI 签名与 Repository adapter。
 - `BiliPlayback`：SIDX、DASH→HLS、loopback 媒体代理和播放 adapter。
 - `BiliGuestFeature`：按 Feed、VideoDetail、GuestScene 组织的 SwiftUI View 与 ViewModel。
 

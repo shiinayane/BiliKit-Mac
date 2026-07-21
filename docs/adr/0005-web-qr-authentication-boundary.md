@@ -118,4 +118,4 @@ M3 第 5 步已经按本决策接入真实 App：
 - App composition root 创建唯一认证服务并注入账号 sheet，不让游客 Feature、播放器或 App shell 持有认证材料。
 - 登出依次取消认证任务、清除二维码、删除 Keychain item、失效 Web QR 与授权 session、重建空 session，最后发布未登录。若 Keychain 删除失败，则保持安全错误且后续取消也不能伪装成已退出。
 
-自动化与当前 macOS 的未登录/二维码/取消 UI smoke 证据见 [`../validation/M3-auth-feature-2026-07-21.md`](../validation/M3-auth-feature-2026-07-21.md)。真实扫码、重启恢复与界面登出留到首个已登录业务闭环完成后一起验收。
+自动化与当前 macOS 的未登录/二维码/取消 UI smoke 证据见 [`../validation/M3-auth-feature-2026-07-21.md`](../validation/M3-auth-feature-2026-07-21.md)。观看历史 endpoint 已按同一授权边界接入；真实扫码、重启恢复、个性化读取与界面登出证据见 [`../validation/M3-watch-history-2026-07-21.md`](../validation/M3-watch-history-2026-07-21.md)。
