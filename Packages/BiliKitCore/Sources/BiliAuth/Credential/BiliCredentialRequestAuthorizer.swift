@@ -16,10 +16,13 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
 
     private let store: any WebCredentialStoring
     private let httpClient: HTTPClient
+    private let transportInvalidator: (@Sendable () -> Void)?
 
     public init() {
+        let transport = Self.makeProductionTransport()
         store = KeychainWebCredentialStore()
-        httpClient = HTTPClient(transport: Self.makeProductionTransport())
+        httpClient = HTTPClient(transport: transport)
+        transportInvalidator = { transport.invalidateAndCancel() }
     }
 
     init(
@@ -28,6 +31,11 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     ) {
         self.store = store
         httpClient = HTTPClient(transport: transport)
+        if let invalidating = transport as? any HTTPTransportInvalidating {
+            transportInvalidator = { invalidating.invalidateAndCancel() }
+        } else {
+            transportInvalidator = nil
+        }
     }
 
     public func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
@@ -76,6 +84,10 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         } catch {
             throw BiliRequestAuthorizationError.credentialStoreUnavailable
         }
+    }
+
+    public func invalidateSession() {
+        transportInvalidator?()
     }
 
     public func restoreLoginState() async throws -> Bool {

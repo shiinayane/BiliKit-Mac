@@ -44,6 +44,10 @@ public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
+public protocol HTTPTransportInvalidating: Sendable {
+    func invalidateAndCancel()
+}
+
 public enum HTTPClientError: Error, Sendable, Equatable {
     case nonHTTPResponse
     case unacceptableStatusCode(Int)
@@ -68,7 +72,9 @@ public actor HTTPClient {
     }
 }
 
-public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
+public final class URLSessionTransport: HTTPTransport, HTTPTransportInvalidating,
+    @unchecked Sendable
+{
     private let session: URLSession
 
     public init(session: URLSession = .shared) {
@@ -119,6 +125,10 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
             headers: headers,
             body: data
         )
+    }
+
+    public func invalidateAndCancel() {
+        session.invalidateAndCancel()
     }
 }
 

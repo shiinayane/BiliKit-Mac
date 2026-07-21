@@ -1,3 +1,5 @@
+import BiliApplication
+import BiliAuthFeature
 import BiliGuestFeature
 import Testing
 @testable import BiliKit
@@ -10,8 +12,10 @@ struct BiliKitMacTests {
 
         let feedModel = environment.makeFeedViewModel()
         let videoModel = environment.makeVideoViewModel()
+        let authenticationModel = environment.makeAuthenticationViewModel()
 
         #expect(feedModel.state == .idle)
         #expect(videoModel.state == .idle)
+        #expect(authenticationModel.state == .signedOut)
     }
 }

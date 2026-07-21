@@ -14,6 +14,7 @@ public actor WebQRLoginSession {
     private let httpClient: HTTPClient
     private let baseURL: URL
     private let credentialStore: any WebCredentialStoring
+    private let transportInvalidator: (@Sendable () -> Void)?
     private let decoder = JSONDecoder()
     private var generation: UInt64 = 0
     private var activeChallenge: ActiveChallenge?
@@ -21,9 +22,11 @@ public actor WebQRLoginSession {
     private var latestPollID: UInt64 = 0
 
     public init() {
-        httpClient = HTTPClient(transport: Self.makeProductionTransport())
+        let transport = Self.makeProductionTransport()
+        httpClient = HTTPClient(transport: transport)
         baseURL = Self.productionBaseURL
         credentialStore = KeychainWebCredentialStore()
+        transportInvalidator = { transport.invalidateAndCancel() }
     }
 
     init(
@@ -34,6 +37,11 @@ public actor WebQRLoginSession {
         httpClient = HTTPClient(transport: transport)
         self.baseURL = baseURL
         self.credentialStore = credentialStore
+        if let invalidating = transport as? any HTTPTransportInvalidating {
+            transportInvalidator = { invalidating.invalidateAndCancel() }
+        } else {
+            transportInvalidator = nil
+        }
     }
 
     @discardableResult
@@ -179,6 +187,11 @@ public actor WebQRLoginSession {
         activeChallenge = nil
         pendingCredential = nil
         state = .signedOut
+    }
+
+    public func invalidateSession() {
+        cancel()
+        transportInvalidator?()
     }
 
     public func validatePendingCredential() async throws -> Bool {

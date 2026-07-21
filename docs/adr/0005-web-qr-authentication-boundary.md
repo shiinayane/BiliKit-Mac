@@ -106,4 +106,16 @@ M3 第 4 步的代码与自动化边界已经落地：
 - 恢复入口重新请求 nav；远端明确失效时清理，本地缺失/损坏/过期时回退未登录，临时网络失败不误删。
 - 认证 transport 拒绝 HTTP 重定向；授权器还会独立拒绝 HTTP、相似主机、CDN、loopback、错误 path/method、userinfo、fragment 和调用方预置 Cookie。
 
-当前未签名 SwiftPM 测试进程直接执行 Data Protection Keychain SecItem 往返时返回 unavailable；该安全错误同时覆盖系统的 missing-entitlement 与 not-available 状态，因此本记录不进一步猜测具体 OSStatus。自动测试通过注入的窄 SecItem 后端验证完整查询和状态映射；真实 Security.framework 往返必须在后续具备正确签名/entitlement 的 App smoke 中单独完成，不能由模拟结果替代。
+第 4 步实现期间，未签名 SwiftPM 测试进程直接执行 Data Protection Keychain SecItem 往返时返回 unavailable；该安全错误同时覆盖系统的 missing-entitlement 与 not-available 状态，因此本记录不进一步猜测具体 OSStatus。自动测试通过注入的窄 SecItem 后端验证完整查询和状态映射；随后签名 App smoke 已使用隔离的测试 service/account 完成真实 Security.framework add/update/read/delete 与无残留确认，证据见 [`../validation/M3-keychain-authorization-2026-07-21.md`](../validation/M3-keychain-authorization-2026-07-21.md)。
+
+## Application/Feature 与登出实现落点
+
+M3 第 5 步已经按本决策接入真实 App：
+
+- `BiliApplication` 只公开非秘密认证状态与 `AuthenticationServicing` 用户意图 port；Cookie、QR key、完整 QR URL、Keychain 类型和 endpoint DTO 均未越过 adapter 边界。
+- `BiliAuthenticationService` actor 将现有 Web QR session 与请求授权器编排为恢复、请求二维码、单次轮询、最终提交、取消和登出；Feature 只取得进程内二维码图像投影。
+- `BiliAuthFeature` 只依赖 Application；`@MainActor` ViewModel 拥有两秒轮询 Task 与界面代次，旧任务、取消或新登录意图不能覆盖当前状态。
+- App composition root 创建唯一认证服务并注入账号 sheet，不让游客 Feature、播放器或 App shell 持有认证材料。
+- 登出依次取消认证任务、清除二维码、删除 Keychain item、失效 Web QR 与授权 session、重建空 session，最后发布未登录。若 Keychain 删除失败，则保持安全错误且后续取消也不能伪装成已退出。
+
+自动化与当前 macOS 的未登录/二维码/取消 UI smoke 证据见 [`../validation/M3-auth-feature-2026-07-21.md`](../validation/M3-auth-feature-2026-07-21.md)。真实扫码、重启恢复与界面登出留到首个已登录业务闭环完成后一起验收。

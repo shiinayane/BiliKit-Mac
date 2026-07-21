@@ -12,6 +12,9 @@
 		A10000000000000000000005 /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
 		A10000000000000000000006 /* BiliGuestFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* BiliGuestFeature */; };
 		A10000000000000000000007 /* BiliAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* BiliAuth */; };
+		A10000000000000000000008 /* BiliAuth in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000017 /* BiliAuth */; };
+		A10000000000000000000009 /* BiliAuthFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000018 /* BiliAuthFeature */; };
+		A1000000000000000000000A /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +68,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000009 /* BiliAuthFeature in Frameworks */,
+				A10000000000000000000008 /* BiliAuth in Frameworks */,
 				A10000000000000000000006 /* BiliGuestFeature in Frameworks */,
 				A10000000000000000000005 /* BiliApplication in Frameworks */,
 				A10000000000000000000004 /* BiliAPI in Frameworks */,
@@ -76,6 +81,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000000A /* BiliApplication in Frameworks */,
 				A10000000000000000000007 /* BiliAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,6 +138,8 @@
 			name = BiliKitMac;
 			packageProductDependencies = (
 				A10000000000000000000015 /* BiliApplication */,
+				A10000000000000000000017 /* BiliAuth */,
+				A10000000000000000000018 /* BiliAuthFeature */,
 				A10000000000000000000016 /* BiliGuestFeature */,
 				A10000000000000000000013 /* BiliPlayback */,
 				A10000000000000000000014 /* BiliAPI */,
@@ -158,6 +166,7 @@
 			);
 			name = BiliKitMacTests;
 			packageProductDependencies = (
+				A10000000000000000000015 /* BiliApplication */,
 				A10000000000000000000017 /* BiliAuth */,
 			);
 			productName = BiliKitMacTests;
@@ -639,6 +648,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliAuth;
+		};
+		A10000000000000000000018 /* BiliAuthFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
+			productName = BiliAuthFeature;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

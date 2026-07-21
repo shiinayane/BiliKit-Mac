@@ -519,7 +519,7 @@ struct WebQRLoginSessionTests {
     }
 }
 
-private actor RecordingAuthTransport: HTTPTransport {
+actor RecordingAuthTransport: HTTPTransport {
     private var queuedResponses: [HTTPResponse]
     private var queuedErrors: [any Error]
     private(set) var requests: [HTTPRequest] = []
@@ -666,7 +666,7 @@ private enum FixtureCredentialStoreError: Error {
     case unavailable
 }
 
-private let fixtureSetCookieHeader = [
+let fixtureSetCookieHeader = [
     "DedeUserID=FIXTURE_USER_ID_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
     "DedeUserID__ckMd5=FIXTURE_USER_HASH_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
     "SESSDATA=FIXTURE_SESSDATA_VALUE; Domain=.bilibili.com; Path=/; Secure; HttpOnly; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
@@ -675,7 +675,7 @@ private let fixtureSetCookieHeader = [
     "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
 ].joined(separator: ", ")
 
-private func fixtureResponse(
+func fixtureResponse(
     _ name: String,
     headers: [String: String] = ["Content-Type": "application/json"]
 ) throws -> HTTPResponse {
