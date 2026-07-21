@@ -4,6 +4,7 @@ import Foundation
 
 public protocol BiliAPIService: Sendable {
     func popular(page: Int, pageSize: Int) async throws -> PopularPage
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage
     func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64, quality: Int) async throws -> VideoPlayback
@@ -20,15 +21,22 @@ public actor BiliAPIClient: BiliAPIService {
     private let baseURL: URL
     private let userAgent: String
     private let decoder: JSONDecoder
+    private let timestampProvider: @Sendable () -> Int64
+    private let wbiSigner = WBISigner()
+    private var cachedWBIKey: CachedWBIKey?
 
     public init(
         transport: any HTTPTransport = URLSessionTransport(),
         baseURL: URL = BiliAPIClient.productionBaseURL,
-        userAgent: String = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1"
+        userAgent: String = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
+        timestampProvider: @escaping @Sendable () -> Int64 = {
+            Int64(Date().timeIntervalSince1970)
+        }
     ) {
         httpClient = HTTPClient(transport: transport)
         self.baseURL = baseURL
         self.userAgent = userAgent
+        self.timestampProvider = timestampProvider
         decoder = JSONDecoder()
     }
 
@@ -49,6 +57,31 @@ public actor BiliAPIClient: BiliAPIService {
         )
         let videos = try payload.list.map { try $0.model() }
         return PopularPage(videos: videos, pageNumber: page, pageSize: pageSize)
+    }
+
+    public func searchVideos(
+        keyword: String,
+        page: Int = 1
+    ) async throws -> SearchPage {
+        let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedKeyword.isEmpty,
+              normalizedKeyword.count <= 100,
+              page > 0
+        else {
+            throw BiliAPIError.invalidRequest
+        }
+        let parameters = [
+            "keyword": normalizedKeyword,
+            "page": String(page),
+            "search_type": "video",
+        ]
+        do {
+            return try await signedSearch(parameters: parameters, forceKeyRefresh: false)
+        } catch let BiliAPIError.apiRejected(code, _) where code == -403 {
+            return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
+        } catch BiliAPIError.httpStatus(403) {
+            return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
+        }
     }
 
     public func videoDetail(for bvid: String) async throws -> VideoDetail {
@@ -128,6 +161,52 @@ public actor BiliAPIClient: BiliAPIService {
         referer: String
     ) async throws -> Payload {
         let url = try endpoint(path: path, queryItems: queryItems)
+        return try await get(url: url, referer: referer)
+    }
+
+    private func get<Payload: Decodable & Sendable>(
+        path: String,
+        percentEncodedQuery: String,
+        referer: String
+    ) async throws -> Payload {
+        let url = try endpoint(
+            path: path,
+            percentEncodedQuery: percentEncodedQuery
+        )
+        return try await get(url: url, referer: referer)
+    }
+
+    private func get<Payload: Decodable & Sendable>(
+        url: URL,
+        referer: String
+    ) async throws -> Payload {
+        let response = try await response(url: url, referer: referer)
+
+        let status: APIStatusEnvelope
+        do {
+            status = try decoder.decode(APIStatusEnvelope.self, from: response.body)
+        } catch {
+            throw BiliAPIError.decodingFailed
+        }
+        guard status.code == 0 else {
+            throw BiliAPIError.apiRejected(
+                code: status.code,
+                message: status.message ?? ""
+            )
+        }
+        let envelope: APIEnvelope<Payload>
+        do {
+            envelope = try decoder.decode(APIEnvelope<Payload>.self, from: response.body)
+        } catch {
+            throw BiliAPIError.decodingFailed
+        }
+        guard let payload = envelope.data else {
+            throw BiliAPIError.missingData
+        }
+        return payload
+    }
+
+    private func response(url: URL, referer: String) async throws -> HTTPResponse {
         let request = HTTPRequest(
             url: url,
             headers: [
@@ -159,29 +238,58 @@ public actor BiliAPIClient: BiliAPIService {
         guard Self.looksLikeJSON(response) else {
             throw BiliAPIError.nonJSONResponse
         }
+        return response
+    }
 
-        let status: APIStatusEnvelope
-        do {
-            status = try decoder.decode(APIStatusEnvelope.self, from: response.body)
-        } catch {
-            throw BiliAPIError.decodingFailed
+    private func signedSearch(
+        parameters: [String: String],
+        forceKeyRefresh: Bool
+    ) async throws -> SearchPage {
+        let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        let query = try wbiSigner.sign(
+            parameters: parameters,
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let payload: SearchPayload = try await get(
+            path: "/x/web-interface/wbi/search/type",
+            percentEncodedQuery: query,
+            referer: "https://www.bilibili.com/"
+        )
+        return try payload.model()
+    }
+
+    private func wbiKey(forceRefresh: Bool) async throws -> WBIKeyMaterial {
+        let currentDay = timestampProvider() / 86_400
+        if forceRefresh {
+            cachedWBIKey = nil
+        } else if let cachedWBIKey, cachedWBIKey.day == currentDay {
+            return cachedWBIKey.key
         }
-        guard status.code == 0 else {
-            throw BiliAPIError.apiRejected(
-                code: status.code,
-                message: status.message ?? ""
+
+        let url = try endpoint(path: "/x/web-interface/nav", queryItems: [])
+        let response = try await response(
+            url: url,
+            referer: "https://www.bilibili.com/"
+        )
+        let envelope: APIEnvelope<NavigationPayload>
+        do {
+            envelope = try decoder.decode(
+                APIEnvelope<NavigationPayload>.self,
+                from: response.body
             )
-        }
-        let envelope: APIEnvelope<Payload>
-        do {
-            envelope = try decoder.decode(APIEnvelope<Payload>.self, from: response.body)
         } catch {
             throw BiliAPIError.decodingFailed
         }
-        guard let payload = envelope.data else {
-            throw BiliAPIError.missingData
+        guard let image = envelope.data?.wbiImage else {
+            throw BiliAPIError.invalidWBIKey
         }
-        return payload
+        let key = try WBIKeyMaterial(
+            imageURL: image.imageURL,
+            subURL: image.subURL
+        )
+        cachedWBIKey = CachedWBIKey(key: key, day: currentDay)
+        return key
     }
 
     private func endpoint(
@@ -196,6 +304,24 @@ public actor BiliAPIClient: BiliAPIService {
         }
         components.path = path
         components.queryItems = queryItems
+        guard let url = components.url else {
+            throw BiliAPIError.invalidRequest
+        }
+        return url
+    }
+
+    private func endpoint(
+        path: String,
+        percentEncodedQuery: String
+    ) throws -> URL {
+        guard var components = URLComponents(
+            url: baseURL,
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw BiliAPIError.invalidRequest
+        }
+        components.path = path
+        components.percentEncodedQuery = percentEncodedQuery
         guard let url = components.url else {
             throw BiliAPIError.invalidRequest
         }
@@ -226,6 +352,11 @@ public actor BiliAPIClient: BiliAPIService {
         }
         return firstByte == 0x7B || firstByte == 0x5B
     }
+}
+
+private struct CachedWBIKey: Sendable {
+    let key: WBIKeyMaterial
+    let day: Int64
 }
 
 private struct APIStatusEnvelope: Decodable, Sendable {

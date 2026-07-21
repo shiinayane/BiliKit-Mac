@@ -1,0 +1,54 @@
+{
+  "code": 0,
+  "message": "OK",
+  "ttl": 1,
+  "data": {
+    "page": 1,
+    "pagesize": 20,
+    "numResults": 3,
+    "numPages": 1,
+    "result": [
+      {
+        "type": "video",
+        "bvid": "BV1SearchA01",
+        "title": "学习<em class=\"keyword\">macOS</em> 的第一步",
+        "description": "手写的脱敏搜索结果。",
+        "pic": "//images.example.invalid/search-a.jpg",
+        "author": "测试作者甲",
+        "mid": 20001,
+        "upic": "//images.example.invalid/search-avatar-a.jpg",
+        "duration": "01:02:03",
+        "pubdate": 1720000000,
+        "play": 1234,
+        "danmaku": 56,
+        "like": 789
+      },
+      {
+        "type": "video",
+        "bvid": "BV1SearchB02",
+        "title": "第二个<em class=\"keyword\">macOS</em>样本",
+        "description": "另一个手写结果。",
+        "pic": "https://images.example.invalid/search-b.jpg",
+        "author": "测试作者乙",
+        "mid": 20002,
+        "duration": "12:34",
+        "pubdate": 1720003600,
+        "play": 5678,
+        "danmaku": 90
+      },
+      {
+        "type": "video",
+        "bvid": "",
+        "title": "没有 BV 标识的混入项",
+        "description": "该项会被映射层过滤。",
+        "pic": "https://images.example.invalid/search-invalid.jpg",
+        "author": "测试作者丙",
+        "mid": 20003,
+        "duration": "00:30",
+        "pubdate": 1720007200,
+        "play": 1,
+        "danmaku": 0
+      }
+    ]
+  }
+}

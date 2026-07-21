@@ -7,6 +7,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case decodingFailed
     case apiRejected(code: Int, message: String)
     case missingData
+    case invalidWBIKey
+    case signingFailed
     case invalidMediaData
     case noAVCVideo
     case noAACAudio
@@ -29,6 +31,10 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "api-rejected-\(code)"
         case .missingData:
             "missing-data"
+        case .invalidWBIKey:
+            "invalid-wbi-key"
+        case .signingFailed:
+            "signing-failed"
         case .invalidMediaData:
             "invalid-media-data"
         case .noAVCVideo:

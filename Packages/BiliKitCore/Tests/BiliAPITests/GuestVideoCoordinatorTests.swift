@@ -62,6 +62,16 @@ private actor GuestAPIStub: BiliAPIService {
         PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
     }
 
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
     func videoDetail(for bvid: String) async throws -> VideoDetail {
         await delay(for: bvid)
         return makeDetail(bvid: bvid)

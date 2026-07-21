@@ -63,6 +63,136 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func searchUsesWBIAndNormalizesEndpointQuirks() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        let page = try await client.searchVideos(
+            keyword: " macOS !'()* 测试 ",
+            page: 1
+        )
+
+        #expect(page.totalResults == 3)
+        #expect(page.videos.count == 2)
+        #expect(page.videos[0].title == "学习macOS 的第一步")
+        #expect(page.videos[0].durationSeconds == 3_723)
+        #expect(page.videos[0].coverURL?.scheme == "https")
+        #expect(page.videos[1].durationSeconds == 754)
+
+        let requests = await transport.capturedRequests()
+        #expect(requests.map(\.url.path) == [
+            "/x/web-interface/nav",
+            "/x/web-interface/wbi/search/type",
+        ])
+        let searchQuery = URLComponents(
+            url: requests[1].url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(searchQuery?.first(where: { $0.name == "keyword" })?.value == "macOS  测试")
+        #expect(searchQuery?.first(where: { $0.name == "wts" })?.value == "1700000000")
+        #expect(searchQuery?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
+    }
+
+    @Test
+    func searchReusesSameDayWBIKey() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                try fixtureResponse("search"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        _ = try await client.searchVideos(keyword: "macOS", page: 1)
+        _ = try await client.searchVideos(keyword: "Swift", page: 1)
+
+        let paths = await transport.capturedRequests().map(\.url.path)
+        #expect(paths.filter { $0 == "/x/web-interface/nav" }.count == 1)
+        #expect(paths.filter { $0 == "/x/web-interface/wbi/search/type" }.count == 2)
+    }
+
+    @Test
+    func signatureRejectionRefreshesWBIKeyOnce() async throws {
+        let rejected = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(
+                #"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#.utf8
+            )
+        )
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                rejected,
+                try fixtureResponse("nav-refreshed"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        let page = try await client.searchVideos(keyword: "macOS", page: 1)
+
+        #expect(page.videos.count == 2)
+        let requests = await transport.capturedRequests()
+        #expect(requests.map(\.url.path) == [
+            "/x/web-interface/nav",
+            "/x/web-interface/wbi/search/type",
+            "/x/web-interface/nav",
+            "/x/web-interface/wbi/search/type",
+        ])
+        let signatures = requests
+            .filter { $0.url.path.contains("/wbi/search/") }
+            .compactMap {
+                URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
+                    .queryItems?
+                    .first(where: { $0.name == "w_rid" })?
+                    .value
+            }
+        #expect(signatures.count == 2)
+        #expect(signatures[0] != signatures[1])
+    }
+
+    @Test
+    func httpForbiddenAlsoRefreshesWBIKeyOnce() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                HTTPResponse(statusCode: 403, body: Data()),
+                try fixtureResponse("nav-refreshed"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        _ = try await client.searchVideos(keyword: "macOS", page: 1)
+
+        #expect(await transport.capturedRequests().map(\.url.path) == [
+            "/x/web-interface/nav",
+            "/x/web-interface/wbi/search/type",
+            "/x/web-interface/nav",
+            "/x/web-interface/wbi/search/type",
+        ])
+    }
+
+    @Test
     func playURLMapsOnlyAVCAndAACRepresentations() async throws {
         let transport = RecordingTransport(responses: [try fixtureResponse("playurl")])
         let client = BiliAPIClient(transport: transport)

@@ -1,0 +1,12 @@
+{
+  "code": -101,
+  "message": "账号未登录",
+  "ttl": 1,
+  "data": {
+    "isLogin": false,
+    "wbi_img": {
+      "img_url": "https://images.example.invalid/wbi/0123456789abcdef0123456789abcdef.png",
+      "sub_url": "https://images.example.invalid/wbi/fedcba9876543210fedcba9876543210.png"
+    }
+  }
+}
