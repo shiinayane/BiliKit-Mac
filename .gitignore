@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Xcode user state and local build products
+DerivedData/
+*.xcresult
+*.xcuserstate
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local research checkouts are not project source.
+references/*
+!references/README.md
+

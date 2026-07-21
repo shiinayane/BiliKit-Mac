@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* BiliModels in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* BiliModels */; };
+		A10000000000000000000002 /* BiliNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* BiliNetworking */; };
+		A10000000000000000000003 /* BiliPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* BiliPlayback */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8DFA900F300F375600DF3E1D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,7 +30,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		8DFA9001300F375500DF3E1D /* BiliKitMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BiliKitMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8DFA9001300F375500DF3E1D /* BiliKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BiliKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DFA900E300F375600DF3E1D /* BiliKitMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiliKitMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DFA9018300F375600DF3E1D /* BiliKitMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiliKitMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -45,6 +51,16 @@
 			path = BiliKitMacUITests;
 			sourceTree = "<group>";
 		};
+		8DFA902B300F37DA00DF3E1D /* docs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = docs;
+			sourceTree = "<group>";
+		};
+		8DFA902D300F383F00DF3E1D /* references */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = references;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +68,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000003 /* BiliPlayback in Frameworks */,
+				A10000000000000000000002 /* BiliNetworking in Frameworks */,
+				A10000000000000000000001 /* BiliModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,6 +94,8 @@
 		8DFA8FF8300F375500DF3E1D = {
 			isa = PBXGroup;
 			children = (
+				8DFA902D300F383F00DF3E1D /* references */,
+				8DFA902B300F37DA00DF3E1D /* docs */,
 				8DFA9003300F375500DF3E1D /* BiliKitMac */,
 				8DFA9011300F375600DF3E1D /* BiliKitMacTests */,
 				8DFA901B300F375600DF3E1D /* BiliKitMacUITests */,
@@ -85,7 +106,7 @@
 		8DFA9002300F375500DF3E1D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8DFA9001300F375500DF3E1D /* BiliKitMac.app */,
+				8DFA9001300F375500DF3E1D /* BiliKit.app */,
 				8DFA900E300F375600DF3E1D /* BiliKitMacTests.xctest */,
 				8DFA9018300F375600DF3E1D /* BiliKitMacUITests.xctest */,
 			);
@@ -112,9 +133,12 @@
 			);
 			name = BiliKitMac;
 			packageProductDependencies = (
+				A10000000000000000000011 /* BiliModels */,
+				A10000000000000000000012 /* BiliNetworking */,
+				A10000000000000000000013 /* BiliPlayback */,
 			);
 			productName = BiliKitMac;
-			productReference = 8DFA9001300F375500DF3E1D /* BiliKitMac.app */;
+			productReference = 8DFA9001300F375500DF3E1D /* BiliKit.app */;
 			productType = "com.apple.product-type.application";
 		};
 		8DFA900D300F375600DF3E1D /* BiliKitMacTests */ = {
@@ -197,6 +221,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8DFA9002300F375500DF3E1D /* Products */;
+			packageReferences = (
+				A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -323,7 +350,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -381,7 +408,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -408,16 +435,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = BiliKit;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -440,16 +468,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = BiliKit;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -461,7 +490,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH7TKWQMF7;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -469,8 +498,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiliKitMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiliKitMac";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiliKit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiliKit";
 			};
 			name = Debug;
 		};
@@ -482,7 +511,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH7TKWQMF7;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -490,8 +519,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiliKitMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiliKitMac";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiliKit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiliKit";
 			};
 			name = Release;
 		};
@@ -502,6 +531,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH7TKWQMF7;
 				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -509,8 +539,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = BiliKitMac;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = BiliKit;
 			};
 			name = Debug;
 		};
@@ -521,6 +551,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = MH7TKWQMF7;
 				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -528,8 +559,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = BiliKitMac;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = BiliKit;
 			};
 			name = Release;
 		};
@@ -573,6 +604,31 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BiliKitCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000011 /* BiliModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			productName = BiliModels;
+		};
+		A10000000000000000000012 /* BiliNetworking */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			productName = BiliNetworking;
+		};
+		A10000000000000000000013 /* BiliPlayback */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "BiliKitCore" */;
+			productName = BiliPlayback;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8DFA8FF9300F375500DF3E1D /* Project object */;
 }

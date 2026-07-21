@@ -5,15 +5,23 @@
 //  Created by shiinayane on 2026/07/21.
 //
 
+import BiliModels
+import BiliPlayback
 import Testing
-@testable import BiliKitMac
+@testable import BiliKit
 
 struct BiliKitMacTests {
+    @Test
+    func liveEnvironmentCreatesPlaybackRequest() {
+        let manifest = PlaybackManifest(
+            videoRepresentations: [],
+            audioRepresentations: []
+        )
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-        // Swift Testing Documentation
-        // https://developer.apple.com/documentation/testing
+        let request = AppEnvironment.live.makePlaybackRequest(manifest)
+
+        #expect(request.manifest == manifest)
+        #expect(request.preferredVideoRepresentationID == nil)
+        #expect(request.preferredAudioRepresentationID == nil)
     }
-
 }

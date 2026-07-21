@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Test core package
+        run: xcrun swift test --package-path Packages/BiliKitCore
+
+      - name: Build app and test targets
+        run: |
+          xcodebuild \
+            -project BiliKitMac.xcodeproj \
+            -scheme BiliKitMac \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/BiliKitMac-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+
+      - name: Run app unit tests
+        run: |
+          xcodebuild \
+            -project BiliKitMac.xcodeproj \
+            -scheme BiliKitMac \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/BiliKitMac-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building \
+            -only-testing:BiliKitMacTests
+
