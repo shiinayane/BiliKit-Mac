@@ -158,9 +158,37 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             return components.queryItems?.isEmpty != false
         case "/x/web-interface/history/cursor":
             return isAllowedHistoryQuery(components.queryItems)
+        case "/x/player/v2":
+            return isAllowedPlayerV2Query(components.queryItems)
         default:
             return false
         }
+    }
+
+    private static func isAllowedPlayerV2Query(
+        _ queryItems: [URLQueryItem]?
+    ) -> Bool {
+        guard let queryItems, queryItems.count == 2 else { return false }
+        var values: [String: String] = [:]
+        for item in queryItems {
+            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
+                return false
+            }
+        }
+        guard values.count == 2,
+              Set(values.keys) == ["bvid", "cid"],
+              let bvid = values["bvid"],
+              bvid.count == 12,
+              bvid.hasPrefix("BV"),
+              bvid.allSatisfy({
+                  $0.isASCII && ($0.isLetter || $0.isNumber)
+              }),
+              let cid = values["cid"].flatMap(Int64.init),
+              cid > 0
+        else {
+            return false
+        }
+        return true
     }
 
     private static func isAllowedHistoryQuery(

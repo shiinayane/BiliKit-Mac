@@ -1,0 +1,21 @@
+{
+  "font_size": 0.4,
+  "font_color": "#FFFFFF",
+  "background_alpha": 0.5,
+  "background_color": "#000000",
+  "Stroke": "none",
+  "body": [
+    {
+      "from": 1.25,
+      "to": 3.5,
+      "location": 2,
+      "content": "这是手写的字幕测试内容。"
+    },
+    {
+      "from": 4.0,
+      "to": 6.25,
+      "location": 2,
+      "content": "它不对应任何真实视频。"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "need_login_subtitle": false,
+    "subtitle": {
+      "allow_submit": false,
+      "lan": "zh-CN",
+      "lan_doc": "中文（简体）",
+      "subtitles": [
+        {
+          "id": 900001,
+          "lan": "zh-CN",
+          "lan_doc": "中文（简体）",
+          "is_lock": false,
+          "subtitle_url": "https://subtitle.example.invalid/bfs/subtitle/fixture.json",
+          "type": 0,
+          "id_str": "900001",
+          "ai_type": 0,
+          "ai_status": 0
+        }
+      ]
+    }
+  }
+}

@@ -31,6 +31,16 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let authorizedHistory = try await authorizer.authorize(historyRequest)
         #expect(authorizedHistory.headers["Cookie"] == credential.cookieHeader)
+
+        let playerRequest = HTTPRequest(
+            url: try #require(
+                URL(
+                    string: "https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001"
+                )
+            )
+        )
+        let authorizedPlayer = try await authorizer.authorize(playerRequest)
+        #expect(authorizedPlayer.headers["Cookie"] == credential.cookieHeader)
     }
 
     @Test
@@ -47,6 +57,11 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://api.bilibili.com/x/web-interface/history/cursor?ps=20", .get),
             ("https://api.bilibili.com/x/web-interface/history/cursor?max=0&view_at=0&business=&ps=20&extra=1", .get),
             ("https://api.bilibili.com/x/web-interface/history/cursor?max=-1&view_at=0&business=&ps=20", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=0", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001&extra=1", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=invalid&cid=900001", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001", .get),
             ("https://api.bilibili.com/x/web-interface/nav", .post),
             ("https://user@api.bilibili.com/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/nav#fragment", .get),
