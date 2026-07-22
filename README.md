@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理和 M3 登录/观看历史闭环已经完成。Presentation target 现按产品领域划分：`BiliBrowseFeature`、`BiliLibraryFeature` 与 `BiliAuthFeature` 只通过 Application/Domain 工作，`BiliAPI`、`BiliAuth` 与 `BiliPlayback` 由 composition root 注入。M4 将先建立统一播放时间轴和字幕纵向切片，再进入有界弹幕调度/渲染与本地缓存；功能代码尚未开始。项目尚不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理、M3 登录/观看历史和 M4.0–M4.3 时间轴、字幕、弹幕数据与调度内核已经完成。Core Animation/AppKit renderer、产品界面接入和本地缓存尚未实现。项目仍不适合日常使用或分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -35,8 +35,9 @@ references/                 完全忽略的本地参考项目，不进入 Xcode 
 - `BiliAuth`：Web QR 状态机、版本化凭据、Data Protection Keychain adapter、精确请求授权器与认证专用 ephemeral transport。
 - `BiliAuthFeature`：Authentication 子功能，包含账号 sheet、内存二维码展示与拥有轮询 Task/代次的认证 ViewModel。
 - `BiliLibraryFeature`：Library 产品域；当前包含只读观看历史及分页、取消、旧结果隔离和内存清理。
-- `BiliAPI`：游客/观看历史 endpoint、DTO 映射、WBI 签名与 Repository adapter。
+- `BiliAPI`：游客/观看历史/字幕/弹幕 endpoint、DTO/protobuf 映射、WBI 签名与 Repository adapter；只有该模块依赖 SwiftProtobuf wire runtime。
 - `BiliPlayback`：SIDX、DASH→HLS、loopback 媒体代理和播放 adapter。
+- `BiliDanmaku`：只消费 Application/Models 类型和统一播放时间轴的分段预取、去重、过滤与调度内核；renderer 留给 M4.4。
 - `BiliBrowseFeature`：Browse 产品域，按 BrowseScene、Feed、Search、VideoDetail 组织 SwiftUI View 与 ViewModel。
 
 依赖方向和模型分类见 [ADR 0004](docs/adr/0004-mvvm-clean-architecture.md)，Feature target 准入与产品域命名见 [ADR 0006](docs/adr/0006-product-domain-feature-targets.md)。CI 会运行架构、秘密与工程静态契约检查，阻止分层反向依赖，并固定 entitlement、产品命名和 macOS 15 基线。
@@ -150,6 +151,16 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 游客接口和媒体 URL 都会动态变化。已记录的 BVID 可能失效，或者不再允许请求指定画质，因此一次探针失败本身不能证明播放实现发生回归。探针不会输出带签名的媒体 URL 或响应 body。当前结果见[真实播放验证记录](docs/validation/M1-real-playback-2026-07-21.md)。
 
 M1 收尾矩阵使用 30 秒连续播放、6 轮双向 seek 和 12 次播放项目替换，同时检查视频时间戳相对 AVPlayer timebase 的最大偏差，以及进程最终 RSS 增长。该矩阵已在 GitHub Actions 的 macOS 15 runner 上通过；它只通过手动触发入口运行，不属于 push/PR 必过检查。
+
+## 显式运行弹幕数据与调度探针
+
+M4.3 探针使用生产 `BiliAPI` protobuf decoder 和 `BiliDanmaku` 调度器处理首段普通弹幕，只输出解码/调度计数，不输出 BVID、CID、弹幕正文、用户标识或响应 body：
+
+```sh
+zsh Scripts/run-m4-danmaku-probe.sh
+```
+
+脚本交互读取 BVID，CID 留空时自动选择首分 P。它不会自动进入 CI；M4.3 Gate 和当前边界见 [M4 弹幕数据与调度验证记录](docs/validation/M4-danmaku-data-scheduler-2026-07-22.md)。
 
 ## 安全与实现边界
 

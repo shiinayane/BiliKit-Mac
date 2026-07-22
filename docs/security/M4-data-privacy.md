@@ -1,6 +1,6 @@
 # M4 字幕、弹幕与本地状态数据边界
 
-> 状态：M4.0、M4.1、M4.2 Gate 已通过；字幕实现只使用进程内存，尚未创建持久化 schema
+> 状态：M4.0–M4.3 Gate 已通过；字幕与弹幕数据只使用进程内存，尚未创建持久化 schema
 
 ## 1. 保护对象
 
@@ -58,3 +58,5 @@ M4.0 已形成匿名与已登录边界、字幕正文来源、二进制弹幕响
 M4.2 已将字幕负向 fixture 接入生产 decoder，并固定以下运行边界：字幕目录只能经精确授权的 `/x/player/v2` 获取；字幕 URL 不离开 `BiliAPI`；正文只能由无 Cookie、无缓存、拒绝重定向的专用 ephemeral transport 请求；当前只允许 `https://aisubtitle.hdslb.com:443/bfs/...`。轨道、cue 与播放 identity 只存在于内存，切换视频、分 P、轨道、关闭详情或登出均通过取消和 generation 清理旧状态。签名真实样本已通过这条生产链路，且探针日志未发现内容标识、正文、完整 URL 或凭据，因此 M4.2 Gate 已关闭。
 
 现场目录可能包含 `subtitle_url` 为空字符串的不可用占位轨。生产 decoder 只忽略这种明确无正文来源的条目；非空但无法解析、来源不可信或字段异常的条目仍使整个目录失败关闭。探针必须实际出现生产 decoder 的 ready 标志，不能把“全部轨道均为空占位”造成的 skip 当作 Gate 通过。
+
+M4.3 的 protobuf wire 类型只存在于 `BiliAPI` 解码边界；映射后的 `DanmakuEvent` 不保留发送者 hash、创建时间、action 或原始 wire。分段正文、事件 ID 和过滤关键词只存在于当前进程内存，`BiliDanmakuProbe` 只输出解码/调度/缓存计数。会话最多并发 2 个分段请求并保留 3 段；切换 identity、stop 和 discontinuity 会取消或隔离旧任务与游标。真实匿名首段已通过生产 decoder 与调度器，日志未保存内容标识、正文、完整 URL、用户标识或凭据，因此 M4.3 Gate 已关闭。
