@@ -19,6 +19,8 @@ assert_occurrences() {
 project_file="BiliKitMac.xcodeproj/project.pbxproj"
 entitlements_file="BiliKitMac/BiliKitMac.entitlements"
 package_file="Packages/BiliKitCore/Package.swift"
+package_resolution_file="Packages/BiliKitCore/Package.resolved"
+xcode_resolution_file="BiliKitMac.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 
 /usr/bin/plutil -lint "$entitlements_file" >/dev/null \
     || fail "entitlements 不是有效 plist"
@@ -64,6 +66,26 @@ for product in BiliBrowseFeature BiliLibraryFeature BiliAuthFeature; do
         ".library(name: \"$product\", targets: [\"$product\"])," \
         "$package_file" \
         "缺少产品领域 Feature product：$product"
+done
+
+assert_occurrences 1 \
+    '.library(name: "BiliDanmaku", targets: ["BiliDanmaku"]),' \
+    "$package_file" \
+    "缺少 BiliDanmaku product"
+assert_occurrences 1 \
+    'exact: "1.38.1"' \
+    "$package_file" \
+    "SwiftProtobuf 必须精确固定为 1.38.1"
+for resolved_file in "$package_resolution_file" "$xcode_resolution_file"; do
+    [ -f "$resolved_file" ] || fail "缺少依赖锁文件：$resolved_file"
+    assert_occurrences 1 '"identity" : "swift-protobuf"' "$resolved_file" \
+        "SwiftProtobuf 依赖锁必须唯一：$resolved_file"
+    assert_occurrences 1 '"version" : "1.38.1"' "$resolved_file" \
+        "SwiftProtobuf 锁定版本不一致：$resolved_file"
+    assert_occurrences 1 \
+        '"revision" : "55d7a1cc5666b85c13464aea1c4b4a90feccb4c8"' \
+        "$resolved_file" \
+        "SwiftProtobuf 锁定 revision 不一致：$resolved_file"
 done
 
 echo "工程、entitlement 与最低系统版本静态契约检查通过"

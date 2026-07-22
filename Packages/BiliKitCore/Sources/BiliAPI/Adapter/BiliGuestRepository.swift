@@ -75,7 +75,8 @@ private extension BiliAPIError {
             .unsupportedMedia
         case .responseTooLarge, .decodingFailed, .missingData,
              .invalidWBIKey, .signingFailed, .invalidMediaData,
-             .invalidSubtitleData, .untrustedSubtitleOrigin:
+             .invalidSubtitleData, .untrustedSubtitleOrigin,
+             .nonProtobufResponse, .invalidDanmakuData:
             .invalidResponse
         case .httpStatus:
             .unavailable

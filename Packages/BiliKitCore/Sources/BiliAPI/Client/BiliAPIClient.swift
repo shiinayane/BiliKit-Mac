@@ -27,6 +27,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
     private static let maximumSubtitleCatalogSize = 1 * 1_024 * 1_024
+    private static let maximumDanmakuSegmentSize = 2 * 1_024 * 1_024
 
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
@@ -192,6 +193,61 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             maximumResponseSize: Self.maximumSubtitleCatalogSize
         )
         return try payload.resources()
+    }
+
+    func danmakuSegmentData(
+        index: Int,
+        for identity: PlaybackItemIdentity
+    ) async throws -> Data {
+        guard Self.isValidBVID(identity.bvid),
+              identity.cid > 0,
+              (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(index)
+        else {
+            throw BiliAPIError.invalidRequest
+        }
+        let url = try endpoint(
+            path: "/x/v2/dm/web/seg.so",
+            queryItems: [
+                URLQueryItem(name: "type", value: "1"),
+                URLQueryItem(name: "oid", value: String(identity.cid)),
+                URLQueryItem(name: "segment_index", value: String(index)),
+            ]
+        )
+        let request = HTTPRequest(
+            url: url,
+            headers: [
+                "Accept": "application/octet-stream",
+                "Referer": Self.videoReferer(identity.bvid),
+                "User-Agent": userAgent,
+            ]
+        )
+        let response: HTTPResponse
+        do {
+            response = try await httpClient.send(request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as HTTPClientError {
+            switch error {
+            case let .unacceptableStatusCode(status):
+                throw BiliAPIError.httpStatus(status)
+            case .nonHTTPResponse:
+                throw BiliAPIError.transportFailure
+            }
+        } catch {
+            throw BiliAPIError.transportFailure
+        }
+        guard !response.body.isEmpty,
+              response.body.count <= Self.maximumDanmakuSegmentSize
+        else {
+            if response.body.isEmpty {
+                throw BiliAPIError.invalidDanmakuData
+            }
+            throw BiliAPIError.responseTooLarge(response.body.count)
+        }
+        guard Self.looksLikeProtobuf(response) else {
+            throw BiliAPIError.nonProtobufResponse
+        }
+        return response.body
     }
 
     public func watchHistory(
@@ -464,6 +520,24 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             return false
         }
         return firstByte == 0x7B || firstByte == 0x5B
+    }
+
+    private static func looksLikeProtobuf(_ response: HTTPResponse) -> Bool {
+        guard let contentType = response.headers.first(where: {
+            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+        })?.value.lowercased(),
+              contentType.contains("application/octet-stream")
+        else {
+            return false
+        }
+        let prefix = String(
+            decoding: response.body.prefix(256),
+            as: UTF8.self
+        ).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !prefix.hasPrefix("{")
+            && !prefix.hasPrefix("[")
+            && !prefix.hasPrefix("<html")
+            && !prefix.hasPrefix("<!doctype")
     }
 }
 

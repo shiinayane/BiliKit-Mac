@@ -176,7 +176,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
              .apiRejected(code: -403, _), .apiRejected(code: -412, _):
             .requestRestricted
         case .responseTooLarge, .decodingFailed, .missingData,
-             .invalidSubtitleData, .untrustedSubtitleOrigin:
+             .invalidSubtitleData, .untrustedSubtitleOrigin,
+             .nonProtobufResponse, .invalidDanmakuData:
             .invalidResponse
         case .httpStatus, .apiRejected:
             .unavailable

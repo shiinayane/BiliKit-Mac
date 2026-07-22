@@ -14,12 +14,20 @@ let package = Package(
         .library(name: "BiliAuth", targets: ["BiliAuth"]),
         .library(name: "BiliAPI", targets: ["BiliAPI"]),
         .library(name: "BiliPlayback", targets: ["BiliPlayback"]),
+        .library(name: "BiliDanmaku", targets: ["BiliDanmaku"]),
         .library(name: "BiliBrowseFeature", targets: ["BiliBrowseFeature"]),
         .library(name: "BiliAuthFeature", targets: ["BiliAuthFeature"]),
         .library(name: "BiliLibraryFeature", targets: ["BiliLibraryFeature"]),
         .executable(name: "BiliAPIProbe", targets: ["BiliAPIProbe"]),
         .executable(name: "BiliAuthProbe", targets: ["BiliAuthProbe"]),
         .executable(name: "BiliPlaybackProbe", targets: ["BiliPlaybackProbe"]),
+        .executable(name: "BiliDanmakuProbe", targets: ["BiliDanmakuProbe"]),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/apple/swift-protobuf.git",
+            exact: "1.38.1"
+        ),
     ],
     targets: [
         .target(name: "BiliModels"),
@@ -34,11 +42,21 @@ let package = Package(
         ),
         .target(
             name: "BiliAPI",
-            dependencies: ["BiliApplication", "BiliModels", "BiliNetworking"]
+            dependencies: [
+                "BiliApplication",
+                "BiliModels",
+                "BiliNetworking",
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            exclude: ["Remote/Protobuf/danmaku.proto"]
         ),
         .target(
             name: "BiliPlayback",
             dependencies: ["BiliApplication", "BiliModels", "BiliNetworking"]
+        ),
+        .target(
+            name: "BiliDanmaku",
+            dependencies: ["BiliApplication", "BiliModels"]
         ),
         .target(
             name: "BiliBrowseFeature",
@@ -67,6 +85,15 @@ let package = Package(
                 "BiliApplication",
                 "BiliModels",
                 "BiliPlayback",
+            ]
+        ),
+        .executableTarget(
+            name: "BiliDanmakuProbe",
+            dependencies: [
+                "BiliAPI",
+                "BiliApplication",
+                "BiliDanmaku",
+                "BiliNetworking",
             ]
         ),
         .testTarget(
@@ -105,6 +132,14 @@ let package = Package(
             ],
             resources: [
                 .copy("Fixtures"),
+            ]
+        ),
+        .testTarget(
+            name: "BiliDanmakuTests",
+            dependencies: [
+                "BiliApplication",
+                "BiliDanmaku",
+                "BiliModels",
             ]
         ),
         .testTarget(
