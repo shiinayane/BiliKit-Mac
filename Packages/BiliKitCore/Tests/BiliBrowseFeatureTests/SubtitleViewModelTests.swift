@@ -30,15 +30,15 @@ struct SubtitleViewModelTests {
         #expect(model.selectedTrackID == "track-standard")
 
         timeline.publish(snapshot(position: 2, state: .playing))
-        await Task.yield()
+        await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         timeline.publish(snapshot(position: 2, rate: 0, state: .paused))
-        await Task.yield()
+        await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         timeline.publish(snapshot(position: 5, rate: 2, state: .playing))
-        await Task.yield()
+        await waitForCue("第二条手写字幕", in: model)
         #expect(model.currentCueText == "第二条手写字幕")
 
         timeline.publish(
@@ -48,7 +48,7 @@ struct SubtitleViewModelTests {
                 discontinuityGeneration: 2
             )
         )
-        await Task.yield()
+        await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
     }
 
@@ -60,7 +60,7 @@ struct SubtitleViewModelTests {
         model.selectVideo(identity)
         await model.waitForCurrentTask()
         timeline.publish(snapshot(position: 2, state: .playing))
-        await Task.yield()
+        await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         model.selectTrack(nil)
@@ -86,7 +86,7 @@ struct SubtitleViewModelTests {
         model.selectTrack("track-automatic")
         await model.waitForCurrentTask()
         timeline.publish(snapshot(position: 2, state: .playing))
-        await Task.yield()
+        await waitForCue("自动生成字幕", in: model)
         #expect(model.currentCueText == "自动生成字幕")
 
         try await Task.sleep(for: .milliseconds(100))
@@ -95,14 +95,20 @@ struct SubtitleViewModelTests {
 
         model.selectVideo(oldIdentity)
         await model.waitForCurrentTask()
+        timeline.publish(
+            snapshot(position: 2, identity: oldIdentity, state: .playing)
+        )
+        await waitForCue("第一条手写字幕", in: model)
+        #expect(model.currentCueText == "第一条手写字幕")
+
         timeline.publish(snapshot(position: 2, identity: identity, state: .playing))
-        await Task.yield()
+        await waitForCue(nil, in: model)
         #expect(model.currentCueText == nil)
 
         timeline.publish(
             snapshot(position: 2, identity: oldIdentity, state: .playing)
         )
-        await Task.yield()
+        await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
     }
 
@@ -147,6 +153,18 @@ struct SubtitleViewModelTests {
             useCase: SubtitleUseCase(repository: repository),
             timeline: timeline
         )
+    }
+
+    private func waitForCue(
+        _ expected: String?,
+        in model: SubtitleViewModel
+    ) async {
+        for _ in 0 ..< 1_000 {
+            if model.currentCueText == expected {
+                return
+            }
+            await Task.yield()
+        }
     }
 
     private func snapshot(
