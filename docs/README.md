@@ -5,6 +5,7 @@
 - [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
 - [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
 - [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：风险分级、任务契约、隔离审查和统一可执行 Gate。
+- [`development/M4.4-renderer-spike-contract.md`](./development/M4.4-renderer-spike-contract.md)：已确认的 renderer 不可合入实验契约、测量矩阵与退出条件。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。
