@@ -4,6 +4,7 @@
 - [`adr/`](./adr/)：已接受的架构决策。
 - [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
 - [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
+- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：风险分级、任务契约、隔离审查和统一可执行 Gate。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。
@@ -42,3 +43,4 @@
 - [`validation/M4-playback-timeline-2026-07-22.md`](./validation/M4-playback-timeline-2026-07-22.md)：M4.1 唯一播放时间线、AVPlayer 适配、取消/替换隔离与本地回归。
 - [`validation/M4-subtitle-vertical-slice-2026-07-22.md`](./validation/M4-subtitle-vertical-slice-2026-07-22.md)：M4.2 字幕生产链路、隐私/来源边界、确定性测试与签名真实样本 Gate。
 - [`validation/M4-danmaku-data-scheduler-2026-07-22.md`](./validation/M4-danmaku-data-scheduler-2026-07-22.md)：M4.3 protobuf decoder、分段调度、依赖边界与真实匿名样本 Gate。
+- [`validation/M4.3.5-engineering-governance-2026-07-22.md`](./validation/M4.3.5-engineering-governance-2026-07-22.md)：风险分级、隔离上下文审查、统一质量 Gate 与首次试运行。

@@ -108,6 +108,26 @@ Feature target 不互相 import。跨 Feature 导航由 App 层的类型化 Rout
 - 子功能超过约 8 个生产文件或 1,500 行时，检查其状态与依赖是否仍内聚。
 - 产品域超过约 25 个生产文件或 5,000 行时，必须记录一次 target 拆分评估。
 
+## 风险分级与隔离审查
+
+风险等级只追加验证，不降低本文件的基线要求；行数和文件数只触发职责检查，不自动决定风险：
+
+- **绿区**：文案、Preview、局部布局、仅限私有实现的机械重命名、明确的 DTO 映射和小型测试补充。公开 API、target 或工程变更不属于绿区。
+- **黄区**：普通 Feature/Use Case、缓存策略、跨文件重构和新增跨模块公共 API。实现前写明 Goal、Context、Constraints、Done when；实现后由未参与实现、且不继承实现推理的新上下文做只读审查。
+- **红区**：认证、授权、Keychain、来源策略、重定向、本地服务器、播放/媒体、线程与资源生命周期、弹幕 renderer、持久化迁移、文件删除和不可逆数据变化。实验前由用户确认 spike 契约；未知性能路线在独立 `codex/spike-*` 分支用合成数据测量，spike 不合入生产分支。实验结束后再由用户确认生产契约；实现后分别审查失败场景，以及线程、所有权、安全和清理路径，并增加真实探针或长时测量。
+
+独立审查只接收任务契约、事实来源和待审文件，不接收实现者结论；输出按 blocker、improvement、reject 分类。只读 Agent 可以共享工作树，多个写入 Agent 不得同时修改同一工作树；确需并行写入时使用独立 branch/worktree，一次只审查和合入一个重要变更。完整流程和模板见 `docs/development/QUALITY-GATES.md`。
+
+项目级 Agent 定义位于 `.codex/agents/`，默认按认知难度分工，而不是按“写代码/写测试”机械分工：
+
+- 主 Agent 使用 Sol Medium，负责理解需求、任务契约、架构与最终整合。
+- `explorer` 使用 Luna Low，只做边界明确的只读定位、调用链和事实清单。
+- `worker` 使用 Terra Medium，只按已确认契约实现窄切片。
+- `reviewer` 使用 Terra High，负责黄区独立只读审查。
+- `red_reviewer` 使用 Sol High，负责红区和重要 Gate 的线程、生命周期、安全与资源终审。
+
+出现两种以上合理解释、无法明确不变量或 owner、跨越两个以上 target 边界、涉及红区、测试失败原因不清晰、连续两次修复失败、reviewer 结论冲突或准备关闭重要 Gate 时必须升级，不能为节省成本降低终审等级。绿区不强制启动全部角色；模型路由只是默认值，自动 Gate、真实探针和用户确认仍是完成证据。
+
 ## 状态、并发与取消
 
 - ViewModel 使用 `@MainActor`，拥有界面生命周期内的 Task、代次和用户意图；View 不直接发 API 请求或解释 DTO。
@@ -147,40 +167,22 @@ Feature target 不互相 import。跨 Feature 导航由 App 层的类型化 Rout
 
 ## 验证矩阵
 
-所有代码变更至少运行：
+文档、脚本和纯静态变更至少运行：
 
 ```sh
-sh Scripts/check-architecture.sh
-sh Scripts/check-secrets.sh
-sh Scripts/check-project-contract.sh
-git diff --check
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift test --package-path Packages/BiliKitCore
+sh Scripts/run-quality-gates.sh static
 ```
 
-涉及 App composition、Xcode 工程、Package product 或资源时，再运行：
+所有代码变更至少运行（内部包含 static）：
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild \
-  -project BiliKitMac.xcodeproj \
-  -scheme BiliKitMac \
-  -configuration Debug \
-  -destination 'platform=macOS' \
-  -derivedDataPath /tmp/BiliKitMac-derived \
-  CODE_SIGNING_ALLOWED=NO \
-  build-for-testing
+sh Scripts/run-quality-gates.sh package
+```
 
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild \
-  -project BiliKitMac.xcodeproj \
-  -scheme BiliKitMac \
-  -configuration Debug \
-  -destination 'platform=macOS' \
-  -derivedDataPath /tmp/BiliKitMac-derived \
-  CODE_SIGNING_ALLOWED=NO \
-  test-without-building \
-  -only-testing:BiliKitMacTests
+涉及 App composition、Xcode 工程、Package product 或资源时运行（内部包含 package）：
+
+```sh
+sh Scripts/run-quality-gates.sh app
 ```
 
 按风险追加验证：
