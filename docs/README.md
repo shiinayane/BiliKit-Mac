@@ -40,3 +40,4 @@
 - [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)：独立审查整改、真实播放回归、工程静态契约和 M3 关闭边界。
 - [`validation/M4-protocol-contract-2026-07-22.md`](./validation/M4-protocol-contract-2026-07-22.md)：M4.0 匿名/已登录协议观察、假值 fixture、依赖审计与隐私 Gate 结论。
 - [`validation/M4-playback-timeline-2026-07-22.md`](./validation/M4-playback-timeline-2026-07-22.md)：M4.1 唯一播放时间线、AVPlayer 适配、取消/替换隔离与本地回归。
+- [`validation/M4-subtitle-vertical-slice-2026-07-22.md`](./validation/M4-subtitle-vertical-slice-2026-07-22.md)：M4.2 字幕生产链路、隐私/来源边界、确定性测试与待完成的签名真实样本 Gate。

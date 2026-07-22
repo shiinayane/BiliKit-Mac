@@ -92,5 +92,10 @@ if [[ $probe_status -ne 0 ]]; then
     print -u2 "探针失败；完整脱敏构建日志位于 $test_log"
     exit $probe_status
 fi
+if ! rg -q 'm4-subtitle-production .*decoder=ready' "$test_log"; then
+    print -u2 '探针未到达生产字幕 decoder；请更换存在可用字幕正文的样本。'
+    print -u2 "完整脱敏构建日志位于 $test_log"
+    exit 1
+fi
 
 print "探针完成；完整脱敏构建日志位于 $test_log"

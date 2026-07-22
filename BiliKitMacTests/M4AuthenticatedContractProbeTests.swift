@@ -1,7 +1,10 @@
+import BiliApplication
 import BiliAuth
+import BiliBrowseFeature
 import BiliNetworking
 import Foundation
 import XCTest
+@testable import BiliKit
 
 final class M4AuthenticatedContractProbeTests: XCTestCase {
     private static let maximumCatalogSize = 1 * 1_024 * 1_024
@@ -61,6 +64,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
 
         let catalogSummary = "m4-subtitle-catalog status=200 content-type=json "
             + "bytes=\(catalogResponse.body.count) tracks=\(catalog.trackCount) "
+            + "usable-tracks=\(catalog.usableTrackCount) "
             + "needs-login=\(catalog.needsLogin) "
             + "envelope-fields=\(catalog.envelopeFieldTypes.joined(separator: ",")) "
             + "data-fields=\(catalog.dataFieldTypes.joined(separator: ",")) "
@@ -72,7 +76,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         else {
             throw ProbeFailure.invalidJSONShape
         }
-        guard catalog.trackCount > 0 else {
+        guard catalog.usableTrackCount > 0 else {
             throw XCTSkip("当前显式样本没有字幕轨，请更换带字幕的公开视频")
         }
         guard catalog.hasMinimumTrackFields else {
@@ -102,6 +106,21 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         guard body.hasMinimumCueFields else {
             throw ProbeFailure.invalidJSONShape
         }
+
+        let identity = PlaybackItemIdentity(bvid: bvid, cid: cid)
+        let productionModel = AppEnvironment.live.makeSubtitleViewModel()
+        productionModel.selectVideo(identity)
+        await productionModel.waitForCurrentTask()
+        guard productionModel.state == .ready(identity),
+              !productionModel.tracks.isEmpty,
+              productionModel.selectedTrackID != nil
+        else {
+            throw ProbeFailure.productionDecoderFailed
+        }
+        XCTContext.runActivity(
+            named: "m4-subtitle-production tracks=\(productionModel.tracks.count) decoder=ready"
+        ) { _ in }
+        productionModel.reset()
     }
 
     private static func firstPageCID(
@@ -191,18 +210,25 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         let data = envelope["data"] as? [String: Any]
         let subtitle = data?["subtitle"] as? [String: Any]
         let tracks = subtitle?["subtitles"] as? [[String: Any]] ?? []
-        let firstTrack = tracks.first
-        let firstURL = try firstTrack.flatMap { track -> URL? in
-            guard let rawURL = track["subtitle_url"] as? String else { return nil }
+        let usableTracks = try tracks.compactMap { track -> ([String: Any], URL)? in
+            guard let rawURL = track["subtitle_url"] as? String else {
+                throw ProbeFailure.invalidJSONShape
+            }
+            guard !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
             let absolute = rawURL.hasPrefix("//") ? "https:\(rawURL)" : rawURL
             guard let url = URL(string: absolute) else {
                 throw ProbeFailure.invalidSubtitleURL
             }
-            return url
+            return (track, url)
         }
+        let firstTrack = usableTracks.first?.0
+        let firstURL = usableTracks.first?.1
         return CatalogObservation(
             needsLogin: data?["need_login_subtitle"] as? Bool ?? false,
             trackCount: tracks.count,
+            usableTrackCount: usableTracks.count,
             envelopeFieldTypes: fieldTypes(envelope),
             dataFieldTypes: data.map(fieldTypes) ?? [],
             subtitleFieldTypes: subtitle.map(fieldTypes) ?? [],
@@ -289,6 +315,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
     private struct CatalogObservation {
         let needsLogin: Bool
         let trackCount: Int
+        let usableTrackCount: Int
         let envelopeFieldTypes: [String]
         let dataFieldTypes: [String]
         let subtitleFieldTypes: [String]
@@ -341,5 +368,6 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         case invalidJSONShape
         case invalidSubtitleURL
         case untrustedSubtitleOrigin
+        case productionDecoderFailed
     }
 }
