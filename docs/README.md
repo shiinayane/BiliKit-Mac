@@ -23,12 +23,14 @@
 - [`adr/0005-web-qr-authentication-boundary.md`](./adr/0005-web-qr-authentication-boundary.md)
 - [`adr/0006-product-domain-feature-targets.md`](./adr/0006-product-domain-feature-targets.md)
 - [`adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md`](./adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md)
+- [`adr/0008-swift-protobuf-runtime.md`](./adr/0008-swift-protobuf-runtime.md)
 
 当前安全基线：
 
 - [`security/M3-threat-model.md`](./security/M3-threat-model.md)
+- [`security/M4-data-privacy.md`](./security/M4-data-privacy.md)：字幕、弹幕、播放位置与未来本地缓存的数据边界。
 
-当前 M3 验证记录：
+当前验证记录：
 
 - [`validation/M3-auth-state-machine-2026-07-21.md`](./validation/M3-auth-state-machine-2026-07-21.md)：Web QR 状态、成功/过期契约与脱敏探针。
 - [`validation/M3-keychain-authorization-2026-07-21.md`](./validation/M3-keychain-authorization-2026-07-21.md)：Keychain envelope、请求授权与未签名环境边界。
@@ -36,3 +38,5 @@
 - [`validation/M3-watch-history-2026-07-21.md`](./validation/M3-watch-history-2026-07-21.md)：观看历史纵向闭环、真实扫码、重启恢复、登出与游客回退。
 - [`validation/M3-pre-M4-architecture-review-2026-07-21.md`](./validation/M3-pre-M4-architecture-review-2026-07-21.md)：进入 M4 前的独立代码审查、领域 Feature 整理、阻断项与本地验证。
 - [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)：独立审查整改、真实播放回归、工程静态契约和 M3 关闭边界。
+- [`validation/M4-protocol-contract-2026-07-22.md`](./validation/M4-protocol-contract-2026-07-22.md)：M4.0 匿名/已登录协议观察、假值 fixture、依赖审计与隐私 Gate 结论。
+- [`validation/M4-playback-timeline-2026-07-22.md`](./validation/M4-playback-timeline-2026-07-22.md)：M4.1 唯一播放时间线、AVPlayer 适配、取消/替换隔离与本地回归。
