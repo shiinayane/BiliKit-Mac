@@ -1,7 +1,27 @@
 import AVKit
 import SwiftUI
 
-struct PlayerHostView: NSViewRepresentable {
+struct PlayerHostView<Overlay: View>: View {
+    let player: AVPlayer
+    let overlay: () -> Overlay
+
+    init(
+        player: AVPlayer,
+        @ViewBuilder overlay: @escaping () -> Overlay
+    ) {
+        self.player = player
+        self.overlay = overlay
+    }
+
+    var body: some View {
+        ZStack {
+            AVPlayerContainerView(player: player)
+            overlay()
+        }
+    }
+}
+
+private struct AVPlayerContainerView: NSViewRepresentable {
     let player: AVPlayer
 
     func makeNSView(context: Context) -> AVPlayerView {

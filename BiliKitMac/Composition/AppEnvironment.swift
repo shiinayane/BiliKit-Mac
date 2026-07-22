@@ -15,18 +15,21 @@ struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     private let repository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
+    private let subtitleRepository: any SubtitleRepository
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
     init(
         repository: any GuestContentRepository,
         historyRepository: any WatchHistoryRepository,
+        subtitleRepository: any SubtitleRepository,
         playerEngine: AVPlayerEngine,
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
         self.repository = repository
         self.historyRepository = historyRepository
+        self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
         self.authenticationService = authenticationService
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
@@ -45,8 +48,19 @@ struct AppEnvironment {
         )
     }
 
-    func makePlayerView() -> AnyView {
-        AnyView(PlayerHostView(player: playerEngine.player))
+    func makeSubtitleViewModel() -> SubtitleViewModel {
+        SubtitleViewModel(
+            useCase: SubtitleUseCase(repository: subtitleRepository),
+            timeline: playerEngine
+        )
+    }
+
+    func makePlayerView(subtitleModel: SubtitleViewModel) -> AnyView {
+        AnyView(
+            PlayerHostView(player: playerEngine.player) {
+                SubtitleOverlayView(model: subtitleModel)
+            }
+        )
     }
 
     func makeAuthenticationViewModel() -> AuthenticationViewModel {
@@ -87,6 +101,7 @@ struct AppEnvironment {
         return AppEnvironment(
             repository: BiliGuestRepository(service: api),
             historyRepository: BiliWatchHistoryRepository(service: api),
+            subtitleRepository: BiliSubtitleRepository(client: api),
             playerEngine: AVPlayerEngine(),
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(

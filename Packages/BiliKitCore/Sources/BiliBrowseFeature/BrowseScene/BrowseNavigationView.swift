@@ -5,6 +5,7 @@ import SwiftUI
 public struct BrowseNavigationView<PlayerContent: View>: View {
     private let feedModel: GuestFeedViewModel
     private let videoModel: GuestVideoViewModel
+    private let subtitleModel: SubtitleViewModel
     private let playerContent: () -> PlayerContent
     @Binding private var requestedBVID: String?
 
@@ -17,11 +18,13 @@ public struct BrowseNavigationView<PlayerContent: View>: View {
     public init(
         feedModel: GuestFeedViewModel,
         videoModel: GuestVideoViewModel,
+        subtitleModel: SubtitleViewModel,
         requestedBVID: Binding<String?> = .constant(nil),
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.feedModel = feedModel
         self.videoModel = videoModel
+        self.subtitleModel = subtitleModel
         _requestedBVID = requestedBVID
         self.playerContent = playerContent
     }
@@ -110,6 +113,7 @@ public struct BrowseNavigationView<PlayerContent: View>: View {
     private var detailColumn: some View {
         VideoDetailColumn(
             model: videoModel,
+            subtitleModel: subtitleModel,
             playerContent: playerContent
         )
     }

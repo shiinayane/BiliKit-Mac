@@ -5,6 +5,7 @@ import SwiftUI
 struct GuestVideoDetailView<PlayerContent: View>: View {
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
+    let subtitleModel: SubtitleViewModel
     let playerContent: () -> PlayerContent
 
     var body: some View {
@@ -58,6 +59,10 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
+
+                    Divider()
+
+                    SubtitleControlsView(model: subtitleModel)
 
                     Divider()
 

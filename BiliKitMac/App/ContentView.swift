@@ -13,6 +13,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var feedModel: GuestFeedViewModel
     @State private var videoModel: GuestVideoViewModel
+    @State private var subtitleModel: SubtitleViewModel
     @State private var authenticationModel: AuthenticationViewModel
     @State private var historyModel: WatchHistoryViewModel
     @State private var isAuthenticationPresented = false
@@ -23,19 +24,24 @@ struct ContentView: View {
     init(environment: AppEnvironment = .live) {
         _feedModel = State(initialValue: environment.makeFeedViewModel())
         _videoModel = State(initialValue: environment.makeVideoViewModel())
+        let subtitleModel = environment.makeSubtitleViewModel()
+        _subtitleModel = State(initialValue: subtitleModel)
         _authenticationModel = State(
             initialValue: environment.makeAuthenticationViewModel()
         )
         _historyModel = State(
             initialValue: environment.makeWatchHistoryViewModel()
         )
-        playerContent = environment.makePlayerView()
+        playerContent = environment.makePlayerView(
+            subtitleModel: subtitleModel
+        )
     }
 
     var body: some View {
         BrowseNavigationView(
             feedModel: feedModel,
             videoModel: videoModel,
+            subtitleModel: subtitleModel,
             requestedBVID: $requestedBVID
         ) {
             playerContent
@@ -86,13 +92,18 @@ struct ContentView: View {
             await authenticationModel.waitForCurrentTask()
         }
         .onChange(of: authenticationModel.isSignedIn) { _, isSignedIn in
-            guard !isSignedIn else { return }
+            if isSignedIn {
+                subtitleModel.retry()
+                return
+            }
             isHistoryPresented = false
             historyModel.reset()
+            subtitleModel.reset()
         }
         .onDisappear {
             feedModel.cancel()
             videoModel.reset()
+            subtitleModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.cancelTransientWork()
         }
