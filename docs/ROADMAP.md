@@ -373,7 +373,7 @@ BiliPersistence ───────> 可重建缓存与本地播放状态 adap
 
    Gate：统一脚本在当前环境通过 App 全矩阵；CI 不再维护另一套重复命令；隔离审查发现的基线降级、Git 授权等冲突已整改；治理规则、PR 模板和试运行证据可以指导下一项红区任务。
 6. **M4.4：有界 renderer 与播放 surface 集成**
-   - M4.4 是红区任务。先由用户确认 spike 的假设、合成输入、测量项和退出条件，再在独立 `codex/spike-*` 分支做不可合入的 Core Animation/AppKit 实验，测量可承受密度、活动对象、文字资源、帧率和 RSS 基线；关闭 spike 后再由用户确认生产契约。
+   - M4.4 是红区任务。先由用户确认 [`development/M4.4-renderer-spike-contract.md`](./development/M4.4-renderer-spike-contract.md) 的假设、合成输入、测量项和退出条件，再在独立 `codex/spike-*` 分支做不可合入的 Core Animation/AppKit 实验，测量可承受密度、活动对象、文字资源、帧率和 RSS 基线；关闭 spike 后再由用户确认生产契约。
    - 使用 Core Animation layer 或可复用 NSView 池实现滚动/顶部/底部基础类型、lane allocator、碰撞预测和对象复用；不把每条弹幕建成长生命周期 SwiftUI `Text`。
    - 根据 spike 结果明确最大同屏数、排队深度、对象池、丢弃/降级顺序、字号/透明度/密度和帧率/RSS 阈值；resize、全屏和容器替换时重新计算轨道而不重复喷射。
    - 动画速度由媒体时间与播放速率推导；暂停冻结，seek/discontinuity 清空并按新时间窗重建，旧 generation 的动画和 Task 必须释放。
