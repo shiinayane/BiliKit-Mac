@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Show toolchain
         run: |
@@ -45,40 +47,21 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Check architecture boundaries
-        run: sh Scripts/check-architecture.sh
-
-      - name: Check repository secrets
-        run: sh Scripts/check-secrets.sh
-
-      - name: Check project and entitlement contract
-        run: sh Scripts/check-project-contract.sh
-
-      - name: Test core package
-        run: xcrun swift test --package-path Packages/BiliKitCore
-
-      - name: Build app and test targets
+      - name: Check changed diff whitespace
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          xcodebuild \
-            -project BiliKitMac.xcodeproj \
-            -scheme BiliKitMac \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/BiliKitMac-derived" \
-            CODE_SIGNING_ALLOWED=NO \
-            build-for-testing
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git diff --check "$BASE_SHA"...HEAD
+          else
+            git diff --check HEAD^ HEAD
+          fi
 
-      - name: Run app unit tests
-        run: |
-          xcodebuild \
-            -project BiliKitMac.xcodeproj \
-            -scheme BiliKitMac \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/BiliKitMac-derived" \
-            CODE_SIGNING_ALLOWED=NO \
-            test-without-building \
-            -only-testing:BiliKitMacTests
+      - name: Run App quality gate
+        env:
+          BILIKIT_DERIVED_DATA_PATH: ${{ runner.temp }}/BiliKitMac-derived
+        run: sh Scripts/run-quality-gates.sh app
 
   real-playback-macos15:
     name: 真实播放验证（macOS 15）
