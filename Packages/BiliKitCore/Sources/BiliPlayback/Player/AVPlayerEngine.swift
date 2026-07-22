@@ -9,6 +9,7 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
     case preferredVideoRepresentationNotFound(Int)
     case preferredAudioRepresentationNotFound(Int)
     case itemFailed(errorType: String)
+    case invalidPlaybackRate
     case seekFailed
 }
 
@@ -19,6 +20,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
 
     private let bridge: DASHToHLSBridge
     private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
+    private let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
     private var readinessTask: Task<Void, any Error>?
     private var loadGeneration = UUID()
@@ -30,10 +32,14 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
     ) {
         self.player = player
         self.bridge = bridge
+        timeline = AVPlayerTimelineAdapter(player: player)
         let stream = AsyncStream<PlayerEvent>.makeStream()
         events = stream.stream
         eventContinuation = stream.continuation
         player.automaticallyWaitsToMinimizeStalling = false
+        timeline.onEnded = { [weak self] in
+            self?.emit(.stateChanged(.ended))
+        }
     }
 
     deinit {
@@ -43,11 +49,26 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         eventContinuation.finish()
     }
 
-    public func load(_ request: PlaybackRequest) async throws {
+    public var currentTimelineSnapshot: PlaybackTimelineSnapshot {
+        timeline.currentSnapshot
+    }
+
+    public func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
+        timeline.updates()
+    }
+
+    public func load(
+        _ request: PlaybackRequest,
+        identity: PlaybackItemIdentity
+    ) async throws {
         let generation = UUID()
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            try await performLoad(request, generation: generation)
+            try await performLoad(
+                request,
+                identity: identity,
+                generation: generation
+            )
         } onCancel: {
             Task { @MainActor [weak self] in
                 self?.cancelLoad(generation: generation)
@@ -55,17 +76,22 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         }
     }
 
-    public func load(_ playback: VideoPlayback) async throws {
+    public func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity
+    ) async throws {
         try await load(
             PlaybackRequest(
                 manifest: playback.manifest,
                 mediaHeaders: playback.mediaHeaders
-            )
+            ),
+            identity: identity
         )
     }
 
     private func performLoad(
         _ request: PlaybackRequest,
+        identity: PlaybackItemIdentity,
         generation: UUID
     ) async throws {
         loadGeneration = generation
@@ -76,6 +102,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         preparedAsset?.stop()
         preparedAsset = nil
         player.replaceCurrentItem(with: nil)
+        timeline.begin(identity: identity)
         emit(.stateChanged(.loading))
 
         let video = try selectedVideo(for: request)
@@ -101,8 +128,9 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
             preparedAsset = prepared
             let item = AVPlayerItem(url: prepared.url)
             player.replaceCurrentItem(with: item)
+            timeline.installObservers(for: item)
             let readinessTask = Task {
-                try await waitUntilReadyToPlay(item)
+                try await AVPlayerItemReadiness.wait(untilReady: item)
             }
             self.readinessTask = readinessTask
             try await readinessTask.value
@@ -111,6 +139,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
                 throw CancellationError()
             }
             self.readinessTask = nil
+            timeline.markReady(duration: item.duration)
             emit(.stateChanged(.ready))
         } catch is CancellationError {
             if loadGeneration == generation {
@@ -119,6 +148,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
                 preparedAsset?.stop()
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
+                timeline.clear()
                 emit(.stateChanged(.idle))
             }
             throw CancellationError()
@@ -129,6 +159,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
                 preparedAsset?.stop()
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
+                timeline.markFailed()
                 emit(
                     .failed(
                         message: String(reflecting: type(of: error))
@@ -149,19 +180,24 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         preparedAsset?.stop()
         preparedAsset = nil
         player.replaceCurrentItem(with: nil)
+        timeline.clear()
         emit(.stateChanged(.idle))
     }
 
     public func play() {
         guard player.currentItem != nil else { return }
-        player.play()
+        timeline.play()
         emit(.stateChanged(.playing))
     }
 
     public func pause() {
         guard player.currentItem != nil else { return }
-        player.pause()
+        timeline.pause()
         emit(.stateChanged(.paused))
+    }
+
+    public func setRate(_ rate: Double) throws {
+        try timeline.setRate(rate)
     }
 
     public func seek(to time: Duration) async throws {
@@ -171,14 +207,31 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         let components = time.components
         let seconds = Double(components.seconds)
             + Double(components.attoseconds) / 1_000_000_000_000_000_000
+        timeline.prepareExplicitSeek(to: seconds)
         let didSeek = await player.seek(
             to: CMTime(seconds: seconds, preferredTimescale: 600),
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
         guard didSeek else {
+            timeline.explicitSeekFailed()
             throw AVPlayerEngineError.seekFailed
         }
+        timeline.explicitSeekCompleted(at: seconds)
+    }
+
+    public func stop() {
+        loadGeneration = UUID()
+        loadTask?.cancel()
+        loadTask = nil
+        readinessTask?.cancel()
+        readinessTask = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        preparedAsset?.stop()
+        preparedAsset = nil
+        timeline.clear()
+        emit(.stateChanged(.idle))
     }
 
     private func selectedVideo(
@@ -219,70 +272,7 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         return representation
     }
 
-    private func waitUntilReadyToPlay(_ item: AVPlayerItem) async throws {
-        let observationBox = PlayerItemStatusObservationBox()
-        let statuses = AsyncStream<AVPlayerItem.Status> { continuation in
-            let observation = item.observe(
-                \.status,
-                options: [.initial, .new]
-            ) { observedItem, _ in
-                continuation.yield(observedItem.status)
-            }
-            observationBox.store(observation)
-            continuation.onTermination = { _ in
-                observationBox.invalidate()
-            }
-        }
-
-        for await status in statuses {
-            try Task.checkCancellation()
-            switch status {
-            case .readyToPlay:
-                return
-            case .failed:
-                let errorType = item.error.map {
-                    String(reflecting: type(of: $0))
-                } ?? "UnknownAVPlayerItemError"
-                throw AVPlayerEngineError.itemFailed(errorType: errorType)
-            case .unknown:
-                continue
-            @unknown default:
-                throw AVPlayerEngineError.itemFailed(
-                    errorType: "UnknownAVPlayerItemStatus"
-                )
-            }
-        }
-        throw CancellationError()
-    }
-
     private func emit(_ event: PlayerEvent) {
         eventContinuation.yield(event)
-    }
-}
-
-private final class PlayerItemStatusObservationBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var observation: NSKeyValueObservation?
-    private var isInvalidated = false
-
-    func store(_ observation: NSKeyValueObservation) {
-        let shouldInvalidate = lock.withLock { () -> Bool in
-            guard !isInvalidated else { return true }
-            self.observation = observation
-            return false
-        }
-        if shouldInvalidate {
-            observation.invalidate()
-        }
-    }
-
-    func invalidate() {
-        let observation = lock.withLock { () -> NSKeyValueObservation? in
-            isInvalidated = true
-            let observation = self.observation
-            self.observation = nil
-            return observation
-        }
-        observation?.invalidate()
     }
 }

@@ -156,11 +156,19 @@ struct GuestViewModelTests {
         )
         #expect(model.state == .ready(context))
         #expect(player.loadedPlaybacks == [fixture.playback])
+        #expect(
+            player.loadedIdentities == [
+                PlaybackItemIdentity(
+                    bvid: fixture.detail.bvid,
+                    cid: fixture.page.cid
+                ),
+            ]
+        )
     }
 
     @Test
     @MainActor
-    func resettingSelectionClearsDetailAndPausesPlayer() async {
+    func resettingSelectionClearsDetailAndStopsPlayer() async {
         let fixture = GuestFixtures()
         let player = RecordingPlayerEngine()
         let model = GuestVideoViewModel(
@@ -175,7 +183,7 @@ struct GuestViewModelTests {
         model.reset()
 
         #expect(model.state == .idle)
-        #expect(player.pauseCallCount == 1)
+        #expect(player.stopCallCount == 1)
     }
 
     @Test
@@ -203,6 +211,7 @@ struct GuestViewModelTests {
         }
         #expect(context.detail.bvid == fast.detail.bvid)
         #expect(player.loadedPlaybacks.count == 1)
+        #expect(player.stopCallCount == 1)
         #expect(
             player.loadedPlaybacks.first?.mediaHeaders["Referer"]?.contains(
                 fast.detail.bvid
@@ -470,13 +479,23 @@ private actor SwitchingGuestRepositoryStub: GuestContentRepository {
 @MainActor
 private final class RecordingPlayerEngine: PlaybackControlling {
     private(set) var loadedPlaybacks: [VideoPlayback] = []
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var pauseCallCount = 0
+    private(set) var stopCallCount = 0
 
-    func load(_ playback: VideoPlayback) async throws {
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity
+    ) async throws {
         loadedPlaybacks.append(playback)
+        loadedIdentities.append(identity)
     }
 
     func pause() {
         pauseCallCount += 1
+    }
+
+    func stop() {
+        stopCallCount += 1
     }
 }

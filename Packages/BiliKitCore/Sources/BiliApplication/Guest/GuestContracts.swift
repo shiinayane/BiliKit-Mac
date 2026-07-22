@@ -17,9 +17,3 @@ public protocol GuestContentRepository: Sendable {
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64, quality: Int) async throws -> VideoPlayback
 }
-
-@MainActor
-public protocol PlaybackControlling: AnyObject {
-    func load(_ playback: VideoPlayback) async throws
-    func pause()
-}

@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import BiliAPI
+import BiliApplication
 import BiliModels
 import BiliPlayback
 import Darwin
@@ -74,7 +75,16 @@ struct BiliPlaybackProbe {
         )
         let engine = AVPlayerEngine()
         engine.player.isMuted = true
-        try await load(engine, request: request, timeout: .seconds(30))
+        let identity = PlaybackItemIdentity(
+            bvid: configuration.bvid,
+            cid: cid
+        )
+        try await load(
+            engine,
+            request: request,
+            identity: identity,
+            timeout: .seconds(30)
+        )
         guard let item = engine.player.currentItem else {
             throw ProbeError.missingPlayerItem
         }
@@ -150,6 +160,7 @@ struct BiliPlaybackProbe {
         try await auditReplacementMemory(
             engine: engine,
             request: request,
+            identity: identity,
             cycles: configuration.replacementCycles,
             maximumGrowthMiB: configuration.maximumMemoryGrowthMiB
         )
@@ -159,6 +170,7 @@ struct BiliPlaybackProbe {
     private static func auditReplacementMemory(
         engine: AVPlayerEngine,
         request: PlaybackRequest,
+        identity: PlaybackItemIdentity,
         cycles: Int,
         maximumGrowthMiB: Double
     ) async throws {
@@ -170,7 +182,12 @@ struct BiliPlaybackProbe {
         var samples = [baseline]
 
         for cycle in 1...cycles {
-            try await load(engine, request: request, timeout: .seconds(30))
+            try await load(
+                engine,
+                request: request,
+                identity: identity,
+                timeout: .seconds(30)
+            )
             engine.play()
             try await wait(
                 for: engine.player,
@@ -204,10 +221,11 @@ struct BiliPlaybackProbe {
     private static func load(
         _ engine: AVPlayerEngine,
         request: PlaybackRequest,
+        identity: PlaybackItemIdentity,
         timeout: Duration
     ) async throws {
         let loadTask = Task { @MainActor in
-            try await engine.load(request)
+            try await engine.load(request, identity: identity)
         }
         let timeoutTask = Task {
             try await Task.sleep(for: timeout)

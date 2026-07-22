@@ -36,6 +36,9 @@ public final class GuestVideoViewModel {
         generation += 1
         let currentGeneration = generation
         task?.cancel()
+        if state != .idle {
+            playback.stop()
+        }
         state = .loading(bvid: bvid)
         task = Task { [weak self] in
             await self?.performSelection(
@@ -51,7 +54,7 @@ public final class GuestVideoViewModel {
         task?.cancel()
         task = nil
         state = .idle
-        playback.pause()
+        playback.stop()
     }
 
     public func waitForCurrentTask() async {
@@ -72,7 +75,13 @@ public final class GuestVideoViewModel {
             guard generation == currentGeneration else { return }
 
             state = .preparingPlayback(context)
-            try await playback.load(context.playback)
+            try await playback.load(
+                context.playback,
+                identity: PlaybackItemIdentity(
+                    bvid: context.detail.bvid,
+                    cid: context.selectedPage.cid
+                )
+            )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
             state = .ready(context)

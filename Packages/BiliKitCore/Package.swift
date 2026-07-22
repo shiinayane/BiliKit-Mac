@@ -62,7 +62,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "BiliPlaybackProbe",
-            dependencies: ["BiliAPI", "BiliModels", "BiliPlayback"]
+            dependencies: [
+                "BiliAPI",
+                "BiliApplication",
+                "BiliModels",
+                "BiliPlayback",
+            ]
         ),
         .testTarget(
             name: "BiliModelsTests",
@@ -92,7 +97,12 @@ let package = Package(
         ),
         .testTarget(
             name: "BiliPlaybackTests",
-            dependencies: ["BiliModels", "BiliNetworking", "BiliPlayback"],
+            dependencies: [
+                "BiliApplication",
+                "BiliModels",
+                "BiliNetworking",
+                "BiliPlayback",
+            ],
             resources: [
                 .copy("Fixtures"),
             ]

@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
@@ -198,6 +199,90 @@ struct LoopbackPlaybackServerTests {
 
     @Test
     @MainActor
+    func enginePublishesTimelineAndClearsItWhenStopped() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(URL(string: "https://timeline.example/video"))
+        let audioURL = try #require(URL(string: "https://timeline.example/audio"))
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let engine = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(transport: transport)
+            )
+        )
+        engine.player.isMuted = true
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1TimelineFixture",
+            cid: 900_001
+        )
+        let request = PlaybackRequest(
+            manifest: PlaybackManifest(
+                videoRepresentations: [video],
+                audioRepresentations: [audio]
+            )
+        )
+
+        try await engine.load(request, identity: identity)
+        let loadGeneration = engine.currentTimelineSnapshot
+            .discontinuityGeneration
+        #expect(engine.currentTimelineSnapshot.identity == identity)
+        #expect(engine.currentTimelineSnapshot.state == .ready)
+
+        try engine.setRate(2)
+        engine.play()
+        try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
+        #expect(engine.currentTimelineSnapshot.positionSeconds > 0)
+        #expect(engine.currentTimelineSnapshot.rate > 1)
+        #expect(engine.currentTimelineSnapshot.state == .playing)
+
+        engine.pause()
+        #expect(engine.currentTimelineSnapshot.rate == 0)
+        #expect(engine.currentTimelineSnapshot.state == .paused)
+
+        try await engine.seek(to: .seconds(0.7))
+        #expect(engine.currentTimelineSnapshot.positionSeconds >= 0.65)
+        #expect(
+            engine.currentTimelineSnapshot.discontinuityGeneration
+                > loadGeneration
+        )
+
+        #expect(throws: AVPlayerEngineError.invalidPlaybackRate) {
+            try engine.setRate(0)
+        }
+
+        let seekGeneration = engine.currentTimelineSnapshot
+            .discontinuityGeneration
+        engine.stop()
+        #expect(engine.player.currentItem == nil)
+        #expect(engine.currentTimelineSnapshot.identity == nil)
+        #expect(engine.currentTimelineSnapshot.state == .idle)
+        #expect(
+            engine.currentTimelineSnapshot.discontinuityGeneration
+                > seekGeneration
+        )
+    }
+
+    @Test
+    @MainActor
     func replacingEngineLoadCancelsOldMediaRequests() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
@@ -272,7 +357,13 @@ struct LoopbackPlaybackServerTests {
         )
 
         let oldLoad = Task { @MainActor in
-            try await engine.load(oldRequest)
+            try await engine.load(
+                oldRequest,
+                identity: PlaybackItemIdentity(
+                    bvid: "BV1OldFixture",
+                    cid: 900_001
+                )
+            )
         }
         for _ in 0..<200 {
             if await transport.startedMediaRequestCount > 0 {
@@ -282,7 +373,13 @@ struct LoopbackPlaybackServerTests {
         }
         #expect(await transport.startedMediaRequestCount > 0)
 
-        try await engine.load(newRequest)
+        try await engine.load(
+            newRequest,
+            identity: PlaybackItemIdentity(
+                bvid: "BV1NewFixture",
+                cid: 900_002
+            )
+        )
         await #expect(throws: CancellationError.self) {
             try await oldLoad.value
         }
@@ -338,7 +435,13 @@ struct LoopbackPlaybackServerTests {
         )
 
         for expectedServerCount in 1...12 {
-            try await engine?.load(request)
+            try await engine?.load(
+                request,
+                identity: PlaybackItemIdentity(
+                    bvid: "BV1LoopFixture",
+                    cid: Int64(900_000 + expectedServerCount)
+                )
+            )
             let servers = registry.servers
             #expect(servers.count == expectedServerCount)
             for server in servers.dropLast() {

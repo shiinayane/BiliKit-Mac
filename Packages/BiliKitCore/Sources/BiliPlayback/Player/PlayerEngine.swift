@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliModels
 import Foundation
 
@@ -35,11 +36,16 @@ public enum PlayerEvent: Sendable, Equatable {
 }
 
 @MainActor
-public protocol PlayerEngine: AnyObject {
+public protocol PlayerEngine: PlaybackTimelineProviding, AnyObject {
     var events: AsyncStream<PlayerEvent> { get }
 
-    func load(_ request: PlaybackRequest) async throws
+    func load(
+        _ request: PlaybackRequest,
+        identity: PlaybackItemIdentity
+    ) async throws
     func play()
     func pause()
+    func setRate(_ rate: Double) throws
     func seek(to time: Duration) async throws
+    func stop()
 }
