@@ -74,7 +74,8 @@ private extension BiliAPIError {
         case .noAVCVideo, .noAACAudio:
             .unsupportedMedia
         case .responseTooLarge, .decodingFailed, .missingData,
-             .invalidWBIKey, .signingFailed, .invalidMediaData:
+             .invalidWBIKey, .signingFailed, .invalidMediaData,
+             .invalidSubtitleData, .untrustedSubtitleOrigin:
             .invalidResponse
         case .httpStatus:
             .unavailable

@@ -11,6 +11,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case invalidWBIKey
     case signingFailed
     case invalidMediaData
+    case invalidSubtitleData
+    case untrustedSubtitleOrigin
     case noAVCVideo
     case noAACAudio
 
@@ -40,6 +42,10 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "signing-failed"
         case .invalidMediaData:
             "invalid-media-data"
+        case .invalidSubtitleData:
+            "invalid-subtitle-data"
+        case .untrustedSubtitleOrigin:
+            "untrusted-subtitle-origin"
         case .noAVCVideo:
             "no-avc-video"
         case .noAACAudio:

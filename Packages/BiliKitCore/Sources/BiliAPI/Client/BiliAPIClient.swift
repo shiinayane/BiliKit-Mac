@@ -26,6 +26,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     )!
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
+    private static let maximumSubtitleCatalogSize = 1 * 1_024 * 1_024
 
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
@@ -174,6 +175,25 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         )
     }
 
+    func subtitleResources(
+        for identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleRemoteTrack] {
+        guard Self.isValidBVID(identity.bvid), identity.cid > 0 else {
+            throw BiliAPIError.invalidRequest
+        }
+        let payload: SubtitleCatalogPayload = try await get(
+            path: "/x/player/v2",
+            queryItems: [
+                URLQueryItem(name: "bvid", value: identity.bvid),
+                URLQueryItem(name: "cid", value: String(identity.cid)),
+            ],
+            referer: Self.videoReferer(identity.bvid),
+            requiresAuthentication: true,
+            maximumResponseSize: Self.maximumSubtitleCatalogSize
+        )
+        return try payload.resources()
+    }
+
     public func watchHistory(
         after continuation: WatchHistoryContinuation? = nil,
         pageSize: Int = 20
@@ -217,13 +237,15 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         path: String,
         queryItems: [URLQueryItem],
         referer: String,
-        requiresAuthentication: Bool = false
+        requiresAuthentication: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let url = try endpoint(path: path, queryItems: queryItems)
         return try await get(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication
+            requiresAuthentication: requiresAuthentication,
+            maximumResponseSize: maximumResponseSize
         )
     }
 
@@ -242,12 +264,14 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     private func get<Payload: Decodable & Sendable>(
         url: URL,
         referer: String,
-        requiresAuthentication: Bool = false
+        requiresAuthentication: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let response = try await response(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication
+            requiresAuthentication: requiresAuthentication,
+            maximumResponseSize: maximumResponseSize
         )
 
         let status: APIStatusEnvelope
@@ -277,7 +301,8 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     private func response(
         url: URL,
         referer: String,
-        requiresAuthentication: Bool = false
+        requiresAuthentication: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> HTTPResponse {
         let baseRequest = HTTPRequest(
             url: url,
@@ -319,7 +344,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             throw BiliAPIError.transportFailure
         }
 
-        guard response.body.count <= Self.maximumResponseSize else {
+        guard response.body.count <= maximumResponseSize else {
             throw BiliAPIError.responseTooLarge(response.body.count)
         }
         guard Self.looksLikeJSON(response) else {
@@ -426,10 +451,11 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     }
 
     private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        if let contentType = response.headers.first(where: {
+        guard let contentType = response.headers.first(where: {
             $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
         })?.value.lowercased(),
-           !contentType.contains("json") {
+              contentType.contains("json")
+        else {
             return false
         }
         guard let firstByte = response.body.first(where: {
