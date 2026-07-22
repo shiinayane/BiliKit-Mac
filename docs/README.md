@@ -5,7 +5,8 @@
 - [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
 - [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
 - [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：风险分级、任务契约、隔离审查和统一可执行 Gate。
-- [`development/M4.4-renderer-spike-contract.md`](./development/M4.4-renderer-spike-contract.md)：已确认的 renderer 不可合入实验契约、测量矩阵与退出条件。
+- [`development/M4.4-renderer-spike-decision.md`](./development/M4.4-renderer-spike-decision.md)：待用户理解并确认的 renderer spike 决策边界。
+- [`development/M4.4-renderer-spike-technical-plan.md`](./development/M4.4-renderer-spike-technical-plan.md)：尚未授权实施、可按审查结果调整的技术草案。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。
@@ -45,3 +46,4 @@
 - [`validation/M4-subtitle-vertical-slice-2026-07-22.md`](./validation/M4-subtitle-vertical-slice-2026-07-22.md)：M4.2 字幕生产链路、隐私/来源边界、确定性测试与签名真实样本 Gate。
 - [`validation/M4-danmaku-data-scheduler-2026-07-22.md`](./validation/M4-danmaku-data-scheduler-2026-07-22.md)：M4.3 protobuf decoder、分段调度、依赖边界与真实匿名样本 Gate。
 - [`validation/M4.3.5-engineering-governance-2026-07-22.md`](./validation/M4.3.5-engineering-governance-2026-07-22.md)：风险分级、隔离上下文审查、统一质量 Gate 与首次试运行。
+- [`validation/M4.4-governance-correction-2026-07-23.md`](./validation/M4.4-governance-correction-2026-07-23.md)：决策价值 Gate、复杂度预算、三视角复审与旧 spike 授权撤销。
