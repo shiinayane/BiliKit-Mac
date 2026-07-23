@@ -6,6 +6,7 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
     let subtitleModel: SubtitleViewModel
+    let danmakuModel: DanmakuControlsViewModel
     let playerContent: () -> PlayerContent
 
     var body: some View {
@@ -63,6 +64,10 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                     Divider()
 
                     SubtitleControlsView(model: subtitleModel)
+
+                    Divider()
+
+                    DanmakuControlsView(model: danmakuModel)
 
                     Divider()
 

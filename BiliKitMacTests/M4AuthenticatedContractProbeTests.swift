@@ -108,7 +108,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         }
 
         let identity = PlaybackItemIdentity(bvid: bvid, cid: cid)
-        let productionModel = AppEnvironment.live.makeSubtitleViewModel()
+        let productionModel = AppEnvironment.live().makeSubtitleViewModel()
         productionModel.selectVideo(identity)
         await productionModel.waitForCurrentTask()
         guard productionModel.state == .ready(identity),

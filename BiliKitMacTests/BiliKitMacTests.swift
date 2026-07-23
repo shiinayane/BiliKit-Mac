@@ -9,7 +9,7 @@ struct BiliKitMacTests {
     @Test
     @MainActor
     func liveEnvironmentBuildsIdleGuestViewModels() {
-        let environment = AppEnvironment.live
+        let environment = AppEnvironment.live()
 
         let feedModel = environment.makeFeedViewModel()
         let videoModel = environment.makeVideoViewModel()

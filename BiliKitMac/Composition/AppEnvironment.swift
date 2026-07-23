@@ -3,6 +3,7 @@ import BiliAPI
 import BiliAuth
 import BiliAuthFeature
 import BiliBrowseFeature
+import BiliDanmaku
 import BiliLibraryFeature
 import BiliNetworking
 import BiliPlayback
@@ -16,6 +17,9 @@ struct AppEnvironment {
     private let repository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
     private let subtitleRepository: any SubtitleRepository
+    private let danmakuSession: DanmakuSession
+    private let danmakuController: DanmakuPresentationController
+    private let danmakuRenderer: CoreAnimationDanmakuRenderer
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
@@ -23,6 +27,7 @@ struct AppEnvironment {
         repository: any GuestContentRepository,
         historyRepository: any WatchHistoryRepository,
         subtitleRepository: any SubtitleRepository,
+        danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
@@ -31,6 +36,18 @@ struct AppEnvironment {
         self.historyRepository = historyRepository
         self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
+        let renderer = CoreAnimationDanmakuRenderer()
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: Self.emptyDanmakuConfiguration
+        )
+        self.danmakuRenderer = renderer
+        self.danmakuController = controller
+        self.danmakuSession = DanmakuSession(
+            useCase: DanmakuSegmentUseCase(repository: danmakuRepository),
+            timeline: playerEngine,
+            presentationSink: controller
+        )
         self.authenticationService = authenticationService
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
     }
@@ -55,9 +72,17 @@ struct AppEnvironment {
         )
     }
 
+    func makeDanmakuViewModel() -> DanmakuControlsViewModel {
+        DanmakuControlsViewModel(presentation: danmakuSession)
+    }
+
     func makePlayerView(subtitleModel: SubtitleViewModel) -> AnyView {
         AnyView(
-            PlayerHostView(player: playerEngine.player) {
+            PlayerHostView(
+                player: playerEngine.player,
+                danmakuRenderer: danmakuRenderer,
+                danmakuController: danmakuController
+            ) {
                 SubtitleOverlayView(model: subtitleModel)
             }
         )
@@ -76,7 +101,7 @@ struct AppEnvironment {
         )
     }
 
-    static let live: AppEnvironment = {
+    static func live() -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {
             let configuration = URLSessionConfiguration.ephemeral
@@ -102,13 +127,24 @@ struct AppEnvironment {
             repository: BiliGuestRepository(service: api),
             historyRepository: BiliWatchHistoryRepository(service: api),
             subtitleRepository: BiliSubtitleRepository(client: api),
+            danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: AVPlayerEngine(),
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService
             )
         )
-    }()
+    }
+
+    private static let emptyDanmakuConfiguration = DanmakuLaneConfiguration(
+        surfaceWidth: 0,
+        surfaceHeight: 0,
+        laneHeight: 36,
+        minimumHorizontalGap: 12,
+        maximumActiveCount:
+            DanmakuLaneConfiguration.hardMaximumActiveCount,
+        displayAreaFraction: 1
+    )
 }
 
 private struct AuthenticationQRCodeProvider: AuthenticationQRCodeProviding {

@@ -52,19 +52,107 @@ struct DanmakuSessionTests {
         #expect(session.state == .idle)
     }
 
+    @Test
+    func presentationSinkReceivesEveryAcceptedTimelineUpdate() async throws {
+        let identity = PlaybackItemIdentity(bvid: "BV1PresentationFixture", cid: 3)
+        let repository = SessionRecordingRepository(delay: .milliseconds(5))
+        let timeline = SessionTimeline()
+        let sink = SessionPresentationSink()
+        let session = DanmakuSession(
+            useCase: DanmakuSegmentUseCase(repository: repository),
+            timeline: timeline,
+            presentationSink: sink
+        )
+
+        session.start(for: identity)
+        timeline.publish(
+            snapshot(
+                identity: identity,
+                position: 1,
+                generation: 7,
+                rate: 0,
+                state: .paused
+            )
+        )
+        try await Task.sleep(for: .milliseconds(10))
+        timeline.publish(
+            snapshot(
+                identity: identity,
+                position: 1,
+                generation: 7,
+                rate: 2,
+                state: .playing
+            )
+        )
+        try await Task.sleep(for: .milliseconds(20))
+
+        let accepted = sink.updates.filter {
+            $0.snapshot.identity == identity
+        }
+        #expect(accepted.count == 2)
+        #expect(accepted[0].snapshot.state == .paused)
+        #expect(accepted[0].batch?.clearsExisting == true)
+        #expect(accepted[1].snapshot.rate == 2)
+        #expect(accepted[1].batch == nil)
+    }
+
+    @Test
+    func controlsClearOrStopPresentationSynchronously() {
+        let repository = SessionRecordingRepository(delay: .milliseconds(5))
+        let timeline = SessionTimeline()
+        let sink = SessionPresentationSink()
+        let session = DanmakuSession(
+            useCase: DanmakuSegmentUseCase(repository: repository),
+            timeline: timeline,
+            presentationSink: sink
+        )
+
+        session.setEnabled(false)
+        #expect(sink.clearCount == 1)
+
+        session.setFilter(
+            DanmakuFilter(showsScrolling: false)
+        )
+        #expect(sink.clearCount == 2)
+
+        session.stop()
+        #expect(sink.stopCount == 1)
+    }
+
     private func snapshot(
         identity: PlaybackItemIdentity,
         position: Double,
-        generation: UInt64
+        generation: UInt64,
+        rate: Double = 1,
+        state: PlaybackTimelineState = .playing
     ) -> PlaybackTimelineSnapshot {
         PlaybackTimelineSnapshot(
             identity: identity,
             positionSeconds: position,
             durationSeconds: 900,
-            rate: 1,
-            state: .playing,
+            rate: rate,
+            state: state,
             discontinuityGeneration: generation
         )
+    }
+}
+
+@MainActor
+private final class SessionPresentationSink: DanmakuPresentationSink {
+    private(set) var updates: [DanmakuPresentationUpdate] = []
+    private(set) var clearCount = 0
+    private(set) var stopCount = 0
+
+    func apply(_ update: DanmakuPresentationUpdate) {
+        updates.append(update)
+    }
+
+    func clearPresentation() {
+        clearCount += 1
+    }
+
+    func stopPresentation() {
+        stopCount += 1
     }
 }
 
