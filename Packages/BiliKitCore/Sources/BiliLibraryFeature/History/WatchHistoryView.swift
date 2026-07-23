@@ -18,37 +18,30 @@ public struct WatchHistoryView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("观看历史")
-                    .font(.title2.weight(.semibold))
-                Spacer()
-                Button {
-                    model.reload()
-                } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+        content
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.reload()
+                    } label: {
+                        Label("刷新", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isBusy)
+                    .accessibilityIdentifier("history.reload")
                 }
-                .disabled(isBusy)
-                .accessibilityIdentifier("history.reload")
             }
-            .padding(20)
-
-            Divider()
-            content
-        }
-        .frame(width: 620, height: 620)
-        .task {
-            model.loadIfNeeded()
-            await model.waitForCurrentTask()
-        }
-        .onChange(of: model.requiresAuthentication) { _, required in
-            if required {
-                onAuthenticationRequired()
+            .task {
+                model.loadIfNeeded()
+                await model.waitForCurrentTask()
             }
-        }
-        .onDisappear {
-            model.reset()
-        }
+            .onChange(of: model.requiresAuthentication) { _, required in
+                if required {
+                    onAuthenticationRequired()
+                }
+            }
+            .onDisappear {
+                model.deactivateRoute()
+            }
     }
 
     @ViewBuilder

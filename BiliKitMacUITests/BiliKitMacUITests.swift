@@ -36,8 +36,20 @@ final class BiliKitMacUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["detail.empty"]
+            app.descendants(matching: .any)["sidebar.history"]
                 .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["sidebar.account"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["feed.loading"]
+                .waitForExistence(timeout: 5)
+                || app.descendants(matching: .any)["feed.grid"]
+                    .waitForExistence(timeout: 5)
+                || app.descendants(matching: .any)["feed.failure"]
+                    .waitForExistence(timeout: 5)
         )
     }
 

@@ -126,6 +126,24 @@ public final class WatchHistoryViewModel {
         task = nil
     }
 
+    public func deactivateRoute() {
+        generation += 1
+        task?.cancel()
+        task = nil
+        switch state {
+        case .loading:
+            state = .idle
+        case let .loadingMore(items, continuation):
+            state = .loaded(
+                items: items,
+                continuation: continuation,
+                loadMoreError: nil
+            )
+        case .idle, .loaded, .failed:
+            break
+        }
+    }
+
     public func waitForCurrentTask() async {
         await task?.value
     }

@@ -163,11 +163,84 @@ struct WatchHistoryViewModelTests {
         )
 
         model.loadIfNeeded()
-        try await Task.sleep(for: .milliseconds(5))
+        let requestStarted = await repository.waitUntilCallCount(1)
+        #expect(requestStarted)
         model.reset()
-        try await Task.sleep(for: .milliseconds(50))
+        let lateResultReturned = await repository.waitUntilCompletionCount(1)
+        #expect(lateResultReturned)
 
         #expect(model.state == .idle)
+    }
+
+    @Test
+    @MainActor
+    func deactivatingRouteDuringInitialLoadReturnsToIdle() async throws {
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: nil
+                    )
+                ),
+            ],
+            firstDelay: .milliseconds(40)
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.loadIfNeeded()
+        let requestStarted = await repository.waitUntilCallCount(1)
+        #expect(requestStarted)
+        model.deactivateRoute()
+        let lateResultReturned = await repository.waitUntilCompletionCount(1)
+        #expect(lateResultReturned)
+
+        #expect(model.state == .idle)
+    }
+
+    @Test
+    @MainActor
+    func deactivatingRouteDuringPaginationRestoresLoadedItems() async throws {
+        let continuation = token(100)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: continuation
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryB2")],
+                        continuation: nil
+                    )
+                ),
+            ],
+            secondDelay: .milliseconds(40)
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        let paginationStarted = await repository.waitUntilCallCount(2)
+        #expect(paginationStarted)
+        model.deactivateRoute()
+        let lateResultReturned = await repository.waitUntilCompletionCount(2)
+        #expect(lateResultReturned)
+
+        #expect(
+            model.state == .loaded(
+                items: [item("BV1HistoryA1")],
+                continuation: continuation,
+                loadMoreError: nil
+            )
+        )
     }
 }
 
@@ -190,15 +263,19 @@ private func item(_ bvid: String) -> WatchHistoryItem {
 private actor HistoryRepositoryStub: WatchHistoryRepository {
     private var results: [Result<WatchHistoryPage, WatchHistoryError>]
     private let firstDelay: Duration?
+    private let secondDelay: Duration?
     private var callCount = 0
+    private var completionCount = 0
     private var continuations: [WatchHistoryContinuation?] = []
 
     init(
         results: [Result<WatchHistoryPage, WatchHistoryError>],
-        firstDelay: Duration? = nil
+        firstDelay: Duration? = nil,
+        secondDelay: Duration? = nil
     ) {
         self.results = results
         self.firstDelay = firstDelay
+        self.secondDelay = secondDelay
     }
 
     func watchHistory(
@@ -213,10 +290,34 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
         if currentCall == 1, let firstDelay {
             try? await Task.sleep(for: firstDelay)
         }
+        if currentCall == 2, let secondDelay {
+            try? await Task.sleep(for: secondDelay)
+        }
+        defer { completionCount += 1 }
         return try result.get()
     }
 
     func observedContinuations() -> [WatchHistoryContinuation?] {
         continuations
+    }
+
+    func waitUntilCallCount(_ expectedCount: Int) async -> Bool {
+        await waitUntil { callCount >= expectedCount }
+    }
+
+    func waitUntilCompletionCount(_ expectedCount: Int) async -> Bool {
+        await waitUntil { completionCount >= expectedCount }
+    }
+
+    private func waitUntil(
+        _ condition: () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return true
     }
 }

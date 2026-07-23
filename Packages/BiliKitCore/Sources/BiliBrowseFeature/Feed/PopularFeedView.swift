@@ -1,11 +1,22 @@
 import SwiftUI
 
-struct PopularFeedView: View {
-    let model: GuestFeedViewModel
-    @Binding var selectedBVID: String?
+public struct PopularFeedView: View {
+    private let model: GuestFeedViewModel
+    private let selectedBVID: String?
+    private let onSelect: (String) -> Void
+
+    public init(
+        model: GuestFeedViewModel,
+        selectedBVID: String? = nil,
+        onSelect: @escaping (String) -> Void
+    ) {
+        self.model = model
+        self.selectedBVID = selectedBVID
+        self.onSelect = onSelect
+    }
 
     @ViewBuilder
-    var body: some View {
+    public var body: some View {
         switch model.state {
         case .idle, .loading(.popular(_, _)):
             ProgressView("正在加载热门视频…")
@@ -18,12 +29,33 @@ struct PopularFeedView: View {
                 description: Text("稍后重试或检查网络连接。")
             )
         case let .loaded(.popular(page)):
-            List(page.videos, selection: $selectedBVID) { video in
-                GuestVideoRow(video: video)
-                    .tag(video.bvid)
+            ScrollView {
+                LazyVGrid(
+                    columns: [
+                        GridItem(
+                            .adaptive(minimum: 220, maximum: 360),
+                            spacing: 18
+                        ),
+                    ],
+                    alignment: .leading,
+                    spacing: 22
+                ) {
+                    ForEach(page.videos) { video in
+                        Button {
+                            onSelect(video.bvid)
+                        } label: {
+                            GuestVideoCard(
+                                video: video,
+                                isSelected: selectedBVID == video.bvid
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("feed.item.\(video.bvid)")
+                    }
+                }
+                .padding(20)
             }
-            .listStyle(.inset)
-            .accessibilityIdentifier("feed.list")
+            .accessibilityIdentifier("feed.grid")
             .refreshable {
                 model.loadPopular(
                     page: page.pageNumber,

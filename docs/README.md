@@ -14,6 +14,12 @@
 - [`development/M4-scheduler-retention-fix-decision.md`](./development/M4-scheduler-retention-fix-decision.md)：总收口终审发现的 scheduler 去重状态无界增长修复契约，D1 已确认并完成本机验证。
 - [`development/M4-scheduler-retention-fix-technical-plan.md`](./development/M4-scheduler-retention-fix-technical-plan.md)：不要求用户逐项确认的窄修复实施草案。
 - [`validation/M4-closeout-2026-07-23.md`](./validation/M4-closeout-2026-07-23.md)：真实 resize/fullscreen/seek/替换、30 分钟 RSS、资源清理与本机 App Gate 证据。
+- [`development/M4.5-uiux-decision.md`](./development/M4.5-uiux-decision.md)：已确认的 App 两栏导航、卡片流与独立播放页设计方向。
+- [`development/M4.5-uiux-design-plan.md`](./development/M4.5-uiux-design-plan.md)：设计阶段的页面结构、响应式与长期信息架构草案。
+- [`development/M4.5-uiux-production-decision.md`](./development/M4.5-uiux-production-decision.md)：已确认的 M4.5 生产范围、风险、复杂度预算和三项授权。
+- [`development/M4.5-uiux-production-technical-plan.md`](./development/M4.5-uiux-production-technical-plan.md)：不要求用户逐项确认的分阶段生产实施草案。
+- [`validation/M4.5-slice-a-2026-07-23.md`](./validation/M4.5-slice-a-2026-07-23.md)：Slice A 两栏路由、卡片流、播放返回、生命周期与本机 Gate 的候选证据。
+- [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：App 级 UI/UX 长期产品蓝图，以及搜索空页、播放页和未来数据能力的边界。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。
