@@ -87,7 +87,12 @@ struct DanmakuSessionTests {
                 state: .paused
             )
         )
-        try await Task.sleep(for: .milliseconds(10))
+        try await waitUntil {
+            sink.updates.contains {
+                $0.snapshot.identity == identity
+                    && $0.snapshot.state == .paused
+            }
+        }
         timeline.publish(
             snapshot(
                 identity: identity,
@@ -97,12 +102,16 @@ struct DanmakuSessionTests {
                 state: .playing
             )
         )
-        try await Task.sleep(for: .milliseconds(20))
+        try await waitUntil {
+            sink.updates.filter {
+                $0.snapshot.identity == identity
+            }.count >= 2
+        }
 
         let accepted = sink.updates.filter {
             $0.snapshot.identity == identity
         }
-        #expect(accepted.count == 2)
+        try #require(accepted.count == 2)
         #expect(accepted[0].snapshot.state == .paused)
         #expect(accepted[0].batch?.clearsExisting == true)
         #expect(accepted[1].snapshot.rate == 2)
@@ -147,6 +156,17 @@ struct DanmakuSessionTests {
             state: state,
             discontinuityGeneration: generation
         )
+    }
+
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !condition(), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(condition())
     }
 }
 

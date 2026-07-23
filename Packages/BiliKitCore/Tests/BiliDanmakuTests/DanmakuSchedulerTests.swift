@@ -1,5 +1,5 @@
 import BiliApplication
-import BiliDanmaku
+@testable import BiliDanmaku
 import BiliModels
 import Foundation
 import Testing
@@ -86,6 +86,7 @@ struct DanmakuSchedulerTests {
         )
         let first = try #require(firstValue)
         #expect(first.events.map(\.id) == ["repeat"])
+        #expect(scheduler.retainedDeliveredIDCount == 1)
 
         let forwardSeekValue = scheduler.consume(
             snapshot(position: 100, rate: 1, generation: 2)
@@ -93,6 +94,7 @@ struct DanmakuSchedulerTests {
         let forwardSeek = try #require(forwardSeekValue)
         #expect(forwardSeek.clearsExisting)
         #expect(forwardSeek.events.isEmpty)
+        #expect(scheduler.retainedDeliveredIDCount == 0)
 
         let backwardSeekValue = scheduler.consume(
             snapshot(position: 0, rate: 1, generation: 3)
@@ -104,6 +106,7 @@ struct DanmakuSchedulerTests {
         )
         let replay = try #require(replayValue)
         #expect(replay.events.map(\.id) == ["repeat"])
+        #expect(scheduler.retainedDeliveredIDCount == 1)
     }
 
     @Test
@@ -139,6 +142,7 @@ struct DanmakuSchedulerTests {
         #expect(batch.events.map(\.id) == ["allowed"])
 
         scheduler.setEnabled(false)
+        #expect(scheduler.retainedDeliveredIDCount == 0)
         let disabled = scheduler.consume(
             snapshot(position: 6, rate: 1, generation: 1)
         )
@@ -175,14 +179,174 @@ struct DanmakuSchedulerTests {
         #expect(oldIdentity == nil)
     }
 
+    @Test
+    func identityReplacementReemitsSameIDAndReenableDoesNotBackfill() throws {
+        var scheduler = DanmakuScheduler()
+        scheduler.begin(for: identity)
+        scheduler.store(
+            DanmakuSegment(
+                index: 1,
+                events: [event(id: "same-id", time: 1)]
+            ),
+            for: identity
+        )
+        _ = scheduler.consume(snapshot(position: 0, rate: 1, generation: 1))
+        let firstValue = scheduler.consume(
+            snapshot(position: 2, rate: 1, generation: 1)
+        )
+        let first = try #require(firstValue)
+        #expect(first.events.map(\.id) == ["same-id"])
+
+        let other = PlaybackItemIdentity(bvid: "BV1OtherFixture", cid: 8)
+        scheduler.begin(for: other)
+        scheduler.store(
+            DanmakuSegment(
+                index: 1,
+                events: [
+                    event(id: "same-id", time: 1),
+                    event(id: "while-disabled", time: 3),
+                    event(id: "after-enabled", time: 5),
+                ]
+            ),
+            for: other
+        )
+        _ = scheduler.consume(
+            snapshot(
+                position: 0,
+                rate: 1,
+                generation: 1,
+                identity: other
+            )
+        )
+        let replacementValue = scheduler.consume(
+            snapshot(
+                position: 2,
+                rate: 1,
+                generation: 1,
+                identity: other
+            )
+        )
+        let replacement = try #require(replacementValue)
+        #expect(replacement.events.map(\.id) == ["same-id"])
+
+        scheduler.setEnabled(false)
+        let disabled = scheduler.consume(
+            snapshot(
+                position: 4,
+                rate: 1,
+                generation: 1,
+                identity: other
+            )
+        )
+        #expect(disabled == nil)
+        scheduler.setEnabled(true)
+        let resumedAnchor = scheduler.consume(
+            snapshot(
+                position: 4.5,
+                rate: 1,
+                generation: 1,
+                identity: other
+            )
+        )
+        #expect(resumedAnchor == nil)
+        let resumedValue = scheduler.consume(
+            snapshot(
+                position: 6,
+                rate: 1,
+                generation: 1,
+                identity: other
+            )
+        )
+        let resumed = try #require(resumedValue)
+        #expect(resumed.events.map(\.id) == ["after-enabled"])
+    }
+
+    @Test
+    func forwardPlaybackBoundsDeliveredIDsAndDeduplicatesAdjacentSegments() throws {
+        var scheduler = DanmakuScheduler()
+        scheduler.begin(for: identity)
+        _ = scheduler.consume(snapshot(position: 0, rate: 1, generation: 1))
+
+        for index in 1...8 {
+            let start = Double(index - 1)
+                * DanmakuScheduler.segmentDurationSeconds
+            var events = [
+                event(id: "unique-\(index)", time: start + 1),
+                event(id: "rolling-duplicate", time: start + 2),
+                event(
+                    id: "boundary-\(index)",
+                    time: start
+                        + DanmakuScheduler.segmentDurationSeconds
+                        - 0.1
+                ),
+            ]
+            if index > 1 {
+                events.append(
+                    event(id: "boundary-\(index - 1)", time: start + 0.1)
+                )
+            }
+            scheduler.store(
+                DanmakuSegment(index: index, events: events),
+                for: identity
+            )
+
+            let value = scheduler.consume(
+                snapshot(
+                    position: start
+                        + DanmakuScheduler.segmentDurationSeconds
+                        - 0.05,
+                    rate: 1,
+                    generation: 1
+                )
+            )
+            let batch = try #require(value)
+            #expect(
+                batch.events.map(\.id)
+                    == (
+                        index == 1
+                            ? [
+                                "unique-1",
+                                "rolling-duplicate",
+                                "boundary-1",
+                            ]
+                            : [
+                                "unique-\(index)",
+                                "boundary-\(index)",
+                            ]
+                    )
+            )
+            #expect(
+                scheduler.retainedDeliveredSegmentCount
+                    <= DanmakuScheduler.maximumCachedSegments
+            )
+            #expect(
+                scheduler.retainedDeliveredIDCount
+                    <= DanmakuScheduler.maximumCachedSegments * 4
+            )
+        }
+
+        #expect(
+            scheduler.retainedDeliveredSegmentCount
+                == DanmakuScheduler.maximumCachedSegments
+        )
+        #expect(
+            scheduler.retainedDeliveredIDCount
+                == DanmakuScheduler.maximumCachedSegments * 4
+        )
+        scheduler.reset()
+        #expect(scheduler.retainedDeliveredSegmentCount == 0)
+        #expect(scheduler.retainedDeliveredIDCount == 0)
+    }
+
     private func snapshot(
         position: Double,
         rate: Double,
         state: PlaybackTimelineState = .playing,
-        generation: UInt64
+        generation: UInt64,
+        identity: PlaybackItemIdentity? = nil
     ) -> PlaybackTimelineSnapshot {
         PlaybackTimelineSnapshot(
-            identity: identity,
+            identity: identity ?? self.identity,
             positionSeconds: position,
             durationSeconds: 900,
             rate: rate,
