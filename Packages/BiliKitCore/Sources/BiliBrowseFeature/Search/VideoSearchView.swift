@@ -1,29 +1,23 @@
 import SwiftUI
 
-struct VideoSearchView: View {
-    let model: GuestFeedViewModel
-    @Binding var searchText: String
-    @Binding var selectedBVID: String?
-    let onSubmit: () -> Void
+public struct VideoSearchView: View {
+    private let model: GuestFeedViewModel
+    private let selectedBVID: String?
+    private let onSelect: (String) -> Void
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                TextField("搜索 B 站视频", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(onSubmit)
-                    .accessibilityIdentifier("search.field")
+    public init(
+        model: GuestFeedViewModel,
+        selectedBVID: String? = nil,
+        onSelect: @escaping (String) -> Void
+    ) {
+        self.model = model
+        self.selectedBVID = selectedBVID
+        self.onSelect = onSelect
+    }
 
-                Button("搜索", action: onSubmit)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(normalizedSearchText.isEmpty)
-                    .accessibilityIdentifier("search.submit")
-            }
-            .padding(12)
-
-            Divider()
-            results
-        }
+    public var body: some View {
+        results
+            .accessibilityIdentifier("search.page")
     }
 
     @ViewBuilder
@@ -48,11 +42,35 @@ struct VideoSearchView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
 
-                List(page.videos, selection: $selectedBVID) { video in
-                    GuestVideoRow(video: video)
-                        .tag(video.bvid)
+                ScrollView {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(
+                                .adaptive(minimum: 220, maximum: 360),
+                                spacing: 18
+                            ),
+                        ],
+                        alignment: .leading,
+                        spacing: 22
+                    ) {
+                        ForEach(page.videos) { video in
+                            Button {
+                                onSelect(video.bvid)
+                            } label: {
+                                GuestVideoCard(
+                                    video: video,
+                                    isSelected: selectedBVID == video.bvid
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier(
+                                "search.item.\(video.bvid)"
+                            )
+                        }
+                    }
+                    .padding(20)
                 }
-                .listStyle(.inset)
+                .accessibilityIdentifier("search.grid")
                 .accessibilityIdentifier("search.results")
                 .refreshable {
                     model.search(query, page: page.pageNumber)
@@ -76,7 +94,4 @@ struct VideoSearchView: View {
         }
     }
 
-    private var normalizedSearchText: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }

@@ -1,14 +1,29 @@
 import BiliApplication
 import SwiftUI
 
-struct VideoDetailColumn<PlayerContent: View>: View {
-    let model: GuestVideoViewModel
-    let subtitleModel: SubtitleViewModel
-    let danmakuModel: DanmakuControlsViewModel
-    let playerContent: () -> PlayerContent
+public struct VideoDetailColumn<PlayerContent: View>: View {
+    private let model: GuestVideoViewModel
+    private let subtitleModel: SubtitleViewModel
+    private let danmakuModel: DanmakuControlsViewModel
+    private let onRetry: () -> Void
+    private let playerContent: () -> PlayerContent
+
+    public init(
+        model: GuestVideoViewModel,
+        subtitleModel: SubtitleViewModel,
+        danmakuModel: DanmakuControlsViewModel,
+        onRetry: @escaping () -> Void,
+        @ViewBuilder playerContent: @escaping () -> PlayerContent
+    ) {
+        self.model = model
+        self.subtitleModel = subtitleModel
+        self.danmakuModel = danmakuModel
+        self.onRetry = onRetry
+        self.playerContent = playerContent
+    }
 
     @ViewBuilder
-    var body: some View {
+    public var body: some View {
         Group {
             switch model.state {
             case .idle:
@@ -37,11 +52,11 @@ struct VideoDetailColumn<PlayerContent: View>: View {
                     danmakuModel: danmakuModel,
                     playerContent: playerContent
                 )
-            case let .failed(bvid, failure):
+            case let .failed(_, failure):
                 BrowseFailureView(
                     title: failure.title,
                     message: failure.message,
-                    retry: { model.selectVideo(bvid) }
+                    retry: onRetry
                 )
             }
         }
@@ -54,10 +69,6 @@ struct VideoDetailColumn<PlayerContent: View>: View {
             subtitleModel.selectVideo(playbackIdentity)
             danmakuModel.selectVideo(playbackIdentity)
             await subtitleModel.waitForCurrentTask()
-        }
-        .onDisappear {
-            subtitleModel.reset()
-            danmakuModel.reset()
         }
     }
 
