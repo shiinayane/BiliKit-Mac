@@ -13,7 +13,6 @@ struct BiliKitMacApp: App {
         WindowGroup {
             ContentView()
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1_320, height: 820)
     }
 }

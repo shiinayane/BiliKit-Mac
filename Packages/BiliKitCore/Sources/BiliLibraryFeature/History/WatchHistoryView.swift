@@ -19,17 +19,6 @@ public struct WatchHistoryView: View {
 
     public var body: some View {
         content
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        model.reload()
-                    } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(isBusy)
-                    .accessibilityIdentifier("history.reload")
-                }
-            }
             .task {
                 model.loadIfNeeded()
                 await model.waitForCurrentTask()
@@ -155,15 +144,6 @@ public struct WatchHistoryView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-        }
-    }
-
-    private var isBusy: Bool {
-        switch model.state {
-        case .loading, .loadingMore:
-            true
-        default:
-            false
         }
     }
 

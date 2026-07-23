@@ -29,39 +29,38 @@ public struct PopularFeedView: View {
                 description: Text("稍后重试或检查网络连接。")
             )
         case let .loaded(.popular(page)):
-            ScrollView {
-                LazyVGrid(
-                    columns: [
-                        GridItem(
-                            .adaptive(minimum: 220, maximum: 360),
-                            spacing: 18
+            GeometryReader { geometry in
+                ScrollView {
+                    LazyVGrid(
+                        columns: GuestVideoGridLayout.columns(
+                            for: geometry.size.width
                         ),
-                    ],
-                    alignment: .leading,
-                    spacing: 22
-                ) {
-                    ForEach(page.videos) { video in
-                        Button {
-                            onSelect(video.bvid)
-                        } label: {
-                            GuestVideoCard(
-                                video: video,
-                                isSelected: selectedBVID == video.bvid
-                            )
+                        alignment: .leading,
+                        spacing: GuestVideoGridLayout.verticalSpacing
+                    ) {
+                        ForEach(page.videos) { video in
+                            Button {
+                                onSelect(video.bvid)
+                            } label: {
+                                GuestVideoCard(
+                                    video: video,
+                                    isSelected: selectedBVID == video.bvid
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("feed.item.\(video.bvid)")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("feed.item.\(video.bvid)")
                     }
+                    .padding(GuestVideoGridLayout.contentPadding)
                 }
-                .padding(20)
-            }
-            .accessibilityIdentifier("feed.grid")
-            .refreshable {
-                model.loadPopular(
-                    page: page.pageNumber,
-                    pageSize: page.pageSize
-                )
-                await model.waitForCurrentTask()
+                .accessibilityIdentifier("feed.grid")
+                .refreshable {
+                    model.loadPopular(
+                        page: page.pageNumber,
+                        pageSize: page.pageSize
+                    )
+                    await model.waitForCurrentTask()
+                }
             }
         case let .failed(request: .popular(_, _), error: error):
             BrowseFailureView(
