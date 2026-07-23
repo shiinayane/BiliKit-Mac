@@ -4,6 +4,7 @@ import SwiftUI
 struct VideoDetailColumn<PlayerContent: View>: View {
     let model: GuestVideoViewModel
     let subtitleModel: SubtitleViewModel
+    let danmakuModel: DanmakuControlsViewModel
     let playerContent: () -> PlayerContent
 
     @ViewBuilder
@@ -25,6 +26,7 @@ struct VideoDetailColumn<PlayerContent: View>: View {
                     context: context,
                     isPreparingPlayback: true,
                     subtitleModel: subtitleModel,
+                    danmakuModel: danmakuModel,
                     playerContent: playerContent
                 )
             case let .ready(context):
@@ -32,6 +34,7 @@ struct VideoDetailColumn<PlayerContent: View>: View {
                     context: context,
                     isPreparingPlayback: false,
                     subtitleModel: subtitleModel,
+                    danmakuModel: danmakuModel,
                     playerContent: playerContent
                 )
             case let .failed(bvid, failure):
@@ -45,13 +48,16 @@ struct VideoDetailColumn<PlayerContent: View>: View {
         .task(id: playbackIdentity) {
             guard let playbackIdentity else {
                 subtitleModel.reset()
+                danmakuModel.reset()
                 return
             }
             subtitleModel.selectVideo(playbackIdentity)
+            danmakuModel.selectVideo(playbackIdentity)
             await subtitleModel.waitForCurrentTask()
         }
         .onDisappear {
             subtitleModel.reset()
+            danmakuModel.reset()
         }
     }
 

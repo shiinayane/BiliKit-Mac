@@ -6,6 +6,7 @@ public struct BrowseNavigationView<PlayerContent: View>: View {
     private let feedModel: GuestFeedViewModel
     private let videoModel: GuestVideoViewModel
     private let subtitleModel: SubtitleViewModel
+    private let danmakuModel: DanmakuControlsViewModel
     private let playerContent: () -> PlayerContent
     @Binding private var requestedBVID: String?
 
@@ -19,12 +20,14 @@ public struct BrowseNavigationView<PlayerContent: View>: View {
         feedModel: GuestFeedViewModel,
         videoModel: GuestVideoViewModel,
         subtitleModel: SubtitleViewModel,
+        danmakuModel: DanmakuControlsViewModel,
         requestedBVID: Binding<String?> = .constant(nil),
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.feedModel = feedModel
         self.videoModel = videoModel
         self.subtitleModel = subtitleModel
+        self.danmakuModel = danmakuModel
         _requestedBVID = requestedBVID
         self.playerContent = playerContent
     }
@@ -114,6 +117,7 @@ public struct BrowseNavigationView<PlayerContent: View>: View {
         VideoDetailColumn(
             model: videoModel,
             subtitleModel: subtitleModel,
+            danmakuModel: danmakuModel,
             playerContent: playerContent
         )
     }

@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var feedModel: GuestFeedViewModel
     @State private var videoModel: GuestVideoViewModel
     @State private var subtitleModel: SubtitleViewModel
+    @State private var danmakuModel: DanmakuControlsViewModel
     @State private var authenticationModel: AuthenticationViewModel
     @State private var historyModel: WatchHistoryViewModel
     @State private var isAuthenticationPresented = false
@@ -21,11 +22,13 @@ struct ContentView: View {
     @State private var requestedBVID: String?
     private let playerContent: AnyView
 
-    init(environment: AppEnvironment = .live) {
+    init(environment: AppEnvironment = .live()) {
         _feedModel = State(initialValue: environment.makeFeedViewModel())
         _videoModel = State(initialValue: environment.makeVideoViewModel())
         let subtitleModel = environment.makeSubtitleViewModel()
         _subtitleModel = State(initialValue: subtitleModel)
+        let danmakuModel = environment.makeDanmakuViewModel()
+        _danmakuModel = State(initialValue: danmakuModel)
         _authenticationModel = State(
             initialValue: environment.makeAuthenticationViewModel()
         )
@@ -42,6 +45,7 @@ struct ContentView: View {
             feedModel: feedModel,
             videoModel: videoModel,
             subtitleModel: subtitleModel,
+            danmakuModel: danmakuModel,
             requestedBVID: $requestedBVID
         ) {
             playerContent
@@ -104,6 +108,7 @@ struct ContentView: View {
             feedModel.cancel()
             videoModel.reset()
             subtitleModel.reset()
+            danmakuModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.cancelTransientWork()
         }

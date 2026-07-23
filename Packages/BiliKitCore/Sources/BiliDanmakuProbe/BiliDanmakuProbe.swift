@@ -8,6 +8,13 @@ import Foundation
 struct BiliDanmakuProbe {
     static func main() async {
         do {
+            if CommandLine.arguments.contains("--renderer-rate") {
+                try await RendererLoadProbe.run(
+                    arguments: CommandLine.arguments
+                )
+                print("RESULT: PASS")
+                return
+            }
             let configuration = try Configuration(arguments: CommandLine.arguments)
             let sessionConfiguration = URLSessionConfiguration.ephemeral
             sessionConfiguration.httpShouldSetCookies = false

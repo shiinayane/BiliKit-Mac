@@ -122,4 +122,4 @@ sh Scripts/run-quality-gates.sh app      # App/Xcode/composition；包含 packag
 
 ## M4.4 renderer 特别要求
 
-M4.4 使用本页通用 Gate；当前用户决策、实施草案和未决产品目标分别见 [`M4.4-renderer-spike-decision.md`](./M4.4-renderer-spike-decision.md) 与 [`M4.4-renderer-spike-technical-plan.md`](./M4.4-renderer-spike-technical-plan.md)。旧长契约已经废止，不得作为授权或恢复旧 harness 的依据。
+M4.4 使用本页通用 Gate。已结束的不可合入实验边界见 [`M4.4-renderer-spike-decision.md`](./M4.4-renderer-spike-decision.md) 与 [`M4.4-renderer-spike-technical-plan.md`](./M4.4-renderer-spike-technical-plan.md)；当前生产授权与可调整实施草案分别见 [`M4.4-renderer-production-decision.md`](./M4.4-renderer-production-decision.md) 与 [`M4.4-renderer-production-technical-plan.md`](./M4.4-renderer-production-technical-plan.md)。旧长契约已经废止，spike 代码与 harness 不得合入或作为生产完成证据。
