@@ -28,45 +28,64 @@ struct ContentView: View {
         let videoModel = environment.makeVideoViewModel()
         let subtitleModel = environment.makeSubtitleViewModel()
         let danmakuModel = environment.makeDanmakuViewModel()
+        let navigationModel = AppNavigationModel(
+            startPlayback: { bvid in
+                videoModel.selectVideo(bvid)
+            },
+            stopPlayback: {
+                videoModel.reset()
+                subtitleModel.reset()
+                danmakuModel.reset()
+            }
+        )
 
+        self.init(
+            navigationModel: navigationModel,
+            feedModel: feedModel,
+            videoModel: videoModel,
+            subtitleModel: subtitleModel,
+            danmakuModel: danmakuModel,
+            authenticationModel: environment.makeAuthenticationViewModel(),
+            historyModel: environment.makeWatchHistoryViewModel(),
+            playerContent: environment.makePlayerView(
+                subtitleModel: subtitleModel
+            )
+        )
+    }
+
+    init(
+        navigationModel: AppNavigationModel,
+        feedModel: GuestFeedViewModel,
+        videoModel: GuestVideoViewModel,
+        subtitleModel: SubtitleViewModel,
+        danmakuModel: DanmakuControlsViewModel,
+        authenticationModel: AuthenticationViewModel,
+        historyModel: WatchHistoryViewModel,
+        playerContent: AnyView
+    ) {
+        _navigationModel = State(initialValue: navigationModel)
         _feedModel = State(initialValue: feedModel)
         _videoModel = State(initialValue: videoModel)
         _subtitleModel = State(initialValue: subtitleModel)
         _danmakuModel = State(initialValue: danmakuModel)
-        _navigationModel = State(
-            initialValue: AppNavigationModel(
-                startPlayback: { bvid in
-                    videoModel.selectVideo(bvid)
-                },
-                stopPlayback: {
-                    videoModel.reset()
-                    subtitleModel.reset()
-                    danmakuModel.reset()
-                }
-            )
-        )
-        _authenticationModel = State(
-            initialValue: environment.makeAuthenticationViewModel()
-        )
-        _historyModel = State(
-            initialValue: environment.makeWatchHistoryViewModel()
-        )
-        playerContent = environment.makePlayerView(
-            subtitleModel: subtitleModel
-        )
+        _authenticationModel = State(initialValue: authenticationModel)
+        _historyModel = State(initialValue: historyModel)
+        self.playerContent = playerContent
     }
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            routeContent
-        }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1_080, minHeight: 680)
-        .sheet(isPresented: $isAuthenticationPresented) {
-            AuthenticationView(model: authenticationModel)
-        }
+        AppShellView(
+            navigationModel: navigationModel,
+            feedModel: feedModel,
+            videoModel: videoModel,
+            subtitleModel: subtitleModel,
+            danmakuModel: danmakuModel,
+            authenticationModel: authenticationModel,
+            historyModel: historyModel,
+            playerContent: playerContent,
+            isAuthenticationPresented: $isAuthenticationPresented,
+            onSubmitSearch: performSearch
+        )
         .task(id: feedTaskID) {
             await loadFeed(for: feedTaskID)
         }
@@ -97,131 +116,6 @@ struct ContentView: View {
             authenticationModel.cancelTransientWork()
             historyModel.reset()
         }
-    }
-
-    private var sidebar: some View {
-        List(selection: selectedSectionBinding) {
-            Label("搜索", systemImage: "magnifyingglass")
-                .tag(AppSection.search)
-                .accessibilityIdentifier("sidebar.search")
-            Label("热门", systemImage: "flame")
-                .tag(AppSection.popular)
-                .accessibilityIdentifier("sidebar.popular")
-            Label("观看历史", systemImage: "clock.arrow.circlepath")
-                .tag(AppSection.history)
-                .accessibilityIdentifier("sidebar.history")
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button {
-                isAuthenticationPresented = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.title2)
-                        .symbolRenderingMode(.hierarchical)
-                    Text(authenticationModel.isSignedIn ? "账号" : "登录")
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .accessibilityIdentifier("sidebar.account")
-        }
-        .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
-    }
-
-    @ViewBuilder
-    private var routeContent: some View {
-        switch navigationModel.route {
-        case .section(.popular):
-            PopularFeedView(
-                model: feedModel,
-                selectedBVID: selectedBVID(for: .popular),
-                onSelect: navigationModel.openPlayback
-            )
-        case .section(.search):
-            VideoSearchView(
-                model: feedModel,
-                selectedBVID: selectedBVID(for: .search),
-                onSelect: navigationModel.openPlayback
-            )
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    CenteredSearchField(
-                        text: $navigationModel.searchQuery,
-                        placeholder: "搜索 B 站视频",
-                        onSubmit: performSearch
-                    )
-                    .frame(width: 340)
-                    .accessibilityIdentifier("search.field")
-                }
-            }
-        case .section(.history):
-            historyContent
-        case .playback:
-            VideoDetailColumn(
-                model: videoModel,
-                subtitleModel: subtitleModel,
-                danmakuModel: danmakuModel,
-                onRetry: navigationModel.retryPlayback
-            ) {
-                playerContent
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        navigationModel.returnFromPlayback()
-                    } label: {
-                        Label("返回", systemImage: "chevron.backward")
-                    }
-                    .accessibilityIdentifier("playback.back")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var historyContent: some View {
-        if authenticationModel.isSignedIn {
-            WatchHistoryView(
-                model: historyModel,
-                onSelect: navigationModel.openPlayback,
-                onAuthenticationRequired: {
-                    historyModel.reset()
-                    authenticationModel.revalidate()
-                }
-            )
-        } else {
-            ContentUnavailableView {
-                Label("登录后查看观看历史", systemImage: "person.crop.circle")
-            } description: {
-                Text("观看历史只在登录期间加载，不会保存到本机。")
-            } actions: {
-                Button("登录") {
-                    isAuthenticationPresented = true
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("history.login")
-            }
-            .accessibilityIdentifier("history.signed-out")
-        }
-    }
-
-    private var selectedSectionBinding: Binding<AppSection?> {
-        Binding(
-            get: { navigationModel.selectedSection },
-            set: { navigationModel.selectedSection = $0 }
-        )
-    }
-
-    private func selectedBVID(for section: AppSection) -> String? {
-        guard navigationModel.returnSnapshot?.sourceSection == section else {
-            return nil
-        }
-        return navigationModel.returnSnapshot?.selectedBVID
     }
 
     private var normalizedSearchQuery: String {
@@ -261,7 +155,7 @@ struct ContentView: View {
     private func loadFeed(for intent: AppFeedTaskID) async {
         switch intent {
         case .popular:
-            feedModel.loadPopular()
+            feedModel.loadPopular(pageSize: 50)
             await feedModel.waitForCurrentTask()
         case .search(nil, _), .none:
             feedModel.cancel()

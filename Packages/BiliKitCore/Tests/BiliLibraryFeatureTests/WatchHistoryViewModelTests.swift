@@ -30,9 +30,13 @@ struct WatchHistoryViewModelTests {
         )
 
         model.loadIfNeeded()
+        #expect(model.isBusy)
         await model.waitForCurrentTask()
+        #expect(!model.isBusy)
         model.loadMore()
+        #expect(model.isBusy)
         await model.waitForCurrentTask()
+        #expect(!model.isBusy)
 
         guard case let .loaded(items, nextContinuation, error) = model.state else {
             Issue.record("历史状态不是 loaded")

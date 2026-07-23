@@ -38,13 +38,20 @@ struct PlayerHostView<Overlay: View>: View {
 
 @MainActor
 final class PlayerHostLifecycleProbe {
+    enum Event: Equatable {
+        case created(ObjectIdentifier)
+        case dismantled(ObjectIdentifier)
+    }
+
     private(set) var activeCount = 0
     private(set) var peakActiveCount = 0
+    private(set) var events: [Event] = []
     private var activeIdentities: Set<ObjectIdentifier> = []
 
     func didCreate(_ host: AnyObject) {
         let identity = ObjectIdentifier(host)
         guard activeIdentities.insert(identity).inserted else { return }
+        events.append(.created(identity))
         activeCount = activeIdentities.count
         peakActiveCount = max(peakActiveCount, activeCount)
     }
@@ -52,6 +59,7 @@ final class PlayerHostLifecycleProbe {
     func didDismantle(_ host: AnyObject) {
         let identity = ObjectIdentifier(host)
         guard activeIdentities.remove(identity) != nil else { return }
+        events.append(.dismantled(identity))
         activeCount = activeIdentities.count
     }
 }

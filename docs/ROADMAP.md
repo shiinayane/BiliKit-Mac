@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 P6 生产契约已确认，Slice A 两栏路由候选已完成本机 Gate，等待用户真实确认后再进入 Slice B。
+> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A 已冻结于提交 `0b1f94a`。导航与窗口 chrome 的 A1 架构迁移已实现并通过本地 Gate、独立审查和无个人数据验证，正等待用户确认迁移后观感；在确认前仍不进入 Slice B/C。
 >
 > 基线日期：2026-07-22（Asia/Tokyo）。
 >
@@ -565,10 +565,11 @@ Gate：
 - M4.3.5 已关闭：短分支已引入风险分级、任务契约、隔离审查、分层模型路由、统一 Gate 命令和 PR 模板；独立只读终审与远程 macOS 15/26 CI 均通过。
 - M4.4 不可合入 spike 已关闭：原始 `CATextLayer` 与 bitmap-backed `CALayer` 的严重卡顿来自共同的逐 layer compositor shadow；内容级 1.5 pt 重墨通过中日韩/拉丁/emoji、黑白背景、40/80 events/s、生命周期和资源稳定性现场验证。该结果只选择 v1 路线，不等于生产实现完成。
 - M4.4 生产实现已关闭：P4 镜像覆盖模型、真实 100% 视觉效果、完整 App Gate、独立红区审查和 80 events/s 的 30 分钟生产 probe 通过；RSS 趋势与真实 resize/fullscreen 仍属于 M4 总收口证据。
+- M4.5 Slice A 已冻结于 `0b1f94a`；A1 导航／窗口 chrome 迁移把 split view、route switch 和页面 toolbar 从 `ContentView` 移入单一 App shell，保留原有任务、路由和清理 owner。完整 App Gate、离线 host identity／busy wiring 测试和默认／窄窗口签名 App smoke 已通过，详见 [`validation/M4.5-navigation-chrome-migration-2026-07-24.md`](./validation/M4.5-navigation-chrome-migration-2026-07-24.md)。
 
 接下来按顺序：
 
-1. 由用户按真实 App 路径确认 Slice A 的搜索／热门／历史／账户、播放与返回是否符合预期。
-2. Slice A 确认后进入播放页响应式重排；最后再做视觉、辅助功能与总 Gate，不提前混入后续切片。
+1. 由用户确认 A1 迁移后的三个页面结果：热门无可见标题、搜索无可见标题且输入框居中、历史保留标题且刷新位于右侧。
+2. 视觉确认后解除架构冻结，再重新决定 Slice B 的播放页响应式重排；最后再做视觉、辅助功能与总 Gate，不提前混入后续切片。
 
 M4.5 不新增评论、相关推荐、UP 主资料、搜索历史、热搜、endpoint 或持久化。本地持久化仍由未来搜索历史或其他明确跨重启需求触发独立切片。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2/M4 测试层修复。

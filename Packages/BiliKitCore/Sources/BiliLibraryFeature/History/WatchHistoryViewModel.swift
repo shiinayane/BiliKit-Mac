@@ -33,6 +33,15 @@ public final class WatchHistoryViewModel {
         }
     }
 
+    public var isBusy: Bool {
+        switch state {
+        case .loading, .loadingMore:
+            true
+        case .idle, .loaded, .failed:
+            false
+        }
+    }
+
     @ObservationIgnored private let useCase: WatchHistoryUseCase
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
