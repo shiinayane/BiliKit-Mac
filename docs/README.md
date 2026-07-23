@@ -9,6 +9,11 @@
 - [`development/M4.4-renderer-spike-technical-plan.md`](./development/M4.4-renderer-spike-technical-plan.md)：已执行 spike 的技术边界与历史输入。
 - [`development/M4.4-renderer-production-decision.md`](./development/M4.4-renderer-production-decision.md)：已授权并按真实播放反馈修订至 P4 的 renderer 生产决策契约。
 - [`development/M4.4-renderer-production-technical-plan.md`](./development/M4.4-renderer-production-technical-plan.md)：不要求用户逐项确认的生产实施草案。
+- [`development/M4-closeout-decision.md`](./development/M4-closeout-decision.md)：M4 性能与真实环境总收口的决策、停止条件与复杂度预算。
+- [`development/M4-closeout-technical-plan.md`](./development/M4-closeout-technical-plan.md)：不改变收口决策的最小实施草案。
+- [`development/M4-scheduler-retention-fix-decision.md`](./development/M4-scheduler-retention-fix-decision.md)：总收口终审发现的 scheduler 去重状态无界增长修复契约，D1 已确认并完成本机验证。
+- [`development/M4-scheduler-retention-fix-technical-plan.md`](./development/M4-scheduler-retention-fix-technical-plan.md)：不要求用户逐项确认的窄修复实施草案。
+- [`validation/M4-closeout-2026-07-23.md`](./validation/M4-closeout-2026-07-23.md)：真实 resize/fullscreen/seek/替换、30 分钟 RSS、资源清理与本机 App Gate 证据。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。

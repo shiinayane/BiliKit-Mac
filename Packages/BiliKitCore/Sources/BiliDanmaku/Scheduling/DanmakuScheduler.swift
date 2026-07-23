@@ -72,18 +72,24 @@ public struct DanmakuScheduler: Sendable {
     private var filter = DanmakuFilter()
     private var isEnabled = true
     private var segments: [Int: [DanmakuEvent]] = [:]
-    private var deliveredIDs: Set<String> = []
+    private var deliveredIDsBySegment: [Int: Set<String>] = [:]
     private var previousPositionSeconds: Double?
     private var discontinuityGeneration: UInt64?
 
     public init() {}
 
     public var cachedSegmentCount: Int { segments.count }
+    var retainedDeliveredSegmentCount: Int {
+        deliveredIDsBySegment.count
+    }
+    var retainedDeliveredIDCount: Int {
+        deliveredIDsBySegment.values.reduce(0) { $0 + $1.count }
+    }
 
     public mutating func begin(for identity: PlaybackItemIdentity) {
         self.identity = identity
         segments.removeAll(keepingCapacity: false)
-        deliveredIDs.removeAll(keepingCapacity: false)
+        deliveredIDsBySegment.removeAll(keepingCapacity: false)
         previousPositionSeconds = nil
         discontinuityGeneration = nil
     }
@@ -91,7 +97,7 @@ public struct DanmakuScheduler: Sendable {
     public mutating func reset() {
         identity = nil
         segments.removeAll(keepingCapacity: false)
-        deliveredIDs.removeAll(keepingCapacity: false)
+        deliveredIDsBySegment.removeAll(keepingCapacity: false)
         previousPositionSeconds = nil
         discontinuityGeneration = nil
     }
@@ -99,7 +105,7 @@ public struct DanmakuScheduler: Sendable {
     public mutating func setEnabled(_ enabled: Bool) {
         guard isEnabled != enabled else { return }
         isEnabled = enabled
-        deliveredIDs.removeAll(keepingCapacity: true)
+        deliveredIDsBySegment.removeAll(keepingCapacity: true)
         previousPositionSeconds = nil
     }
 
@@ -145,7 +151,7 @@ public struct DanmakuScheduler: Sendable {
         if discontinuityGeneration != snapshot.discontinuityGeneration {
             discontinuityGeneration = snapshot.discontinuityGeneration
             previousPositionSeconds = snapshot.positionSeconds
-            deliveredIDs.removeAll(keepingCapacity: true)
+            deliveredIDsBySegment.removeAll(keepingCapacity: true)
             return DanmakuBatch(
                 identity: identity,
                 discontinuityGeneration: snapshot.discontinuityGeneration,
@@ -167,7 +173,7 @@ public struct DanmakuScheduler: Sendable {
         }
         guard snapshot.positionSeconds >= previousPositionSeconds else {
             self.previousPositionSeconds = snapshot.positionSeconds
-            deliveredIDs.removeAll(keepingCapacity: true)
+            deliveredIDsBySegment.removeAll(keepingCapacity: true)
             return DanmakuBatch(
                 identity: identity,
                 discontinuityGeneration: snapshot.discontinuityGeneration,
@@ -178,19 +184,25 @@ public struct DanmakuScheduler: Sendable {
 
         let lowerIndex = Self.segmentIndex(at: previousPositionSeconds)
         let upperIndex = Self.segmentIndex(at: snapshot.positionSeconds)
+        trimDeliveredIDs(through: upperIndex)
         var emitted: [DanmakuEvent] = []
         if lowerIndex <= upperIndex {
             for index in lowerIndex...upperIndex {
-                for event in segments[index] ?? [] where
-                    event.timeSeconds > previousPositionSeconds
-                    && event.timeSeconds <= snapshot.positionSeconds
-                    && filter.allows(event)
-                    && deliveredIDs.insert(event.id).inserted
-                {
+                for event in segments[index] ?? [] {
+                    guard event.timeSeconds > previousPositionSeconds,
+                          event.timeSeconds <= snapshot.positionSeconds,
+                          filter.allows(event)
+                    else { continue }
+
+                    let wasDelivered = hasDelivered(event.id)
+                    deliveredIDsBySegment[index, default: []].insert(event.id)
+                    guard !wasDelivered else { continue }
+
                     emitted.append(event)
                 }
             }
         }
+        trimDeliveredIDs(through: upperIndex)
         self.previousPositionSeconds = snapshot.positionSeconds
         guard !emitted.isEmpty else { return nil }
         emitted.sort(by: Self.eventOrder)
@@ -214,6 +226,20 @@ public struct DanmakuScheduler: Sendable {
         }
         let keep = Set(ordered.prefix(Self.maximumCachedSegments))
         segments = segments.filter { keep.contains($0.key) }
+    }
+
+    private func hasDelivered(_ id: String) -> Bool {
+        deliveredIDsBySegment.values.contains { $0.contains(id) }
+    }
+
+    private mutating func trimDeliveredIDs(through segmentIndex: Int) {
+        let firstRetainedIndex = max(
+            segmentIndex - Self.maximumCachedSegments + 1,
+            1
+        )
+        deliveredIDsBySegment = deliveredIDsBySegment.filter {
+            (firstRetainedIndex...segmentIndex).contains($0.key)
+        }
     }
 
     private static func segmentIndex(at positionSeconds: Double) -> Int {
