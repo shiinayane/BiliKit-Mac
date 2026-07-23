@@ -19,7 +19,14 @@ struct DanmakuSessionTests {
 
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
-        try await Task.sleep(for: .milliseconds(80))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while await repository.requestedIndices().count < 2,
+              clock.now < deadline
+        {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        await session.waitForLoads()
 
         #expect(await repository.requestedIndices().sorted() == [1, 2])
         #expect(await repository.maximumActiveRequests() == 2)
