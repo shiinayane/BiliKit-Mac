@@ -52,7 +52,13 @@ struct DanmakuSessionTests {
         try await Task.sleep(for: .milliseconds(5))
         session.start(for: second)
         timeline.publish(snapshot(identity: second, position: 0, generation: 2))
-        try await Task.sleep(for: .milliseconds(100))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while session.state != .ready(second),
+              clock.now < deadline
+        {
+            try await Task.sleep(for: .milliseconds(5))
+        }
 
         #expect(session.state == .ready(second))
         session.stop()
