@@ -14,6 +14,7 @@ struct BrowseFailureView: View {
         } actions: {
             Button("重试", action: retry)
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("failure.retry")
         }
     }
 }

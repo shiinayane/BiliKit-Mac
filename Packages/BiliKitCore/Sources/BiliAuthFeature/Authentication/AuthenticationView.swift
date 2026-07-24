@@ -99,11 +99,17 @@ public struct AuthenticationView: View {
     private func qrContent(title: String, detail: String) -> some View {
         VStack(spacing: 16) {
             if let image = model.qrCodeImage {
-                Image(decorative: image, scale: 1)
+                Image(
+                    image,
+                    scale: 1,
+                    orientation: .up,
+                    label: Text("哔哩哔哩登录二维码")
+                )
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 240, height: 240)
+                    .accessibilityHint("使用手机客户端扫描")
                     .accessibilityIdentifier("auth.qr-code")
             } else {
                 ProgressView()

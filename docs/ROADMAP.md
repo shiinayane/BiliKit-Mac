@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A 已关闭：两栏导航外壳、首页／搜索／观看历史卡片视觉与窄 `BiliUI` 复用边界已经通过用户视觉确认和本机 Gate。Slice B 已关闭：响应式播放页、单播放器 host 不变量、最终视觉参数、App Gate、红区审查、签名 App 观察与用户确认一致；Slice C 尚未开始。
+> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A、B、C 均已关闭。Slice C 的语义字号、卡片交互、关键辅助语义、Debug fixture、最终 XCUI、App Gate、Release 编译与独立红区审查已经一致；M4.5 本地实现与验证已收口，里程碑总 Gate 仍等待统一 PR 的远程 macOS 15/26 CI。
 >
 > 基线日期：2026-07-22（Asia/Tokyo）。
 >
@@ -567,10 +567,12 @@ Gate：
 - M4.4 不可合入 spike 已关闭：原始 `CATextLayer` 与 bitmap-backed `CALayer` 的严重卡顿来自共同的逐 layer compositor shadow；内容级 1.5 pt 重墨通过中日韩/拉丁/emoji、黑白背景、40/80 events/s、生命周期和资源稳定性现场验证。该结果只选择 v1 路线，不等于生产实现完成。
 - M4.4 生产实现已关闭：P4 镜像覆盖模型、真实 100% 视觉效果、完整 App Gate、独立红区审查和 80 events/s 的 30 分钟生产 probe 通过；RSS 趋势与真实 resize/fullscreen 仍属于 M4 总收口证据。
 - M4.5 Slice A 已关闭：A1 导航／窗口 chrome 迁移把 split view、route switch 和页面 toolbar 从 `ContentView` 移入单一 App shell；热门、搜索与观看历史通过 ADR 0009 的窄 `BiliUI` 边界共用严格 16:9 视频卡片和网格。历史保留自身的进度、完成态、相对观看时间、分页与清理语义。完整 App Gate、独立审查及默认／全屏签名 App 观察通过，详见 [`validation/M4.5-navigation-chrome-migration-2026-07-24.md`](./validation/M4.5-navigation-chrome-migration-2026-07-24.md) 与 [`validation/M4.5-video-card-system-2026-07-24.md`](./validation/M4.5-video-card-system-2026-07-24.md)。
+- M4.5 Slice B 已关闭：响应式播放页保持单 player host，单分 P 不显示空右栏，多分 P 在 compact disclosure 与 400 pt wide rail 间切换；16:9 黑色播放器容器、40 pt 水平边距、24 pt 垂直边距及最终文字层级已通过 App Gate、红区审查、签名 App 观察与用户确认，详见 [`validation/M4.5-slice-b-2026-07-24.md`](./validation/M4.5-slice-b-2026-07-24.md)。
+- M4.5 Slice C 已关闭：视频卡片使用语义字号和统一 hover／pressed／selected／focus 反馈；搜索 Return、播放 Escape、账户／历史／重试／二维码／分 P 辅助语义及无个人数据 Debug fixture 已落地。最终两条 XCUI、补充 selected trait 断言、192 项 Package 测试、App build/unit tests、Release 编译与红区审查通过；用户在最终复跑后要求关闭并提交。未失败且无法归因的 XCUI QoS warning 按 P3 保留观察，详见 [`validation/M4.5-slice-c-2026-07-25.md`](./validation/M4.5-slice-c-2026-07-25.md)。
 
 接下来按顺序：
 
-1. 进入 Slice C 的系统辅助显示矩阵、键盘／VoiceOver 收口与 M4.5 总 Gate，不提前混入后续产品能力。
-2. M4.5 关闭后优先建立字幕串片修复切片：当前真实使用偶发观察到播放页显示其他视频的字幕。先固定可复现的 A→B／快速切换／旧请求迟到序列，检查 `PlaybackItemIdentity`、generation、timeline snapshot 与 repository resource mapping，再修复实际 owner 或隔离缺口；不得在未复现前假定根因或只增加清空 UI 的补丁。
+1. 提交 Slice C，并在 M4.5 统一 PR 上通过远程 macOS 15/26 CI 后关闭里程碑总 Gate。
+2. 随后优先建立字幕串片修复切片：当前真实使用偶发观察到播放页显示其他视频的字幕。先固定可复现的 A→B／快速切换／旧请求迟到序列，检查 `PlaybackItemIdentity`、generation、timeline snapshot 与 repository resource mapping，再修复实际 owner 或隔离缺口；不得在未复现前假定根因或只增加清空 UI 的补丁。
 
 M4.5 不新增评论、相关推荐、UP 主资料、搜索历史、热搜、endpoint 或持久化。本地持久化仍由未来搜索历史或其他明确跨重启需求触发独立切片。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2/M4 测试层修复。

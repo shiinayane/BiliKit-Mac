@@ -115,7 +115,10 @@ public struct WatchHistoryView: View {
                         } label: {
                             WatchHistoryCard(item: item)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(
+                            VideoCardButtonStyle(isSelected: false)
+                        )
+                        .accessibilityHint("播放视频")
                         .accessibilityIdentifier("history.item.\(item.bvid)")
                     }
                 }
@@ -158,8 +161,10 @@ public struct WatchHistoryView: View {
                     model.reload()
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("history.retry")
             }
         }
+        .accessibilityIdentifier("history.failure")
     }
 
     private func title(for error: WatchHistoryError) -> String {

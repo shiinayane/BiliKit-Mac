@@ -57,6 +57,11 @@ struct AppShellView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
+            .accessibilityHint(
+                authenticationModel.isSignedIn
+                    ? "打开账号管理"
+                    : "打开扫码登录"
+            )
             .accessibilityIdentifier("sidebar.account")
         }
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
@@ -208,6 +213,7 @@ private struct HistoryPageRoot: View {
             } actions: {
                 Button("登录", action: onPresentAuthentication)
                     .buttonStyle(.borderedProminent)
+                    .accessibilityHint("打开扫码登录")
                     .accessibilityIdentifier("history.login")
             }
             .accessibilityIdentifier("history.signed-out")
@@ -259,6 +265,8 @@ private struct PlaybackPageRoot: View {
                 Button(action: onReturn) {
                     Label("返回", systemImage: "chevron.backward")
                 }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityHint("返回来源页面并停止当前播放")
                 .accessibilityIdentifier("playback.back")
             }
         }
