@@ -7,7 +7,7 @@ struct SubtitleControlsView: View {
     var body: some View {
         HStack(spacing: 12) {
             Label("字幕", systemImage: "captions.bubble")
-                .font(.headline)
+                .font(.title3.weight(.semibold))
 
             Spacer()
 
@@ -46,6 +46,7 @@ struct SubtitleControlsView: View {
                 }
             }
         }
+        .font(.title3)
         .accessibilityIdentifier("subtitle.controls")
     }
 }

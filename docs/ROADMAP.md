@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A 已关闭：两栏导航外壳、首页／搜索／观看历史卡片视觉与窄 `BiliUI` 复用边界已经通过用户视觉确认和本机 Gate。Slice B/C 尚未开始。
+> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A 已关闭：两栏导航外壳、首页／搜索／观看历史卡片视觉与窄 `BiliUI` 复用边界已经通过用户视觉确认和本机 Gate。Slice B 已关闭：响应式播放页、单播放器 host 不变量、最终视觉参数、App Gate、红区审查、签名 App 观察与用户确认一致；Slice C 尚未开始。
 >
 > 基线日期：2026-07-22（Asia/Tokyo）。
 >
@@ -570,7 +570,7 @@ Gate：
 
 接下来按顺序：
 
-1. 为 Slice B 单独确认播放页响应式重排的决策契约，不沿用 Slice A 的实现授权。
-2. Slice B 通过后再做 Slice C 的系统辅助显示矩阵、键盘／VoiceOver 收口与 M4.5 总 Gate，不提前混入后续切片。
+1. 进入 Slice C 的系统辅助显示矩阵、键盘／VoiceOver 收口与 M4.5 总 Gate，不提前混入后续产品能力。
+2. M4.5 关闭后优先建立字幕串片修复切片：当前真实使用偶发观察到播放页显示其他视频的字幕。先固定可复现的 A→B／快速切换／旧请求迟到序列，检查 `PlaybackItemIdentity`、generation、timeline snapshot 与 repository resource mapping，再修复实际 owner 或隔离缺口；不得在未复现前假定根因或只增加清空 UI 的补丁。
 
 M4.5 不新增评论、相关推荐、UP 主资料、搜索历史、热搜、endpoint 或持久化。本地持久化仍由未来搜索历史或其他明确跨重启需求触发独立切片。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2/M4 测试层修复。

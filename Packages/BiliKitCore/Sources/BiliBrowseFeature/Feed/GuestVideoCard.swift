@@ -62,17 +62,17 @@ struct GuestVideoCard: View {
             title: title,
             coverMetrics: [
                 VideoCardMetric(
-                    GuestVideoCardFormatting.compactCount(viewCount),
+                    VideoMetadataFormatting.compactCount(viewCount),
                     systemImage: "play.fill"
                 ),
                 VideoCardMetric(
-                    GuestVideoCardFormatting.compactCount(danmakuCount),
+                    VideoMetadataFormatting.compactCount(danmakuCount),
                     systemImage: "text.bubble.fill"
                 ),
             ],
             coverTrailingText: durationSeconds.map(Self.duration),
             footerLeadingText: "\(ownerName) · "
-                + GuestVideoCardFormatting.publishedDate(publishedAt),
+                + VideoMetadataFormatting.publishedDate(publishedAt),
             isSelected: isSelected
         )
     }
@@ -112,72 +112,5 @@ struct GuestVideoCard: View {
             )
         }
         return String(format: "%d:%02d", minutes, remainingSeconds)
-    }
-}
-
-enum GuestVideoCardFormatting {
-    static func compactCount(_ count: Int64) -> String {
-        let normalizedCount = max(0, count)
-        if normalizedCount >= 100_000_000 {
-            return compactUnit(
-                normalizedCount,
-                divisor: 100_000_000,
-                suffix: "亿"
-            )
-        }
-        if normalizedCount >= 10_000 {
-            return compactUnit(
-                normalizedCount,
-                divisor: 10_000,
-                suffix: "万"
-            )
-        }
-        return String(normalizedCount)
-    }
-
-    static func publishedDate(
-        _ date: Date,
-        relativeTo now: Date = .now,
-        calendar: Calendar = .current
-    ) -> String {
-        if calendar.isDate(date, inSameDayAs: now) {
-            let elapsedHours = calendar.dateComponents(
-                [.hour],
-                from: date,
-                to: now
-            ).hour ?? 0
-            return "\(max(1, elapsedHours))小时前"
-        }
-
-        if let yesterday = calendar.date(
-            byAdding: .day,
-            value: -1,
-            to: now
-        ),
-           calendar.isDate(date, inSameDayAs: yesterday)
-        {
-            return "昨天"
-        }
-
-        let year = calendar.component(.year, from: date)
-        let month = calendar.component(.month, from: date)
-        let day = calendar.component(.day, from: date)
-        if year == calendar.component(.year, from: now) {
-            return "\(month)月\(day)日"
-        }
-        return "\(year)年\(month)月\(day)日"
-    }
-
-    private static func compactUnit(
-        _ count: Int64,
-        divisor: Int64,
-        suffix: String
-    ) -> String {
-        let whole = count / divisor
-        let fraction = count % divisor * 10 / divisor
-        if fraction == 0 {
-            return "\(whole)\(suffix)"
-        }
-        return "\(whole).\(fraction)\(suffix)"
     }
 }
