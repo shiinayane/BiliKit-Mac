@@ -69,6 +69,14 @@ for product in BiliBrowseFeature BiliLibraryFeature BiliAuthFeature; do
 done
 
 assert_occurrences 1 \
+    '.target(name: "BiliUI"),' \
+    "$package_file" \
+    "缺少 Package 内部 BiliUI target"
+if grep -F 'targets: ["BiliUI"]' "$package_file" >/dev/null; then
+    fail "BiliUI 只能是 Package 内部 target，不能暴露 library product"
+fi
+
+assert_occurrences 1 \
     '.library(name: "BiliDanmaku", targets: ["BiliDanmaku"]),' \
     "$package_file" \
     "缺少 BiliDanmaku product"

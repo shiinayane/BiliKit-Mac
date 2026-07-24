@@ -1,5 +1,7 @@
 import BiliApplication
 import BiliModels
+import BiliUI
+import Foundation
 import SwiftUI
 
 public struct WatchHistoryView: View {
@@ -98,38 +100,51 @@ public struct WatchHistoryView: View {
         isLoadingMore: Bool,
         loadMoreError: WatchHistoryError?
     ) -> some View {
-        List {
-            ForEach(items) { item in
-                Button {
-                    onSelect(item.bvid)
-                } label: {
-                    WatchHistoryRow(item: item)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("history.item.\(item.bvid)")
-            }
-
-            if let loadMoreError {
-                Text(message(for: loadMoreError))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            if canLoadMore {
-                HStack {
-                    Spacer()
-                    Button(isLoadingMore ? "正在加载…" : "加载更多") {
-                        model.loadMore()
+        GeometryReader { geometry in
+            ScrollView {
+                LazyVGrid(
+                    columns: VideoCardGridLayout.columns(
+                        for: geometry.size.width
+                    ),
+                    alignment: .leading,
+                    spacing: VideoCardGridLayout.verticalSpacing
+                ) {
+                    ForEach(items) { item in
+                        Button {
+                            onSelect(item.bvid)
+                        } label: {
+                            WatchHistoryCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("history.item.\(item.bvid)")
                     }
-                    .disabled(isLoadingMore)
-                    .accessibilityIdentifier("history.load-more")
-                    Spacer()
                 }
-                .padding(.vertical, 8)
+                .padding(VideoCardGridLayout.contentPadding)
+
+                if let loadMoreError {
+                    Text(message(for: loadMoreError))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, VideoCardGridLayout.contentPadding)
+                }
+
+                if canLoadMore {
+                    HStack {
+                        Spacer()
+                        Button(isLoadingMore ? "正在加载…" : "加载更多") {
+                            model.loadMore()
+                        }
+                        .disabled(isLoadingMore)
+                        .accessibilityIdentifier("history.load-more")
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, VideoCardGridLayout.contentPadding)
+                }
             }
+            .accessibilityIdentifier("history.list")
         }
-        .listStyle(.inset)
-        .accessibilityIdentifier("history.list")
     }
 
     private func failure(_ error: WatchHistoryError) -> some View {
@@ -174,57 +189,82 @@ public struct WatchHistoryView: View {
     }
 }
 
-private struct WatchHistoryRow: View {
+private struct WatchHistoryCard: View {
     let item: WatchHistoryItem
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            AsyncImage(url: item.coverURL) { phase in
-                if case let .success(image) = phase {
-                    image.resizable().scaledToFill()
-                } else {
-                    Rectangle().fill(.quaternary)
-                }
-            }
-            .frame(width: 144, height: 81)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+        VideoCard(
+            coverURL: item.coverURL,
+            avatarURL: item.owner.avatarURL,
+            showsAvatar: item.owner.avatarURL != nil,
+            title: item.title,
+            coverTrailingText: WatchHistoryCardFormatting.progress(
+                progressSeconds: item.progressSeconds,
+                durationSeconds: item.durationSeconds
+            ),
+            footerLeadingText: item.owner.name,
+            footerTrailingText: WatchHistoryCardFormatting.viewedAt(
+                item.viewedAt
+            ),
+            isSelected: false
+        )
+    }
+}
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                Text(item.owner.name)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Text(progressText)
-                    Spacer()
-                    Text(
-                        item.viewedAt.formatted(
-                            date: .abbreviated,
-                            time: .shortened
-                        )
-                    )
-                }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            }
+enum WatchHistoryCardFormatting {
+    static func progress(
+        progressSeconds: Int,
+        durationSeconds: Int
+    ) -> String {
+        let duration = max(0, durationSeconds)
+        let progress = min(max(0, progressSeconds), duration)
+        if duration > 0, progress >= duration {
+            return "已看完"
         }
-        .contentShape(Rectangle())
-        .padding(.vertical, 4)
+        return "\(durationText(progress))/\(durationText(duration))"
     }
 
-    private var progressText: String {
-        "看到 \(format(item.progressSeconds)) / \(format(item.durationSeconds))"
+    static func viewedAt(
+        _ date: Date,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> String {
+        let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return String(format: "今天 %02d:%02d", hour, minute)
+        }
+        if let yesterday = calendar.date(
+            byAdding: .day,
+            value: -1,
+            to: now
+        ), calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(format: "昨天 %02d:%02d", hour, minute)
+        }
+
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        return String(
+            format: "%d月%d日 %02d:%02d",
+            month,
+            day,
+            hour,
+            minute
+        )
     }
 
-    private func format(_ seconds: Int) -> String {
+    private static func durationText(_ seconds: Int) -> String {
         let hours = seconds / 3_600
         let minutes = seconds % 3_600 / 60
-        let seconds = seconds % 60
+        let remainingSeconds = seconds % 60
         if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            return String(
+                format: "%d:%02d:%02d",
+                hours,
+                minutes,
+                remainingSeconds
+            )
         }
-        return String(format: "%d:%02d", minutes, seconds)
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }

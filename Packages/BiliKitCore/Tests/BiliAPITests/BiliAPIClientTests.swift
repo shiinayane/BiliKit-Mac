@@ -271,6 +271,8 @@ struct BiliAPIClientTests {
         #expect(page.items[0].progressSeconds == 125)
         #expect(page.items[1].progressSeconds == 300)
         #expect(page.items[0].coverURL?.scheme == "https")
+        #expect(page.items[0].owner.avatarURL?.scheme == "https")
+        #expect(page.items[1].owner.avatarURL == nil)
         let continuation = try #require(page.continuation)
         _ = try await client.watchHistory(
             after: continuation,

@@ -28,6 +28,13 @@ check_forbidden_imports \
     '^import (Bili[A-Za-z0-9_]*|Security|SwiftUI|AVFoundation|AVKit|AppKit|Network)$' \
     "BiliNetworking 只能提供无业务语义、无秘密存储的传输边界"
 
+if grep -R -n -E --include='*.swift' '^import ' \
+    Packages/BiliKitCore/Sources/BiliUI \
+    | grep -v -E '^Packages/BiliKitCore/Sources/BiliUI/[^:]+:[0-9]+:import (Foundation|SwiftUI)$'; then
+    echo "架构边界失败：BiliUI 只能依赖 Foundation 与 SwiftUI" >&2
+    exit 1
+fi
+
 for feature_path in Packages/BiliKitCore/Sources/Bili*Feature; do
     check_forbidden_imports \
         "$feature_path" \

@@ -1,3 +1,4 @@
+import BiliUI
 import SwiftUI
 
 public struct PopularFeedView: View {
@@ -32,11 +33,11 @@ public struct PopularFeedView: View {
             GeometryReader { geometry in
                 ScrollView {
                     LazyVGrid(
-                        columns: GuestVideoGridLayout.columns(
+                        columns: VideoCardGridLayout.columns(
                             for: geometry.size.width
                         ),
                         alignment: .leading,
-                        spacing: GuestVideoGridLayout.verticalSpacing
+                        spacing: VideoCardGridLayout.verticalSpacing
                     ) {
                         ForEach(page.videos) { video in
                             Button {
@@ -51,7 +52,7 @@ public struct PopularFeedView: View {
                             .accessibilityIdentifier("feed.item.\(video.bvid)")
                         }
                     }
-                    .padding(GuestVideoGridLayout.contentPadding)
+                    .padding(VideoCardGridLayout.contentPadding)
                 }
                 .accessibilityIdentifier("feed.grid")
                 .refreshable {
