@@ -6,7 +6,7 @@ BiliKit 是一个处于早期阶段、原生且非官方的 macOS B 站客户端
 
 ## 当前状态
 
-M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理、M3 登录/观看历史、M4.0–M4.3 时间轴/字幕/弹幕数据与调度内核，以及 M4.3.5 工程治理已经完成。M4.4 renderer spike 当前未获实施授权；下一步先确认精简的决策契约，再决定是否测量和选择生产路线。产品界面接入和本地缓存尚未实现，项目仍不适合日常使用或分发。
+M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理、M3 登录/观看历史和 M4 播放器／字幕／弹幕纵向链路已经完成。M4.5 正在把验证界面迁移为日常使用的两栏 Mac App，并统一热门、搜索和观看历史的视频卡片视觉；本地缓存尚未实现，项目仍不适合分发。
 
 - 最低系统版本：macOS 15
 - 开发语言：Swift 6
@@ -38,9 +38,10 @@ references/                 完全忽略的本地参考项目，不进入 Xcode 
 - `BiliAPI`：游客/观看历史/字幕/弹幕 endpoint、DTO/protobuf 映射、WBI 签名与 Repository adapter；只有该模块依赖 SwiftProtobuf wire runtime。
 - `BiliPlayback`：SIDX、DASH→HLS、loopback 媒体代理和播放 adapter。
 - `BiliDanmaku`：只消费 Application/Models 类型和统一播放时间轴的分段预取、去重、过滤与调度内核；renderer 留给 M4.4。
+- `BiliUI`：仅供 Package 内 Feature 复用的无业务视频卡片与网格布局，不公开为 library product。
 - `BiliBrowseFeature`：Browse 产品域，按 BrowseScene、Feed、Search、VideoDetail 组织 SwiftUI View 与 ViewModel。
 
-依赖方向和模型分类见 [ADR 0004](docs/adr/0004-mvvm-clean-architecture.md)，Feature target 准入与产品域命名见 [ADR 0006](docs/adr/0006-product-domain-feature-targets.md)。CI 会运行架构、秘密与工程静态契约检查，阻止分层反向依赖，并固定 entitlement、产品命名和 macOS 15 基线。
+依赖方向和模型分类见 [ADR 0004](docs/adr/0004-mvvm-clean-architecture.md)，Feature target 准入与产品域命名见 [ADR 0006](docs/adr/0006-product-domain-feature-targets.md)，窄视频卡片复用边界见 [ADR 0009](docs/adr/0009-narrow-biliui-video-card-boundary.md)。CI 会运行架构、秘密与工程静态契约检查，阻止分层反向依赖，并固定 entitlement、产品命名和 macOS 15 基线。
 
 ## 构建
 

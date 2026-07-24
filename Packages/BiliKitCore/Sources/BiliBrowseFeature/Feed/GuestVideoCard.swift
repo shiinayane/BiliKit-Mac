@@ -1,27 +1,7 @@
 import BiliModels
+import BiliUI
 import Foundation
 import SwiftUI
-
-enum GuestVideoGridLayout {
-    static let horizontalSpacing: CGFloat = 20
-    static let verticalSpacing: CGFloat = 28
-    static let contentPadding: CGFloat = 24
-
-    static func columns(for width: CGFloat) -> [GridItem] {
-        let usableWidth = max(0, width - contentPadding * 2)
-        let naturalCount = Int(
-            (usableWidth + horizontalSpacing) / (240 + horizontalSpacing)
-        )
-        let columnCount = min(5, max(2, naturalCount))
-        return Array(
-            repeating: GridItem(
-                .flexible(minimum: 200),
-                spacing: horizontalSpacing
-            ),
-            count: columnCount
-        )
-    }
-}
 
 struct GuestVideoCard: View {
     private let title: String
@@ -75,97 +55,26 @@ struct GuestVideoCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .bottom) {
-                Color.secondary.opacity(0.12)
-
-                AsyncImage(url: coverURL) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        Image(systemName: "photo")
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-
-                HStack(alignment: .bottom, spacing: 10) {
-                    Label(
-                        GuestVideoCardFormatting.compactCount(viewCount),
-                        systemImage: "play.fill"
-                    )
-                    Label(
-                        GuestVideoCardFormatting.compactCount(danmakuCount),
-                        systemImage: "text.bubble.fill"
-                    )
-                    Spacer(minLength: 8)
-                    if let durationSeconds {
-                        Text(Self.duration(durationSeconds))
-                            .monospacedDigit()
-                    }
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 9)
-                .padding(.top, 22)
-                .padding(.bottom, 8)
-                .background(
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.78)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            }
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(
-                        isSelected ? Color.accentColor : .clear,
-                        lineWidth: 3
-                    )
-            }
-            .accessibilityHidden(true)
-
-            HStack(alignment: .top, spacing: 10) {
-                AsyncImage(url: ownerAvatarURL) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .foregroundStyle(.quaternary)
-                    }
-                }
-                .frame(width: 34, height: 34)
-                .clipShape(Circle())
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .medium))
-                        .lineLimit(2, reservesSpace: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(
-                        "\(ownerName) · "
-                            + GuestVideoCardFormatting.publishedDate(publishedAt)
-                    )
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
+        VideoCard(
+            coverURL: coverURL,
+            avatarURL: ownerAvatarURL,
+            showsAvatar: true,
+            title: title,
+            coverMetrics: [
+                VideoCardMetric(
+                    GuestVideoCardFormatting.compactCount(viewCount),
+                    systemImage: "play.fill"
+                ),
+                VideoCardMetric(
+                    GuestVideoCardFormatting.compactCount(danmakuCount),
+                    systemImage: "text.bubble.fill"
+                ),
+            ],
+            coverTrailingText: durationSeconds.map(Self.duration),
+            footerLeadingText: "\(ownerName) · "
+                + GuestVideoCardFormatting.publishedDate(publishedAt),
+            isSelected: isSelected
+        )
     }
 
     private static func optimizedBiliImageURL(

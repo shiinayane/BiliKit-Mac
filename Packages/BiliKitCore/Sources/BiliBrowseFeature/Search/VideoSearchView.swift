@@ -1,3 +1,4 @@
+import BiliUI
 import SwiftUI
 
 public struct VideoSearchView: View {
@@ -45,11 +46,11 @@ public struct VideoSearchView: View {
                 GeometryReader { geometry in
                     ScrollView {
                         LazyVGrid(
-                            columns: GuestVideoGridLayout.columns(
+                            columns: VideoCardGridLayout.columns(
                                 for: geometry.size.width
                             ),
                             alignment: .leading,
-                            spacing: GuestVideoGridLayout.verticalSpacing
+                            spacing: VideoCardGridLayout.verticalSpacing
                         ) {
                             ForEach(page.videos) { video in
                                 Button {
@@ -66,7 +67,7 @@ public struct VideoSearchView: View {
                                 )
                             }
                         }
-                        .padding(GuestVideoGridLayout.contentPadding)
+                        .padding(VideoCardGridLayout.contentPadding)
                     }
                     .accessibilityIdentifier("search.grid")
                     .accessibilityIdentifier("search.results")

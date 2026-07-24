@@ -60,7 +60,7 @@ let package = Package(
         ),
         .target(
             name: "BiliBrowseFeature",
-            dependencies: ["BiliApplication", "BiliModels"]
+            dependencies: ["BiliApplication", "BiliModels", "BiliUI"]
         ),
         .target(
             name: "BiliAuthFeature",
@@ -68,8 +68,9 @@ let package = Package(
         ),
         .target(
             name: "BiliLibraryFeature",
-            dependencies: ["BiliApplication", "BiliModels"]
+            dependencies: ["BiliApplication", "BiliModels", "BiliUI"]
         ),
+        .target(name: "BiliUI"),
         .executableTarget(
             name: "BiliAPIProbe",
             dependencies: ["BiliAPI", "BiliNetworking"]
