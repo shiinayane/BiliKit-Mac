@@ -43,14 +43,16 @@ struct PlayerHostLifecycleProbeTests {
             useCase: GuestFeedUseCase(repository: repository)
         )
         let timeline = AppShellIdleTimeline()
+        let subtitleRepository = AppShellRecordingSubtitleRepository()
         let subtitleModel = SubtitleViewModel(
             useCase: SubtitleUseCase(
-                repository: AppShellEmptySubtitleRepository()
+                repository: subtitleRepository
             ),
             timeline: timeline
         )
+        let presentation = AppShellPresentation()
         let danmakuModel = DanmakuControlsViewModel(
-            presentation: AppShellPresentation()
+            presentation: presentation
         )
         let authenticationModel = AuthenticationViewModel(
             service: AppShellSignedOutAuthentication(),
@@ -111,18 +113,73 @@ struct PlayerHostLifecycleProbeTests {
                 )
             )
         )
-        hostingView.frame = NSRect(x: 0, y: 0, width: 1_080, height: 680)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 680),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
 
         navigationModel.openPlayback("BV1RouteHostA")
         #expect(await waitUntil {
-            probe.events.count == 1 && probe.activeCount == 1
+            probe.events.count == 1
+                && probe.activeCount == 1
+                && playback.loadedIdentities.count == 1
+                && presentation.startedIdentities.count == 1
         })
+        await subtitleModel.waitForCurrentTask()
+        guard let compactPlayerSize = await waitForPlayerSize(
+            in: hostingView
+        ) else {
+            Issue.record("compact player layout did not settle")
+            return
+        }
+
+        let firstHostEvent = probe.events[0]
+        let baselineEventCount = probe.events.count
+        let baselinePlaybackIdentities = playback.loadedIdentities
+        let baselineSubtitleIdentities =
+            await subtitleRepository.recordedTrackIdentities()
+        let baselineDanmakuIdentities = presentation.startedIdentities
+        #expect(baselineSubtitleIdentities == baselinePlaybackIdentities)
+
+        window.setContentSize(NSSize(width: 1_320, height: 820))
+        hostingView.layoutSubtreeIfNeeded()
+        #expect(await waitUntil {
+            guard let playerSize = self.playerSize(in: hostingView) else {
+                return false
+            }
+            return self.isSixteenByNine(playerSize)
+                && playerSize.width < compactPlayerSize.width
+        })
+
+        window.setContentSize(NSSize(width: 1_080, height: 680))
+        hostingView.layoutSubtreeIfNeeded()
+        #expect(await waitUntil {
+            guard let playerSize = self.playerSize(in: hostingView) else {
+                return false
+            }
+            return self.isSixteenByNine(playerSize)
+                && abs(playerSize.width - compactPlayerSize.width) < 1
+        })
+        #expect(probe.events.count == baselineEventCount)
+        #expect(probe.events[0] == firstHostEvent)
+        #expect(probe.activeCount == 1)
+        #expect(probe.peakActiveCount == 1)
+        #expect(playback.loadedIdentities == baselinePlaybackIdentities)
+        #expect(
+            await subtitleRepository.recordedTrackIdentities()
+                == baselineSubtitleIdentities
+        )
+        #expect(presentation.startedIdentities == baselineDanmakuIdentities)
 
         navigationModel.returnFromPlayback()
         #expect(await waitUntil {
             probe.events.count == 2 && probe.activeCount == 0
         })
+        #expect(playback.stopCount == 1)
 
         navigationModel.openPlayback("BV1RouteHostB")
         #expect(await waitUntil {
@@ -163,6 +220,47 @@ struct PlayerHostLifecycleProbeTests {
             try? await Task.sleep(for: .milliseconds(1))
         }
         return true
+    }
+
+    @MainActor
+    private func waitForPlayerSize(in root: NSView) async -> CGSize? {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while clock.now < deadline {
+            root.layoutSubtreeIfNeeded()
+            if let size = playerSize(in: root), isSixteenByNine(size) {
+                return size
+            }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return nil
+    }
+
+    @MainActor
+    private func playerSize(in root: NSView) -> CGSize? {
+        firstSubview(of: AVPlayerView.self, in: root)?.bounds.size
+    }
+
+    @MainActor
+    private func isSixteenByNine(_ size: CGSize) -> Bool {
+        guard size.height > 0 else { return false }
+        return abs(size.width / size.height - 16.0 / 9.0) < 0.01
+    }
+
+    @MainActor
+    private func firstSubview<ViewType: NSView>(
+        of type: ViewType.Type,
+        in root: NSView
+    ) -> ViewType? {
+        if let match = root as? ViewType {
+            return match
+        }
+        for child in root.subviews {
+            if let match = firstSubview(of: type, in: child) {
+                return match
+            }
+        }
+        return nil
     }
 
 }
@@ -225,6 +323,12 @@ private actor AppShellRouteRepository: GuestContentRepository {
                 title: "P1",
                 durationSeconds: 60
             ),
+            VideoPage(
+                cid: 2,
+                index: 2,
+                title: "P2",
+                durationSeconds: 3_661
+            ),
         ]
     }
 
@@ -246,11 +350,13 @@ private actor AppShellRouteRepository: GuestContentRepository {
 @MainActor
 private final class SuspendingPlayback: PlaybackControlling {
     private(set) var stopCount = 0
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
 
     func load(
         _ playback: VideoPlayback,
         identity: PlaybackItemIdentity
     ) async throws {
+        loadedIdentities.append(identity)
         try await Task.sleep(for: .seconds(30))
     }
 
@@ -261,21 +367,28 @@ private final class SuspendingPlayback: PlaybackControlling {
     }
 }
 
-private actor AppShellEmptySubtitleRepository: SubtitleRepository {
+private actor AppShellRecordingSubtitleRepository: SubtitleRepository {
+    private var trackIdentities: [PlaybackItemIdentity] = []
+
     func tracks(
         for identity: PlaybackItemIdentity
     ) async throws -> [SubtitleTrack] {
-        []
+        trackIdentities.append(identity)
+        return []
     }
 
     func cues(
         for trackID: String,
         identity: PlaybackItemIdentity
     ) async throws -> [SubtitleCue] {
-        []
+        return []
     }
 
     func reset(for identity: PlaybackItemIdentity) async {}
+
+    func recordedTrackIdentities() -> [PlaybackItemIdentity] {
+        trackIdentities
+    }
 }
 
 private struct AppShellSignedOutAuthentication: AuthenticationServicing {
@@ -321,7 +434,11 @@ private final class AppShellIdleTimeline: PlaybackTimelineProviding {
 
 @MainActor
 private final class AppShellPresentation: DanmakuPresentationControlling {
-    func start(for identity: PlaybackItemIdentity) {}
+    private(set) var startedIdentities: [PlaybackItemIdentity] = []
+
+    func start(for identity: PlaybackItemIdentity) {
+        startedIdentities.append(identity)
+    }
 
     func setEnabled(_ enabled: Bool) {}
 

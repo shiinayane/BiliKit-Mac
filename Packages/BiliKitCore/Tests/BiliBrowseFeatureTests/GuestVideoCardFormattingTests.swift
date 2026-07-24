@@ -2,23 +2,23 @@
 import Foundation
 import Testing
 
-struct GuestVideoCardFormattingTests {
+struct VideoMetadataFormattingTests {
     @Test
     func compactCountsUseOnlyDomesticUnits() {
-        #expect(GuestVideoCardFormatting.compactCount(-1) == "0")
-        #expect(GuestVideoCardFormatting.compactCount(9_999) == "9999")
-        #expect(GuestVideoCardFormatting.compactCount(10_000) == "1万")
-        #expect(GuestVideoCardFormatting.compactCount(12_345) == "1.2万")
+        #expect(VideoMetadataFormatting.compactCount(-1) == "0")
+        #expect(VideoMetadataFormatting.compactCount(9_999) == "9999")
+        #expect(VideoMetadataFormatting.compactCount(10_000) == "1万")
+        #expect(VideoMetadataFormatting.compactCount(12_345) == "1.2万")
         #expect(
-            GuestVideoCardFormatting.compactCount(99_999_999)
+            VideoMetadataFormatting.compactCount(99_999_999)
                 == "9999.9万"
         )
         #expect(
-            GuestVideoCardFormatting.compactCount(100_000_000)
+            VideoMetadataFormatting.compactCount(100_000_000)
                 == "1亿"
         )
         #expect(
-            GuestVideoCardFormatting.compactCount(123_456_789)
+            VideoMetadataFormatting.compactCount(123_456_789)
                 == "1.2亿"
         )
     }
@@ -42,21 +42,21 @@ struct GuestVideoCardFormattingTests {
         )
 
         #expect(
-            GuestVideoCardFormatting.publishedDate(
+            VideoMetadataFormatting.publishedDate(
                 now.addingTimeInterval(-30 * 60),
                 relativeTo: now,
                 calendar: calendar
             ) == "1小时前"
         )
         #expect(
-            GuestVideoCardFormatting.publishedDate(
+            VideoMetadataFormatting.publishedDate(
                 now.addingTimeInterval(-2 * 60 * 60),
                 relativeTo: now,
                 calendar: calendar
             ) == "2小时前"
         )
         #expect(
-            GuestVideoCardFormatting.publishedDate(
+            VideoMetadataFormatting.publishedDate(
                 try date(
                     year: 2026,
                     month: 7,
@@ -68,7 +68,7 @@ struct GuestVideoCardFormattingTests {
             ) == "昨天"
         )
         #expect(
-            GuestVideoCardFormatting.publishedDate(
+            VideoMetadataFormatting.publishedDate(
                 try date(
                     year: 2026,
                     month: 7,
@@ -80,7 +80,7 @@ struct GuestVideoCardFormattingTests {
             ) == "7月1日"
         )
         #expect(
-            GuestVideoCardFormatting.publishedDate(
+            VideoMetadataFormatting.publishedDate(
                 try date(
                     year: 2025,
                     month: 12,
@@ -90,6 +90,33 @@ struct GuestVideoCardFormattingTests {
                 relativeTo: now,
                 calendar: calendar
             ) == "2025年12月31日"
+        )
+    }
+
+    @Test
+    func fullPublicationDateIncludesSeconds() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(
+            TimeZone(identifier: "Asia/Tokyo")
+        )
+        let date = try #require(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: 7,
+                    day: 24,
+                    hour: 22,
+                    minute: 51,
+                    second: 3
+                )
+            )
+        )
+
+        #expect(
+            VideoMetadataFormatting.fullPublishedDate(
+                date,
+                calendar: calendar
+            ) == "2026年07月24日 22:51:03"
         )
     }
 

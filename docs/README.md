@@ -18,7 +18,10 @@
 - [`development/M4.5-uiux-design-plan.md`](./development/M4.5-uiux-design-plan.md)：设计阶段的页面结构、响应式与长期信息架构草案。
 - [`development/M4.5-uiux-production-decision.md`](./development/M4.5-uiux-production-decision.md)：已确认的 M4.5 生产范围、风险、复杂度预算和三项授权。
 - [`development/M4.5-uiux-production-technical-plan.md`](./development/M4.5-uiux-production-technical-plan.md)：不要求用户逐项确认的分阶段生产实施草案。
+- [`development/M4.5-playback-layout-decision.md`](./development/M4.5-playback-layout-decision.md)：已确认的 Slice B 播放页响应式结构、单播放器不变量与停止条件。
+- [`development/M4.5-playback-layout-technical-plan.md`](./development/M4.5-playback-layout-technical-plan.md)：Slice B 的稳定主区、分 P 宽窄呈现、生命周期证据与回退草案。
 - [`validation/M4.5-slice-a-2026-07-23.md`](./validation/M4.5-slice-a-2026-07-23.md)：Slice A 两栏路由、卡片流、播放返回、生命周期与本机 Gate 的候选证据。
+- [`validation/M4.5-slice-b-2026-07-24.md`](./validation/M4.5-slice-b-2026-07-24.md)：Slice B 播放页响应式布局、单 host 生命周期、签名 App 与本机 Gate 的候选证据。
 - [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：App 级 UI/UX 长期产品蓝图，以及搜索空页、播放页和未来数据能力的边界。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 

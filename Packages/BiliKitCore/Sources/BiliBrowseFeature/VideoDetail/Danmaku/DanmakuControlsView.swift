@@ -43,5 +43,6 @@ struct DanmakuControlsView: View {
 
             Spacer()
         }
+        .font(.title3)
     }
 }
