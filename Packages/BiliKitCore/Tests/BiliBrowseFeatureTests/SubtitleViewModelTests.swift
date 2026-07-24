@@ -17,7 +17,7 @@ struct SubtitleViewModelTests {
     )
 
     @Test
-    func timelineDrivesCueAcrossPauseRateAndBackwardSeek() async {
+    func timelineDrivesCueAcrossPauseRateAndBackwardSeek() async throws {
         let repository = SubtitleRepositoryStub()
         let timeline = SubtitleTimelineStub()
         let model = makeModel(repository: repository, timeline: timeline)
@@ -30,15 +30,15 @@ struct SubtitleViewModelTests {
         #expect(model.selectedTrackID == "track-standard")
 
         timeline.publish(snapshot(position: 2, state: .playing))
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         timeline.publish(snapshot(position: 2, rate: 0, state: .paused))
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         timeline.publish(snapshot(position: 5, rate: 2, state: .playing))
-        await waitForCue("第二条手写字幕", in: model)
+        try await waitForCue("第二条手写字幕", in: model)
         #expect(model.currentCueText == "第二条手写字幕")
 
         timeline.publish(
@@ -48,19 +48,19 @@ struct SubtitleViewModelTests {
                 discontinuityGeneration: 2
             )
         )
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
     }
 
     @Test
-    func turningOffAndSwitchingTrackReplacesPresentedCue() async {
+    func turningOffAndSwitchingTrackReplacesPresentedCue() async throws {
         let repository = SubtitleRepositoryStub()
         let timeline = SubtitleTimelineStub()
         let model = makeModel(repository: repository, timeline: timeline)
         model.selectVideo(identity)
         await model.waitForCurrentTask()
         timeline.publish(snapshot(position: 2, state: .playing))
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         model.selectTrack(nil)
@@ -82,11 +82,15 @@ struct SubtitleViewModelTests {
         let model = makeModel(repository: repository, timeline: timeline)
 
         model.selectVideo(identity)
-        try await Task.sleep(for: .milliseconds(10))
+        try await waitUntil {
+            model.state == .loadingTrack(identity)
+                && model.selectedTrackID == "track-standard"
+                && model.tracks.contains { $0.id == "track-automatic" }
+        }
         model.selectTrack("track-automatic")
         await model.waitForCurrentTask()
         timeline.publish(snapshot(position: 2, state: .playing))
-        await waitForCue("自动生成字幕", in: model)
+        try await waitForCue("自动生成字幕", in: model)
         #expect(model.currentCueText == "自动生成字幕")
 
         try await Task.sleep(for: .milliseconds(100))
@@ -98,17 +102,17 @@ struct SubtitleViewModelTests {
         timeline.publish(
             snapshot(position: 2, identity: oldIdentity, state: .playing)
         )
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
 
         timeline.publish(snapshot(position: 2, identity: identity, state: .playing))
-        await waitForCue(nil, in: model)
+        try await waitForCue(nil, in: model)
         #expect(model.currentCueText == nil)
 
         timeline.publish(
             snapshot(position: 2, identity: oldIdentity, state: .playing)
         )
-        await waitForCue("第一条手写字幕", in: model)
+        try await waitForCue("第一条手写字幕", in: model)
         #expect(model.currentCueText == "第一条手写字幕")
     }
 
@@ -158,13 +162,24 @@ struct SubtitleViewModelTests {
     private func waitForCue(
         _ expected: String?,
         in model: SubtitleViewModel
-    ) async {
-        for _ in 0 ..< 1_000 {
-            if model.currentCueText == expected {
-                return
-            }
-            await Task.yield()
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while model.currentCueText != expected, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
         }
+        #expect(model.currentCueText == expected)
+    }
+
+    private func waitUntil(
+        _ condition: () -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !condition(), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(condition())
     }
 
     private func snapshot(
