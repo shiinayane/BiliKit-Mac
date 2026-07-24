@@ -29,6 +29,7 @@ public struct PopularFeedView: View {
                 systemImage: "rectangle.stack",
                 description: Text("稍后重试或检查网络连接。")
             )
+            .accessibilityIdentifier("feed.empty")
         case let .loaded(.popular(page)):
             GeometryReader { geometry in
                 ScrollView {
@@ -48,7 +49,12 @@ public struct PopularFeedView: View {
                                     isSelected: selectedBVID == video.bvid
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(
+                                VideoCardButtonStyle(
+                                    isSelected: selectedBVID == video.bvid
+                                )
+                            )
+                            .accessibilityHint("播放视频")
                             .accessibilityIdentifier("feed.item.\(video.bvid)")
                         }
                     }
@@ -73,6 +79,7 @@ public struct PopularFeedView: View {
         default:
             ProgressView("正在切换到热门视频…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("feed.transitioning")
         }
     }
 }

@@ -146,7 +146,12 @@ let package = Package(
         ),
         .testTarget(
             name: "BiliBrowseFeatureTests",
-            dependencies: ["BiliApplication", "BiliBrowseFeature", "BiliModels"]
+            dependencies: [
+                "BiliApplication",
+                "BiliBrowseFeature",
+                "BiliModels",
+                "BiliUI",
+            ]
         ),
         .testTarget(
             name: "BiliAuthFeatureTests",

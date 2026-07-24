@@ -48,7 +48,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                             .padding(.top, 10)
                     }
                     .font(.title3)
-                    .accessibilityIdentifier("playback.parts.compact")
                 }
 
                 if !context.detail.summary.isEmpty {
@@ -172,6 +171,15 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "第 \(page.index) 分 P，\(page.title)，"
+                        + Self.duration(page.durationSeconds)
+                )
+                .accessibilityAddTraits(
+                    page.id == context.selectedPage.id ? [.isSelected] : []
+                )
+                .accessibilityIdentifier("playback.part.\(page.index)")
             }
         }
         .font(.title3)

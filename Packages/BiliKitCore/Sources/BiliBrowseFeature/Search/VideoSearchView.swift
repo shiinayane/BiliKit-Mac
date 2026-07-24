@@ -18,7 +18,6 @@ public struct VideoSearchView: View {
 
     public var body: some View {
         results
-            .accessibilityIdentifier("search.page")
     }
 
     @ViewBuilder
@@ -61,7 +60,13 @@ public struct VideoSearchView: View {
                                         isSelected: selectedBVID == video.bvid
                                     )
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(
+                                    VideoCardButtonStyle(
+                                        isSelected:
+                                            selectedBVID == video.bvid
+                                    )
+                                )
+                                .accessibilityHint("播放视频")
                                 .accessibilityIdentifier(
                                     "search.item.\(video.bvid)"
                                 )
@@ -70,13 +75,13 @@ public struct VideoSearchView: View {
                         .padding(VideoCardGridLayout.contentPadding)
                     }
                     .accessibilityIdentifier("search.grid")
-                    .accessibilityIdentifier("search.results")
                     .refreshable {
                         model.search(query, page: page.pageNumber)
                         await model.waitForCurrentTask()
                     }
                 }
             }
+            .accessibilityIdentifier("search.results")
         case let .failed(request: .search(_, _), error: error):
             BrowseFailureView(
                 title: error.guestTitle,

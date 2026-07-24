@@ -98,14 +98,6 @@ package struct VideoCard: View {
                 )
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(
-                        isSelected ? Color.accentColor : .clear,
-                        lineWidth: 3
-                    )
-                    .accessibilityHidden(true)
-            }
     }
 
     private var details: some View {
@@ -130,7 +122,7 @@ package struct VideoCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.title3.weight(.medium))
                     .lineLimit(2, reservesSpace: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -144,7 +136,7 @@ package struct VideoCard: View {
                             .monospacedDigit()
                     }
                 }
-                .font(.system(size: 13))
+                .font(.body)
                 .foregroundStyle(.secondary)
             }
         }
