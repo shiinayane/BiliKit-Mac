@@ -47,6 +47,9 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
+        #expect(await waitUntil {
+            presentation.stopCount > 0
+        })
         let baselineStopCount = presentation.stopCount
 
         videoModel.selectVideo(fixture.bvid)
