@@ -13,16 +13,54 @@ case "$mode" in
     *) fail "模式必须是 static、package 或 app" ;;
 esac
 
+compact_logs="${BILIKIT_COMPACT_LOGS:-0}"
+case "$compact_logs" in
+    0|1) ;;
+    *) fail "BILIKIT_COMPACT_LOGS 必须是 0 或 1" ;;
+esac
+
+gate_log_dir=""
+if [ "$compact_logs" = "1" ]; then
+    gate_log_dir=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-gates.XXXXXX")
+    echo "[Gate] 精简日志已启用；完整日志：$gate_log_dir"
+fi
+
+run_with_optional_compact_log() {
+    stage="$1"
+    shift
+
+    if [ "$compact_logs" = "0" ]; then
+        "$@"
+        return
+    fi
+
+    log_path="$gate_log_dir/$stage.log"
+    if "$@" >"$log_path" 2>&1; then
+        echo "[Gate] $stage 通过；完整日志：$log_path"
+        return
+    else
+        status=$?
+    fi
+
+    echo "[Gate] $stage 失败；完整日志：$log_path" >&2
+    tail -n 40 "$log_path" | cut -c 1-360 >&2
+    return "$status"
+}
+
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 cd "$repository_root"
 
+run_static_contracts() {
+    sh Scripts/check-architecture.sh || return $?
+    sh Scripts/check-secrets.sh || return $?
+    sh Scripts/check-project-contract.sh || return $?
+    git diff --check || return $?
+    git diff --cached --check || return $?
+}
+
 echo "[Gate] 静态契约"
-sh Scripts/check-architecture.sh
-sh Scripts/check-secrets.sh
-sh Scripts/check-project-contract.sh
-git diff --check
-git diff --cached --check
+run_with_optional_compact_log static-contracts run_static_contracts
 
 if [ "$mode" = "static" ]; then
     echo "[Gate] static 通过"
@@ -30,7 +68,9 @@ if [ "$mode" = "static" ]; then
 fi
 
 echo "[Gate] Swift Package"
-xcrun swift test --package-path Packages/BiliKitCore
+run_with_optional_compact_log \
+    swift-package \
+    xcrun swift test --package-path Packages/BiliKitCore
 
 if [ "$mode" = "package" ]; then
     echo "[Gate] package 通过"
@@ -43,7 +83,9 @@ xcodebuild -version >/dev/null 2>&1 \
 derived_data_path="${BILIKIT_DERIVED_DATA_PATH:-${TMPDIR:-/tmp}/BiliKitMac-derived}"
 
 echo "[Gate] App build-for-testing"
-xcodebuild \
+run_with_optional_compact_log \
+    app-build-for-testing \
+    xcodebuild \
     -project BiliKitMac.xcodeproj \
     -scheme BiliKitMac \
     -configuration Debug \
@@ -53,7 +95,9 @@ xcodebuild \
     build-for-testing
 
 echo "[Gate] App unit tests"
-xcodebuild \
+run_with_optional_compact_log \
+    app-unit-tests \
+    xcodebuild \
     -project BiliKitMac.xcodeproj \
     -scheme BiliKitMac \
     -configuration Debug \
