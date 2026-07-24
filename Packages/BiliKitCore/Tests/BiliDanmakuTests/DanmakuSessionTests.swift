@@ -10,7 +10,7 @@ struct DanmakuSessionTests {
     @Test
     func sessionPrefetchesCurrentAndNextWithBoundedConcurrency() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1DanmakuFixture", cid: 1)
-        let repository = SessionRecordingRepository(delay: .milliseconds(20))
+        let repository = ControlledPrefetchRepository()
         let timeline = SessionTimeline()
         let session = DanmakuSession(
             useCase: DanmakuSegmentUseCase(repository: repository),
@@ -21,15 +21,22 @@ struct DanmakuSessionTests {
         timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(1))
-        while await repository.requestedIndices().count < 2,
-              clock.now < deadline
-        {
-            try await Task.sleep(for: .milliseconds(5))
+        do {
+            while await repository.requestedIndices().count < 2,
+                  clock.now < deadline
+            {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        } catch {
+            await repository.releaseRequests()
+            await session.waitForLoads()
+            throw error
         }
-        await session.waitForLoads()
 
         #expect(await repository.requestedIndices().sorted() == [1, 2])
         #expect(await repository.maximumActiveRequests() == 2)
+        await repository.releaseRequests()
+        await session.waitForLoads()
         #expect(session.state == .ready(identity))
     }
 
@@ -250,4 +257,43 @@ private actor SessionRecordingRepository: DanmakuSegmentRepository {
 
     func requestedIndices() -> [Int] { requested }
     func maximumActiveRequests() -> Int { maximumActive }
+}
+
+private actor ControlledPrefetchRepository: DanmakuSegmentRepository {
+    private var requested: [Int] = []
+    private var active = 0
+    private var maximumActive = 0
+    private var requestsReleased = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func segment(
+        index: Int,
+        for identity: PlaybackItemIdentity
+    ) async throws -> DanmakuSegment {
+        requested.append(index)
+        active += 1
+        maximumActive = max(maximumActive, active)
+
+        await withCheckedContinuation { continuation in
+            if requestsReleased {
+                continuation.resume()
+            } else {
+                releaseWaiters.append(continuation)
+            }
+        }
+
+        active -= 1
+        return DanmakuSegment(index: index, events: [])
+    }
+
+    func requestedIndices() -> [Int] { requested }
+
+    func maximumActiveRequests() -> Int { maximumActive }
+
+    func releaseRequests() {
+        requestsReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        waiters.forEach { $0.resume() }
+    }
 }
