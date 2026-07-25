@@ -25,7 +25,6 @@
     "includeConditionalImports" : false
   },
   "prioritizeKeepingFunctionOutputTogether" : true,
-  "reflowMultilineStringLiterals" : "never",
   "respectsExistingLineBreaks" : true,
   "rules" : {
     "AllPublicDeclarationsHaveDocumentation" : false,
