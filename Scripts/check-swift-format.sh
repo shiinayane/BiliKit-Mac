@@ -12,6 +12,9 @@ fail() {
 swift_format=$(xcrun --find swift-format 2>/dev/null) \
     || fail "当前 Xcode/Command Line Tools 不提供 swift-format"
 
+swift_format_version=$("$swift_format" --version)
+echo "[Static] strict Swift format lint（swift-format ${swift_format_version}）"
+
 # Protobuf 生成物由 schema 与固定 generator 负责，不把机械格式化结果作为源码契约。
 "$swift_format" lint \
     --strict \

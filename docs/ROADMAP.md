@@ -204,7 +204,7 @@ BiliKit App（Composition Root / macOS Scene）
    - 将 API 专属错误映射为应用级、可测试的失败类型；用户文案仍由 Presentation 决定。
 3. **收紧 Data 与 Platform adapter**
    - 将 endpoint request/response DTO 和映射集中到 `BiliAPI` 内部目录；Feature 不再直接消费 endpoint/API 错误类型。
-   - 由 `BiliGuestRepository` 包装 `BiliAPIService` 并实现 Application port，同时保留现有 fixture contract tests、WBI 单次刷新与取消语义。
+   - 由 `BiliGuestRepository` 包装具体 `BiliAPIClient` 并实现 Application port，同时保留现有 fixture contract tests、WBI 单次刷新与取消语义；Application-owned port 是 Feature 唯一依赖的能力抽象。
    - 让播放实现适配 Application playback port；保留 `PlaybackManifest`、请求头、CDN fallback、Range 和 loopback server 的既有边界，不重写已经通过 M1 的算法。
 4. **迁移为 Feature 级 MVVM**
    - 创建 `BiliGuestFeature`，按 `Feed`、`VideoDetail` 和共享 Presentation 组件组织代码，不按 `View/Model/Utils` 建立跨功能大目录。
@@ -519,6 +519,34 @@ Gate：
 - 架构 reviewer 不重复普通行为审查或红区安全终审，不把文件长度、命名偏好和对称性
   单独升级为 blocker；实际审查结果能指出静态 import Gate 无法证明的边界。
 - macOS 15/26 CI 的统一 App Gate 包含 strict Swift format lint。
+
+### M4.8：架构公共面收敛与 CI 确定性
+
+目标：整改 M4.7 架构审查记录的重复 adapter seam，并让并发测试与 CI 以可观察事件
+和统一 Gate 的阶段结果判断完成，不再用短暂 sleep 推断异步工作已经发生。
+
+交付物：
+
+- 删除仅供 `BiliGuestRepository` 测试替身使用、与 Application-owned
+  `GuestContentRepository` 能力重复的 public `BiliAPIService`；游客 adapter 与其他
+  API adapter 一样持有具体 `BiliAPIClient`，Composition 继续只负责组装。
+- 将已知依赖 5–120 ms 延时制造先后顺序的 Browse、Library、Auth 与 Danmaku 测试改为
+  continuation／事件闸门；请求开始、允许返回、旧请求完成和 presentation 更新均由
+  明确事件确认。生产轮询间隔、真实播放时钟、超时上限和专门等待取消的长阻塞替身
+  不属于“以时间推断完成”，不得被机械删除。
+- CI 继续只运行一个最高适用 App Gate；Gate 在 GitHub Actions 中为 static、Package、
+  App build-for-testing 与 App unit tests 输出阶段分组和 Step Summary，并在工具链
+  证据中记录 `swift-format` 版本。不得增加重复 lint job 或跳过统一 Gate 内的 lint。
+
+Gate：
+
+- `BiliAPIService` 无生产或测试引用；`BiliGuestRepository` 的错误映射与取消传播继续
+  通过使用自制 transport 的 adapter 测试证明。
+- 上述四组竞态测试不再以 `Task.sleep` 或固定短延时决定何时发起下一意图或断言旧结果；
+  失败必须来自缺失事件、错误状态或取消语义，而非 runner 速度。
+- 本地最高适用 App Gate、独立 architecture reviewer、普通黄区 reviewer 与
+  macOS 15/26 CI 通过；CI 日志能直接识别 strict lint 所属 stage 和实际 formatter
+  版本。
 
 ### M5：日常观看核心闭环
 
