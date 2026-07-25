@@ -86,7 +86,7 @@ struct HTTPRangeClientTests {
                 range: try HTTPByteRange(start: 0, endInclusive: 2)
             )
             Issue.record("Expected every CDN candidate to fail")
-        } catch let HTTPRangeClientError.allCandidatesFailed(attempts) {
+        } catch HTTPRangeClientError.allCandidatesFailed(let attempts) {
             #expect(
                 attempts == [
                     HTTPRangeAttempt(url: first, failure: .statusCode(403)),
