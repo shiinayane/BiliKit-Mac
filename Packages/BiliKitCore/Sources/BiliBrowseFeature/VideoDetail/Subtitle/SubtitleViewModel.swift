@@ -21,6 +21,11 @@ public enum SubtitleViewState: Sendable, Equatable {
 @MainActor
 @Observable
 public final class SubtitleViewModel {
+    private struct LoadIntent {
+        let identity: PlaybackItemIdentity
+        let generation: Int
+    }
+
     public private(set) var state: SubtitleViewState = .idle
     public private(set) var tracks: [SubtitleTrack] = []
     public private(set) var selectedTrackID: String?
@@ -30,8 +35,12 @@ public final class SubtitleViewModel {
     @ObservationIgnored private let timeline: any PlaybackTimelineProviding
     @ObservationIgnored private var contentTask: Task<Void, Never>?
     @ObservationIgnored private var timelineTask: Task<Void, Never>?
+    @ObservationIgnored private var resetTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingResetIdentity: PlaybackItemIdentity?
+    @ObservationIgnored private var pendingLoadIntent: LoadIntent?
     @ObservationIgnored private var contentGeneration = 0
     @ObservationIgnored private var identity: PlaybackItemIdentity?
+    @ObservationIgnored private var suspendedIdentity: PlaybackItemIdentity?
     @ObservationIgnored private var cues: [SubtitleCue] = []
     @ObservationIgnored private var latestPositionSeconds = 0.0
 
@@ -46,11 +55,13 @@ public final class SubtitleViewModel {
     deinit {
         contentTask?.cancel()
         timelineTask?.cancel()
+        resetTask?.cancel()
     }
 
     public func selectVideo(_ identity: PlaybackItemIdentity) {
         guard self.identity != identity else { return }
         let previousIdentity = self.identity
+        suspendedIdentity = nil
         contentGeneration += 1
         let generation = contentGeneration
         contentTask?.cancel()
@@ -63,18 +74,13 @@ public final class SubtitleViewModel {
         latestPositionSeconds = 0
         state = .loadingCatalog(identity)
 
-        if let previousIdentity {
-            Task { [useCase] in
-                await useCase.reset(for: previousIdentity)
-            }
-        }
+        enqueueReset(for: previousIdentity)
         startTimeline(for: identity)
-        contentTask = Task { [weak self] in
-            await self?.loadCatalog(
-                for: identity,
-                generation: generation
-            )
-        }
+        pendingLoadIntent = LoadIntent(
+            identity: identity,
+            generation: generation
+        )
+        startPendingLoadIfReady()
     }
 
     public func selectTrack(_ trackID: String?) {
@@ -105,16 +111,38 @@ public final class SubtitleViewModel {
     }
 
     public func retry() {
-        guard let identity else { return }
+        guard let identity = identity ?? suspendedIdentity else { return }
+        suspendedIdentity = nil
         self.identity = nil
         selectVideo(identity)
     }
 
     public func reset() {
+        reset(preservingIdentityForRetry: false)
+    }
+
+    public func suspendForAuthentication() {
+        reset(preservingIdentityForRetry: true)
+    }
+
+    public func waitForCurrentTask() async {
+        await resetTask?.value
+        await contentTask?.value
+    }
+
+    private func reset(
+        preservingIdentityForRetry: Bool
+    ) {
         let previousIdentity = identity
+        if preservingIdentityForRetry {
+            suspendedIdentity = previousIdentity ?? suspendedIdentity
+        } else {
+            suspendedIdentity = nil
+        }
         contentGeneration += 1
         contentTask?.cancel()
         contentTask = nil
+        pendingLoadIntent = nil
         timelineTask?.cancel()
         timelineTask = nil
         identity = nil
@@ -125,15 +153,7 @@ public final class SubtitleViewModel {
         latestPositionSeconds = 0
         state = .idle
 
-        if let previousIdentity {
-            Task { [useCase] in
-                await useCase.reset(for: previousIdentity)
-            }
-        }
-    }
-
-    public func waitForCurrentTask() async {
-        await contentTask?.value
+        enqueueReset(for: previousIdentity)
     }
 
     private func loadCatalog(
@@ -211,6 +231,51 @@ public final class SubtitleViewModel {
                     positionSeconds: snapshot.positionSeconds
                 )
             }
+        }
+    }
+
+    private func enqueueReset(for identity: PlaybackItemIdentity?) {
+        if let identity, pendingResetIdentity == nil {
+            pendingResetIdentity = identity
+        }
+        guard resetTask == nil, pendingResetIdentity != nil else {
+            return
+        }
+        let task = Task { [weak self, useCase] in
+            while !Task.isCancelled {
+                guard let identity = self?.takePendingReset() else {
+                    self?.finishResetWorker()
+                    return
+                }
+                await useCase.reset(for: identity)
+            }
+            self?.finishResetWorker()
+        }
+        resetTask = task
+    }
+
+    private func takePendingReset() -> PlaybackItemIdentity? {
+        guard let identity = pendingResetIdentity else { return nil }
+        pendingResetIdentity = nil
+        return identity
+    }
+
+    private func finishResetWorker() {
+        resetTask = nil
+        startPendingLoadIfReady()
+    }
+
+    private func startPendingLoadIfReady() {
+        guard resetTask == nil, let intent = pendingLoadIntent else {
+            return
+        }
+        pendingLoadIntent = nil
+        contentTask?.cancel()
+        contentTask = Task { [weak self] in
+            await self?.loadCatalog(
+                for: intent.identity,
+                generation: intent.generation
+            )
         }
     }
 

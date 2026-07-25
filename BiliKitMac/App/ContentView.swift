@@ -100,7 +100,7 @@ struct ContentView: View {
             }
             historyModel.reset()
             navigationModel.authenticationDidBecomeSignedOut()
-            subtitleModel.reset()
+            subtitleModel.suspendForAuthentication()
         }
         .onChange(of: navigationModel.searchQuery) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

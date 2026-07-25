@@ -117,6 +117,232 @@ struct SubtitleViewModelTests {
     }
 
     @Test
+    func lateOldVideoCuesNeverReplaceCurrentPresentation() async throws {
+        let repository = LateCueSubtitleRepository(
+            oldIdentity: identity,
+            currentIdentity: oldIdentity
+        )
+        let timeline = SubtitleTimelineStub()
+        let model = makeModel(repository: repository, timeline: timeline)
+
+        model.selectVideo(identity)
+        do {
+            try await waitUntilAsync {
+                await repository.oldCueRequestStarted()
+            }
+            #expect(model.state == .loadingTrack(identity))
+            #expect(model.currentCueText == nil)
+
+            model.selectVideo(oldIdentity)
+            #expect(model.currentCueText == nil)
+            await model.waitForCurrentTask()
+            timeline.publish(
+                snapshot(
+                    position: 2,
+                    identity: oldIdentity,
+                    state: .playing
+                )
+            )
+            try await waitForCue("当前视频字幕", in: model)
+            #expect(model.state == .ready(oldIdentity))
+            #expect(model.currentCueText == "当前视频字幕")
+
+            await repository.releaseOldCueRequest()
+            try await waitUntilAsync {
+                await repository.oldCueRequestReturned()
+            }
+            #expect(model.currentCueText == "当前视频字幕")
+
+            timeline.publish(
+                snapshot(
+                    position: 2,
+                    identity: oldIdentity,
+                    state: .playing,
+                    discontinuityGeneration: 2
+                )
+            )
+            try await waitForCue("当前视频字幕", in: model)
+            #expect(model.state == .ready(oldIdentity))
+        } catch {
+            await repository.releaseOldCueRequest()
+            throw error
+        }
+    }
+
+    @Test
+    func staleResetCannotInvalidateNewSessionForSameIdentity() async throws {
+        let repository = ABAResetSubtitleRepository(
+            repeatedIdentity: identity,
+            otherIdentity: oldIdentity
+        )
+        let timeline = SubtitleTimelineStub()
+        let model = makeModel(repository: repository, timeline: timeline)
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        #expect(model.state == .ready(identity))
+
+        do {
+            model.selectVideo(oldIdentity)
+            try await waitUntilAsync {
+                await repository.staleResetStarted()
+            }
+
+            model.selectVideo(identity)
+            await repository.releaseStaleReset()
+            try await waitUntilAsync {
+                await repository.staleResetCompleted()
+            }
+            try await waitUntilAsync {
+                await repository.repeatedCueRequestStarted()
+            }
+            #expect(model.state == .loadingTrack(identity))
+            await repository.releaseRepeatedCueRequest()
+            await model.waitForCurrentTask()
+
+            #expect(model.state == .ready(identity))
+            #expect(
+                await repository
+                    .repeatedReloadBeganBeforeStaleResetCompleted() == false
+            )
+            #expect(
+                await repository.trackRequestCount(for: identity) == 2
+            )
+            #expect(
+                await repository.trackRequestCount(for: oldIdentity) == 0
+            )
+            timeline.publish(snapshot(position: 2, state: .playing))
+            try await waitForCue("新会话字幕", in: model)
+            #expect(model.currentCueText == "新会话字幕")
+        } catch {
+            await repository.releaseAll()
+            await model.waitForCurrentTask()
+            throw error
+        }
+    }
+
+    @Test
+    func authenticationSuspensionResumesCurrentVideoAfterResetCompletes() async throws {
+        let repository = ABAResetSubtitleRepository(
+            repeatedIdentity: identity,
+            otherIdentity: oldIdentity
+        )
+        let timeline = SubtitleTimelineStub()
+        let model = makeModel(repository: repository, timeline: timeline)
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        #expect(model.state == .ready(identity))
+
+        do {
+            model.suspendForAuthentication()
+            #expect(model.state == .idle)
+            #expect(model.currentCueText == nil)
+            try await waitUntilAsync {
+                await repository.staleResetStarted()
+            }
+
+            model.retry()
+            await repository.releaseStaleReset()
+            try await waitUntilAsync {
+                await repository.staleResetCompleted()
+            }
+            try await waitUntilAsync {
+                await repository.repeatedCueRequestStarted()
+            }
+            await repository.releaseRepeatedCueRequest()
+            await model.waitForCurrentTask()
+
+            #expect(model.state == .ready(identity))
+            timeline.publish(snapshot(position: 2, state: .playing))
+            try await waitForCue("新会话字幕", in: model)
+        } catch {
+            await repository.releaseAll()
+            await model.waitForCurrentTask()
+            throw error
+        }
+    }
+
+    @Test
+    func closingAfterAuthenticationSuspensionDoesNotResumeVideo() async throws {
+        let repository = ABAResetSubtitleRepository(
+            repeatedIdentity: identity,
+            otherIdentity: oldIdentity
+        )
+        let model = makeModel(
+            repository: repository,
+            timeline: SubtitleTimelineStub()
+        )
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        #expect(model.state == .ready(identity))
+
+        do {
+            model.suspendForAuthentication()
+            try await waitUntilAsync {
+                await repository.staleResetStarted()
+            }
+
+            model.reset()
+            model.retry()
+            await repository.releaseStaleReset()
+            try await waitUntilAsync {
+                await repository.staleResetCompleted()
+            }
+
+            #expect(model.state == .idle)
+            #expect(
+                await repository.trackRequestCount(for: identity) == 1
+            )
+        } catch {
+            await repository.releaseAll()
+            throw error
+        }
+    }
+
+    @Test
+    func closingDuringQueuedTransitionStillResetsLoadedSession() async throws {
+        let repository = ABAResetSubtitleRepository(
+            repeatedIdentity: identity,
+            otherIdentity: oldIdentity
+        )
+        let model = makeModel(
+            repository: repository,
+            timeline: SubtitleTimelineStub()
+        )
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        #expect(model.state == .ready(identity))
+
+        do {
+            model.selectVideo(oldIdentity)
+            model.reset()
+            #expect(model.state == .idle)
+
+            try await waitUntilAsync {
+                await repository.staleResetStarted()
+            }
+            await repository.releaseStaleReset()
+            try await waitUntilAsync {
+                await repository.staleResetCompleted()
+            }
+
+            #expect(await repository.activeIdentity() == nil)
+            #expect(
+                await repository.trackRequestCount(for: oldIdentity) == 0
+            )
+            #expect(model.state == .idle)
+            model.retry()
+            #expect(model.state == .idle)
+        } catch {
+            await repository.releaseAll()
+            throw error
+        }
+    }
+
+    @Test
     func emptyAuthenticationFailureAndResetHaveSafeStates() async {
         let timeline = SubtitleTimelineStub()
         let emptyModel = makeModel(
@@ -147,10 +373,12 @@ struct SubtitleViewModelTests {
         #expect(authModel.tracks.isEmpty)
         #expect(authModel.selectedTrackID == nil)
         #expect(authModel.currentCueText == nil)
+        authModel.retry()
+        #expect(authModel.state == .idle)
     }
 
     private func makeModel(
-        repository: SubtitleRepositoryStub,
+        repository: any SubtitleRepository,
         timeline: SubtitleTimelineStub
     ) -> SubtitleViewModel {
         SubtitleViewModel(
@@ -180,6 +408,17 @@ struct SubtitleViewModelTests {
             try await Task.sleep(for: .milliseconds(1))
         }
         #expect(condition())
+    }
+
+    private func waitUntilAsync(
+        _ condition: () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await condition())
     }
 
     private func snapshot(
@@ -262,6 +501,231 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
     }
 
     func reset(for identity: PlaybackItemIdentity) async {}
+}
+
+private actor LateCueSubtitleRepository: SubtitleRepository {
+    private let oldIdentity: PlaybackItemIdentity
+    private let currentIdentity: PlaybackItemIdentity
+    private var oldCueStarted = false
+    private var oldCueReturned = false
+    private var oldCueReleased = false
+    private var oldCueContinuation: CheckedContinuation<Void, Never>?
+
+    init(
+        oldIdentity: PlaybackItemIdentity,
+        currentIdentity: PlaybackItemIdentity
+    ) {
+        self.oldIdentity = oldIdentity
+        self.currentIdentity = currentIdentity
+    }
+
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleTrack] {
+        [track(for: identity)]
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleCue] {
+        if identity == oldIdentity {
+            oldCueStarted = true
+            await withCheckedContinuation { continuation in
+                if oldCueReleased {
+                    continuation.resume()
+                } else {
+                    oldCueContinuation = continuation
+                }
+            }
+            oldCueReturned = true
+            return [cue(text: "旧视频字幕")]
+        }
+        guard identity == currentIdentity else {
+            throw SubtitleApplicationError.invalidRequest
+        }
+        return [cue(text: "当前视频字幕")]
+    }
+
+    func reset(for identity: PlaybackItemIdentity) async {}
+
+    func oldCueRequestStarted() -> Bool { oldCueStarted }
+
+    func oldCueRequestReturned() -> Bool { oldCueReturned }
+
+    func releaseOldCueRequest() {
+        oldCueReleased = true
+        oldCueContinuation?.resume()
+        oldCueContinuation = nil
+    }
+
+    private func track(
+        for identity: PlaybackItemIdentity
+    ) -> SubtitleTrack {
+        SubtitleTrack(
+            id: "track-\(identity.cid)",
+            languageCode: "zh-CN",
+            displayName: "测试字幕",
+            kind: .standard
+        )
+    }
+
+    private func cue(text: String) -> SubtitleCue {
+        SubtitleCue(
+            startSeconds: 1,
+            endSeconds: 3,
+            text: text
+        )
+    }
+}
+
+private actor ABAResetSubtitleRepository: SubtitleRepository {
+    private let repeatedIdentity: PlaybackItemIdentity
+    private let otherIdentity: PlaybackItemIdentity
+    private var generation: UInt64 = 0
+    private var currentIdentity: PlaybackItemIdentity?
+    private var trackRequestCounts: [PlaybackItemIdentity: Int] = [:]
+    private var repeatedCueRequestCount = 0
+    private var staleResetHasStarted = false
+    private var staleResetHasCompleted = false
+    private var staleResetReleased = false
+    private var repeatedCueHasStarted = false
+    private var repeatedReloadBeganBeforeResetCompleted = false
+    private var repeatedCueReleased = false
+    private var staleResetContinuation: CheckedContinuation<Void, Never>?
+    private var repeatedCueContinuation: CheckedContinuation<Void, Never>?
+
+    init(
+        repeatedIdentity: PlaybackItemIdentity,
+        otherIdentity: PlaybackItemIdentity
+    ) {
+        self.repeatedIdentity = repeatedIdentity
+        self.otherIdentity = otherIdentity
+    }
+
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleTrack] {
+        trackRequestCounts[identity, default: 0] += 1
+        if identity == repeatedIdentity,
+           trackRequestCounts[identity] == 2 {
+            repeatedReloadBeganBeforeResetCompleted =
+                !staleResetHasCompleted
+        }
+        generation &+= 1
+        currentIdentity = identity
+        return [track(for: identity)]
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleCue] {
+        guard currentIdentity == identity else {
+            throw SubtitleApplicationError.invalidRequest
+        }
+        let requestGeneration = generation
+
+        if identity == repeatedIdentity {
+            repeatedCueRequestCount += 1
+            if repeatedCueRequestCount == 2 {
+                repeatedCueHasStarted = true
+                await withCheckedContinuation { continuation in
+                    if repeatedCueReleased {
+                        continuation.resume()
+                    } else {
+                        repeatedCueContinuation = continuation
+                    }
+                }
+            }
+        }
+
+        guard currentIdentity == identity,
+              generation == requestGeneration
+        else {
+            throw CancellationError()
+        }
+        return [
+            SubtitleCue(
+                startSeconds: 1,
+                endSeconds: 3,
+                text: identity == repeatedIdentity
+                    ? (repeatedCueRequestCount == 1
+                        ? "初始会话字幕"
+                        : "新会话字幕")
+                    : "其他视频字幕"
+            ),
+        ]
+    }
+
+    func reset(for identity: PlaybackItemIdentity) async {
+        if identity == repeatedIdentity, !staleResetHasStarted {
+            staleResetHasStarted = true
+            await withCheckedContinuation { continuation in
+                if staleResetReleased {
+                    continuation.resume()
+                } else {
+                    staleResetContinuation = continuation
+                }
+            }
+        }
+
+        if currentIdentity == identity {
+            generation &+= 1
+            currentIdentity = nil
+        }
+        if identity == repeatedIdentity {
+            staleResetHasCompleted = true
+        }
+    }
+
+    func staleResetStarted() -> Bool { staleResetHasStarted }
+
+    func staleResetCompleted() -> Bool { staleResetHasCompleted }
+
+    func repeatedCueRequestStarted() -> Bool { repeatedCueHasStarted }
+
+    func repeatedReloadBeganBeforeStaleResetCompleted() -> Bool {
+        repeatedReloadBeganBeforeResetCompleted
+    }
+
+    func activeIdentity() -> PlaybackItemIdentity? { currentIdentity }
+
+    func trackRequestCount(
+        for identity: PlaybackItemIdentity
+    ) -> Int {
+        trackRequestCounts[identity, default: 0]
+    }
+
+    func releaseStaleReset() {
+        staleResetReleased = true
+        staleResetContinuation?.resume()
+        staleResetContinuation = nil
+    }
+
+    func releaseRepeatedCueRequest() {
+        repeatedCueReleased = true
+        repeatedCueContinuation?.resume()
+        repeatedCueContinuation = nil
+    }
+
+    func releaseAll() {
+        releaseStaleReset()
+        releaseRepeatedCueRequest()
+    }
+
+    private func track(
+        for identity: PlaybackItemIdentity
+    ) -> SubtitleTrack {
+        SubtitleTrack(
+            id: "track-\(identity.cid)",
+            languageCode: "zh-CN",
+            displayName: identity == otherIdentity
+                ? "其他视频字幕"
+                : "重复视频字幕",
+            kind: .standard
+        )
+    }
 }
 
 @MainActor
