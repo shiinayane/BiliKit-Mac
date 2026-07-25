@@ -145,6 +145,7 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
             }
     }
 
+    @MainActor
     private func recordFailure(_ category: String) {
         XCTContext.runActivity(
             named: "m46-subtitle-lifecycle failure=\(category)"
