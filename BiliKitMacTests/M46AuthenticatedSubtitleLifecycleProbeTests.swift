@@ -45,7 +45,7 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         let player = AVPlayerEngine()
         let videoModel = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
-                repository: BiliGuestRepository(service: api)
+                repository: BiliGuestRepository(client: api)
             ),
             playback: player
         )

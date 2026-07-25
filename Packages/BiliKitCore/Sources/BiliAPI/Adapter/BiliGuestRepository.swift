@@ -2,33 +2,33 @@ import BiliApplication
 import BiliModels
 
 public struct BiliGuestRepository: GuestContentRepository {
-    private let service: any BiliAPIService
+    private let client: BiliAPIClient
 
-    public init(service: any BiliAPIService) {
-        self.service = service
+    public init(client: BiliAPIClient) {
+        self.client = client
     }
 
     public func popular(page: Int, pageSize: Int) async throws -> PopularPage {
         try await mapError {
-            try await service.popular(page: page, pageSize: pageSize)
+            try await client.popular(page: page, pageSize: pageSize)
         }
     }
 
     public func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
         try await mapError {
-            try await service.searchVideos(keyword: keyword, page: page)
+            try await client.searchVideos(keyword: keyword, page: page)
         }
     }
 
     public func videoDetail(for bvid: String) async throws -> VideoDetail {
         try await mapError {
-            try await service.videoDetail(for: bvid)
+            try await client.videoDetail(for: bvid)
         }
     }
 
     public func pages(for bvid: String) async throws -> [VideoPage] {
         try await mapError {
-            try await service.pages(for: bvid)
+            try await client.pages(for: bvid)
         }
     }
 
@@ -38,7 +38,7 @@ public struct BiliGuestRepository: GuestContentRepository {
         quality: Int
     ) async throws -> VideoPlayback {
         try await mapError {
-            try await service.playback(for: bvid, cid: cid, quality: quality)
+            try await client.playback(for: bvid, cid: cid, quality: quality)
         }
     }
 
