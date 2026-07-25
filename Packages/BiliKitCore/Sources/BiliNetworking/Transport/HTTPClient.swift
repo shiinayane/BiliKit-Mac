@@ -85,12 +85,13 @@ public final class URLSessionTransport: HTTPTransport, HTTPTransportInvalidating
         configuration: URLSessionConfiguration,
         redirectPolicy: HTTPRedirectPolicy
     ) {
-        let delegate: URLSessionTaskDelegate? = switch redirectPolicy {
-        case .follow:
-            nil
-        case .reject:
-            RejectHTTPRedirectDelegate()
-        }
+        let delegate: URLSessionTaskDelegate? =
+            switch redirectPolicy {
+            case .follow:
+                nil
+            case .reject:
+                RejectHTTPRedirectDelegate()
+            }
         self.init(
             session: URLSession(
                 configuration: configuration,

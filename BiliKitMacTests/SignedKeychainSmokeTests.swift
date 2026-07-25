@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import XCTest
+
 @testable import BiliAuth
 
 final class SignedKeychainSmokeTests: XCTestCase {
@@ -110,9 +111,9 @@ final class SignedKeychainSmokeTests: XCTestCase {
             throw SmokeFailure.attributeReadFailed(status)
         }
         guard let attributes = result as? [String: Any],
-              attributes[kSecAttrAccessible as String] as? String
+            attributes[kSecAttrAccessible as String] as? String
                 == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String,
-              !isSynchronizable(attributes[kSecAttrSynchronizable as String])
+            !isSynchronizable(attributes[kSecAttrSynchronizable as String])
         else {
             throw SmokeFailure.invalidStoredAttributes
         }
@@ -127,14 +128,14 @@ final class SignedKeychainSmokeTests: XCTestCase {
     private static func signingTeamIdentifier() -> String? {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess,
-              let code
+            let code
         else {
             return nil
         }
 
         var staticCode: SecStaticCode?
         guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
-              let staticCode
+            let staticCode
         else {
             return nil
         }
@@ -142,7 +143,7 @@ final class SignedKeychainSmokeTests: XCTestCase {
         var information: CFDictionary?
         let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
         guard SecCodeCopySigningInformation(staticCode, flags, &information) == errSecSuccess,
-              let values = information as? [String: Any]
+            let values = information as? [String: Any]
         else {
             return nil
         }

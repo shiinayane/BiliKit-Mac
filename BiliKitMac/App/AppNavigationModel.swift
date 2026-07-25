@@ -37,7 +37,7 @@ final class AppNavigationModel {
 
     var selectedSection: AppSection? {
         get {
-            guard case let .section(section) = route else { return nil }
+            guard case .section(let section) = route else { return nil }
             return section
         }
         set {
@@ -57,13 +57,13 @@ final class AppNavigationModel {
     func openPlayback(_ bvid: String) {
         guard !bvid.isEmpty else { return }
         switch route {
-        case let .section(section):
+        case .section(let section):
             returnSnapshot = AppReturnSnapshot(
                 sourceSection: section,
                 searchQuery: searchQuery,
                 selectedBVID: bvid
             )
-        case let .playback(currentBVID):
+        case .playback(let currentBVID):
             guard currentBVID != bvid else { return }
             stopPlayback()
         }
@@ -83,7 +83,7 @@ final class AppNavigationModel {
     }
 
     func retryPlayback() {
-        guard case let .playback(bvid) = route else { return }
+        guard case .playback(let bvid) = route else { return }
         startPlayback(bvid)
     }
 

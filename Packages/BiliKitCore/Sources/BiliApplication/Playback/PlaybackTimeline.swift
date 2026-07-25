@@ -92,14 +92,14 @@ package final class PlaybackTimelineStore {
     package var subscriberCount: Int { continuations.count }
 
     private var currentToken: PlaybackTimelineItemToken?
-    private var continuations: [
-        UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation
-    ] = [:]
+    private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
 
     package init() {}
 
     deinit {
-        continuations.values.forEach { $0.finish() }
+        for continuation in continuations.values {
+            continuation.finish()
+        }
     }
 
     package func updates() -> AsyncStream<PlaybackTimelineSnapshot> {
@@ -221,6 +221,8 @@ package final class PlaybackTimelineStore {
     private func publish(_ snapshot: PlaybackTimelineSnapshot) {
         guard snapshot != currentSnapshot else { return }
         currentSnapshot = snapshot
-        continuations.values.forEach { $0.yield(snapshot) }
+        for continuation in continuations.values {
+            continuation.yield(snapshot)
+        }
     }
 }

@@ -26,11 +26,12 @@ enum VideoMetadataFormatting {
         calendar: Calendar = .current
     ) -> String {
         if calendar.isDate(date, inSameDayAs: now) {
-            let elapsedHours = calendar.dateComponents(
-                [.hour],
-                from: date,
-                to: now
-            ).hour ?? 0
+            let elapsedHours =
+                calendar.dateComponents(
+                    [.hour],
+                    from: date,
+                    to: now
+                ).hour ?? 0
             return "\(max(1, elapsedHours))小时前"
         }
 
@@ -39,7 +40,7 @@ enum VideoMetadataFormatting {
             value: -1,
             to: now
         ),
-           calendar.isDate(date, inSameDayAs: yesterday)
+            calendar.isDate(date, inSameDayAs: yesterday)
         {
             return "昨天"
         }

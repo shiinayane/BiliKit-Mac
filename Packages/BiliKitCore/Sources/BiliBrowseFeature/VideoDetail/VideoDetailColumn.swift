@@ -36,7 +36,7 @@ public struct VideoDetailColumn<PlayerContent: View>: View {
             case .loading:
                 ProgressView("正在加载视频详情…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case let .preparingPlayback(context):
+            case .preparingPlayback(let context):
                 GuestVideoDetailView(
                     context: context,
                     isPreparingPlayback: true,
@@ -44,7 +44,7 @@ public struct VideoDetailColumn<PlayerContent: View>: View {
                     danmakuModel: danmakuModel,
                     playerContent: playerContent
                 )
-            case let .ready(context):
+            case .ready(let context):
                 GuestVideoDetailView(
                     context: context,
                     isPreparingPlayback: false,
@@ -52,7 +52,7 @@ public struct VideoDetailColumn<PlayerContent: View>: View {
                     danmakuModel: danmakuModel,
                     playerContent: playerContent
                 )
-            case let .failed(_, failure):
+            case .failed(_, let failure):
                 BrowseFailureView(
                     title: failure.title,
                     message: failure.message,
@@ -73,7 +73,7 @@ public struct VideoDetailColumn<PlayerContent: View>: View {
 
     private var playbackIdentity: PlaybackItemIdentity? {
         switch model.state {
-        case let .preparingPlayback(context), let .ready(context):
+        case .preparingPlayback(let context), .ready(let context):
             PlaybackItemIdentity(
                 bvid: context.detail.bvid,
                 cid: context.selectedPage.cid

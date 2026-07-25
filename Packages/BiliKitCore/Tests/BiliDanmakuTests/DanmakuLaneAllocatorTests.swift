@@ -259,12 +259,15 @@ struct DanmakuLaneAllocatorTests {
 
     @Test
     func displayAreaFractionMirrorsBottomFromSurfaceEdge() {
-        let cases: [(fraction: Double, expectedTop: [Double],
-                     expectedBottom: [Double])] = [
-            (0.5, [0, 20], [60, 40]),
-            (0.75, [0, 20, 40], [60, 40, 20]),
-            (1, [0, 20, 40, 60], [60, 40, 20, 0]),
-        ]
+        let cases:
+            [(
+                fraction: Double, expectedTop: [Double],
+                expectedBottom: [Double]
+            )] = [
+                (0.5, [0, 20], [60, 40]),
+                (0.75, [0, 20, 40], [60, 40, 20]),
+                (1, [0, 20, 40, 60], [60, 40, 20, 0]),
+            ]
 
         for testCase in cases {
             var allocator = DanmakuLaneAllocator(

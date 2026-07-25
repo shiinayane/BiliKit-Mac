@@ -23,9 +23,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
     private var generation = 0
     private var timelineTask: Task<Void, Never>?
     private var loadTasks: [Int: Task<Void, Never>] = [:]
-    private var continuations: [
-        UUID: AsyncStream<DanmakuBatch>.Continuation
-    ] = [:]
+    private var continuations: [UUID: AsyncStream<DanmakuBatch>.Continuation] = [:]
 
     public init(
         useCase: DanmakuSegmentUseCase,
@@ -39,8 +37,12 @@ public final class DanmakuSession: DanmakuPresentationControlling {
 
     deinit {
         timelineTask?.cancel()
-        loadTasks.values.forEach { $0.cancel() }
-        continuations.values.forEach { $0.finish() }
+        for task in loadTasks.values {
+            task.cancel()
+        }
+        for continuation in continuations.values {
+            continuation.finish()
+        }
     }
 
     public func batches() -> AsyncStream<DanmakuBatch> {
@@ -108,7 +110,9 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         generation &+= 1
         timelineTask?.cancel()
         timelineTask = nil
-        loadTasks.values.forEach { $0.cancel() }
+        for task in loadTasks.values {
+            task.cancel()
+        }
         loadTasks.removeAll(keepingCapacity: false)
         identity = nil
         scheduler.reset()
@@ -129,10 +133,13 @@ public final class DanmakuSession: DanmakuPresentationControlling {
             DanmakuPresentationUpdate(snapshot: snapshot, batch: batch)
         )
         if let batch {
-            continuations.values.forEach { $0.yield(batch) }
+            for continuation in continuations.values {
+                continuation.yield(batch)
+            }
         }
         let required = scheduler.desiredSegmentIndices(for: snapshot)
-        for index in required where
+        for index in required
+        where
             !scheduler.containsSegment(index: index)
             && loadTasks[index] == nil
             && loadTasks.count < 2
@@ -154,28 +161,28 @@ public final class DanmakuSession: DanmakuPresentationControlling {
                 )
                 try Task.checkCancellation()
                 guard let self,
-                      self.generation == requestGeneration,
-                      self.identity == identity
+                    self.generation == requestGeneration,
+                    self.identity == identity
                 else { return }
                 self.scheduler.store(segment, for: identity)
                 self.loadTasks[index] = nil
                 self.state = .ready(identity)
             } catch is CancellationError {
                 guard let self,
-                      self.generation == requestGeneration
+                    self.generation == requestGeneration
                 else { return }
                 self.loadTasks[index] = nil
             } catch let error as DanmakuApplicationError {
                 guard let self,
-                      self.generation == requestGeneration,
-                      self.identity == identity
+                    self.generation == requestGeneration,
+                    self.identity == identity
                 else { return }
                 self.loadTasks[index] = nil
                 self.state = .failed(identity, error)
             } catch {
                 guard let self,
-                      self.generation == requestGeneration,
-                      self.identity == identity
+                    self.generation == requestGeneration,
+                    self.identity == identity
                 else { return }
                 self.loadTasks[index] = nil
                 self.state = .failed(identity, .unavailable)

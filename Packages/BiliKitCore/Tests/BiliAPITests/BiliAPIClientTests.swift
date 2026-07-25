@@ -91,10 +91,12 @@ struct BiliAPIClientTests {
         #expect(page.videos[1].durationSeconds == 754)
 
         let requests = await transport.capturedRequests()
-        #expect(requests.map(\.url.path) == [
-            "/x/web-interface/nav",
-            "/x/web-interface/wbi/search/type",
-        ])
+        #expect(
+            requests.map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/search/type",
+            ]
+        )
         let searchQuery = URLComponents(
             url: requests[1].url,
             resolvingAgainstBaseURL: false
@@ -152,13 +154,16 @@ struct BiliAPIClientTests {
 
         #expect(page.videos.count == 2)
         let requests = await transport.capturedRequests()
-        #expect(requests.map(\.url.path) == [
-            "/x/web-interface/nav",
-            "/x/web-interface/wbi/search/type",
-            "/x/web-interface/nav",
-            "/x/web-interface/wbi/search/type",
-        ])
-        let signatures = requests
+        #expect(
+            requests.map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/search/type",
+            ]
+        )
+        let signatures =
+            requests
             .filter { $0.url.path.contains("/wbi/search/") }
             .compactMap {
                 URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
@@ -187,12 +192,14 @@ struct BiliAPIClientTests {
 
         _ = try await client.searchVideos(keyword: "macOS", page: 1)
 
-        #expect(await transport.capturedRequests().map(\.url.path) == [
-            "/x/web-interface/nav",
-            "/x/web-interface/wbi/search/type",
-            "/x/web-interface/nav",
-            "/x/web-interface/wbi/search/type",
-        ])
+        #expect(
+            await transport.capturedRequests().map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/search/type",
+            ]
+        )
     }
 
     @Test
@@ -304,10 +311,12 @@ struct BiliAPIClientTests {
                 URLQueryItem(name: "business", value: "archive")
             ) == true
         )
-        #expect(await authorizer.capturedPaths() == [
-            "/x/web-interface/history/cursor",
-            "/x/web-interface/history/cursor",
-        ])
+        #expect(
+            await authorizer.capturedPaths() == [
+                "/x/web-interface/history/cursor",
+                "/x/web-interface/history/cursor",
+            ]
+        )
     }
 
     @Test

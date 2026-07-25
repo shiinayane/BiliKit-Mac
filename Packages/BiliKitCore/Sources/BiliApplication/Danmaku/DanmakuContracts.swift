@@ -29,8 +29,8 @@ public struct DanmakuSegmentUseCase: Sendable {
         for identity: PlaybackItemIdentity
     ) async throws -> DanmakuSegment {
         guard (1...Self.maximumSegmentIndex).contains(index),
-              !identity.bvid.isEmpty,
-              identity.cid > 0
+            !identity.bvid.isEmpty,
+            identity.cid > 0
         else {
             throw DanmakuApplicationError.invalidRequest
         }

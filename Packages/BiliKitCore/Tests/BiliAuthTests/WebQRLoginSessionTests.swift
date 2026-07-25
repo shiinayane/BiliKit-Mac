@@ -1,6 +1,7 @@
 import BiliNetworking
 import Foundation
 import Testing
+
 @testable import BiliAuth
 
 struct WebQRLoginSessionTests {
@@ -11,7 +12,7 @@ struct WebQRLoginSessionTests {
 
         let state = try await session.requestQRCode()
 
-        guard case let .awaitingScan(qrCode) = state else {
+        guard case .awaitingScan(let qrCode) = state else {
             Issue.record("应进入等待扫码状态")
             return
         }
@@ -76,7 +77,7 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        guard case let .awaitingConfirmation(qrCode) = state else {
+        guard case .awaitingConfirmation(let qrCode) = state else {
             Issue.record("86090 应进入等待手机确认状态")
             return
         }
@@ -120,20 +121,24 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        guard case let .awaitingCredentialValidation(observation) = state else {
+        guard case .awaitingCredentialValidation(let observation) = state else {
             Issue.record("code=0 应等待登录态校验，不能直接视为已登录")
             return
         }
         #expect(observation.code == 0)
         #expect(observation.urlHost == "passport.biligame.com")
-        #expect(observation.urlQueryNames == [
-            "DedeUserID", "Expires", "SESSDATA", "bili_jct", "first_domain", "gourl",
-        ])
+        #expect(
+            observation.urlQueryNames == [
+                "DedeUserID", "Expires", "SESSDATA", "bili_jct", "first_domain", "gourl",
+            ]
+        )
         #expect(observation.refreshTokenPresent)
-        #expect(observation.cookieNames == [
-            "DedeUserID", "DedeUserID__ckMd5", "SESSDATA", "bili_jct", "sid",
-            "unknown_cookie",
-        ])
+        #expect(
+            observation.cookieNames == [
+                "DedeUserID", "DedeUserID__ckMd5", "SESSDATA", "bili_jct", "sid",
+                "unknown_cookie",
+            ]
+        )
         #expect(state.description == "awaiting-credential-validation")
         #expect(!String(describing: observation).contains("FIXTURE_VALUE"))
     }
@@ -339,14 +344,16 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        guard case let .failed(.unsupportedStatus(observation)) = state else {
+        guard case .failed(.unsupportedStatus(let observation)) = state else {
             Issue.record("未知状态应生成安全观察结果")
             return
         }
         #expect(observation.code == 12_345)
-        #expect(observation.dataFieldNames == [
-            "code", "message", "refresh_token", "timestamp", "url",
-        ])
+        #expect(
+            observation.dataFieldNames == [
+                "code", "message", "refresh_token", "timestamp", "url",
+            ]
+        )
         #expect(observation.urlHost == nil)
         #expect(observation.urlQueryNames.isEmpty)
         #expect(observation.refreshTokenPresent)
@@ -363,10 +370,12 @@ struct WebQRLoginSessionTests {
             statusCode: 200,
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": "fixture_cookie=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS; Path=/; Secure; HttpOnly",
+                "Set-Cookie":
+                    "fixture_cookie=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS; Path=/; Secure; HttpOnly",
             ],
             body: Data(
-                #"{"code":0,"data":{"url":"https://www.bilibili.com/?first_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS&second_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","refresh_token":"TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","timestamp":1700000001,"code":12345,"message":"fixture"}}"#.utf8
+                #"{"code":0,"data":{"url":"https://www.bilibili.com/?first_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS&second_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","refresh_token":"TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","timestamp":1700000001,"code":12345,"message":"fixture"}}"#
+                    .utf8
             )
         )
         let transport = RecordingAuthTransport(
@@ -377,7 +386,7 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        guard case let .failed(.unsupportedStatus(observation)) = state else {
+        guard case .failed(.unsupportedStatus(let observation)) = state else {
             Issue.record("未知状态应生成安全观察结果")
             return
         }
@@ -389,7 +398,8 @@ struct WebQRLoginSessionTests {
         #expect(observation.cookieAttributeNames.contains("Name"))
         #expect(observation.cookieAttributeNames.contains("Value"))
 
-        let diagnostics = String(describing: observation)
+        let diagnostics =
+            String(describing: observation)
             + String(reflecting: observation)
             + state.description
         #expect(!diagnostics.contains("TOP_SECRET"))
@@ -454,7 +464,8 @@ struct WebQRLoginSessionTests {
     @Test
     func rejectsQRCodeURLOutsideExactHostAllowlist() async throws {
         let body = Data(
-            #"{"code":0,"data":{"url":"https://account.bilibili.com.evil.invalid/login","qrcode_key":"FIXTURE_QR_KEY_00000000000000000"}}"#.utf8
+            #"{"code":0,"data":{"url":"https://account.bilibili.com.evil.invalid/login","qrcode_key":"FIXTURE_QR_KEY_00000000000000000"}}"#
+                .utf8
         )
         let session = WebQRLoginSession(
             transport: RecordingAuthTransport(
@@ -463,7 +474,7 @@ struct WebQRLoginSessionTests {
                         statusCode: 200,
                         headers: ["Content-Type": "application/json"],
                         body: body
-                    ),
+                    )
                 ]
             )
         )

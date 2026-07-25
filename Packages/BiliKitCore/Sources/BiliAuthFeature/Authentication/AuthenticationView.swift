@@ -77,7 +77,7 @@ public struct AuthenticationView: View {
                 systemImage: "clock.badge.exclamationmark",
                 detail: "请重新生成二维码。"
             )
-        case let .failed(failure):
+        case .failed(let failure):
             terminalContent(
                 title: "登录未完成",
                 systemImage: "exclamationmark.triangle",
@@ -105,12 +105,12 @@ public struct AuthenticationView: View {
                     orientation: .up,
                     label: Text("哔哩哔哩登录二维码")
                 )
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 240, height: 240)
-                    .accessibilityHint("使用手机客户端扫描")
-                    .accessibilityIdentifier("auth.qr-code")
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 240, height: 240)
+                .accessibilityHint("使用手机客户端扫描")
+                .accessibilityIdentifier("auth.qr-code")
             } else {
                 ProgressView()
                     .frame(width: 240, height: 240)

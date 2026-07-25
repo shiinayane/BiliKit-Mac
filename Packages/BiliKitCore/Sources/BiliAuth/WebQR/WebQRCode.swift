@@ -49,7 +49,6 @@ public struct WebQRCode: Sendable, Equatable, CustomStringConvertible,
         }
         return image
     }
-
 }
 
 public enum WebQRCodeRenderingError: Error, Sendable, Equatable {

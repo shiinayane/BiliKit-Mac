@@ -219,7 +219,6 @@ private struct HistoryPageRoot: View {
             .accessibilityIdentifier("history.signed-out")
         }
     }
-
 }
 
 struct HistoryRefreshButton: View {

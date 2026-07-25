@@ -8,7 +8,9 @@ public enum WatchHistoryError: Error, Sendable, Equatable {
     case invalidResponse
 }
 
-/// API adapter 生成并消费的不透明分页令牌。Presentation 与 Use Case 只能保存和回传，
+/// API adapter 生成并消费的不透明分页令牌。
+///
+/// Presentation 与 Use Case 只能保存和回传，
 /// 不知道远端 cursor 的字段或编码。
 public struct WatchHistoryContinuation: Sendable, Equatable {
     package let rawValue: String

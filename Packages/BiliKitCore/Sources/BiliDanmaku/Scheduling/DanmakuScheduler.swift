@@ -30,11 +30,12 @@ public struct DanmakuFilter: Sendable, Equatable {
 
     func allows(_ event: DanmakuEvent) -> Bool {
         guard event.weight >= minimumWeight else { return false }
-        let showsMode = switch event.mode {
-        case .scrolling: showsScrolling
-        case .top: showsTop
-        case .bottom: showsBottom
-        }
+        let showsMode =
+            switch event.mode {
+            case .scrolling: showsScrolling
+            case .top: showsTop
+            case .bottom: showsBottom
+            }
         guard showsMode else { return false }
         return !blockedKeywords.contains { keyword in
             event.text.range(
@@ -134,9 +135,9 @@ public struct DanmakuScheduler: Sendable {
         var indices = [current]
         let next = current + 1
         if next <= DanmakuSegmentUseCase.maximumSegmentIndex,
-           snapshot.durationSeconds.map({
-               Double(current) * Self.segmentDurationSeconds < $0
-           }) ?? true
+            snapshot.durationSeconds.map({
+                Double(current) * Self.segmentDurationSeconds < $0
+            }) ?? true
         {
             indices.append(next)
         }
@@ -161,8 +162,8 @@ public struct DanmakuScheduler: Sendable {
         }
 
         guard isEnabled,
-              snapshot.state == .playing,
-              snapshot.rate > 0
+            snapshot.state == .playing,
+            snapshot.rate > 0
         else {
             previousPositionSeconds = snapshot.positionSeconds
             return nil
@@ -190,8 +191,8 @@ public struct DanmakuScheduler: Sendable {
             for index in lowerIndex...upperIndex {
                 for event in segments[index] ?? [] {
                     guard event.timeSeconds > previousPositionSeconds,
-                          event.timeSeconds <= snapshot.positionSeconds,
-                          filter.allows(event)
+                        event.timeSeconds <= snapshot.positionSeconds,
+                        filter.allows(event)
                     else { continue }
 
                     let wasDelivered = hasDelivered(event.id)
@@ -243,7 +244,8 @@ public struct DanmakuScheduler: Sendable {
     }
 
     private static func segmentIndex(at positionSeconds: Double) -> Int {
-        let normalized = positionSeconds.isFinite
+        let normalized =
+            positionSeconds.isFinite
             ? max(positionSeconds, 0)
             : 0
         return Int(normalized / segmentDurationSeconds) + 1

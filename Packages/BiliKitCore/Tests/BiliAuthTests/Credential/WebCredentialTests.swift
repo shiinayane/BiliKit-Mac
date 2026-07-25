@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import Testing
+
 @testable import BiliAuth
 
 struct WebCredentialTests {
@@ -13,7 +14,8 @@ struct WebCredentialTests {
 
         #expect(decoded == credential)
         #expect(String(decoding: encoded, as: UTF8.self).contains(#""version":1"#))
-        let diagnostics = String(describing: credential)
+        let diagnostics =
+            String(describing: credential)
             + String(reflecting: credential)
             + credential.cookies.map(String.init(reflecting:)).joined()
         #expect(!diagnostics.contains("FIXTURE_"))

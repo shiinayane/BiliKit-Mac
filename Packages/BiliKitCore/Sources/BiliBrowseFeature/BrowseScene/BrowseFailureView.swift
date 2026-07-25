@@ -22,7 +22,7 @@ struct BrowseFailureView: View {
 extension GuestFlowFailure {
     var title: String {
         switch self {
-        case let .content(error):
+        case .content(let error):
             error.guestTitle
         case .playback:
             "无法准备播放"
@@ -31,7 +31,7 @@ extension GuestFlowFailure {
 
     var message: String {
         switch self {
-        case let .content(error):
+        case .content(let error):
             error.guestMessage
         case .playback:
             "当前媒体轨道或网络响应无法交给系统播放器。"
@@ -57,7 +57,7 @@ extension GuestApplicationError {
             "请求参数无效，请重新选择内容。"
         case .requestRestricted:
             "服务可能返回了风控页，请降低请求频率后重试。"
-        case let .serviceRejected(code):
+        case .serviceRejected(let code):
             "服务暂时无法完成请求（代码 \(code)）。"
         case .transportFailure:
             "请检查网络连接后重试。"

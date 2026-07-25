@@ -53,7 +53,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
     }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
-        return makeDetail(bvid: bvid)
+        makeDetail(bvid: bvid)
     }
 
     func pages(for bvid: String) async throws -> [VideoPage] {
@@ -125,7 +125,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
                         mimeType: "video/mp4",
                         primaryURL: videoURL,
                         segmentBase: segmentBase
-                    ),
+                    )
                 ],
                 audioRepresentations: [
                     MediaRepresentation(
@@ -135,7 +135,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
                         mimeType: "audio/mp4",
                         primaryURL: audioURL,
                         segmentBase: segmentBase
-                    ),
+                    )
                 ]
             ),
             mediaHeaders: [:]

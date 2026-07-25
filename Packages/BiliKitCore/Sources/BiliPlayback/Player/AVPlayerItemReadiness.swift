@@ -23,9 +23,10 @@ enum AVPlayerItemReadiness {
             case .readyToPlay:
                 return
             case .failed:
-                let errorType = item.error.map {
-                    String(reflecting: type(of: $0))
-                } ?? "UnknownAVPlayerItemError"
+                let errorType =
+                    item.error.map {
+                        String(reflecting: type(of: $0))
+                    } ?? "UnknownAVPlayerItemError"
                 throw AVPlayerEngineError.itemFailed(errorType: errorType)
             case .unknown:
                 continue

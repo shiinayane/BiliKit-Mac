@@ -27,7 +27,8 @@ public struct HLSMediaPlaylistBuilder: Sendable {
             throw HLSPlaylistBuilderError.invalidTimescale
         }
         let uri = try safeURI(mediaURI)
-        let maximumDuration = index.references
+        let maximumDuration =
+            index.references
             .map { Double($0.duration) / Double(index.timescale) }
             .max() ?? 0
         let targetDuration = max(1, Int(ceil(maximumDuration)))
@@ -74,9 +75,9 @@ public struct HLSMediaPlaylistBuilder: Sendable {
     private func safeURI(_ url: URL) throws -> String {
         let value = url.absoluteString
         guard !value.isEmpty,
-              !value.contains("\r"),
-              !value.contains("\n"),
-              !value.contains("\"")
+            !value.contains("\r"),
+            !value.contains("\n"),
+            !value.contains("\"")
         else {
             throw HLSPlaylistBuilderError.unsafeURI
         }
@@ -146,9 +147,9 @@ public struct HLSMasterPlaylistBuilder: Sendable {
 
     private func safeAttribute(_ value: String) throws -> String {
         guard !value.isEmpty,
-              !value.contains("\r"),
-              !value.contains("\n"),
-              !value.contains("\"")
+            !value.contains("\r"),
+            !value.contains("\n"),
+            !value.contains("\"")
         else {
             throw HLSPlaylistBuilderError.unsafeAttributeValue
         }
@@ -158,9 +159,9 @@ public struct HLSMasterPlaylistBuilder: Sendable {
     private func safeURI(_ url: URL) throws -> String {
         let value = url.absoluteString
         guard !value.isEmpty,
-              !value.contains("\r"),
-              !value.contains("\n"),
-              !value.contains("\"")
+            !value.contains("\r"),
+            !value.contains("\n"),
+            !value.contains("\"")
         else {
             throw HLSPlaylistBuilderError.unsafeURI
         }

@@ -13,6 +13,16 @@ public enum BiliRequestAuthorizationError: Error, Sendable, Equatable {
 
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
     private static let maximumResponseSize = 256 * 1_024
+    private static let navigationValidationURL: URL = {
+        guard
+            let url = URL(
+                string: "https://api.bilibili.com/x/web-interface/nav"
+            )
+        else {
+            preconditionFailure("Static navigation validation URL must be valid")
+        }
+        return url
+    }()
 
     private let store: any WebCredentialStoring
     private let httpClient: HTTPClient
@@ -42,9 +52,11 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         guard Self.isAllowed(request) else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard !request.headers.keys.contains(where: {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-        }) else {
+        guard
+            !request.headers.keys.contains(where: {
+                $0.caseInsensitiveCompare("Cookie") == .orderedSame
+            })
+        else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -92,9 +104,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
 
     public func restoreLoginState() async throws -> Bool {
         let request = HTTPRequest(
-            url: URL(
-                string: "https://api.bilibili.com/x/web-interface/nav"
-            )!,
+            url: Self.navigationValidationURL,
             headers: [
                 "Accept": "application/json",
                 "Referer": "https://www.bilibili.com/",
@@ -105,8 +115,9 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         do {
             authorized = try await authorize(request)
         } catch BiliRequestAuthorizationError.missingCredential,
-                BiliRequestAuthorizationError.expiredCredential,
-                BiliRequestAuthorizationError.invalidCredential {
+            BiliRequestAuthorizationError.expiredCredential,
+            BiliRequestAuthorizationError.invalidCredential
+        {
             return false
         }
 
@@ -119,13 +130,13 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             throw BiliRequestAuthorizationError.validationUnavailable
         }
         guard response.body.count <= Self.maximumResponseSize,
-              Self.looksLikeJSON(response),
-              let envelope = try? JSONDecoder().decode(
-                  NavigationEnvelope.self,
-                  from: response.body
-              ),
-              envelope.code == 0,
-              let data = envelope.data
+            Self.looksLikeJSON(response),
+            let envelope = try? JSONDecoder().decode(
+                NavigationEnvelope.self,
+                from: response.body
+            ),
+            envelope.code == 0,
+            let data = envelope.data
         else {
             throw BiliRequestAuthorizationError.validationUnavailable
         }
@@ -137,19 +148,22 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     }
 
     private static func isAllowed(_ request: HTTPRequest) -> Bool {
-        guard let components = URLComponents(
-            url: request.url,
-            resolvingAgainstBaseURL: false
-        ) else {
+        guard
+            let components = URLComponents(
+                url: request.url,
+                resolvingAgainstBaseURL: false
+            )
+        else {
             return false
         }
-        guard components.scheme?.lowercased() == "https"
-            && components.host?.lowercased() == "api.bilibili.com"
-            && (components.port == nil || components.port == 443)
-            && components.user == nil
-            && components.password == nil
-            && components.fragment == nil
-            && request.method == .get
+        guard
+            components.scheme?.lowercased() == "https"
+                && components.host?.lowercased() == "api.bilibili.com"
+                && (components.port == nil || components.port == 443)
+                && components.user == nil
+                && components.password == nil
+                && components.fragment == nil
+                && request.method == .get
         else {
             return false
         }
@@ -176,15 +190,15 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             }
         }
         guard values.count == 2,
-              Set(values.keys) == ["bvid", "cid"],
-              let bvid = values["bvid"],
-              bvid.count == 12,
-              bvid.hasPrefix("BV"),
-              bvid.allSatisfy({
-                  $0.isASCII && ($0.isLetter || $0.isNumber)
-              }),
-              let cid = values["cid"].flatMap(Int64.init),
-              cid > 0
+            Set(values.keys) == ["bvid", "cid"],
+            let bvid = values["bvid"],
+            bvid.count == 12,
+            bvid.hasPrefix("BV"),
+            bvid.allSatisfy({
+                $0.isASCII && ($0.isLetter || $0.isNumber)
+            }),
+            let cid = values["cid"].flatMap(Int64.init),
+            cid > 0
         else {
             return false
         }
@@ -202,16 +216,16 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             }
         }
         guard values.count == 4,
-              Set(values.keys) == ["max", "view_at", "business", "ps"],
-              let maximum = values["max"].flatMap(Int64.init),
-              let viewedAt = values["view_at"].flatMap(Int64.init),
-              let pageSize = values["ps"].flatMap(Int.init),
-              maximum >= 0,
-              viewedAt >= 0,
-              (1...50).contains(pageSize),
-              let business = values["business"],
-              business.count <= 64,
-              business.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
+            Set(values.keys) == ["max", "view_at", "business", "ps"],
+            let maximum = values["max"].flatMap(Int64.init),
+            let viewedAt = values["view_at"].flatMap(Int64.init),
+            let pageSize = values["ps"].flatMap(Int.init),
+            maximum >= 0,
+            viewedAt >= 0,
+            (1...50).contains(pageSize),
+            let business = values["business"],
+            business.count <= 64,
+            business.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
         else {
             return false
         }
@@ -230,12 +244,15 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         if let contentType = response.headers.first(where: {
             $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
         })?.value.lowercased(),
-           !contentType.contains("json") {
+            !contentType.contains("json")
+        {
             return false
         }
-        guard let firstByte = response.body.first(where: {
-            ![9, 10, 13, 32].contains($0)
-        }) else {
+        guard
+            let firstByte = response.body.first(where: {
+                ![9, 10, 13, 32].contains($0)
+            })
+        else {
             return false
         }
         return firstByte == 0x7B

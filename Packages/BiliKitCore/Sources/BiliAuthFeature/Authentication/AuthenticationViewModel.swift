@@ -29,8 +29,7 @@ public final class AuthenticationViewModel {
     }
 
     @ObservationIgnored private let service: any AuthenticationServicing
-    @ObservationIgnored private let qrCodeProvider:
-        any AuthenticationQRCodeProviding
+    @ObservationIgnored private let qrCodeProvider: any AuthenticationQRCodeProviding
     @ObservationIgnored private let pollInterval: Duration
     @ObservationIgnored private let pollTimeout: Duration
     @ObservationIgnored private let maximumPollAttempts: Int
@@ -136,7 +135,7 @@ public final class AuthenticationViewModel {
     public func cancelTransientWork() {
         switch state {
         case .restoring, .requestingQRCode, .awaitingScan, .awaitingConfirmation,
-             .finalizing, .expired:
+            .finalizing, .expired:
             cancelLogin()
         case .failed:
             if retryAction == .login {
@@ -161,7 +160,8 @@ public final class AuthenticationViewModel {
         task = nil
         state = initialState
         if initialState != .awaitingScan,
-           initialState != .awaitingConfirmation {
+            initialState != .awaitingConfirmation
+        {
             qrCodeImage = nil
         }
         task = Task { [weak self] in
@@ -177,7 +177,8 @@ public final class AuthenticationViewModel {
         var attempts = 0
 
         while generation == operationGeneration,
-              state == .awaitingScan || state == .awaitingConfirmation {
+            state == .awaitingScan || state == .awaitingConfirmation
+        {
             if attempts >= maximumPollAttempts || clock.now >= deadline {
                 await expireLocalChallenge(generation: operationGeneration)
                 return

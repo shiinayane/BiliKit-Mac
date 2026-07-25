@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+
 @testable import BiliKit
 
 struct SliceCAccessibilityTests {
@@ -51,10 +52,12 @@ struct SliceCAccessibilityTests {
         hostingView.frame = NSRect(x: 0, y: 0, width: 340, height: 40)
         hostingView.layoutSubtreeIfNeeded()
 
-        guard let searchField = firstSubview(
-            of: NSSearchField.self,
-            in: hostingView
-        ) else {
+        guard
+            let searchField = firstSubview(
+                of: NSSearchField.self,
+                in: hostingView
+            )
+        else {
             Issue.record("missing NSSearchField")
             return
         }

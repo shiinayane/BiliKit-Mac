@@ -1,6 +1,7 @@
-@testable import BiliBrowseFeature
 import Foundation
 import Testing
+
+@testable import BiliBrowseFeature
 
 struct VideoMetadataFormattingTests {
     @Test

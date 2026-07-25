@@ -1,8 +1,9 @@
 import BiliApplication
-@testable import BiliDanmaku
 import BiliModels
 import Foundation
 import Testing
+
+@testable import BiliDanmaku
 
 @Suite
 struct DanmakuSchedulerTests {
@@ -268,7 +269,8 @@ struct DanmakuSchedulerTests {
         _ = scheduler.consume(snapshot(position: 0, rate: 1, generation: 1))
 
         for index in 1...8 {
-            let start = Double(index - 1)
+            let start =
+                Double(index - 1)
                 * DanmakuScheduler.segmentDurationSeconds
             var events = [
                 event(id: "unique-\(index)", time: start + 1),
@@ -302,18 +304,16 @@ struct DanmakuSchedulerTests {
             let batch = try #require(value)
             #expect(
                 batch.events.map(\.id)
-                    == (
-                        index == 1
-                            ? [
-                                "unique-1",
-                                "rolling-duplicate",
-                                "boundary-1",
-                            ]
-                            : [
-                                "unique-\(index)",
-                                "boundary-\(index)",
-                            ]
-                    )
+                    == (index == 1
+                        ? [
+                            "unique-1",
+                            "rolling-duplicate",
+                            "boundary-1",
+                        ]
+                        : [
+                            "unique-\(index)",
+                            "boundary-\(index)",
+                        ])
             )
             #expect(
                 scheduler.retainedDeliveredSegmentCount

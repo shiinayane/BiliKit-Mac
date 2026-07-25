@@ -23,14 +23,14 @@ public struct VideoSearchView: View {
     @ViewBuilder
     private var results: some View {
         switch model.state {
-        case let .loading(.search(query, _)):
+        case .loading(.search(let query, _)):
             ProgressView("正在搜索“\(query)”…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("search.loading")
-        case let .loaded(.search(query, page)) where page.videos.isEmpty:
+        case .loaded(.search(let query, let page)) where page.videos.isEmpty:
             ContentUnavailableView.search(text: query)
                 .accessibilityIdentifier("search.empty")
-        case let .loaded(.search(query, page)):
+        case .loaded(.search(let query, let page)):
             VStack(spacing: 0) {
                 HStack {
                     Text("“\(query)”")
@@ -82,7 +82,7 @@ public struct VideoSearchView: View {
                 }
             }
             .accessibilityIdentifier("search.results")
-        case let .failed(request: .search(_, _), error: error):
+        case .failed(request: .search(_, _), let error):
             BrowseFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
@@ -98,5 +98,4 @@ public struct VideoSearchView: View {
             .accessibilityIdentifier("search.prompt")
         }
     }
-
 }

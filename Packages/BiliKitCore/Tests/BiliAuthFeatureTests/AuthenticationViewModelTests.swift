@@ -2,6 +2,7 @@ import BiliApplication
 import CoreGraphics
 import Foundation
 import Testing
+
 @testable import BiliAuthFeature
 
 struct AuthenticationViewModelTests {

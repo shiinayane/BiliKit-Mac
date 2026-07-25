@@ -3,6 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 import Testing
+
 @testable import BiliAPI
 
 @Suite
@@ -285,12 +286,13 @@ struct BiliSubtitleRepositoryTests {
             )
         var body = Data(source.utf8)
         if prependingEmptyURLTrack {
-            guard var envelope = try JSONSerialization.jsonObject(with: body)
+            guard
+                var envelope = try JSONSerialization.jsonObject(with: body)
                     as? [String: Any],
-                  var data = envelope["data"] as? [String: Any],
-                  var subtitle = data["subtitle"] as? [String: Any],
-                  var tracks = subtitle["subtitles"] as? [[String: Any]],
-                  var placeholder = tracks.first
+                var data = envelope["data"] as? [String: Any],
+                var subtitle = data["subtitle"] as? [String: Any],
+                var tracks = subtitle["subtitles"] as? [[String: Any]],
+                var placeholder = tracks.first
             else {
                 throw SubtitleTestTransportError.missingResponse
             }

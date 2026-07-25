@@ -4,6 +4,7 @@ import BiliBrowseFeature
 import BiliNetworking
 import Foundation
 import XCTest
+
 @testable import BiliKit
 
 final class M4AuthenticatedContractProbeTests: XCTestCase {
@@ -11,14 +12,14 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
     private static let maximumPageListSize = 512 * 1_024
     private static let maximumSubtitleBodySize = 2 * 1_024 * 1_024
     private static let allowedSubtitleHosts: Set<String> = [
-        "aisubtitle.hdslb.com",
+        "aisubtitle.hdslb.com"
     ]
 
     @MainActor
     func testAuthenticatedSubtitleContractWhenExplicitlyConfigured() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let bvid = environment["BILIKIT_M4_PROBE_BVID"],
-              Self.isValidBVID(bvid)
+            Self.isValidBVID(bvid)
         else {
             throw XCTSkip(
                 "仅在显式提供 BILIKIT_M4_PROBE_BVID 时运行已登录 M4 探针"
@@ -62,7 +63,8 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         let catalogResponse = try await transport.send(authorizedRequest)
         let catalog = try Self.catalogObservation(from: catalogResponse)
 
-        let catalogSummary = "m4-subtitle-catalog status=200 content-type=json "
+        let catalogSummary =
+            "m4-subtitle-catalog status=200 content-type=json "
             + "bytes=\(catalogResponse.body.count) tracks=\(catalog.trackCount) "
             + "usable-tracks=\(catalog.usableTrackCount) "
             + "needs-login=\(catalog.needsLogin) "
@@ -72,7 +74,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
             + "track-fields=\(catalog.trackFieldTypes.joined(separator: ","))"
         XCTContext.runActivity(named: catalogSummary) { _ in }
         guard catalog.hasSuccessfulEnvelope,
-              catalog.hasSubtitleCatalog
+            catalog.hasSubtitleCatalog
         else {
             throw ProbeFailure.invalidJSONShape
         }
@@ -98,7 +100,8 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
             )
         )
         let body = try Self.subtitleBodyObservation(from: subtitleResponse)
-        let bodySummary = "m4-subtitle-body status=200 host=\(host) "
+        let bodySummary =
+            "m4-subtitle-body status=200 host=\(host) "
             + "content-type=json bytes=\(subtitleResponse.body.count) "
             + "cues=\(body.cueCount) "
             + "cue-fields=\(body.cueFieldTypes.joined(separator: ","))"
@@ -112,8 +115,8 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         productionModel.selectVideo(identity)
         await productionModel.waitForCurrentTask()
         guard productionModel.state == .ready(identity),
-              !productionModel.tracks.isEmpty,
-              productionModel.selectedTrackID != nil
+            !productionModel.tracks.isEmpty,
+            productionModel.selectedTrackID != nil
         else {
             throw ProbeFailure.productionDecoderFailed
         }
@@ -153,13 +156,14 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         guard contentType(response).contains("json") else {
             throw ProbeFailure.unexpectedContentType
         }
-        guard let envelope = try JSONSerialization.jsonObject(
-            with: response.body
-        ) as? [String: Any],
-              envelope["code"] as? Int == 0,
-              let pages = envelope["data"] as? [[String: Any]],
-              let firstCID = pages.first?["cid"] as? NSNumber,
-              firstCID.int64Value > 0
+        guard
+            let envelope = try JSONSerialization.jsonObject(
+                with: response.body
+            ) as? [String: Any],
+            envelope["code"] as? Int == 0,
+            let pages = envelope["data"] as? [[String: Any]],
+            let firstCID = pages.first?["cid"] as? NSNumber,
+            firstCID.int64Value > 0
         else {
             throw ProbeFailure.invalidJSONShape
         }
@@ -202,9 +206,11 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         guard contentType(response).contains("json") else {
             throw ProbeFailure.unexpectedContentType
         }
-        guard let envelope = try JSONSerialization.jsonObject(
-            with: response.body
-        ) as? [String: Any] else {
+        guard
+            let envelope = try JSONSerialization.jsonObject(
+                with: response.body
+            ) as? [String: Any]
+        else {
             throw ProbeFailure.invalidJSONShape
         }
         let data = envelope["data"] as? [String: Any]
@@ -233,14 +239,13 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
             dataFieldTypes: data.map(fieldTypes) ?? [],
             subtitleFieldTypes: subtitle.map(fieldTypes) ?? [],
             trackFieldTypes: firstTrack.map(fieldTypes) ?? [],
-            hasSuccessfulEnvelope:
-                (envelope["code"] as? NSNumber)?.intValue == 0
+            hasSuccessfulEnvelope: (envelope["code"] as? NSNumber)?.intValue == 0
                 && data != nil,
             hasSubtitleCatalog:
                 subtitle != nil
                 && subtitle?["subtitles"] is [[String: Any]],
-            hasMinimumTrackFields:
-                (firstTrack?["id"] is NSNumber || firstTrack?["id_str"] is String)
+            hasMinimumTrackFields: (firstTrack?["id"] is NSNumber
+                || firstTrack?["id_str"] is String)
                 && firstTrack?["lan"] is String
                 && firstTrack?["subtitle_url"] is String,
             firstSubtitleURL: firstURL
@@ -248,17 +253,18 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
     }
 
     private static func validatedSubtitleHost(for url: URL) throws -> String {
-        guard let components = URLComponents(
-            url: url,
-            resolvingAgainstBaseURL: false
-        ),
-              components.scheme?.lowercased() == "https",
-              let host = components.host?.lowercased(),
-              allowedSubtitleHosts.contains(host),
-              (components.port == nil || components.port == 443),
-              components.user == nil,
-              components.password == nil,
-              components.fragment == nil
+        guard
+            let components = URLComponents(
+                url: url,
+                resolvingAgainstBaseURL: false
+            ),
+            components.scheme?.lowercased() == "https",
+            let host = components.host?.lowercased(),
+            allowedSubtitleHosts.contains(host),
+            components.port == nil || components.port == 443,
+            components.user == nil,
+            components.password == nil,
+            components.fragment == nil
         else {
             throw ProbeFailure.untrustedSubtitleOrigin
         }
@@ -277,11 +283,12 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
         guard contentType(response).contains("json") else {
             throw ProbeFailure.unexpectedContentType
         }
-        guard let payload = try JSONSerialization.jsonObject(
-            with: response.body
-        ) as? [String: Any],
-              let cues = payload["body"] as? [[String: Any]],
-              let firstCue = cues.first
+        guard
+            let payload = try JSONSerialization.jsonObject(
+                with: response.body
+            ) as? [String: Any],
+            let cues = payload["body"] as? [[String: Any]],
+            let firstCue = cues.first
         else {
             throw ProbeFailure.invalidJSONShape
         }
@@ -346,7 +353,8 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
             case is String:
                 self = .string
             case let number as NSNumber:
-                self = CFGetTypeID(number) == CFBooleanGetTypeID()
+                self =
+                    CFGetTypeID(number) == CFBooleanGetTypeID()
                     ? .boolean : .number
             case is [Any]:
                 self = .array

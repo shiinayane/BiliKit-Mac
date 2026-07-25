@@ -59,24 +59,24 @@ public struct BiliGuestRepository: GuestContentRepository {
     }
 }
 
-private extension BiliAPIError {
-    var applicationError: GuestApplicationError {
+extension BiliAPIError {
+    fileprivate var applicationError: GuestApplicationError {
         switch self {
         case .invalidRequest, .authorizationRequired:
             .invalidRequest
         case .transportFailure:
             .transportFailure
         case .httpStatus(403), .nonJSONResponse,
-             .apiRejected(code: -403, _), .apiRejected(code: -412, _):
+            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
             .requestRestricted
-        case let .apiRejected(code, _):
+        case .apiRejected(let code, _):
             .serviceRejected(code: code)
         case .noAVCVideo, .noAACAudio:
             .unsupportedMedia
         case .responseTooLarge, .decodingFailed, .missingData,
-             .invalidWBIKey, .signingFailed, .invalidMediaData,
-             .invalidSubtitleData, .untrustedSubtitleOrigin,
-             .nonProtobufResponse, .invalidDanmakuData:
+            .invalidWBIKey, .signingFailed, .invalidMediaData,
+            .invalidSubtitleData, .untrustedSubtitleOrigin,
+            .nonProtobufResponse, .invalidDanmakuData:
             .invalidResponse
         case .httpStatus:
             .unavailable

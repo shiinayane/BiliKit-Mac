@@ -21,9 +21,12 @@ public protocol BiliWatchHistoryService: Sendable {
 public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     AuthenticatedSessionInvalidating
 {
-    public static let productionBaseURL = URL(
-        string: "https://api.bilibili.com"
-    )!
+    public static let productionBaseURL: URL = {
+        guard let url = URL(string: "https://api.bilibili.com") else {
+            preconditionFailure("Static API base URL must be valid")
+        }
+        return url
+    }()
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
     private static let maximumSubtitleCatalogSize = 1 * 1_024 * 1_024
@@ -45,7 +48,8 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         transportFactory: (@Sendable () -> any HTTPTransport)? = nil,
         baseURL: URL = BiliAPIClient.productionBaseURL,
-        userAgent: String = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
+        userAgent: String =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -86,8 +90,8 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     ) async throws -> SearchPage {
         let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedKeyword.isEmpty,
-              normalizedKeyword.count <= 100,
-              page > 0
+            normalizedKeyword.count <= 100,
+            page > 0
         else {
             throw BiliAPIError.invalidRequest
         }
@@ -200,8 +204,8 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         for identity: PlaybackItemIdentity
     ) async throws -> Data {
         guard Self.isValidBVID(identity.bvid),
-              identity.cid > 0,
-              (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(index)
+            identity.cid > 0,
+            (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(index)
         else {
             throw BiliAPIError.invalidRequest
         }
@@ -228,7 +232,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             throw CancellationError()
         } catch let error as HTTPClientError {
             switch error {
-            case let .unacceptableStatusCode(status):
+            case .unacceptableStatusCode(let status):
                 throw BiliAPIError.httpStatus(status)
             case .nonHTTPResponse:
                 throw BiliAPIError.transportFailure
@@ -237,7 +241,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             throw BiliAPIError.transportFailure
         }
         guard !response.body.isEmpty,
-              response.body.count <= Self.maximumDanmakuSegmentSize
+            response.body.count <= Self.maximumDanmakuSegmentSize
         else {
             if response.body.isEmpty {
                 throw BiliAPIError.invalidDanmakuData
@@ -391,7 +395,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
             throw CancellationError()
         } catch let error as HTTPClientError {
             switch error {
-            case let .unacceptableStatusCode(status):
+            case .unacceptableStatusCode(let status):
                 throw BiliAPIError.httpStatus(status)
             case .nonHTTPResponse:
                 throw BiliAPIError.transportFailure
@@ -464,10 +468,12 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         path: String,
         queryItems: [URLQueryItem]
     ) throws -> URL {
-        guard var components = URLComponents(
-            url: baseURL,
-            resolvingAgainstBaseURL: false
-        ) else {
+        guard
+            var components = URLComponents(
+                url: baseURL,
+                resolvingAgainstBaseURL: false
+            )
+        else {
             throw BiliAPIError.invalidRequest
         }
         components.path = path
@@ -482,10 +488,12 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         path: String,
         percentEncodedQuery: String
     ) throws -> URL {
-        guard var components = URLComponents(
-            url: baseURL,
-            resolvingAgainstBaseURL: false
-        ) else {
+        guard
+            var components = URLComponents(
+                url: baseURL,
+                resolvingAgainstBaseURL: false
+            )
+        else {
             throw BiliAPIError.invalidRequest
         }
         components.path = path
@@ -507,26 +515,30 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
     }
 
     private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        guard let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-              contentType.contains("json")
+        guard
+            let contentType = response.headers.first(where: {
+                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+            })?.value.lowercased(),
+            contentType.contains("json")
         else {
             return false
         }
-        guard let firstByte = response.body.first(where: {
-            ![9, 10, 13, 32].contains($0)
-        }) else {
+        guard
+            let firstByte = response.body.first(where: {
+                ![9, 10, 13, 32].contains($0)
+            })
+        else {
             return false
         }
         return firstByte == 0x7B || firstByte == 0x5B
     }
 
     private static func looksLikeProtobuf(_ response: HTTPResponse) -> Bool {
-        guard let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-              contentType.contains("application/octet-stream")
+        guard
+            let contentType = response.headers.first(where: {
+                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+            })?.value.lowercased(),
+            contentType.contains("application/octet-stream")
         else {
             return false
         }

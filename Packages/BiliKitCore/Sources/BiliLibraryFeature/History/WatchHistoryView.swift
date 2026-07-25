@@ -42,7 +42,7 @@ public struct WatchHistoryView: View {
             ProgressView("正在加载观看历史…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("history.loading")
-        case let .loaded(items, continuation, loadMoreError):
+        case .loaded(let items, let continuation, let loadMoreError):
             if items.isEmpty {
                 emptyHistory(
                     canLoadMore: continuation != nil,
@@ -56,14 +56,14 @@ public struct WatchHistoryView: View {
                     loadMoreError: loadMoreError
                 )
             }
-        case let .loadingMore(items, _):
+        case .loadingMore(let items, _):
             historyList(
                 items: items,
                 canLoadMore: true,
                 isLoadingMore: true,
                 loadMoreError: nil
             )
-        case let .failed(error):
+        case .failed(let error):
             failure(error)
         }
     }
@@ -184,7 +184,7 @@ public struct WatchHistoryView: View {
             "请重新扫码登录后再试。"
         case .requestRestricted:
             "服务暂时拒绝了请求，请降低频率后重试。"
-        case let .serviceRejected(code):
+        case .serviceRejected(let code):
             "服务暂时无法完成请求（代码 \(code)）。"
         case .transportFailure:
             "请检查网络连接后重试。"

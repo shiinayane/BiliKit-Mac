@@ -67,7 +67,7 @@ public struct SIDXParser: Sendable {
         var reader = BigEndianReader(data: data)
         let declaredSize = try reader.readUInt32()
         guard data.count <= UInt32.max,
-              declaredSize == UInt32(data.count)
+            declaredSize == UInt32(data.count)
         else {
             throw SIDXParserError.invalidBoxSize(
                 declared: declaredSize,
@@ -129,7 +129,7 @@ public struct SIDXParser: Sendable {
             let sap = try reader.readUInt32()
             let endExclusive = try adding(nextMediaOffset, referencedSize)
             guard nextMediaOffset <= UInt64(Int64.max),
-                  endExclusive - 1 <= UInt64(Int64.max)
+                endExclusive - 1 <= UInt64(Int64.max)
             else {
                 throw SIDXParserError.integerOverflow
             }

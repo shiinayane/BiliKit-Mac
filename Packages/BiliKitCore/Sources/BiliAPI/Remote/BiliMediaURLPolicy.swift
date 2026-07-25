@@ -12,7 +12,7 @@ struct BiliMediaURLPolicy: Sendable {
 
     func allows(_ url: URL) -> Bool {
         guard publicHTTPSPolicy.allows(url),
-              let host = url.host?.lowercased()
+            let host = url.host?.lowercased()
         else {
             return false
         }

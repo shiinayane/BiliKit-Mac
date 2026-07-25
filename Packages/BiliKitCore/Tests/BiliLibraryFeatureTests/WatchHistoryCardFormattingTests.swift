@@ -1,6 +1,7 @@
-@testable import BiliLibraryFeature
 import Foundation
 import Testing
+
+@testable import BiliLibraryFeature
 
 struct WatchHistoryCardFormattingTests {
     @Test

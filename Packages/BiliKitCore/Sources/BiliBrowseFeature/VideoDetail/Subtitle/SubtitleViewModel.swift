@@ -164,7 +164,7 @@ public final class SubtitleViewModel {
             let tracks = try await useCase.tracks(for: identity)
             try Task.checkCancellation()
             guard self.identity == identity,
-                  contentGeneration == generation
+                contentGeneration == generation
             else { return }
             self.tracks = tracks
             guard let firstTrack = tracks.first else {
@@ -200,8 +200,8 @@ public final class SubtitleViewModel {
             )
             try Task.checkCancellation()
             guard self.identity == identity,
-                  selectedTrackID == trackID,
-                  contentGeneration == generation
+                selectedTrackID == trackID,
+                contentGeneration == generation
             else { return }
             self.cues = cues
             updateCurrentCue(positionSeconds: latestPositionSeconds)
@@ -317,7 +317,7 @@ public final class SubtitleViewModel {
         generation: Int
     ) {
         guard self.identity == identity,
-              contentGeneration == generation
+            contentGeneration == generation
         else { return }
         cues = []
         currentCueText = nil

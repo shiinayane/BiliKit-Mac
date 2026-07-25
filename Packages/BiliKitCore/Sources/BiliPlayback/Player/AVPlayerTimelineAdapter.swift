@@ -42,7 +42,7 @@ final class AVPlayerTimelineAdapter {
         ) { [weak self, weak item] time in
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item,
-                      let seconds = Self.seconds(from: time)
+                    let seconds = Self.seconds(from: time)
                 else { return }
                 self.store.update(
                     token: token,
@@ -125,12 +125,13 @@ final class AVPlayerTimelineAdapter {
         ) { [weak self, weak item] _ in
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item,
-                      self.store.currentSnapshot.state != .loading,
-                      let position = Self.seconds(from: item.currentTime())
+                    self.store.currentSnapshot.state != .loading,
+                    let position = Self.seconds(from: item.currentTime())
                 else { return }
 
                 if let explicit = self.pendingExplicitSeekPosition,
-                   abs(explicit - position) <= 0.25 {
+                    abs(explicit - position) <= 0.25
+                {
                     self.pendingExplicitSeekPosition = nil
                     return
                 }
@@ -272,7 +273,8 @@ private final class PlayerTimelineObserverBag: Sendable {
 
     private static func remove(_ storage: Storage) {
         if let player = storage.player,
-           let periodicTimeObserver = storage.periodicTimeObserver {
+            let periodicTimeObserver = storage.periodicTimeObserver
+        {
             player.removeTimeObserver(periodicTimeObserver)
         }
         storage.rateObservation?.invalidate()

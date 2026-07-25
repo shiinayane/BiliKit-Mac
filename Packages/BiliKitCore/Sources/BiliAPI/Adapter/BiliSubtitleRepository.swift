@@ -76,8 +76,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         identity: PlaybackItemIdentity
     ) async throws -> [SubtitleCue] {
         guard currentIdentity == identity,
-              let url = resourceURLs[trackID],
-              SubtitleURLPolicy().allows(url)
+            let url = resourceURLs[trackID],
+            SubtitleURLPolicy().allows(url)
         else {
             throw SubtitleApplicationError.invalidRequest
         }
@@ -95,7 +95,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             let response = try await bodyClient.send(request)
             try Task.checkCancellation()
             guard generation == requestGeneration,
-                  currentIdentity == identity
+                currentIdentity == identity
             else {
                 throw CancellationError()
             }
@@ -119,7 +119,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             throw CancellationError()
         } catch let error as HTTPClientError {
             switch error {
-            case let .unacceptableStatusCode(status):
+            case .unacceptableStatusCode(let status):
                 throw Self.applicationError(.httpStatus(status))
             case .nonHTTPResponse:
                 throw SubtitleApplicationError.transportFailure
@@ -147,16 +147,19 @@ public actor BiliSubtitleRepository: SubtitleRepository {
     }
 
     private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        guard let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-              contentType.contains("json")
+        guard
+            let contentType = response.headers.first(where: {
+                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+            })?.value.lowercased(),
+            contentType.contains("json")
         else {
             return false
         }
-        guard let firstByte = response.body.first(where: {
-            ![9, 10, 13, 32].contains($0)
-        }) else {
+        guard
+            let firstByte = response.body.first(where: {
+                ![9, 10, 13, 32].contains($0)
+            })
+        else {
             return false
         }
         return firstByte == 0x7B
@@ -173,16 +176,16 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         case .transportFailure:
             .transportFailure
         case .httpStatus(403), .nonJSONResponse,
-             .apiRejected(code: -403, _), .apiRejected(code: -412, _):
+            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
             .requestRestricted
         case .responseTooLarge, .decodingFailed, .missingData,
-             .invalidSubtitleData, .untrustedSubtitleOrigin,
-             .nonProtobufResponse, .invalidDanmakuData:
+            .invalidSubtitleData, .untrustedSubtitleOrigin,
+            .nonProtobufResponse, .invalidDanmakuData:
             .invalidResponse
         case .httpStatus, .apiRejected:
             .unavailable
         case .invalidWBIKey, .signingFailed, .invalidMediaData,
-             .noAVCVideo, .noAACAudio:
+            .noAVCVideo, .noAACAudio:
             .invalidResponse
         }
     }

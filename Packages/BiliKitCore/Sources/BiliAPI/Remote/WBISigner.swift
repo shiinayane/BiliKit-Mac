@@ -63,9 +63,11 @@ struct WBISigner: Sendable {
     }
 
     private static func percentEncode(_ value: String) throws -> String {
-        guard let encoded = value.addingPercentEncoding(
-            withAllowedCharacters: unreservedCharacters
-        ) else {
+        guard
+            let encoded = value.addingPercentEncoding(
+                withAllowedCharacters: unreservedCharacters
+            )
+        else {
             throw BiliAPIError.signingFailed
         }
         return encoded

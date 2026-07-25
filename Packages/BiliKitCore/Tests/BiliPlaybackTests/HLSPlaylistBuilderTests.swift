@@ -1,6 +1,7 @@
 import BiliModels
 import Foundation
 import Testing
+
 @testable import BiliPlayback
 
 struct HLSPlaylistBuilderTests {

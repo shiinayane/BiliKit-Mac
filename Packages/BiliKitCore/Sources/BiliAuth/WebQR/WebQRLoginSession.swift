@@ -2,9 +2,22 @@ import BiliNetworking
 import Foundation
 
 public actor WebQRLoginSession {
-    public static let productionBaseURL = URL(
-        string: "https://passport.bilibili.com"
-    )!
+    public static let productionBaseURL: URL = {
+        guard let url = URL(string: "https://passport.bilibili.com") else {
+            preconditionFailure("Static Web QR base URL must be valid")
+        }
+        return url
+    }()
+    private static let navigationValidationURL: URL = {
+        guard
+            let url = URL(
+                string: "https://api.bilibili.com/x/web-interface/nav"
+            )
+        else {
+            preconditionFailure("Static navigation validation URL must be valid")
+        }
+        return url
+    }()
 
     private static let qrCodeHost = "account.bilibili.com"
     private static let maximumResponseSize = 256 * 1_024
@@ -71,8 +84,8 @@ public actor WebQRLoginSession {
                 )
             }
             guard let data = envelope.data,
-                  Self.isValidQRCodeKey(data.qrcodeKey),
-                  Self.isValidQRCodeURL(data.url)
+                Self.isValidQRCodeKey(data.qrcodeKey),
+                Self.isValidQRCodeURL(data.url)
             else {
                 return fail(.invalidResponse, generation: operationGeneration)
             }
@@ -100,7 +113,7 @@ public actor WebQRLoginSession {
     @discardableResult
     public func pollOnce() async throws -> WebQRLoginState {
         guard let challenge = activeChallenge,
-              challenge.generation == generation
+            challenge.generation == generation
         else {
             state = .failed(.noActiveChallenge)
             return state
@@ -113,7 +126,7 @@ public actor WebQRLoginSession {
             let response = try await send(
                 path: "/x/passport-login/web/qrcode/poll",
                 queryItems: [
-                    URLQueryItem(name: "qrcode_key", value: challenge.key),
+                    URLQueryItem(name: "qrcode_key", value: challenge.key)
                 ]
             )
             try Task.checkCancellation()
@@ -264,7 +277,7 @@ public actor WebQRLoginSession {
             throw CancellationError()
         } catch let error as HTTPClientError {
             switch error {
-            case let .unacceptableStatusCode(status):
+            case .unacceptableStatusCode(let status):
                 throw WebQRLoginFailure.httpStatus(status)
             case .nonHTTPResponse:
                 throw WebQRLoginFailure.network
@@ -286,10 +299,12 @@ public actor WebQRLoginSession {
         path: String,
         queryItems: [URLQueryItem]
     ) throws -> URL {
-        guard var components = URLComponents(
-            url: baseURL,
-            resolvingAgainstBaseURL: false
-        ) else {
+        guard
+            var components = URLComponents(
+                url: baseURL,
+                resolvingAgainstBaseURL: false
+            )
+        else {
             throw WebQRLoginFailure.invalidResponse
         }
         components.path = path
@@ -303,14 +318,11 @@ public actor WebQRLoginSession {
     private func sendNavigationValidation(
         cookieHeader: String
     ) async throws -> HTTPResponse {
-        let url = URL(
-            string: "https://api.bilibili.com/x/web-interface/nav"
-        )!
         let response: HTTPResponse
         do {
             response = try await httpClient.send(
                 HTTPRequest(
-                    url: url,
+                    url: Self.navigationValidationURL,
                     headers: [
                         "Accept": "application/json",
                         "Cookie": cookieHeader,
@@ -323,7 +335,7 @@ public actor WebQRLoginSession {
             throw CancellationError()
         } catch let error as HTTPClientError {
             switch error {
-            case let .unacceptableStatusCode(status):
+            case .unacceptableStatusCode(let status):
                 throw WebQRLoginFailure.httpStatus(status)
             case .nonHTTPResponse:
                 throw WebQRLoginFailure.network
@@ -351,7 +363,7 @@ public actor WebQRLoginSession {
         pollID expectedPollID: UInt64
     ) throws {
         guard generation == expectedGeneration,
-              latestPollID == expectedPollID
+            latestPollID == expectedPollID
         else {
             throw StaleOperationError()
         }
@@ -391,12 +403,15 @@ public actor WebQRLoginSession {
         if let contentType = response.headers.first(where: {
             $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
         })?.value.lowercased(),
-           !contentType.contains("json") {
+            !contentType.contains("json")
+        {
             return false
         }
-        guard let firstByte = response.body.first(where: {
-            ![9, 10, 13, 32].contains($0)
-        }) else {
+        guard
+            let firstByte = response.body.first(where: {
+                ![9, 10, 13, 32].contains($0)
+            })
+        else {
             return false
         }
         return firstByte == 0x7B
@@ -458,13 +473,13 @@ public actor WebQRLoginSession {
             for: productionBaseURL
         ).filter { allowedNames.contains($0.name) }
         guard cookies.count == allowedNames.count,
-              Set(cookies.map(\.name)) == allowedNames
+            Set(cookies.map(\.name)) == allowedNames
         else {
             return nil
         }
         let credentialCookies: [WebCredentialCookie] = cookies.compactMap { cookie in
             guard let name = WebCredentialCookieName(rawValue: cookie.name),
-                  let expiresAt = cookie.expiresDate
+                let expiresAt = cookie.expiresDate
             else {
                 return nil
             }

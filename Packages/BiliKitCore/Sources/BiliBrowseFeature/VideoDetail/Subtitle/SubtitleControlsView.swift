@@ -19,7 +19,7 @@ struct SubtitleControlsView: View {
             case .unavailable:
                 Text("此视频没有可用字幕")
                     .foregroundStyle(.secondary)
-            case let .failed(_, failure):
+            case .failed(_, let failure):
                 Text(failure.message)
                     .foregroundStyle(.secondary)
                 Button("重试", action: model.retry)
@@ -51,8 +51,8 @@ struct SubtitleControlsView: View {
     }
 }
 
-private extension SubtitleFailure {
-    var message: String {
+extension SubtitleFailure {
+    fileprivate var message: String {
         switch self {
         case .authenticationRequired:
             "登录后可查看字幕"
@@ -66,8 +66,8 @@ private extension SubtitleFailure {
     }
 }
 
-private extension SubtitleTrack {
-    var label: String {
+extension SubtitleTrack {
+    fileprivate var label: String {
         switch kind {
         case .standard:
             displayName

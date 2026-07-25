@@ -2,6 +2,7 @@ import BiliApplication
 import BiliNetworking
 import Foundation
 import Testing
+
 @testable import BiliAuth
 
 struct BiliAuthenticationServiceTests {
@@ -105,7 +106,7 @@ struct BiliAuthenticationServiceTests {
                 )
             },
             additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events),
+                RecordingAuthenticatedSessionInvalidator(events: events)
             ]
         )
 
@@ -113,12 +114,14 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.logout() == .signedOut)
 
         #expect(try store.load() == nil)
-        #expect(events.values() == [
-            "credential-deleted",
-            "qr-invalidated",
-            "validation-invalidated",
-            "api-invalidated",
-        ])
+        #expect(
+            events.values() == [
+                "credential-deleted",
+                "qr-invalidated",
+                "validation-invalidated",
+                "api-invalidated",
+            ]
+        )
     }
 
     @Test
@@ -160,7 +163,7 @@ struct BiliAuthenticationServiceTests {
                 )
             },
             additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events),
+                RecordingAuthenticatedSessionInvalidator(events: events)
             ]
         )
 
@@ -169,12 +172,14 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.cancelLogin() == .failed(.credentialUnavailable))
 
         #expect(try store.load() != nil)
-        #expect(events.values() == [
-            "credential-delete-failed",
-            "qr-invalidated",
-            "validation-invalidated",
-            "api-invalidated",
-        ])
+        #expect(
+            events.values() == [
+                "credential-delete-failed",
+                "qr-invalidated",
+                "validation-invalidated",
+                "api-invalidated",
+            ]
+        )
     }
 
     private func makeService(

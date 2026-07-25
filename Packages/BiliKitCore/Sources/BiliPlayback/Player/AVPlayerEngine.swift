@@ -205,7 +205,8 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
             throw AVPlayerEngineError.seekFailed
         }
         let components = time.components
-        let seconds = Double(components.seconds)
+        let seconds =
+            Double(components.seconds)
             + Double(components.attoseconds) / 1_000_000_000_000_000_000
         timeline.prepareExplicitSeek(to: seconds)
         let didSeek = await player.seek(
@@ -238,9 +239,11 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         for request: PlaybackRequest
     ) throws -> MediaRepresentation {
         if let preferredID = request.preferredVideoRepresentationID {
-            guard let representation = request.manifest.videoRepresentations.first(
-                where: { $0.id == preferredID }
-            ) else {
+            guard
+                let representation = request.manifest.videoRepresentations.first(
+                    where: { $0.id == preferredID }
+                )
+            else {
                 throw AVPlayerEngineError.preferredVideoRepresentationNotFound(
                     preferredID
                 )
@@ -257,9 +260,11 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         for request: PlaybackRequest
     ) throws -> MediaRepresentation {
         if let preferredID = request.preferredAudioRepresentationID {
-            guard let representation = request.manifest.audioRepresentations.first(
-                where: { $0.id == preferredID }
-            ) else {
+            guard
+                let representation = request.manifest.audioRepresentations.first(
+                    where: { $0.id == preferredID }
+                )
+            else {
                 throw AVPlayerEngineError.preferredAudioRepresentationNotFound(
                     preferredID
                 )

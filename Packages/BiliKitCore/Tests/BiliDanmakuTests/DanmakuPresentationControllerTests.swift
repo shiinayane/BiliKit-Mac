@@ -1,9 +1,10 @@
 import AppKit
 import BiliApplication
-@testable import BiliDanmaku
 import BiliModels
 import QuartzCore
 import Testing
+
+@testable import BiliDanmaku
 
 @MainActor
 @Suite
@@ -520,12 +521,15 @@ struct DanmakuPresentationControllerTests {
             state: state,
             discontinuityGeneration: generation
         )
-        let batch = events.isEmpty ? nil : DanmakuBatch(
-            identity: identity,
-            discontinuityGeneration: generation,
-            events: events,
-            clearsExisting: false
-        )
+        let batch =
+            events.isEmpty
+            ? nil
+            : DanmakuBatch(
+                identity: identity,
+                discontinuityGeneration: generation,
+                events: events,
+                clearsExisting: false
+            )
         return DanmakuPresentationUpdate(snapshot: snapshot, batch: batch)
     }
 

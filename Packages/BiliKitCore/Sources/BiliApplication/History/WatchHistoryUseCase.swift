@@ -29,7 +29,7 @@ public struct WatchHistoryUseCase: Sendable {
                 pageSize: pageSize
             )
             guard page.items.isEmpty,
-                  let nextContinuation = page.continuation
+                let nextContinuation = page.continuation
             else {
                 return page
             }
