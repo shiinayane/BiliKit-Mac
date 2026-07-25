@@ -5,7 +5,37 @@ import Testing
 
 @testable import BiliAuthFeature
 
+@Suite(.timeLimit(.minutes(1)))
 struct AuthenticationViewModelTests {
+    @Test
+    func eventCounterCancellationCannotLeaveOrResumeAStaleWaiter() async throws {
+        let counter = TestEventCounter()
+
+        let cancelledBeforeRegistration = Task {
+            try await counter.wait(until: 1)
+        }
+        cancelledBeforeRegistration.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelledBeforeRegistration.value
+        }
+
+        let cancelledAfterRegistration = Task {
+            try await counter.wait(until: 2)
+        }
+        while await counter.pendingWaiterCount == 0 {
+            try Task.checkCancellation()
+            await Task.yield()
+        }
+        cancelledAfterRegistration.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelledAfterRegistration.value
+        }
+
+        #expect(await counter.pendingWaiterCount == 0)
+        await counter.signal()
+        await counter.signal()
+    }
+
     @Test
     @MainActor
     func drivesQRCodeConfirmationAndFinalizationToSignedIn() async {
@@ -36,7 +66,7 @@ struct AuthenticationViewModelTests {
     func newerLoginIntentPreventsOldResultFromOverwritingState() async throws {
         let service = AuthenticationServiceStub(
             requestStates: [.failed(.network), .expired],
-            firstRequestDelay: .milliseconds(50)
+            suspendsFirstRequest: true
         )
         let model = AuthenticationViewModel(
             service: service,
@@ -45,10 +75,12 @@ struct AuthenticationViewModelTests {
         )
 
         model.startLogin()
-        try await Task.sleep(for: .milliseconds(5))
+        try await service.waitForFirstRequestStart()
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.startLogin()
         await model.waitForCurrentTask()
-        try await Task.sleep(for: .milliseconds(60))
+        await service.releaseFirstRequest()
+        await supersededTask.value
 
         #expect(model.state == .expired)
     }
@@ -213,9 +245,12 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private let finalizeState: AuthenticationState
     private let cancelState: AuthenticationState
     private let logoutState: AuthenticationState
-    private let firstRequestDelay: Duration?
+    private let suspendsFirstRequest: Bool
     private var requestCount = 0
     private var calls: [String] = []
+    private var firstRequestReleased = false
+    private let firstRequestEvents = TestEventCounter()
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         requestStates: [AuthenticationState] = [],
@@ -224,7 +259,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         finalizeState: AuthenticationState = .signedOut,
         cancelState: AuthenticationState = .signedOut,
         logoutState: AuthenticationState = .signedOut,
-        firstRequestDelay: Duration? = nil
+        suspendsFirstRequest: Bool = false
     ) {
         self.requestStates = requestStates
         self.pollStates = pollStates
@@ -232,7 +267,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         self.finalizeState = finalizeState
         self.cancelState = cancelState
         self.logoutState = logoutState
-        self.firstRequestDelay = firstRequestDelay
+        self.suspendsFirstRequest = suspendsFirstRequest
     }
 
     func restore() -> AuthenticationState {
@@ -246,8 +281,15 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         calls.append("request")
         guard !requestStates.isEmpty else { return .failed(.invalidResponse) }
         let result = requestStates.removeFirst()
-        if currentRequest == 1, let firstRequestDelay {
-            try? await Task.sleep(for: firstRequestDelay)
+        if currentRequest == 1, suspendsFirstRequest {
+            await firstRequestEvents.signal()
+            await withCheckedContinuation { continuation in
+                if firstRequestReleased {
+                    continuation.resume()
+                } else {
+                    releaseWaiters.append(continuation)
+                }
+            }
         }
         return result
     }
@@ -280,5 +322,77 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
 
     func observedCalls() -> [String] {
         calls
+    }
+
+    func waitForFirstRequestStart() async throws {
+        do {
+            try await firstRequestEvents.wait(until: 1)
+        } catch {
+            releaseFirstRequest()
+            throw error
+        }
+    }
+
+    func releaseFirstRequest() {
+        firstRequestReleased = true
+        resume(&releaseWaiters)
+    }
+
+    private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor TestEventCounter {
+    private struct Waiter {
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var count = 0
+    private var waiters: [UUID: Waiter] = [:]
+
+    var pendingWaiterCount: Int {
+        waiters.count
+    }
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { count >= $0.value.expectedCount }
+        for (id, waiter) in ready where waiters.removeValue(forKey: id) != nil {
+            waiter.continuation.resume()
+        }
+    }
+
+    func wait(until expectedCount: Int) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if count >= expectedCount {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = Waiter(
+                        expectedCount: expectedCount,
+                        continuation: continuation
+                    )
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id)
+            }
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }

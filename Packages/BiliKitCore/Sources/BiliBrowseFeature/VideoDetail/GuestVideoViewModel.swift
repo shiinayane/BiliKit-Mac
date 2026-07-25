@@ -61,6 +61,10 @@ public final class GuestVideoViewModel {
         await task?.value
     }
 
+    func taskSnapshotForTesting() -> Task<Void, Never>? {
+        task
+    }
+
     private func performSelection(
         bvid: String,
         quality: Int,

@@ -159,6 +159,10 @@ public final class WatchHistoryViewModel {
         await task?.value
     }
 
+    func taskSnapshotForTesting() -> Task<Void, Never>? {
+        task
+    }
+
     private func begin(
         state initialState: WatchHistoryState,
         clearExistingTask: Bool = true,

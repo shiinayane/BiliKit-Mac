@@ -126,6 +126,10 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         }
     }
 
+    func loadTaskSnapshotForTesting() -> [Task<Void, Never>] {
+        Array(loadTasks.values)
+    }
+
     private func handle(_ snapshot: PlaybackTimelineSnapshot) {
         guard let identity, snapshot.identity == identity else { return }
         let batch = scheduler.consume(snapshot)

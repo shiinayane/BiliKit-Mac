@@ -1,11 +1,12 @@
 import BiliApplication
-import BiliDanmaku
 import BiliModels
 import Foundation
 import Testing
 
+@testable import BiliDanmaku
+
 @MainActor
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct DanmakuSessionTests {
     @Test
     func sessionPrefetchesCurrentAndNextWithBoundedConcurrency() async throws {
@@ -19,23 +20,11 @@ struct DanmakuSessionTests {
 
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        do {
-            while await repository.requestedIndices().count < 2,
-                clock.now < deadline
-            {
-                try await Task.sleep(for: .milliseconds(5))
-            }
-        } catch {
-            await repository.releaseRequests()
-            await session.waitForLoads()
-            throw error
-        }
+        try await repository.waitForRequestCount(2, identity: identity)
 
         #expect(await repository.requestedIndices().sorted() == [1, 2])
         #expect(await repository.maximumActiveRequests() == 2)
-        await repository.releaseRequests()
+        await repository.releaseRequests(for: identity)
         await session.waitForLoads()
         #expect(session.state == .ready(identity))
     }
@@ -44,10 +33,7 @@ struct DanmakuSessionTests {
     func replacingIdentityRejectsLateOldSegmentsAndStopReturnsIdle() async throws {
         let first = PlaybackItemIdentity(bvid: "BV1FirstFixture", cid: 1)
         let second = PlaybackItemIdentity(bvid: "BV1SecondFixture", cid: 2)
-        let repository = SessionRecordingRepository(
-            delay: .milliseconds(40),
-            ignoresCancellation: true
-        )
+        let repository = ControlledPrefetchRepository()
         let timeline = SessionTimeline()
         let session = DanmakuSession(
             useCase: DanmakuSegmentUseCase(repository: repository),
@@ -56,17 +42,24 @@ struct DanmakuSessionTests {
 
         session.start(for: first)
         timeline.publish(snapshot(identity: first, position: 0, generation: 1))
-        try await Task.sleep(for: .milliseconds(5))
+        try await repository.waitForRequestCount(2, identity: first)
+        let supersededTasks = session.loadTaskSnapshotForTesting()
+        guard supersededTasks.count == 2 else {
+            await repository.releaseAllRequests()
+            Issue.record("首个 identity 未捕获到两项预取 Task")
+            return
+        }
         session.start(for: second)
         timeline.publish(snapshot(identity: second, position: 0, generation: 2))
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while session.state != .ready(second),
-            clock.now < deadline
-        {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await repository.waitForRequestCount(2, identity: second)
+        await repository.releaseRequests(for: second)
+        await session.waitForLoads()
 
+        #expect(session.state == .ready(second))
+        await repository.releaseRequests(for: first)
+        for task in supersededTasks {
+            await task.value
+        }
         #expect(session.state == .ready(second))
         session.stop()
         #expect(session.state == .idle)
@@ -75,7 +68,7 @@ struct DanmakuSessionTests {
     @Test
     func presentationSinkReceivesEveryAcceptedTimelineUpdate() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1PresentationFixture", cid: 3)
-        let repository = SessionRecordingRepository(delay: .milliseconds(5))
+        let repository = ImmediateDanmakuRepository()
         let timeline = SessionTimeline()
         let sink = SessionPresentationSink()
         let session = DanmakuSession(
@@ -94,12 +87,7 @@ struct DanmakuSessionTests {
                 state: .paused
             )
         )
-        try await waitUntil {
-            sink.updates.contains {
-                $0.snapshot.identity == identity
-                    && $0.snapshot.state == .paused
-            }
-        }
+        try await sink.waitForUpdateCount(1, identity: identity)
         timeline.publish(
             snapshot(
                 identity: identity,
@@ -109,11 +97,7 @@ struct DanmakuSessionTests {
                 state: .playing
             )
         )
-        try await waitUntil {
-            sink.updates.filter {
-                $0.snapshot.identity == identity
-            }.count >= 2
-        }
+        try await sink.waitForUpdateCount(2, identity: identity)
 
         let accepted = sink.updates.filter {
             $0.snapshot.identity == identity
@@ -127,7 +111,7 @@ struct DanmakuSessionTests {
 
     @Test
     func controlsClearOrStopPresentationSynchronously() {
-        let repository = SessionRecordingRepository(delay: .milliseconds(5))
+        let repository = ImmediateDanmakuRepository()
         let timeline = SessionTimeline()
         let sink = SessionPresentationSink()
         let session = DanmakuSession(
@@ -164,17 +148,6 @@ struct DanmakuSessionTests {
             discontinuityGeneration: generation
         )
     }
-
-    private func waitUntil(
-        _ condition: @escaping @MainActor () -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !condition(), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(condition())
-    }
 }
 
 @MainActor
@@ -182,9 +155,21 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
     private(set) var updates: [DanmakuPresentationUpdate] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
+    private var updateWaiters:
+        [UUID: (
+            identity: PlaybackItemIdentity,
+            count: Int,
+            continuation: CheckedContinuation<Void, any Error>
+        )] = [:]
 
     func apply(_ update: DanmakuPresentationUpdate) {
         updates.append(update)
+        let ready = updateWaiters.filter {
+            updateCount(for: $0.value.identity) >= $0.value.count
+        }
+        for (id, waiter) in ready where updateWaiters.removeValue(forKey: id) != nil {
+            waiter.continuation.resume()
+        }
     }
 
     func clearPresentation() {
@@ -193,6 +178,38 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
 
     func stopPresentation() {
         stopCount += 1
+    }
+
+    func waitForUpdateCount(
+        _ expectedCount: Int,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if updateCount(for: identity) >= expectedCount {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    updateWaiters[id] = (identity, expectedCount, continuation)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                self.cancelUpdateWaiter(id)
+            }
+        }
+    }
+
+    private func cancelUpdateWaiter(_ id: UUID) {
+        updateWaiters.removeValue(forKey: id)?.continuation.resume(
+            throwing: CancellationError()
+        )
+    }
+
+    private func updateCount(for identity: PlaybackItemIdentity) -> Int {
+        updates.lazy.filter { $0.snapshot.identity == identity }.count
     }
 }
 
@@ -226,59 +243,43 @@ private final class SessionTimeline: PlaybackTimelineProviding {
     }
 }
 
-private actor SessionRecordingRepository: DanmakuSegmentRepository {
-    private let delay: Duration
-    private let ignoresCancellation: Bool
-    private var requested: [Int] = []
-    private var active = 0
-    private var maximumActive = 0
-
-    init(delay: Duration, ignoresCancellation: Bool = false) {
-        self.delay = delay
-        self.ignoresCancellation = ignoresCancellation
-    }
-
+private struct ImmediateDanmakuRepository: DanmakuSegmentRepository {
     func segment(
         index: Int,
         for identity: PlaybackItemIdentity
     ) async throws -> DanmakuSegment {
-        requested.append(index)
-        active += 1
-        maximumActive = max(maximumActive, active)
-        do {
-            try await Task.sleep(for: delay)
-        } catch  where !ignoresCancellation {
-            active -= 1
-            throw CancellationError()
-        } catch {}
-        active -= 1
-        return DanmakuSegment(index: index, events: [])
+        DanmakuSegment(index: index, events: [])
     }
-
-    func requestedIndices() -> [Int] { requested }
-    func maximumActiveRequests() -> Int { maximumActive }
 }
 
 private actor ControlledPrefetchRepository: DanmakuSegmentRepository {
-    private var requested: [Int] = []
+    private struct Request: Sendable {
+        let index: Int
+        let identity: PlaybackItemIdentity
+    }
+
+    private var requests: [Request] = []
     private var active = 0
     private var maximumActive = 0
-    private var requestsReleased = false
-    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var allRequestsReleased = false
+    private var releasedIdentities: Set<PlaybackItemIdentity> = []
+    private var requestEvents: [PlaybackItemIdentity: TestEventCounter] = [:]
+    private var releaseWaiters: [PlaybackItemIdentity: [CheckedContinuation<Void, Never>]] = [:]
 
     func segment(
         index: Int,
         for identity: PlaybackItemIdentity
     ) async throws -> DanmakuSegment {
-        requested.append(index)
+        requests.append(Request(index: index, identity: identity))
         active += 1
         maximumActive = max(maximumActive, active)
+        await requestCounter(for: identity).signal()
 
         await withCheckedContinuation { continuation in
-            if requestsReleased {
+            if allRequestsReleased || releasedIdentities.contains(identity) {
                 continuation.resume()
             } else {
-                releaseWaiters.append(continuation)
+                releaseWaiters[identity, default: []].append(continuation)
             }
         }
 
@@ -286,16 +287,93 @@ private actor ControlledPrefetchRepository: DanmakuSegmentRepository {
         return DanmakuSegment(index: index, events: [])
     }
 
-    func requestedIndices() -> [Int] { requested }
+    func requestedIndices() -> [Int] { requests.map(\.index) }
 
     func maximumActiveRequests() -> Int { maximumActive }
 
-    func releaseRequests() {
-        requestsReleased = true
-        let waiters = releaseWaiters
-        releaseWaiters.removeAll(keepingCapacity: false)
-        for waiter in waiters {
+    func waitForRequestCount(
+        _ expectedCount: Int,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        let counter = requestCounter(for: identity)
+        do {
+            try await counter.wait(until: expectedCount)
+        } catch {
+            releaseAllRequests()
+            throw error
+        }
+    }
+
+    func releaseRequests(for identity: PlaybackItemIdentity) {
+        releasedIdentities.insert(identity)
+        let pending = releaseWaiters.removeValue(forKey: identity) ?? []
+        for waiter in pending {
             waiter.resume()
         }
+    }
+
+    private func requestCounter(for identity: PlaybackItemIdentity) -> TestEventCounter {
+        if let counter = requestEvents[identity] {
+            return counter
+        }
+        let counter = TestEventCounter()
+        requestEvents[identity] = counter
+        return counter
+    }
+
+    func releaseAllRequests() {
+        allRequestsReleased = true
+        releasedIdentities.formUnion(releaseWaiters.keys)
+        let pending = releaseWaiters.values.flatMap { $0 }
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor TestEventCounter {
+    private struct Waiter {
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var count = 0
+    private var waiters: [UUID: Waiter] = [:]
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { count >= $0.value.expectedCount }
+        for (id, waiter) in ready where waiters.removeValue(forKey: id) != nil {
+            waiter.continuation.resume()
+        }
+    }
+
+    func wait(until expectedCount: Int) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if count >= expectedCount {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = Waiter(
+                        expectedCount: expectedCount,
+                        continuation: continuation
+                    )
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id)
+            }
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }

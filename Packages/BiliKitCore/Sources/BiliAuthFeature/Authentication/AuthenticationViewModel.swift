@@ -150,6 +150,10 @@ public final class AuthenticationViewModel {
         await task?.value
     }
 
+    func taskSnapshotForTesting() -> Task<Void, Never>? {
+        task
+    }
+
     private func begin(
         state initialState: AuthenticationState,
         operation: @escaping @MainActor (Int) async -> Void
