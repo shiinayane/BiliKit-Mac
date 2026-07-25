@@ -1,21 +1,26 @@
 # BiliKit macOS 路线图
 
-> 状态：M1、M2、M2.5、M3 和 M4 已完成；M4.5 Slice A、B、C 均已关闭。Slice C 的语义字号、卡片交互、关键辅助语义、Debug fixture、最终 XCUI、App Gate、Release 编译与独立红区审查已经一致；M4.5 本地实现与验证已收口，里程碑总 Gate 仍等待统一 PR 的远程 macOS 15/26 CI。
+> 状态：M1、M2、M2.5、M3、M4 和 M4.5 已完成；M4.5 合入后的 CI
+> 曾暴露测试稳定性问题，修复后的 `origin/main` macOS 15/26 CI 已通过。M4.6
+> 正在进行字幕生命周期稳定化与后续路线评估，尚未关闭。
 >
-> 基线日期：2026-07-22（Asia/Tokyo）。
+> 基线日期：2026-07-25（Asia/Tokyo）。
 >
-> 本文描述当前事实、下一阶段和验收门槛；研究依据见
+> 本文描述当前事实、下一阶段和验收门槛；产品优先级见
+> [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)，研究依据见
 > [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)。计划中的能力在通过对应验收前，不视为已经实现。
 
 ## 1. 产品目标
 
 BiliKit 是一个 SwiftUI 驱动、macOS-first、第三方且非官方的 B 站浏览与播放客户端。v1 优先保证：
 
-- 游客可以浏览、搜索并打开视频。
+- 用户可以在首页持续浏览个性推荐视频流，并从首页、搜索或历史进入同窗口视频页；
+  当前“热门”是独立公共发现入口，不等同于首页个性推荐。
 - 用户可以通过 Web QR 安全登录。
 - AVC/AAC DASH 可以通过 AVPlayer 可靠播放、seek 和切换 CDN。
-- 字幕与弹幕在暂停、倍速和 seek 后保持正确时间轴。
-- 窗口、菜单、快捷键和辅助功能符合 Mac 使用习惯。
+- 视频页可以稳定观看视频、字幕和弹幕。
+- 用户可以从相关推荐连续打开新视频，返回后恢复来源页面和浏览上下文。
+- 核心窗口、键盘和辅助功能符合 Mac 使用习惯；PiP、mini player 等不阻塞 v1。
 
 ## 2. 当前仓库基线
 
@@ -30,7 +35,8 @@ BiliKit 是一个 SwiftUI 驱动、macOS-first、第三方且非官方的 B 站�
 - README、MIT License、第三方声明、`.gitignore` 和共享 App scheme。
 - GitHub Actions 的 Package 测试、App 无签名构建与单元测试工作流。
 - 原生 macOS 客户端的竞品、技术和合规研究文档。
-- 152 个 Package 测试、28 个测试套件、1 个 App composition 单元测试和 1 个签名 Keychain smoke；原 App 业务测试已迁移到对应 Application/Feature target。
+- Package、App composition、XCUI、签名 Keychain 与显式媒体 probe 分层验证；
+  原 App 业务测试已迁移到对应 Application/Feature target。
 - 以最低 deployment target macOS 15 通过的无签名 `build-for-testing`；构建产物不包含研究文档。
 - M0 已在本地提交为 `575879a`。
 - 严格 HTTP Range 校验、CDN fallback 与取消传播。
@@ -68,7 +74,8 @@ BiliKit 是一个 SwiftUI 驱动、macOS-first、第三方且非官方的 B 站�
 
 尚不存在：
 
-- 弹幕 renderer、产品界面接入与业务持久化实现；观看历史当前只读且只映射普通视频 archive。
+- 首页个性推荐、相关推荐、评论、服务端观看进度写入与业务持久化实现；观看历史当前
+  只读且只映射普通视频 archive。
 
 当前已知开发环境事项：
 
@@ -442,8 +449,9 @@ M4 总 Gate 结论：通过。首次红区终审发现 renderer-only probe 绕�
 
 明确不做：
 
-- 不新增收藏、稍后再看、推荐写操作、endpoint、业务状态或持久化 schema；发现功能缺口应回到对应里程碑单独立项。
-- 不提前实现 M5 的独立播放器窗口、mini player、PiP、系统分享、媒体键或完整 Commands。
+- 不新增首页个性推荐、评论、相关推荐、历史上报、清晰度切换、收藏、稍后再看、
+  endpoint、业务状态或持久化 schema；发现功能缺口应回到对应里程碑单独立项。
+- 不实现独立播放器窗口、mini player、PiP、系统分享、媒体键或完整 Commands；这些能力不再属于 v1 Gate。
 - 不以样式复用为由创建没有第二个真实调用方的公共 target、组件层或主题框架。
 - 热门／搜索与观看历史已形成两个真实 Feature 调用方；其唯一获准例外是 ADR 0009 限定的内部 `BiliUI` 视频卡片边界，不因此准入其他通用组件。
 
@@ -454,23 +462,113 @@ Gate：
 - 核心流程可用键盘完成，主要控件有可理解标签和可见焦点。
 - M4 的播放、字幕、弹幕帧率、内存和时间轴指标无可测回归；Package/App 测试、CI 与无个人数据 UI 验证记录通过。
 
-### M5：Mac 产品完成度
+### M4.6：字幕生命周期稳定化与路线评估（进行中）
 
-目标：从“能播放的原型”变成遵循 Mac 习惯的日常客户端。
+本阶段只完成两件事：
 
-交付物：
+1. 用可控 A → B、A → B → A、认证切换、关闭与非协作迟到请求固定字幕
+   identity、generation、reset owner 和资源上限；修复能够由失败测试证明的缺口。
+2. 按当前代码与产品愿景重新排列 M5，并明确 v1/v1.1 截线；不实现 M5 endpoint、
+   缓存、分页、认证写入或播放控制。
 
-- Commands、可发现快捷键和完整键盘导航。
-- 独立播放器窗口、mini player、全屏和能力允许时的 PiP。
-- 窗口恢复、拖入 B 站 URL、系统分享和媒体键集成。
-- 在 M4.5 基线之上补齐完整 VoiceOver 导航和系统级 Mac 交互。
-- 服务端 Library 能力（历史、稍后再看）与本地播放进度形成清晰、可撤销的闭环。
+当前结论：
+
+- 已确认的问题是旧 A reset 在 A → B → A 中可能使新 A 会话失效并永久停在 loading；
+  实现候选改为单 reset worker、最早 pending reset 与单一最新 load intent。
+- 可控 A → B 迟到 cue 没有覆盖当前 B；用户观察到的“其他视频字幕”仍未被独立复现，
+  因此不能把上述 ABA loading 缺口写成串片根因。
+- `GuestFeedViewModel` 当前共同承载热门与搜索，普通导航会清空工作集；M5.0 先修复
+  现有状态连续性，但不因命名审计扩张，也不吸收未来个性推荐。
+- 未来首页仍指个性推荐而非热门。App/Web 来源、分页、登录 scope、资源上限与停止
+  条件由 M5.1 的独立来源决策 Gate 确定；M4.6 不预选 endpoint。
+- 用户已选择精简 v1 截线：状态保留、单一首页来源、相关推荐连续观看与真实播放
+  缺口阻塞 v1；只读评论和服务端观看进度写入进入 v1.1。
 
 Gate：
 
-- 核心流程无需鼠标即可完成。
-- 主要控件具备可理解的辅助功能标签。
-- 窗口与播放状态在关闭、重开和模式切换后保持一致。
+- 字幕候选须通过确定性测试、重复调度压力、最高适用 App Gate、独立红区复核与脱敏
+  真实 A/B 路径；远程 CI 仅在提交后验证，未执行前保持未验证。
+- ROADMAP、产品愿景与 UI/UX 蓝图必须统一上述截线，同时继续把各 M5 切片写成待确认
+  契约而非生产授权。
+
+### M5：日常观看核心闭环
+
+目标：完成“首页个性推荐流 → 视频／字幕／弹幕 → 推荐连续切换 → 返回来源”的
+高频路径。只读评论和服务端观看进度写入属于 v1.1，不阻塞首次发布。
+
+前置稳定性：
+
+- M4.6 字幕生命周期切片必须先关闭；未被复现的串片观察保持未证明，不以清空 UI
+  或扩大 coordinator 代替根因证据。
+- 首页来源、相关推荐和任何播放控制改动分别通过自己的决策 Gate；M5 总 Gate 不能
+  代替来源语义、媒体清理或真实 UI 证据。
+
+#### M5.0：日用状态保留与缓存边界
+
+- 当前热门与搜索共用一个历史命名的 `GuestFeedViewModel` 状态；普通 tab 切换会执行
+  `cancel()` 并清成 idle，返回后重新请求。正式 API transport 也明确关闭 URL cache。
+- 按
+  [`M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)
+  的 revision D2，采用 D1“每窗口单一 Browse owner／热门与最后搜索双 snapshot”
+  和 D2“首切片只做内存工作集”；仍只有一个 active Task 和 generation。M5.0 默认
+  不因命名审计扩张，但 `GuestFeed*` 不得继续吸收未来首页语义。
+- 普通 tab／播放返回只 deactivate 请求并恢复内容、选择与稳定 item anchor；用户
+  显式刷新才重新请求，刷新失败保留 identity 匹配的旧内容。
+- 热门最多一页 50 项，搜索只留最后一个 query 的一页；关窗 reset。首切片不增加
+  Repository cache、TTL、后台刷新、数据库、图片 pipeline 或媒体缓存。
+- revision D2 已通过预确认红区终审但仍待用户单独确认，不构成生产实现授权。图片
+  行为、History 总量和未来个性推荐登录 scope 保持未验证，按真实问题分别立项。
+
+Gate：
+
+- 热门 → 搜索／历史 → 热门及搜索 → 播放 → 返回不增加无意图的 repository call，
+  不闪回首次 loading，并恢复相应 snapshot 与 anchor。
+- 手动刷新恰好形成一个最新请求；失败保留同 identity 旧内容，搜索 A 不能在失败的
+  搜索 B 下显示。
+- deactivate、连续刷新、route/query 替换、reset 与关窗后没有 busy 卡死、迟到回填、
+  Browse Task 或 snapshot 越界；既有播放资源清理回归通过。
+
+#### M5.1：首页个性推荐来源决策与纵向切片
+
+- 当前“热门”保留为独立公共发现入口，不改名、不静默回退，也不作为个性推荐完成
+  证据。
+- 先以最低成本结构 probe 比较 App/Web 两个候选的推荐语义、认证 scope、分页、
+  风控与失效边界；最终只选择一个生产来源，不同时接入。
+- 生产契约必须定义 source identity、auth epoch、单 active request、去重、工作集
+  上限、刷新、登出／关窗清理与停止条件。来源不可稳定验证时停止并返回产品决策，
+  不以热门静默 fallback。
+- 首页倾向单列 `LazyVStack` 连续流，但 View 惰性不等于分页、图片缓存或资源有界；
+  首切片不得借机引入通用 cache、图片 pipeline 或磁盘 schema。
+
+#### M5.2：相关推荐与同页连续观看
+
+- 增加只读相关推荐的 Domain/Application port、endpoint adapter、Feature 状态和
+  脱敏 fixture；来源失败时当前播放页仍成立。
+- 点击推荐后保持同一 App shell 和单一播放器 host，但创建新的播放 identity 与
+  generation，取消旧详情、媒体、字幕、弹幕和后续评论任务。
+- 连续 A → B → C 不覆盖最初的来源页面快照；返回后恢复来源入口、搜索词、选中项和
+  可合理恢复的滚动上下文。
+- 不实现推荐反馈、稍后再看、收藏、关注或其他写操作。
+
+#### M5.3：核心播放缺口审计
+
+- 保留 AVPlayer 系统控制、现有 SwiftUI 字幕 overlay、唯一播放时间轴与 Core
+  Animation 弹幕；不预设自制“统一播放控制层”。
+- 先检查真实日用阻断项。若唯一缺口是清晰度切换，只为受控重载、时间／速率／播放
+  状态恢复建立窄媒体契约，不扩张为通用多 variant 框架。
+- 任何新增控件不得直接请求 API、解释 DTO、创建第二个播放器、维护第二套播放时钟
+  或在布局变化时重建 player host。
+- 原生字幕路线仍停留在未完成的 N5 预检与未授权生产候选，不属于当前能力或 M5
+  默认前提。
+
+Gate：
+
+- 首页个性推荐 → 视频 A → 推荐 B／C → 返回来源的完整路径可重复执行；推荐来源
+  语义准确，来源上下文和 active player host 上限保持一致。
+- A 的详情、媒体、字幕和弹幕结果不会在 B/C 中回流；关闭后对应 Task、observer、
+  server、route、connection 和 renderer 资源归零。
+- 推荐失败不影响当前视频播放；游客与登录路径都不因本里程碑发送历史写请求。
+- 核心播放和导航操作具备可理解标签、键盘可达性和目标窗口尺寸下的稳定布局。
 
 ### M6：v1 发布准备
 
@@ -478,7 +576,7 @@ Gate：
 
 交付物：
 
-- API、播放、凭据和 UI 的回归矩阵。
+- API、首页个性推荐、播放、凭据、相关推荐、只读历史和 UI 的回归矩阵。
 - 隐私说明、第三方 notice、非官方与风险声明。
 - Developer ID 签名、notarization 和 GitHub Releases 流程。
 - 崩溃与诊断信息的秘密扫描和用户可读导出。
@@ -487,19 +585,23 @@ Gate：
 Gate：
 
 - 在干净环境完成 Release 构建、测试、签名和 notarization。
-- macOS 15 与当前 macOS 上完成游客、登录、播放、seek、弹幕和登出 smoke test。
+- macOS 15 与当前 macOS 上完成游客、登录、首页个性推荐、播放、seek、字幕、弹幕、
+  相关推荐切换、只读历史和登出 smoke test。
 - 发布包不包含开发 fixture、研究资料、私人证书或敏感日志。
 
 ## 5. v1 明确不做
 
 - 下载、转码和媒体导出。
 - 直播与直播弹幕。
-- 投稿、发动态、私信和复杂评论写操作。
+- 投稿、发动态、私信，以及评论、回复、点赞、收藏、关注、稍后再看等社交或 Library 写操作。
 - 多账号。
 - 区域解锁或绕过地区限制。
 - Dolby Vision、8K、互动视频和课程等长尾格式。
 - 完整复刻官方客户端的全部首页入口。
 - Mac App Store 上架承诺。
+- 独立播放器窗口、mini player、PiP、拖入 URL、系统分享、完整 Commands 和媒体键；
+  这些保留为 v1.1 候选，不构成 v1 Gate。
+- 只读评论与服务端观看进度写入；两者保留为 v1.1 独立切片，不构成 v1 Gate。
 
 任何非目标若要提前进入 v1，必须说明对现有 Gate 的影响并新增 ADR。
 
@@ -572,7 +674,18 @@ Gate：
 
 接下来按顺序：
 
-1. 提交 Slice C，并在 M4.5 统一 PR 上通过远程 macOS 15/26 CI 后关闭里程碑总 Gate。
-2. 随后优先建立字幕串片修复切片：当前真实使用偶发观察到播放页显示其他视频的字幕。先固定可复现的 A→B／快速切换／旧请求迟到序列，检查 `PlaybackItemIdentity`、generation、timeline snapshot 与 repository resource mapping，再修复实际 owner 或隔离缺口；不得在未复现前假定根因或只增加清空 UI 的补丁。
+1. 完成 M4.6 字幕生命周期候选的脱敏真实 A/B 路径、最终复核与远程 CI；用户观察的
+   串片若仍未复现，必须明确保留为未证明，不扩大修复声称。
+2. 单独确认并实施 M5.0 revision D2：D1 单 Browse owner／双 snapshot，D2 仅内存
+   工作集，不做磁盘、图片或媒体 cache。
+3. 为 M5.1 建立 App/Web 首页来源决策 Gate，只选择一个生产来源，再实施有界首页
+   纵向切片。
+4. 实施 M5.2 相关推荐与 A → B → C 连续观看，然后按真实缺口决定是否进入 M5.3
+   窄播放切片。
+5. M5 核心闭环关闭后进入 M6 发布准备；只读评论、服务端历史写入、独立播放器窗口、
+   mini player、PiP 等转入 v1.1，不阻塞 v1。
 
-M4.5 不新增评论、相关推荐、UP 主资料、搜索历史、热搜、endpoint 或持久化。本地持久化仍由未来搜索历史或其他明确跨重启需求触发独立切片。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时必须回到对应的 M1/M2/M4 测试层修复。
+M4.6 不新增首页个性推荐、评论、相关推荐、UP 主资料、搜索历史、热搜、业务 endpoint
+或持久化。本地持久化仍由未来搜索历史或其他明确跨重启需求触发独立切片，不与服务端
+观看历史写入混为一谈。更多真实样本与 Intel 覆盖属于兼容性扩展，但发现可重复回归时
+必须回到对应的 M1/M2/M4 测试层修复。

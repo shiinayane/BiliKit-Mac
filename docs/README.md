@@ -22,7 +22,11 @@
 - [`development/M4.5-playback-layout-technical-plan.md`](./development/M4.5-playback-layout-technical-plan.md)：Slice B 的稳定主区、分 P 宽窄呈现、生命周期证据与回退草案。
 - [`validation/M4.5-slice-a-2026-07-23.md`](./validation/M4.5-slice-a-2026-07-23.md)：Slice A 两栏路由、卡片流、播放返回、生命周期与本机 Gate 的候选证据。
 - [`validation/M4.5-slice-b-2026-07-24.md`](./validation/M4.5-slice-b-2026-07-24.md)：Slice B 播放页响应式布局、单 host 生命周期、签名 App 与本机 Gate 的候选证据。
+- [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)：首页个性推荐起点的日常观看核心闭环、v1 截线与 M4.5 之后的产品优先级。
 - [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：App 级 UI/UX 长期产品蓝图，以及搜索空页、播放页和未来数据能力的边界。
+- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：热门／最后搜索工作集保留、刷新、上限、清理与后续缓存边界的待确认 D2 契约。
+- [`development/M4.6-subtitle-lifecycle-roadmap-decision.md`](./development/M4.6-subtitle-lifecycle-roadmap-decision.md)：已确认的字幕生命周期稳定化、真实证据边界与精简 v1 截线。
+- [`validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md`](./validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md)：ABA 失败证据、任务上限整改、签名 A/B 生产集成与未解释远端边界。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
 现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。

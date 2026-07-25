@@ -68,7 +68,6 @@ public struct VideoDetailColumn<PlayerContent: View>: View {
             }
             subtitleModel.selectVideo(playbackIdentity)
             danmakuModel.selectVideo(playbackIdentity)
-            await subtitleModel.waitForCurrentTask()
         }
     }
 
