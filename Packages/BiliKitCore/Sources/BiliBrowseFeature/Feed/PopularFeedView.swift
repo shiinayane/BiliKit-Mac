@@ -23,14 +23,14 @@ public struct PopularFeedView: View {
             ProgressView("正在加载热门视频…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("feed.loading")
-        case let .loaded(.popular(page)) where page.videos.isEmpty:
+        case .loaded(.popular(let page)) where page.videos.isEmpty:
             ContentUnavailableView(
                 "暂无热门视频",
                 systemImage: "rectangle.stack",
                 description: Text("稍后重试或检查网络连接。")
             )
             .accessibilityIdentifier("feed.empty")
-        case let .loaded(.popular(page)):
+        case .loaded(.popular(let page)):
             GeometryReader { geometry in
                 ScrollView {
                     LazyVGrid(
@@ -69,7 +69,7 @@ public struct PopularFeedView: View {
                     await model.waitForCurrentTask()
                 }
             }
-        case let .failed(request: .popular(_, _), error: error):
+        case .failed(request: .popular(_, _), let error):
             BrowseFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,

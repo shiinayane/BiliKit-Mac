@@ -3,6 +3,7 @@ import BiliAuthFeature
 import BiliBrowseFeature
 import BiliLibraryFeature
 import Testing
+
 @testable import BiliKit
 
 struct BiliKitMacTests {

@@ -83,11 +83,11 @@ struct GuestVideoCard: View {
         height: Int
     ) -> URL? {
         guard let url,
-              let host = url.host?.lowercased(),
-              host == "hdslb.com" || host.hasSuffix(".hdslb.com"),
-              url.query == nil,
-              url.fragment == nil,
-              !url.path.contains("@")
+            let host = url.host?.lowercased(),
+            host == "hdslb.com" || host.hasSuffix(".hdslb.com"),
+            url.query == nil,
+            url.fragment == nil,
+            !url.path.contains("@")
         else {
             return url
         }

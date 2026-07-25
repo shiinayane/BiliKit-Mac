@@ -14,16 +14,17 @@ struct GuestFeedUseCaseTests {
         )
 
         #expect(
-            content == .search(
-                query: "macOS",
-                page: SearchPage(
-                    videos: [],
-                    pageNumber: 2,
-                    pageSize: 20,
-                    totalResults: 0,
-                    totalPages: 0
+            content
+                == .search(
+                    query: "macOS",
+                    page: SearchPage(
+                        videos: [],
+                        pageNumber: 2,
+                        pageSize: 20,
+                        totalResults: 0,
+                        totalPages: 0
+                    )
                 )
-            )
         )
         #expect(await repository.searchQueries() == ["macOS"])
     }

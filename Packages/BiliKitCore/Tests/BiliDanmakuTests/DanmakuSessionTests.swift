@@ -23,7 +23,7 @@ struct DanmakuSessionTests {
         let deadline = clock.now.advanced(by: .seconds(1))
         do {
             while await repository.requestedIndices().count < 2,
-                  clock.now < deadline
+                clock.now < deadline
             {
                 try await Task.sleep(for: .milliseconds(5))
             }
@@ -62,7 +62,7 @@ struct DanmakuSessionTests {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(1))
         while session.state != .ready(second),
-              clock.now < deadline
+            clock.now < deadline
         {
             try await Task.sleep(for: .milliseconds(5))
         }
@@ -199,9 +199,7 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
 @MainActor
 private final class SessionTimeline: PlaybackTimelineProviding {
     private var snapshot = PlaybackTimelineSnapshot.idle
-    private var continuations: [
-        UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation
-    ] = [:]
+    private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
 
     var currentTimelineSnapshot: PlaybackTimelineSnapshot { snapshot }
 
@@ -222,7 +220,9 @@ private final class SessionTimeline: PlaybackTimelineProviding {
 
     func publish(_ snapshot: PlaybackTimelineSnapshot) {
         self.snapshot = snapshot
-        continuations.values.forEach { $0.yield(snapshot) }
+        for continuation in continuations.values {
+            continuation.yield(snapshot)
+        }
     }
 }
 
@@ -247,7 +247,7 @@ private actor SessionRecordingRepository: DanmakuSegmentRepository {
         maximumActive = max(maximumActive, active)
         do {
             try await Task.sleep(for: delay)
-        } catch where !ignoresCancellation {
+        } catch  where !ignoresCancellation {
             active -= 1
             throw CancellationError()
         } catch {}
@@ -294,6 +294,8 @@ private actor ControlledPrefetchRepository: DanmakuSegmentRepository {
         requestsReleased = true
         let waiters = releaseWaiters
         releaseWaiters.removeAll(keepingCapacity: false)
-        waiters.forEach { $0.resume() }
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 }

@@ -198,10 +198,10 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         case .requestingQRCode:
             qrCode = nil
             return .requestingQRCode
-        case let .awaitingScan(code):
+        case .awaitingScan(let code):
             qrCode = code
             return .awaitingScan
-        case let .awaitingConfirmation(code):
+        case .awaitingConfirmation(let code):
             qrCode = code
             return .awaitingConfirmation
         case .awaitingCredentialValidation:
@@ -210,7 +210,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         case .expired:
             qrCode = nil
             return .expired
-        case let .failed(failure):
+        case .failed(let failure):
             qrCode = nil
             return .failed(Self.map(failure))
         }
@@ -225,7 +225,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         case .serviceRejected:
             .serviceUnavailable
         case .noActiveChallenge, .responseTooLarge, .nonJSONResponse,
-             .invalidResponse, .incompleteCredential, .unsupportedStatus:
+            .invalidResponse, .incompleteCredential, .unsupportedStatus:
             .invalidResponse
         }
     }
@@ -239,7 +239,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         case .credentialStoreUnavailable:
             .credentialUnavailable
         case .requestNotAllowed, .credentialHeaderAlreadyPresent,
-             .missingCredential, .expiredCredential, .invalidCredential:
+            .missingCredential, .expiredCredential, .invalidCredential:
             .invalidResponse
         }
     }

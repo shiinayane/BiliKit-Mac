@@ -30,8 +30,8 @@ public final class GuestFeedViewModel {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = GuestFeedRequest.search(query: normalizedQuery, page: page)
         guard !normalizedQuery.isEmpty,
-              normalizedQuery.count <= 100,
-              page > 0
+            normalizedQuery.count <= 100,
+            page > 0
         else {
             fail(request: request, error: .invalidRequest)
             return
@@ -40,7 +40,7 @@ public final class GuestFeedViewModel {
     }
 
     public func retry() {
-        guard case let .failed(request, _) = state else { return }
+        guard case .failed(let request, _) = state else { return }
         load(request)
     }
 

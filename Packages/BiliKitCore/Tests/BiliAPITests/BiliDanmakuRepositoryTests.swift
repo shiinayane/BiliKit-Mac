@@ -3,6 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 import Testing
+
 @testable import BiliAPI
 
 @Suite

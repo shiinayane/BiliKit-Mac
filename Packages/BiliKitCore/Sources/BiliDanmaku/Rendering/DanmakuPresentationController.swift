@@ -72,7 +72,7 @@ public final class DanmakuPresentationController:
         let changesIdentity = identity != updateIdentity
         let changesGeneration =
             discontinuityGeneration
-                != update.snapshot.discontinuityGeneration
+            != update.snapshot.discontinuityGeneration
         if changesIdentity
             || changesGeneration
             || matchingBatch?.clearsExisting == true
@@ -83,13 +83,14 @@ public final class DanmakuPresentationController:
         discontinuityGeneration =
             update.snapshot.discontinuityGeneration
 
-        let effectiveRate = update.snapshot.state == .playing
+        let effectiveRate =
+            update.snapshot.state == .playing
             ? update.snapshot.rate
             : 0
         backend.setPlaybackRate(effectiveRate)
 
         guard let batch = matchingBatch,
-              !batch.clearsExisting
+            !batch.clearsExisting
         else {
             return
         }

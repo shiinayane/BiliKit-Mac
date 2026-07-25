@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Foundation
 import Testing
+
 @testable import BiliLibraryFeature
 
 struct WatchHistoryViewModelTests {
@@ -38,7 +39,7 @@ struct WatchHistoryViewModelTests {
         await model.waitForCurrentTask()
         #expect(!model.isBusy)
 
-        guard case let .loaded(items, nextContinuation, error) = model.state else {
+        guard case .loaded(let items, let nextContinuation, let error) = model.state else {
             Issue.record("历史状态不是 loaded")
             return
         }
@@ -87,7 +88,7 @@ struct WatchHistoryViewModelTests {
         model.loadIfNeeded()
         await model.waitForCurrentTask()
 
-        guard case let .loaded(items, nextContinuation, error) = model.state else {
+        guard case .loaded(let items, let nextContinuation, let error) = model.state else {
             Issue.record("历史状态不是 loaded")
             return
         }
@@ -117,7 +118,7 @@ struct WatchHistoryViewModelTests {
         await model.waitForCurrentTask()
         try await Task.sleep(for: .milliseconds(60))
 
-        guard case let .loaded(items, _, _) = model.state else {
+        guard case .loaded(let items, _, _) = model.state else {
             Issue.record("历史状态不是 loaded")
             return
         }
@@ -134,7 +135,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1")],
                         continuation: nil
                     )
-                ),
+                )
             ]
         )
         let model = WatchHistoryViewModel(
@@ -158,7 +159,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1")],
                         continuation: nil
                     )
-                ),
+                )
             ],
             firstDelay: .milliseconds(40)
         )
@@ -186,7 +187,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1")],
                         continuation: nil
                     )
-                ),
+                )
             ],
             firstDelay: .milliseconds(40)
         )
@@ -239,11 +240,12 @@ struct WatchHistoryViewModelTests {
         #expect(lateResultReturned)
 
         #expect(
-            model.state == .loaded(
-                items: [item("BV1HistoryA1")],
-                continuation: continuation,
-                loadMoreError: nil
-            )
+            model.state
+                == .loaded(
+                    items: [item("BV1HistoryA1")],
+                    continuation: continuation,
+                    loadMoreError: nil
+                )
         )
     }
 }

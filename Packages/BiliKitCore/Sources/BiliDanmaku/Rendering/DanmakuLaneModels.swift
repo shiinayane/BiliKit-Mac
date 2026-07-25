@@ -36,12 +36,12 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             displayAreaFraction,
         ]
         guard values.allSatisfy(\.isFinite),
-              surfaceWidth > 0,
-              surfaceHeight > 0,
-              laneHeight > 0,
-              minimumHorizontalGap >= 0,
-              maximumActiveCount > 0,
-              maximumActiveCount <= Self.hardMaximumActiveCount
+            surfaceWidth > 0,
+            surfaceHeight > 0,
+            laneHeight > 0,
+            minimumHorizontalGap >= 0,
+            maximumActiveCount > 0,
+            maximumActiveCount <= Self.hardMaximumActiveCount
         else {
             return false
         }

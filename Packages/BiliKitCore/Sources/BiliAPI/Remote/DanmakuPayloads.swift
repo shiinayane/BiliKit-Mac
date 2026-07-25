@@ -27,16 +27,17 @@ enum DanmakuPayloadDecoder {
             let text = element.content.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-            let id = element.idString.isEmpty
+            let id =
+                element.idString.isEmpty
                 ? (element.id > 0 ? String(element.id) : nil)
                 : element.idString
             guard let id,
-                  id.count <= 128,
-                  element.progressMilliseconds >= 0,
-                  element.progressMilliseconds <= maximumTimeMilliseconds,
-                  !text.isEmpty,
-                  text.count <= maximumEventTextLength,
-                  element.colorRgb <= 0xFF_FF_FF
+                id.count <= 128,
+                element.progressMilliseconds >= 0,
+                element.progressMilliseconds <= maximumTimeMilliseconds,
+                !text.isEmpty,
+                text.count <= maximumEventTextLength,
+                element.colorRgb <= 0xFF_FF_FF
             else {
                 throw BiliAPIError.invalidDanmakuData
             }

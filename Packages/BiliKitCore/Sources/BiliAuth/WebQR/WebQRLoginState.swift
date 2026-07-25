@@ -21,7 +21,7 @@ public enum WebQRLoginState: Sendable, Equatable, CustomStringConvertible {
             "awaiting-credential-validation"
         case .expired:
             "expired"
-        case let .failed(failure):
+        case .failed(let failure):
             "failed-\(failure.description)"
         }
     }
@@ -45,7 +45,7 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
             "no-active-challenge"
         case .network:
             "network"
-        case let .httpStatus(status):
+        case .httpStatus(let status):
             "http-status-\(status)"
         case .responseTooLarge:
             "response-too-large"
@@ -57,9 +57,9 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
             "incomplete-credential"
         case .credentialStoreUnavailable:
             "credential-store-unavailable"
-        case let .serviceRejected(code):
+        case .serviceRejected(let code):
             "service-rejected-\(code)"
-        case let .unsupportedStatus(observation):
+        case .unsupportedStatus(let observation):
             "unsupported-status-\(observation.code)"
         }
     }

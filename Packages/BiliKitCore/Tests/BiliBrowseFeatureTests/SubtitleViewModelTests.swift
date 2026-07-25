@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Foundation
 import Testing
+
 @testable import BiliBrowseFeature
 
 @Suite
@@ -362,10 +363,11 @@ struct SubtitleViewModelTests {
         authModel.selectVideo(identity)
         await authModel.waitForCurrentTask()
         #expect(
-            authModel.state == .failed(
-                identity,
-                .authenticationRequired
-            )
+            authModel.state
+                == .failed(
+                    identity,
+                    .authenticationRequired
+                )
         )
 
         authModel.reset()
@@ -483,7 +485,7 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
                     startSeconds: 1,
                     endSeconds: 3.5,
                     text: "自动生成字幕"
-                ),
+                )
             ]
         }
         return [
@@ -731,9 +733,7 @@ private actor ABAResetSubtitleRepository: SubtitleRepository {
 @MainActor
 private final class SubtitleTimelineStub: PlaybackTimelineProviding {
     private(set) var currentTimelineSnapshot = PlaybackTimelineSnapshot.idle
-    private var continuations: [
-        UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation
-    ] = [:]
+    private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
 
     func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
         let id = UUID()
@@ -752,6 +752,8 @@ private final class SubtitleTimelineStub: PlaybackTimelineProviding {
 
     func publish(_ snapshot: PlaybackTimelineSnapshot) {
         currentTimelineSnapshot = snapshot
-        continuations.values.forEach { $0.yield(snapshot) }
+        for continuation in continuations.values {
+            continuation.yield(snapshot)
+        }
     }
 }

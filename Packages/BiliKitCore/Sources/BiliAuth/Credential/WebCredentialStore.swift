@@ -102,7 +102,7 @@ struct KeychainWebCredentialStore: WebCredentialStoring, Sendable {
             throw WebCredentialStoreError.interactionNotAllowed
         }
         guard status != errSecMissingEntitlement,
-              status != errSecNotAvailable
+            status != errSecNotAvailable
         else {
             throw WebCredentialStoreError.unavailable
         }

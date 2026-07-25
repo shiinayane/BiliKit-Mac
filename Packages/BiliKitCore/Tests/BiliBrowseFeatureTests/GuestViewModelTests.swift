@@ -26,15 +26,16 @@ struct GuestViewModelTests {
         await model.waitForCurrentTask()
 
         #expect(
-            model.state == .loaded(
-                .popular(
-                    PopularPage(
-                        videos: [fixture.popularVideo],
-                        pageNumber: 2,
-                        pageSize: 10
+            model.state
+                == .loaded(
+                    .popular(
+                        PopularPage(
+                            videos: [fixture.popularVideo],
+                            pageNumber: 2,
+                            pageSize: 10
+                        )
                     )
                 )
-            )
         )
     }
 
@@ -52,18 +53,19 @@ struct GuestViewModelTests {
         await model.waitForCurrentTask()
 
         #expect(
-            model.state == .loaded(
-                .search(
-                    query: "macOS",
-                    page: SearchPage(
-                        videos: [fixture.searchVideo],
-                        pageNumber: 2,
-                        pageSize: 20,
-                        totalResults: 1,
-                        totalPages: 1
+            model.state
+                == .loaded(
+                    .search(
+                        query: "macOS",
+                        page: SearchPage(
+                            videos: [fixture.searchVideo],
+                            pageNumber: 2,
+                            pageSize: 20,
+                            totalResults: 1,
+                            totalPages: 1
+                        )
                     )
                 )
-            )
         )
     }
 
@@ -84,15 +86,16 @@ struct GuestViewModelTests {
         try await Task.sleep(for: .milliseconds(30))
 
         #expect(
-            model.state == .loaded(
-                .popular(
-                    PopularPage(
-                        videos: [fixture.popularVideo],
-                        pageNumber: 1,
-                        pageSize: 20
+            model.state
+                == .loaded(
+                    .popular(
+                        PopularPage(
+                            videos: [fixture.popularVideo],
+                            pageNumber: 1,
+                            pageSize: 20
+                        )
                     )
                 )
-            )
         )
     }
 
@@ -109,27 +112,29 @@ struct GuestViewModelTests {
         model.search("macOS", page: 2)
         await model.waitForCurrentTask()
         #expect(
-            model.state == .failed(
-                request: .search(query: "macOS", page: 2),
-                error: .requestRestricted
-            )
+            model.state
+                == .failed(
+                    request: .search(query: "macOS", page: 2),
+                    error: .requestRestricted
+                )
         )
 
         model.retry()
         await model.waitForCurrentTask()
         #expect(
-            model.state == .loaded(
-                .search(
-                    query: "macOS",
-                    page: SearchPage(
-                        videos: [fixture.searchVideo],
-                        pageNumber: 2,
-                        pageSize: 20,
-                        totalResults: 1,
-                        totalPages: 1
+            model.state
+                == .loaded(
+                    .search(
+                        query: "macOS",
+                        page: SearchPage(
+                            videos: [fixture.searchVideo],
+                            pageNumber: 2,
+                            pageSize: 20,
+                            totalResults: 1,
+                            totalPages: 1
+                        )
                     )
                 )
-            )
         )
     }
 
@@ -161,7 +166,7 @@ struct GuestViewModelTests {
                 PlaybackItemIdentity(
                     bvid: fixture.detail.bvid,
                     cid: fixture.page.cid
-                ),
+                )
             ]
         )
     }
@@ -205,7 +210,7 @@ struct GuestViewModelTests {
         await model.waitForCurrentTask()
         try await Task.sleep(for: .milliseconds(120))
 
-        guard case let .ready(context) = model.state else {
+        guard case .ready(let context) = model.state else {
             Issue.record("最新视频未进入就绪状态")
             return
         }
@@ -218,7 +223,6 @@ struct GuestViewModelTests {
             ) == true
         )
     }
-
 }
 
 private struct GuestFixtures: Sendable {

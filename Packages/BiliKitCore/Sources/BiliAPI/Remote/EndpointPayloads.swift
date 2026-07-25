@@ -13,8 +13,8 @@ private enum WebImageURL {
             normalized = value
         }
         guard let url = URL(string: normalized),
-              url.scheme?.lowercased() == "https",
-              url.host != nil
+            url.scheme?.lowercased() == "https",
+            url.host != nil
         else {
             return nil
         }
@@ -183,22 +183,26 @@ struct DASHRepresentationPayload: Decodable, Sendable {
         id = try container.decode(Int.self, forKey: .id)
         codecid = try container.decodeIfPresent(Int.self, forKey: .codecid)
         codecs = try container.decode(String.self, forKey: .codecs)
-        mimeType = try container.decodeIfPresent(String.self, forKey: .mimeType)
+        mimeType =
+            try container.decodeIfPresent(String.self, forKey: .mimeType)
             ?? container.decode(String.self, forKey: .mimeTypeCamel)
         bandwidth = try container.decodeIfPresent(Int.self, forKey: .bandwidth)
-        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
+        baseURL =
+            try container.decodeIfPresent(String.self, forKey: .baseURL)
             ?? container.decode(String.self, forKey: .baseURLCamel)
-        backupURLs = try container.decodeIfPresent(
-            [String].self,
-            forKey: .backupURLs
-        ) ?? container.decodeIfPresent(
-            [String].self,
-            forKey: .backupURLsCamel
-        ) ?? []
-        segmentBase = try container.decodeIfPresent(
-            DASHSegmentBasePayload.self,
-            forKey: .segmentBase
-        ) ?? container.decode(DASHSegmentBasePayload.self, forKey: .segmentBaseCamel)
+        backupURLs =
+            try container.decodeIfPresent(
+                [String].self,
+                forKey: .backupURLs
+            ) ?? container.decodeIfPresent(
+                [String].self,
+                forKey: .backupURLsCamel
+            ) ?? []
+        segmentBase =
+            try container.decodeIfPresent(
+                DASHSegmentBasePayload.self,
+                forKey: .segmentBase
+            ) ?? container.decode(DASHSegmentBasePayload.self, forKey: .segmentBaseCamel)
     }
 
     func model(kind: MediaKind) throws -> MediaRepresentation {
@@ -223,7 +227,7 @@ struct DASHRepresentationPayload: Decodable, Sendable {
 
     private static func validMediaURL(_ value: String) -> URL? {
         guard let url = URL(string: value),
-              BiliMediaURLPolicy().allows(url)
+            BiliMediaURLPolicy().allows(url)
         else {
             return nil
         }
@@ -244,7 +248,8 @@ struct DASHSegmentBasePayload: Decodable, Sendable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         initialization = try container.decode(String.self, forKey: .initialization)
-        indexRange = try container.decodeIfPresent(String.self, forKey: .indexRange)
+        indexRange =
+            try container.decodeIfPresent(String.self, forKey: .indexRange)
             ?? container.decode(String.self, forKey: .indexRangeCamel)
     }
 
@@ -266,8 +271,8 @@ struct DASHSegmentBasePayload: Decodable, Sendable {
             omittingEmptySubsequences: false
         )
         guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              let end = Int64(bounds[1])
+            let start = Int64(bounds[0]),
+            let end = Int64(bounds[1])
         else {
             throw BiliAPIError.invalidMediaData
         }
@@ -338,7 +343,7 @@ struct WatchHistoryCursorPayload: Codable, Sendable {
 
     init(_ continuation: WatchHistoryContinuation) throws {
         guard let data = Data(base64Encoded: continuation.rawValue),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data)
+            let cursor = try? JSONDecoder().decode(Self.self, from: data)
         else {
             throw BiliAPIError.invalidRequest
         }
@@ -389,20 +394,21 @@ struct WatchHistoryItemPayload: Decodable, Sendable {
     func model() throws -> WatchHistoryItem? {
         guard history.business == "archive" else { return nil }
         guard let bvid = history.bvid,
-              bvid.hasPrefix("BV"),
-              bvid.count <= 24,
-              bvid.dropFirst(2).allSatisfy({
-                  $0.isASCII && ($0.isLetter || $0.isNumber)
-              }),
-              !title.isEmpty,
-              !authorName.isEmpty,
-              authorID >= 0,
-              viewedAt > 0,
-              duration >= 0
+            bvid.hasPrefix("BV"),
+            bvid.count <= 24,
+            bvid.dropFirst(2).allSatisfy({
+                $0.isASCII && ($0.isLetter || $0.isNumber)
+            }),
+            !title.isEmpty,
+            !authorName.isEmpty,
+            authorID >= 0,
+            viewedAt > 0,
+            duration >= 0
         else {
             throw BiliAPIError.decodingFailed
         }
-        let normalizedProgress = progress < 0
+        let normalizedProgress =
+            progress < 0
             ? duration
             : min(progress, duration)
         return WatchHistoryItem(
@@ -446,7 +452,8 @@ struct SearchPayload: Decodable, Sendable {
             throw BiliAPIError.decodingFailed
         }
         return SearchPage(
-            videos: try result
+            videos:
+                try result
                 .filter(\.hasUsableBVID)
                 .map { try $0.model() },
             pageNumber: page,

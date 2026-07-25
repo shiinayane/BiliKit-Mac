@@ -7,9 +7,9 @@ struct BiliAPIProbe {
     static func main() async {
         do {
             switch try Configuration(arguments: CommandLine.arguments).mode {
-            case let .search(keyword, page):
+            case .search(let keyword, let page):
                 try await runSearch(keyword: keyword, page: page)
-            case let .m4Contract(bvid, cid):
+            case .m4Contract(let bvid, let cid):
                 try await M4ContractProbe().run(bvid: bvid, cid: cid)
             }
             print("RESULT: PASS")
@@ -156,17 +156,19 @@ private struct M4ContractProbe {
         guard contentType(response).contains("json") else {
             throw ProbeError.unexpectedContentType
         }
-        guard let envelope = try JSONSerialization.jsonObject(
-            with: response.body
-        ) as? [String: Any],
-              envelope["code"] as? Int == 0,
-              let data = envelope["data"] as? [String: Any],
-              let subtitle = data["subtitle"] as? [String: Any],
-              let tracks = subtitle["subtitles"] as? [[String: Any]]
+        guard
+            let envelope = try JSONSerialization.jsonObject(
+                with: response.body
+            ) as? [String: Any],
+            envelope["code"] as? Int == 0,
+            let data = envelope["data"] as? [String: Any],
+            let subtitle = data["subtitle"] as? [String: Any],
+            let tracks = subtitle["subtitles"] as? [[String: Any]]
         else {
             throw ProbeError.invalidJSONShape
         }
-        let fields = tracks.first.map { $0.keys.sorted().joined(separator: ",") }
+        let fields =
+            tracks.first.map { $0.keys.sorted().joined(separator: ",") }
             ?? "none"
         let needsLogin = data["need_login_subtitle"] as? Bool ?? false
         print(
@@ -190,7 +192,7 @@ private struct M4ContractProbe {
             throw ProbeError.unexpectedContentType
         }
         guard (try? JSONSerialization.jsonObject(with: response.body)) == nil,
-              !looksLikeHTML(response.body)
+            !looksLikeHTML(response.body)
         else {
             throw ProbeError.unexpectedBodyClass
         }
@@ -235,11 +237,11 @@ private struct Configuration {
         if arguments.first == "--m4-contract" {
             let values = try Self.values(from: Array(arguments.dropFirst()))
             guard values.count == 2,
-                  let bvid = values["--bvid"],
-                  Self.isValidBVID(bvid),
-                  let rawCID = values["--cid"],
-                  let cid = Int64(rawCID),
-                  cid > 0
+                let bvid = values["--bvid"],
+                Self.isValidBVID(bvid),
+                let rawCID = values["--cid"],
+                let cid = Int64(rawCID),
+                cid > 0
             else {
                 throw ProbeError.invalidRequest
             }
@@ -249,12 +251,12 @@ private struct Configuration {
 
         let values = try Self.values(from: arguments)
         guard values.count <= 2,
-              let keyword = values["--search"]?.trimmingCharacters(
-                  in: .whitespacesAndNewlines
-              ),
-              !keyword.isEmpty,
-              let page = Int(values["--page"] ?? "1"),
-              page > 0
+            let keyword = values["--search"]?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ),
+            !keyword.isEmpty,
+            let page = Int(values["--page"] ?? "1"),
+            page > 0
         else {
             throw ProbeError.invalidRequest
         }

@@ -132,7 +132,7 @@ private final class DanmakuPlayerView: AVPlayerView {
 
     private func installDanmakuOverlayIfNeeded() {
         guard !installedDanmakuOverlay,
-              let contentOverlayView
+            let contentOverlayView
         else {
             return
         }

@@ -45,14 +45,18 @@ struct BiliPlaybackProbe {
             cid: cid,
             quality: 32
         )
-        guard let video = playback.manifest.videoRepresentations.max(
-            by: { $0.id < $1.id }
-        ) else {
+        guard
+            let video = playback.manifest.videoRepresentations.max(
+                by: { $0.id < $1.id }
+            )
+        else {
             throw ProbeError.noAVCVideo
         }
-        guard let audio = playback.manifest.audioRepresentations.min(
-            by: { ($0.bandwidth ?? .max) < ($1.bandwidth ?? .max) }
-        ) else {
+        guard
+            let audio = playback.manifest.audioRepresentations.min(
+                by: { ($0.bandwidth ?? .max) < ($1.bandwidth ?? .max) }
+            )
+        else {
             throw ProbeError.noAACAudio
         }
 
@@ -337,9 +341,9 @@ private struct ProbeConfiguration {
         }
 
         guard let bvid = values["--bvid"],
-              bvid.hasPrefix("BV"),
-              bvid.count <= 24,
-              bvid.dropFirst(2).allSatisfy({ $0.isLetter || $0.isNumber })
+            bvid.hasPrefix("BV"),
+            bvid.count <= 24,
+            bvid.dropFirst(2).allSatisfy({ $0.isLetter || $0.isNumber })
         else {
             throw ProbeError.invalidArguments
         }
@@ -410,7 +414,7 @@ private final class VideoTimelineSampler {
         output = AVPlayerItemVideoOutput(
             pixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String:
-                    Int(kCVPixelFormatType_32BGRA),
+                    Int(kCVPixelFormatType_32BGRA)
             ]
         )
         item.add(output)
@@ -419,17 +423,19 @@ private final class VideoTimelineSampler {
     func sample(player: AVPlayer) {
         let requestedTime = output.itemTime(forHostTime: CACurrentMediaTime())
         guard requestedTime.isValid,
-              requestedTime.seconds.isFinite,
-              output.hasNewPixelBuffer(forItemTime: requestedTime)
+            requestedTime.seconds.isFinite,
+            output.hasNewPixelBuffer(forItemTime: requestedTime)
         else {
             return
         }
 
         var displayTime = CMTime.invalid
-        guard output.copyPixelBuffer(
-            forItemTime: requestedTime,
-            itemTimeForDisplay: &displayTime
-        ) != nil else {
+        guard
+            output.copyPixelBuffer(
+                forItemTime: requestedTime,
+                itemTimeForDisplay: &displayTime
+            ) != nil
+        else {
             return
         }
         let frameTime = displayTime.isValid ? displayTime : requestedTime
@@ -470,11 +476,11 @@ private enum ProbeError: Error, CustomStringConvertible {
         case .playerItemFailed: "player-item-failed"
         case .insufficientVideoTimelineSamples:
             "insufficient-video-timeline-samples"
-        case let .videoTimelineDrift(delta):
+        case .videoTimelineDrift(let delta):
             "video-timeline-drift-\(delta)"
         case .memoryMeasurementUnavailable:
             "memory-measurement-unavailable"
-        case let .memoryGrowthExceeded(growth):
+        case .memoryGrowthExceeded(let growth):
             "memory-growth-exceeded-\(growth)-mib"
         case .timedOut: "timed-out"
         }

@@ -29,21 +29,21 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
     private static func map(_ error: BiliAPIError) -> WatchHistoryError {
         switch error {
         case .authorizationRequired,
-             .apiRejected(code: -101, message: _):
+            .apiRejected(code: -101, message: _):
             .authenticationRequired
         case .apiRejected(code: -412, message: _),
-             .apiRejected(code: -403, message: _),
-             .nonJSONResponse:
+            .apiRejected(code: -403, message: _),
+            .nonJSONResponse:
             .requestRestricted
-        case let .apiRejected(code, _):
+        case .apiRejected(let code, _):
             .serviceRejected(code: code)
         case .transportFailure, .httpStatus:
             .transportFailure
         case .invalidRequest, .responseTooLarge, .decodingFailed,
-             .missingData, .invalidWBIKey, .signingFailed,
-             .invalidMediaData, .invalidSubtitleData,
-             .untrustedSubtitleOrigin, .nonProtobufResponse,
-             .invalidDanmakuData, .noAVCVideo, .noAACAudio:
+            .missingData, .invalidWBIKey, .signingFailed,
+            .invalidMediaData, .invalidSubtitleData,
+            .untrustedSubtitleOrigin, .nonProtobufResponse,
+            .invalidDanmakuData, .noAVCVideo, .noAACAudio:
             .invalidResponse
         }
     }

@@ -57,15 +57,16 @@ struct SubtitleTrackPayload: Decodable, Sendable {
         guard let subtitleURL = Self.nonempty(subtitleURL) else {
             return nil
         }
-        let id = stringID.flatMap(Self.nonempty)
+        let id =
+            stringID.flatMap(Self.nonempty)
             ?? numericID.map(String.init)
         guard let id,
-              id.count <= 128,
-              let languageCode = Self.nonempty(languageCode),
-              languageCode.count <= 64,
-              let displayName = Self.nonempty(displayName),
-              displayName.count <= 128,
-              let url = Self.url(subtitleURL)
+            id.count <= 128,
+            let languageCode = Self.nonempty(languageCode),
+            languageCode.count <= 64,
+            let displayName = Self.nonempty(displayName),
+            displayName.count <= 128,
+            let url = Self.url(subtitleURL)
         else {
             throw BiliAPIError.invalidSubtitleData
         }
@@ -132,12 +133,12 @@ struct SubtitleCuePayload: Decodable, Sendable {
     func cue() throws -> SubtitleCue {
         let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard startSeconds.isFinite,
-              endSeconds.isFinite,
-              startSeconds >= 0,
-              endSeconds > startSeconds,
-              endSeconds <= 86_400,
-              !text.isEmpty,
-              text.count <= 4_096
+            endSeconds.isFinite,
+            startSeconds >= 0,
+            endSeconds > startSeconds,
+            endSeconds <= 86_400,
+            !text.isEmpty,
+            text.count <= 4_096
         else {
             throw BiliAPIError.invalidSubtitleData
         }

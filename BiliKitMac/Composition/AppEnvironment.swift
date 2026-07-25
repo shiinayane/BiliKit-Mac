@@ -1,5 +1,5 @@
-import BiliApplication
 import BiliAPI
+import BiliApplication
 import BiliAuth
 import BiliAuthFeature
 import BiliBrowseFeature

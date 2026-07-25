@@ -74,7 +74,8 @@ enum RendererLoadProbe {
         )
 
         for index in 0..<targetCount {
-            let deadline = start
+            let deadline =
+                start
                 + Double(index + 1) / Double(configuration.rate)
             let remainingSeconds = deadline - CACurrentMediaTime()
             if remainingSeconds > 0 {
@@ -120,9 +121,10 @@ enum RendererLoadProbe {
             requestedSegmentCount > DanmakuScheduler.maximumCachedSegments
         let shouldCrossRetentionWindow =
             configuration.durationSeconds
-                > DanmakuScheduler.segmentDurationSeconds
-                    * Double(DanmakuScheduler.maximumCachedSegments)
-        let accountedEventCount = statistics.admitted
+            > DanmakuScheduler.segmentDurationSeconds
+            * Double(DanmakuScheduler.maximumCachedSegments)
+        let accountedEventCount =
+            statistics.admitted
             + statistics.droppedNoLane
             + statistics.droppedCapacity
         let sessionStopped = session.state == .idle
@@ -133,7 +135,7 @@ enum RendererLoadProbe {
         let rootAttachedAfterStop = renderer.rootLayer.superlayer != nil
         let residentMemoryAfterStop = residentMemoryBytes()
         guard residentMemorySamples.allSatisfy({ $0 > 0 }),
-              residentMemoryAfterStop > 0
+            residentMemoryAfterStop > 0
         else {
             throw DanmakuApplicationError.invalidResponse
         }
@@ -163,14 +165,14 @@ enum RendererLoadProbe {
         ]
         print(fields.joined(separator: " "))
         guard emitted == targetCount,
-              activeAfterStop == 0,
-              layersAfterStop == 0,
-              !rootAttachedAfterStop,
-              requestedSegmentCount > 0,
-              accountedEventCount == targetCount,
-              !shouldCrossRetentionWindow || crossedRetentionWindow,
-              timelineSubscribersAfterStop == 0,
-              sessionStopped
+            activeAfterStop == 0,
+            layersAfterStop == 0,
+            !rootAttachedAfterStop,
+            requestedSegmentCount > 0,
+            accountedEventCount == targetCount,
+            !shouldCrossRetentionWindow || crossedRetentionWindow,
+            timelineSubscribersAfterStop == 0,
+            sessionStopped
         else {
             throw DanmakuApplicationError.invalidResponse
         }
@@ -296,9 +298,7 @@ enum RendererLoadProbe {
 @MainActor
 private final class RendererProbeTimeline: PlaybackTimelineProviding {
     private var snapshot = PlaybackTimelineSnapshot.idle
-    private var continuations: [
-        UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation
-    ] = [:]
+    private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
 
     var currentTimelineSnapshot: PlaybackTimelineSnapshot { snapshot }
     var subscriberCount: Int { continuations.count }
@@ -320,7 +320,9 @@ private final class RendererProbeTimeline: PlaybackTimelineProviding {
 
     func publish(_ snapshot: PlaybackTimelineSnapshot) {
         self.snapshot = snapshot
-        continuations.values.forEach { $0.yield(snapshot) }
+        for continuation in continuations.values {
+            continuation.yield(snapshot)
+        }
     }
 }
 
@@ -337,7 +339,7 @@ private actor RendererProbeRepository: DanmakuSegmentRepository {
         for identity: PlaybackItemIdentity
     ) async throws -> DanmakuSegment {
         guard identity.cid > 0,
-              (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(index)
+            (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(index)
         else {
             throw DanmakuApplicationError.invalidRequest
         }
@@ -346,7 +348,8 @@ private actor RendererProbeRepository: DanmakuSegmentRepository {
             DanmakuScheduler.segmentDurationSeconds * Double(rate)
         )
         let firstGlobalIndex = (index - 1) * eventsPerSegment
-        let segmentStart = Double(index - 1)
+        let segmentStart =
+            Double(index - 1)
             * DanmakuScheduler.segmentDurationSeconds
         let events = (0..<eventsPerSegment).map { offset in
             RendererLoadProbe.event(
@@ -379,13 +382,13 @@ private struct Configuration {
             index += 2
         }
         guard values.count == 2,
-              let rawRate = values["--renderer-rate"],
-              let rate = Int(rawRate),
-              rate == 40 || rate == 80,
-              let rawDuration = values["--duration"],
-              let durationSeconds = Double(rawDuration),
-              durationSeconds.isFinite,
-              (1...1_800).contains(durationSeconds)
+            let rawRate = values["--renderer-rate"],
+            let rate = Int(rawRate),
+            rate == 40 || rate == 80,
+            let rawDuration = values["--duration"],
+            let durationSeconds = Double(rawDuration),
+            durationSeconds.isFinite,
+            (1...1_800).contains(durationSeconds)
         else {
             throw DanmakuApplicationError.invalidRequest
         }

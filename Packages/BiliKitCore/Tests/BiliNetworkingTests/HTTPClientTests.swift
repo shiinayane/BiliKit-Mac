@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import BiliNetworking
 
 struct HTTPClientTests {
@@ -32,7 +33,10 @@ struct HTTPClientTests {
     func redactsSensitiveRequestData() throws {
         let redactor = HTTPLogRedactor()
         let url = try #require(
-            URL(string: "https://example.com/play?bvid=BV1xx&access_key=secret&w_rid=signed&qrcode_key=qr-secret")
+            URL(
+                string:
+                    "https://example.com/play?bvid=BV1xx&access_key=secret&w_rid=signed&qrcode_key=qr-secret"
+            )
         )
 
         let redactedURL = redactor.redact(url: url)

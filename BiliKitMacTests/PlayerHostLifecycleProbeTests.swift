@@ -1,5 +1,5 @@
-import AppKit
 import AVKit
+import AppKit
 import BiliApplication
 import BiliAuthFeature
 import BiliBrowseFeature
@@ -9,6 +9,7 @@ import BiliModels
 import Observation
 import SwiftUI
 import Testing
+
 @testable import BiliKit
 
 @Suite(.serialized)
@@ -102,14 +103,14 @@ struct PlayerHostLifecycleProbeTests {
             rootView: DisappearingContentRoot(
                 visibility: visibility,
                 content: ContentView(
-                navigationModel: navigationModel,
-                feedModel: feedModel,
-                videoModel: videoModel,
-                subtitleModel: subtitleModel,
-                danmakuModel: danmakuModel,
-                authenticationModel: authenticationModel,
-                historyModel: historyModel,
-                playerContent: playerContent
+                    navigationModel: navigationModel,
+                    feedModel: feedModel,
+                    videoModel: videoModel,
+                    subtitleModel: subtitleModel,
+                    danmakuModel: danmakuModel,
+                    authenticationModel: authenticationModel,
+                    historyModel: historyModel,
+                    playerContent: playerContent
                 )
             )
         )
@@ -123,16 +124,20 @@ struct PlayerHostLifecycleProbeTests {
         hostingView.layoutSubtreeIfNeeded()
 
         navigationModel.openPlayback("BV1RouteHostA")
-        #expect(await waitUntil {
-            probe.events.count == 1
-                && probe.activeCount == 1
-                && playback.loadedIdentities.count == 1
-                && presentation.startedIdentities.count == 1
-        })
+        #expect(
+            await waitUntil {
+                probe.events.count == 1
+                    && probe.activeCount == 1
+                    && playback.loadedIdentities.count == 1
+                    && presentation.startedIdentities.count == 1
+            }
+        )
         await subtitleModel.waitForCurrentTask()
-        guard let compactPlayerSize = await waitForPlayerSize(
-            in: hostingView
-        ) else {
+        guard
+            let compactPlayerSize = await waitForPlayerSize(
+                in: hostingView
+            )
+        else {
             Issue.record("compact player layout did not settle")
             return
         }
@@ -147,23 +152,27 @@ struct PlayerHostLifecycleProbeTests {
 
         window.setContentSize(NSSize(width: 1_320, height: 820))
         hostingView.layoutSubtreeIfNeeded()
-        #expect(await waitUntil {
-            guard let playerSize = self.playerSize(in: hostingView) else {
-                return false
+        #expect(
+            await waitUntil {
+                guard let playerSize = self.playerSize(in: hostingView) else {
+                    return false
+                }
+                return self.isSixteenByNine(playerSize)
+                    && playerSize.width < compactPlayerSize.width
             }
-            return self.isSixteenByNine(playerSize)
-                && playerSize.width < compactPlayerSize.width
-        })
+        )
 
         window.setContentSize(NSSize(width: 1_080, height: 680))
         hostingView.layoutSubtreeIfNeeded()
-        #expect(await waitUntil {
-            guard let playerSize = self.playerSize(in: hostingView) else {
-                return false
+        #expect(
+            await waitUntil {
+                guard let playerSize = self.playerSize(in: hostingView) else {
+                    return false
+                }
+                return self.isSixteenByNine(playerSize)
+                    && abs(playerSize.width - compactPlayerSize.width) < 1
             }
-            return self.isSixteenByNine(playerSize)
-                && abs(playerSize.width - compactPlayerSize.width) < 1
-        })
+        )
         #expect(probe.events.count == baselineEventCount)
         #expect(probe.events[0] == firstHostEvent)
         #expect(probe.activeCount == 1)
@@ -176,29 +185,35 @@ struct PlayerHostLifecycleProbeTests {
         #expect(presentation.startedIdentities == baselineDanmakuIdentities)
 
         navigationModel.returnFromPlayback()
-        #expect(await waitUntil {
-            probe.events.count == 2 && probe.activeCount == 0
-        })
+        #expect(
+            await waitUntil {
+                probe.events.count == 2 && probe.activeCount == 0
+            }
+        )
         #expect(playback.stopCount == 1)
 
         navigationModel.openPlayback("BV1RouteHostB")
-        #expect(await waitUntil {
-            probe.events.count == 3 && probe.activeCount == 1
-        })
+        #expect(
+            await waitUntil {
+                probe.events.count == 3 && probe.activeCount == 1
+            }
+        )
 
         visibility.isPresented = false
         hostingView.layoutSubtreeIfNeeded()
-        #expect(await waitUntil {
-            probe.events.count == 4
-                && probe.activeCount == 0
-                && navigationModel.route == .section(.popular)
-                && playback.stopCount == 2
-        })
+        #expect(
+            await waitUntil {
+                probe.events.count == 4
+                    && probe.activeCount == 0
+                    && navigationModel.route == .section(.popular)
+                    && playback.stopCount == 2
+            }
+        )
 
-        guard case let .created(firstHost) = probe.events[0],
-              case let .dismantled(firstDismantled) = probe.events[1],
-              case let .created(secondHost) = probe.events[2],
-              case let .dismantled(secondDismantled) = probe.events[3]
+        guard case .created(let firstHost) = probe.events[0],
+            case .dismantled(let firstDismantled) = probe.events[1],
+            case .created(let secondHost) = probe.events[2],
+            case .dismantled(let secondDismantled) = probe.events[3]
         else {
             Issue.record("unexpected lifecycle event order")
             return
@@ -262,7 +277,6 @@ struct PlayerHostLifecycleProbeTests {
         }
         return nil
     }
-
 }
 
 @MainActor
@@ -381,7 +395,7 @@ private actor AppShellRecordingSubtitleRepository: SubtitleRepository {
         for trackID: String,
         identity: PlaybackItemIdentity
     ) async throws -> [SubtitleCue] {
-        return []
+        []
     }
 
     func reset(for identity: PlaybackItemIdentity) async {}

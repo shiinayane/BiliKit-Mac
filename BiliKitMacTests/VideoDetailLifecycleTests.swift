@@ -47,41 +47,51 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
-        #expect(await waitUntil {
-            presentation.stopCount > 0
-        })
+        #expect(
+            await waitUntil {
+                presentation.stopCount > 0
+            }
+        )
         let baselineStopCount = presentation.stopCount
 
         videoModel.selectVideo(fixture.bvid)
-        #expect(await waitUntil {
-            player.loadCallCount == 1
-                && presentation.startedIdentities.count == 1
-                && subtitleModel.state != .idle
-        })
+        #expect(
+            await waitUntil {
+                player.loadCallCount == 1
+                    && presentation.startedIdentities.count == 1
+                    && subtitleModel.state != .idle
+            }
+        )
 
         player.failPendingLoad()
         await videoModel.waitForCurrentTask()
-        #expect(await waitUntil {
-            if case .failed = videoModel.state {
-                return subtitleModel.state == .idle
-                    && presentation.stopCount == baselineStopCount + 1
+        #expect(
+            await waitUntil {
+                if case .failed = videoModel.state {
+                    return subtitleModel.state == .idle
+                        && presentation.stopCount == baselineStopCount + 1
+                }
+                return false
             }
-            return false
-        })
+        )
 
         videoModel.selectVideo(fixture.bvid)
-        #expect(await waitUntil {
-            player.loadCallCount == 2
-                && presentation.startedIdentities.count == 2
-                && subtitleModel.state != .idle
-        })
+        #expect(
+            await waitUntil {
+                player.loadCallCount == 2
+                    && presentation.startedIdentities.count == 2
+                    && subtitleModel.state != .idle
+            }
+        )
 
         player.failPendingLoad()
         await videoModel.waitForCurrentTask()
-        #expect(await waitUntil {
-            subtitleModel.state == .idle
-                && presentation.stopCount == baselineStopCount + 2
-        })
+        #expect(
+            await waitUntil {
+                subtitleModel.state == .idle
+                    && presentation.stopCount == baselineStopCount + 2
+            }
+        )
 
         window.contentView = NSView()
     }

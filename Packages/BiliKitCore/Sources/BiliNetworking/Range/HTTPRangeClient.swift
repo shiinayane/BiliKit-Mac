@@ -54,7 +54,7 @@ public struct HTTPContentRange: Sendable, Equatable {
             whereSeparator: { $0.isWhitespace }
         )
         guard unitAndValue.count == 2,
-              unitAndValue[0].lowercased() == "bytes"
+            unitAndValue[0].lowercased() == "bytes"
         else {
             throw HTTPContentRangeError.invalidValue
         }
@@ -74,8 +74,8 @@ public struct HTTPContentRange: Sendable, Equatable {
             omittingEmptySubsequences: false
         )
         guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              let endInclusive = Int64(bounds[1])
+            let start = Int64(bounds[0]),
+            let endInclusive = Int64(bounds[1])
         else {
             throw HTTPContentRangeError.invalidValue
         }
@@ -256,7 +256,7 @@ public struct HTTPRangeClient: Sendable {
         }
 
         guard contentRange.start == expectedRange.start,
-              contentRange.endInclusive == expectedRange.endInclusive
+            contentRange.endInclusive == expectedRange.endInclusive
         else {
             throw HTTPRangeAttemptFailureError(
                 .mismatchedContentRange(
@@ -290,8 +290,8 @@ private struct HTTPRangeAttemptFailureError: Error {
     }
 }
 
-private extension HTTPResponse {
-    func headerValue(named expectedName: String) -> String? {
+extension HTTPResponse {
+    fileprivate func headerValue(named expectedName: String) -> String? {
         headers.first { name, _ in
             name.caseInsensitiveCompare(expectedName) == .orderedSame
         }?.value

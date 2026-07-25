@@ -35,8 +35,8 @@ struct WebCredential: Sendable, Equatable,
         let expectedNames = Set(WebCredentialCookieName.allCases)
         let actualNames = Set(cookies.map(\.name))
         guard cookies.count == expectedNames.count,
-              actualNames == expectedNames,
-              cookies.allSatisfy(Self.isStructurallyValid)
+            actualNames == expectedNames,
+            cookies.allSatisfy(Self.isStructurallyValid)
         else {
             throw WebCredentialCodingError.invalidCredential
         }

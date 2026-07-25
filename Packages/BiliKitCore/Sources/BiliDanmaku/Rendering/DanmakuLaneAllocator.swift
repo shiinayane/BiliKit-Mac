@@ -87,9 +87,9 @@ public struct DanmakuLaneAllocator: Sendable {
         for request in requests {
             let result = admit(request, at: playbackTime)
             switch result {
-            case let .success(placement):
+            case .success(let placement):
                 admitted.append(placement)
-            case let .failure(reason):
+            case .failure(let reason):
                 dropCounts.record(reason)
             }
         }
@@ -105,9 +105,9 @@ public struct DanmakuLaneAllocator: Sendable {
         at playbackTime: Double
     ) -> Result<DanmakuLanePlacement, DanmakuLaneDropReason> {
         guard configuration.isValid,
-              request.isValid,
-              request.height <= configuration.laneHeight,
-              active[request.event.id] == nil
+            request.isValid,
+            request.height <= configuration.laneHeight,
+            active[request.event.id] == nil
         else {
             return .failure(.invalidRequest)
         }

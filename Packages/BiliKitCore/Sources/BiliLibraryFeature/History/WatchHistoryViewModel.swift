@@ -26,7 +26,7 @@ public final class WatchHistoryViewModel {
     public var requiresAuthentication: Bool {
         switch state {
         case .failed(.authenticationRequired),
-             .loaded(_, _, .authenticationRequired):
+            .loaded(_, _, .authenticationRequired):
             true
         default:
             false
@@ -79,7 +79,7 @@ public final class WatchHistoryViewModel {
     }
 
     public func loadMore() {
-        guard case let .loaded(items, .some(continuation), _) = state else { return }
+        guard case .loaded(let items, .some(let continuation), _) = state else { return }
         begin(
             state: .loadingMore(items: items, continuation: continuation),
             clearExistingTask: false
@@ -88,9 +88,11 @@ public final class WatchHistoryViewModel {
             do {
                 let page = try await useCase.load(after: continuation)
                 var seen = Set(items.map(\.bvid))
-                let merged = items + page.items.filter {
-                    seen.insert($0.bvid).inserted
-                }
+                let merged =
+                    items
+                    + page.items.filter {
+                        seen.insert($0.bvid).inserted
+                    }
                 apply(
                     .loaded(
                         items: merged,
@@ -142,7 +144,7 @@ public final class WatchHistoryViewModel {
         switch state {
         case .loading:
             state = .idle
-        case let .loadingMore(items, continuation):
+        case .loadingMore(let items, let continuation):
             state = .loaded(
                 items: items,
                 continuation: continuation,

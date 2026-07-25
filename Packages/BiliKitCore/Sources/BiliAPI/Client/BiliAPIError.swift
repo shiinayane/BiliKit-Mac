@@ -26,9 +26,9 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "authorization-required"
         case .transportFailure:
             "transport-failure"
-        case let .httpStatus(status):
+        case .httpStatus(let status):
             "http-status-\(status)"
-        case let .responseTooLarge(size):
+        case .responseTooLarge(let size):
             "response-too-large-\(size)"
         case .nonJSONResponse:
             "non-json-response"
@@ -36,7 +36,7 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "non-protobuf-response"
         case .decodingFailed:
             "decoding-failed"
-        case let .apiRejected(code, _):
+        case .apiRejected(let code, _):
             "api-rejected-\(code)"
         case .missingData:
             "missing-data"

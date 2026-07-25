@@ -1,6 +1,6 @@
-@preconcurrency import Network
 import BiliNetworking
 import Foundation
+@preconcurrency import Network
 
 public struct LoopbackRemoteResource: Sendable, Equatable {
     public let candidateURLs: [URL]
@@ -34,18 +34,18 @@ public enum LoopbackPlaybackResource: Sendable, Equatable {
 
     fileprivate var contentLength: Int64 {
         switch self {
-        case let .inMemory(data, _):
+        case .inMemory(let data, _):
             Int64(data.count)
-        case let .remote(resource):
+        case .remote(let resource):
             resource.contentLength
         }
     }
 
     fileprivate var contentType: String {
         switch self {
-        case let .inMemory(_, contentType):
+        case .inMemory(_, let contentType):
             contentType
-        case let .remote(resource):
+        case .remote(let resource):
             resource.contentType
         }
     }
@@ -130,7 +130,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     self.port = boundPort
                 }
                 startBox.resume()
-            case let .failed(error):
+            case .failed(let error):
                 startBox.resume(
                     throwing: LoopbackPlaybackServerError.listenerFailed(
                         String(describing: error)
@@ -186,11 +186,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     }
 
     public func stop() {
-        let state = lock.withLock { () -> (
-            NWListener?,
-            [NWConnection],
-            [Task<Void, Never>]
-        ) in
+        let state = lock.withLock {
+            () -> (
+                NWListener?,
+                [NWConnection],
+                [Task<Void, Never>]
+            ) in
             let state = (
                 listener,
                 Array(connections.values),
@@ -205,8 +206,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
 
         state.0?.cancel()
-        state.1.forEach { $0.cancel() }
-        state.2.forEach { $0.cancel() }
+        for connection in state.1 {
+            connection.cancel()
+        }
+        for task in state.2 {
+            task.cancel()
+        }
     }
 
     func diagnosticsSnapshot() -> LoopbackPlaybackServerDiagnostics {
@@ -300,7 +305,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             return
         }
         guard request.target.hasPrefix("/\(sessionToken)/"),
-              let resource = lock.withLock({ routes[request.target] })
+            let resource = lock.withLock({ routes[request.target] })
         else {
             sendStatus(404, reason: "Not Found", on: connection)
             return
@@ -352,7 +357,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
 
         switch resource {
-        case let .inMemory(data, _):
+        case .inMemory(let data, _):
             let body: Data
             if let requestedRange {
                 body = data.subdata(
@@ -373,7 +378,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 body: body,
                 on: connection
             )
-        case let .remote(remote):
+        case .remote(let remote):
             guard let requestedRange else {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
@@ -414,7 +419,8 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 : "\(bodyLength)",
         ]
         if let range {
-            headers["Content-Range"] = "bytes \(range.start)-\(range.endInclusive)/\(resource.contentLength)"
+            headers["Content-Range"] =
+                "bytes \(range.start)-\(range.endInclusive)/\(resource.contentLength)"
         }
         return headers
     }
@@ -425,7 +431,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     ) throws -> HTTPByteRange? {
         guard let value else { return nil }
         guard value.lowercased().hasPrefix("bytes="),
-              !value.contains(",")
+            !value.contains(",")
         else {
             throw LoopbackPlaybackServerError.invalidRangeHeader
         }
@@ -436,9 +442,9 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             omittingEmptySubsequences: false
         )
         guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              start >= 0,
-              start < contentLength
+            let start = Int64(bounds[0]),
+            start >= 0,
+            start < contentLength
         else {
             throw LoopbackPlaybackServerError.invalidRangeHeader
         }
@@ -479,9 +485,11 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     ) {
         var responseHeaders = headers
         responseHeaders["Connection"] = "close"
-        responseHeaders["Content-Length"] = responseHeaders["Content-Length"]
+        responseHeaders["Content-Length"] =
+            responseHeaders["Content-Length"]
             ?? "\(body.count)"
-        let head = (["HTTP/1.1 \(status) \(reason)"]
+        let head =
+            (["HTTP/1.1 \(status) \(reason)"]
             + responseHeaders.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
             + ["", ""])
             .joined(separator: "\r\n")
@@ -506,9 +514,9 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
 
     private func isValidRoute(_ route: String) -> Bool {
         guard !route.isEmpty,
-              !route.hasPrefix("/"),
-              !route.hasSuffix("/"),
-              !route.contains("..")
+            !route.hasPrefix("/"),
+            !route.hasSuffix("/"),
+            !route.contains("..")
         else {
             return false
         }
@@ -531,7 +539,7 @@ private struct LoopbackHTTPRequest: Sendable {
         let lines = text.components(separatedBy: "\r\n")
         let requestLine = lines[0].split(separator: " ")
         guard requestLine.count == 3,
-              requestLine[2].hasPrefix("HTTP/1.")
+            requestLine[2].hasPrefix("HTTP/1.")
         else {
             throw LoopbackPlaybackServerError.invalidHTTPRequest
         }

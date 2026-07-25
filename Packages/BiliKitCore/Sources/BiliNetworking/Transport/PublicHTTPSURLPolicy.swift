@@ -6,25 +6,25 @@ public struct PublicHTTPSURLPolicy: Sendable {
 
     public func allows(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
-              url.user == nil,
-              url.password == nil,
-              url.fragment == nil,
-              url.port == nil || url.port == 443,
-              let rawHost = url.host?.lowercased(),
-              !rawHost.isEmpty
+            url.user == nil,
+            url.password == nil,
+            url.fragment == nil,
+            url.port == nil || url.port == 443,
+            let rawHost = url.host?.lowercased(),
+            !rawHost.isEmpty
         else {
             return false
         }
 
         let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         guard !host.isEmpty,
-              host != "localhost",
-              !host.hasSuffix(".localhost"),
-              !host.hasSuffix(".local"),
-              !host.hasSuffix(".internal"),
-              host != "home.arpa",
-              !host.hasSuffix(".home.arpa"),
-              !Self.isIPAddress(host)
+            host != "localhost",
+            !host.hasSuffix(".localhost"),
+            !host.hasSuffix(".local"),
+            !host.hasSuffix(".internal"),
+            host != "home.arpa",
+            !host.hasSuffix(".home.arpa"),
+            !Self.isIPAddress(host)
         else {
             return false
         }

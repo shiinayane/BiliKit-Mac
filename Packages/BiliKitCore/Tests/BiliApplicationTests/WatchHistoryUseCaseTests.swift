@@ -14,9 +14,11 @@ struct WatchHistoryUseCaseTests {
 
         _ = try await useCase.load(after: continuation, pageSize: 30)
 
-        #expect(await repository.requests() == [
-            Request(continuation: continuation, pageSize: 30),
-        ])
+        #expect(
+            await repository.requests() == [
+                Request(continuation: continuation, pageSize: 30)
+            ]
+        )
     }
 
     @Test

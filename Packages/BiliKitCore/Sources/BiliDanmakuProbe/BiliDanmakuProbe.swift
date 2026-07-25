@@ -33,9 +33,11 @@ struct BiliDanmakuProbe {
             if let configuredCID = configuration.cid {
                 cid = configuredCID
             } else {
-                guard let firstPage = try await client.pages(
-                    for: configuration.bvid
-                ).first else {
+                guard
+                    let firstPage = try await client.pages(
+                        for: configuration.bvid
+                    ).first
+                else {
                     throw DanmakuApplicationError.invalidResponse
                 }
                 cid = firstPage.cid
@@ -55,7 +57,8 @@ struct BiliDanmakuProbe {
             var scheduler = DanmakuScheduler()
             scheduler.begin(for: identity)
             scheduler.store(segment, for: identity)
-            let start = Double(configuration.segmentIndex - 1)
+            let start =
+                Double(configuration.segmentIndex - 1)
                 * DanmakuScheduler.segmentDurationSeconds
             _ = scheduler.consume(
                 snapshot(
@@ -138,13 +141,13 @@ private struct Configuration {
             index += 2
         }
         guard (2...3).contains(values.count),
-              let bvid = values["--bvid"],
-              bvid.count == 12,
-              bvid.hasPrefix("BV"),
-              bvid.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }),
-              let rawSegmentIndex = values["--segment-index"],
-              let segmentIndex = Int(rawSegmentIndex),
-              (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(segmentIndex)
+            let bvid = values["--bvid"],
+            bvid.count == 12,
+            bvid.hasPrefix("BV"),
+            bvid.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }),
+            let rawSegmentIndex = values["--segment-index"],
+            let segmentIndex = Int(rawSegmentIndex),
+            (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(segmentIndex)
         else {
             throw DanmakuApplicationError.invalidRequest
         }

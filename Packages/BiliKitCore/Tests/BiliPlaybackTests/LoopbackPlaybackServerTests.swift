@@ -4,6 +4,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 import Testing
+
 @testable import BiliPlayback
 
 struct LoopbackPlaybackServerTests {
@@ -680,10 +681,10 @@ private actor FixtureRangeTransport: HTTPTransport {
             return HTTPResponse(statusCode: 403, body: Data())
         }
         guard let data = media[request.url],
-              let rangeHeader = request.headers.first(where: { name, _ in
-                  name.caseInsensitiveCompare("Range") == .orderedSame
-              })?.value,
-              let range = parseRange(rangeHeader, contentLength: data.count)
+            let rangeHeader = request.headers.first(where: { name, _ in
+                name.caseInsensitiveCompare("Range") == .orderedSame
+            })?.value,
+            let range = parseRange(rangeHeader, contentLength: data.count)
         else {
             return HTTPResponse(statusCode: 400, body: Data())
         }
@@ -694,7 +695,7 @@ private actor FixtureRangeTransport: HTTPTransport {
         return HTTPResponse(
             statusCode: 206,
             headers: [
-                "Content-Range": "bytes \(range.start)-\(range.endInclusive)/\(data.count)",
+                "Content-Range": "bytes \(range.start)-\(range.endInclusive)/\(data.count)"
             ],
             body: body
         )
@@ -711,11 +712,11 @@ private actor FixtureRangeTransport: HTTPTransport {
             omittingEmptySubsequences: false
         )
         guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              let end = Int64(bounds[1]),
-              start >= 0,
-              end >= start,
-              end < Int64(contentLength)
+            let start = Int64(bounds[0]),
+            let end = Int64(bounds[1]),
+            start >= 0,
+            end >= start,
+            end < Int64(contentLength)
         else {
             return nil
         }
@@ -742,16 +743,16 @@ private actor ReplacementRangeTransport: HTTPTransport {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         guard let data = media[request.url],
-              let rangeHeader = request.headers.first(where: { name, _ in
-                  name.caseInsensitiveCompare("Range") == .orderedSame
-              })?.value,
-              let requestedRange = parseRange(rangeHeader)
+            let rangeHeader = request.headers.first(where: { name, _ in
+                name.caseInsensitiveCompare("Range") == .orderedSame
+            })?.value,
+            let requestedRange = parseRange(rangeHeader)
         else {
             return HTTPResponse(statusCode: 400, body: Data())
         }
 
         if blockedMediaURLs.contains(request.url),
-           requestedRange != indexRanges[request.url]
+            requestedRange != indexRanges[request.url]
         {
             startedMediaRequestCount += 1
             do {
@@ -768,7 +769,8 @@ private actor ReplacementRangeTransport: HTTPTransport {
         return HTTPResponse(
             statusCode: 206,
             headers: [
-                "Content-Range": "bytes \(requestedRange.start)-\(requestedRange.endInclusive)/\(data.count)",
+                "Content-Range":
+                    "bytes \(requestedRange.start)-\(requestedRange.endInclusive)/\(data.count)"
             ],
             body: body
         )
@@ -782,8 +784,8 @@ private actor ReplacementRangeTransport: HTTPTransport {
             omittingEmptySubsequences: false
         )
         guard bounds.count == 2,
-              let start = Int64(bounds[0]),
-              let end = Int64(bounds[1])
+            let start = Int64(bounds[0]),
+            let end = Int64(bounds[1])
         else {
             return nil
         }

@@ -8,7 +8,6 @@
 import XCTest
 
 final class BiliKitMacUITests: XCTestCase {
-
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

@@ -133,7 +133,7 @@ struct ContentView: View {
     private var feedTaskID: AppFeedTaskID {
         let sourceSection: AppSection?
         switch navigationModel.route {
-        case let .section(section):
+        case .section(let section):
             sourceSection = section
         case .playback:
             sourceSection = navigationModel.returnSnapshot?.sourceSection
@@ -159,7 +159,7 @@ struct ContentView: View {
             await feedModel.waitForCurrentTask()
         case .search(nil, _), .none:
             feedModel.cancel()
-        case let .search(.some(query), _):
+        case .search(.some(let query), _):
             feedModel.search(query)
             await feedModel.waitForCurrentTask()
         }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import BiliNetworking
 
 struct HTTPRangeClientTests {
@@ -12,7 +13,7 @@ struct HTTPRangeClientTests {
                     statusCode: 206,
                     headers: ["content-range": "bytes 10-12/100"],
                     body: Data([0xaa, 0xbb, 0xcc])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)
@@ -133,7 +134,7 @@ struct HTTPRangeClientTests {
                     statusCode: 206,
                     headers: ["Content-Range": "bytes 0-2/100"],
                     body: Data([0, 1, 2])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)

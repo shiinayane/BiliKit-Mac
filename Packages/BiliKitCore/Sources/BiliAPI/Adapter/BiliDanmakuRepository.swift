@@ -37,16 +37,16 @@ public struct BiliDanmakuRepository: DanmakuSegmentRepository, Sendable {
         case .transportFailure:
             .transportFailure
         case .httpStatus(403), .nonProtobufResponse,
-             .apiRejected(code: -403, _), .apiRejected(code: -412, _):
+            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
             .requestRestricted
         case .responseTooLarge, .decodingFailed, .missingData,
-             .invalidDanmakuData:
+            .invalidDanmakuData:
             .invalidResponse
         case .httpStatus, .apiRejected:
             .unavailable
         case .authorizationRequired, .nonJSONResponse, .invalidWBIKey,
-             .signingFailed, .invalidMediaData, .invalidSubtitleData,
-             .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio:
+            .signingFailed, .invalidMediaData, .invalidSubtitleData,
+            .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio:
             .invalidResponse
         }
     }

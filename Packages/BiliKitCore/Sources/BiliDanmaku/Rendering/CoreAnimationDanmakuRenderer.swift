@@ -47,7 +47,7 @@ public final class CoreAnimationDanmakuRenderer:
 
     public func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
         guard !event.text.isEmpty,
-              event.text.utf16.count <= Self.maximumTextUTF16Length
+            event.text.utf16.count <= Self.maximumTextUTF16Length
         else {
             return DanmakuTextMetrics(width: 0, height: 0)
         }
@@ -66,11 +66,11 @@ public final class CoreAnimationDanmakuRenderer:
         let widthPixels = ceil(measured.width * contentsScale) + 8
         let heightPixels = ceil(measured.height * contentsScale) + 8
         guard widthPixels.isFinite,
-              heightPixels.isFinite,
-              widthPixels > 0,
-              heightPixels > 0,
-              widthPixels <= Self.maximumTextWidthPixels,
-              heightPixels <= Self.maximumTextHeightPixels
+            heightPixels.isFinite,
+            widthPixels > 0,
+            heightPixels > 0,
+            widthPixels <= Self.maximumTextWidthPixels,
+            heightPixels <= Self.maximumTextHeightPixels
         else {
             return DanmakuTextMetrics(width: 0, height: 0)
         }
@@ -83,10 +83,10 @@ public final class CoreAnimationDanmakuRenderer:
     public func render(_ placement: DanmakuLanePlacement) {
         let event = placement.request.event
         guard entries[event.id] == nil,
-              entries.count
+            entries.count
                 < DanmakuLaneConfiguration.hardMaximumActiveCount,
-              surfaceSize.width > 0,
-              surfaceSize.height > 0
+            surfaceSize.width > 0,
+            surfaceSize.height > 0
         else {
             return
         }
@@ -134,7 +134,8 @@ public final class CoreAnimationDanmakuRenderer:
         let newRate = rate.isFinite ? max(rate, 0) : 0
         guard Double(rootLayer.speed) != newRate else { return }
         let mediaTime = CACurrentMediaTime()
-        let parentTime = rootLayer.superlayer?
+        let parentTime =
+            rootLayer.superlayer?
             .convertTime(mediaTime, from: nil)
             ?? mediaTime
         let localTime = rootLayer.convertTime(mediaTime, from: nil)
@@ -176,8 +177,8 @@ public final class CoreAnimationDanmakuRenderer:
         renderEpoch completionEpoch: UInt64
     ) {
         guard completionEpoch == renderEpoch,
-              let entry = entries[eventID],
-              entry.objectIdentity == objectIdentity
+            let entry = entries[eventID],
+            entry.objectIdentity == objectIdentity
         else {
             return
         }

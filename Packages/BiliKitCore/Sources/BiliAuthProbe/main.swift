@@ -64,7 +64,7 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
         print("state=requesting-qr-code")
         do {
             let initialState = try await session.requestQRCode()
-            guard case let .awaitingScan(qrCode) = initialState else {
+            guard case .awaitingScan(let qrCode) = initialState else {
                 await finish(with: initialState, exitCode: EXIT_FAILURE)
                 return
             }
@@ -103,7 +103,7 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
                         reportedAwaitingConfirmation = true
                     }
                     continue
-                case let .awaitingCredentialValidation(observation):
+                case .awaitingCredentialValidation(let observation):
                     print("state=awaiting-credential-validation")
                     printObservation(observation)
                     let isLoggedIn = try await session.validatePendingCredential()
@@ -185,7 +185,7 @@ private final class ProbeAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
     private func finish(with state: WebQRLoginState, exitCode: Int32) async {
         print("state=\(state.description)")
-        if case let .failed(.unsupportedStatus(observation)) = state {
+        if case .failed(.unsupportedStatus(let observation)) = state {
             printObservation(observation)
         }
         await session.cancel()

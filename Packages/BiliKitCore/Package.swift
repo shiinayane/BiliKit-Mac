@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "BiliKitCore",
     platforms: [
-        .macOS(.v15),
+        .macOS(.v15)
     ],
     products: [
         .library(name: "BiliModels", targets: ["BiliModels"]),
@@ -27,7 +27,7 @@ let package = Package(
         .package(
             url: "https://github.com/apple/swift-protobuf.git",
             exact: "1.38.1"
-        ),
+        )
     ],
     targets: [
         .target(name: "BiliModels"),
@@ -114,14 +114,14 @@ let package = Package(
             name: "BiliAuthTests",
             dependencies: ["BiliAuth", "BiliNetworking"],
             resources: [
-                .copy("Fixtures"),
+                .copy("Fixtures")
             ]
         ),
         .testTarget(
             name: "BiliAPITests",
             dependencies: ["BiliAPI", "BiliModels", "BiliNetworking"],
             resources: [
-                .copy("Fixtures"),
+                .copy("Fixtures")
             ]
         ),
         .testTarget(
@@ -133,7 +133,7 @@ let package = Package(
                 "BiliPlayback",
             ],
             resources: [
-                .copy("Fixtures"),
+                .copy("Fixtures")
             ]
         ),
         .testTarget(

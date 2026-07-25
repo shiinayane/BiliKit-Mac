@@ -58,7 +58,7 @@ package struct VideoCard: View {
             .overlay {
                 AsyncImage(url: coverURL) { phase in
                     switch phase {
-                    case let .success(image):
+                    case .success(let image):
                         image
                             .resizable()
                             .scaledToFill()
@@ -105,7 +105,7 @@ package struct VideoCard: View {
             if showsAvatar {
                 AsyncImage(url: avatarURL) { phase in
                     switch phase {
-                    case let .success(image):
+                    case .success(let image):
                         image
                             .resizable()
                             .scaledToFill()
