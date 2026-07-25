@@ -55,6 +55,7 @@ run_static_contracts() {
     sh Scripts/check-architecture.sh || return $?
     sh Scripts/check-secrets.sh || return $?
     sh Scripts/check-project-contract.sh || return $?
+    sh Scripts/check-swift-format.sh || return $?
     git diff --check || return $?
     git diff --cached --check || return $?
 }
