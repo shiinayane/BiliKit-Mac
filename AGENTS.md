@@ -69,18 +69,32 @@ Feature target 按产品领域划分，默认先在现有领域内增加纵向�
 风险等级只追加验证，不降低基线；按后果、不确定性、可逆性和证据需求分类，不按改动行数分类：
 
 - **绿区**：文案、Preview、局部布局、私有机械重命名、明确 DTO 映射和小型测试补充。主 Agent 可以直接完成并检查 diff；公开 API、target 或工程变更不属于绿区。
-- **黄区**：普通 Feature/Use Case、缓存策略、跨文件重构和跨模块公共 API。实现前写明 Goal、Context、Constraints、Done when；非机械改动完成后由不继承实现推理的新上下文做只读审查。
-- **红区**：认证、授权、Keychain、来源与重定向、本地服务器、播放/媒体、线程与资源生命周期、renderer、持久化迁移、文件删除和不可逆变化。新决策或新生产契约必须先通过决策价值 Gate、复杂度预算和用户确认；实现后由 `red_reviewer` 检查失败、安全、所有权、取消、资源上限、清理和 rollback，并增加任务所需的真实证据。
+- **黄区**：普通 Feature/Use Case、缓存策略、跨文件重构和跨模块公共 API。实现前写明
+  Goal、Context、Constraints、Outcome floor、Done when；Outcome floor 必须来自 Roadmap、
+  产品文档、ADR 或用户明确要求，并限定在当前已接受切片内，不得被局部简化悄悄降低。
+  切片不必一次交付完整 App，但不得冒充更大闭环已经完成。非机械改动完成后由不继承
+  实现推理的新上下文做只读审查。
+- **红区**：认证、授权、Keychain、来源与重定向、本地服务器、播放/媒体、线程与资源生命周期、renderer、持久化迁移、文件删除和不可逆变化。新决策或新生产契约必须先通过结果充分性与决策价值 Gate，在候选足以满足 Outcome floor 后再限定复杂度预算并取得用户确认；实现后由 `red_reviewer` 检查结果到证据的追踪、失败、安全、所有权、取消、资源上限、清理和 rollback，并增加任务所需的真实证据。
+
+选择“满足 Outcome floor 的最低成本方案”，不是所有候选中最容易实现的方案。保存
+item ID、请求次数、对象存活、编译通过、mock 或内部状态只可作为支持证据；除非任务
+契约说明它为何可靠预测用户可见结果，并给出可推翻该预测的直接验收，否则不能代替
+产品完成标准。对当前 Outcome floor 的用户可见降级、fallback、容差或延期必须单独
+列出并确认，不能藏在复杂度预算或非目标中。
 
 `architecture_reviewer` 不是普通改动的额外必经层。只有任务确实改变 target 间依赖、
 owner、公共面或迁移责任，修改 Package product／公共 API／Composition root，新增
 Repository／Use Case／共享组件，达到 ADR 0006 的职责规模触发线，迁移可能留下新旧
-双轨，语义命名不再匹配 owner，或准备关闭重要架构 Gate 时才按需启动。它检查依赖
+双轨，语义命名不再匹配 owner，当前切片将成为已接受后续产品路径的基础，或准备关闭
+重要架构 Gate 时才按需启动。它检查依赖
 方向、类型归属、公共面和抽象价值；纯机械跨 target 改动、格式、行数、覆盖率与命名
 偏好不能单独成为 blocker。机械代码风格由 `.swift-format` 与统一 Gate 强制，不创建
 主观的 clean-code reviewer。
 
-已绑定用户确认的红区生产契约可以承载语义不变的维护切片；只要 Goal、候选、范围、安全/隐私边界、资源 owner、复杂度预算、停止条件或下一步发生变化，就必须返回完整前置流程。详细的决策 Gate、维护例外、证据包、工作树隔离和 reviewer 输出格式以 [`docs/development/QUALITY-GATES.md`](docs/development/QUALITY-GATES.md) 为准。
+已绑定用户确认的红区生产契约可以承载语义不变的维护切片；只要 Goal、Outcome floor、
+候选、范围、安全/隐私边界、资源 owner、复杂度预算、停止条件、用户可见妥协或下一步
+发生变化，就必须返回完整前置流程。详细的决策 Gate、维护例外、证据包、工作树隔离和
+reviewer 输出格式以 [`docs/development/QUALITY-GATES.md`](docs/development/QUALITY-GATES.md) 为准。
 
 项目 Agent 定义及模型配置以 [`.codex/config.toml`](.codex/config.toml) 和 [`.codex/agents/`](.codex/agents/) 为准。出现两种以上合理解释、无法明确不变量/owner/清理点、跨越两个以上 target、涉及红区、测试失败原因不清晰、连续两次修复失败、reviewer 冲突或准备关闭重要 Gate 时必须升级；模型选择、自动测试或用户确认不能互相替代。
 
@@ -105,8 +119,12 @@ Repository／Use Case／共享组件，达到 ADR 0006 的职责规模触发线�
    异步测试用事件、continuation、状态流或显式闸门确认开始与完成；固定时长只能作为
    超时保险，不能用来推断请求已经发生或状态已经稳定。
 3. 保持一个纵向目的；不混入无关格式化、重命名或未来模块占位。已有工作树改动默认属于用户。
-4. 移动文件后重新检查 SwiftPM target、Xcode package product、imports、脚本路径和文档链接。
-5. 没有用户明确要求时，不提交、不推送、不改写 Git 历史，也不创建 PR。
+4. 先用直接用户可见或调用方可见结果定义验收，再选择实现代理和测试 seam；不得从
+   当前实现反推更容易通过的 Done when。
+5. 已审查实现若仍未达到用户要求，停止叠加补丁，找出被削弱的 Outcome floor、无效
+   代理或错误 owner，重开任务契约和受影响的审查。
+6. 移动文件后重新检查 SwiftPM target、Xcode package product、imports、脚本路径和文档链接。
+7. 没有用户明确要求时，不提交、不推送、不改写 Git 历史，也不创建 PR。
 
 外部 CLI 在受限网络沙箱中报告 token 无效、未认证、DNS/TLS 或远端不可达时，不得立即要求用户重新登录或修改凭据。先在获准联网的只读上下文使用同一 CLI、账号、认证方式和远端协议/目标复核；只有等价复核仍失败时，才按真实认证问题处理。
 
