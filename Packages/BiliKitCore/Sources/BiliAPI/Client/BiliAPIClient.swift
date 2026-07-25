@@ -102,7 +102,7 @@ public actor BiliAPIClient: BiliAPIService, BiliWatchHistoryService,
         ]
         do {
             return try await signedSearch(parameters: parameters, forceKeyRefresh: false)
-        } catch let BiliAPIError.apiRejected(code, _) where code == -403 {
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
             return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
         } catch BiliAPIError.httpStatus(403) {
             return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
