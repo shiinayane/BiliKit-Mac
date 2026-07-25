@@ -11,13 +11,14 @@ import XCTest
 final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
     @MainActor
     func testAuthenticatedABASubtitleLifecycleWhenExplicitlyConfigured()
-        async throws {
+        async throws
+    {
         let environment = ProcessInfo.processInfo.environment
         guard let firstBVID = environment["BILIKIT_M46_PROBE_BVID_A"],
-              let secondBVID = environment["BILIKIT_M46_PROBE_BVID_B"],
-              Self.isValidBVID(firstBVID),
-              Self.isValidBVID(secondBVID),
-              firstBVID != secondBVID
+            let secondBVID = environment["BILIKIT_M46_PROBE_BVID_B"],
+            Self.isValidBVID(firstBVID),
+            Self.isValidBVID(secondBVID),
+            firstBVID != secondBVID
         else {
             throw XCTSkip(
                 "仅在显式提供两个不同的 M4.6 probe BVID 时运行签名 A/B 生命周期探针"
@@ -67,7 +68,7 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         for (index, bvid) in [firstBVID, secondBVID, firstBVID].enumerated() {
             videoModel.selectVideo(bvid)
             await videoModel.waitForCurrentTask()
-            guard case let .ready(context) = videoModel.state else {
+            guard case .ready(let context) = videoModel.state else {
                 recordFailure("video-session-\(index + 1)")
                 throw ProbeFailure.videoPreparationFailed(session: index + 1)
             }
@@ -84,8 +85,8 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
             subtitleModel.selectVideo(contextIdentity)
             await subtitleModel.waitForCurrentTask()
             guard subtitleModel.state == .ready(contextIdentity),
-                  !subtitleModel.tracks.isEmpty,
-                  subtitleModel.selectedTrackID != nil
+                !subtitleModel.tracks.isEmpty,
+                subtitleModel.selectedTrackID != nil
             else {
                 recordFailure(
                     subtitleFailureCategory(
@@ -113,8 +114,8 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         }
 
         guard completedSessions == 3,
-              identitiesMatched,
-              generationsAdvanced
+            identitiesMatched,
+            generationsAdvanced
         else {
             recordFailure("identity-or-generation")
             throw ProbeFailure.identityMismatch
@@ -124,7 +125,7 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         await subtitleModel.waitForCurrentTask()
         videoModel.reset()
         guard player.currentTimelineSnapshot.identity == nil,
-              subtitleModel.state == .idle
+            subtitleModel.state == .idle
         else {
             recordFailure("cleanup")
             throw ProbeFailure.cleanupFailed
@@ -156,29 +157,30 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         state: SubtitleViewState,
         session: Int
     ) -> String {
-        let reason = switch state {
-        case .idle:
-            "idle"
-        case .loadingCatalog:
-            "loading-catalog"
-        case .loadingTrack:
-            "loading-track"
-        case .ready:
-            "incomplete-ready"
-        case .unavailable:
-            "unavailable"
-        case let .failed(_, failure):
-            switch failure {
-            case .authenticationRequired:
-                "authentication-required"
-            case .requestRestricted:
-                "request-restricted"
-            case .invalidResponse:
-                "invalid-response"
+        let reason =
+            switch state {
+            case .idle:
+                "idle"
+            case .loadingCatalog:
+                "loading-catalog"
+            case .loadingTrack:
+                "loading-track"
+            case .ready:
+                "incomplete-ready"
             case .unavailable:
-                "failed-unavailable"
+                "unavailable"
+            case .failed(_, let failure):
+                switch failure {
+                case .authenticationRequired:
+                    "authentication-required"
+                case .requestRestricted:
+                    "request-restricted"
+                case .invalidResponse:
+                    "invalid-response"
+                case .unavailable:
+                    "failed-unavailable"
+                }
             }
-        }
         return "subtitle-\(reason)-session-\(session)"
     }
 }
