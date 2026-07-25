@@ -55,6 +55,10 @@ public final class GuestFeedViewModel {
         await task?.value
     }
 
+    func taskSnapshotForTesting() -> Task<Void, Never>? {
+        task
+    }
+
     private func load(_ request: GuestFeedRequest) {
         generation += 1
         let currentGeneration = generation

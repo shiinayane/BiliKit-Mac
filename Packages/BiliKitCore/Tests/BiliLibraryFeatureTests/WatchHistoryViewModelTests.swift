@@ -5,6 +5,7 @@ import Testing
 
 @testable import BiliLibraryFeature
 
+@Suite(.timeLimit(.minutes(1)))
 struct WatchHistoryViewModelTests {
     @Test
     @MainActor
@@ -98,7 +99,7 @@ struct WatchHistoryViewModelTests {
         #expect(await repository.observedContinuations() == [nil, continuation])
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
     func reloadPreventsOlderResultFromOverwritingNewIntent() async throws {
         let repository = HistoryRepositoryStub(
@@ -106,17 +107,19 @@ struct WatchHistoryViewModelTests {
                 .success(WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil)),
                 .success(WatchHistoryPage(items: [item("BV1HistoryB2")], continuation: nil)),
             ],
-            firstDelay: .milliseconds(50)
+            suspendedCalls: [1]
         )
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.reload()
-        try await Task.sleep(for: .milliseconds(5))
+        try await repository.waitUntilCallCount(1)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.reload()
         await model.waitForCurrentTask()
-        try await Task.sleep(for: .milliseconds(60))
+        await repository.releaseCall(1)
+        await supersededTask.value
 
         guard case .loaded(let items, _, _) = model.state else {
             Issue.record("历史状态不是 loaded")
@@ -161,18 +164,18 @@ struct WatchHistoryViewModelTests {
                     )
                 )
             ],
-            firstDelay: .milliseconds(40)
+            suspendedCalls: [1]
         )
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.loadIfNeeded()
-        let requestStarted = await repository.waitUntilCallCount(1)
-        #expect(requestStarted)
+        try await repository.waitUntilCallCount(1)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.reset()
-        let lateResultReturned = await repository.waitUntilCompletionCount(1)
-        #expect(lateResultReturned)
+        await repository.releaseCall(1)
+        await supersededTask.value
 
         #expect(model.state == .idle)
     }
@@ -189,18 +192,18 @@ struct WatchHistoryViewModelTests {
                     )
                 )
             ],
-            firstDelay: .milliseconds(40)
+            suspendedCalls: [1]
         )
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.loadIfNeeded()
-        let requestStarted = await repository.waitUntilCallCount(1)
-        #expect(requestStarted)
+        try await repository.waitUntilCallCount(1)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.deactivateRoute()
-        let lateResultReturned = await repository.waitUntilCompletionCount(1)
-        #expect(lateResultReturned)
+        await repository.releaseCall(1)
+        await supersededTask.value
 
         #expect(model.state == .idle)
     }
@@ -224,7 +227,7 @@ struct WatchHistoryViewModelTests {
                     )
                 ),
             ],
-            secondDelay: .milliseconds(40)
+            suspendedCalls: [2]
         )
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(repository: repository)
@@ -233,11 +236,11 @@ struct WatchHistoryViewModelTests {
         model.loadIfNeeded()
         await model.waitForCurrentTask()
         model.loadMore()
-        let paginationStarted = await repository.waitUntilCallCount(2)
-        #expect(paginationStarted)
+        try await repository.waitUntilCallCount(2)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.deactivateRoute()
-        let lateResultReturned = await repository.waitUntilCompletionCount(2)
-        #expect(lateResultReturned)
+        await repository.releaseCall(2)
+        await supersededTask.value
 
         #expect(
             model.state
@@ -268,20 +271,19 @@ private func item(_ bvid: String) -> WatchHistoryItem {
 
 private actor HistoryRepositoryStub: WatchHistoryRepository {
     private var results: [Result<WatchHistoryPage, WatchHistoryError>]
-    private let firstDelay: Duration?
-    private let secondDelay: Duration?
+    private let suspendedCalls: Set<Int>
     private var callCount = 0
-    private var completionCount = 0
     private var continuations: [WatchHistoryContinuation?] = []
+    private let callEvents = TestEventCounter()
+    private var releaseWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var releasedCalls: Set<Int> = []
 
     init(
         results: [Result<WatchHistoryPage, WatchHistoryError>],
-        firstDelay: Duration? = nil,
-        secondDelay: Duration? = nil
+        suspendedCalls: Set<Int> = []
     ) {
         self.results = results
-        self.firstDelay = firstDelay
-        self.secondDelay = secondDelay
+        self.suspendedCalls = suspendedCalls
     }
 
     func watchHistory(
@@ -291,15 +293,14 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
         callCount += 1
         let currentCall = callCount
         continuations.append(continuation)
+        await callEvents.signal()
         guard !results.isEmpty else { throw WatchHistoryError.invalidResponse }
         let result = results.removeFirst()
-        if currentCall == 1, let firstDelay {
-            try? await Task.sleep(for: firstDelay)
+        if suspendedCalls.contains(currentCall), !releasedCalls.contains(currentCall) {
+            await withCheckedContinuation {
+                releaseWaiters[currentCall, default: []].append($0)
+            }
         }
-        if currentCall == 2, let secondDelay {
-            try? await Task.sleep(for: secondDelay)
-        }
-        defer { completionCount += 1 }
         return try result.get()
     }
 
@@ -307,23 +308,75 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
         continuations
     }
 
-    func waitUntilCallCount(_ expectedCount: Int) async -> Bool {
-        await waitUntil { callCount >= expectedCount }
-    }
-
-    func waitUntilCompletionCount(_ expectedCount: Int) async -> Bool {
-        await waitUntil { completionCount >= expectedCount }
-    }
-
-    private func waitUntil(
-        _ condition: () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(1))
+    func waitUntilCallCount(_ expectedCount: Int) async throws {
+        do {
+            try await callEvents.wait(until: expectedCount)
+        } catch {
+            releaseAllCalls()
+            throw error
         }
-        return true
+    }
+
+    func releaseCall(_ call: Int) {
+        releasedCalls.insert(call)
+        let pending = releaseWaiters.removeValue(forKey: call) ?? []
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+
+    private func releaseAllCalls() {
+        releasedCalls.formUnion(suspendedCalls)
+        let pending = releaseWaiters.values.flatMap { $0 }
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor TestEventCounter {
+    private struct Waiter {
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var count = 0
+    private var waiters: [UUID: Waiter] = [:]
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { count >= $0.value.expectedCount }
+        for (id, waiter) in ready where waiters.removeValue(forKey: id) != nil {
+            waiter.continuation.resume()
+        }
+    }
+
+    func wait(until expectedCount: Int) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if count >= expectedCount {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = Waiter(
+                        expectedCount: expectedCount,
+                        continuation: continuation
+                    )
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id)
+            }
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }

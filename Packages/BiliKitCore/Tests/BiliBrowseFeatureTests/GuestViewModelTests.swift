@@ -6,11 +6,13 @@
 //
 
 import BiliApplication
-import BiliBrowseFeature
 import BiliModels
 import Foundation
 import Testing
 
+@testable import BiliBrowseFeature
+
+@Suite(.timeLimit(.minutes(1)))
 struct GuestViewModelTests {
     @Test
     @MainActor
@@ -69,21 +71,24 @@ struct GuestViewModelTests {
         )
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
         let fixture = GuestFixtures()
+        let repository = FeedSwitchingRepositoryStub(fixtures: fixture)
         let model = GuestFeedViewModel(
             useCase: GuestFeedUseCase(
-                repository: FeedSwitchingRepositoryStub(fixtures: fixture)
+                repository: repository
             )
         )
 
         model.search("旧搜索")
-        try await Task.sleep(for: .milliseconds(10))
+        try await repository.waitForSearchStart()
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.loadPopular()
         await model.waitForCurrentTask()
-        try await Task.sleep(for: .milliseconds(30))
+        await repository.releaseSearch()
+        await supersededTask.value
 
         #expect(
             model.state
@@ -191,24 +196,27 @@ struct GuestViewModelTests {
         #expect(player.stopCallCount == 1)
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerSelectionPreventsOldVideoFromLoadingPlayer() async throws {
         let slow = GuestFixtures(bvid: "BV1SlowFixture", title: "旧视频")
         let fast = GuestFixtures(bvid: "BV1FastFixture", title: "新视频")
         let player = RecordingPlayerEngine()
+        let repository = SwitchingGuestRepositoryStub(slow: slow, fast: fast)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
-                repository: SwitchingGuestRepositoryStub(slow: slow, fast: fast)
+                repository: repository
             ),
             playback: player
         )
 
         model.selectVideo(slow.detail.bvid)
-        try await Task.sleep(for: .milliseconds(10))
+        try await repository.waitForSlowRequestCount(2)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.selectVideo(fast.detail.bvid)
         await model.waitForCurrentTask()
-        try await Task.sleep(for: .milliseconds(120))
+        await repository.releaseSlowRequests()
+        await supersededTask.value
 
         guard case .ready(let context) = model.state else {
             Issue.record("最新视频未进入就绪状态")
@@ -340,6 +348,9 @@ private actor GuestRepositoryStub: GuestContentRepository {
 
 private actor FeedSwitchingRepositoryStub: GuestContentRepository {
     let fixtures: GuestFixtures
+    private var searchReleased = false
+    private let searchEvents = TestEventCounter()
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(fixtures: GuestFixtures) {
         self.fixtures = fixtures
@@ -354,7 +365,14 @@ private actor FeedSwitchingRepositoryStub: GuestContentRepository {
     }
 
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        try? await Task.sleep(for: .milliseconds(100))
+        await searchEvents.signal()
+        await withCheckedContinuation { continuation in
+            if searchReleased {
+                continuation.resume()
+            } else {
+                releaseWaiters.append(continuation)
+            }
+        }
         return SearchPage(
             videos: [fixtures.searchVideo],
             pageNumber: page,
@@ -378,6 +396,28 @@ private actor FeedSwitchingRepositoryStub: GuestContentRepository {
         quality: Int
     ) async throws -> VideoPlayback {
         fixtures.playback
+    }
+
+    func waitForSearchStart() async throws {
+        do {
+            try await searchEvents.wait(until: 1)
+        } catch {
+            releaseSearch()
+            throw error
+        }
+    }
+
+    func releaseSearch() {
+        searchReleased = true
+        resume(&releaseWaiters)
+    }
+
+    private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 
@@ -431,6 +471,9 @@ private actor RetryingSearchRepositoryStub: GuestContentRepository {
 private actor SwitchingGuestRepositoryStub: GuestContentRepository {
     let slow: GuestFixtures
     let fast: GuestFixtures
+    private var slowRequestsReleased = false
+    private let slowRequestEvents = TestEventCounter()
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(slow: GuestFixtures, fast: GuestFixtures) {
         self.slow = slow
@@ -470,13 +513,83 @@ private actor SwitchingGuestRepositoryStub: GuestContentRepository {
     }
 
     private func delayIfSlow(_ bvid: String) async throws {
-        if bvid == slow.bvid {
-            try await Task.sleep(for: .milliseconds(100))
+        guard bvid == slow.bvid else { return }
+        await slowRequestEvents.signal()
+        await withCheckedContinuation { continuation in
+            if slowRequestsReleased {
+                continuation.resume()
+            } else {
+                releaseWaiters.append(continuation)
+            }
         }
     }
 
     private func fixture(for bvid: String) -> GuestFixtures {
         bvid == slow.bvid ? slow : fast
+    }
+
+    func waitForSlowRequestCount(_ expectedCount: Int) async throws {
+        do {
+            try await slowRequestEvents.wait(until: expectedCount)
+        } catch {
+            releaseSlowRequests()
+            throw error
+        }
+    }
+
+    func releaseSlowRequests() {
+        slowRequestsReleased = true
+        let pending = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor TestEventCounter {
+    private struct Waiter {
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var count = 0
+    private var waiters: [UUID: Waiter] = [:]
+
+    func signal() {
+        count += 1
+        let ready = waiters.filter { count >= $0.value.expectedCount }
+        for (id, waiter) in ready where waiters.removeValue(forKey: id) != nil {
+            waiter.continuation.resume()
+        }
+    }
+
+    func wait(until expectedCount: Int) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if count >= expectedCount {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = Waiter(
+                        expectedCount: expectedCount,
+                        continuation: continuation
+                    )
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id)
+            }
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }
 
