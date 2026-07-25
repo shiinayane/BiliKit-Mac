@@ -491,6 +491,35 @@ Gate：
 - ROADMAP、产品愿景与 UI/UX 蓝图必须统一上述截线，同时继续把各 M5 切片写成待确认
   契约而非生产授权。
 
+### M4.7：架构审查与 Swift 格式基线
+
+目标：在后续功能继续扩大 Browse、Library、Application 与 adapter 边界前，补齐自动
+依赖检查无法证明的架构审查视角，并让本地与 CI 对全部手写 Swift 源码执行同一套强制
+格式规则。
+
+交付物：
+
+- 将按需 `architecture_reviewer` 的选择方法写回独立
+  `project-governance-bootstrap` Skill，再用 upgrade 模式更新本项目配置。
+- 架构 reviewer 只在确实改变跨 target 的依赖／owner／公共面／迁移责任、公共 API、
+  Composition、抽象准入、迁移双轨、语义 ownership 或重要架构 Gate 时启动；纯机械
+  跨 target 改动不单独触发，也不增加主观 clean-code reviewer。
+- 将 `/Volumes/Data/Projects/.swift-format` 复制为仓库根配置；统一 Gate 对 App、
+  App Tests／UI Tests、Package manifest、Sources 与 Tests 执行 strict lint，排除固定
+  generator 产生的 protobuf。
+- 对既有手写 Swift 源码建立一次性格式基线；CI 复用统一 App Gate，不维护第二套规则。
+- 用新 reviewer 对当前仓库执行一次真实只读架构审查，以 blocker／improvement／reject
+  检查角色边界、触发条件与输出是否具有决策价值。
+
+Gate：
+
+- 独立 Skills 仓库验证与 BiliKit 最高适用统一 App Gate 通过。
+- `Scripts/check-swift-format.sh` 对未跟踪和已跟踪的范围一致生效，故意制造的格式错误
+  能让检查失败，恢复后通过。
+- 架构 reviewer 不重复普通行为审查或红区安全终审，不把文件长度、命名偏好和对称性
+  单独升级为 blocker；实际审查结果能指出静态 import Gate 无法证明的边界。
+- macOS 15/26 CI 的统一 App Gate 包含 strict Swift format lint。
+
 ### M5：日常观看核心闭环
 
 目标：完成“首页个性推荐流 → 视频／字幕／弹幕 → 推荐连续切换 → 返回来源”的

@@ -62,7 +62,7 @@ jobs:
             git diff --check HEAD^ HEAD
           fi
 
-      - name: Run App quality gate
+      - name: Run App quality gate (includes strict Swift format lint)
         env:
           BILIKIT_DERIVED_DATA_PATH: ${{ runner.temp }}/BiliKitMac-derived
         run: sh Scripts/run-quality-gates.sh app

@@ -81,6 +81,15 @@
 - reviewer 结论冲突或共同导致预算超限时，主 Agent 返回决策价值 Gate；不得把三份意见机械合并成更大的方案。
 - 路径和调用链已经明确时不重复启动 `explorer`；边界很小且主 Agent 可以直接完成时不启动 `worker`。reviewer 优先复用证据包中的验证摘要，只在证据不足或需要独立复现具体失败时运行定点测试，不为形式完整重复全量 Gate。
 
+架构审查是按需视角，不是所有黄区改动的附加仪式。任务确实改变 target 间依赖、owner、
+公共面或迁移责任，修改 Package product／公共 API／Composition root，新增 Repository／
+Use Case／共享组件，触发 ADR 0006 的职责规模审查，迁移可能留下新旧双轨，语义命名
+不再匹配 owner，或准备关闭重要架构 Gate 时，使用独立 `architecture_reviewer`。它沿
+一条代表性产品路径检查依赖方向、类型归属、具体 adapter 可见性、公共面最小性、
+Composition 纯度、抽象真实调用方和迁移完整性。纯机械跨 target 改动、文件长度、
+target 数、覆盖率、命名偏好和对称性只是线索，不能单独成为 blocker。机械格式由
+确定性 lint 负责，不创建 clean-code reviewer。
+
 ## 模型路由与升级
 
 项目配置位于 `.codex/config.toml` 与 `.codex/agents/`。默认主 Agent 为 Sol Medium；子 Agent 按任务的认知难度路由：
@@ -90,6 +99,7 @@
 | `explorer` | Luna Low，只读 | 找符号、入口、依赖、有限调用链和整理日志 | 架构取舍、竞态、安全或生命周期结论 |
 | `worker` | Terra Medium | 按已确认契约实现可独立验证的窄切片 | 改变公共 API、架构、安全边界或验收条件 |
 | `reviewer` | Terra High，只读 | 黄区的契约、失败、取消、测试与维护性审查 | 红区最终签字 |
+| `architecture_reviewer` | Sol High，只读，按需 | 依赖方向、类型归属、公共面、Composition、抽象准入与迁移完整性 | 一般行为审查、红区安全终审、主观样式统一 |
 | `red_reviewer` | Sol High，只读 | 线程、生命周期、认证、安全、播放、renderer、迁移和重要 Gate 终审 | 代替真实探针、长时测量或用户确认 |
 
 满足任一条件时停止当前低成本路线并升级主 Agent 或 `red_reviewer`：
@@ -113,6 +123,12 @@ sh Scripts/run-quality-gates.sh app      # App/Xcode/composition；包含 packag
 ```
 
 每次只运行最高适用模式，不顺序执行 `static → package → app`。风险等级只会追加验证，不会降低基线：所有代码改动至少运行 `package`，涉及 App/Xcode/composition 时运行 `app`。本地 Agent 运行 Gate 时默认使用 `BILIKIT_COMPACT_LOGS=1 sh Scripts/run-quality-gates.sh <mode>`：成功时只输出阶段结果和临时完整日志路径，失败时输出有界日志尾部；完整日志属于临时诊断证据，可能被系统清理。CI 不设置该变量，继续保留完整日志。reviewer 默认读取主 Agent 提供的 Gate 摘要，只在证据不足或需要独立复现时运行定点测试；整改完成后由主 Agent 运行一次最高适用的最终 Gate。
+
+三个统一模式都通过 `Scripts/check-swift-format.sh` 对 App、App Tests／UI Tests、
+Package manifest、Sources 与 Tests 中的 Swift 源码执行根目录 `.swift-format` 的
+strict lint；固定 generator 产生的 `*.pb.swift` 除外。CI 调用同一 App Gate，不维护
+第二套格式规则。格式修复使用相同配置运行 `swift-format format --in-place`，不得通过
+放宽规则、复制配置或只检查 changed files 让既有源码与新代码形成双重标准。
 
 脚本尊重当前 `xcode-select`；只有调用方显式设置时才使用 `DEVELOPER_DIR`。本地 whitespace 检查覆盖 tracked 的 unstaged/staged diff，untracked 文件在暂存后或 CI 的提交范围检查中覆盖。上述命令只证明构建、确定性测试和静态契约。红区任务必须在任务契约中追加具体命令和阈值，例如受控播放探针、弹幕高密度基准、30 分钟 soak、签名 Keychain smoke 或真实 UI 检查。普通 `swift test` 输出保留在 CI；只有难以自动化、以后需要复查的真实设备、网络、性能、安全或兼容性证据才写入 `docs/validation/`。
 

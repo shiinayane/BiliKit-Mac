@@ -72,6 +72,14 @@ Feature target 按产品领域划分，默认先在现有领域内增加纵向�
 - **黄区**：普通 Feature/Use Case、缓存策略、跨文件重构和跨模块公共 API。实现前写明 Goal、Context、Constraints、Done when；非机械改动完成后由不继承实现推理的新上下文做只读审查。
 - **红区**：认证、授权、Keychain、来源与重定向、本地服务器、播放/媒体、线程与资源生命周期、renderer、持久化迁移、文件删除和不可逆变化。新决策或新生产契约必须先通过决策价值 Gate、复杂度预算和用户确认；实现后由 `red_reviewer` 检查失败、安全、所有权、取消、资源上限、清理和 rollback，并增加任务所需的真实证据。
 
+`architecture_reviewer` 不是普通改动的额外必经层。只有任务确实改变 target 间依赖、
+owner、公共面或迁移责任，修改 Package product／公共 API／Composition root，新增
+Repository／Use Case／共享组件，达到 ADR 0006 的职责规模触发线，迁移可能留下新旧
+双轨，语义命名不再匹配 owner，或准备关闭重要架构 Gate 时才按需启动。它检查依赖
+方向、类型归属、公共面和抽象价值；纯机械跨 target 改动、格式、行数、覆盖率与命名
+偏好不能单独成为 blocker。机械代码风格由 `.swift-format` 与统一 Gate 强制，不创建
+主观的 clean-code reviewer。
+
 已绑定用户确认的红区生产契约可以承载语义不变的维护切片；只要 Goal、候选、范围、安全/隐私边界、资源 owner、复杂度预算、停止条件或下一步发生变化，就必须返回完整前置流程。详细的决策 Gate、维护例外、证据包、工作树隔离和 reviewer 输出格式以 [`docs/development/QUALITY-GATES.md`](docs/development/QUALITY-GATES.md) 为准。
 
 项目 Agent 定义及模型配置以 [`.codex/config.toml`](.codex/config.toml) 和 [`.codex/agents/`](.codex/agents/) 为准。出现两种以上合理解释、无法明确不变量/owner/清理点、跨越两个以上 target、涉及红区、测试失败原因不清晰、连续两次修复失败、reviewer 冲突或准备关闭重要 Gate 时必须升级；模型选择、自动测试或用户确认不能互相替代。
