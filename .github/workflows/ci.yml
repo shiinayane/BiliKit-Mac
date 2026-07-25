@@ -50,6 +50,7 @@ jobs:
           sw_vers
           xcodebuild -version
           xcrun swift --version
+          xcrun swift-format --version
 
       - name: Check changed diff whitespace
         if: github.event_name != 'workflow_dispatch'

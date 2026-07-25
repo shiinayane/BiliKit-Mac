@@ -41,6 +41,14 @@ assert_occurrences 1 \
     'run: sh Scripts/run-quality-gates.sh app' \
     "$ci_file" \
     "CI 必须运行统一 App Gate"
+assert_occurrences 1 \
+    'xcrun swift-format --version' \
+    "$ci_file" \
+    "CI 必须记录实际 Swift Format 工具链版本"
+assert_occurrences 1 \
+    'github_summary="${GITHUB_STEP_SUMMARY:-}"' \
+    "$quality_gate_file" \
+    "统一质量 Gate 必须向 GitHub Actions 输出阶段摘要"
 
 /usr/bin/plutil -lint "$entitlements_file" >/dev/null \
     || fail "entitlements 不是有效 plist"

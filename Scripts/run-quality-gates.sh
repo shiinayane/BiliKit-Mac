@@ -25,25 +25,60 @@ if [ "$compact_logs" = "1" ]; then
     echo "[Gate] 精简日志已启用；完整日志：$gate_log_dir"
 fi
 
+github_actions="${GITHUB_ACTIONS:-false}"
+github_summary="${GITHUB_STEP_SUMMARY:-}"
+if [ "$github_actions" = "true" ] && [ -n "$github_summary" ]; then
+    {
+        echo "### BiliKit quality gate"
+        echo
+        echo "| Stage | Result |"
+        echo "| --- | --- |"
+    } >>"$github_summary"
+fi
+
+record_stage_result() {
+    stage="$1"
+    result="$2"
+    if [ "$github_actions" = "true" ] && [ -n "$github_summary" ]; then
+        echo "| \`$stage\` | $result |" >>"$github_summary"
+    fi
+}
+
 run_with_optional_compact_log() {
     stage="$1"
     shift
 
+    if [ "$github_actions" = "true" ]; then
+        echo "::group::$stage"
+    fi
+
     if [ "$compact_logs" = "0" ]; then
-        "$@"
-        return
-    fi
-
-    log_path="$gate_log_dir/$stage.log"
-    if "$@" >"$log_path" 2>&1; then
-        echo "[Gate] $stage 通过；完整日志：$log_path"
-        return
+        if "$@"; then
+            status=0
+        else
+            status=$?
+        fi
     else
-        status=$?
+        log_path="$gate_log_dir/$stage.log"
+        if "$@" >"$log_path" 2>&1; then
+            echo "[Gate] $stage 通过；完整日志：$log_path"
+            status=0
+        else
+            status=$?
+            echo "[Gate] $stage 失败；完整日志：$log_path" >&2
+            tail -n 40 "$log_path" | LC_ALL=C cut -c 1-360 >&2
+        fi
     fi
 
-    echo "[Gate] $stage 失败；完整日志：$log_path" >&2
-    tail -n 40 "$log_path" | cut -c 1-360 >&2
+    if [ "$github_actions" = "true" ]; then
+        echo "::endgroup::"
+    fi
+
+    if [ "$status" -eq 0 ]; then
+        record_stage_result "$stage" "passed"
+    else
+        record_stage_result "$stage" "failed"
+    fi
     return "$status"
 }
 
