@@ -610,7 +610,8 @@ private actor ABAResetSubtitleRepository: SubtitleRepository {
     ) async throws -> [SubtitleTrack] {
         trackRequestCounts[identity, default: 0] += 1
         if identity == repeatedIdentity,
-           trackRequestCounts[identity] == 2 {
+            trackRequestCounts[identity] == 2
+        {
             repeatedReloadBeganBeforeResetCompleted =
                 !staleResetHasCompleted
         }
@@ -643,7 +644,7 @@ private actor ABAResetSubtitleRepository: SubtitleRepository {
         }
 
         guard currentIdentity == identity,
-              generation == requestGeneration
+            generation == requestGeneration
         else {
             throw CancellationError()
         }
@@ -656,7 +657,7 @@ private actor ABAResetSubtitleRepository: SubtitleRepository {
                         ? "初始会话字幕"
                         : "新会话字幕")
                     : "其他视频字幕"
-            ),
+            )
         ]
     }
 
