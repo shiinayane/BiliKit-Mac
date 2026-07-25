@@ -124,7 +124,7 @@ struct AppEnvironment {
             additionalSessionInvalidators: [api]
         )
         return AppEnvironment(
-            repository: BiliGuestRepository(service: api),
+            repository: BiliGuestRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(service: api),
             subtitleRepository: BiliSubtitleRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),

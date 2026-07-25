@@ -1,64 +1,126 @@
 import BiliAPI
 import BiliApplication
-import BiliModels
+import BiliNetworking
+import Foundation
 import Testing
 
 struct BiliGuestRepositoryTests {
-    @Test(arguments: [
-        (BiliAPIError.invalidRequest, GuestApplicationError.invalidRequest),
-        (BiliAPIError.nonJSONResponse, GuestApplicationError.requestRestricted),
-        (BiliAPIError.noAVCVideo, GuestApplicationError.unsupportedMedia),
-        (BiliAPIError.decodingFailed, GuestApplicationError.invalidResponse),
-    ])
-    func mapsAPIErrorAtAdapterBoundary(
-        apiError: BiliAPIError,
-        expected: GuestApplicationError
-    ) async {
+    @Test
+    func mapsInvalidRequestAtAdapterBoundary() async {
         let repository = BiliGuestRepository(
-            service: FailingAPIService(error: apiError)
+            client: BiliAPIClient(transport: UnexpectedTransport())
         )
 
-        await #expect(throws: expected) {
+        await #expect(throws: GuestApplicationError.invalidRequest) {
+            try await repository.popular(page: 0, pageSize: 20)
+        }
+    }
+
+    @Test
+    func mapsRestrictedResponseAtAdapterBoundary() async {
+        let repository = BiliGuestRepository(
+            client: BiliAPIClient(
+                transport: FixedResponseTransport(
+                    response: HTTPResponse(statusCode: 403, body: Data())
+                )
+            )
+        )
+
+        await #expect(throws: GuestApplicationError.requestRestricted) {
             try await repository.popular(page: 1, pageSize: 20)
+        }
+    }
+
+    @Test
+    func mapsMalformedPayloadAtAdapterBoundary() async {
+        let repository = BiliGuestRepository(
+            client: BiliAPIClient(
+                transport: FixedResponseTransport(
+                    response: HTTPResponse(
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"],
+                        body: Data("{".utf8)
+                    )
+                )
+            )
+        )
+
+        await #expect(throws: GuestApplicationError.invalidResponse) {
+            try await repository.popular(page: 1, pageSize: 20)
+        }
+    }
+
+    @Test
+    func mapsUnsupportedPlaybackAtAdapterBoundary() async throws {
+        let fixture = try fixtureResponse("playurl")
+        let body = String(decoding: fixture.body, as: UTF8.self)
+            .replacingOccurrences(of: #""codecid": 7"#, with: #""codecid": 12"#)
+            .replacingOccurrences(of: "avc1.64001f", with: "hev1.1.6.L120.90")
+        let repository = BiliGuestRepository(
+            client: BiliAPIClient(
+                transport: FixedResponseTransport(
+                    response: HTTPResponse(
+                        statusCode: fixture.statusCode,
+                        headers: fixture.headers,
+                        body: Data(body.utf8)
+                    )
+                )
+            )
+        )
+
+        await #expect(throws: GuestApplicationError.unsupportedMedia) {
+            try await repository.playback(
+                for: "BV1FixtureA1",
+                cid: 900_001,
+                quality: 32
+            )
         }
     }
 
     @Test
     func preservesCancellationAtAdapterBoundary() async {
         let repository = BiliGuestRepository(
-            service: FailingAPIService(error: CancellationError())
+            client: BiliAPIClient(transport: CancellationTransport())
         )
 
         await #expect(throws: CancellationError.self) {
             try await repository.popular(page: 1, pageSize: 20)
         }
     }
+
+    private func fixtureResponse(_ name: String) throws -> HTTPResponse {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: name,
+                withExtension: "json",
+                subdirectory: "Fixtures"
+            )
+        )
+        return HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json; charset=utf-8"],
+            body: try Data(contentsOf: url)
+        )
+    }
 }
 
-private struct FailingAPIService: BiliAPIService {
-    let error: any Error & Sendable
+private struct FixedResponseTransport: HTTPTransport {
+    let response: HTTPResponse
 
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        throw error
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        response
     }
+}
 
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        throw error
+private struct CancellationTransport: HTTPTransport {
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        throw CancellationError()
     }
+}
 
-    func videoDetail(for bvid: String) async throws -> VideoDetail {
-        throw error
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        throw error
-    }
-
-    func playback(
-        for bvid: String,
-        cid: Int64,
-        quality: Int
-    ) async throws -> VideoPlayback {
-        throw error
+private struct UnexpectedTransport: HTTPTransport {
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        Issue.record("Invalid input should fail before transport")
+        throw CancellationError()
     }
 }
