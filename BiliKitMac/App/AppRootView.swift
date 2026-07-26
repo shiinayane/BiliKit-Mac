@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  AppRootView.swift
 //  BiliKitMac
 //
 //  Created by shiinayane on 2026/07/21.
@@ -10,26 +10,26 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
-struct ContentView: View {
-    @State private var navigationModel: AppNavigationModel
-    @State private var feedModel: GuestFeedViewModel
+struct AppRootView: View {
+    @State private var navigationCoordinator: AppNavigationCoordinator
+    @State private var browseModel: GuestBrowseViewModel
     @State private var videoModel: GuestVideoViewModel
     @State private var subtitleModel: SubtitleViewModel
     @State private var danmakuModel: DanmakuControlsViewModel
     @State private var authenticationModel: AuthenticationViewModel
     @State private var historyModel: WatchHistoryViewModel
     @State private var isAuthenticationPresented = false
-    @State private var submittedQuery: String?
+    @State private var submittedSearchQuery: String?
     private let playerContent: AnyView
 
     init(environment: AppEnvironment = .live()) {
-        let feedModel = environment.makeFeedViewModel()
+        let browseModel = environment.makeBrowseViewModel()
         let videoModel = environment.makeVideoViewModel()
         let subtitleModel = environment.makeSubtitleViewModel()
         let danmakuModel = environment.makeDanmakuViewModel()
-        let navigationModel = AppNavigationModel(
+        let navigationCoordinator = AppNavigationCoordinator(
             startPlayback: { bvid in
-                videoModel.selectVideo(bvid)
+                videoModel.loadVideo(bvid)
             },
             stopPlayback: {
                 videoModel.reset()
@@ -39,8 +39,8 @@ struct ContentView: View {
         )
 
         self.init(
-            navigationModel: navigationModel,
-            feedModel: feedModel,
+            navigationCoordinator: navigationCoordinator,
+            browseModel: browseModel,
             videoModel: videoModel,
             subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,
@@ -53,8 +53,8 @@ struct ContentView: View {
     }
 
     init(
-        navigationModel: AppNavigationModel,
-        feedModel: GuestFeedViewModel,
+        navigationCoordinator: AppNavigationCoordinator,
+        browseModel: GuestBrowseViewModel,
         videoModel: GuestVideoViewModel,
         subtitleModel: SubtitleViewModel,
         danmakuModel: DanmakuControlsViewModel,
@@ -62,8 +62,8 @@ struct ContentView: View {
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView
     ) {
-        _navigationModel = State(initialValue: navigationModel)
-        _feedModel = State(initialValue: feedModel)
+        _navigationCoordinator = State(initialValue: navigationCoordinator)
+        _browseModel = State(initialValue: browseModel)
         _videoModel = State(initialValue: videoModel)
         _subtitleModel = State(initialValue: subtitleModel)
         _danmakuModel = State(initialValue: danmakuModel)
@@ -74,8 +74,8 @@ struct ContentView: View {
 
     var body: some View {
         AppShellView(
-            navigationModel: navigationModel,
-            feedModel: feedModel,
+            navigationCoordinator: navigationCoordinator,
+            browseModel: browseModel,
             videoModel: videoModel,
             subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,
@@ -83,11 +83,11 @@ struct ContentView: View {
             historyModel: historyModel,
             playerContent: playerContent,
             isAuthenticationPresented: $isAuthenticationPresented,
-            submittedSearchQuery: submittedQuery,
+            submittedSearchQuery: submittedSearchQuery,
             onSubmitSearch: performSearch
         )
-        .task(id: feedTaskID) {
-            await loadFeed(for: feedTaskID)
+        .task(id: browseActivation) {
+            await applyBrowseActivation(for: browseActivation)
         }
         .task {
             authenticationModel.restoreIfNeeded()
@@ -101,64 +101,66 @@ struct ContentView: View {
             historyModel.reset()
             subtitleModel.suspendForAuthentication()
         }
-        .onChange(of: navigationModel.searchQuery) { _, query in
+        .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
                 return
             }
-            submittedQuery = nil
+            submittedSearchQuery = nil
         }
         .onDisappear {
-            navigationModel.closeWindow()
-            feedModel.reset()
+            navigationCoordinator.resetForWindowClosure()
+            browseModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.reset()
         }
     }
 
-    private var normalizedSearchQuery: String {
-        navigationModel.searchQuery
+    private var normalizedSearchDraft: String {
+        navigationCoordinator.searchDraft
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func performSearch() {
-        guard !normalizedSearchQuery.isEmpty else { return }
-        navigationModel.searchQuery = normalizedSearchQuery
-        submittedQuery = normalizedSearchQuery
-        feedModel.search(normalizedSearchQuery)
+        guard !normalizedSearchDraft.isEmpty else { return }
+        navigationCoordinator.searchDraft = normalizedSearchDraft
+        submittedSearchQuery = normalizedSearchDraft
+        browseModel.search(normalizedSearchDraft)
     }
 
-    private var feedTaskID: AppFeedTaskID {
-        switch navigationModel.selectedSection {
+    private var browseActivation: BrowseActivation {
+        switch navigationCoordinator.selectedTab {
         case .popular:
             return .popular
         case .search:
-            return .search(query: submittedQuery)
+            return .search(query: submittedSearchQuery)
         case .history:
-            return .none
+            return .inactive
         }
     }
 
-    private func loadFeed(for intent: AppFeedTaskID) async {
-        switch intent {
+    private func applyBrowseActivation(
+        for activation: BrowseActivation
+    ) async {
+        switch activation {
         case .popular:
-            feedModel.activatePopular(pageSize: 50)
-            await feedModel.waitForCurrentTask()
-        case .search(nil), .none:
-            feedModel.deactivate()
+            browseModel.activatePopular(pageSize: 50)
+            await browseModel.waitForCurrentTask()
+        case .search(nil), .inactive:
+            browseModel.deactivateRoute()
         case .search(.some(let query)):
-            feedModel.activateSearch(query)
-            await feedModel.waitForCurrentTask()
+            browseModel.activateSearch(query)
+            await browseModel.waitForCurrentTask()
         }
     }
 }
 
-private enum AppFeedTaskID: Hashable {
+private enum BrowseActivation: Hashable {
     case popular
     case search(query: String?)
-    case none
+    case inactive
 }
 
 #Preview {
-    ContentView()
+    AppRootView()
 }

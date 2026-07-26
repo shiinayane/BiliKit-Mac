@@ -4,8 +4,8 @@ import BiliLibraryFeature
 import SwiftUI
 
 struct AppShellView: View {
-    let navigationModel: AppNavigationModel
-    let feedModel: GuestFeedViewModel
+    let navigationCoordinator: AppNavigationCoordinator
+    let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
@@ -26,15 +26,15 @@ struct AppShellView: View {
     )
 
     var body: some View {
-        TabView(selection: selectedSectionBinding) {
-            Tab(value: AppSection.search) {
-                sectionNavigation(for: .search) {
-                    SearchPageRoot(
-                        model: feedModel,
-                        query: searchQueryBinding,
-                        submittedQuery: submittedSearchQuery,
+        TabView(selection: selectedTabBinding) {
+            Tab(value: AppTab.search) {
+                tabNavigation(for: .search) {
+                    SearchTabRoot(
+                        model: browseModel,
+                        searchDraft: searchDraftBinding,
+                        submittedSearchQuery: submittedSearchQuery,
                         scrollPosition: $searchScrollPosition,
-                        onSelect: navigationModel.openPlayback,
+                        onSelect: navigationCoordinator.openPlayback,
                         onSubmit: onSubmitSearch
                     )
                 }
@@ -42,25 +42,25 @@ struct AppShellView: View {
                 Label("搜索", systemImage: "magnifyingglass")
             }
 
-            Tab(value: AppSection.popular) {
-                sectionNavigation(for: .popular) {
-                    PopularPageRoot(
-                        model: feedModel,
+            Tab(value: AppTab.popular) {
+                tabNavigation(for: .popular) {
+                    PopularTabRoot(
+                        model: browseModel,
                         scrollPosition: $popularScrollPosition,
-                        onSelect: navigationModel.openPlayback
+                        onSelect: navigationCoordinator.openPlayback
                     )
                 }
             } label: {
                 Label("热门", systemImage: "flame")
             }
 
-            Tab(value: AppSection.history) {
-                sectionNavigation(for: .history) {
-                    HistoryPageRoot(
+            Tab(value: AppTab.history) {
+                tabNavigation(for: .history) {
+                    HistoryTabRoot(
                         model: historyModel,
                         isSignedIn: authenticationModel.isSignedIn,
                         scrollPosition: $historyScrollPosition,
-                        onSelect: navigationModel.openPlayback,
+                        onSelect: navigationCoordinator.openPlayback,
                         onPresentAuthentication: {
                             isAuthenticationPresented = true
                         },
@@ -121,59 +121,59 @@ struct AppShellView: View {
         .accessibilityIdentifier("sidebar.account")
     }
 
-    private func sectionNavigation<Content: View>(
-        for section: AppSection,
+    private func tabNavigation<Content: View>(
+        for tab: AppTab,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        NavigationStack(path: playbackPathBinding(for: section)) {
+        NavigationStack(path: playbackPathBinding(for: tab)) {
             content()
                 .navigationDestination(for: PlaybackDestination.self) { _ in
-                    PlaybackPageRoot(
+                    PlaybackDestinationView(
                         model: videoModel,
                         subtitleModel: subtitleModel,
                         danmakuModel: danmakuModel,
                         playerContent: playerContent,
-                        onRetry: navigationModel.retryPlayback
+                        onRetry: navigationCoordinator.retryPlayback
                     )
                 }
         }
     }
 
-    private var selectedSectionBinding: Binding<AppSection> {
+    private var selectedTabBinding: Binding<AppTab> {
         Binding(
-            get: { navigationModel.selectedSection },
-            set: { navigationModel.selectedSection = $0 }
+            get: { navigationCoordinator.selectedTab },
+            set: { navigationCoordinator.selectedTab = $0 }
         )
     }
 
-    private var searchQueryBinding: Binding<String> {
+    private var searchDraftBinding: Binding<String> {
         Binding(
-            get: { navigationModel.searchQuery },
-            set: { navigationModel.searchQuery = $0 }
+            get: { navigationCoordinator.searchDraft },
+            set: { navigationCoordinator.searchDraft = $0 }
         )
     }
 
     private func playbackPathBinding(
-        for section: AppSection
+        for tab: AppTab
     ) -> Binding<[PlaybackDestination]> {
         Binding(
             get: {
-                navigationModel.selectedSection == section
-                    ? navigationModel.playbackPath
+                navigationCoordinator.selectedTab == tab
+                    ? navigationCoordinator.playbackPath
                     : []
             },
             set: { path in
-                guard navigationModel.selectedSection == section else {
+                guard navigationCoordinator.selectedTab == tab else {
                     return
                 }
-                navigationModel.playbackPath = path
+                navigationCoordinator.playbackPath = path
             }
         )
     }
 }
 
-private struct PopularPageRoot: View {
-    let model: GuestFeedViewModel
+private struct PopularTabRoot: View {
+    let model: GuestBrowseViewModel
     @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
 
@@ -189,10 +189,10 @@ private struct PopularPageRoot: View {
     }
 }
 
-private struct SearchPageRoot: View {
-    let model: GuestFeedViewModel
-    @Binding var query: String
-    let submittedQuery: String?
+private struct SearchTabRoot: View {
+    let model: GuestBrowseViewModel
+    @Binding var searchDraft: String
+    let submittedSearchQuery: String?
     @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
@@ -200,7 +200,7 @@ private struct SearchPageRoot: View {
     var body: some View {
         VideoSearchView(
             model: model,
-            submittedQuery: submittedQuery,
+            submittedSearchQuery: submittedSearchQuery,
             scrollPosition: $scrollPosition,
             onSelect: onSelect
         )
@@ -210,7 +210,7 @@ private struct SearchPageRoot: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 CenteredSearchField(
-                    text: $query,
+                    text: $searchDraft,
                     placeholder: "搜索 B 站视频",
                     onSubmit: onSubmit
                 )
@@ -221,7 +221,7 @@ private struct SearchPageRoot: View {
     }
 }
 
-private struct HistoryPageRoot: View {
+private struct HistoryTabRoot: View {
     let model: WatchHistoryViewModel
     let isSignedIn: Bool
     @Binding var scrollPosition: ScrollPosition
@@ -284,7 +284,7 @@ struct HistoryRefreshButton: View {
     }
 }
 
-private struct PlaybackPageRoot: View {
+private struct PlaybackDestinationView: View {
     @Environment(\.dismiss) private var dismiss
 
     let model: GuestVideoViewModel
@@ -294,7 +294,7 @@ private struct PlaybackPageRoot: View {
     let onRetry: () -> Void
 
     var body: some View {
-        VideoDetailColumn(
+        VideoPlaybackView(
             model: model,
             subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,

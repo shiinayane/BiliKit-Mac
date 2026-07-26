@@ -2,19 +2,19 @@ import Testing
 
 @testable import BiliKit
 
-struct AppNavigationModelTests {
+struct AppNavigationCoordinatorTests {
     @Test
     @MainActor
-    func playbackReturnAndSecondSelectionHaveOneSideEffectOwner() {
+    func playbackReturnAndSecondPlaybackHaveOneSideEffectOwner() {
         var events: [String] = []
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0)") },
             stopPlayback: { events.append("stop") }
         )
 
-        model.openPlayback("BV1RouteA")
-        model.playbackPath.removeLast()
-        model.openPlayback("BV1RouteB")
+        coordinator.openPlayback("BV1RouteA")
+        coordinator.playbackPath.removeLast()
+        coordinator.openPlayback("BV1RouteB")
 
         #expect(
             events == [
@@ -24,7 +24,7 @@ struct AppNavigationModelTests {
             ]
         )
         #expect(
-            model.playbackPath == [
+            coordinator.playbackPath == [
                 PlaybackDestination(bvid: "BV1RouteB")
             ]
         )
@@ -35,19 +35,19 @@ struct AppNavigationModelTests {
     func returnRestoresSearchSourceAndQueryWithoutRestartingPlayback() {
         var startCount = 0
         var stopCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in startCount += 1 },
             stopPlayback: { stopCount += 1 }
         )
-        model.selectedSection = .search
-        model.searchQuery = "手写搜索词"
+        coordinator.selectedTab = .search
+        coordinator.searchDraft = "手写搜索词"
 
-        model.openPlayback("BV1SearchA")
-        model.playbackPath.removeLast()
+        coordinator.openPlayback("BV1SearchA")
+        coordinator.playbackPath.removeLast()
 
-        #expect(model.selectedSection == .search)
-        #expect(model.playbackPath.isEmpty)
-        #expect(model.searchQuery == "手写搜索词")
+        #expect(coordinator.selectedTab == .search)
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.searchDraft == "手写搜索词")
         #expect(startCount == 1)
         #expect(stopCount == 1)
     }
@@ -56,48 +56,48 @@ struct AppNavigationModelTests {
     @MainActor
     func closingWindowStopsPlaybackOnceAndResetsNativeNavigation() {
         var stopCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
 
-        model.openPlayback("BV1CloseA")
-        model.closeWindow()
-        model.closeWindow()
+        coordinator.openPlayback("BV1CloseA")
+        coordinator.resetForWindowClosure()
+        coordinator.resetForWindowClosure()
 
         #expect(stopCount == 1)
-        #expect(model.selectedSection == .popular)
-        #expect(model.playbackPath.isEmpty)
+        #expect(coordinator.selectedTab == .popular)
+        #expect(coordinator.playbackPath.isEmpty)
     }
 
     @Test
     @MainActor
-    func selectingAnotherSidebarSectionPopsPlaybackAndStopsOnce() {
+    func selectingAnotherTabPopsPlaybackAndStopsOnce() {
         var stopCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
 
-        model.openPlayback("BV1SidebarA")
-        model.selectedSection = .search
+        coordinator.openPlayback("BV1SidebarA")
+        coordinator.selectedTab = .search
 
         #expect(stopCount == 1)
-        #expect(model.selectedSection == .search)
-        #expect(model.playbackPath.isEmpty)
+        #expect(coordinator.selectedTab == .search)
+        #expect(coordinator.playbackPath.isEmpty)
     }
 
     @Test
     @MainActor
     func reopeningCurrentPlaybackDoesNotDuplicateLoad() {
         var startCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in startCount += 1 },
             stopPlayback: {}
         )
 
-        model.openPlayback("BV1SameA")
-        model.openPlayback("BV1SameA")
+        coordinator.openPlayback("BV1SameA")
+        coordinator.openPlayback("BV1SameA")
 
         #expect(startCount == 1)
     }
@@ -106,13 +106,13 @@ struct AppNavigationModelTests {
     @MainActor
     func playbackRetryUsesTheAppOwnerWithoutChangingPath() {
         var events: [String] = []
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0)") },
             stopPlayback: { events.append("stop") }
         )
 
-        model.openPlayback("BV1RetryA")
-        model.retryPlayback()
+        coordinator.openPlayback("BV1RetryA")
+        coordinator.retryPlayback()
 
         #expect(
             events == [
@@ -121,7 +121,7 @@ struct AppNavigationModelTests {
             ]
         )
         #expect(
-            model.playbackPath == [
+            coordinator.playbackPath == [
                 PlaybackDestination(bvid: "BV1RetryA")
             ]
         )
@@ -129,21 +129,21 @@ struct AppNavigationModelTests {
 
     @Test
     @MainActor
-    func historySelectionRemainsTheSourceWhilePlaybackIsPushed() {
+    func historyTabRemainsTheSourceWhilePlaybackIsPushed() {
         var stopCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
-        model.selectedSection = .history
-        model.openPlayback("BV1HistoryA")
+        coordinator.selectedTab = .history
+        coordinator.openPlayback("BV1HistoryA")
 
         #expect(
-            model.playbackPath == [
+            coordinator.playbackPath == [
                 PlaybackDestination(bvid: "BV1HistoryA")
             ]
         )
-        #expect(model.selectedSection == .history)
+        #expect(coordinator.selectedTab == .history)
         #expect(stopCount == 0)
     }
 
@@ -151,16 +151,16 @@ struct AppNavigationModelTests {
     @MainActor
     func nativePathPopStopsPlaybackExactlyOnce() {
         var stopCount = 0
-        let model = AppNavigationModel(
+        let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
-        model.openPlayback("BV1NativeBack")
+        coordinator.openPlayback("BV1NativeBack")
 
-        model.playbackPath.removeLast()
-        model.playbackPath.removeAll()
+        coordinator.playbackPath.removeLast()
+        coordinator.playbackPath.removeAll()
 
         #expect(stopCount == 1)
-        #expect(model.playbackPath.isEmpty)
+        #expect(coordinator.playbackPath.isEmpty)
     }
 }
