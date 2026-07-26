@@ -59,7 +59,6 @@ private actor SearchProbeTransport: HTTPTransport {
 }
 
 private struct M4ContractProbe {
-    private static let catalogLimit = 1 * 1_024 * 1_024
     private static let danmakuViewLimit = 256 * 1_024
     private static let danmakuSegmentLimit = 2 * 1_024 * 1_024
 
@@ -81,17 +80,6 @@ private struct M4ContractProbe {
 
     func run(bvid: String, cid: Int64) async throws {
         let referer = "https://www.bilibili.com/video/\(bvid)"
-        let catalog = try await request(
-            path: "/x/player/v2",
-            queryItems: [
-                URLQueryItem(name: "bvid", value: bvid),
-                URLQueryItem(name: "cid", value: String(cid)),
-            ],
-            accept: "application/json",
-            referer: referer
-        )
-        try observeCatalog(catalog)
-
         let view = try await request(
             path: "/x/v2/dm/web/view",
             queryItems: [
@@ -148,36 +136,6 @@ private struct M4ContractProbe {
         )
     }
 
-    private func observeCatalog(_ response: HTTPResponse) throws {
-        guard response.statusCode == 200 else { throw ProbeError.unexpectedStatus }
-        guard response.body.count <= Self.catalogLimit else {
-            throw ProbeError.responseTooLarge
-        }
-        guard contentType(response).contains("json") else {
-            throw ProbeError.unexpectedContentType
-        }
-        guard
-            let envelope = try JSONSerialization.jsonObject(
-                with: response.body
-            ) as? [String: Any],
-            envelope["code"] as? Int == 0,
-            let data = envelope["data"] as? [String: Any],
-            let subtitle = data["subtitle"] as? [String: Any],
-            let tracks = subtitle["subtitles"] as? [[String: Any]]
-        else {
-            throw ProbeError.invalidJSONShape
-        }
-        let fields =
-            tracks.first.map { $0.keys.sorted().joined(separator: ",") }
-            ?? "none"
-        let needsLogin = data["need_login_subtitle"] as? Bool ?? false
-        print(
-            "contract=subtitle-catalog status=200 content-type=json "
-                + "bytes=\(response.body.count) tracks=\(tracks.count) "
-                + "needs-login=\(needsLogin) track-fields=\(fields)"
-        )
-    }
-
     private func observeBinary(
         _ response: HTTPResponse,
         name: String,
@@ -219,7 +177,6 @@ private enum ProbeError: String, Error {
     case unexpectedStatus = "unexpected-status"
     case responseTooLarge = "response-too-large"
     case unexpectedContentType = "unexpected-content-type"
-    case invalidJSONShape = "invalid-json-shape"
     case emptyResponse = "empty-response"
     case unexpectedBodyClass = "unexpected-body-class"
 }

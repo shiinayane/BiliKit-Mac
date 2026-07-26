@@ -1,5 +1,9 @@
 # M4 协议与隐私 Gate——2026-07-22
 
+> 2026-07-26 更新：本文保留 2026-07-22 对旧 `/x/player/v2` 的历史观察。
+> 当前生产字幕目录已迁移到 WBI 签名的 `/x/player/wbi/v2`，旧路径不再位于认证
+> allowlist；签名生产探针是当前远端兼容性入口。
+
 ## 当前结论
 
 M4.0 Gate 已通过，允许进入 M4.1 统一播放时间轴。
@@ -30,8 +34,8 @@ M4.0 Gate 已通过，允许进入 M4.1 统一播放时间轴。
 
 ## 已固定的本地材料
 
-- `BiliAPIProbe --m4-contract --bvid <BVID> --cid <CID>`：只输出 path 对应的结构分类、状态、Content-Type、字节数、轨道计数和字段名。
-- `M4AuthenticatedContractProbeTests`：仅在显式提供环境变量时运行于签名 App 测试宿主；通过 `BiliAuth` 的精确 `/x/player/v2` allowlist 使用现有登录凭据，只输出字幕主机、字段名、计数和大小。普通 CI 与无参数 App 测试会跳过，不自动访问网络或 Keychain。
+- `BiliAPIProbe --m4-contract --bvid <BVID> --cid <CID>`：当前只保留匿名弹幕二进制 contract；旧的匿名字幕目录观察已随 `/x/player/v2` 退役删除。
+- `M4AuthenticatedContractProbeTests`：仅在显式提供环境变量时运行于签名 App 测试宿主；当前通过生产 composition 的 WBI 字幕目录链路使用现有登录凭据，只输出轨道数和 decoder 状态。普通 CI 与无参数 App 测试会跳过，不自动访问网络或 Keychain。
 - `BiliAPITests/Fixtures/subtitle-catalog.json` 与 `subtitle-body.json`：手写目录和 cue。
 - `danmaku-segment-minimal.hex` 与 `danmaku-segment-truncated.hex`：自制最小 wire 输入和截断输入。
 - `m4-error.json` 与 `m4-error.html`：错误响应失败关闭输入。

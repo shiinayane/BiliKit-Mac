@@ -18,7 +18,7 @@ M4.2 Gate 已通过，可以进入 M4.3 弹幕数据与调度内核。生产实�
 
 - `BiliModels` 只公开字幕轨类型、轨道元数据和 cue；不包含 endpoint DTO、URL、Cookie 或网络错误正文。
 - `BiliApplication` 定义目录、正文、reset port 和用途明确的应用错误；Use Case 校验播放 identity 与轨道归属。
-- `BiliAPI` 通过已授权的 `/x/player/v2` 获取目录，并在 actor 内保存当前 identity 对应的轨道 ID→URL 映射；URL 不跨出 adapter。
+- `BiliAPI` 当前通过 WBI 签名并已授权的 `/x/player/wbi/v2` 获取目录，并在 actor 内保存当前 identity 对应的轨道 ID→URL 映射；URL 不跨出 adapter。初始实现使用的 `/x/player/v2` 已在 2026-07-26 被取代。
 - 字幕正文使用独立 ephemeral session，禁用 Cookie jar 和缓存，并拒绝重定向。来源策略只接受 HTTPS、443、无 userinfo/fragment、精确主机 `aisubtitle.hdslb.com` 和 `/bfs/` 路径前缀。
 - 真实目录可能把空字符串 `subtitle_url` 作为不可用占位轨；decoder 忽略该条目并继续寻找可用轨。非空但畸形或来源不可信的 URL 仍使目录失败关闭。
 - 目录上限 1 MiB、正文上限 2 MiB；两者均要求 JSON Content-Type。HTML、JSON 错误 envelope、空或未知结构不会降级解析。
