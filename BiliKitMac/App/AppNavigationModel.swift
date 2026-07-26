@@ -6,22 +6,24 @@ enum AppSection: Hashable {
     case history
 }
 
-enum AppRoute: Hashable {
-    case section(AppSection)
-    case playback(bvid: String)
-}
-
-struct AppReturnSnapshot: Equatable {
-    let sourceSection: AppSection
-    let searchQuery: String
-    let selectedBVID: String
+struct PlaybackDestination: Hashable {
+    let bvid: String
 }
 
 @MainActor
 @Observable
 final class AppNavigationModel {
-    private(set) var route: AppRoute = .section(.popular)
-    private(set) var returnSnapshot: AppReturnSnapshot?
+    var selectedSection: AppSection = .popular {
+        didSet {
+            guard selectedSection != oldValue else { return }
+            playbackPath.removeAll()
+        }
+    }
+    var playbackPath: [PlaybackDestination] = [] {
+        didSet {
+            reconcilePlayback(from: oldValue, to: playbackPath)
+        }
+    }
     var searchQuery = ""
 
     @ObservationIgnored private let startPlayback: (String) -> Void
@@ -35,70 +37,35 @@ final class AppNavigationModel {
         self.stopPlayback = stopPlayback
     }
 
-    var selectedSection: AppSection? {
-        get {
-            guard case .section(let section) = route else { return nil }
-            return section
-        }
-        set {
-            guard let newValue else { return }
-            selectSection(newValue)
-        }
-    }
-
-    func selectSection(_ section: AppSection) {
-        if case .playback = route {
-            stopPlayback()
-        }
-        route = .section(section)
-        returnSnapshot = nil
-    }
-
     func openPlayback(_ bvid: String) {
         guard !bvid.isEmpty else { return }
-        switch route {
-        case .section(let section):
-            returnSnapshot = AppReturnSnapshot(
-                sourceSection: section,
-                searchQuery: searchQuery,
-                selectedBVID: bvid
-            )
-        case .playback(let currentBVID):
-            guard currentBVID != bvid else { return }
-            stopPlayback()
-        }
-        route = .playback(bvid: bvid)
-        startPlayback(bvid)
-    }
-
-    func returnFromPlayback() {
-        guard case .playback = route else { return }
-        stopPlayback()
-        if let returnSnapshot {
-            searchQuery = returnSnapshot.searchQuery
-            route = .section(returnSnapshot.sourceSection)
-        } else {
-            route = .section(.popular)
-        }
+        playbackPath = [PlaybackDestination(bvid: bvid)]
     }
 
     func retryPlayback() {
-        guard case .playback(let bvid) = route else { return }
+        guard let bvid = playbackPath.last?.bvid else { return }
         startPlayback(bvid)
     }
 
-    func authenticationDidBecomeSignedOut() {
-        if returnSnapshot?.sourceSection == .history {
-            returnSnapshot = nil
-        }
+    func closeWindow() {
+        playbackPath.removeAll()
+        selectedSection = .popular
+        searchQuery = ""
     }
 
-    func closeWindow() {
-        if case .playback = route {
+    private func reconcilePlayback(
+        from oldPath: [PlaybackDestination],
+        to newPath: [PlaybackDestination]
+    ) {
+        let oldDestination = oldPath.last
+        let newDestination = newPath.last
+        guard oldDestination != newDestination else { return }
+
+        if oldDestination != nil {
             stopPlayback()
         }
-        route = .section(.popular)
-        returnSnapshot = nil
-        searchQuery = ""
+        if let newDestination {
+            startPlayback(newDestination.bvid)
+        }
     }
 }

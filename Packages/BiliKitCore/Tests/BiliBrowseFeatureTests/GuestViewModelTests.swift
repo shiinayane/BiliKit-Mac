@@ -124,7 +124,7 @@ struct GuestViewModelTests {
                 )
         )
 
-        model.retry()
+        model.retry(.search(query: "macOS", page: 2))
         await model.waitForCurrentTask()
         #expect(
             model.state
@@ -141,6 +141,102 @@ struct GuestViewModelTests {
                     )
                 )
         )
+    }
+
+    @Test
+    @MainActor
+    func tabRoundTripReusesPopularAndSearchSnapshotsWithoutNewRequests() async {
+        let fixture = GuestFixtures()
+        let repository = SnapshotRepositoryStub(fixtures: fixture)
+        let model = GuestFeedViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let searchRequest = GuestFeedRequest.search(query: "macOS", page: 1)
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+
+        model.activateSearch("macOS")
+        await model.waitForCurrentTask()
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+
+        #expect(await repository.popularCallCount == 1)
+        #expect(await repository.searchCallCount == 1)
+        #expect(
+            model.presentation(for: searchRequest).state
+                == .loaded(
+                    .search(
+                        query: "macOS",
+                        page: SearchPage(
+                            videos: [fixture.searchVideo],
+                            pageNumber: 1,
+                            pageSize: 20,
+                            totalResults: 1,
+                            totalPages: 1
+                        )
+                    )
+                )
+        )
+        #expect(
+            model.state
+                == .loaded(
+                    .popular(
+                        PopularPage(
+                            videos: [fixture.popularVideo],
+                            pageNumber: 1,
+                            pageSize: 50
+                        )
+                    )
+                )
+        )
+    }
+
+    @Test
+    @MainActor
+    func failedRefreshKeepsMatchingLoadedContentVisible() async {
+        let fixture = GuestFixtures()
+        let repository = SnapshotRepositoryStub(fixtures: fixture)
+        let model = GuestFeedViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        let loadedState = model.state
+        await repository.failNextPopularRequest()
+
+        model.loadPopular(pageSize: 50)
+        #expect(model.state == loadedState)
+        #expect(model.isRefreshing)
+        await model.waitForCurrentTask()
+
+        #expect(model.state == loadedState)
+        #expect(!model.isRefreshing)
+        #expect(model.refreshError == .requestRestricted)
+        #expect(await repository.popularCallCount == 2)
+    }
+
+    @Test
+    @MainActor
+    func resetClearsWorksetsAndRequiresANewLoad() async {
+        let fixture = GuestFixtures()
+        let repository = SnapshotRepositoryStub(fixtures: fixture)
+        let model = GuestFeedViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        model.reset()
+
+        #expect(
+            model.presentation(
+                for: .popular(page: 1, pageSize: 50)
+            ).state == .idle
+        )
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        #expect(await repository.popularCallCount == 2)
     }
 
     @Test
@@ -230,6 +326,61 @@ struct GuestViewModelTests {
                 fast.detail.bvid
             ) == true
         )
+    }
+}
+
+private actor SnapshotRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    private(set) var popularCallCount = 0
+    private(set) var searchCallCount = 0
+    private var shouldFailNextPopular = false
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        popularCallCount += 1
+        if shouldFailNextPopular {
+            shouldFailNextPopular = false
+            throw GuestApplicationError.requestRestricted
+        }
+        return PopularPage(
+            videos: [fixtures.popularVideo],
+            pageNumber: page,
+            pageSize: pageSize
+        )
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        searchCallCount += 1
+        return SearchPage(
+            videos: [fixtures.searchVideo],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 1,
+            totalPages: 1
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [fixtures.page]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64,
+        quality: Int
+    ) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+
+    func failNextPopularRequest() {
+        shouldFailNextPopular = true
     }
 }
 

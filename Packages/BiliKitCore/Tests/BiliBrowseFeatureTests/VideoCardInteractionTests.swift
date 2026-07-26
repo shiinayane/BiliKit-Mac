@@ -14,10 +14,9 @@ struct VideoCardInteractionTests {
     }
 
     @Test
-    func hoverSelectionAndFocusExposeStableEmphasis() {
+    func hoverAndFocusExposeStableEmphasis() {
         for state in [
             state(isHovered: true),
-            state(isSelected: true),
             state(isFocused: true),
         ] {
             let appearance = VideoCardInteractionPolicy.appearance(for: state)
@@ -45,10 +44,10 @@ struct VideoCardInteractionTests {
     @Test
     func increasedContrastStrengthensTheSameOutline() {
         let standard = VideoCardInteractionPolicy.appearance(
-            for: state(isSelected: true)
+            for: state(isFocused: true)
         )
         let increased = VideoCardInteractionPolicy.appearance(
-            for: state(isSelected: true, increasedContrast: true)
+            for: state(isFocused: true, increasedContrast: true)
         )
 
         #expect(increased.strokeWidth > standard.strokeWidth)
@@ -58,7 +57,6 @@ struct VideoCardInteractionTests {
     private func state(
         isHovered: Bool = false,
         isPressed: Bool = false,
-        isSelected: Bool = false,
         isFocused: Bool = false,
         increasedContrast: Bool = false,
         reduceMotion: Bool = false
@@ -66,7 +64,6 @@ struct VideoCardInteractionTests {
         VideoCardInteractionState(
             isHovered: isHovered,
             isPressed: isPressed,
-            isSelected: isSelected,
             isFocused: isFocused,
             increasedContrast: increasedContrast,
             reduceMotion: reduceMotion

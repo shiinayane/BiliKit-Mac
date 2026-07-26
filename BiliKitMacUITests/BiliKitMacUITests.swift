@@ -19,7 +19,7 @@ final class BiliKitMacUITests: XCTestCase {
         let feedGrid = element("feed.grid", in: app)
         XCTAssertTrue(feedGrid.waitForExistence(timeout: 5))
 
-        element("sidebar.search", in: app).click()
+        sidebarTab("搜索", in: app).click()
         let searchField = element("search.field", in: app)
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.click()
@@ -44,7 +44,7 @@ final class BiliKitMacUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        element("sidebar.history", in: app).click()
+        sidebarTab("观看历史", in: app).click()
         XCTAssertTrue(
             element("history.signed-out", in: app)
                 .waitForExistence(timeout: 5)
@@ -130,5 +130,16 @@ final class BiliKitMacUITests: XCTestCase {
         in app: XCUIApplication
     ) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
+    }
+
+    @MainActor
+    private func sidebarTab(
+        _ label: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        app.outlines["Sidebar"]
+            .descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
     }
 }

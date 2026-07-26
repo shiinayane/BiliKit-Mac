@@ -1,18 +1,23 @@
+import BiliApplication
+import BiliModels
 import BiliUI
 import SwiftUI
 
 public struct VideoSearchView: View {
     private let model: GuestFeedViewModel
-    private let selectedBVID: String?
+    private let submittedQuery: String?
+    @Binding private var scrollPosition: ScrollPosition
     private let onSelect: (String) -> Void
 
     public init(
         model: GuestFeedViewModel,
-        selectedBVID: String? = nil,
+        submittedQuery: String?,
+        scrollPosition: Binding<ScrollPosition>,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
-        self.selectedBVID = selectedBVID
+        self.submittedQuery = submittedQuery
+        _scrollPosition = scrollPosition
         self.onSelect = onSelect
     }
 
@@ -22,8 +27,23 @@ public struct VideoSearchView: View {
 
     @ViewBuilder
     private var results: some View {
-        switch model.state {
-        case .loading(.search(let query, _)):
+        if let submittedQuery {
+            let request = GuestFeedRequest.search(
+                query: submittedQuery,
+                page: 1
+            )
+            searchResults(for: request)
+        } else {
+            searchPrompt
+        }
+    }
+
+    @ViewBuilder
+    private func searchResults(for request: GuestFeedRequest) -> some View {
+        let presentation = model.presentation(for: request)
+        switch presentation.state {
+        case .idle, .loading:
+            let query = request.searchQuery ?? ""
             ProgressView("正在搜索“\(query)”…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("search.loading")
@@ -42,60 +62,122 @@ public struct VideoSearchView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
 
-                GeometryReader { geometry in
-                    ScrollView {
-                        LazyVGrid(
-                            columns: VideoCardGridLayout.columns(
-                                for: geometry.size.width
-                            ),
-                            alignment: .leading,
-                            spacing: VideoCardGridLayout.verticalSpacing
-                        ) {
-                            ForEach(page.videos) { video in
-                                Button {
-                                    onSelect(video.bvid)
-                                } label: {
-                                    GuestVideoCard(
-                                        video: video,
-                                        isSelected: selectedBVID == video.bvid
-                                    )
-                                }
-                                .buttonStyle(
-                                    VideoCardButtonStyle(
-                                        isSelected:
-                                            selectedBVID == video.bvid
-                                    )
-                                )
-                                .accessibilityHint("播放视频")
-                                .accessibilityIdentifier(
-                                    "search.item.\(video.bvid)"
-                                )
-                            }
-                        }
-                        .padding(VideoCardGridLayout.contentPadding)
-                    }
-                    .accessibilityIdentifier("search.grid")
-                    .refreshable {
-                        model.search(query, page: page.pageNumber)
-                        await model.waitForCurrentTask()
-                    }
-                }
+                SearchResultsGrid(
+                    model: model,
+                    query: query,
+                    page: page,
+                    scrollPosition: $scrollPosition,
+                    onSelect: onSelect
+                )
             }
             .accessibilityIdentifier("search.results")
         case .failed(request: .search(_, _), let error):
             BrowseFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
-                retry: model.retry
+                retry: { model.retry(request) }
             )
             .accessibilityIdentifier("search.failure")
         default:
-            ContentUnavailableView(
-                "搜索视频",
-                systemImage: "magnifyingglass",
-                description: Text("输入关键词后按下 Return 或点击搜索。")
-            )
-            .accessibilityIdentifier("search.prompt")
+            searchPrompt
+        }
+    }
+
+    private var searchPrompt: some View {
+        ContentUnavailableView(
+            "搜索视频",
+            systemImage: "magnifyingglass",
+            description: Text("输入关键词后按下 Return 或点击搜索。")
+        )
+        .accessibilityIdentifier("search.prompt")
+    }
+}
+
+extension GuestFeedRequest {
+    fileprivate var searchQuery: String? {
+        guard case .search(let query, _) = self else { return nil }
+        return query
+    }
+}
+
+private struct SearchResultsGrid: View {
+    let model: GuestFeedViewModel
+    let query: String
+    let page: SearchPage
+    @Binding var scrollPosition: ScrollPosition
+    let onSelect: (String) -> Void
+    let request: GuestFeedRequest
+
+    init(
+        model: GuestFeedViewModel,
+        query: String,
+        page: SearchPage,
+        scrollPosition: Binding<ScrollPosition>,
+        onSelect: @escaping (String) -> Void
+    ) {
+        let request = GuestFeedRequest.search(
+            query: query,
+            page: page.pageNumber
+        )
+        self.model = model
+        self.query = query
+        self.page = page
+        _scrollPosition = scrollPosition
+        self.onSelect = onSelect
+        self.request = request
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                LazyVGrid(
+                    columns: VideoCardGridLayout.columns(
+                        for: geometry.size.width
+                    ),
+                    alignment: .leading,
+                    spacing: VideoCardGridLayout.verticalSpacing
+                ) {
+                    ForEach(page.videos) { video in
+                        Button {
+                            onSelect(video.bvid)
+                        } label: {
+                            GuestVideoCard(video: video)
+                        }
+                        .buttonStyle(VideoCardButtonStyle())
+                        .accessibilityHint("播放视频")
+                        .accessibilityIdentifier("search.item.\(video.bvid)")
+                    }
+                }
+                .padding(VideoCardGridLayout.contentPadding)
+                .scrollTargetLayout()
+            }
+            .scrollPosition($scrollPosition)
+            .accessibilityIdentifier("search.grid")
+            .refreshable {
+                model.search(query, page: page.pageNumber)
+                await model.waitForCurrentTask()
+            }
+            .overlay(alignment: .top) {
+                refreshStatus
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var refreshStatus: some View {
+        let presentation = model.presentation(for: request)
+        if presentation.isRefreshing {
+            ProgressView()
+                .controlSize(.small)
+                .padding(8)
+                .background(.regularMaterial, in: Capsule())
+                .accessibilityLabel("正在刷新搜索结果")
+        } else if let error = presentation.refreshError {
+            Text(error.guestMessage)
+                .font(.caption)
+                .padding(8)
+                .background(.regularMaterial, in: Capsule())
+                .accessibilityIdentifier("search.refresh-failure")
         }
     }
 }

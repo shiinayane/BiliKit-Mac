@@ -12,9 +12,8 @@ struct GuestVideoCard: View {
     private let danmakuCount: Int64
     private let durationSeconds: Int?
     private let publishedAt: Date
-    private let isSelected: Bool
 
-    init(video: PopularVideo, isSelected: Bool) {
+    init(video: PopularVideo) {
         title = video.title
         coverURL = Self.optimizedBiliImageURL(
             video.coverURL,
@@ -31,10 +30,9 @@ struct GuestVideoCard: View {
         danmakuCount = video.statistics.danmakuCount
         durationSeconds = video.durationSeconds
         publishedAt = video.publishedAt
-        self.isSelected = isSelected
     }
 
-    init(video: SearchVideo, isSelected: Bool) {
+    init(video: SearchVideo) {
         title = video.title
         coverURL = Self.optimizedBiliImageURL(
             video.coverURL,
@@ -51,7 +49,6 @@ struct GuestVideoCard: View {
         danmakuCount = video.statistics.danmakuCount
         durationSeconds = video.durationSeconds
         publishedAt = video.publishedAt
-        self.isSelected = isSelected
     }
 
     var body: some View {
@@ -72,8 +69,7 @@ struct GuestVideoCard: View {
             ],
             coverTrailingText: durationSeconds.map(Self.duration),
             footerLeadingText: "\(ownerName) · "
-                + VideoMetadataFormatting.publishedDate(publishedAt),
-            isSelected: isSelected
+                + VideoMetadataFormatting.publishedDate(publishedAt)
         )
     }
 

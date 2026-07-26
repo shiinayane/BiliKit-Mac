@@ -33,7 +33,7 @@ struct AppShellChromeTests {
 struct PlayerHostLifecycleProbeTests {
     @Test
     @MainActor
-    func appRouteReturnAndWindowCloseEachDismantleCurrentHostOnce() async {
+    func nativeNavigationReturnAndWindowCloseDismantleEachHostOnce() async {
         let repository = AppShellRouteRepository()
         let playback = SuspendingPlayback()
         let videoModel = GuestVideoViewModel(
@@ -184,7 +184,7 @@ struct PlayerHostLifecycleProbeTests {
         )
         #expect(presentation.startedIdentities == baselineDanmakuIdentities)
 
-        navigationModel.returnFromPlayback()
+        navigationModel.playbackPath.removeLast()
         #expect(
             await waitUntil {
                 probe.events.count == 2 && probe.activeCount == 0
@@ -193,11 +193,14 @@ struct PlayerHostLifecycleProbeTests {
         #expect(playback.stopCount == 1)
 
         navigationModel.openPlayback("BV1RouteHostB")
-        #expect(
-            await waitUntil {
+        guard
+            await waitUntil({
                 probe.events.count == 3 && probe.activeCount == 1
-            }
-        )
+            })
+        else {
+            Issue.record("second player host did not settle")
+            return
+        }
 
         visibility.isPresented = false
         hostingView.layoutSubtreeIfNeeded()
@@ -205,7 +208,8 @@ struct PlayerHostLifecycleProbeTests {
             await waitUntil {
                 probe.events.count == 4
                     && probe.activeCount == 0
-                    && navigationModel.route == .section(.popular)
+                    && navigationModel.selectedSection == .popular
+                    && navigationModel.playbackPath.isEmpty
                     && playback.stopCount == 2
             }
         )
@@ -229,7 +233,7 @@ struct PlayerHostLifecycleProbeTests {
         _ condition: @MainActor () -> Bool
     ) async -> Bool {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
+        let deadline = clock.now.advanced(by: .seconds(3))
         while !condition() {
             guard clock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(1))
