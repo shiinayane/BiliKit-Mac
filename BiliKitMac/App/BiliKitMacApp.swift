@@ -19,10 +19,10 @@ struct BiliKitMacApp: App {
                 if uiTestConfiguration.isEnabled {
                     UITestConfiguredRoot(configuration: uiTestConfiguration)
                 } else {
-                    ContentView()
+                    AppRootView()
                 }
             #else
-                ContentView()
+                AppRootView()
             #endif
         }
         #if DEBUG

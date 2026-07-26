@@ -1,6 +1,6 @@
 import Observation
 
-enum AppSection: Hashable {
+enum AppTab: Hashable {
     case search
     case popular
     case history
@@ -12,10 +12,10 @@ struct PlaybackDestination: Hashable {
 
 @MainActor
 @Observable
-final class AppNavigationModel {
-    var selectedSection: AppSection = .popular {
+final class AppNavigationCoordinator {
+    var selectedTab: AppTab = .popular {
         didSet {
-            guard selectedSection != oldValue else { return }
+            guard selectedTab != oldValue else { return }
             playbackPath.removeAll()
         }
     }
@@ -24,7 +24,7 @@ final class AppNavigationModel {
             reconcilePlayback(from: oldValue, to: playbackPath)
         }
     }
-    var searchQuery = ""
+    var searchDraft = ""
 
     @ObservationIgnored private let startPlayback: (String) -> Void
     @ObservationIgnored private let stopPlayback: () -> Void
@@ -47,10 +47,10 @@ final class AppNavigationModel {
         startPlayback(bvid)
     }
 
-    func closeWindow() {
+    func resetForWindowClosure() {
         playbackPath.removeAll()
-        selectedSection = .popular
-        searchQuery = ""
+        selectedTab = .popular
+        searchDraft = ""
     }
 
     private func reconcilePlayback(
