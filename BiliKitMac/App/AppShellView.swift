@@ -13,103 +13,133 @@ struct AppShellView: View {
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
     @Binding var isAuthenticationPresented: Bool
+    let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
+    @State private var popularScrollPosition = ScrollPosition(
+        idType: String.self
+    )
+    @State private var searchScrollPosition = ScrollPosition(
+        idType: String.self
+    )
+    @State private var historyScrollPosition = ScrollPosition(
+        idType: String.self
+    )
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            routeContent
+        TabView(selection: selectedSectionBinding) {
+            Tab(value: AppSection.search) {
+                sectionNavigation(for: .search) {
+                    SearchPageRoot(
+                        model: feedModel,
+                        query: searchQueryBinding,
+                        submittedQuery: submittedSearchQuery,
+                        scrollPosition: $searchScrollPosition,
+                        onSelect: navigationModel.openPlayback,
+                        onSubmit: onSubmitSearch
+                    )
+                }
+            } label: {
+                Label("搜索", systemImage: "magnifyingglass")
+            }
+
+            Tab(value: AppSection.popular) {
+                sectionNavigation(for: .popular) {
+                    PopularPageRoot(
+                        model: feedModel,
+                        scrollPosition: $popularScrollPosition,
+                        onSelect: navigationModel.openPlayback
+                    )
+                }
+            } label: {
+                Label("热门", systemImage: "flame")
+            }
+
+            Tab(value: AppSection.history) {
+                sectionNavigation(for: .history) {
+                    HistoryPageRoot(
+                        model: historyModel,
+                        isSignedIn: authenticationModel.isSignedIn,
+                        scrollPosition: $historyScrollPosition,
+                        onSelect: navigationModel.openPlayback,
+                        onPresentAuthentication: {
+                            isAuthenticationPresented = true
+                        },
+                        onAuthenticationRequired: {
+                            historyModel.reset()
+                            authenticationModel.revalidate()
+                        }
+                    )
+                }
+            } label: {
+                Label("观看历史", systemImage: "clock.arrow.circlepath")
+            }
         }
-        .navigationSplitViewStyle(.balanced)
+        .tabViewStyle(.sidebarAdaptable)
+        .tabViewSidebarBottomBar {
+            accountButton
+        }
         .frame(minWidth: 1_080, minHeight: 680)
         .sheet(isPresented: $isAuthenticationPresented) {
             AuthenticationView(model: authenticationModel)
         }
+        .onChange(of: submittedSearchQuery) { previousQuery, query in
+            guard previousQuery != query else { return }
+            searchScrollPosition = ScrollPosition(idType: String.self)
+        }
+        .onChange(of: authenticationModel.isSignedIn) {
+            previousIsSignedIn,
+            isSignedIn in
+            guard previousIsSignedIn != isSignedIn else { return }
+            historyScrollPosition = ScrollPosition(idType: String.self)
+        }
     }
 
-    private var sidebar: some View {
-        List(selection: selectedSectionBinding) {
-            Label("搜索", systemImage: "magnifyingglass")
-                .tag(AppSection.search)
-                .accessibilityIdentifier("sidebar.search")
-            Label("热门", systemImage: "flame")
-                .tag(AppSection.popular)
-                .accessibilityIdentifier("sidebar.popular")
-            Label("观看历史", systemImage: "clock.arrow.circlepath")
-                .tag(AppSection.history)
-                .accessibilityIdentifier("sidebar.history")
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button {
-                isAuthenticationPresented = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.title2)
-                        .symbolRenderingMode(.hierarchical)
-                    Text(authenticationModel.isSignedIn ? "账号" : "登录")
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
+    private var accountButton: some View {
+        Button {
+            isAuthenticationPresented = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+
+                Text(authenticationModel.isSignedIn ? "账号" : "登录")
+
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .accessibilityHint(
-                authenticationModel.isSignedIn
-                    ? "打开账号管理"
-                    : "打开扫码登录"
-            )
-            .accessibilityIdentifier("sidebar.account")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .accessibilityHint(
+            authenticationModel.isSignedIn
+                ? "打开账号管理"
+                : "打开扫码登录"
+        )
+        .accessibilityIdentifier("sidebar.account")
     }
 
-    @ViewBuilder
-    private var routeContent: some View {
-        switch navigationModel.route {
-        case .section(.popular):
-            PopularPageRoot(
-                model: feedModel,
-                selectedBVID: selectedBVID(for: .popular),
-                onSelect: navigationModel.openPlayback
-            )
-        case .section(.search):
-            SearchPageRoot(
-                model: feedModel,
-                query: searchQueryBinding,
-                selectedBVID: selectedBVID(for: .search),
-                onSelect: navigationModel.openPlayback,
-                onSubmit: onSubmitSearch
-            )
-        case .section(.history):
-            HistoryPageRoot(
-                model: historyModel,
-                isSignedIn: authenticationModel.isSignedIn,
-                onSelect: navigationModel.openPlayback,
-                onPresentAuthentication: {
-                    isAuthenticationPresented = true
-                },
-                onAuthenticationRequired: {
-                    historyModel.reset()
-                    authenticationModel.revalidate()
+    private func sectionNavigation<Content: View>(
+        for section: AppSection,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        NavigationStack(path: playbackPathBinding(for: section)) {
+            content()
+                .navigationDestination(for: PlaybackDestination.self) { _ in
+                    PlaybackPageRoot(
+                        model: videoModel,
+                        subtitleModel: subtitleModel,
+                        danmakuModel: danmakuModel,
+                        playerContent: playerContent,
+                        onRetry: navigationModel.retryPlayback
+                    )
                 }
-            )
-        case .playback:
-            PlaybackPageRoot(
-                model: videoModel,
-                subtitleModel: subtitleModel,
-                danmakuModel: danmakuModel,
-                playerContent: playerContent,
-                onRetry: navigationModel.retryPlayback,
-                onReturn: navigationModel.returnFromPlayback
-            )
         }
     }
 
-    private var selectedSectionBinding: Binding<AppSection?> {
+    private var selectedSectionBinding: Binding<AppSection> {
         Binding(
             get: { navigationModel.selectedSection },
             set: { navigationModel.selectedSection = $0 }
@@ -123,23 +153,34 @@ struct AppShellView: View {
         )
     }
 
-    private func selectedBVID(for section: AppSection) -> String? {
-        guard navigationModel.returnSnapshot?.sourceSection == section else {
-            return nil
-        }
-        return navigationModel.returnSnapshot?.selectedBVID
+    private func playbackPathBinding(
+        for section: AppSection
+    ) -> Binding<[PlaybackDestination]> {
+        Binding(
+            get: {
+                navigationModel.selectedSection == section
+                    ? navigationModel.playbackPath
+                    : []
+            },
+            set: { path in
+                guard navigationModel.selectedSection == section else {
+                    return
+                }
+                navigationModel.playbackPath = path
+            }
+        )
     }
 }
 
 private struct PopularPageRoot: View {
     let model: GuestFeedViewModel
-    let selectedBVID: String?
+    @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
 
     var body: some View {
         PopularFeedView(
             model: model,
-            selectedBVID: selectedBVID,
+            scrollPosition: $scrollPosition,
             onSelect: onSelect
         )
         .navigationTitle("热门")
@@ -151,14 +192,16 @@ private struct PopularPageRoot: View {
 private struct SearchPageRoot: View {
     let model: GuestFeedViewModel
     @Binding var query: String
-    let selectedBVID: String?
+    let submittedQuery: String?
+    @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
 
     var body: some View {
         VideoSearchView(
             model: model,
-            selectedBVID: selectedBVID,
+            submittedQuery: submittedQuery,
+            scrollPosition: $scrollPosition,
             onSelect: onSelect
         )
         .navigationTitle("搜索")
@@ -181,6 +224,7 @@ private struct SearchPageRoot: View {
 private struct HistoryPageRoot: View {
     let model: WatchHistoryViewModel
     let isSignedIn: Bool
+    @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
     let onAuthenticationRequired: () -> Void
@@ -202,6 +246,7 @@ private struct HistoryPageRoot: View {
         if isSignedIn {
             WatchHistoryView(
                 model: model,
+                scrollPosition: $scrollPosition,
                 onSelect: onSelect,
                 onAuthenticationRequired: onAuthenticationRequired
             )
@@ -240,12 +285,13 @@ struct HistoryRefreshButton: View {
 }
 
 private struct PlaybackPageRoot: View {
+    @Environment(\.dismiss) private var dismiss
+
     let model: GuestVideoViewModel
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
     let onRetry: () -> Void
-    let onReturn: () -> Void
 
     var body: some View {
         VideoDetailColumn(
@@ -259,15 +305,8 @@ private struct PlaybackPageRoot: View {
         .navigationTitle("播放")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: onReturn) {
-                    Label("返回", systemImage: "chevron.backward")
-                }
-                .keyboardShortcut(.cancelAction)
-                .accessibilityHint("返回来源页面并停止当前播放")
-                .accessibilityIdentifier("playback.back")
-            }
+        .onExitCommand {
+            dismiss()
         }
     }
 }

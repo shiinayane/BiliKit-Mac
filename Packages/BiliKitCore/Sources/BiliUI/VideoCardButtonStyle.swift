@@ -3,7 +3,6 @@ import SwiftUI
 package struct VideoCardInteractionState: Sendable, Equatable {
     package let isHovered: Bool
     package let isPressed: Bool
-    package let isSelected: Bool
     package let isFocused: Bool
     package let increasedContrast: Bool
     package let reduceMotion: Bool
@@ -11,14 +10,12 @@ package struct VideoCardInteractionState: Sendable, Equatable {
     package init(
         isHovered: Bool,
         isPressed: Bool,
-        isSelected: Bool,
         isFocused: Bool,
         increasedContrast: Bool,
         reduceMotion: Bool
     ) {
         self.isHovered = isHovered
         self.isPressed = isPressed
-        self.isSelected = isSelected
         self.isFocused = isFocused
         self.increasedContrast = increasedContrast
         self.reduceMotion = reduceMotion
@@ -37,8 +34,7 @@ package enum VideoCardInteractionPolicy {
     package static func appearance(
         for state: VideoCardInteractionState
     ) -> VideoCardInteractionAppearance {
-        let isEmphasized =
-            state.isSelected || state.isFocused || state.isHovered
+        let isEmphasized = state.isFocused || state.isHovered
         return VideoCardInteractionAppearance(
             surfaceOpacity: state.isPressed ? 0.14 : (isEmphasized ? 0.08 : 0),
             strokeOpacity: isEmphasized ? 1 : 0,
@@ -50,26 +46,18 @@ package enum VideoCardInteractionPolicy {
 }
 
 package struct VideoCardButtonStyle: ButtonStyle {
-    private let isSelected: Bool
-
-    package init(isSelected: Bool) {
-        self.isSelected = isSelected
-    }
+    package init() {}
 
     package func makeBody(configuration: Configuration) -> some View {
         VideoCardInteractionBody(
-            configuration: configuration,
-            isSelected: isSelected
+            configuration: configuration
         )
     }
 }
 
 private struct VideoCardInteractionBody: View {
     let configuration: ButtonStyle.Configuration
-    let isSelected: Bool
 
-    @Environment(\.accessibilityDifferentiateWithoutColor)
-    private var differentiateWithoutColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.isFocused) private var isFocused
@@ -80,7 +68,6 @@ private struct VideoCardInteractionBody: View {
             for: VideoCardInteractionState(
                 isHovered: isHovered,
                 isPressed: configuration.isPressed,
-                isSelected: isSelected,
                 isFocused: isFocused,
                 increasedContrast: colorSchemeContrast == .increased,
                 reduceMotion: reduceMotion
@@ -98,21 +85,10 @@ private struct VideoCardInteractionBody: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(
-                        isSelected || isFocused
-                            ? Color.accentColor
-                            : Color.secondary,
+                        isFocused ? Color.accentColor : Color.secondary,
                         lineWidth: appearance.strokeWidth
                     )
                     .opacity(appearance.strokeOpacity)
-            }
-            .overlay(alignment: .topTrailing) {
-                if isSelected && differentiateWithoutColor {
-                    Image(systemName: "checkmark.circle.fill")
-                        .symbolRenderingMode(.hierarchical)
-                        .font(.title3)
-                        .padding(8)
-                        .accessibilityHidden(true)
-                }
             }
             .opacity(appearance.contentOpacity)
             .scaleEffect(appearance.scale)

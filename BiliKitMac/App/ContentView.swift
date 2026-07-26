@@ -20,7 +20,6 @@ struct ContentView: View {
     @State private var historyModel: WatchHistoryViewModel
     @State private var isAuthenticationPresented = false
     @State private var submittedQuery: String?
-    @State private var searchRevision = 0
     private let playerContent: AnyView
 
     init(environment: AppEnvironment = .live()) {
@@ -84,6 +83,7 @@ struct ContentView: View {
             historyModel: historyModel,
             playerContent: playerContent,
             isAuthenticationPresented: $isAuthenticationPresented,
+            submittedSearchQuery: submittedQuery,
             onSubmitSearch: performSearch
         )
         .task(id: feedTaskID) {
@@ -99,7 +99,6 @@ struct ContentView: View {
                 return
             }
             historyModel.reset()
-            navigationModel.authenticationDidBecomeSignedOut()
             subtitleModel.suspendForAuthentication()
         }
         .onChange(of: navigationModel.searchQuery) { _, query in
@@ -108,11 +107,10 @@ struct ContentView: View {
                 return
             }
             submittedQuery = nil
-            searchRevision += 1
         }
         .onDisappear {
             navigationModel.closeWindow()
-            feedModel.cancel()
+            feedModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.reset()
         }
@@ -127,27 +125,16 @@ struct ContentView: View {
         guard !normalizedSearchQuery.isEmpty else { return }
         navigationModel.searchQuery = normalizedSearchQuery
         submittedQuery = normalizedSearchQuery
-        searchRevision += 1
+        feedModel.search(normalizedSearchQuery)
     }
 
     private var feedTaskID: AppFeedTaskID {
-        let sourceSection: AppSection?
-        switch navigationModel.route {
-        case .section(let section):
-            sourceSection = section
-        case .playback:
-            sourceSection = navigationModel.returnSnapshot?.sourceSection
-        }
-
-        switch sourceSection {
+        switch navigationModel.selectedSection {
         case .popular:
             return .popular
         case .search:
-            return .search(
-                query: submittedQuery,
-                revision: searchRevision
-            )
-        case .history, nil:
+            return .search(query: submittedQuery)
+        case .history:
             return .none
         }
     }
@@ -155,12 +142,12 @@ struct ContentView: View {
     private func loadFeed(for intent: AppFeedTaskID) async {
         switch intent {
         case .popular:
-            feedModel.loadPopular(pageSize: 50)
+            feedModel.activatePopular(pageSize: 50)
             await feedModel.waitForCurrentTask()
-        case .search(nil, _), .none:
-            feedModel.cancel()
-        case .search(.some(let query), _):
-            feedModel.search(query)
+        case .search(nil), .none:
+            feedModel.deactivate()
+        case .search(.some(let query)):
+            feedModel.activateSearch(query)
             await feedModel.waitForCurrentTask()
         }
     }
@@ -168,7 +155,7 @@ struct ContentView: View {
 
 private enum AppFeedTaskID: Hashable {
     case popular
-    case search(query: String?, revision: Int)
+    case search(query: String?)
     case none
 }
 

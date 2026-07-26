@@ -13,7 +13,7 @@ struct AppNavigationModelTests {
         )
 
         model.openPlayback("BV1RouteA")
-        model.returnFromPlayback()
+        model.playbackPath.removeLast()
         model.openPlayback("BV1RouteB")
 
         #expect(
@@ -23,7 +23,11 @@ struct AppNavigationModelTests {
                 "start:BV1RouteB",
             ]
         )
-        #expect(model.route == .playback(bvid: "BV1RouteB"))
+        #expect(
+            model.playbackPath == [
+                PlaybackDestination(bvid: "BV1RouteB")
+            ]
+        )
     }
 
     @Test
@@ -35,22 +39,22 @@ struct AppNavigationModelTests {
             startPlayback: { _ in startCount += 1 },
             stopPlayback: { stopCount += 1 }
         )
-        model.selectSection(.search)
+        model.selectedSection = .search
         model.searchQuery = "手写搜索词"
 
         model.openPlayback("BV1SearchA")
-        model.returnFromPlayback()
+        model.playbackPath.removeLast()
 
-        #expect(model.route == .section(.search))
+        #expect(model.selectedSection == .search)
+        #expect(model.playbackPath.isEmpty)
         #expect(model.searchQuery == "手写搜索词")
-        #expect(model.returnSnapshot?.selectedBVID == "BV1SearchA")
         #expect(startCount == 1)
         #expect(stopCount == 1)
     }
 
     @Test
     @MainActor
-    func closingPlaybackStopsOnceAndClearsReturnContext() {
+    func closingWindowStopsPlaybackOnceAndResetsNativeNavigation() {
         var stopCount = 0
         let model = AppNavigationModel(
             startPlayback: { _ in },
@@ -62,13 +66,13 @@ struct AppNavigationModelTests {
         model.closeWindow()
 
         #expect(stopCount == 1)
-        #expect(model.route == .section(.popular))
-        #expect(model.returnSnapshot == nil)
+        #expect(model.selectedSection == .popular)
+        #expect(model.playbackPath.isEmpty)
     }
 
     @Test
     @MainActor
-    func selectingSidebarFromPlaybackStopsOnceAndClearsReturnContext() {
+    func selectingAnotherSidebarSectionPopsPlaybackAndStopsOnce() {
         var stopCount = 0
         let model = AppNavigationModel(
             startPlayback: { _ in },
@@ -76,11 +80,11 @@ struct AppNavigationModelTests {
         )
 
         model.openPlayback("BV1SidebarA")
-        model.selectSection(.search)
+        model.selectedSection = .search
 
         #expect(stopCount == 1)
-        #expect(model.route == .section(.search))
-        #expect(model.returnSnapshot == nil)
+        #expect(model.selectedSection == .search)
+        #expect(model.playbackPath.isEmpty)
     }
 
     @Test
@@ -100,7 +104,7 @@ struct AppNavigationModelTests {
 
     @Test
     @MainActor
-    func playbackRetryUsesTheAppOwnerWithoutChangingRoute() {
+    func playbackRetryUsesTheAppOwnerWithoutChangingPath() {
         var events: [String] = []
         let model = AppNavigationModel(
             startPlayback: { events.append("start:\($0)") },
@@ -116,24 +120,47 @@ struct AppNavigationModelTests {
                 "start:BV1RetryA",
             ]
         )
-        #expect(model.route == .playback(bvid: "BV1RetryA"))
+        #expect(
+            model.playbackPath == [
+                PlaybackDestination(bvid: "BV1RetryA")
+            ]
+        )
     }
 
     @Test
     @MainActor
-    func signingOutClearsPersonalizedReturnSourceWithoutStoppingPublicPlayback() {
+    func historySelectionRemainsTheSourceWhilePlaybackIsPushed() {
         var stopCount = 0
         let model = AppNavigationModel(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
-        model.selectSection(.history)
+        model.selectedSection = .history
         model.openPlayback("BV1HistoryA")
 
-        model.authenticationDidBecomeSignedOut()
-
-        #expect(model.route == .playback(bvid: "BV1HistoryA"))
-        #expect(model.returnSnapshot == nil)
+        #expect(
+            model.playbackPath == [
+                PlaybackDestination(bvid: "BV1HistoryA")
+            ]
+        )
+        #expect(model.selectedSection == .history)
         #expect(stopCount == 0)
+    }
+
+    @Test
+    @MainActor
+    func nativePathPopStopsPlaybackExactlyOnce() {
+        var stopCount = 0
+        let model = AppNavigationModel(
+            startPlayback: { _ in },
+            stopPlayback: { stopCount += 1 }
+        )
+        model.openPlayback("BV1NativeBack")
+
+        model.playbackPath.removeLast()
+        model.playbackPath.removeAll()
+
+        #expect(stopCount == 1)
+        #expect(model.playbackPath.isEmpty)
     }
 }

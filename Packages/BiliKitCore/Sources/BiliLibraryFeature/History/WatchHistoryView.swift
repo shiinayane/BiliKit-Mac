@@ -6,15 +6,18 @@ import SwiftUI
 
 public struct WatchHistoryView: View {
     private let model: WatchHistoryViewModel
+    @Binding private var scrollPosition: ScrollPosition
     private let onSelect: (String) -> Void
     private let onAuthenticationRequired: () -> Void
 
     public init(
         model: WatchHistoryViewModel,
+        scrollPosition: Binding<ScrollPosition>,
         onSelect: @escaping (String) -> Void,
         onAuthenticationRequired: @escaping () -> Void
     ) {
         self.model = model
+        _scrollPosition = scrollPosition
         self.onSelect = onSelect
         self.onAuthenticationRequired = onAuthenticationRequired
     }
@@ -115,14 +118,13 @@ public struct WatchHistoryView: View {
                         } label: {
                             WatchHistoryCard(item: item)
                         }
-                        .buttonStyle(
-                            VideoCardButtonStyle(isSelected: false)
-                        )
+                        .buttonStyle(VideoCardButtonStyle())
                         .accessibilityHint("播放视频")
                         .accessibilityIdentifier("history.item.\(item.bvid)")
                     }
                 }
                 .padding(VideoCardGridLayout.contentPadding)
+                .scrollTargetLayout()
 
                 if let loadMoreError {
                     Text(message(for: loadMoreError))
@@ -146,6 +148,7 @@ public struct WatchHistoryView: View {
                     .padding(.horizontal, VideoCardGridLayout.contentPadding)
                 }
             }
+            .scrollPosition($scrollPosition)
             .accessibilityIdentifier("history.list")
         }
     }
@@ -210,8 +213,7 @@ private struct WatchHistoryCard: View {
             footerLeadingText: item.owner.name,
             footerTrailingText: WatchHistoryCardFormatting.viewedAt(
                 item.viewedAt
-            ),
-            isSelected: false
+            )
         )
     }
 }

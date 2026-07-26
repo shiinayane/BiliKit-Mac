@@ -19,7 +19,6 @@ package struct VideoCard: View {
     private let coverTrailingText: String?
     private let footerLeadingText: String
     private let footerTrailingText: String?
-    private let isSelected: Bool
 
     package init(
         coverURL: URL?,
@@ -29,8 +28,7 @@ package struct VideoCard: View {
         coverMetrics: [VideoCardMetric] = [],
         coverTrailingText: String? = nil,
         footerLeadingText: String,
-        footerTrailingText: String? = nil,
-        isSelected: Bool
+        footerTrailingText: String? = nil
     ) {
         self.coverURL = coverURL
         self.avatarURL = avatarURL
@@ -40,7 +38,6 @@ package struct VideoCard: View {
         self.coverTrailingText = coverTrailingText
         self.footerLeadingText = footerLeadingText
         self.footerTrailingText = footerTrailingText
-        self.isSelected = isSelected
     }
 
     package var body: some View {
@@ -49,7 +46,6 @@ package struct VideoCard: View {
             details
         }
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     private var cover: some View {
