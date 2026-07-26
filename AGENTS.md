@@ -52,6 +52,17 @@ BiliKit App = App/ + Composition/ + Platform/
 - 保留已有工作树改动。没有用户明确要求时，不提交、不推送、不创建 PR、不改写 Git 历史。
 - reviewer、subagent、Plan mode 和专项 Skill 都按任务需要使用，不是必经流程。
 
+## 提交与协作文本
+
+- Commit 与 PR 标题使用 `<type>(可选 scope): <中文摘要>`；type 固定为 `feat`、
+  `fix`、`refactor`、`test`、`docs`、`build`、`ci` 或 `chore`。
+- 中文摘要以动词开头、不加句号；一个 commit 只表达一个语义变更。需要 body 时，用中文
+  说明原因、边界与验证，不复述 diff。
+- PR 正文、review 回复和交付说明使用中文；代码符号、API、命令与工具自动生成的输出保留
+  原文。PR 正文至少说明变化、原因、用户影响、验证和未覆盖边界。
+- 分支名使用 ASCII kebab-case，并遵循当前执行环境要求的前缀，例如
+  `codex/m5-native-navigation`。
+
 每次只运行覆盖改动的最高一层：
 
 ```sh
