@@ -1,56 +1,17 @@
-# BiliKit 协作指南
+# BiliKit 仓库说明
 
-本文件适用于整个仓库。子目录可以增加更严格的 `AGENTS.md`，但只补充局部规则，不重复或放宽本文件。详细工程流程见 [`docs/development/QUALITY-GATES.md`](docs/development/QUALITY-GATES.md)。
+本文件只保留每次任务都需要知道、且不能可靠地从代码中推导的项目规则。
 
-## 项目定位
+## 项目
 
-BiliKit 是原生、macOS-first、第三方且非官方的 B 站浏览与播放客户端，采用 Swift 6、SwiftUI 和 AVPlayer-first 路线，最低支持 macOS 15。App 产品与公开 Swift 模块名为 `BiliKit`；仓库、Xcode 工程和内部 App target 保留 `BiliKitMac`。
+BiliKit 是原生、macOS-first、第三方且非官方的 B 站浏览与播放客户端，使用 Swift 6、
+SwiftUI 和 AVPlayer，最低支持 macOS 15。App 产品与公开 Swift 模块名为 `BiliKit`；
+仓库、Xcode 工程和内部 App target 保留 `BiliKitMac`。
 
-仓库文档使用中文，Swift 标识符、测试名和 API 名使用清晰的英文。用户可见文案应简洁自然，不暴露 endpoint、状态码、Cookie 名称或底层错误正文。
+当前产品范围和实施顺序见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。不要擅自加入下载、转码、
+媒体导出、直播、多账号、区域解锁或复杂写操作。
 
-v1 的范围和非目标以 [`docs/ROADMAP.md`](docs/ROADMAP.md) 为准。不要擅自加入下载、转码、媒体导出、直播、多账号、区域解锁或复杂写操作。
-
-## 事实来源
-
-不要用一张总排序裁决不同类型的事实，先判断当前问题属于哪个域：
-
-- **当前实现与配置**：当前代码、`Package.swift`、Xcode 工程、entitlement 和 CI 工作流。
-  它们证明现在怎样运行，不能降低产品验收。
-- **产品结果与 v1 范围**：用户明确要求、已接受的 `docs/product/` 基线与
-  `docs/ROADMAP.md` 的当前产品 Gate。长期方向不自动授权当前实现；当前切片也不能冒充
-  更大产品闭环完成。
-- **当次生产授权**：已确认的 decision revision、绑定的用户实际入站回复和其中明确的
-  范围／妥协。愿景不能扩张未确认切片，旧 revision 不能覆盖新确认。
-- **架构与迁移责任**：当前依赖 manifest 和已接受 ADR；新 ADR 只有明确写明“取代”时
-  才覆盖旧决策。
-- **安全与隐私边界**：本文件和 `docs/security/` 的当前威胁模型；产品计划不能静默
-  放宽这些边界。
-- **完成证据**：当前可执行 Gate 与 `docs/validation/` 的带日期、有边界记录。计划不是
-  完成证据，历史验证也不是当前状态。
-- **研究材料**：`references/` 仅供理解机制，不是依赖、规范或可复制源码。
-
-同一事实域内发生冲突时，必须找到明确取代关系或先完成协调；不得让当前实现反推更容易
-通过的产品要求，也不得让长期愿景绕过当次授权。修改前先查找相关 ADR、测试和验证记录。
-后续变化通过新 ADR 或当前状态说明，不改写历史验证数据或旧 ADR 的背景。
-
-## 仓库与依赖边界
-
-```text
-BiliKitMac/
-├── App/               # Scene、产品级路由和导航外壳
-├── Composition/       # 唯一可见具体 adapter 的依赖组装位置
-├── Platform/          # 必须留在 App target 的 macOS 宿主
-└── Assets.xcassets/
-
-Packages/BiliKitCore/
-├── Sources/
-├── Tests/
-└── Package.swift
-```
-
-继续使用一个本地 Swift Package、多个 target；除非 ADR 证明独立发布、版本或工具链边界确有必要，不新增第二个 `Package.swift`。
-
-核心依赖方向是：
+## 代码边界
 
 ```text
 Bili*Feature ──> BiliApplication ──> BiliModels
@@ -61,113 +22,43 @@ Bili*Feature ──> BiliApplication ──> BiliModels
 BiliKit App = App/ + Composition/ + Platform/
 ```
 
-- `BiliModels` 只放稳定领域实体和值类型。
-- `BiliApplication` 只放 Use Case、port、应用错误和平台无关值；不得出现 endpoint DTO、SwiftUI/AppKit/AVKit、具体 client、Keychain 或 Cookie。
-- `BiliNetworking` 是无 Bilibili 业务语义的传输基础设施，不保存秘密。
-- `BiliAPI`、`BiliAuth`、`BiliPlayback` 分别拥有 endpoint adapter、认证秘密与授权 adapter、AVFoundation/媒体 bridge。
-- `Bili*Feature` 只通过 Application port 工作，Feature 之间禁止直接 import；跨域导航由 App 层类型化 Route/Intent 协调。
-- Probe 可以依赖具体 adapter，但不得成为产品代码的反向依赖。
+- Feature 之间不直接 import；跨页面协调留在 App 层。
+- `BiliApplication` 不出现 endpoint DTO、SwiftUI/AppKit/AVKit、具体 client、Keychain
+  或 Cookie；具体 adapter 只在 Composition 可见。
+- 继续使用一个仓库内 Swift Package；没有真实发布或工具链边界时不增加第二个
+  `Package.swift`，不创建空 target、占位 Repository 或 `Common`/`Shared`/`Utils`。
+- 依赖方向由 `Scripts/check-architecture.sh` 检查，不能绕过脚本。
+- `references/` 只用于研究，不进入 target、fixture 或发布包；实现不得复制第三方源码。
 
-Feature target 按产品领域划分，默认先在现有领域内增加纵向子功能；只有出现稳定独立领域、真实 App 调用方和测试时才评估新 target。禁止创建空 target、占位 Repository 或 `Common`、`Shared`、`Utils` 大仓库。具体准入与规模审查触发线见 [`docs/adr/0006-product-domain-feature-targets.md`](docs/adr/0006-product-domain-feature-targets.md)。
+## 安全与运行时
 
-依赖边界由 `Scripts/check-architecture.sh` 固定。若脚本与规则不一致，修正脚本和代码，不能用注释、别名或动态查找绕过。
+- Cookie、QR key、token、refresh token 和完整认证 URL 只存在于 `BiliAuth` 的短生命周期
+  内存与 Keychain，不进入 Feature、UserDefaults、日志、fixture、截图或验证记录。
+- 认证、远端来源、重定向、本地服务器、字幕、弹幕或缓存改动先读取对应
+  `docs/security/` 文档，并覆盖失败路径。
+- 可变网络、认证和播放会话必须有明确 owner、取消和清理点；旧结果用 identity 或
+  generation 隔离。页面关闭、登出、切换视频和替换播放项后不能留下活动资源。
+- 游客 API、图片、媒体 CDN 和 loopback 请求不得携带认证授权器；loopback server
+  只绑定 `127.0.0.1`。
+- Probe 和 fixture 不保存个人内容、秘密、完整远端响应或未脱敏 URL。
 
-`references/` 整体由 Git 忽略，也不得加入 Xcode target、SwiftPM resource、fixture 或发布包。第三方代码只能用于理解机制；实现必须来自自有代码、公开文档和自制测试材料，并检查许可证。
+## 工作与验证
 
-## 风险与审查路由
+- 修改前读取相关代码、测试、ADR、路线图和威胁模型。用户要求定义结果；现有实现和旧计划
+  只描述历史，不限制根据新证据调整实现。
+- 修复优先复现问题；异步测试使用事件、状态或 continuation 判断完成，固定时间只作超时。
+- 外部 CLI 在受限网络中报告认证或连接失败时，先在获准联网的等价只读环境复核，
+  不要直接要求用户重新登录或修改凭据。
+- 保留已有工作树改动。没有用户明确要求时，不提交、不推送、不创建 PR、不改写 Git 历史。
+- reviewer、subagent、Plan mode 和专项 Skill 都按任务需要使用，不是必经流程。
 
-风险等级只追加验证，不降低基线；按后果、不确定性、可逆性和证据需求分类，不按改动行数分类：
-
-- **绿区**：文案、Preview、局部布局、私有机械重命名、明确 DTO 映射和小型测试补充。主 Agent 可以直接完成并检查 diff；公开 API、target 或工程变更不属于绿区。
-- **黄区**：普通 Feature/Use Case、缓存策略、跨文件重构和跨模块公共 API。实现前写明
-  Goal、Context、Constraints、Outcome floor、Done when；Outcome floor 必须来自 Roadmap、
-  产品文档、ADR 或用户明确要求，并限定在当前已接受切片内，不得被局部简化悄悄降低。
-  切片不必一次交付完整 App，但不得冒充更大闭环已经完成。非机械改动完成后由不继承
-  实现推理的新上下文做只读审查。
-- **红区**：认证、授权、Keychain、来源与重定向、本地服务器、播放/媒体、线程与资源生命周期、renderer、持久化迁移、文件删除和不可逆变化。新决策或新生产契约必须先通过结果充分性与决策价值 Gate，在候选足以满足 Outcome floor 后再限定复杂度预算并取得用户确认；实现后由 `red_reviewer` 检查结果到证据的追踪、失败、安全、所有权、取消、资源上限、清理和 rollback，并增加任务所需的真实证据。
-
-选择“满足 Outcome floor 的最低成本方案”，不是所有候选中最容易实现的方案。保存
-item ID、请求次数、对象存活、编译通过、mock 或内部状态只可作为支持证据；除非任务
-契约说明它为何可靠预测用户可见结果，并给出可推翻该预测的直接验收，否则不能代替
-产品完成标准。对当前 Outcome floor 的用户可见降级、fallback、容差或延期必须单独
-列出并确认，不能藏在复杂度预算或非目标中。
-
-`architecture_reviewer` 不是普通改动的额外必经层。只有任务确实改变 target 间依赖、
-owner、公共面或迁移责任，修改 Package product／公共 API／Composition root，新增
-Repository／Use Case／共享组件，达到 ADR 0006 的职责规模触发线，迁移可能留下新旧
-双轨，语义命名不再匹配 owner，当前切片将成为已接受后续产品路径的基础，或准备关闭
-重要架构 Gate 时才按需启动。它检查依赖
-方向、类型归属、公共面和抽象价值；纯机械跨 target 改动、格式、行数、覆盖率与命名
-偏好不能单独成为 blocker。机械代码风格由 `.swift-format` 与统一 Gate 强制，不创建
-主观的 clean-code reviewer。
-
-已绑定用户确认的红区生产契约可以承载语义不变的维护切片；只要 Goal、Outcome floor、
-候选、范围、安全/隐私边界、资源 owner、复杂度预算、停止条件、用户可见妥协或下一步
-发生变化，就必须返回完整前置流程。详细的决策 Gate、维护例外、证据包、工作树隔离和
-reviewer 输出格式以 [`docs/development/QUALITY-GATES.md`](docs/development/QUALITY-GATES.md) 为准。
-
-项目 Agent 定义及模型配置以 [`.codex/config.toml`](.codex/config.toml) 和 [`.codex/agents/`](.codex/agents/) 为准。出现两种以上合理解释、无法明确不变量/owner/清理点、跨越两个以上 target、涉及红区、测试失败原因不清晰、连续两次修复失败、reviewer 冲突或准备关闭重要 Gate 时必须升级；模型选择、自动测试或用户确认不能互相替代。
-
-## 状态、安全与数据
-
-- ViewModel 使用 `@MainActor` 并拥有界面生命周期内的 Task、generation 和用户意图；View 不直接请求 API 或解释 DTO。
-- 可变网络、认证和播放会话优先由 actor 隔离；跨 actor 类型必须满足 Swift 6 `Sendable`，不得用 `@unchecked Sendable` 掩盖设计问题。取消必须向下传播，旧结果用 generation/identity 隔离；页面关闭、登出、切换视频和替换播放项必须有明确清理点与资源上限。
-- 轮询、重试和预取必须有单实例、最小间隔、总时限与次数/并发/缓存上限；不能只依赖远端返回终止状态。
-- Cookie、QR key、完整二维码 URL、token 和 refresh token 只能存在于 `BiliAuth` 的短生命周期内存与 Keychain；不得进入 Feature、Domain、Application、UserDefaults、SwiftData、日志、fixture、截图或验证记录。
-- Keychain 使用固定 namespace、Data Protection Keychain、`WhenUnlockedThisDeviceOnly` 和非同步 item；登出必须能在离线时清除本机状态。
-- 认证请求使用专用 ephemeral session 和精确 allowlist，并重新校验每次重定向。游客 API、图片、媒体 CDN 和 loopback 请求不得携带认证授权器。
-- 远端 URL 必须在进入 transport 前执行用途匹配的来源策略。媒体 URL 和每次重定向至少检查 HTTPS、userinfo、端口、主机族及 loopback/private/link-local 边界。loopback playback server 只能绑定 `127.0.0.1`，使用不可预测的会话路由，并严格验证方法、路径和 Range。
-- 每个 endpoint 使用独立 DTO，并在 adapter 边界映射为 Domain/Application 类型。未知状态、HTML 风控页、字段缺失和异常重定向默认失败关闭。
-- Fixture 只使用手写假值或自制媒体；Probe 必须显式运行且只输出脱敏结构、计数和状态。不打印原始响应 body，不把现场观察当作 deterministic contract test。新增敏感字段时同步更新 `Scripts/check-secrets.sh` 和脱敏测试。
-
-触碰认证、授权、Keychain、媒体来源、重定向或本地服务器时，先读对应威胁模型并增加负向测试；仅有成功路径不算完成。
-
-## 工作方式与 Skill 路由
-
-1. 先阅读相关代码、测试、ADR、路线图和威胁模型，确认当前行为与范围。
-2. 对修复先写或定位能失败的测试；对结构迁移先固定已有行为。
-   异步测试用事件、continuation、状态流或显式闸门确认开始与完成；固定时长只能作为
-   超时保险，不能用来推断请求已经发生或状态已经稳定。
-3. 保持一个纵向目的；不混入无关格式化、重命名或未来模块占位。已有工作树改动默认属于用户。
-4. 先用直接用户可见或调用方可见结果定义验收，再选择实现代理和测试 seam；不得从
-   当前实现反推更容易通过的 Done when。
-5. 已审查实现若仍未达到用户要求，停止叠加补丁，找出被削弱的 Outcome floor、无效
-   代理或错误 owner，重开任务契约和受影响的审查。
-6. 移动文件后重新检查 SwiftPM target、Xcode package product、imports、脚本路径和文档链接。
-7. 没有用户明确要求时，不提交、不推送、不改写 Git 历史，也不创建 PR。
-
-外部 CLI 在受限网络沙箱中报告 token 无效、未认证、DNS/TLS 或远端不可达时，不得立即要求用户重新登录或修改凭据。先在获准联网的只读上下文使用同一 CLI、账号、认证方式和远端协议/目标复核；只有等价复核仍失败时，才按真实认证问题处理。
-
-修改 `AGENTS.md`、质量 Gate、风险分级或 Agent 路由时，自动使用 `project-governance-bootstrap`，只读检查使用 `audit`，写入使用 `upgrade`，无需等待用户显式点名。如果 Skill 不可用，则直接按其最小等价流程读取本文件、`QUALITY-GATES.md`、相关 ADR 与现有验证入口，审计比例性和事实来源，运行最高适用 Gate，并明确报告能力缺口。
-
-任务涉及以下任一能力时，自动使用 `apple-dev-loop`，无需等待用户显式点名：
-
-- Xcode 工程、scheme、target、资源、Package product 或 App composition；
-- Xcode MCP、`xcodebuild`、`.xcresult`、XCTest/XCUI、Simulator 或真实设备；
-- 签名、entitlement、Keychain、系统权限或真实登录链路；
-- SwiftUI/AppKit 真实 UI、窗口、焦点、辅助功能或视觉验收；
-- 播放、媒体、并发、资源生命周期，或 CPU、内存、泄漏、卡顿和 Instruments 测量。
-
-纯解释、只读源码定位、纯文档/静态变更，以及不触及上述能力、不改变 Xcode 工程、Package product 或 App composition、且只需现有 Package Gate 的边界明确窄修改不加载 `apple-dev-loop`。Skill 负责工具选择与证据层级；本文件、ADR、威胁模型和仓库 Gate 仍是项目事实来源。如果 Skill 在当前环境不可用，继续运行可复现的仓库 Gate，并明确报告缺失的 Xcode、UI、签名、设备或性能证据。
-
-## 验证与完成
-
-每次只运行最高适用模式，不顺序重复运行低层 Gate：
+每次只运行覆盖改动的最高一层：
 
 ```sh
-sh Scripts/run-quality-gates.sh static   # 文档、脚本和纯静态变更
+sh Scripts/run-quality-gates.sh static   # 文档、脚本和静态配置
 sh Scripts/run-quality-gates.sh package  # Package 代码；包含 static
 sh Scripts/run-quality-gates.sh app      # App/Xcode/composition；包含 package
 ```
 
-本地 Agent 默认设置 `BILIKIT_COMPACT_LOGS=1`；CI 保留完整输出。风险会追加状态迁移、取消、负向契约、受控播放、签名 Keychain、真实 UI 或性能证据，具体选择见 `QUALITY-GATES.md` 和 `apple-dev-loop`。无签名 CI、mock、MCP 连接、编译成功、截图、一次 trace 或一次设备观察都不能证明更高层 Gate。
-
-若环境使检查跳过或失败，准确标记“未验证”。只有代码、测试、文档、CI 和所需真实证据一致时才能关闭 Gate；完成回复先给结果，再列风险、验证和未覆盖边界。
-
-## 文档维护
-
-- 改变架构、依赖、平台版本、安全边界或不可逆技术路线时新增 ADR。
-- `docs/ROADMAP.md` 只在证据满足 Gate 后标记完成。
-- `docs/validation/` 记录日期、OS/架构、命令、结果和适用边界，不保存账号、内容标题、BVID、二维码或秘密。
-- README 只描述当前用户可见能力和稳定入口，不复制完整路线图，也不写测试数量、CI run ID 或提交 SHA。
-- 移动或重命名模块时更新当前 README、路线图、ADR 索引和架构脚本；历史 ADR/验证记录保留当时名称，由新 ADR 说明取代关系。
+涉及签名、Keychain、真实 UI、播放或性能时，再运行能够观察该行为的真实检查；build、mock、
+截图和一次 trace 不能互相替代。只有实际证据支持时才更新路线图完成状态。

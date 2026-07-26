@@ -4,7 +4,7 @@
 - [`adr/`](./adr/)：已接受的架构决策。
 - [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
 - [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
-- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：风险分级、任务契约、隔离审查和统一可执行 Gate。
+- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：当前自动检查与真实行为验证入口；旧风险分级和固定审查流程已退役。
 - [`development/M4.4-renderer-spike-decision.md`](./development/M4.4-renderer-spike-decision.md)：已执行完毕的不可合入 renderer spike 决策边界。
 - [`development/M4.4-renderer-spike-technical-plan.md`](./development/M4.4-renderer-spike-technical-plan.md)：已执行 spike 的技术边界与历史输入。
 - [`development/M4.4-renderer-production-decision.md`](./development/M4.4-renderer-production-decision.md)：已授权并按真实播放反馈修订至 P4 的 renderer 生产决策契约。
@@ -26,12 +26,13 @@
 - [`validation/ROADMAP-rebaseline-2026-07-25.md`](./validation/ROADMAP-rebaseline-2026-07-25.md)：Governance v1 下的阶段事实、M5.0 恢复边界和 M5.1–M6 直接结果 Gate 重排记录。
 - [`validation/M4.7-architecture-lint-governance-2026-07-25.md`](./validation/M4.7-architecture-lint-governance-2026-07-25.md)：按需架构 reviewer、Swift 格式基线、负向 lint 与本机统一 Gate 证据。
 - [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：App 级 UI/UX 长期产品蓝图，以及搜索空页、播放页和未来数据能力的边界。
-- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：热门／最后搜索工作集保留、刷新、上限与清理边界的 D2 历史基线；恢复遗留实现前须建立新 revision。
+- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：热门／搜索返回连续性、刷新、资源边界与未验证问题的现状记录。
 - [`development/M4.6-subtitle-lifecycle-roadmap-decision.md`](./development/M4.6-subtitle-lifecycle-roadmap-decision.md)：已确认的字幕生命周期稳定化、真实证据边界与精简 v1 截线。
 - [`validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md`](./validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md)：ABA 失败证据、任务上限整改、签名 A/B 生产集成与未解释远端边界。
 - [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
 
-现行文档必须区分仓库事实和目标方向。计划中的能力只有通过对应 gate 后，才能视为已实现。
+现行文档必须区分仓库事实和目标方向。计划中的能力只有在代码、测试和必要的真实行为
+证据一致后，才能视为已实现。
 
 ## 本地参考项目
 
