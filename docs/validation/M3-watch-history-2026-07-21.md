@@ -1,6 +1,8 @@
 # M3 观看历史纵向闭环与最终实机验证（2026-07-21）
 
-> 结论：观看历史已按 Domain → Application → Feature MVVM → App composition root 接入；当前 macOS 的真实扫码、历史读取、详情/播放器跳转、进程重启恢复、界面登出与游客回退全部通过，随后 macOS 15/26 CI 也已通过。本记录证明当时纵向链路；后续独立审查发现的安全与状态机阻断仍须另行整改。
+> 结论：观看历史已按 Domain → Application → Feature MVVM → App composition root 接入；
+> 当前 macOS 的真实扫码、历史读取、详情/播放器跳转、进程重启恢复、界面登出与游客
+> 回退全部通过，随后安全/状态整改与 macOS 15/26 CI 也已完成。
 
 ## 1. 选择范围
 
@@ -8,10 +10,12 @@ M3 的首个个性化功能选择“观看历史”，理由是它是只读 GET 
 
 依赖落点如下：
 
-- `BiliModels`：`WatchHistoryItem`、分页 cursor 与 page。
-- `BiliApplication`：`WatchHistoryRepository`、安全错误与 `WatchHistoryUseCase`。
+- `BiliModels`：`WatchHistoryItem` 与页面内容。
+- `BiliApplication`：`WatchHistoryRepository`、不可读 continuation、安全错误与
+  `WatchHistoryUseCase`。
 - `BiliAPI`：独立 endpoint payload、DTO 映射和 `BiliWatchHistoryRepository` adapter。
-- `BiliHistoryFeature`：拥有加载、刷新、分页、取消与旧结果隔离的 ViewModel，以及不接触 Cookie 的 SwiftUI sheet。
+- `BiliLibraryFeature`：拥有加载、刷新、分页、取消与旧结果隔离的 ViewModel，以及不接触
+  Cookie 的 SwiftUI 页面。
 - App composition root：让同一个 `BiliAPIClient` 分别服务游客与历史 port，并把历史条目交回既有详情/播放器 ViewModel。
 
 历史 sheet 关闭或登出时会取消任务并清空个性化列表；不会把标题、BVID、观看时间或进度写入 UserDefaults、SwiftData、fixture 或日志。
@@ -59,9 +63,13 @@ M3 的首个个性化功能选择“观看历史”，理由是它是只读 GET 
 
 验证只记录状态、行数和结构结果；没有输出、截图、复制或保存二维码、UID、昵称、标题、BVID、Cookie、token 或响应 body。
 
-## 5. 适用边界
+## 5. 后续整改与适用边界
 
 - 观看历史是未公开 Web endpoint，字段和风控策略可能漂移；真实响应异常时必须经 adapter 映射为安全错误，不得把 body 打进日志。
 - 当前只映射普通视频 archive，不承诺番剧、直播、课程或其他业务类型。
 - 本记录对应的 macOS 15/26 Package、架构、秘密扫描与 App 无签名构建随后通过；无签名 CI 不覆盖真实 Keychain entitlement。
-- 2026-07-21 后续独立审查发现：媒体 URL/重定向来源策略不足、恢复失败无清除坏凭据出口、QR 轮询无本地总时限，以及 archive 过滤后的空首页隐藏分页入口。它们不否定本记录中的实机观察，但在修复与回归前阻止 M3 关闭。
+- 2026-07-21 后续独立审查发现的媒体来源、坏凭据清理、QR 本地上限和过滤空页分页问题
+  已在关闭 M3 前整改。历史 continuation 从 Domain 远端 cursor 改为 Application
+  不可读 token；过滤出空页时有界继续扫描，并保留显式加载更早记录的出口。
+- 这些整改通过当时的确定性测试和 macOS 15/26 CI；本文的真实扫码和个性化内容观察
+  没有重复执行，因此不能把 CI 当作新的真实账号证据。

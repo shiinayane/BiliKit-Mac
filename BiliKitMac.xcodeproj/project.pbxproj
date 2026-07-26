@@ -40,6 +40,13 @@
 		8DFA9001300F375500DF3E1D /* BiliKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BiliKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DFA900E300F375600DF3E1D /* BiliKitMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiliKitMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DFA9018300F375600DF3E1D /* BiliKitMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiliKitMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000021 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		A10000000000000000000022 /* .swift-format */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ".swift-format"; sourceTree = "<group>"; };
+		A10000000000000000000023 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
+		A10000000000000000000024 /* CLAUDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CLAUDE.md; sourceTree = "<group>"; };
+		A10000000000000000000025 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		A10000000000000000000026 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		A10000000000000000000027 /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_NOTICES.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -103,6 +110,13 @@
 		8DFA8FF8300F375500DF3E1D = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000021 /* .gitignore */,
+				A10000000000000000000022 /* .swift-format */,
+				A10000000000000000000023 /* AGENTS.md */,
+				A10000000000000000000024 /* CLAUDE.md */,
+				A10000000000000000000025 /* LICENSE */,
+				A10000000000000000000026 /* README.md */,
+				A10000000000000000000027 /* THIRD_PARTY_NOTICES.md */,
 				8DFA9003300F375500DF3E1D /* BiliKitMac */,
 				8DFA9011300F375600DF3E1D /* BiliKitMacTests */,
 				8DFA901B300F375600DF3E1D /* BiliKitMacUITests */,

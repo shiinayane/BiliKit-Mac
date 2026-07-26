@@ -1,6 +1,7 @@
 # M3 Keychain 与请求授权验证（2026-07-21）
 
-> 结论：M3 第 4 步的代码、自动化和签名 Data Protection Keychain smoke 均已通过；M3 仍需完成认证 Feature、完整登出和一个个性化闭环。
+> 结论：M3 的 Data Protection Keychain、请求授权、认证 Feature 与完整本地登出均已
+> 通过自动化；签名 App 完成真实 Keychain 往返。端到端账号链路见同日观看历史记录。
 
 ## 1. 实现范围
 
@@ -67,3 +68,21 @@ smoke 固定使用 `com.shiinayane.BiliKitMac.tests.signed-keychain-smoke.v1` / 
 - Markdown 相对链接与 `git diff --check`：通过。
 
 远程 macOS 15/26 CI 结果在提交推送后检查；本记录不预写尚未运行的结果。
+
+## 5. 认证 Feature 与后续安全整改合并记录
+
+`BiliAuthFeature` 只依赖 `BiliApplication`。`AuthenticationViewModel` 拥有轮询 Task、
+generation、页面取消与按最后操作区分的重试；Feature 不接触 Cookie、二维码 key、
+Keychain item 或 endpoint DTO。完整本地登出按以下顺序执行：
+
+1. 推进 generation 并取消活跃 QR 请求；
+2. 清除内存二维码与临时材料；
+3. 删除固定 Keychain item；
+4. 失效认证和 API ephemeral session；
+5. 只有本机秘密清理成功后才发布 `signedOut`。
+
+后续独立审查补齐了 QR 总时限/次数上限、恢复失败后的“清除本机状态”出口、媒体 URL
+用途专属 allowlist、Range session 拒绝重定向，以及工程 entitlement/最低系统静态契约。
+对应代码通过当时的 Package、架构、秘密、工程、App 构建/测试与 macOS 15/26 CI。
+媒体来源的真实播放复查到达 `readyToPlay` 并完成前后 seek；该样本只证明当时 allowlist
+兼容，不能承诺远端 CDN 家族不再变化。
