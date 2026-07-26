@@ -4,13 +4,13 @@ import BiliUI
 import SwiftUI
 
 public struct PopularFeedView: View {
-    private let model: GuestFeedViewModel
+    private let model: GuestBrowseViewModel
     private let request: GuestFeedRequest
     @Binding private var scrollPosition: ScrollPosition
     private let onSelect: (String) -> Void
 
     public init(
-        model: GuestFeedViewModel,
+        model: GuestBrowseViewModel,
         page: Int = 1,
         pageSize: Int = 50,
         scrollPosition: Binding<ScrollPosition>,
@@ -60,14 +60,14 @@ public struct PopularFeedView: View {
 }
 
 private struct PopularGrid: View {
-    let model: GuestFeedViewModel
+    let model: GuestBrowseViewModel
     let page: PopularPage
     @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
     let request: GuestFeedRequest
 
     init(
-        model: GuestFeedViewModel,
+        model: GuestBrowseViewModel,
         page: PopularPage,
         scrollPosition: Binding<ScrollPosition>,
         onSelect: @escaping (String) -> Void
@@ -110,7 +110,7 @@ private struct PopularGrid: View {
             .scrollPosition($scrollPosition)
             .accessibilityIdentifier("feed.grid")
             .refreshable {
-                model.loadPopular(
+                model.refreshPopular(
                     page: page.pageNumber,
                     pageSize: page.pageSize
                 )

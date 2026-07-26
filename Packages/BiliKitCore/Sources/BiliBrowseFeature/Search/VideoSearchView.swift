@@ -4,19 +4,19 @@ import BiliUI
 import SwiftUI
 
 public struct VideoSearchView: View {
-    private let model: GuestFeedViewModel
-    private let submittedQuery: String?
+    private let model: GuestBrowseViewModel
+    private let submittedSearchQuery: String?
     @Binding private var scrollPosition: ScrollPosition
     private let onSelect: (String) -> Void
 
     public init(
-        model: GuestFeedViewModel,
-        submittedQuery: String?,
+        model: GuestBrowseViewModel,
+        submittedSearchQuery: String?,
         scrollPosition: Binding<ScrollPosition>,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
-        self.submittedQuery = submittedQuery
+        self.submittedSearchQuery = submittedSearchQuery
         _scrollPosition = scrollPosition
         self.onSelect = onSelect
     }
@@ -27,9 +27,9 @@ public struct VideoSearchView: View {
 
     @ViewBuilder
     private var results: some View {
-        if let submittedQuery {
+        if let submittedSearchQuery {
             let request = GuestFeedRequest.search(
-                query: submittedQuery,
+                query: submittedSearchQuery,
                 page: 1
             )
             searchResults(for: request)
@@ -101,7 +101,7 @@ extension GuestFeedRequest {
 }
 
 private struct SearchResultsGrid: View {
-    let model: GuestFeedViewModel
+    let model: GuestBrowseViewModel
     let query: String
     let page: SearchPage
     @Binding var scrollPosition: ScrollPosition
@@ -109,7 +109,7 @@ private struct SearchResultsGrid: View {
     let request: GuestFeedRequest
 
     init(
-        model: GuestFeedViewModel,
+        model: GuestBrowseViewModel,
         query: String,
         page: SearchPage,
         scrollPosition: Binding<ScrollPosition>,

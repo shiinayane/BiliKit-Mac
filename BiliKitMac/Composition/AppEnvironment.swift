@@ -14,7 +14,7 @@ import SwiftUI
 @MainActor
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
-    private let repository: any GuestContentRepository
+    private let guestContentRepository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
     private let subtitleRepository: any SubtitleRepository
     private let danmakuSession: DanmakuSession
@@ -32,7 +32,7 @@ struct AppEnvironment {
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
-        self.repository = repository
+        self.guestContentRepository = repository
         self.historyRepository = historyRepository
         self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
@@ -52,15 +52,15 @@ struct AppEnvironment {
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
     }
 
-    func makeFeedViewModel() -> GuestFeedViewModel {
-        GuestFeedViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+    func makeBrowseViewModel() -> GuestBrowseViewModel {
+        GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: guestContentRepository)
         )
     }
 
     func makeVideoViewModel() -> GuestVideoViewModel {
         GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+            useCase: GuestVideoUseCase(repository: guestContentRepository),
             playback: playerEngine
         )
     }
