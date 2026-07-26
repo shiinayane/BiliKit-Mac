@@ -4,6 +4,9 @@
 - 日期：2026-07-21
 - 取代：ADR 0001 中“SwiftUI Feature 初期留在 App target”的临时安排；其余平台、命名和单 Package 决策继续有效。
 
+> 当前说明：本文中的 `BiliGuestFeature` 是当时名称。ADR 0006 已将其取代为
+> `BiliBrowseFeature`，并将 History 归入 `BiliLibraryFeature`；分层与依赖方向继续有效。
+
 ## 背景
 
 M2 已经证明游客热门、搜索、详情、分 P 与播放的纵向链路，但原型代码把 Presentation、应用编排和具体 adapter 混在一起：`GuestAppModel` 同时持有 API、播放器、界面状态和并发代次，SwiftUI View 直接导入 `BiliAPI` 与 `BiliPlayback`，而跨 endpoint 的 `GuestVideoCoordinator` 位于 API target。继续在该结构上增加认证和持久化，会让 Feature 通过具体实现彼此耦合。

@@ -1,73 +1,30 @@
 # 项目文档
 
-- [`ROADMAP.md`](./ROADMAP.md)：当前实施顺序与验收门槛。
-- [`adr/`](./adr/)：已接受的架构决策。
-- [`security/`](./security/)：认证、凭据和后续隐私边界的威胁模型。
-- [`validation/`](./validation/)：注明日期、环境和适用边界的运行验证记录。
-- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：当前自动检查与真实行为验证入口；旧风险分级和固定审查流程已退役。
-- [`development/M4.4-renderer-spike-decision.md`](./development/M4.4-renderer-spike-decision.md)：已执行完毕的不可合入 renderer spike 决策边界。
-- [`development/M4.4-renderer-spike-technical-plan.md`](./development/M4.4-renderer-spike-technical-plan.md)：已执行 spike 的技术边界与历史输入。
-- [`development/M4.4-renderer-production-decision.md`](./development/M4.4-renderer-production-decision.md)：已授权并按真实播放反馈修订至 P4 的 renderer 生产决策契约。
-- [`development/M4.4-renderer-production-technical-plan.md`](./development/M4.4-renderer-production-technical-plan.md)：不要求用户逐项确认的生产实施草案。
-- [`development/M4-closeout-decision.md`](./development/M4-closeout-decision.md)：M4 性能与真实环境总收口的决策、停止条件与复杂度预算。
-- [`development/M4-closeout-technical-plan.md`](./development/M4-closeout-technical-plan.md)：不改变收口决策的最小实施草案。
-- [`development/M4-scheduler-retention-fix-decision.md`](./development/M4-scheduler-retention-fix-decision.md)：总收口终审发现的 scheduler 去重状态无界增长修复契约，D1 已确认并完成本机验证。
-- [`development/M4-scheduler-retention-fix-technical-plan.md`](./development/M4-scheduler-retention-fix-technical-plan.md)：不要求用户逐项确认的窄修复实施草案。
-- [`validation/M4-closeout-2026-07-23.md`](./validation/M4-closeout-2026-07-23.md)：真实 resize/fullscreen/seek/替换、30 分钟 RSS、资源清理与本机 App Gate 证据。
-- [`development/M4.5-uiux-decision.md`](./development/M4.5-uiux-decision.md)：已确认的 App 两栏导航、卡片流与独立播放页设计方向。
-- [`development/M4.5-uiux-design-plan.md`](./development/M4.5-uiux-design-plan.md)：设计阶段的页面结构、响应式与长期信息架构草案。
-- [`development/M4.5-uiux-production-decision.md`](./development/M4.5-uiux-production-decision.md)：已确认的 M4.5 生产范围、风险、复杂度预算和三项授权。
-- [`development/M4.5-uiux-production-technical-plan.md`](./development/M4.5-uiux-production-technical-plan.md)：不要求用户逐项确认的分阶段生产实施草案。
-- [`development/M4.5-playback-layout-decision.md`](./development/M4.5-playback-layout-decision.md)：已确认的 Slice B 播放页响应式结构、单播放器不变量与停止条件。
-- [`development/M4.5-playback-layout-technical-plan.md`](./development/M4.5-playback-layout-technical-plan.md)：Slice B 的稳定主区、分 P 宽窄呈现、生命周期证据与回退草案。
-- [`validation/M4.5-slice-a-2026-07-23.md`](./validation/M4.5-slice-a-2026-07-23.md)：Slice A 两栏路由、卡片流、播放返回、生命周期与本机 Gate 的候选证据。
-- [`validation/M4.5-slice-b-2026-07-24.md`](./validation/M4.5-slice-b-2026-07-24.md)：Slice B 播放页响应式布局、单 host 生命周期、签名 App 与本机 Gate 的候选证据。
-- [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)：首页个性推荐起点的日常观看核心闭环、v1 截线与 M4.5 之后的产品优先级。
-- [`validation/ROADMAP-rebaseline-2026-07-25.md`](./validation/ROADMAP-rebaseline-2026-07-25.md)：Governance v1 下的阶段事实、M5.0 恢复边界和 M5.1–M6 直接结果 Gate 重排记录。
-- [`validation/M4.7-architecture-lint-governance-2026-07-25.md`](./validation/M4.7-architecture-lint-governance-2026-07-25.md)：按需架构 reviewer、Swift 格式基线、负向 lint 与本机统一 Gate 证据。
-- [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：App 级 UI/UX 长期产品蓝图，以及搜索空页、播放页和未来数据能力的边界。
-- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：热门／搜索返回连续性、刷新、资源边界与未验证问题的现状记录。
-- [`development/M4.6-subtitle-lifecycle-roadmap-decision.md`](./development/M4.6-subtitle-lifecycle-roadmap-decision.md)：已确认的字幕生命周期稳定化、真实证据边界与精简 v1 截线。
-- [`validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md`](./validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md)：ABA 失败证据、任务上限整改、签名 A/B 生产集成与未解释远端边界。
-- [`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md)：产品、竞品、播放、许可和分发研究基线。
+这里保存仍会影响当前开发判断的文档。Git 历史已经承担旧实施计划、阶段契约和治理试运行
+的归档职责，不在 `docs/` 中保留第二份可被 AI 误读为现行规则的副本。
 
-现行文档必须区分仓库事实和目标方向。计划中的能力只有在代码、测试和必要的真实行为
-证据一致后，才能视为已实现。
+## 当前入口
 
-## 本地参考项目
+- [`ROADMAP.md`](./ROADMAP.md)：当前能力、未完成结果和实施顺序。
+- [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)：v1 产品结果与范围。
+- [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：长期界面与交互方向。
+- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：自动检查和真实行为验证入口。
+- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：
+  M5.0 已确认问题、用户结果与资源边界；它不预定导航实现。
 
-`references/` 专门存放用于研究第三方行为和项目历史的完整本地 checkout。该目录整体被 Git 忽略，也不进入 Xcode 工程；其中任何内容都不是 App 依赖或获准重新分发的输入。
+## 持久约束
 
-将第三方源码、注释、fixture、图标或其他资产复制进 BiliKit 前，必须先核实来源和许可证兼容性。
+- [`adr/`](./adr/)：已接受的架构决策。旧 ADR 保留当时背景，由明确写明“取代”的新 ADR
+  更新当前决策。
+- [`security/`](./security/)：认证、凭据、媒体来源和本地数据边界。
+- [`validation/`](./validation/)：仍值得复查的真实设备、网络、性能、安全和兼容性证据。
 
-已接受的决策：
+验证记录是带日期的证据，不是当前测试数量、工具链或实现状态的权威来源。当前事实应先
+核对代码、`Package.swift`、Xcode 工程和质量 Gate。
 
-- [`adr/0001-platform-naming-and-modules.md`](./adr/0001-platform-naming-and-modules.md)
-- [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
-- [`adr/0003-raise-minimum-macos-to-15.md`](./adr/0003-raise-minimum-macos-to-15.md)
-- [`adr/0004-mvvm-clean-architecture.md`](./adr/0004-mvvm-clean-architecture.md)
-- [`adr/0005-web-qr-authentication-boundary.md`](./adr/0005-web-qr-authentication-boundary.md)
-- [`adr/0006-product-domain-feature-targets.md`](./adr/0006-product-domain-feature-targets.md)
-- [`adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md`](./adr/0007-m4-timeline-danmaku-and-persistence-boundaries.md)
-- [`adr/0008-swift-protobuf-runtime.md`](./adr/0008-swift-protobuf-runtime.md)
+## 研究材料
 
-当前安全基线：
-
-- [`security/M3-threat-model.md`](./security/M3-threat-model.md)
-- [`security/M4-data-privacy.md`](./security/M4-data-privacy.md)：字幕、弹幕、播放位置与未来本地缓存的数据边界。
-
-当前验证记录：
-
-- [`validation/M3-auth-state-machine-2026-07-21.md`](./validation/M3-auth-state-machine-2026-07-21.md)：Web QR 状态、成功/过期契约与脱敏探针。
-- [`validation/M3-keychain-authorization-2026-07-21.md`](./validation/M3-keychain-authorization-2026-07-21.md)：Keychain envelope、请求授权与未签名环境边界。
-- [`validation/M3-auth-feature-2026-07-21.md`](./validation/M3-auth-feature-2026-07-21.md)：认证 Application/Feature、完整本地登出与最小 UI smoke。
-- [`validation/M3-watch-history-2026-07-21.md`](./validation/M3-watch-history-2026-07-21.md)：观看历史纵向闭环、真实扫码、重启恢复、登出与游客回退。
-- [`validation/M3-pre-M4-architecture-review-2026-07-21.md`](./validation/M3-pre-M4-architecture-review-2026-07-21.md)：进入 M4 前的独立代码审查、领域 Feature 整理、阻断项与本地验证。
-- [`validation/M3-audit-remediation-2026-07-22.md`](./validation/M3-audit-remediation-2026-07-22.md)：独立审查整改、真实播放回归、工程静态契约和 M3 关闭边界。
-- [`validation/M4-protocol-contract-2026-07-22.md`](./validation/M4-protocol-contract-2026-07-22.md)：M4.0 匿名/已登录协议观察、假值 fixture、依赖审计与隐私 Gate 结论。
-- [`validation/M4-playback-timeline-2026-07-22.md`](./validation/M4-playback-timeline-2026-07-22.md)：M4.1 唯一播放时间线、AVPlayer 适配、取消/替换隔离与本地回归。
-- [`validation/M4-subtitle-vertical-slice-2026-07-22.md`](./validation/M4-subtitle-vertical-slice-2026-07-22.md)：M4.2 字幕生产链路、隐私/来源边界、确定性测试与签名真实样本 Gate。
-- [`validation/M4-danmaku-data-scheduler-2026-07-22.md`](./validation/M4-danmaku-data-scheduler-2026-07-22.md)：M4.3 protobuf decoder、分段调度、依赖边界与真实匿名样本 Gate。
-- [`validation/M4.3.5-engineering-governance-2026-07-22.md`](./validation/M4.3.5-engineering-governance-2026-07-22.md)：风险分级、隔离上下文审查、统一质量 Gate 与首次试运行。
-- [`validation/M4.4-governance-correction-2026-07-23.md`](./validation/M4.4-governance-correction-2026-07-23.md)：决策价值 Gate、复杂度预算、三视角复审与旧 spike 授权撤销。
-- [`validation/M4.4-renderer-production-2026-07-23.md`](./validation/M4.4-renderer-production-2026-07-23.md)：P4 镜像覆盖、真实视觉反馈、完整 App Gate、独立红区审查与 30 分钟生产 probe。
+[`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md) 是立项期的竞品、技术、
+许可和分发研究。它可以解释历史选择，但不定义当前模块名、路线图、工程结构或 AI 工作
+流程。第三方 checkout 只允许放在被 Git 忽略的 `references/`，不得成为产品依赖、测试
+fixture 或可复制源码。
