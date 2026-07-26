@@ -29,7 +29,7 @@ struct VideoDetailLifecycleTests {
         )
         let hostingView = NSHostingView(
             rootView: AnyView(
-                VideoDetailColumn(
+                VideoPlaybackView(
                     model: videoModel,
                     subtitleModel: subtitleModel,
                     danmakuModel: danmakuModel,
@@ -54,7 +54,7 @@ struct VideoDetailLifecycleTests {
         )
         let baselineStopCount = presentation.stopCount
 
-        videoModel.selectVideo(fixture.bvid)
+        videoModel.loadVideo(fixture.bvid)
         #expect(
             await waitUntil {
                 player.loadCallCount == 1
@@ -75,7 +75,7 @@ struct VideoDetailLifecycleTests {
             }
         )
 
-        videoModel.selectVideo(fixture.bvid)
+        videoModel.loadVideo(fixture.bvid)
         #expect(
             await waitUntil {
                 player.loadCallCount == 2

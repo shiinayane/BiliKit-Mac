@@ -40,7 +40,7 @@ struct PlayerHostLifecycleProbeTests {
             useCase: GuestVideoUseCase(repository: repository),
             playback: playback
         )
-        let feedModel = GuestFeedViewModel(
+        let browseModel = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
         let timeline = AppShellIdleTimeline()
@@ -64,9 +64,9 @@ struct PlayerHostLifecycleProbeTests {
                 repository: AppShellSuspendingHistoryRepository()
             )
         )
-        let navigationModel = AppNavigationModel(
+        let navigationCoordinator = AppNavigationCoordinator(
             startPlayback: { bvid in
-                videoModel.selectVideo(bvid)
+                videoModel.loadVideo(bvid)
             },
             stopPlayback: {
                 videoModel.reset()
@@ -102,9 +102,9 @@ struct PlayerHostLifecycleProbeTests {
         let hostingView = NSHostingView(
             rootView: DisappearingContentRoot(
                 visibility: visibility,
-                content: ContentView(
-                    navigationModel: navigationModel,
-                    feedModel: feedModel,
+                content: AppRootView(
+                    navigationCoordinator: navigationCoordinator,
+                    browseModel: browseModel,
                     videoModel: videoModel,
                     subtitleModel: subtitleModel,
                     danmakuModel: danmakuModel,
@@ -123,7 +123,7 @@ struct PlayerHostLifecycleProbeTests {
         window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
 
-        navigationModel.openPlayback("BV1RouteHostA")
+        navigationCoordinator.openPlayback("BV1RouteHostA")
         #expect(
             await waitUntil {
                 probe.events.count == 1
@@ -184,7 +184,7 @@ struct PlayerHostLifecycleProbeTests {
         )
         #expect(presentation.startedIdentities == baselineDanmakuIdentities)
 
-        navigationModel.playbackPath.removeLast()
+        navigationCoordinator.playbackPath.removeLast()
         #expect(
             await waitUntil {
                 probe.events.count == 2 && probe.activeCount == 0
@@ -192,7 +192,7 @@ struct PlayerHostLifecycleProbeTests {
         )
         #expect(playback.stopCount == 1)
 
-        navigationModel.openPlayback("BV1RouteHostB")
+        navigationCoordinator.openPlayback("BV1RouteHostB")
         guard
             await waitUntil({
                 probe.events.count == 3 && probe.activeCount == 1
@@ -208,8 +208,8 @@ struct PlayerHostLifecycleProbeTests {
             await waitUntil {
                 probe.events.count == 4
                     && probe.activeCount == 0
-                    && navigationModel.selectedSection == .popular
-                    && navigationModel.playbackPath.isEmpty
+                    && navigationCoordinator.selectedTab == .popular
+                    && navigationCoordinator.playbackPath.isEmpty
                     && playback.stopCount == 2
             }
         )
@@ -291,7 +291,7 @@ private final class AppShellContentVisibility {
 
 private struct DisappearingContentRoot: View {
     let visibility: AppShellContentVisibility
-    let content: ContentView
+    let content: AppRootView
 
     @ViewBuilder
     var body: some View {

@@ -66,7 +66,7 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
         var generationsAdvanced = true
 
         for (index, bvid) in [firstBVID, secondBVID, firstBVID].enumerated() {
-            videoModel.selectVideo(bvid)
+            videoModel.loadVideo(bvid)
             await videoModel.waitForCurrentTask()
             guard case .ready(let context) = videoModel.state else {
                 recordFailure("video-session-\(index + 1)")

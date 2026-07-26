@@ -111,12 +111,12 @@
     }
 
     private struct UITestContentView: View {
-        private let content: ContentView
+        private let content: AppRootView
 
         init() {
             let repository = UITestGuestRepository()
             let playback = UITestPlayback()
-            let feedModel = GuestFeedViewModel(
+            let browseModel = GuestBrowseViewModel(
                 useCase: GuestFeedUseCase(repository: repository)
             )
             let videoModel = GuestVideoViewModel(
@@ -142,9 +142,9 @@
                     repository: UITestHistoryRepository()
                 )
             )
-            let navigationModel = AppNavigationModel(
+            let navigationCoordinator = AppNavigationCoordinator(
                 startPlayback: { bvid in
-                    videoModel.selectVideo(bvid)
+                    videoModel.loadVideo(bvid)
                 },
                 stopPlayback: {
                     videoModel.reset()
@@ -153,9 +153,9 @@
                 }
             )
 
-            content = ContentView(
-                navigationModel: navigationModel,
-                feedModel: feedModel,
+            content = AppRootView(
+                navigationCoordinator: navigationCoordinator,
+                browseModel: browseModel,
                 videoModel: videoModel,
                 subtitleModel: subtitleModel,
                 danmakuModel: danmakuModel,

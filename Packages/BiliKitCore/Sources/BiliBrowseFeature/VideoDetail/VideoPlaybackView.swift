@@ -1,7 +1,7 @@
 import BiliApplication
 import SwiftUI
 
-public struct VideoDetailColumn<PlayerContent: View>: View {
+public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: GuestVideoViewModel
     private let subtitleModel: SubtitleViewModel
     private let danmakuModel: DanmakuControlsViewModel
