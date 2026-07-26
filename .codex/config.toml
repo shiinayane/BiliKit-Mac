@@ -9,28 +9,3 @@ args = ["mcpbridge"]
 env = { DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer" }
 startup_timeout_sec = 15.0
 tool_timeout_sec = 120.0
-
-[agents]
-max_threads = 3
-max_depth = 1
-interrupt_message = true
-
-[agents.explorer]
-description = "低成本只读探索：定位文件、符号、调用链和已知事实，不做架构判断。"
-config_file = "agents/explorer.toml"
-
-[agents.worker]
-description = "按已确认契约完成边界清晰的绿区或黄区实现。"
-config_file = "agents/worker.toml"
-
-[agents.reviewer]
-description = "黄区只读审查：从契约检查正确性、测试、取消和维护性。"
-config_file = "agents/reviewer.toml"
-
-[agents.architecture_reviewer]
-description = "按需只读架构审查：依赖方向、类型归属、公共面、Composition、抽象价值与迁移完整性。"
-config_file = "agents/architecture-reviewer.toml"
-
-[agents.red_reviewer]
-description = "红区只读终审：线程、生命周期、安全、资源和不可逆边界。"
-config_file = "agents/red-reviewer.toml"
