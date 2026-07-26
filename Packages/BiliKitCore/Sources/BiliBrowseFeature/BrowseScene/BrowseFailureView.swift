@@ -19,7 +19,7 @@ struct BrowseFailureView: View {
     }
 }
 
-extension GuestFlowFailure {
+extension GuestVideoFailure {
     var title: String {
         switch self {
         case .content(let error):

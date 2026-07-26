@@ -1,27 +1,27 @@
 import BiliApplication
 import Observation
 
-public enum GuestFlowFailure: Sendable, Equatable {
+public enum GuestVideoFailure: Sendable, Equatable {
     case content(GuestApplicationError)
     case playback
 }
 
-public enum GuestSelectionState: Sendable, Equatable {
+public enum GuestVideoState: Sendable, Equatable {
     case idle
     case loading(bvid: String)
     case preparingPlayback(GuestVideoContext)
     case ready(GuestVideoContext)
-    case failed(bvid: String, failure: GuestFlowFailure)
+    case failed(bvid: String, failure: GuestVideoFailure)
 }
 
 @MainActor
 @Observable
 public final class GuestVideoViewModel {
-    public private(set) var state: GuestSelectionState = .idle
+    public private(set) var state: GuestVideoState = .idle
 
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
-    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
 
     public init(
@@ -32,16 +32,16 @@ public final class GuestVideoViewModel {
         self.playback = playback
     }
 
-    public func selectVideo(_ bvid: String, quality: Int = 32) {
+    public func loadVideo(_ bvid: String, quality: Int = 32) {
         generation += 1
         let currentGeneration = generation
-        task?.cancel()
+        loadTask?.cancel()
         if state != .idle {
             playback.stop()
         }
         state = .loading(bvid: bvid)
-        task = Task { [weak self] in
-            await self?.performSelection(
+        loadTask = Task { [weak self] in
+            await self?.performLoad(
                 bvid: bvid,
                 quality: quality,
                 generation: currentGeneration
@@ -51,21 +51,21 @@ public final class GuestVideoViewModel {
 
     public func reset() {
         generation += 1
-        task?.cancel()
-        task = nil
+        loadTask?.cancel()
+        loadTask = nil
         state = .idle
         playback.stop()
     }
 
     public func waitForCurrentTask() async {
-        await task?.value
+        await loadTask?.value
     }
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
-        task
+        loadTask
     }
 
-    private func performSelection(
+    private func performLoad(
         bvid: String,
         quality: Int,
         generation currentGeneration: Int
@@ -101,7 +101,7 @@ public final class GuestVideoViewModel {
         }
 
         if generation == currentGeneration {
-            task = nil
+            loadTask = nil
         }
     }
 }
