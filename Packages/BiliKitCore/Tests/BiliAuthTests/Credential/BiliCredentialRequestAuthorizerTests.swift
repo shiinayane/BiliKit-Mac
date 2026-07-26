@@ -37,7 +37,8 @@ struct BiliCredentialRequestAuthorizerTests {
         let playerRequest = HTTPRequest(
             url: try #require(
                 URL(
-                    string: "https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001"
+                    string:
+                        "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef"
                 )
             )
         )
@@ -65,12 +66,34 @@ struct BiliCredentialRequestAuthorizerTests {
                 "https://api.bilibili.com/x/web-interface/history/cursor?max=-1&view_at=0&business=&ps=20",
                 .get
             ),
-            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01", .get),
-            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=0", .get),
-            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001&extra=1", .get),
-            ("https://api.bilibili.com/x/player/v2?bvid=invalid&cid=900001", .get),
+            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001", .get),
+            ("https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01", .get),
             (
-                "https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001",
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=0&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=0&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=invalid",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdeF",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef&extra=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=invalid&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
                 .get
             ),
             ("https://api.bilibili.com/x/web-interface/nav", .post),

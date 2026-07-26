@@ -16,7 +16,10 @@ struct BiliSubtitleRepositoryTests {
     @Test
     func catalogAndBodyDecodeThroughSeparatedAuthorizationBoundary() async throws {
         let catalogTransport = SubtitleRecordingTransport(
-            responses: [try catalogResponse()]
+            responses: [
+                try fixtureResponse("nav"),
+                try catalogResponse(),
+            ]
         )
         let bodyTransport = SubtitleRecordingTransport(
             responses: [try fixtureResponse("subtitle-body")]
@@ -24,7 +27,8 @@ struct BiliSubtitleRepositoryTests {
         let authorizer = SubtitleRecordingAuthorizer()
         let client = BiliAPIClient(
             transport: catalogTransport,
-            requestAuthorizer: authorizer
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
         )
         let repository = BiliSubtitleRepository(
             client: client,
@@ -47,12 +51,25 @@ struct BiliSubtitleRepositoryTests {
         #expect(cues[0].endSeconds == 3.5)
         #expect(cues[0].text == "这是手写的字幕测试内容。")
 
-        let catalogRequest = try #require(
-            await catalogTransport.capturedRequests().first
+        let catalogRequests = await catalogTransport.capturedRequests()
+        #expect(
+            catalogRequests.map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/player/wbi/v2",
+            ]
         )
-        #expect(catalogRequest.url.path == "/x/player/v2")
+        #expect(catalogRequests[0].headers["Cookie"] == nil)
+        let catalogRequest = catalogRequests[1]
         #expect(catalogRequest.headers["Cookie"] == "FIXTURE_AUTHORIZED")
-        #expect(await authorizer.capturedPaths() == ["/x/player/v2"])
+        let catalogQuery = URLComponents(
+            url: catalogRequest.url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(catalogQuery?.first(where: { $0.name == "bvid" })?.value == identity.bvid)
+        #expect(catalogQuery?.first(where: { $0.name == "cid" })?.value == "900001")
+        #expect(catalogQuery?.first(where: { $0.name == "wts" })?.value == "1700000000")
+        #expect(catalogQuery?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
+        #expect(await authorizer.capturedPaths() == ["/x/player/wbi/v2"])
 
         let bodyRequest = try #require(
             await bodyTransport.capturedRequests().first
@@ -67,9 +84,13 @@ struct BiliSubtitleRepositoryTests {
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
                 transport: SubtitleRecordingTransport(
-                    responses: [try catalogResponse(prependingEmptyURLTrack: true)]
+                    responses: [
+                        try fixtureResponse("nav"),
+                        try catalogResponse(prependingEmptyURLTrack: true),
+                    ]
                 ),
-                requestAuthorizer: SubtitleRecordingAuthorizer()
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: SubtitleRecordingTransport(responses: [])
         )
@@ -96,15 +117,70 @@ struct BiliSubtitleRepositoryTests {
     }
 
     @Test
+    func signatureRejectionRefreshesWBIKeyOnce() async throws {
+        let rejected = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(
+                #"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#.utf8
+            )
+        )
+        let catalogTransport = SubtitleRecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                rejected,
+                try fixtureResponse("nav-refreshed"),
+                try catalogResponse(),
+            ]
+        )
+        let repository = BiliSubtitleRepository(
+            client: BiliAPIClient(
+                transport: catalogTransport,
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
+            ),
+            bodyTransport: SubtitleRecordingTransport(responses: [])
+        )
+
+        let tracks = try await repository.tracks(for: identity)
+
+        #expect(tracks.count == 1)
+        let requests = await catalogTransport.capturedRequests()
+        #expect(
+            requests.map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/player/wbi/v2",
+                "/x/web-interface/nav",
+                "/x/player/wbi/v2",
+            ]
+        )
+        let signatures =
+            requests
+            .filter { $0.url.path == "/x/player/wbi/v2" }
+            .compactMap {
+                URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
+                    .queryItems?
+                    .first(where: { $0.name == "w_rid" })?
+                    .value
+            }
+        #expect(signatures.count == 2)
+        #expect(signatures[0] != signatures[1])
+    }
+
+    @Test
     func catalogRejectsUntrustedSubtitleOriginBeforeBodyTransport() async throws {
         let catalogTransport = SubtitleRecordingTransport(
-            responses: [try fixtureResponse("subtitle-catalog")]
+            responses: [
+                try fixtureResponse("nav"),
+                try fixtureResponse("subtitle-catalog"),
+            ]
         )
         let bodyTransport = SubtitleRecordingTransport(responses: [])
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
                 transport: catalogTransport,
-                requestAuthorizer: SubtitleRecordingAuthorizer()
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: bodyTransport
         )
@@ -188,9 +264,13 @@ struct BiliSubtitleRepositoryTests {
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
                 transport: SubtitleRecordingTransport(
-                    responses: [try catalogResponse()]
+                    responses: [
+                        try fixtureResponse("nav"),
+                        try catalogResponse(),
+                    ]
                 ),
-                requestAuthorizer: SubtitleRecordingAuthorizer()
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: bodyTransport
         )
@@ -209,7 +289,8 @@ struct BiliSubtitleRepositoryTests {
     @Test
     func resetInvalidatesCatalogThatFinishesAfterViewClosed() async throws {
         let catalogTransport = SubtitleDelayedTransport(
-            response: try catalogResponse(),
+            navigationResponse: try fixtureResponse("nav"),
+            catalogResponse: try catalogResponse(),
             delay: .milliseconds(80)
         )
         let bodyTransport = SubtitleRecordingTransport(
@@ -218,7 +299,8 @@ struct BiliSubtitleRepositoryTests {
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
                 transport: catalogTransport,
-                requestAuthorizer: SubtitleRecordingAuthorizer()
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: bodyTransport
         )
@@ -261,9 +343,13 @@ struct BiliSubtitleRepositoryTests {
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
                 transport: SubtitleRecordingTransport(
-                    responses: [try catalogResponse()]
+                    responses: [
+                        try fixtureResponse("nav"),
+                        try catalogResponse(),
+                    ]
                 ),
-                requestAuthorizer: SubtitleRecordingAuthorizer()
+                requestAuthorizer: SubtitleRecordingAuthorizer(),
+                timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: SubtitleRecordingTransport(
                 responses: [bodyResponse]
@@ -374,17 +460,26 @@ private actor SubtitleRecordingAuthorizer: HTTPRequestAuthorizing {
 }
 
 private actor SubtitleDelayedTransport: HTTPTransport {
-    let response: HTTPResponse
+    let navigationResponse: HTTPResponse
+    let catalogResponse: HTTPResponse
     let delay: Duration
 
-    init(response: HTTPResponse, delay: Duration) {
-        self.response = response
+    init(
+        navigationResponse: HTTPResponse,
+        catalogResponse: HTTPResponse,
+        delay: Duration
+    ) {
+        self.navigationResponse = navigationResponse
+        self.catalogResponse = catalogResponse
         self.delay = delay
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        if request.url.path == "/x/web-interface/nav" {
+            return navigationResponse
+        }
         try? await Task.sleep(for: delay)
-        return response
+        return catalogResponse
     }
 }
 

@@ -172,25 +172,25 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             return components.queryItems?.isEmpty != false
         case "/x/web-interface/history/cursor":
             return isAllowedHistoryQuery(components.queryItems)
-        case "/x/player/v2":
-            return isAllowedPlayerV2Query(components.queryItems)
+        case "/x/player/wbi/v2":
+            return isAllowedPlayerWBIQuery(components.queryItems)
         default:
             return false
         }
     }
 
-    private static func isAllowedPlayerV2Query(
+    private static func isAllowedPlayerWBIQuery(
         _ queryItems: [URLQueryItem]?
     ) -> Bool {
-        guard let queryItems, queryItems.count == 2 else { return false }
+        guard let queryItems, queryItems.count == 4 else { return false }
         var values: [String: String] = [:]
         for item in queryItems {
             guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
                 return false
             }
         }
-        guard values.count == 2,
-            Set(values.keys) == ["bvid", "cid"],
+        guard values.count == 4,
+            Set(values.keys) == ["bvid", "cid", "w_rid", "wts"],
             let bvid = values["bvid"],
             bvid.count == 12,
             bvid.hasPrefix("BV"),
@@ -198,7 +198,15 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
                 $0.isASCII && ($0.isLetter || $0.isNumber)
             }),
             let cid = values["cid"].flatMap(Int64.init),
-            cid > 0
+            cid > 0,
+            let timestamp = values["wts"].flatMap(Int64.init),
+            timestamp > 0,
+            let signature = values["w_rid"],
+            signature.count == 32,
+            signature.allSatisfy({
+                $0.isASCII
+                    && ($0.isNumber || ("a"..."f").contains($0))
+            })
         else {
             return false
         }

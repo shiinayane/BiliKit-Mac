@@ -176,17 +176,25 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
         guard Self.isValidBVID(identity.bvid), identity.cid > 0 else {
             throw BiliAPIError.invalidRequest
         }
-        let payload: SubtitleCatalogPayload = try await get(
-            path: "/x/player/v2",
-            queryItems: [
-                URLQueryItem(name: "bvid", value: identity.bvid),
-                URLQueryItem(name: "cid", value: String(identity.cid)),
-            ],
-            referer: Self.videoReferer(identity.bvid),
-            requiresAuthentication: true,
-            maximumResponseSize: Self.maximumSubtitleCatalogSize
-        )
-        return try payload.resources()
+        guard requestAuthorizer != nil else {
+            throw BiliAPIError.authorizationRequired
+        }
+        do {
+            return try await signedSubtitleResources(
+                for: identity,
+                forceKeyRefresh: false
+            )
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
+            return try await signedSubtitleResources(
+                for: identity,
+                forceKeyRefresh: true
+            )
+        } catch BiliAPIError.httpStatus(403) {
+            return try await signedSubtitleResources(
+                for: identity,
+                forceKeyRefresh: true
+            )
+        }
     }
 
     func danmakuSegmentData(
@@ -302,13 +310,20 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
     private func get<Payload: Decodable & Sendable>(
         path: String,
         percentEncodedQuery: String,
-        referer: String
+        referer: String,
+        requiresAuthentication: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let url = try endpoint(
             path: path,
             percentEncodedQuery: percentEncodedQuery
         )
-        return try await get(url: url, referer: referer)
+        return try await get(
+            url: url,
+            referer: referer,
+            requiresAuthentication: requiresAuthentication,
+            maximumResponseSize: maximumResponseSize
+        )
     }
 
     private func get<Payload: Decodable & Sendable>(
@@ -419,6 +434,29 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
             referer: "https://www.bilibili.com/"
         )
         return try payload.model()
+    }
+
+    private func signedSubtitleResources(
+        for identity: PlaybackItemIdentity,
+        forceKeyRefresh: Bool
+    ) async throws -> [SubtitleRemoteTrack] {
+        let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        let query = try wbiSigner.sign(
+            parameters: [
+                "bvid": identity.bvid,
+                "cid": String(identity.cid),
+            ],
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let payload: SubtitleCatalogPayload = try await get(
+            path: "/x/player/wbi/v2",
+            percentEncodedQuery: query,
+            referer: Self.videoReferer(identity.bvid),
+            requiresAuthentication: true,
+            maximumResponseSize: Self.maximumSubtitleCatalogSize
+        )
+        return try payload.resources()
     }
 
     private func wbiKey(forceRefresh: Bool) async throws -> WBIKeyMaterial {
