@@ -97,7 +97,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 
 ### M5.0：日用状态保留与真实返回上下文
 
-状态：尚未实施；从当前 `main` 重新判断。
+状态：进行中；2026-07-26 已开始原生导航与窗口内工作集切片，M5.0 Gate 尚未关闭。
 
 目标：
 
@@ -106,13 +106,22 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - 刷新是独立意图；刷新中保留旧内容，失败不清空仍有效的同一 identity 数据。
 - route、query、刷新和关窗后的迟到结果不能覆盖当前状态。
 
-第一步不是套用旧实现，而是核对当前自定义 route、`NavigationSplitView` /
-`NavigationStack`、列表 state owner 和 SwiftUI 平台恢复能力，再决定是否改用原生
-Navigation 以及 App/Feature 的 owner。完整边界见
+当前 revision 已选择 macOS 15 `TabView(.sidebarAdaptable)` 表达搜索／热门／历史三个
+平级来源，每个 Tab 内以 `NavigationStack(path:)` 推入类型化播放 destination，系统
+pop 负责返回。App 不再用 `AppRoute` 和 `AppReturnSnapshot` 重建来源页面；热门／最后
+搜索分别从 Browse Feature 的每窗口双工作集读取 presentation，Tab 与
+`NavigationStack` 负责来源返回；App shell 为热门、搜索和历史各持有一个以视频
+identity 为目标的原生 `ScrollPosition`，不再维护数值 offset。新搜索词或登录身份
+变化会重置对应位置，同一工作集的 Tab 往返继续保留。视频卡片不再具有持久 selected
+API 或高亮分支。完整边界见
 [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)。
 
 完成证据至少包括确定性请求/取消测试，以及热门、搜索、tab 往返、视频进入/返回和窗口
 尺寸变化的真实 UI 路径。首次修复不引入数据库、通用 cache、图片 pipeline 或媒体缓存。
+当前定向 Package/App 测试已通过；未签名 fixture XCUI runner 在 worker 启动阶段
+阻塞，签名 runner 能启动测试但 App 激活停在 `Running Background`，均未进入用户
+路径，尚不能作为 UI 通过证据。完整 App Gate 已通过；直接 UI 验收、review 与 CI
+仍待完成。
 
 ### M5.1：首页个性推荐
 
