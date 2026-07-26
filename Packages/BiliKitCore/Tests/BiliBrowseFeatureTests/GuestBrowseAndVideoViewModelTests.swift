@@ -13,18 +13,18 @@ import Testing
 @testable import BiliBrowseFeature
 
 @Suite(.timeLimit(.minutes(1)))
-struct GuestViewModelTests {
+struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func modelLoadsPopularPage() async {
         let fixture = GuestFixtures()
-        let model = GuestFeedViewModel(
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(
                 repository: GuestRepositoryStub(fixtures: fixture)
             )
         )
 
-        model.loadPopular(page: 2, pageSize: 10)
+        model.refreshPopular(page: 2, pageSize: 10)
         await model.waitForCurrentTask()
 
         #expect(
@@ -45,7 +45,7 @@ struct GuestViewModelTests {
     @MainActor
     func modelSearchesVideosWithNormalizedQuery() async {
         let fixture = GuestFixtures()
-        let model = GuestFeedViewModel(
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(
                 repository: GuestRepositoryStub(fixtures: fixture)
             )
@@ -76,7 +76,7 @@ struct GuestViewModelTests {
     func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
         let fixture = GuestFixtures()
         let repository = FeedSwitchingRepositoryStub(fixtures: fixture)
-        let model = GuestFeedViewModel(
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(
                 repository: repository
             )
@@ -85,7 +85,7 @@ struct GuestViewModelTests {
         model.search("旧搜索")
         try await repository.waitForSearchStart()
         let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.loadPopular()
+        model.refreshPopular()
         await model.waitForCurrentTask()
         await repository.releaseSearch()
         await supersededTask.value
@@ -108,7 +108,7 @@ struct GuestViewModelTests {
     @MainActor
     func failedSearchRetriesItsOriginalRequest() async {
         let fixture = GuestFixtures()
-        let model = GuestFeedViewModel(
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(
                 repository: RetryingSearchRepositoryStub(fixtures: fixture)
             )
@@ -145,10 +145,10 @@ struct GuestViewModelTests {
 
     @Test
     @MainActor
-    func tabRoundTripReusesPopularAndSearchSnapshotsWithoutNewRequests() async {
+    func tabRoundTripReusesPopularAndSearchWorksetsWithoutNewRequests() async {
         let fixture = GuestFixtures()
-        let repository = SnapshotRepositoryStub(fixtures: fixture)
-        let model = GuestFeedViewModel(
+        let repository = WorksetRepositoryStub(fixtures: fixture)
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
         let searchRequest = GuestFeedRequest.search(query: "macOS", page: 1)
@@ -196,8 +196,8 @@ struct GuestViewModelTests {
     @MainActor
     func failedRefreshKeepsMatchingLoadedContentVisible() async {
         let fixture = GuestFixtures()
-        let repository = SnapshotRepositoryStub(fixtures: fixture)
-        let model = GuestFeedViewModel(
+        let repository = WorksetRepositoryStub(fixtures: fixture)
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
 
@@ -206,7 +206,7 @@ struct GuestViewModelTests {
         let loadedState = model.state
         await repository.failNextPopularRequest()
 
-        model.loadPopular(pageSize: 50)
+        model.refreshPopular(pageSize: 50)
         #expect(model.state == loadedState)
         #expect(model.isRefreshing)
         await model.waitForCurrentTask()
@@ -221,8 +221,8 @@ struct GuestViewModelTests {
     @MainActor
     func resetClearsWorksetsAndRequiresANewLoad() async {
         let fixture = GuestFixtures()
-        let repository = SnapshotRepositoryStub(fixtures: fixture)
-        let model = GuestFeedViewModel(
+        let repository = WorksetRepositoryStub(fixtures: fixture)
+        let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
         model.activatePopular(pageSize: 50)
@@ -251,7 +251,7 @@ struct GuestViewModelTests {
             playback: player
         )
 
-        model.selectVideo(fixture.detail.bvid)
+        model.loadVideo(fixture.detail.bvid)
         await model.waitForCurrentTask()
 
         let context = GuestVideoContext(
@@ -274,7 +274,7 @@ struct GuestViewModelTests {
 
     @Test
     @MainActor
-    func resettingSelectionClearsDetailAndStopsPlayer() async {
+    func resettingVideoLoadClearsDetailAndStopsPlayer() async {
         let fixture = GuestFixtures()
         let player = RecordingPlayerEngine()
         let model = GuestVideoViewModel(
@@ -284,7 +284,7 @@ struct GuestViewModelTests {
             playback: player
         )
 
-        model.selectVideo(fixture.bvid)
+        model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
         model.reset()
 
@@ -294,7 +294,7 @@ struct GuestViewModelTests {
 
     @Test(.timeLimit(.minutes(1)))
     @MainActor
-    func newerSelectionPreventsOldVideoFromLoadingPlayer() async throws {
+    func newerVideoLoadPreventsOldVideoFromLoadingPlayer() async throws {
         let slow = GuestFixtures(bvid: "BV1SlowFixture", title: "旧视频")
         let fast = GuestFixtures(bvid: "BV1FastFixture", title: "新视频")
         let player = RecordingPlayerEngine()
@@ -306,10 +306,10 @@ struct GuestViewModelTests {
             playback: player
         )
 
-        model.selectVideo(slow.detail.bvid)
+        model.loadVideo(slow.detail.bvid)
         try await repository.waitForSlowRequestCount(2)
         let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.selectVideo(fast.detail.bvid)
+        model.loadVideo(fast.detail.bvid)
         await model.waitForCurrentTask()
         await repository.releaseSlowRequests()
         await supersededTask.value
@@ -329,7 +329,7 @@ struct GuestViewModelTests {
     }
 }
 
-private actor SnapshotRepositoryStub: GuestContentRepository {
+private actor WorksetRepositoryStub: GuestContentRepository {
     let fixtures: GuestFixtures
     private(set) var popularCallCount = 0
     private(set) var searchCallCount = 0
