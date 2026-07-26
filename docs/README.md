@@ -10,7 +10,7 @@
 - [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：长期界面与交互方向。
 - [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：自动检查和真实行为验证入口。
 - [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：
-  M5.0 已确认问题、用户结果与资源边界；它不预定导航实现。
+  M5.0 已确认问题、用户结果、资源边界与当前原生导航 revision。
 
 ## 持久约束
 
