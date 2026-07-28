@@ -34,11 +34,6 @@ struct BiliAPIProbe {
         print(
             "search: page=\(page.pageNumber) count=\(page.videos.count) total=\(page.totalResults)"
         )
-        if let first = page.videos.first {
-            print(
-                "first: bvid=\(first.bvid) duration=\(first.durationSeconds ?? 0)s"
-            )
-        }
     }
 
     private static func writeError(_ message: String) {
@@ -47,7 +42,19 @@ struct BiliAPIProbe {
 }
 
 private actor SearchProbeTransport: HTTPTransport {
-    private let transport = URLSessionTransport()
+    private let transport: URLSessionTransport
+
+    init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        transport = URLSessionTransport(
+            configuration: configuration,
+            redirectPolicy: .reject
+        )
+    }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let response = try await transport.send(request)
@@ -191,55 +198,71 @@ private struct Configuration {
 
     init(arguments: [String]) throws {
         let arguments = Array(arguments.dropFirst())
-        if arguments.first == "--m4-contract" {
-            let values = try Self.values(from: Array(arguments.dropFirst()))
-            guard values.count == 2,
-                let bvid = values["--bvid"],
+        guard arguments.count == 2,
+            arguments[0] == "--input-file"
+        else {
+            throw ProbeError.invalidRequest
+        }
+        let values = try SecureProbeInput.load(path: arguments[1])
+        switch values["mode"] {
+        case "m4-contract":
+            guard
+                let bvid = values["bvid"],
                 Self.isValidBVID(bvid),
-                let rawCID = values["--cid"],
+                let rawCID = values["cid"],
                 let cid = Int64(rawCID),
                 cid > 0
             else {
                 throw ProbeError.invalidRequest
             }
             mode = .m4Contract(bvid: bvid, cid: cid)
-            return
-        }
-
-        let values = try Self.values(from: arguments)
-        guard values.count <= 2,
-            let keyword = values["--search"]?.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ),
-            !keyword.isEmpty,
-            let page = Int(values["--page"] ?? "1"),
-            page > 0
-        else {
-            throw ProbeError.invalidRequest
-        }
-        mode = .search(keyword: keyword, page: page)
-    }
-
-    private static func values(from arguments: [String]) throws -> [String: String] {
-        guard arguments.count.isMultiple(of: 2) else {
-            throw ProbeError.invalidRequest
-        }
-        var values: [String: String] = [:]
-        var index = 0
-        while index < arguments.count {
-            let name = arguments[index]
-            guard name.hasPrefix("--"), values[name] == nil else {
+        case "search":
+            guard
+                let keyword = values["query"]?.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ),
+                !keyword.isEmpty,
+                keyword.count <= 100,
+                let page = Int(values["page"] ?? "1"),
+                page > 0
+            else {
                 throw ProbeError.invalidRequest
             }
-            values[name] = arguments[index + 1]
-            index += 2
+            mode = .search(keyword: keyword, page: page)
+        default:
+            throw ProbeError.invalidRequest
         }
-        return values
     }
 
     private static func isValidBVID(_ value: String) -> Bool {
         value.count == 12
             && value.hasPrefix("BV")
             && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+}
+
+private enum SecureProbeInput {
+    private static let maximumBytes = 4 * 1_024
+
+    static func load(path: String) throws -> [String: String] {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard
+            attributes[.type] as? FileAttributeType == .typeRegular,
+            let permissions = attributes[.posixPermissions] as? NSNumber,
+            permissions.intValue & 0o077 == 0
+        else {
+            throw ProbeError.invalidRequest
+        }
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: path),
+            options: .mappedIfSafe
+        )
+        guard data.count <= maximumBytes else {
+            throw ProbeError.invalidRequest
+        }
+        return try PropertyListDecoder().decode(
+            [String: String].self,
+            from: data
+        )
     }
 }

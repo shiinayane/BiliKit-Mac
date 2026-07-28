@@ -11,13 +11,15 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
 
     @MainActor
     func testAuthenticatedSubtitleContractWhenExplicitlyConfigured() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        guard let bvid = environment["BILIKIT_M4_PROBE_BVID"],
+        guard let input = try LocalProbeInput.load() else {
+            throw XCTSkip(
+                "仅在显式提供安全本机 probe 输入文件时运行已登录 M4 探针"
+            )
+        }
+        guard let bvid = input["bvid"],
             Self.isValidBVID(bvid)
         else {
-            throw XCTSkip(
-                "仅在显式提供 BILIKIT_M4_PROBE_BVID 时运行已登录 M4 探针"
-            )
+            throw ProbeFailure.invalidRequest
         }
 
         let configuration = URLSessionConfiguration.ephemeral
@@ -35,7 +37,7 @@ final class M4AuthenticatedContractProbeTests: XCTestCase {
 
         let referer = "https://www.bilibili.com/video/\(bvid)"
         let cid: Int64
-        if let rawCID = environment["BILIKIT_M4_PROBE_CID"] {
+        if let rawCID = input["cid"] {
             guard let configuredCID = Int64(rawCID), configuredCID > 0 else {
                 throw ProbeFailure.invalidRequest
             }

@@ -127,32 +127,25 @@ private struct Configuration {
 
     init(arguments: [String]) throws {
         let arguments = Array(arguments.dropFirst())
-        guard arguments.count.isMultiple(of: 2) else {
+        guard arguments.count == 2,
+            arguments[0] == "--input-file"
+        else {
             throw DanmakuApplicationError.invalidRequest
         }
-        var values: [String: String] = [:]
-        var index = 0
-        while index < arguments.count {
-            let name = arguments[index]
-            guard name.hasPrefix("--"), values[name] == nil else {
-                throw DanmakuApplicationError.invalidRequest
-            }
-            values[name] = arguments[index + 1]
-            index += 2
-        }
-        guard (2...3).contains(values.count),
-            let bvid = values["--bvid"],
+        let values = try SecureProbeInput.load(path: arguments[1])
+        guard
+            let bvid = values["bvid"],
             bvid.count == 12,
             bvid.hasPrefix("BV"),
             bvid.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }),
-            let rawSegmentIndex = values["--segment-index"],
+            let rawSegmentIndex = values["segment"],
             let segmentIndex = Int(rawSegmentIndex),
             (1...DanmakuSegmentUseCase.maximumSegmentIndex).contains(segmentIndex)
         else {
             throw DanmakuApplicationError.invalidRequest
         }
         let cid: Int64?
-        if let rawCID = values["--cid"] {
+        if let rawCID = values["cid"] {
             guard let parsed = Int64(rawCID), parsed > 0 else {
                 throw DanmakuApplicationError.invalidRequest
             }
@@ -163,5 +156,31 @@ private struct Configuration {
         self.bvid = bvid
         self.cid = cid
         self.segmentIndex = segmentIndex
+    }
+}
+
+private enum SecureProbeInput {
+    private static let maximumBytes = 4 * 1_024
+
+    static func load(path: String) throws -> [String: String] {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard
+            attributes[.type] as? FileAttributeType == .typeRegular,
+            let permissions = attributes[.posixPermissions] as? NSNumber,
+            permissions.intValue & 0o077 == 0
+        else {
+            throw DanmakuApplicationError.invalidRequest
+        }
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: path),
+            options: .mappedIfSafe
+        )
+        guard data.count <= maximumBytes else {
+            throw DanmakuApplicationError.invalidRequest
+        }
+        return try PropertyListDecoder().decode(
+            [String: String].self,
+            from: data
+        )
     }
 }

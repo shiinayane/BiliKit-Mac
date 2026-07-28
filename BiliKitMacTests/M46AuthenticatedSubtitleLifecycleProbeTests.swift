@@ -13,16 +13,18 @@ final class M46AuthenticatedSubtitleLifecycleProbeTests: XCTestCase {
     func testAuthenticatedABASubtitleLifecycleWhenExplicitlyConfigured()
         async throws
     {
-        let environment = ProcessInfo.processInfo.environment
-        guard let firstBVID = environment["BILIKIT_M46_PROBE_BVID_A"],
-            let secondBVID = environment["BILIKIT_M46_PROBE_BVID_B"],
+        guard let input = try LocalProbeInput.load() else {
+            throw XCTSkip(
+                "仅在显式提供安全本机 probe 输入文件时运行签名 A/B 生命周期探针"
+            )
+        }
+        guard let firstBVID = input["bvidA"],
+            let secondBVID = input["bvidB"],
             Self.isValidBVID(firstBVID),
             Self.isValidBVID(secondBVID),
             firstBVID != secondBVID
         else {
-            throw XCTSkip(
-                "仅在显式提供两个不同的 M4.6 probe BVID 时运行签名 A/B 生命周期探针"
-            )
+            throw LocalProbeInputError.invalidValue
         }
 
         let transportFactory: @Sendable () -> any HTTPTransport = {
