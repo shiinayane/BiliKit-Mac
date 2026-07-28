@@ -269,8 +269,6 @@ struct HistoryRefreshButton: View {
 }
 
 private struct PlaybackDestinationView: View {
-    @Environment(\.dismiss) private var dismiss
-
     let model: GuestVideoViewModel
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
@@ -289,8 +287,5 @@ private struct PlaybackDestinationView: View {
         .navigationTitle("播放")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .onExitCommand {
-            dismiss()
-        }
     }
 }
