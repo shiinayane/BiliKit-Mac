@@ -12,18 +12,21 @@ struct SliceCAccessibilityTests {
         #expect(!live.usesCompactWindow)
         #expect(!live.usesDarkAppearance)
         #expect(!live.usesLargeText)
+        #expect(!live.usesNativeSearchableProbe)
 
         let isolatedHelperFlags = UITestConfiguration.parse(
             arguments: [
                 "-ui-testing-compact",
                 "-ui-testing-dark",
                 "-ui-testing-large-text",
+                "-ui-testing-native-searchable",
             ]
         )
         #expect(!isolatedHelperFlags.isEnabled)
         #expect(!isolatedHelperFlags.usesCompactWindow)
         #expect(!isolatedHelperFlags.usesDarkAppearance)
         #expect(!isolatedHelperFlags.usesLargeText)
+        #expect(!isolatedHelperFlags.usesNativeSearchableProbe)
 
         let fixture = UITestConfiguration.parse(
             arguments: [
@@ -31,12 +34,14 @@ struct SliceCAccessibilityTests {
                 "-ui-testing-compact",
                 "-ui-testing-dark",
                 "-ui-testing-large-text",
+                "-ui-testing-native-searchable",
             ]
         )
         #expect(fixture.isEnabled)
         #expect(fixture.usesCompactWindow)
         #expect(fixture.usesDarkAppearance)
         #expect(fixture.usesLargeText)
+        #expect(fixture.usesNativeSearchableProbe)
     }
 
     @Test
