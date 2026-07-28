@@ -7,6 +7,7 @@ enum DanmakuPayloadDecoder {
     private static let maximumTextLength = 1_000_000
     private static let maximumEventTextLength = 4_096
     private static let maximumTimeMilliseconds = 86_400_000
+    private static let baseColorRGBMask: UInt32 = 0x00FF_FFFF
 
     static func events(from data: Data) throws -> [DanmakuEvent] {
         let payload: Bilikit_Danmaku_SegmentReply
@@ -38,8 +39,7 @@ enum DanmakuPayloadDecoder {
                 id.count <= 128,
                 element.progressMilliseconds >= 0,
                 element.progressMilliseconds <= maximumTimeMilliseconds,
-                text.count <= maximumEventTextLength,
-                element.colorRgb <= 0xFF_FF_FF
+                text.count <= maximumEventTextLength
             else {
                 throw BiliAPIError.invalidDanmakuData
             }
@@ -53,7 +53,10 @@ enum DanmakuPayloadDecoder {
                 mode: mode,
                 text: text,
                 fontSize: normalizedFontSize(element.fontSize),
-                colorRGB: element.colorRgb,
+                // Field 5 supplies the base RRGGBB color. Future presentation
+                // metadata such as member gradients belongs in separate model
+                // fields instead of being packed into this RGB value.
+                colorRGB: element.colorRgb & baseColorRGBMask,
                 weight: Int(element.weight)
             )
         }

@@ -151,6 +151,27 @@ struct BiliDanmakuRepositoryTests {
     }
 
     @Test
+    func decoderNormalizesBaseColorRGBWithoutDroppingTheEvent() throws {
+        var element = Bilikit_Danmaku_Element()
+        element.id = 4
+        element.progressMilliseconds = 1_000
+        element.mode = 1
+        element.fontSize = 25
+        element.colorRgb = 0xAB12_3456
+        element.content = "colored fixture"
+        var payload = Bilikit_Danmaku_SegmentReply()
+        payload.elements = [element]
+
+        let events = try DanmakuPayloadDecoder.events(
+            from: payload.serializedData()
+        )
+        let event = try #require(events.first)
+
+        #expect(events.count == 1)
+        #expect(event.colorRGB == 0x12_3456)
+    }
+
+    @Test
     func cancellationIsNotCollapsedIntoTransportFailure() async {
         let client = BiliAPIClient(transport: DanmakuCancellationTransport())
         let repository = BiliDanmakuRepository(client: client)
