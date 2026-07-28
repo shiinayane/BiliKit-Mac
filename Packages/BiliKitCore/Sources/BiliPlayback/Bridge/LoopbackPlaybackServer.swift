@@ -304,6 +304,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             )
             return
         }
+        guard let expectedHostHeader,
+            request.headers["host"] == expectedHostHeader
+        else {
+            sendStatus(400, reason: "Bad Request", on: connection)
+            return
+        }
         guard request.target.hasPrefix("/\(sessionToken)/"),
             let resource = lock.withLock({ routes[request.target] })
         else {
@@ -525,6 +531,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         )
         return route.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
+
+    private var expectedHostHeader: String? {
+        lock.withLock {
+            port.map { "127.0.0.1:\($0.rawValue)" }
+        }
+    }
 }
 
 private struct LoopbackHTTPRequest: Sendable {
@@ -554,7 +566,11 @@ private struct LoopbackHTTPRequest: Sendable {
             let name = line[..<separator].trimmingCharacters(in: .whitespaces)
             let value = line[line.index(after: separator)...]
                 .trimmingCharacters(in: .whitespaces)
-            headers[name.lowercased()] = value
+            let normalizedName = name.lowercased()
+            guard normalizedName != "host" || headers[normalizedName] == nil else {
+                throw LoopbackPlaybackServerError.invalidHTTPRequest
+            }
+            headers[normalizedName] = value
         }
         return Self(
             method: String(requestLine[0]),
