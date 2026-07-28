@@ -70,6 +70,22 @@ struct DanmakuSchedulerTests {
     }
 
     @Test
+    func finalSegmentDoesNotPrefetchBeyondKnownDuration() {
+        var scheduler = DanmakuScheduler()
+        scheduler.begin(for: identity)
+        let snapshot = PlaybackTimelineSnapshot(
+            identity: identity,
+            positionSeconds: 2_200,
+            durationSeconds: 2_327,
+            rate: 1,
+            state: .playing,
+            discontinuityGeneration: 1
+        )
+
+        #expect(scheduler.desiredSegmentIndices(for: snapshot) == [7])
+    }
+
+    @Test
     func discontinuityClearsWithoutBackfillAndBackwardSeekCanReemit() throws {
         var scheduler = DanmakuScheduler()
         scheduler.begin(for: identity)

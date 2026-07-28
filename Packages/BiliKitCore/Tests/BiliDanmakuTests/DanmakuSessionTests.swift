@@ -132,6 +132,46 @@ struct DanmakuSessionTests {
         #expect(sink.stopCount == 1)
     }
 
+    @Test
+    func failedSegmentsAreNotRetriedByEveryLaterTimelineUpdate() async throws {
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1FailingDanmakuFixture",
+            cid: 4
+        )
+        let repository = AlwaysFailingDanmakuRepository()
+        let timeline = SessionTimeline()
+        let session = DanmakuSession(
+            useCase: DanmakuSegmentUseCase(repository: repository),
+            timeline: timeline
+        )
+        let updateCount = 128
+
+        session.start(for: identity)
+        for ordinal in 1...updateCount {
+            timeline.publish(
+                snapshot(
+                    identity: identity,
+                    position: 0,
+                    generation: 1
+                )
+            )
+            try await repository.waitForRequestCount(
+                ordinal * 2,
+                identity: identity
+            )
+            await session.waitForLoads()
+        }
+
+        let attempts = await repository.requestCount(for: identity)
+        #expect(attempts == updateCount * 2)
+        #expect(session.state == .failed(identity, .unavailable))
+        withKnownIssue(
+            "A failed current/next segment is retried by every later timeline update."
+        ) {
+            #expect(attempts <= 4)
+        }
+    }
+
     private func snapshot(
         identity: PlaybackItemIdentity,
         position: Double,
@@ -249,6 +289,40 @@ private struct ImmediateDanmakuRepository: DanmakuSegmentRepository {
         for identity: PlaybackItemIdentity
     ) async throws -> DanmakuSegment {
         DanmakuSegment(index: index, events: [])
+    }
+}
+
+private actor AlwaysFailingDanmakuRepository: DanmakuSegmentRepository {
+    private var counts: [PlaybackItemIdentity: Int] = [:]
+    private var events: [PlaybackItemIdentity: TestEventCounter] = [:]
+
+    func segment(
+        index _: Int,
+        for identity: PlaybackItemIdentity
+    ) async throws -> DanmakuSegment {
+        counts[identity, default: 0] += 1
+        await event(for: identity).signal()
+        throw DanmakuApplicationError.unavailable
+    }
+
+    func requestCount(for identity: PlaybackItemIdentity) -> Int {
+        counts[identity, default: 0]
+    }
+
+    func waitForRequestCount(
+        _ expectedCount: Int,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        try await event(for: identity).wait(until: expectedCount)
+    }
+
+    private func event(for identity: PlaybackItemIdentity) -> TestEventCounter {
+        if let event = events[identity] {
+            return event
+        }
+        let event = TestEventCounter()
+        events[identity] = event
+        return event
     }
 }
 
