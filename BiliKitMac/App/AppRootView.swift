@@ -10,19 +10,18 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
-struct AppRootView: View {
-    @State private var navigationCoordinator: AppNavigationCoordinator
-    @State private var browseModel: GuestBrowseViewModel
-    @State private var videoModel: GuestVideoViewModel
-    @State private var subtitleModel: SubtitleViewModel
-    @State private var danmakuModel: DanmakuControlsViewModel
-    @State private var authenticationModel: AuthenticationViewModel
-    @State private var historyModel: WatchHistoryViewModel
-    @State private var isAuthenticationPresented = false
-    @State private var submittedSearchQuery: String?
-    private let playerContent: AnyView
+@MainActor
+private final class AppWindowOwner {
+    let navigationCoordinator: AppNavigationCoordinator
+    let browseModel: GuestBrowseViewModel
+    let videoModel: GuestVideoViewModel
+    let subtitleModel: SubtitleViewModel
+    let danmakuModel: DanmakuControlsViewModel
+    let authenticationModel: AuthenticationViewModel
+    let historyModel: WatchHistoryViewModel
+    let playerContent: AnyView
 
-    init(environment: AppEnvironment = .live()) {
+    convenience init(environment: AppEnvironment) {
         let browseModel = environment.makeBrowseViewModel()
         let videoModel = environment.makeVideoViewModel()
         let subtitleModel = environment.makeSubtitleViewModel()
@@ -37,7 +36,6 @@ struct AppRootView: View {
                 danmakuModel.reset()
             }
         )
-
         self.init(
             navigationCoordinator: navigationCoordinator,
             browseModel: browseModel,
@@ -62,14 +60,50 @@ struct AppRootView: View {
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView
     ) {
-        _navigationCoordinator = State(initialValue: navigationCoordinator)
-        _browseModel = State(initialValue: browseModel)
-        _videoModel = State(initialValue: videoModel)
-        _subtitleModel = State(initialValue: subtitleModel)
-        _danmakuModel = State(initialValue: danmakuModel)
-        _authenticationModel = State(initialValue: authenticationModel)
-        _historyModel = State(initialValue: historyModel)
+        self.navigationCoordinator = navigationCoordinator
+        self.browseModel = browseModel
+        self.videoModel = videoModel
+        self.subtitleModel = subtitleModel
+        self.danmakuModel = danmakuModel
+        self.authenticationModel = authenticationModel
+        self.historyModel = historyModel
         self.playerContent = playerContent
+    }
+}
+
+struct AppRootView: View {
+    @State private var windowOwner: AppWindowOwner
+    @State private var isAuthenticationPresented = false
+    @State private var submittedSearchQuery: String?
+
+    init(environment: AppEnvironment = .live()) {
+        _windowOwner = State(
+            initialValue: AppWindowOwner(environment: environment)
+        )
+    }
+
+    init(
+        navigationCoordinator: AppNavigationCoordinator,
+        browseModel: GuestBrowseViewModel,
+        videoModel: GuestVideoViewModel,
+        subtitleModel: SubtitleViewModel,
+        danmakuModel: DanmakuControlsViewModel,
+        authenticationModel: AuthenticationViewModel,
+        historyModel: WatchHistoryViewModel,
+        playerContent: AnyView
+    ) {
+        _windowOwner = State(
+            initialValue: AppWindowOwner(
+                navigationCoordinator: navigationCoordinator,
+                browseModel: browseModel,
+                videoModel: videoModel,
+                subtitleModel: subtitleModel,
+                danmakuModel: danmakuModel,
+                authenticationModel: authenticationModel,
+                historyModel: historyModel,
+                playerContent: playerContent
+            )
+        )
     }
 
     var body: some View {
@@ -114,6 +148,38 @@ struct AppRootView: View {
             authenticationModel.cancelTransientWork()
             historyModel.reset()
         }
+    }
+
+    private var navigationCoordinator: AppNavigationCoordinator {
+        windowOwner.navigationCoordinator
+    }
+
+    private var browseModel: GuestBrowseViewModel {
+        windowOwner.browseModel
+    }
+
+    private var videoModel: GuestVideoViewModel {
+        windowOwner.videoModel
+    }
+
+    private var subtitleModel: SubtitleViewModel {
+        windowOwner.subtitleModel
+    }
+
+    private var danmakuModel: DanmakuControlsViewModel {
+        windowOwner.danmakuModel
+    }
+
+    private var authenticationModel: AuthenticationViewModel {
+        windowOwner.authenticationModel
+    }
+
+    private var historyModel: WatchHistoryViewModel {
+        windowOwner.historyModel
+    }
+
+    private var playerContent: AnyView {
+        windowOwner.playerContent
     }
 
     private var normalizedSearchDraft: String {

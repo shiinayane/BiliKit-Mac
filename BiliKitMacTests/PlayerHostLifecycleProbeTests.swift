@@ -30,7 +30,46 @@ struct AppShellChromeTests {
     }
 }
 
+@Suite(.serialized)
 struct PlayerHostLifecycleProbeTests {
+    @Test
+    @MainActor
+    func rootReinitializationKeepsPlayerSurfaceWithRetainedModels() async {
+        let playerRecorder = RootPlayerIdentityRecorder()
+        let first = makeRootIdentityFixture(
+            marker: "first",
+            playerRecorder: playerRecorder
+        )
+        let second = makeRootIdentityFixture(
+            marker: "second",
+            playerRecorder: playerRecorder
+        )
+        let hostingView = NSHostingView(rootView: first.root)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 680),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+
+        hostingView.rootView = second.root
+        hostingView.layoutSubtreeIfNeeded()
+        first.navigationCoordinator.openPlayback("BV1RootIdentity")
+
+        #expect(
+            await waitUntil {
+                first.playback.loadedIdentities.count == 1
+                    && playerRecorder.lastMarker != nil
+            }
+        )
+        #expect(second.playback.loadedIdentities.isEmpty)
+        #expect(playerRecorder.lastMarker == "first")
+
+        first.navigationCoordinator.resetForWindowClosure()
+    }
+
     @Test
     @MainActor
     func nativeNavigationReturnAndWindowCloseDismantleEachHostOnce() async {
@@ -280,6 +319,104 @@ struct PlayerHostLifecycleProbeTests {
             }
         }
         return nil
+    }
+
+    @MainActor
+    private func makeRootIdentityFixture(
+        marker: String,
+        playerRecorder: RootPlayerIdentityRecorder
+    ) -> RootIdentityFixture {
+        let repository = AppShellRouteRepository()
+        let playback = SuspendingPlayback()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: playback
+        )
+        let browseModel = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let subtitleModel = SubtitleViewModel(
+            useCase: SubtitleUseCase(
+                repository: AppShellRecordingSubtitleRepository()
+            ),
+            timeline: AppShellIdleTimeline()
+        )
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: AppShellPresentation()
+        )
+        let authenticationModel = AuthenticationViewModel(
+            service: AppShellSignedOutAuthentication(),
+            qrCodeProvider: AppShellEmptyQRCodeProvider()
+        )
+        let historyModel = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: AppShellSuspendingHistoryRepository()
+            )
+        )
+        let navigationCoordinator = AppNavigationCoordinator(
+            startPlayback: { bvid in
+                videoModel.loadVideo(bvid)
+            },
+            stopPlayback: {
+                videoModel.reset()
+                subtitleModel.reset()
+                danmakuModel.reset()
+            }
+        )
+        let root = AppRootView(
+            navigationCoordinator: navigationCoordinator,
+            browseModel: browseModel,
+            videoModel: videoModel,
+            subtitleModel: subtitleModel,
+            danmakuModel: danmakuModel,
+            authenticationModel: authenticationModel,
+            historyModel: historyModel,
+            playerContent: AnyView(
+                RootPlayerIdentityProbeView(
+                    marker: marker,
+                    recorder: playerRecorder
+                )
+            )
+        )
+        return RootIdentityFixture(
+            root: root,
+            navigationCoordinator: navigationCoordinator,
+            playback: playback
+        )
+    }
+}
+
+@MainActor
+private struct RootIdentityFixture {
+    let root: AppRootView
+    let navigationCoordinator: AppNavigationCoordinator
+    let playback: SuspendingPlayback
+}
+
+@MainActor
+private final class RootPlayerIdentityRecorder {
+    private(set) var markers: [String] = []
+
+    var lastMarker: String? {
+        markers.last
+    }
+
+    func record(_ marker: String) {
+        markers.append(marker)
+    }
+}
+
+private struct RootPlayerIdentityProbeView: NSViewRepresentable {
+    let marker: String
+    let recorder: RootPlayerIdentityRecorder
+
+    func makeNSView(context: Context) -> NSView {
+        recorder.record(marker)
+        return NSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        recorder.record(marker)
     }
 }
 
