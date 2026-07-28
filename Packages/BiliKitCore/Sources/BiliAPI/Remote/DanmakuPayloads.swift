@@ -27,6 +27,9 @@ enum DanmakuPayloadDecoder {
             let text = element.content.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
+            guard !text.isEmpty else {
+                return nil
+            }
             let id =
                 element.idString.isEmpty
                 ? (element.id > 0 ? String(element.id) : nil)
@@ -35,7 +38,6 @@ enum DanmakuPayloadDecoder {
                 id.count <= 128,
                 element.progressMilliseconds >= 0,
                 element.progressMilliseconds <= maximumTimeMilliseconds,
-                !text.isEmpty,
                 text.count <= maximumEventTextLength,
                 element.colorRgb <= 0xFF_FF_FF
             else {

@@ -101,7 +101,7 @@ struct BiliDanmakuRepositoryTests {
     }
 
     @Test
-    func decoderDropsUnsupportedModesButRejectsMissingRequiredFields() async throws {
+    func decoderDropsUnsupportedModesAndBlankContent() async throws {
         var unsupported = Bilikit_Danmaku_Element()
         unsupported.id = 1
         unsupported.progressMilliseconds = 1_000
@@ -114,8 +114,12 @@ struct BiliDanmakuRepositoryTests {
         valid.idString = "fixture-valid"
         valid.mode = 5
         valid.content = "top fixture"
+        var blank = valid
+        blank.id = 3
+        blank.idString = "fixture-blank"
+        blank.content = "\u{00A0}\n"
         var payload = Bilikit_Danmaku_SegmentReply()
-        payload.elements = [unsupported, valid]
+        payload.elements = [unsupported, blank, valid]
 
         let events = try DanmakuPayloadDecoder.events(
             from: payload.serializedData()
@@ -123,8 +127,24 @@ struct BiliDanmakuRepositoryTests {
         #expect(events.count == 1)
         #expect(events.first?.mode == .top)
 
-        valid.content = ""
-        payload.elements = [valid]
+        payload.elements = [blank]
+        let blankEvents = try DanmakuPayloadDecoder.events(
+            from: payload.serializedData()
+        )
+        #expect(blankEvents.isEmpty)
+    }
+
+    @Test
+    func decoderStillRejectsMissingRequiredFields() throws {
+        var missingID = Bilikit_Danmaku_Element()
+        missingID.progressMilliseconds = 1_000
+        missingID.mode = 1
+        missingID.fontSize = 25
+        missingID.colorRgb = 0xFF_FF_FF
+        missingID.content = "fixture text"
+        var payload = Bilikit_Danmaku_SegmentReply()
+        payload.elements = [missingID]
+
         #expect(throws: BiliAPIError.invalidDanmakuData) {
             try DanmakuPayloadDecoder.events(from: payload.serializedData())
         }
