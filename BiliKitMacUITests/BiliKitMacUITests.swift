@@ -38,9 +38,24 @@ final class BiliKitMacUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["Back"].click()
         XCTAssertTrue(
             element("search.results", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        sidebarTab("热门", in: app).click()
+        let popularResult = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(popularResult.waitForExistence(timeout: 5))
+        popularResult.click()
+        XCTAssertTrue(
+            element("playback.layout.wide", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        app.buttons["Back"].click()
+        XCTAssertTrue(
+            element("feed.grid", in: app)
                 .waitForExistence(timeout: 5)
         )
 
@@ -137,9 +152,16 @@ final class BiliKitMacUITests: XCTestCase {
         _ label: String,
         in app: XCUIApplication
     ) -> XCUIElement {
-        app.outlines["Sidebar"]
-            .descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", label))
-            .firstMatch
+        let tab = app.staticTexts[label].firstMatch
+        if !tab.waitForExistence(timeout: 1) {
+            let showSidebar = app.buttons
+                .matching(
+                    NSPredicate(format: "label == %@", "Show Sidebar")
+                )
+                .firstMatch
+            XCTAssertTrue(showSidebar.waitForExistence(timeout: 2))
+            showSidebar.click()
+        }
+        return tab
     }
 }

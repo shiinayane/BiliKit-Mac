@@ -89,6 +89,28 @@ struct AppNavigationCoordinatorTests {
 
     @Test
     @MainActor
+    func eachTabProjectsItsOwnNativeNavigationPath() {
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: {}
+        )
+
+        coordinator.selectedTab = .search
+        coordinator.searchPlaybackPath = [
+            PlaybackDestination(bvid: "BV1SearchPath")
+        ]
+
+        #expect(
+            coordinator.playbackPath(for: .search) == [
+                PlaybackDestination(bvid: "BV1SearchPath")
+            ]
+        )
+        #expect(coordinator.playbackPath(for: .popular).isEmpty)
+        #expect(coordinator.playbackPath(for: .history).isEmpty)
+    }
+
+    @Test
+    @MainActor
     func reopeningCurrentPlaybackDoesNotDuplicateLoad() {
         var startCount = 0
         let coordinator = AppNavigationCoordinator(

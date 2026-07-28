@@ -26,9 +26,11 @@ struct AppShellView: View {
     )
 
     var body: some View {
+        @Bindable var navigationCoordinator = navigationCoordinator
+
         TabView(selection: selectedTabBinding) {
             Tab(value: AppTab.search) {
-                tabNavigation(for: .search) {
+                tabNavigation(path: $navigationCoordinator.searchPlaybackPath) {
                     SearchTabRoot(
                         model: browseModel,
                         searchDraft: searchDraftBinding,
@@ -43,7 +45,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.popular) {
-                tabNavigation(for: .popular) {
+                tabNavigation(path: $navigationCoordinator.popularPlaybackPath) {
                     PopularTabRoot(
                         model: browseModel,
                         scrollPosition: $popularScrollPosition,
@@ -55,7 +57,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.history) {
-                tabNavigation(for: .history) {
+                tabNavigation(path: $navigationCoordinator.historyPlaybackPath) {
                     HistoryTabRoot(
                         model: historyModel,
                         isSignedIn: authenticationModel.isSignedIn,
@@ -122,10 +124,10 @@ struct AppShellView: View {
     }
 
     private func tabNavigation<Content: View>(
-        for tab: AppTab,
+        path: Binding<[PlaybackDestination]>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        NavigationStack(path: playbackPathBinding(for: tab)) {
+        NavigationStack(path: path) {
             content()
                 .navigationDestination(for: PlaybackDestination.self) { _ in
                     PlaybackDestinationView(
@@ -150,24 +152,6 @@ struct AppShellView: View {
         Binding(
             get: { navigationCoordinator.searchDraft },
             set: { navigationCoordinator.searchDraft = $0 }
-        )
-    }
-
-    private func playbackPathBinding(
-        for tab: AppTab
-    ) -> Binding<[PlaybackDestination]> {
-        Binding(
-            get: {
-                navigationCoordinator.selectedTab == tab
-                    ? navigationCoordinator.playbackPath
-                    : []
-            },
-            set: { path in
-                guard navigationCoordinator.selectedTab == tab else {
-                    return
-                }
-                navigationCoordinator.playbackPath = path
-            }
         )
     }
 }
