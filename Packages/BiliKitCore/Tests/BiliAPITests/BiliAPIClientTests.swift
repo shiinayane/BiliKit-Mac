@@ -219,6 +219,9 @@ struct BiliAPIClientTests {
         #expect(playback.manifest.audioRepresentations.count == 1)
         #expect(video.id == 32)
         #expect(video.urlCandidates.count == 2)
+        #expect(video.videoAttributes?.width == 1280)
+        #expect(video.videoAttributes?.height == 720)
+        #expect(video.videoAttributes?.frameRate == 60_000.0 / 1_001.0)
         #expect(video.segmentBase.initialization.httpRangeHeaderValue == "bytes=0-999")
         #expect(audio.id == 30216)
         #expect(audio.segmentBase.index.httpRangeHeaderValue == "bytes=800-1599")
@@ -232,6 +235,32 @@ struct BiliAPIClientTests {
         )?.queryItems
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "16")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
+    }
+
+    @Test
+    func playURLRejectsInvalidVideoFrameRate() async throws {
+        let fixture = try fixtureResponse("playurl")
+        let invalidBody = String(decoding: fixture.body, as: UTF8.self)
+            .replacingOccurrences(
+                of: "\"frame_rate\": \"60000/1001\"",
+                with: "\"frame_rate\": \"60/0\""
+            )
+        let response = HTTPResponse(
+            statusCode: fixture.statusCode,
+            headers: fixture.headers,
+            body: Data(invalidBody.utf8)
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.invalidMediaData) {
+            try await client.playback(
+                for: "BV1FixtureA1",
+                cid: 900_001,
+                quality: 32
+            )
+        }
     }
 
     @Test

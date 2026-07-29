@@ -38,4 +38,22 @@ struct PlaybackManifestTests {
 
         #expect(representation.urlCandidates == [primaryURL, backupURL])
     }
+
+    @Test
+    func videoAttributesRejectInvalidPresentationValues() {
+        #expect(throws: VideoRepresentationAttributesError.self) {
+            try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: .nan
+            )
+        }
+        #expect(throws: VideoRepresentationAttributesError.self) {
+            try VideoRepresentationAttributes(
+                width: 0,
+                height: 1_080,
+                frameRate: 60
+            )
+        }
+    }
 }

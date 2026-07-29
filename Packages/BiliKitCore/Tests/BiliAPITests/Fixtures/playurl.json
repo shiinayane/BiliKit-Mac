@@ -14,6 +14,9 @@
           "codecs": "avc1.64001f",
           "mime_type": "video/mp4",
           "bandwidth": 500000,
+          "width": 1280,
+          "height": 720,
+          "frame_rate": "60000/1001",
           "base_url": "https://media.example.invalid/video-avc-primary.m4s",
           "backup_url": [
             "https://backup.example.invalid/video-avc.m4s",
@@ -30,6 +33,9 @@
           "codecs": "hev1.1.6.L120.90",
           "mimeType": "video/mp4",
           "bandwidth": 1500000,
+          "width": 1920,
+          "height": 1080,
+          "frame_rate": "60",
           "baseUrl": "https://media.example.invalid/video-hevc.m4s",
           "backupUrl": [],
           "SegmentBase": {
