@@ -28,12 +28,12 @@ struct AppShellView: View {
     var body: some View {
         @Bindable var navigationCoordinator = navigationCoordinator
 
-        TabView(selection: selectedTabBinding) {
+        TabView(selection: $navigationCoordinator.selectedTab) {
             Tab(value: AppTab.search) {
                 tabNavigation(path: $navigationCoordinator.searchPlaybackPath) {
                     SearchTabRoot(
                         model: browseModel,
-                        searchDraft: searchDraftBinding,
+                        searchDraft: $navigationCoordinator.searchDraft,
                         submittedSearchQuery: submittedSearchQuery,
                         scrollPosition: $searchScrollPosition,
                         onSelect: navigationCoordinator.openPlayback,
@@ -139,20 +139,6 @@ struct AppShellView: View {
                     )
                 }
         }
-    }
-
-    private var selectedTabBinding: Binding<AppTab> {
-        Binding(
-            get: { navigationCoordinator.selectedTab },
-            set: { navigationCoordinator.selectedTab = $0 }
-        )
-    }
-
-    private var searchDraftBinding: Binding<String> {
-        Binding(
-            get: { navigationCoordinator.searchDraft },
-            set: { navigationCoordinator.searchDraft = $0 }
-        )
     }
 }
 

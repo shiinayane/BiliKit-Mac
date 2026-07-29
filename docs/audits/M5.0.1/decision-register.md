@@ -45,7 +45,7 @@
 | UI-004 | 保留每 Tab 语义 ScrollPosition | 独立复核通过 | 搜索/历史/resize 真实路径未测 | 待定 |
 | UI-005 | 保留 GeometryReader 职责；1080 pt 下限未决 | 独立复核通过 | 缺窄窗口与大文字证据 | 待定 |
 | UI-006 | 用共享 `Duration.TimeFormatStyle` helper 替换三份 formatter；搜索 decoder 拒绝负 duration | 已实施：三处 UI 统一使用 `VideoDurationFormatting`，保留历史完成态／progress clamp；搜索负时长映射为 nil；12 个边界 × 3 locale 回归及 package gate（237 tests，0 known issues）通过 | 未列举其他数字系统与未来 Foundation 版本；不扩展到日期或中文计数格式 | 实施完成 |
-| UI-007 | 两个直接属性 Binding 改用现有局部 @Bindable；字幕／弹幕 method Binding 保留 | 当前三个 path 已使用同一投影；最小 Observation probe 证明写入与 didSet 语义；UI-008 回归覆盖既有投影 | 尚未在真实 TabView/TextField 中应用这两处替换；不得与 searchable 或 path owner 同改 | 验证完成，可作为独立低风险 cleanup |
+| UI-007 | 两个直接属性 Binding 改用现有局部 `@Bindable`；字幕／弹幕 method Binding 保留 | 已实施：Tab selection 与 search draft 直接使用 `$navigationCoordinator` 投影，两个纯转发 helper 已删除；完整 app gate（237 package tests、App build、App unit tests）通过 | 定点 XCUI 的临时 App／runner 构建签名成功，但本机 worker 未 materialize，fixture 未执行；既有 Observation probe 与 UI-008 仍是行为依据 | 实施完成；未扩大字幕／弹幕可写面 |
 | UI-008 | 每个 NavigationStack 使用独立 path 与局部 `@Bindable` 投影；切 Tab 仍清空来源 path | test-only probe 隔离出 Button 已调用、path 已写入而条件 Binding 未被栈消费；离线搜索/热门/System Back 回归、app gate 与一次脱敏真实匿名往返通过 | 真实 App 只覆盖当前机器与一次样本 | 用户已授权并验收，已实施 |
 | UI-009 | V1 接受系统 Back，不要求 Escape 或其他直接键盘返回；删除无效 `onExitCommand` | Escape、`onExitCommand`、`onKeyPress` 与 Command-[ 在当前窗口焦点下均未弹栈；系统 Back 正常 | Full Keyboard Access／VoiceOver 对 Back 的可达性仍属于 AX-001，不作为 V1 直接快捷键承诺 | 用户已裁决，已实施 |
 | STATE-001 | 保留 State owner 模式；以单一 `AppWindowOwner` 保证完整 owner 同代且稳定 | 修复后 root re-init 与 host dismantle 2/2 普通通过 | 真实 WindowGroup 触发频率与修正后 Memory Graph 尚未测 | 用户同意修复，已实施 |

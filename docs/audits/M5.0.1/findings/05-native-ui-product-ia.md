@@ -264,10 +264,9 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 - **finding_id**：UI-007
 - **审计线与涉及能力**：SwiftUI Observation、手写 `Binding(get:set:)`。
 - **当前实现（文件、符号、调用链）**：
-  `AppShellView.body` 已创建局部 `@Bindable navigationCoordinator`，三个
-  NavigationStack path 都直接使用其投影；文件末尾仍为
-  `navigationCoordinator.selectedTab` 和 `searchDraft` 保留两个无附加逻辑的 computed
-  Binding。字幕和弹幕 Binding 把写入路由到 ViewModel method。
+  `AppShellView.body` 的局部 `@Bindable navigationCoordinator` 已直接投影 Tab
+  selection、search draft 和三个 NavigationStack path；两个无附加逻辑的 computed
+  Binding 已删除。字幕和弹幕 Binding 仍把写入路由到 ViewModel method。
 - **它声称提供的职责**：把 `@Observable` reference 属性或只读 ViewModel 状态投影成
   SwiftUI control binding。
 - **外部事实来源**：
@@ -283,16 +282,15 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 - **本地测试实际证明的范围**：导航测试证明赋值后的副作用；不依赖 Binding helper
   的具体拼写；最小 probe 证明 setter／didSet 语义，不渲染真实 TabView 或搜索控件。
   字幕／弹幕测试依赖 method 约束，不证明可直接开放 setter。
-- **判断**：验证支持**替换**仅 `selectedTabBinding` 与 `searchDraftBinding` 两个纯转发
-  helper 为现有局部 `@Bindable` 的 `$navigationCoordinator.selectedTab` 与
-  `$navigationCoordinator.searchDraft`。playback path 已完成同类迁移，不再存在旧
-  conditional helper；**保留**字幕／弹幕 method Binding，因为它们收口副作用，不是
-  纯语法转发。
+- **判断**：**替换已实施**。`selectedTabBinding` 与 `searchDraftBinding` 两个纯转发
+  helper 已由 `$navigationCoordinator.selectedTab` 与
+  `$navigationCoordinator.searchDraft` 取代；**保留**字幕／弹幕 method Binding，
+  因为它们收口副作用，不是纯语法转发。
 - **风险**：影响低；误把所有手写 Binding 一起机械删除会扩大 ViewModel 可写面，
   所以必须按职责拆分。纯转发替换可轻易恢复。
-- **下一步最小验证**：独立 cleanup revision 只替换两个直接属性 binding，运行
-  `AppNavigationCoordinatorTests` 和现有搜索 Return／Tab 切换 UI 路径；不同时改
-  path owner、搜索容器或字幕／弹幕 controls。
+- **下一步最小验证**：完整 app gate 已通过。定点搜索 Return／Tab XCUI 的临时产物完成
+  构建签名，但本机 test worker 未 materialize，fixture 未执行；未来签名／Automation
+  环境恢复时补跑即可，不把本次启动记为行为通过。
 - **与其他 finding 的依赖或冲突**：UI-001 要求继续保留单一播放副作用 owner；
   UI-002 若先采用 `.searchable`，可与 search draft 的 `@Bindable` 一起验证，但应分
   commit。
