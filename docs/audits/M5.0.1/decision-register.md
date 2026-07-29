@@ -85,6 +85,6 @@
 | M501-ENG-007 | 1.0(1) 仅作开发值；发布版本策略待定 | 独立复核通过 | 是否制作 v1 分发包尚未决定 | 若制作公证包再建立版本递增与 archive→commit 策略；不打包时不提前建设发布流程 |
 | M501-ENG-008 | 保留 SwiftProtobuf lock/notice；成品许可呈现未决 | 独立复核并收紧 target membership | 缺最终载体 | 待定 |
 | M501-ENG-009 | 保留 references clean-room 隔离 | 独立复核通过 | 当前 tree 不证明历史独立创作 | 待定 |
-| M501-ENG-010 | checkout action 固定当前已验证的 `d23441a…` 完整 SHA，并保留 `# v6` 注释 | GitHub 规范确认完整 SHA 才不可变；官方 remote 与基线 run 均解析到该提交 | `v6.0.2` 落后于当前 major tag 的后续 backport，不能按编号机械选取 | 已验证，待实施 |
+| M501-ENG-010 | checkout action 固定当前已验证的 `d23441a…` 完整 SHA，并保留 `# v6` 注释 | `d961197` 已实施；工作流唯一 `uses:` 固定完整 SHA，可移动 tag 检查、空白检查与 static gate 通过 | CI matrix 尚未在远端执行；`v6.0.2` 落后于当前 major tag 的后续 backport，不能按编号机械选取 | 实施完成，待远端 CI |
 
 只有完成外部取证和交叉复核的 finding 才能进入本表。审计阶段不把判断直接转成生产修改。
