@@ -40,7 +40,6 @@ final class BiliKitMacUITests: XCTestCase {
             element("playback.layout.wide", in: app)
                 .waitForExistence(timeout: 5)
         )
-
         app.buttons["Back"].click()
         XCTAssertTrue(
             element("search.results", in: app)
@@ -63,7 +62,6 @@ final class BiliKitMacUITests: XCTestCase {
             element("playback.layout.wide", in: app)
                 .waitForExistence(timeout: 5)
         )
-
         app.buttons["Back"].click()
         XCTAssertTrue(
             element("feed.grid", in: app)
@@ -80,6 +78,39 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(
             element("auth.start", in: app)
                 .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
+    func testNativeBackStopsPlayback() throws {
+        let app = launchFixture(arguments: ["-ui-testing"])
+
+        let popularResult = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(popularResult.waitForExistence(timeout: 5))
+        popularResult.click()
+        XCTAssertTrue(
+            element("playback.layout.wide", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            element("playback.status.playing", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        app.buttons["Back"].click()
+        XCTAssertTrue(
+            element("feed.grid", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            element("playback.status.stopped", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(
+            element("playback.layout.wide", in: app)
+                .waitForExistence(timeout: 1)
         )
     }
 

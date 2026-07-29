@@ -119,6 +119,7 @@ public struct WatchHistoryView: View {
                             WatchHistoryCard(item: item)
                         }
                         .buttonStyle(VideoCardButtonStyle())
+                        .focusable(false)
                         .accessibilityHint("播放视频")
                         .accessibilityIdentifier("history.item.\(item.bvid)")
                     }

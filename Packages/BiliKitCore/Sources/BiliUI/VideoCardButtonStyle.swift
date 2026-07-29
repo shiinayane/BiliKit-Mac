@@ -3,20 +3,17 @@ import SwiftUI
 package struct VideoCardInteractionState: Sendable, Equatable {
     package let isHovered: Bool
     package let isPressed: Bool
-    package let isFocused: Bool
     package let increasedContrast: Bool
     package let reduceMotion: Bool
 
     package init(
         isHovered: Bool,
         isPressed: Bool,
-        isFocused: Bool,
         increasedContrast: Bool,
         reduceMotion: Bool
     ) {
         self.isHovered = isHovered
         self.isPressed = isPressed
-        self.isFocused = isFocused
         self.increasedContrast = increasedContrast
         self.reduceMotion = reduceMotion
     }
@@ -34,10 +31,9 @@ package enum VideoCardInteractionPolicy {
     package static func appearance(
         for state: VideoCardInteractionState
     ) -> VideoCardInteractionAppearance {
-        let isEmphasized = state.isFocused || state.isHovered
-        return VideoCardInteractionAppearance(
-            surfaceOpacity: state.isPressed ? 0.14 : (isEmphasized ? 0.08 : 0),
-            strokeOpacity: isEmphasized ? 1 : 0,
+        VideoCardInteractionAppearance(
+            surfaceOpacity: state.isPressed ? 0.14 : (state.isHovered ? 0.08 : 0),
+            strokeOpacity: state.isHovered ? 1 : 0,
             strokeWidth: state.increasedContrast ? 2 : 1,
             contentOpacity: state.isPressed ? 0.82 : 1,
             scale: state.isPressed && !state.reduceMotion ? 0.985 : 1
@@ -60,7 +56,6 @@ private struct VideoCardInteractionBody: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.isFocused) private var isFocused
     @State private var isHovered = false
 
     private var appearance: VideoCardInteractionAppearance {
@@ -68,7 +63,6 @@ private struct VideoCardInteractionBody: View {
             for: VideoCardInteractionState(
                 isHovered: isHovered,
                 isPressed: configuration.isPressed,
-                isFocused: isFocused,
                 increasedContrast: colorSchemeContrast == .increased,
                 reduceMotion: reduceMotion
             )
@@ -85,7 +79,7 @@ private struct VideoCardInteractionBody: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(
-                        isFocused ? Color.accentColor : Color.secondary,
+                        Color.secondary,
                         lineWidth: appearance.strokeWidth
                     )
                     .opacity(appearance.strokeOpacity)
