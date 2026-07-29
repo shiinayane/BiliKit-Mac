@@ -14,7 +14,7 @@
 | MP-001 | 按 Apple 设备 profile 替换 master 元数据模型，并以同 item 原生 ABR 提供自动画质 | synthetic 同 item 自动降档 6/6；真实 quality 16/32 同 item 自动降档已现场观察；补齐且确认识别尺寸／帧率后结果不变 | 当前 production 仍只生成单 variant；validator 与 HLS peak bandwidth 仍未验证；恢复升档时机无公开控制契约 | V1 只提供自动画质，不提供手动档位；不为恢复升档设置 peak cap、首档或额外 buffer 参数，使用 AVPlayer 默认策略 |
 | MP-002 | 当前 direct SIDX v0 子集保留；完整时间线正确性尚不能判断 | 主 Agent 已完成一个公开匿名样本的音视频结构 probe | 单样本均为 v0/direct/EPT 0；仍缺不同内容与 representation 形态 | 待定 |
 | MP-003 | representation 固定到索引来源；失败时整体重准备 | 独立复核完成；确定性 loopback 已复现 A、A、B 请求序列和跨对象 206 拼接 | 真实 CDN 内容不一致发生率未知，但不再影响机制裁决 | 待定 |
-| MP-004 | 替换统一 502；按 range 类型分别制定 HTTP 策略 | 独立复核完成；GET/HEAD × full/closed/open/suffix/unsatisfiable/multi/unknown 矩阵已复现 12 个目标差异 | AVPlayer 是否实际发送边界 Range 只影响发生率，不影响 HTTP 机制裁决 | 待定 |
+| MP-004 | 替换统一 502；按 range 类型分别制定 HTTP 策略 | 已实施：single closed/open/suffix 返回 206，不可满足返回 416＋完整长度，in-memory 忽略 multi/未知 unit，HEAD 忽略 Range；remote 语法错误不触发 upstream；2 项定点测试及 package gate（230 tests，8 个既有 known issues）通过 | AVPlayer 是否实际发送边界 Range 只影响发生率，不影响已完成的 HTTP 机制裁决 | 实施完成 |
 | MP-005 | 恢复 AVPlayer 默认等待；不保留无 recovery owner 的 `false` | 独立复核通过；同媒体 starvation 对照已证明默认 waiting 自动恢复，`false` paused 后不恢复 | 真实弱网发生率与体验仍未知，但不再影响 owner 裁决 | 待定 |
 | MP-006 | 增加 item-identity scoped 的持续失败出口 | ready 后 Range 失败十秒无终态；显式当前 item failed-to-end 通知被 engine 漏接 | 真实错误类型与发生率未知；旧 item 隔离和 observer 清理待实施验收 | 待定 |
 | MP-007 | 保留共享播放器时间线；zero-tolerance seek 尚不能判断 | 主 Agent 复核，待性能线 | 缺 seek latency/落点误差测量 | 待定 |

@@ -197,7 +197,6 @@ struct LoopbackPlaybackServerTests {
             let method: String
             let range: String?
             let expected: ExpectedResponse
-            let knownIssue: String?
         }
 
         let server = LoopbackPlaybackServer()
@@ -220,8 +219,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "5",
                     contentRange: nil,
                     body: Data([0, 1, 2, 3, 4])
-                ),
-                knownIssue: nil
+                )
             ),
             Case(
                 name: "GET closed",
@@ -232,8 +230,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "3",
                     contentRange: "bytes 1-3/5",
                     body: Data([1, 2, 3])
-                ),
-                knownIssue: nil
+                )
             ),
             Case(
                 name: "GET open",
@@ -244,8 +241,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "3",
                     contentRange: "bytes 2-4/5",
                     body: Data([2, 3, 4])
-                ),
-                knownIssue: nil
+                )
             ),
             Case(
                 name: "GET suffix",
@@ -256,8 +252,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "2",
                     contentRange: "bytes 3-4/5",
                     body: Data([3, 4])
-                ),
-                knownIssue: "A suffix byte range is valid RFC 9110 syntax."
+                )
             ),
             Case(
                 name: "GET unsatisfiable",
@@ -268,8 +263,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "0",
                     contentRange: "bytes */5",
                     body: Data()
-                ),
-                knownIssue: "An unsatisfiable valid range requires a 416 response."
+                )
             ),
             Case(
                 name: "GET multi range ignored",
@@ -280,8 +274,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "5",
                     contentRange: nil,
                     body: Data([0, 1, 2, 3, 4])
-                ),
-                knownIssue: "An unsupported multi-range may be ignored, not mapped to 502."
+                )
             ),
             Case(
                 name: "GET malformed range ignored",
@@ -292,8 +285,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "5",
                     contentRange: nil,
                     body: Data([0, 1, 2, 3, 4])
-                ),
-                knownIssue: "An unknown range unit may be ignored, not mapped to 502."
+                )
             ),
             Case(
                 name: "HEAD full",
@@ -304,8 +296,7 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "5",
                     contentRange: nil,
                     body: Data()
-                ),
-                knownIssue: nil
+                )
             ),
             Case(
                 name: "HEAD range ignored",
@@ -316,8 +307,51 @@ struct LoopbackPlaybackServerTests {
                     contentLength: "5",
                     contentRange: nil,
                     body: Data()
-                ),
-                knownIssue: nil
+                )
+            ),
+            Case(
+                name: "HEAD suffix ignored",
+                method: "HEAD",
+                range: "bytes=-2",
+                expected: ExpectedResponse(
+                    status: 200,
+                    contentLength: "5",
+                    contentRange: nil,
+                    body: Data()
+                )
+            ),
+            Case(
+                name: "HEAD unsatisfiable ignored",
+                method: "HEAD",
+                range: "bytes=5-",
+                expected: ExpectedResponse(
+                    status: 200,
+                    contentLength: "5",
+                    contentRange: nil,
+                    body: Data()
+                )
+            ),
+            Case(
+                name: "HEAD multi range ignored",
+                method: "HEAD",
+                range: "bytes=0-0,2-2",
+                expected: ExpectedResponse(
+                    status: 200,
+                    contentLength: "5",
+                    contentRange: nil,
+                    body: Data()
+                )
+            ),
+            Case(
+                name: "HEAD unknown unit ignored",
+                method: "HEAD",
+                range: "items=0-1",
+                expected: ExpectedResponse(
+                    status: 200,
+                    contentLength: "5",
+                    contentRange: nil,
+                    body: Data()
+                )
             ),
         ]
 
@@ -332,34 +366,94 @@ struct LoopbackPlaybackServerTests {
                 response as? HTTPURLResponse,
                 "Missing HTTP response for \(testCase.name)"
             )
-            let assertion = {
-                #expect(
-                    httpResponse.statusCode == testCase.expected.status,
-                    Comment(rawValue: testCase.name)
-                )
-                #expect(
-                    httpResponse.value(
-                        forHTTPHeaderField: "Content-Length"
-                    ) == testCase.expected.contentLength,
-                    Comment(rawValue: testCase.name)
-                )
-                #expect(
-                    httpResponse.value(
-                        forHTTPHeaderField: "Content-Range"
-                    ) == testCase.expected.contentRange,
-                    Comment(rawValue: testCase.name)
-                )
-                #expect(
-                    body == testCase.expected.body,
-                    Comment(rawValue: testCase.name)
-                )
-            }
-            if let knownIssue = testCase.knownIssue {
-                withKnownIssue(Comment(rawValue: knownIssue), assertion)
-            } else {
-                assertion()
-            }
+            #expect(
+                httpResponse.statusCode == testCase.expected.status,
+                Comment(rawValue: testCase.name)
+            )
+            #expect(
+                httpResponse.value(
+                    forHTTPHeaderField: "Content-Length"
+                ) == testCase.expected.contentLength,
+                Comment(rawValue: testCase.name)
+            )
+            #expect(
+                httpResponse.value(
+                    forHTTPHeaderField: "Content-Range"
+                ) == testCase.expected.contentRange,
+                Comment(rawValue: testCase.name)
+            )
+            #expect(
+                body == testCase.expected.body,
+                Comment(rawValue: testCase.name)
+            )
         }
+    }
+
+    @Test
+    func remoteRangeErrorsStayLocalAndSuffixIsForwardedAsClosedRange() async throws {
+        let remoteURL = try #require(
+            URL(string: "https://media.example.invalid/remote.mp4")
+        )
+        let media = Data([0, 1, 2, 3, 4])
+        let transport = FixtureRangeTransport(
+            media: [remoteURL: media],
+            failingURLs: []
+        )
+        let server = LoopbackPlaybackServer(
+            rangeClient: HTTPRangeClient(transport: transport)
+        )
+        try await server.start()
+        defer { server.stop() }
+        let url = try server.register(
+            .remote(
+                try LoopbackRemoteResource(
+                    candidateURLs: [remoteURL],
+                    contentLength: Int64(media.count),
+                    contentType: "video/mp4"
+                )
+            ),
+            at: "remote-range-errors.mp4"
+        )
+
+        for range in ["items=0-1", "bytes=0-0,2-2"] {
+            var request = URLRequest(url: url)
+            request.setValue(range, forHTTPHeaderField: "Range")
+            let (body, response) = try await URLSession.shared.data(for: request)
+
+            #expect((response as? HTTPURLResponse)?.statusCode == 400)
+            #expect(body.isEmpty)
+        }
+        #expect(await transport.requests.isEmpty)
+
+        var unsatisfiableRequest = URLRequest(url: url)
+        unsatisfiableRequest.setValue(
+            "bytes=5-",
+            forHTTPHeaderField: "Range"
+        )
+        let (unsatisfiableBody, unsatisfiableResponse) =
+            try await URLSession.shared.data(for: unsatisfiableRequest)
+        let unsatisfiableHTTPResponse = try #require(
+            unsatisfiableResponse as? HTTPURLResponse
+        )
+        #expect(unsatisfiableHTTPResponse.statusCode == 416)
+        #expect(
+            unsatisfiableHTTPResponse.value(
+                forHTTPHeaderField: "Content-Range"
+            ) == "bytes */5"
+        )
+        #expect(unsatisfiableBody.isEmpty)
+        #expect(await transport.requests.isEmpty)
+
+        var suffixRequest = URLRequest(url: url)
+        suffixRequest.setValue("bytes=-2", forHTTPHeaderField: "Range")
+        let (suffixBody, suffixResponse) = try await URLSession.shared.data(
+            for: suffixRequest
+        )
+        #expect((suffixResponse as? HTTPURLResponse)?.statusCode == 206)
+        #expect(suffixBody == Data([3, 4]))
+        let requests = await transport.requests
+        #expect(requests.count == 1)
+        #expect(requests[0].headers["Range"] == "bytes=3-4")
     }
 
     @Test

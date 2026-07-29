@@ -58,7 +58,6 @@ public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case notStarted
     case listenerFailed(String)
     case invalidHTTPRequest
-    case invalidRangeHeader
 }
 
 struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
@@ -66,6 +65,12 @@ struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
     let registeredRouteCount: Int
     let activeConnectionCount: Int
     let activeTaskCount: Int
+}
+
+private enum LoopbackRangeRequest {
+    case ignored
+    case satisfiable(HTTPByteRange)
+    case unsatisfiable
 }
 
 public final class LoopbackPlaybackServer: @unchecked Sendable {
@@ -341,11 +346,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         with resource: LoopbackPlaybackResource,
         on connection: NWConnection
     ) async throws {
-        let requestedRange = try parseRange(
-            request.headers["range"],
-            contentLength: resource.contentLength
-        )
-
         if request.method == "HEAD" {
             sendResponse(
                 status: 200,
@@ -357,6 +357,30 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     isHead: true
                 ),
                 body: Data(),
+                on: connection
+            )
+            return
+        }
+
+        let requestedRange: HTTPByteRange?
+        switch parseRange(
+            request.headers["range"],
+            contentLength: resource.contentLength
+        ) {
+        case .ignored:
+            requestedRange = nil
+        case .satisfiable(let range):
+            requestedRange = range
+        case .unsatisfiable:
+            sendStatus(
+                416,
+                reason: "Range Not Satisfiable",
+                headers: [
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-store",
+                    "Content-Range": "bytes */\(resource.contentLength)",
+                    "Content-Type": resource.contentType,
+                ],
                 on: connection
             )
             return
@@ -434,25 +458,53 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private func parseRange(
         _ value: String?,
         contentLength: Int64
-    ) throws -> HTTPByteRange? {
-        guard let value else { return nil }
-        guard value.lowercased().hasPrefix("bytes="),
-            !value.contains(",")
+    ) -> LoopbackRangeRequest {
+        guard let value else { return .ignored }
+        let components = value.split(
+            separator: "=",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard components.count == 2,
+            components[0].lowercased() == "bytes",
+            !components[1].contains(",")
         else {
-            throw LoopbackPlaybackServerError.invalidRangeHeader
+            return .ignored
         }
 
-        let bounds = value.dropFirst("bytes=".count).split(
+        let bounds = components[1].split(
             separator: "-",
             maxSplits: 1,
             omittingEmptySubsequences: false
         )
-        guard bounds.count == 2,
-            let start = Int64(bounds[0]),
-            start >= 0,
-            start < contentLength
-        else {
-            throw LoopbackPlaybackServerError.invalidRangeHeader
+        guard bounds.count == 2 else {
+            return .ignored
+        }
+
+        if bounds[0].isEmpty {
+            guard let suffixLength = Int64(bounds[1]) else {
+                return .ignored
+            }
+            guard suffixLength > 0 else {
+                return suffixLength == 0 ? .unsatisfiable : .ignored
+            }
+            let boundedLength = min(suffixLength, contentLength)
+            guard
+                let range = try? HTTPByteRange(
+                    start: contentLength - boundedLength,
+                    endInclusive: contentLength - 1
+                )
+            else {
+                return .ignored
+            }
+            return .satisfiable(range)
+        }
+
+        guard let start = Int64(bounds[0]), start >= 0 else {
+            return .ignored
+        }
+        guard start < contentLength else {
+            return .unsatisfiable
         }
 
         let endInclusive: Int64
@@ -460,11 +512,19 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             endInclusive = contentLength - 1
         } else {
             guard let requestedEnd = Int64(bounds[1]), requestedEnd >= start else {
-                throw LoopbackPlaybackServerError.invalidRangeHeader
+                return .ignored
             }
             endInclusive = min(requestedEnd, contentLength - 1)
         }
-        return try HTTPByteRange(start: start, endInclusive: endInclusive)
+        guard
+            let range = try? HTTPByteRange(
+                start: start,
+                endInclusive: endInclusive
+            )
+        else {
+            return .ignored
+        }
+        return .satisfiable(range)
     }
 
     private func sendStatus(
