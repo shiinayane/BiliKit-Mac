@@ -39,6 +39,9 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         timeline.onEnded = { [weak self] in
             self?.emit(.stateChanged(.ended))
         }
+        timeline.onFailed = { [weak self] in
+            self?.handleCurrentItemFailure()
+        }
     }
 
     deinit {
@@ -278,5 +281,12 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
 
     private func emit(_ event: PlayerEvent) {
         eventContinuation.yield(event)
+    }
+
+    private func handleCurrentItemFailure() {
+        player.pause()
+        preparedAsset?.stop()
+        preparedAsset = nil
+        emit(.failed(message: "PlaybackItemFailed"))
     }
 }

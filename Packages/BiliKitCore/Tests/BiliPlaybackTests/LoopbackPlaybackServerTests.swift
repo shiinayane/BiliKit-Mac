@@ -1636,6 +1636,7 @@ struct LoopbackPlaybackServerTests {
         )
 
         try await engine.load(request, identity: identity)
+        let firstItem = try #require(engine.player.currentItem)
         let loadGeneration = engine.currentTimelineSnapshot
             .discontinuityGeneration
         #expect(engine.currentTimelineSnapshot.identity == identity)
@@ -1662,6 +1663,22 @@ struct LoopbackPlaybackServerTests {
         #expect(throws: AVPlayerEngineError.invalidPlaybackRate) {
             try engine.setRate(0)
         }
+
+        let replacementIdentity = PlaybackItemIdentity(
+            bvid: "BV1TimelineReplacement",
+            cid: 900_002
+        )
+        try await engine.load(request, identity: replacementIdentity)
+        #expect(engine.player.currentItem !== firstItem)
+        NotificationCenter.default.post(
+            name: AVPlayerItem.failedToPlayToEndTimeNotification,
+            object: firstItem
+        )
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        #expect(engine.currentTimelineSnapshot.identity == replacementIdentity)
+        #expect(engine.currentTimelineSnapshot.state == .ready)
 
         let seekGeneration = engine.currentTimelineSnapshot
             .discontinuityGeneration
@@ -1777,22 +1794,30 @@ struct LoopbackPlaybackServerTests {
             name: AVPlayerItem.failedToPlayToEndTimeNotification,
             object: item
         )
-        for _ in 0..<20 where nativeFailureRecorder.failureCount == 0 {
+        NotificationCenter.default.post(
+            name: AVPlayerItem.failedToPlayToEndTimeNotification,
+            object: item
+        )
+        for _ in 0..<20 where nativeFailureRecorder.failureCount < 2 {
             await Task.yield()
         }
-        #expect(nativeFailureRecorder.failureCount == 1)
-        let events = await eventRecorder.events
-        withKnownIssue(
-            "AVPlayerEngine does not consume the current item's failed-to-end signal after readiness."
-        ) {
-            #expect(
-                events.contains { event in
-                    if case .failed = event { return true }
-                    return false
-                }
-            )
-            #expect(engine.currentTimelineSnapshot.state == .failed)
+        #expect(nativeFailureRecorder.failureCount == 2)
+        var failureEvents: [PlayerEvent] = []
+        for _ in 0..<20 {
+            failureEvents = await eventRecorder.events.filter {
+                if case .failed = $0 { return true }
+                return false
+            }
+            if failureEvents.count == 1 {
+                break
+            }
+            await Task.yield()
         }
+        #expect(
+            failureEvents
+                == [.failed(message: "PlaybackItemFailed")]
+        )
+        #expect(engine.currentTimelineSnapshot.state == .failed)
     }
 
     @Test

@@ -16,7 +16,7 @@
 | MP-003 | representation 固定到索引来源；失败时整体重准备 | 独立复核完成；确定性 loopback 已复现 A、A、B 请求序列和跨对象 206 拼接 | 真实 CDN 内容不一致发生率未知，但不再影响机制裁决 | 待定 |
 | MP-004 | 替换统一 502；按 range 类型分别制定 HTTP 策略 | 已实施：single closed/open/suffix 返回 206，不可满足返回 416＋完整长度，in-memory 忽略 multi/未知 unit，HEAD 忽略 Range；remote 语法错误不触发 upstream；2 项定点测试及 package gate（230 tests，8 个既有 known issues）通过 | AVPlayer 是否实际发送边界 Range 只影响发生率，不影响已完成的 HTTP 机制裁决 | 实施完成 |
 | MP-005 | 恢复 AVPlayer 默认等待；不保留无 recovery owner 的 `false` | 已删除生产覆盖值；starvation 回归验证默认 waiting 后自动恢复，MP-006 故障注入显式隔离其测试开关；定点测试及 package gate（230 tests，4 个其他 known issues）通过 | 真实弱网发生率与体验仍未知，但不再影响 owner 裁决 | 实施完成 |
-| MP-006 | 增加 item-identity scoped 的持续失败出口 | ready 后 Range 失败十秒无终态；显式当前 item failed-to-end 通知被 engine 漏接 | 真实错误类型与发生率未知；旧 item 隔离和 observer 清理待实施验收 | 待定 |
+| MP-006 | 增加 item-identity scoped 的持续失败出口 | 已持续观察 item status 与 failed-to-end；同 item 只发布一次稳定 `PlaybackItemFailed`，旧 item 通知被忽略，首次失败/替换/stop 均清 observer；2 项定点测试及 package gate（230 tests，2 个其他 known issues）通过 | 真实错误类型、发生率及 access/error log 诊断仍未采集 | 实施完成 |
 | MP-007 | 保留共享播放器时间线；zero-tolerance seek 尚不能判断 | 主 Agent 复核，待性能线 | 缺 seek latency/落点误差测量 | 待定 |
 | MP-008 | wire-level 空 message 合法；endpoint 空 body 语义尚不能判断 | 独立复核推翻原“替换”判断 | 缺脱敏 HTTP 现场样本 | 待定 |
 | MP-009 | 将失败重试从 timeline update 解耦并设有界策略 | 恒失败对照确认 128 次 update 产生 256 次同 identity 请求 | 真实错误类型、callback 频率和具体重试上限未定 | 待定 |
