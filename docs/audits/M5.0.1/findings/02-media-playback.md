@@ -272,14 +272,14 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
   完整备选源。
 - **真实行为证据**：尚无真实 CDN/解码错误的 domain/code、发生率或终态记录。
 - **本地测试实际证明范围**：
-  `LoopbackPlaybackServerTests.engineReportsFailureAfterItemWasReady` 使用 production
-  `AVPlayerEngine` 和 loopback HLS，让 item 先 ready/播放，再把后续 Range 固定为 503。
-  十秒内 item 仍为 ready、engine timeline 停在 paused，没有原生终态通知；这证明不能把
-  “持续 Range 失败必然很快转成 item.failed”作为恢复策略。测试随后对当前 item 显式发送
-  documented failed-to-end notification，独立 observer 恰好收到一次，但 engine 没有
-  发出 `.failed` event，timeline 也没有进入 failed。两个目标断言以 known issue 登记。
-  synthetic 通知不证明 AVPlayer 在何种真实错误下发送它，也尚未证明换视频后的旧 item
-  隔离和 observer 成对释放。
+  早期 loopback HLS 对照让 item 先 ready/播放，再把后续 Range 固定为 503；一次本机运行
+  十秒内仍为 ready，而 CI run `30431468445` 的 macOS 26 在同一窗口内产生 native
+  failure、macOS 15 未产生，证明不能把具体到达时机作为确定性 Gate。该路径现由
+  `BILIKIT_RUN_PLAYER_FAILURE_POLICY_PROBE=1` 显式启用，只记录观察。
+  `engineDeduplicatesFailureNotificationAfterReady` 则在健康 item ready 后显式发送两次
+  documented failed-to-end notification，确定性验证 production engine 只发一次
+  `.failed(message: "PlaybackItemFailed")` 并把 timeline 收敛为 failed；旧 item 隔离
+  另由 replacement 回归覆盖。synthetic 通知仍不证明 AVPlayer 在何种真实错误下发送它。
 - **判断**：**替换**。readiness KVO 在 ready 后释放；当前既不再观察 item 的终态 status，
   也不监听独立的 failed-to-end 通知，因此 ready 后错误缺少可靠出口。应增加
   item-identity scoped 的持续失败观察；对用户只暴露稳定错误类别，
