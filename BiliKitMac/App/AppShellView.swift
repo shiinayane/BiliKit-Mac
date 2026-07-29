@@ -192,12 +192,20 @@ private struct SearchTabRoot: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .searchable(
             text: $searchDraft,
-            placement: .toolbarPrincipal,
+            placement: searchFieldPlacement,
             prompt: "搜索 B 站视频"
         )
         .onSubmit(of: .search) {
             onSubmit()
         }
+    }
+
+    private var searchFieldPlacement: SearchFieldPlacement {
+        #if compiler(>=6.2)
+            .toolbarPrincipal
+        #else
+            .toolbar
+        #endif
     }
 }
 

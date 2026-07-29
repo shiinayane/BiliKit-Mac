@@ -61,7 +61,7 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 - **审计线与涉及能力**：Apple 原生 UI；`NSViewRepresentable`、搜索、焦点和 Return。
 - **当前实现（文件、符号、调用链）**：
   `SearchTabRoot` 已在实际导航内容上使用
-  `.searchable(text:placement:.toolbarPrincipal,prompt:)` 与
+  `.searchable`、编译期选择的原生 toolbar placement 与
   `.onSubmit(of:.search)`；`CenteredSearchField` AppKit bridge、固定 340 pt
   宽度和专用 test-only native searchable spike 已删除。
 - **它声称提供的职责**：在 toolbar 中居中搜索框、双向绑定搜索 draft、按 Return
@@ -69,8 +69,9 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 - **外部事实来源**：
   - 当前 SDK interface
     `SwiftUI.swiftmodule/arm64e-apple-macos.swiftinterface:5660-5705,9098-9132`
-    显示 `.searchable` 与 `SearchFieldPlacement.toolbarPrincipal` 均早于最低版本
-    （分别至少 macOS 12）；
+    显示 `.searchable` 早于最低版本；`SearchFieldPlacement.toolbarPrincipal`
+    在 Xcode 26 SDK 中标注 macOS 12+，但 Xcode 16.4/macOS 15.5 SDK 没有该成员。
+    CI 的真实编译失败证明 availability 不能替代旧 SDK 声明可见性；
   - Apple [Adding a search interface](https://developer.apple.com/documentation/swiftui/adding-a-search-interface-to-your-app)
     规定在 `NavigationStack`／导航容器上使用 `.searchable`；
   - Apple [toolbarPrincipal](https://developer.apple.com/documentation/swiftui/searchfieldplacement/toolbarprincipal)
@@ -98,8 +99,8 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
   SearchField role 覆盖 Escape、Return 与 Tab 往返，但本机 test worker 未
   materialize，本轮没有执行这些断言。
 - **判断**：**替换已实施，但不是逐属性等价**。
-  `.searchable(text:placement:.toolbarPrincipal,prompt:)` +
-  `.onSubmit(of:.search)` 已取代 AppKit bridge。
+  `.searchable` + `.onSubmit(of:.search)` 已取代 AppKit bridge。Xcode 26+ 构建使用
+  `.toolbarPrincipal`；Xcode 16.4 构建使用同样原生但不保证居中的 `.toolbar`。
   V1 不应把现有 340 pt 固定宽度、`search.field` identifier 或 Command-F 当成原生 API
   自动保留的契约。若产品要求进入 Tab 后立即聚焦，仍需另行采用并验证
   `isPresented`/`.searchFocused`，不能由 TV 私有 App 观察推断。

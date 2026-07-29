@@ -13,8 +13,9 @@
 `PlayerHostLifecycleProbe` 只在注入时记录 host 创建／dismantle，不是系统资源释放证明，必须
 与 player、overlay、observer 和 loopback owner 分开审计。
 
-UI-002 已用 production `.searchable(..., placement: .toolbarPrincipal)` 取代
-`CenteredSearchField`；搜索不再包含 AppKit bridge。
+UI-002 已用 production `.searchable` 取代 `CenteredSearchField`；Xcode 26+
+使用 `.toolbarPrincipal`，Xcode 16.4 构建回退到 `.toolbar`，搜索不再包含 AppKit
+bridge。
 
 ## 手写 Binding
 
