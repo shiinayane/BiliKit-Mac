@@ -93,32 +93,28 @@
 
 - **finding_id**：ARCH-003
 - **审计线与涉及能力**：播放器 protocol、死抽象。
-- **当前实现（文件、符号、调用链）**：
-  `BiliPlayback/Player/PlayerEngine.swift:38-50` 定义宽接口并继承
-  `PlaybackTimelineProviding`；唯一 conformer 是
-  `AVPlayerEngine`（`AVPlayerEngine.swift:17`）。全仓库没有 `any PlayerEngine`、泛型
-  constraint 或接收 `PlayerEngine` 的生产/测试 API；App composition、probe 和测试要么
-  使用具体 `AVPlayerEngine`，要么 Feature 使用较窄 `PlaybackControlling` /
-  `PlaybackTimelineProviding`。
+- **当前实现（文件、符号、调用链）**：已实施删除。`AVPlayerEngine` 只 conform
+  `PlaybackControlling`，Feature／Danmaku／字幕继续使用
+  `PlaybackControlling`／`PlaybackTimelineProviding` 两个窄 Application ports；
+  composition、probe 和播放器测试直接使用具体 engine。`PlaybackRequest`、
+  `PlayerState`、`PlayerEvent` 保留在改名后的 `PlayerTypes.swift`。
 - **它声称提供的职责**：理论上描述完整 player engine；实际上没有隔离任何调用点。
 - **外部事实来源**：不适用；零调用者是仓库事实。
 - **OSS 对照及 commit/date**：不适用。
 - **真实行为证据**：删除 conformance 不改变 production dispatch；`AVPlayerEngine`
   的公开方法仍被 probe/host 具体调用。
 - **本地测试实际证明的范围**：播放器测试覆盖 concrete engine 和窄 Application ports；
-  没有测试以 `PlayerEngine` 替换实现。审计后新增的 MP-006 定点测试则直接消费 concrete
-  engine 的 `events`，并以 known issue 证明 ready 后 failed-to-end 尚未进入失败出口。
-- **判断：删除** `PlayerEngine` protocol 与 `AVPlayerEngine: PlayerEngine`
-  conformance；这是已证明零调用者的结构噪音。**撤回**“同时删除 event stream”的旧扩展
-  结论：`events`／`PlayerEvent` 已成为 MP-006 的预期失败出口，虽然 production UI 尚无
-  消费者，也不能在持续失败修复前先删。`PlayerState` 是否应与已有
-  `PlaybackTimelineState` 合并，应在 MP-006 实施时按唯一状态 owner 单独裁决。保留有实际
-  probe/tests 调用的 `PlaybackRequest`、`setRate` 与 `Duration` seek。
+  MP-006 定点测试直接消费 concrete engine 的 `events` 并已证明 ready 后持续失败出口。
+  删除 protocol 后 package gate 237 项通过；这不证明仓库外调用兼容。
+- **判断：删除已实施**。`PlayerEngine` protocol 与唯一 conformance 已删除；这是已证明
+  零调用者的结构噪音。`events`／`PlayerEvent` 保留为 MP-006 失败出口。
+  `PlayerState` 是否应与已有 `PlaybackTimelineState` 合并不属于本项；若未来重开，
+  必须按唯一状态 owner 单独裁决。保留有实际 probe/tests 调用的 `PlaybackRequest`、
+  `setRate` 与 `Duration` seek。
 - **风险：影响、触发条件、可恢复性**：源码兼容性只影响仓库外若有人使用该公开 SwiftPM
   product，但 BiliKitCore 未作为独立版本化 SDK 分发；本仓库 build 可直接发现遗漏。
-- **下一步最小验证**：实施时以 `rg '\\bPlayerEngine\\b'` 再冻结调用者，只删除 protocol
-  与 conformance 后运行 package gate；不顺带删 event stream、合并状态或收窄 concrete
-  engine。MP-006 单独负责失败 observer、旧 item 隔离、清理与 production 消费出口。
+- **下一步最小验证**：本项关闭；未来只有出现第二个完整 engine 消费边界时再按真实调用者
+  引入抽象，不为类型对称恢复 protocol。
 - **与其他 finding 的依赖或冲突**：不删除两个窄 Application playback ports；与
   MP-005 无关，但 event stream 的后续形态依赖 MP-006。
 
