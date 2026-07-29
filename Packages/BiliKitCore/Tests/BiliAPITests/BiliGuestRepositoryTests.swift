@@ -71,8 +71,7 @@ struct BiliGuestRepositoryTests {
         await #expect(throws: GuestApplicationError.unsupportedMedia) {
             try await repository.playback(
                 for: "BV1FixtureA1",
-                cid: 900_001,
-                quality: 32
+                cid: 900_001
             )
         }
     }

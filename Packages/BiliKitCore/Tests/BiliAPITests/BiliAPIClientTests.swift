@@ -107,6 +107,41 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func searchRejectsNegativeDuration() async throws {
+        let response = try fixtureResponse("search")
+        let source = try #require(
+            String(data: response.body, encoding: .utf8)
+        )
+        let body = try #require(
+            source.replacingOccurrences(
+                of: "\"duration\": \"01:02:03\"",
+                with: "\"duration\": \"-01:02:03\""
+            ).data(using: .utf8)
+        )
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                HTTPResponse(
+                    statusCode: response.statusCode,
+                    headers: response.headers,
+                    body: body
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        let page = try await client.searchVideos(
+            keyword: "macOS",
+            page: 1
+        )
+
+        #expect(page.videos[0].durationSeconds == nil)
+    }
+
+    @Test
     func searchReusesSameDayWBIKey() async throws {
         let transport = RecordingTransport(
             responses: [
@@ -209,8 +244,7 @@ struct BiliAPIClientTests {
 
         let playback = try await client.playback(
             for: "BV1FixtureA1",
-            cid: 900_001,
-            quality: 32
+            cid: 900_001
         )
 
         let video = try #require(playback.manifest.videoRepresentations.first)
@@ -219,6 +253,9 @@ struct BiliAPIClientTests {
         #expect(playback.manifest.audioRepresentations.count == 1)
         #expect(video.id == 32)
         #expect(video.urlCandidates.count == 2)
+        #expect(video.videoAttributes?.width == 1280)
+        #expect(video.videoAttributes?.height == 720)
+        #expect(video.videoAttributes?.frameRate == 60_000.0 / 1_001.0)
         #expect(video.segmentBase.initialization.httpRangeHeaderValue == "bytes=0-999")
         #expect(audio.id == 30216)
         #expect(audio.segmentBase.index.httpRangeHeaderValue == "bytes=800-1599")
@@ -230,8 +267,54 @@ struct BiliAPIClientTests {
             url: request.url,
             resolvingAgainstBaseURL: false
         )?.queryItems
-        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "16")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
+    }
+
+    @Test
+    func playbackNeverRequestsCredentialAuthorization() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try fixtureResponse("playurl")]
+            ),
+            requestAuthorizer: authorizer
+        )
+
+        _ = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(await authorizer.capturedPaths().isEmpty)
+    }
+
+    @Test
+    func playURLRejectsInvalidVideoFrameRate() async throws {
+        let fixture = try fixtureResponse("playurl")
+        let invalidBody = String(decoding: fixture.body, as: UTF8.self)
+            .replacingOccurrences(
+                of: "\"frame_rate\": \"60000/1001\"",
+                with: "\"frame_rate\": \"60/0\""
+            )
+        let response = HTTPResponse(
+            statusCode: fixture.statusCode,
+            headers: fixture.headers,
+            body: Data(invalidBody.utf8)
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.invalidMediaData) {
+            try await client.playback(
+                for: "BV1FixtureA1",
+                cid: 900_001,
+                quality: 32
+            )
+        }
     }
 
     @Test

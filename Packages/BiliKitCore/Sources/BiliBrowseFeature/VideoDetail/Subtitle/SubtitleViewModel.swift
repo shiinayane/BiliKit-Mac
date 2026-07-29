@@ -112,6 +112,14 @@ public final class SubtitleViewModel {
 
     public func retry() {
         guard let identity = identity ?? suspendedIdentity else { return }
+        if self.identity == identity,
+            case .failed(let failedIdentity, _) = state,
+            failedIdentity == identity,
+            let selectedTrackID
+        {
+            selectTrack(selectedTrackID)
+            return
+        }
         suspendedIdentity = nil
         self.identity = nil
         selectVideo(identity)
@@ -167,18 +175,13 @@ public final class SubtitleViewModel {
                 contentGeneration == generation
             else { return }
             self.tracks = tracks
-            guard let firstTrack = tracks.first else {
+            guard !tracks.isEmpty else {
                 state = .unavailable(identity)
                 contentTask = nil
                 return
             }
-            selectedTrackID = firstTrack.id
-            state = .loadingTrack(identity)
-            await loadTrack(
-                firstTrack.id,
-                identity: identity,
-                generation: generation
-            )
+            state = .ready(identity)
+            contentTask = nil
         } catch is CancellationError {
             return
         } catch let error as SubtitleApplicationError {

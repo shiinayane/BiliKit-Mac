@@ -4,9 +4,11 @@ set -euo pipefail
 
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
-derived_data=/tmp/BiliKitMac-m4-probe
-test_log="$repository_root/test.log"
-result_bundle="$derived_data/M4ContractProbe-$(date +%Y%m%d-%H%M%S).xcresult"
+probe_directory=""
+input_file=""
+derived_data=""
+test_log=""
+result_bundle=""
 xctestrun_file=""
 environment_path=":TestConfigurations:0:TestTargets:0:EnvironmentVariables"
 
@@ -27,14 +29,30 @@ fi
 cleanup() {
     if [[ -n "$xctestrun_file" && -f "$xctestrun_file" ]]; then
         /usr/libexec/PlistBuddy \
-            -c "Delete ${environment_path}:BILIKIT_M4_PROBE_BVID" \
+            -c "Delete ${environment_path}:BILIKIT_LOCAL_PROBE_INPUT_FILE" \
             "$xctestrun_file" >/dev/null 2>&1 || true
-        /usr/libexec/PlistBuddy \
-            -c "Delete ${environment_path}:BILIKIT_M4_PROBE_CID" \
-            "$xctestrun_file" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$probe_directory"
+        && "$probe_directory" == /tmp/BiliKitMac-m4-probe.*
+        && -d "$probe_directory" ]]; then
+        rm -rf -- "$probe_directory"
     fi
 }
 trap cleanup EXIT INT TERM
+
+probe_directory=$(mktemp -d /tmp/BiliKitMac-m4-probe.XXXXXX)
+chmod 700 "$probe_directory"
+input_file="$probe_directory/input.plist"
+derived_data="$probe_directory/DerivedData"
+test_log="$probe_directory/raw-test.log"
+result_bundle="$probe_directory/M4ContractProbe.xcresult"
+/usr/bin/plutil -create xml1 "$input_file"
+/usr/bin/plutil -insert bvid -string "$probe_bvid" "$input_file"
+if [[ -n "$probe_cid" ]]; then
+    /usr/bin/plutil -insert cid -string "$probe_cid" "$input_file"
+fi
+chmod 600 "$input_file"
+unset probe_bvid probe_cid
 
 cd "$repository_root"
 print '正在构建签名测试宿主……'
@@ -58,13 +76,8 @@ fi
 xctestrun_file=${xctestrun_files[1]}
 
 /usr/libexec/PlistBuddy \
-    -c "Add ${environment_path}:BILIKIT_M4_PROBE_BVID string $probe_bvid" \
+    -c "Add ${environment_path}:BILIKIT_LOCAL_PROBE_INPUT_FILE string $input_file" \
     "$xctestrun_file"
-if [[ -n "$probe_cid" ]]; then
-    /usr/libexec/PlistBuddy \
-        -c "Add ${environment_path}:BILIKIT_M4_PROBE_CID string $probe_cid" \
-        "$xctestrun_file"
-fi
 
 print '正在运行已登录字幕契约探针……'
 set +e
@@ -89,13 +102,12 @@ fi
 
 rg 'm4-subtitle|TEST (SUCCEEDED|FAILED)|Test case.*M4Authenticated' "$test_log" || true
 if [[ $probe_status -ne 0 ]]; then
-    print -u2 "探针失败；完整脱敏构建日志位于 $test_log"
+    print -u2 '探针失败；原始输出已清理。'
     exit $probe_status
 fi
 if ! rg -q 'm4-subtitle-production .*decoder=ready' "$test_log"; then
     print -u2 '探针未到达生产字幕 decoder；请更换存在可用字幕正文的样本。'
-    print -u2 "完整脱敏构建日志位于 $test_log"
     exit 1
 fi
 
-print "探针完成；完整脱敏构建日志位于 $test_log"
+print '探针完成；BVID、CID、URL、字幕正文、凭据和原始产物均未保留。'

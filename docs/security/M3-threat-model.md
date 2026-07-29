@@ -125,7 +125,7 @@ signedIn
 
 以下本地 Gate 已满足：
 
-- 观看历史 endpoint 已接入精确授权；负向测试证明游客 endpoint、CDN、loopback、非白名单 endpoint 与跨主机重定向不会得到 Cookie。
+- 观看历史与字幕目录已接入精确授权；负向测试证明游客 endpoint、playurl、CDN、loopback、非白名单 endpoint 与跨主机重定向不会得到 Cookie。
 - 真实扫码、App 重启恢复、观看历史读取、详情/播放器跳转与界面登出已通过；第二次重启保持未登录，未登录历史入口回退账号 sheet。
 - 历史 sheet 关闭与登出会取消任务并清空个性化列表；验证记录不包含账号身份、历史标题、BVID 或秘密值。
 

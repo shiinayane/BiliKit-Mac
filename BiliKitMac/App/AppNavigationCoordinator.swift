@@ -16,12 +16,20 @@ final class AppNavigationCoordinator {
     var selectedTab: AppTab = .popular {
         didSet {
             guard selectedTab != oldValue else { return }
-            playbackPath.removeAll()
+            let previousPath = playbackPath(for: oldValue)
+            replacePlaybackPath([], for: oldValue)
+            reconcilePlayback(from: previousPath, to: [])
         }
     }
-    var playbackPath: [PlaybackDestination] = [] {
-        didSet {
-            reconcilePlayback(from: oldValue, to: playbackPath)
+    private(set) var searchPlaybackPath: [PlaybackDestination] = []
+    private(set) var popularPlaybackPath: [PlaybackDestination] = []
+    private(set) var historyPlaybackPath: [PlaybackDestination] = []
+    var playbackPath: [PlaybackDestination] {
+        get {
+            playbackPath(for: selectedTab)
+        }
+        set {
+            updatePlaybackPath(newValue, for: selectedTab)
         }
     }
     var searchDraft = ""
@@ -48,9 +56,35 @@ final class AppNavigationCoordinator {
     }
 
     func resetForWindowClosure() {
-        playbackPath.removeAll()
+        let previousPath = playbackPath
+        replacePlaybackPath([], for: .search)
+        replacePlaybackPath([], for: .popular)
+        replacePlaybackPath([], for: .history)
+        reconcilePlayback(from: previousPath, to: [])
         selectedTab = .popular
         searchDraft = ""
+    }
+
+    func updatePlaybackPath(
+        _ path: [PlaybackDestination],
+        for tab: AppTab
+    ) {
+        guard selectedTab == tab else { return }
+        let previousPath = playbackPath(for: tab)
+        guard previousPath != path else { return }
+        replacePlaybackPath(path, for: tab)
+        reconcilePlayback(from: previousPath, to: path)
+    }
+
+    func playbackPath(for tab: AppTab) -> [PlaybackDestination] {
+        switch tab {
+        case .search:
+            searchPlaybackPath
+        case .popular:
+            popularPlaybackPath
+        case .history:
+            historyPlaybackPath
+        }
     }
 
     private func reconcilePlayback(
@@ -66,6 +100,20 @@ final class AppNavigationCoordinator {
         }
         if let newDestination {
             startPlayback(newDestination.bvid)
+        }
+    }
+
+    private func replacePlaybackPath(
+        _ path: [PlaybackDestination],
+        for tab: AppTab
+    ) {
+        switch tab {
+        case .search:
+            searchPlaybackPath = path
+        case .popular:
+            popularPlaybackPath = path
+        case .history:
+            historyPlaybackPath = path
         }
     }
 }

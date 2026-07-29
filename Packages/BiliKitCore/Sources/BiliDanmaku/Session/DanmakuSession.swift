@@ -23,6 +23,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
     private var generation = 0
     private var timelineTask: Task<Void, Never>?
     private var loadTasks: [Int: Task<Void, Never>] = [:]
+    private var failedSegmentIndices: Set<Int> = []
     private var continuations: [UUID: AsyncStream<DanmakuBatch>.Continuation] = [:]
 
     public init(
@@ -114,6 +115,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
             task.cancel()
         }
         loadTasks.removeAll(keepingCapacity: false)
+        failedSegmentIndices.removeAll(keepingCapacity: false)
         identity = nil
         scheduler.reset()
         state = .idle
@@ -145,6 +147,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         for index in required
         where
             !scheduler.containsSegment(index: index)
+            && !failedSegmentIndices.contains(index)
             && loadTasks[index] == nil
             && loadTasks.count < 2
         {
@@ -182,6 +185,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
                     self.identity == identity
                 else { return }
                 self.loadTasks[index] = nil
+                self.failedSegmentIndices.insert(index)
                 self.state = .failed(identity, error)
             } catch {
                 guard let self,
@@ -189,6 +193,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
                     self.identity == identity
                 else { return }
                 self.loadTasks[index] = nil
+                self.failedSegmentIndices.insert(index)
                 self.state = .failed(identity, .unavailable)
             }
         }

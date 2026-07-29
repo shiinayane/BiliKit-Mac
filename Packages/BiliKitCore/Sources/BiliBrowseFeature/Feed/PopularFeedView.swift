@@ -100,6 +100,7 @@ private struct PopularGrid: View {
                             GuestVideoCard(video: video)
                         }
                         .buttonStyle(VideoCardButtonStyle())
+                        .focusable(false)
                         .accessibilityHint("播放视频")
                         .accessibilityIdentifier("feed.item.\(video.bvid)")
                     }

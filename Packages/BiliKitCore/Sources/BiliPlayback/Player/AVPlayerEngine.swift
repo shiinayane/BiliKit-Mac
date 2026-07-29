@@ -14,7 +14,10 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
 }
 
 @MainActor
-public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
+public final class AVPlayerEngine:
+    PlaybackControlling,
+    PlaybackTimelineProviding
+{
     public let player: AVPlayer
     public let events: AsyncStream<PlayerEvent>
 
@@ -36,9 +39,11 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         let stream = AsyncStream<PlayerEvent>.makeStream()
         events = stream.stream
         eventContinuation = stream.continuation
-        player.automaticallyWaitsToMinimizeStalling = false
         timeline.onEnded = { [weak self] in
             self?.emit(.stateChanged(.ended))
+        }
+        timeline.onFailed = { [weak self] in
+            self?.handleCurrentItemFailure()
         }
     }
 
@@ -105,11 +110,11 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         timeline.begin(identity: identity)
         emit(.stateChanged(.loading))
 
-        let video = try selectedVideo(for: request)
+        let videos = try selectedVideos(for: request)
         let audio = try selectedAudio(for: request)
         let task = Task {
             try await bridge.prepare(
-                video: video,
+                videos: videos,
                 audio: audio,
                 headers: request.mediaHeaders
             )
@@ -235,9 +240,9 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         emit(.stateChanged(.idle))
     }
 
-    private func selectedVideo(
+    private func selectedVideos(
         for request: PlaybackRequest
-    ) throws -> MediaRepresentation {
+    ) throws -> [MediaRepresentation] {
         if let preferredID = request.preferredVideoRepresentationID {
             guard
                 let representation = request.manifest.videoRepresentations.first(
@@ -248,12 +253,12 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
                     preferredID
                 )
             }
-            return representation
+            return [representation]
         }
-        guard let representation = request.manifest.videoRepresentations.first else {
+        guard !request.manifest.videoRepresentations.isEmpty else {
             throw AVPlayerEngineError.missingVideoRepresentation
         }
-        return representation
+        return request.manifest.videoRepresentations
     }
 
     private func selectedAudio(
@@ -279,5 +284,12 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
 
     private func emit(_ event: PlayerEvent) {
         eventContinuation.yield(event)
+    }
+
+    private func handleCurrentItemFailure() {
+        player.pause()
+        preparedAsset?.stop()
+        preparedAsset = nil
+        emit(.failed(message: "PlaybackItemFailed"))
     }
 }

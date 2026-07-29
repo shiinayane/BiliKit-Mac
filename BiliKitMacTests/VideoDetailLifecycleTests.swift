@@ -178,8 +178,7 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixture.playback
     }

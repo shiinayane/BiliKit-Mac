@@ -15,5 +15,5 @@ public protocol GuestContentRepository: Sendable {
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage
     func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
-    func playback(for bvid: String, cid: Int64, quality: Int) async throws -> VideoPlayback
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
 }

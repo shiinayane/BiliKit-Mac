@@ -3,7 +3,9 @@ import BiliNetworking
 import Foundation
 
 public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
+    case missingVideoRepresentation
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
+    case duplicateVideoRepresentationID(Int)
     case missingCompleteMediaLength(representationID: Int)
 }
 
@@ -55,11 +57,34 @@ public struct DASHToHLSBridge: Sendable {
         audio: MediaRepresentation,
         headers: [String: String] = [:]
     ) async throws -> PreparedPlaybackAsset {
-        guard video.kind == .video else {
-            throw DASHToHLSBridgeError.invalidMediaKind(
-                expected: .video,
-                actual: video.kind
-            )
+        try await prepare(
+            videos: [video],
+            audio: audio,
+            headers: headers
+        )
+    }
+
+    public func prepare(
+        videos: [MediaRepresentation],
+        audio: MediaRepresentation,
+        headers: [String: String] = [:]
+    ) async throws -> PreparedPlaybackAsset {
+        guard !videos.isEmpty else {
+            throw DASHToHLSBridgeError.missingVideoRepresentation
+        }
+        var videoIDs = Set<Int>()
+        for video in videos {
+            guard video.kind == .video else {
+                throw DASHToHLSBridgeError.invalidMediaKind(
+                    expected: .video,
+                    actual: video.kind
+                )
+            }
+            guard videoIDs.insert(video.id).inserted else {
+                throw DASHToHLSBridgeError.duplicateVideoRepresentationID(
+                    video.id
+                )
+            }
         }
         guard audio.kind == .audio else {
             throw DASHToHLSBridgeError.invalidMediaKind(
@@ -68,21 +93,15 @@ public struct DASHToHLSBridge: Sendable {
             )
         }
 
-        async let loadedVideo = indexLoader.load(
-            for: video,
-            headers: headers
-        )
         async let loadedAudio = indexLoader.load(
             for: audio,
             headers: headers
         )
-        let (videoIndex, audioIndex) = try await (loadedVideo, loadedAudio)
-
-        guard let videoLength = videoIndex.completeMediaLength else {
-            throw DASHToHLSBridgeError.missingCompleteMediaLength(
-                representationID: video.id
-            )
-        }
+        let videoIndices = try await loadVideoIndices(
+            videos,
+            headers: headers
+        )
+        let audioIndex = try await loadedAudio
         guard let audioLength = audioIndex.completeMediaLength else {
             throw DASHToHLSBridgeError.missingCompleteMediaLength(
                 representationID: audio.id
@@ -93,29 +112,11 @@ public struct DASHToHLSBridge: Sendable {
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")
-            let videoPlaylistURL = try server.url(for: "video/\(video.id).m3u8")
             let audioPlaylistURL = try server.url(for: "audio/\(audio.id).m3u8")
-            let videoMediaURL = try server.register(
-                .remote(
-                    try LoopbackRemoteResource(
-                        candidateURLs: preferredCandidates(
-                            selected: videoIndex.sourceURL,
-                            all: video.urlCandidates
-                        ),
-                        contentLength: videoLength,
-                        contentType: video.mimeType,
-                        headers: headers
-                    )
-                ),
-                at: "media/video/\(video.id).mp4"
-            )
             let audioMediaURL = try server.register(
                 .remote(
                     try LoopbackRemoteResource(
-                        candidateURLs: preferredCandidates(
-                            selected: audioIndex.sourceURL,
-                            all: audio.urlCandidates
-                        ),
+                        sourceURL: audioIndex.sourceURL,
                         contentLength: audioLength,
                         contentType: audio.mimeType,
                         headers: headers
@@ -124,30 +125,61 @@ public struct DASHToHLSBridge: Sendable {
                 at: "media/audio/\(audio.id).mp4"
             )
 
-            let videoPlaylist = try mediaPlaylistBuilder.build(
-                representation: video,
-                index: videoIndex.index,
-                mediaURI: videoMediaURL
-            )
             let audioPlaylist = try mediaPlaylistBuilder.build(
                 representation: audio,
                 index: audioIndex.index,
                 mediaURI: audioMediaURL
             )
-            let masterPlaylist = try masterPlaylistBuilder.build(
-                video: video,
-                videoPlaylistURI: videoPlaylistURL,
-                audio: audio,
-                audioPlaylistURI: audioPlaylistURL
-            )
-
-            _ = try server.register(
-                playlistResource(videoPlaylist),
-                at: "video/\(video.id).m3u8"
-            )
             _ = try server.register(
                 playlistResource(audioPlaylist),
                 at: "audio/\(audio.id).m3u8"
+            )
+
+            var variants: [HLSVideoVariant] = []
+            variants.reserveCapacity(videos.count)
+            for (video, videoIndex) in zip(videos, videoIndices) {
+                guard let videoLength = videoIndex.completeMediaLength else {
+                    throw DASHToHLSBridgeError.missingCompleteMediaLength(
+                        representationID: video.id
+                    )
+                }
+                let videoPlaylistURL = try server.url(
+                    for: "video/\(video.id).m3u8"
+                )
+                let videoMediaURL = try server.register(
+                    .remote(
+                        try LoopbackRemoteResource(
+                            sourceURL: videoIndex.sourceURL,
+                            contentLength: videoLength,
+                            contentType: video.mimeType,
+                            headers: headers
+                        )
+                    ),
+                    at: "media/video/\(video.id).mp4"
+                )
+                let videoPlaylist = try mediaPlaylistBuilder.build(
+                    representation: video,
+                    index: videoIndex.index,
+                    mediaURI: videoMediaURL
+                )
+                _ = try server.register(
+                    playlistResource(videoPlaylist),
+                    at: "video/\(video.id).m3u8"
+                )
+                variants.append(
+                    HLSVideoVariant(
+                        representation: video,
+                        index: videoIndex.index,
+                        playlistURI: videoPlaylistURL
+                    )
+                )
+            }
+
+            let masterPlaylist = try masterPlaylistBuilder.build(
+                videoVariants: variants,
+                audio: audio,
+                audioIndex: audioIndex.index,
+                audioPlaylistURI: audioPlaylistURL
             )
             _ = try server.register(
                 playlistResource(masterPlaylist),
@@ -161,11 +193,34 @@ public struct DASHToHLSBridge: Sendable {
         }
     }
 
-    private func preferredCandidates(
-        selected: URL,
-        all candidates: [URL]
-    ) -> [URL] {
-        [selected] + candidates.filter { $0 != selected }
+    private func loadVideoIndices(
+        _ videos: [MediaRepresentation],
+        headers: [String: String]
+    ) async throws -> [LoadedSegmentIndex] {
+        try await withThrowingTaskGroup(
+            of: (Int, LoadedSegmentIndex).self
+        ) { group in
+            for (offset, video) in videos.enumerated() {
+                group.addTask {
+                    (
+                        offset,
+                        try await indexLoader.load(
+                            for: video,
+                            headers: headers
+                        )
+                    )
+                }
+            }
+
+            var ordered = [LoadedSegmentIndex?](
+                repeating: nil,
+                count: videos.count
+            )
+            for try await (offset, index) in group {
+                ordered[offset] = index
+            }
+            return ordered.compactMap { $0 }
+        }
     }
 
     private func playlistResource(_ playlist: String) -> LoopbackPlaybackResource {

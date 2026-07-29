@@ -13,6 +13,7 @@ message Element {
   int32 progress_milliseconds = 2;
   int32 mode = 3;
   int32 font_size = 4;
+  // Base RRGGBB color. Presentation metadata remains in separate fields.
   uint32 color_rgb = 5;
   string sender_hash = 6;
   string content = 7;

@@ -32,7 +32,7 @@ public final class GuestVideoViewModel {
         self.playback = playback
     }
 
-    public func loadVideo(_ bvid: String, quality: Int = 32) {
+    public func loadVideo(_ bvid: String) {
         generation += 1
         let currentGeneration = generation
         loadTask?.cancel()
@@ -43,7 +43,6 @@ public final class GuestVideoViewModel {
         loadTask = Task { [weak self] in
             await self?.performLoad(
                 bvid: bvid,
-                quality: quality,
                 generation: currentGeneration
             )
         }
@@ -67,14 +66,10 @@ public final class GuestVideoViewModel {
 
     private func performLoad(
         bvid: String,
-        quality: Int,
         generation currentGeneration: Int
     ) async {
         do {
-            let context = try await useCase.prepareVideo(
-                bvid: bvid,
-                quality: quality
-            )
+            let context = try await useCase.prepareVideo(bvid: bvid)
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
 

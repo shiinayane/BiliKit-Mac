@@ -69,8 +69,7 @@ private actor FeedRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         throw GuestApplicationError.unavailable
     }

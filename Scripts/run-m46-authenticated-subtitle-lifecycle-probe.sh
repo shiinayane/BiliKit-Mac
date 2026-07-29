@@ -5,6 +5,7 @@ set -euo pipefail
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
 probe_directory=""
+input_file=""
 derived_data=""
 test_log=""
 result_bundle=""
@@ -72,10 +73,7 @@ fi
 cleanup() {
     if [[ -n "$xctestrun_file" && -f "$xctestrun_file" ]]; then
         /usr/libexec/PlistBuddy \
-            -c "Delete ${environment_path}:BILIKIT_M46_PROBE_BVID_A" \
-            "$xctestrun_file" >/dev/null 2>&1 || true
-        /usr/libexec/PlistBuddy \
-            -c "Delete ${environment_path}:BILIKIT_M46_PROBE_BVID_B" \
+            -c "Delete ${environment_path}:BILIKIT_LOCAL_PROBE_INPUT_FILE" \
             "$xctestrun_file" >/dev/null 2>&1 || true
     fi
     if [[ -n "$probe_directory"
@@ -88,9 +86,15 @@ trap cleanup EXIT INT TERM
 
 probe_directory=$(mktemp -d /tmp/BiliKitMac-m46-subtitle-probe.XXXXXX)
 chmod 700 "$probe_directory"
+input_file="$probe_directory/input.plist"
 derived_data="$probe_directory/DerivedData"
 test_log="$probe_directory/raw-test.log"
 result_bundle="$probe_directory/M46SubtitleLifecycle.xcresult"
+/usr/bin/plutil -create xml1 "$input_file"
+/usr/bin/plutil -insert bvidA -string "$probe_bvid_a" "$input_file"
+/usr/bin/plutil -insert bvidB -string "$probe_bvid_b" "$input_file"
+chmod 600 "$input_file"
+unset probe_bvid_a probe_bvid_b
 
 cd "$repository_root"
 print '正在构建签名测试宿主……'
@@ -117,10 +121,7 @@ fi
 xctestrun_file=${xctestrun_files[1]}
 
 /usr/libexec/PlistBuddy \
-    -c "Add ${environment_path}:BILIKIT_M46_PROBE_BVID_A string $probe_bvid_a" \
-    "$xctestrun_file"
-/usr/libexec/PlistBuddy \
-    -c "Add ${environment_path}:BILIKIT_M46_PROBE_BVID_B string $probe_bvid_b" \
+    -c "Add ${environment_path}:BILIKIT_LOCAL_PROBE_INPUT_FILE string $input_file" \
     "$xctestrun_file"
 
 print '正在运行已登录 A/B 字幕生命周期探针……'

@@ -40,12 +40,45 @@ public enum MediaKind: String, Sendable, Equatable {
     case audio
 }
 
+public struct VideoRepresentationAttributes: Sendable, Equatable {
+    public let width: Int
+    public let height: Int
+    public let frameRate: Double
+
+    public init(
+        width: Int,
+        height: Int,
+        frameRate: Double
+    ) throws {
+        guard width > 0,
+            height > 0,
+            frameRate.isFinite,
+            frameRate > 0
+        else {
+            throw VideoRepresentationAttributesError.invalidValues(
+                width: width,
+                height: height,
+                frameRate: frameRate
+            )
+        }
+
+        self.width = width
+        self.height = height
+        self.frameRate = frameRate
+    }
+}
+
+public enum VideoRepresentationAttributesError: Error, Sendable, Equatable {
+    case invalidValues(width: Int, height: Int, frameRate: Double)
+}
+
 public struct MediaRepresentation: Sendable, Equatable {
     public let id: Int
     public let kind: MediaKind
     public let codecs: String
     public let mimeType: String
     public let bandwidth: Int?
+    public let videoAttributes: VideoRepresentationAttributes?
     public let primaryURL: URL
     public let backupURLs: [URL]
     public let segmentBase: SegmentBase
@@ -56,6 +89,7 @@ public struct MediaRepresentation: Sendable, Equatable {
         codecs: String,
         mimeType: String,
         bandwidth: Int? = nil,
+        videoAttributes: VideoRepresentationAttributes? = nil,
         primaryURL: URL,
         backupURLs: [URL] = [],
         segmentBase: SegmentBase
@@ -65,6 +99,7 @@ public struct MediaRepresentation: Sendable, Equatable {
         self.codecs = codecs
         self.mimeType = mimeType
         self.bandwidth = bandwidth
+        self.videoAttributes = videoAttributes
         self.primaryURL = primaryURL
         self.backupURLs = backupURLs
         self.segmentBase = segmentBase

@@ -6,6 +6,7 @@ import os
 @MainActor
 final class AVPlayerTimelineAdapter {
     var onEnded: (@MainActor () -> Void)?
+    var onFailed: (@MainActor () -> Void)?
 
     var currentSnapshot: PlaybackTimelineSnapshot {
         store.currentSnapshot
@@ -15,6 +16,7 @@ final class AVPlayerTimelineAdapter {
     private let store = PlaybackTimelineStore()
     private let observers = PlayerTimelineObserverBag()
     private var token: PlaybackTimelineItemToken?
+    private var failedToken: PlaybackTimelineItemToken?
     private var preferredPlaybackRate: Float = 1
     private var pendingExplicitSeekPosition: Double?
 
@@ -30,6 +32,7 @@ final class AVPlayerTimelineAdapter {
         observers.reset()
         pendingExplicitSeekPosition = nil
         token = store.beginItem(identity: identity)
+        failedToken = nil
     }
 
     func installObservers(for item: AVPlayerItem) {
@@ -74,6 +77,7 @@ final class AVPlayerTimelineAdapter {
                     return
                 }
                 let currentState = self.store.currentSnapshot.state
+                guard currentState != .failed else { return }
                 switch player.timeControlStatus {
                 case .paused:
                     guard currentState != .loading, currentState != .ended else {
@@ -118,6 +122,30 @@ final class AVPlayerTimelineAdapter {
             }
         }
 
+        let statusObservation = item.observe(
+            \.status,
+            options: [.new]
+        ) { [weak self, weak item] observedItem, _ in
+            Task { @MainActor in
+                guard observedItem.status == .failed,
+                    let self,
+                    let item
+                else { return }
+                self.fail(item: item, token: token)
+            }
+        }
+
+        let failureNotificationObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+            object: item,
+            queue: .main
+        ) { [weak self, weak item] _ in
+            Task { @MainActor in
+                guard let self, let item else { return }
+                self.fail(item: item, token: token)
+            }
+        }
+
         let timeJumpNotificationObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.timeJumpedNotification,
             object: item,
@@ -148,7 +176,9 @@ final class AVPlayerTimelineAdapter {
             periodicTimeObserver: periodicTimeObserver,
             rateObservation: rateObservation,
             timeControlObservation: timeControlObservation,
+            statusObservation: statusObservation,
             endNotificationObserver: endNotificationObserver,
+            failureNotificationObserver: failureNotificationObserver,
             timeJumpNotificationObserver: timeJumpNotificationObserver
         )
     }
@@ -164,6 +194,7 @@ final class AVPlayerTimelineAdapter {
     func markFailed() {
         observers.reset()
         guard let token else { return }
+        failedToken = token
         store.markFailed(token: token)
     }
 
@@ -214,6 +245,23 @@ final class AVPlayerTimelineAdapter {
         pendingExplicitSeekPosition = nil
         store.clear(token: token)
         token = nil
+        failedToken = nil
+    }
+
+    private func fail(
+        item: AVPlayerItem,
+        token: PlaybackTimelineItemToken
+    ) {
+        guard player.currentItem === item,
+            self.token == token,
+            failedToken != token,
+            store.currentSnapshot.state != .loading
+        else { return }
+
+        failedToken = token
+        observers.reset()
+        store.markFailed(token: token)
+        onFailed?()
     }
 
     private static func seconds(from time: CMTime) -> Double? {
@@ -229,7 +277,9 @@ private final class PlayerTimelineObserverBag: Sendable {
         var periodicTimeObserver: Any? = nil
         var rateObservation: NSKeyValueObservation? = nil
         var timeControlObservation: NSKeyValueObservation? = nil
+        var statusObservation: NSKeyValueObservation? = nil
         var endNotificationObserver: NSObjectProtocol? = nil
+        var failureNotificationObserver: NSObjectProtocol? = nil
         var timeJumpNotificationObserver: NSObjectProtocol? = nil
     }
 
@@ -244,7 +294,9 @@ private final class PlayerTimelineObserverBag: Sendable {
         periodicTimeObserver: Any,
         rateObservation: NSKeyValueObservation,
         timeControlObservation: NSKeyValueObservation,
+        statusObservation: NSKeyValueObservation,
         endNotificationObserver: NSObjectProtocol,
+        failureNotificationObserver: NSObjectProtocol,
         timeJumpNotificationObserver: NSObjectProtocol
     ) {
         let previous = storage.withLockUnchecked { storage -> Storage in
@@ -254,7 +306,9 @@ private final class PlayerTimelineObserverBag: Sendable {
                 periodicTimeObserver: periodicTimeObserver,
                 rateObservation: rateObservation,
                 timeControlObservation: timeControlObservation,
+                statusObservation: statusObservation,
                 endNotificationObserver: endNotificationObserver,
+                failureNotificationObserver: failureNotificationObserver,
                 timeJumpNotificationObserver: timeJumpNotificationObserver
             )
             return previous
@@ -279,8 +333,12 @@ private final class PlayerTimelineObserverBag: Sendable {
         }
         storage.rateObservation?.invalidate()
         storage.timeControlObservation?.invalidate()
+        storage.statusObservation?.invalidate()
         if let endNotificationObserver = storage.endNotificationObserver {
             NotificationCenter.default.removeObserver(endNotificationObserver)
+        }
+        if let failureNotificationObserver = storage.failureNotificationObserver {
+            NotificationCenter.default.removeObserver(failureNotificationObserver)
         }
         if let timeJumpNotificationObserver = storage.timeJumpNotificationObserver {
             NotificationCenter.default.removeObserver(timeJumpNotificationObserver)

@@ -1,6 +1,4 @@
-import BiliApplication
 import BiliModels
-import Foundation
 
 public struct PlaybackRequest: Sendable, Equatable {
     public let manifest: PlaybackManifest
@@ -33,19 +31,4 @@ public enum PlayerState: Sendable, Equatable {
 public enum PlayerEvent: Sendable, Equatable {
     case stateChanged(PlayerState)
     case failed(message: String)
-}
-
-@MainActor
-public protocol PlayerEngine: PlaybackTimelineProviding, AnyObject {
-    var events: AsyncStream<PlayerEvent> { get }
-
-    func load(
-        _ request: PlaybackRequest,
-        identity: PlaybackItemIdentity
-    ) async throws
-    func play()
-    func pause()
-    func setRate(_ rate: Double) throws
-    func seek(to time: Duration) async throws
-    func stop()
 }

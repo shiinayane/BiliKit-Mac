@@ -2,6 +2,7 @@
 import BiliAPI
 import BiliApplication
 import BiliModels
+import BiliNetworking
 import BiliPlayback
 import Darwin
 import Foundation
@@ -29,7 +30,19 @@ struct BiliPlaybackProbe {
     }
 
     private static func run(_ configuration: ProbeConfiguration) async throws {
-        let client = BiliAPIClient()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.httpShouldSetCookies = false
+        sessionConfiguration.httpCookieStorage = nil
+        sessionConfiguration.urlCache = nil
+        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        sessionConfiguration.timeoutIntervalForRequest = 15
+        sessionConfiguration.timeoutIntervalForResource = 30
+        let client = BiliAPIClient(
+            transport: URLSessionTransport(
+                configuration: sessionConfiguration,
+                redirectPolicy: .reject
+            )
+        )
         let cid: Int64
         if let configuredCID = configuration.cid {
             cid = configuredCID
@@ -60,12 +73,11 @@ struct BiliPlaybackProbe {
             throw ProbeError.noAACAudio
         }
 
-        print("sample: bvid=\(configuration.bvid) cid=\(cid)")
         print(
-            "video: id=\(video.id) codec=\(video.codecs) bandwidth=\(video.bandwidth ?? 0) cdns=\(hosts(video.urlCandidates))"
+            "video: id=\(video.id) codec=\(video.codecs) bandwidth=\(video.bandwidth ?? 0) cdn-count=\(video.urlCandidates.count)"
         )
         print(
-            "audio: id=\(audio.id) codec=\(audio.codecs) bandwidth=\(audio.bandwidth ?? 0) cdns=\(hosts(audio.urlCandidates))"
+            "audio: id=\(audio.id) codec=\(audio.codecs) bandwidth=\(audio.bandwidth ?? 0) cdn-count=\(audio.urlCandidates.count)"
         )
 
         let request = PlaybackRequest(
@@ -272,13 +284,6 @@ struct BiliPlaybackProbe {
         throw ProbeError.timedOut
     }
 
-    private static func hosts(_ urls: [URL]) -> String {
-        var seen = Set<String>()
-        return urls.compactMap(\.host)
-            .filter { seen.insert($0).inserted }
-            .joined(separator: ",")
-    }
-
     private static func formatted(_ value: Double) -> String {
         String(
             format: "%.2f",
@@ -340,16 +345,21 @@ private struct ProbeConfiguration {
             index += 2
         }
 
-        guard let bvid = values["--bvid"],
+        guard let inputPath = values.removeValue(forKey: "--input-file") else {
+            throw ProbeError.invalidArguments
+        }
+        let input = try SecureProbeInput.load(path: inputPath)
+        guard
+            let bvid = input["bvid"],
             bvid.hasPrefix("BV"),
-            bvid.count <= 24,
+            bvid.count == 12,
             bvid.dropFirst(2).allSatisfy({ $0.isLetter || $0.isNumber })
         else {
             throw ProbeError.invalidArguments
         }
         self.bvid = bvid
 
-        if let rawCID = values["--cid"] {
+        if let rawCID = input["cid"] {
             guard let cid = Int64(rawCID), cid > 0 else {
                 throw ProbeError.invalidArguments
             }
@@ -373,6 +383,17 @@ private struct ProbeConfiguration {
         maximumMemoryGrowthMiB = try Self.positiveDouble(
             values["--max-memory-growth-mib"] ?? "64"
         )
+        let allowedKeys: Set<String> = [
+            "--play-seconds",
+            "--forward-seek",
+            "--backward-seek",
+            "--seek-cycles",
+            "--replacement-cycles",
+            "--max-memory-growth-mib",
+        ]
+        guard Set(values.keys).isSubset(of: allowedKeys) else {
+            throw ProbeError.invalidArguments
+        }
     }
 
     private static func positiveDouble(_ value: String) throws -> Double {
@@ -401,6 +422,32 @@ private struct ProbeConfiguration {
             throw ProbeError.invalidArguments
         }
         return parsed
+    }
+}
+
+private enum SecureProbeInput {
+    private static let maximumBytes = 4 * 1_024
+
+    static func load(path: String) throws -> [String: String] {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard
+            attributes[.type] as? FileAttributeType == .typeRegular,
+            let permissions = attributes[.posixPermissions] as? NSNumber,
+            permissions.intValue & 0o077 == 0
+        else {
+            throw ProbeError.invalidArguments
+        }
+        let data = try Data(
+            contentsOf: URL(fileURLWithPath: path),
+            options: .mappedIfSafe
+        )
+        guard data.count <= maximumBytes else {
+            throw ProbeError.invalidArguments
+        }
+        return try PropertyListDecoder().decode(
+            [String: String].self,
+            from: data
+        )
     }
 }
 

@@ -3,14 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-public protocol BiliWatchHistoryService: Sendable {
-    func watchHistory(
-        after continuation: WatchHistoryContinuation?,
-        pageSize: Int
-    ) async throws -> WatchHistoryPage
-}
-
-public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalidating {
+public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
             preconditionFailure("Static API base URL must be valid")
@@ -130,7 +123,7 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
     public func playback(
         for bvid: String,
         cid: Int64,
-        quality: Int = 32
+        quality: Int = 120
     ) async throws -> VideoPlayback {
         guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
             throw BiliAPIError.invalidRequest
@@ -142,9 +135,9 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
                 URLQueryItem(name: "bvid", value: bvid),
                 URLQueryItem(name: "cid", value: String(cid)),
                 URLQueryItem(name: "qn", value: String(quality)),
-                URLQueryItem(name: "fnval", value: "16"),
+                URLQueryItem(name: "fnval", value: "976"),
                 URLQueryItem(name: "fnver", value: "0"),
-                URLQueryItem(name: "fourk", value: "0"),
+                URLQueryItem(name: "fourk", value: "1"),
             ],
             referer: referer
         )

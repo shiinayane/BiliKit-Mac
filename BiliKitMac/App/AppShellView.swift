@@ -26,12 +26,14 @@ struct AppShellView: View {
     )
 
     var body: some View {
-        TabView(selection: selectedTabBinding) {
+        @Bindable var navigationCoordinator = navigationCoordinator
+
+        TabView(selection: $navigationCoordinator.selectedTab) {
             Tab(value: AppTab.search) {
-                tabNavigation(for: .search) {
+                tabNavigation(path: playbackPathBinding(for: .search)) {
                     SearchTabRoot(
                         model: browseModel,
-                        searchDraft: searchDraftBinding,
+                        searchDraft: $navigationCoordinator.searchDraft,
                         submittedSearchQuery: submittedSearchQuery,
                         scrollPosition: $searchScrollPosition,
                         onSelect: navigationCoordinator.openPlayback,
@@ -43,7 +45,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.popular) {
-                tabNavigation(for: .popular) {
+                tabNavigation(path: playbackPathBinding(for: .popular)) {
                     PopularTabRoot(
                         model: browseModel,
                         scrollPosition: $popularScrollPosition,
@@ -55,7 +57,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.history) {
-                tabNavigation(for: .history) {
+                tabNavigation(path: playbackPathBinding(for: .history)) {
                     HistoryTabRoot(
                         model: historyModel,
                         isSignedIn: authenticationModel.isSignedIn,
@@ -122,10 +124,10 @@ struct AppShellView: View {
     }
 
     private func tabNavigation<Content: View>(
-        for tab: AppTab,
+        path: Binding<[PlaybackDestination]>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        NavigationStack(path: playbackPathBinding(for: tab)) {
+        NavigationStack(path: path) {
             content()
                 .navigationDestination(for: PlaybackDestination.self) { _ in
                     PlaybackDestinationView(
@@ -139,34 +141,15 @@ struct AppShellView: View {
         }
     }
 
-    private var selectedTabBinding: Binding<AppTab> {
-        Binding(
-            get: { navigationCoordinator.selectedTab },
-            set: { navigationCoordinator.selectedTab = $0 }
-        )
-    }
-
-    private var searchDraftBinding: Binding<String> {
-        Binding(
-            get: { navigationCoordinator.searchDraft },
-            set: { navigationCoordinator.searchDraft = $0 }
-        )
-    }
-
     private func playbackPathBinding(
         for tab: AppTab
     ) -> Binding<[PlaybackDestination]> {
         Binding(
             get: {
-                navigationCoordinator.selectedTab == tab
-                    ? navigationCoordinator.playbackPath
-                    : []
+                navigationCoordinator.playbackPath(for: tab)
             },
             set: { path in
-                guard navigationCoordinator.selectedTab == tab else {
-                    return
-                }
-                navigationCoordinator.playbackPath = path
+                navigationCoordinator.updatePlaybackPath(path, for: tab)
             }
         )
     }
@@ -207,17 +190,22 @@ private struct SearchTabRoot: View {
         .navigationTitle("搜索")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                CenteredSearchField(
-                    text: $searchDraft,
-                    placeholder: "搜索 B 站视频",
-                    onSubmit: onSubmit
-                )
-                .frame(width: 340)
-                .accessibilityIdentifier("search.field")
-            }
+        .searchable(
+            text: $searchDraft,
+            placement: searchFieldPlacement,
+            prompt: "搜索 B 站视频"
+        )
+        .onSubmit(of: .search) {
+            onSubmit()
         }
+    }
+
+    private var searchFieldPlacement: SearchFieldPlacement {
+        #if compiler(>=6.2)
+            .toolbarPrincipal
+        #else
+            .toolbar
+        #endif
     }
 }
 
@@ -285,8 +273,6 @@ struct HistoryRefreshButton: View {
 }
 
 private struct PlaybackDestinationView: View {
-    @Environment(\.dismiss) private var dismiss
-
     let model: GuestVideoViewModel
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
@@ -305,8 +291,5 @@ private struct PlaybackDestinationView: View {
         .navigationTitle("播放")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .onExitCommand {
-            dismiss()
-        }
     }
 }

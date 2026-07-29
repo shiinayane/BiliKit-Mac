@@ -2,10 +2,10 @@ import BiliApplication
 import BiliModels
 
 public struct BiliWatchHistoryRepository: WatchHistoryRepository {
-    private let service: any BiliWatchHistoryService
+    private let client: BiliAPIClient
 
-    public init(service: any BiliWatchHistoryService) {
-        self.service = service
+    public init(client: BiliAPIClient) {
+        self.client = client
     }
 
     public func watchHistory(
@@ -13,7 +13,7 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
         pageSize: Int
     ) async throws -> WatchHistoryPage {
         do {
-            return try await service.watchHistory(
+            return try await client.watchHistory(
                 after: continuation,
                 pageSize: pageSize
             )

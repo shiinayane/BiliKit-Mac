@@ -76,8 +76,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         observedPlaybackCIDs.append(cid)
         return try makePlayback()

@@ -3,25 +3,22 @@ import Foundation
 @preconcurrency import Network
 
 public struct LoopbackRemoteResource: Sendable, Equatable {
-    public let candidateURLs: [URL]
+    public let sourceURL: URL
     public let contentLength: Int64
     public let contentType: String
     public let headers: [String: String]
 
     public init(
-        candidateURLs: [URL],
+        sourceURL: URL,
         contentLength: Int64,
         contentType: String,
         headers: [String: String] = [:]
     ) throws {
-        guard !candidateURLs.isEmpty else {
-            throw LoopbackPlaybackServerError.noRemoteCandidates
-        }
         guard contentLength > 0 else {
             throw LoopbackPlaybackServerError.invalidContentLength(contentLength)
         }
 
-        self.candidateURLs = candidateURLs
+        self.sourceURL = sourceURL
         self.contentLength = contentLength
         self.contentType = contentType
         self.headers = headers
@@ -52,13 +49,11 @@ public enum LoopbackPlaybackResource: Sendable, Equatable {
 }
 
 public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
-    case noRemoteCandidates
     case invalidContentLength(Int64)
     case invalidRoute(String)
     case notStarted
     case listenerFailed(String)
     case invalidHTTPRequest
-    case invalidRangeHeader
 }
 
 struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
@@ -66,6 +61,12 @@ struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
     let registeredRouteCount: Int
     let activeConnectionCount: Int
     let activeTaskCount: Int
+}
+
+private enum LoopbackRangeRequest {
+    case ignored
+    case satisfiable(HTTPByteRange)
+    case unsatisfiable
 }
 
 public final class LoopbackPlaybackServer: @unchecked Sendable {
@@ -78,6 +79,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private var listener: NWListener?
     private var port: NWEndpoint.Port?
     private var routes: [String: LoopbackPlaybackResource] = [:]
+    private var requestCounts: [String: Int] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var connectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 
@@ -153,9 +155,16 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             self.listener = listener
         }
 
-        try await withCheckedThrowingContinuation { continuation in
-            startBox.install(continuation)
-            listener.start(queue: queue)
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                startBox.install(continuation)
+                listener.start(queue: queue)
+            }
+            try Task.checkCancellation()
+        } onCancel: {
+            startBox.resume(throwing: CancellationError())
+            self.cancelStart(listener)
         }
     }
 
@@ -200,6 +209,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             listener = nil
             port = nil
             routes.removeAll()
+            requestCounts.removeAll()
             connections.removeAll()
             connectionTasks.removeAll()
             return state
@@ -225,6 +235,13 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
+    func requestCount(method: String, at relativePath: String) throws -> Int {
+        let route = try url(for: relativePath).path
+        return lock.withLock {
+            requestCounts[requestKey(method: method, target: route), default: 0]
+        }
+    }
+
     private func accept(_ connection: NWConnection) {
         let id = ObjectIdentifier(connection)
         lock.withLock {
@@ -240,6 +257,15 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
         connection.start(queue: queue)
         receiveRequestHeader(on: connection, id: id, accumulated: Data())
+    }
+
+    private func cancelStart(_ listener: NWListener) {
+        lock.withLock {
+            guard self.listener === listener else { return }
+            self.listener = nil
+            port = nil
+            listener.cancel()
+        }
     }
 
     private func receiveRequestHeader(
@@ -304,11 +330,23 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             )
             return
         }
+        guard let expectedHostHeader,
+            request.headers["host"] == expectedHostHeader
+        else {
+            sendStatus(400, reason: "Bad Request", on: connection)
+            return
+        }
         guard request.target.hasPrefix("/\(sessionToken)/"),
             let resource = lock.withLock({ routes[request.target] })
         else {
             sendStatus(404, reason: "Not Found", on: connection)
             return
+        }
+        lock.withLock {
+            requestCounts[
+                requestKey(method: request.method, target: request.target),
+                default: 0
+            ] += 1
         }
 
         let task = Task { [weak self, weak connection] in
@@ -330,16 +368,15 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
+    private func requestKey(method: String, target: String) -> String {
+        "\(method.uppercased()) \(target)"
+    }
+
     private func respond(
         to request: LoopbackHTTPRequest,
         with resource: LoopbackPlaybackResource,
         on connection: NWConnection
     ) async throws {
-        let requestedRange = try parseRange(
-            request.headers["range"],
-            contentLength: resource.contentLength
-        )
-
         if request.method == "HEAD" {
             sendResponse(
                 status: 200,
@@ -351,6 +388,30 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     isHead: true
                 ),
                 body: Data(),
+                on: connection
+            )
+            return
+        }
+
+        let requestedRange: HTTPByteRange?
+        switch parseRange(
+            request.headers["range"],
+            contentLength: resource.contentLength
+        ) {
+        case .ignored:
+            requestedRange = nil
+        case .satisfiable(let range):
+            requestedRange = range
+        case .unsatisfiable:
+            sendStatus(
+                416,
+                reason: "Range Not Satisfiable",
+                headers: [
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-store",
+                    "Content-Range": "bytes */\(resource.contentLength)",
+                    "Content-Type": resource.contentType,
+                ],
                 on: connection
             )
             return
@@ -384,7 +445,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 return
             }
             let result = try await rangeClient.fetch(
-                from: remote.candidateURLs,
+                from: [remote.sourceURL],
                 range: requestedRange,
                 headers: remote.headers
             )
@@ -428,25 +489,53 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private func parseRange(
         _ value: String?,
         contentLength: Int64
-    ) throws -> HTTPByteRange? {
-        guard let value else { return nil }
-        guard value.lowercased().hasPrefix("bytes="),
-            !value.contains(",")
+    ) -> LoopbackRangeRequest {
+        guard let value else { return .ignored }
+        let components = value.split(
+            separator: "=",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard components.count == 2,
+            components[0].lowercased() == "bytes",
+            !components[1].contains(",")
         else {
-            throw LoopbackPlaybackServerError.invalidRangeHeader
+            return .ignored
         }
 
-        let bounds = value.dropFirst("bytes=".count).split(
+        let bounds = components[1].split(
             separator: "-",
             maxSplits: 1,
             omittingEmptySubsequences: false
         )
-        guard bounds.count == 2,
-            let start = Int64(bounds[0]),
-            start >= 0,
-            start < contentLength
-        else {
-            throw LoopbackPlaybackServerError.invalidRangeHeader
+        guard bounds.count == 2 else {
+            return .ignored
+        }
+
+        if bounds[0].isEmpty {
+            guard let suffixLength = Int64(bounds[1]) else {
+                return .ignored
+            }
+            guard suffixLength > 0 else {
+                return suffixLength == 0 ? .unsatisfiable : .ignored
+            }
+            let boundedLength = min(suffixLength, contentLength)
+            guard
+                let range = try? HTTPByteRange(
+                    start: contentLength - boundedLength,
+                    endInclusive: contentLength - 1
+                )
+            else {
+                return .ignored
+            }
+            return .satisfiable(range)
+        }
+
+        guard let start = Int64(bounds[0]), start >= 0 else {
+            return .ignored
+        }
+        guard start < contentLength else {
+            return .unsatisfiable
         }
 
         let endInclusive: Int64
@@ -454,11 +543,19 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             endInclusive = contentLength - 1
         } else {
             guard let requestedEnd = Int64(bounds[1]), requestedEnd >= start else {
-                throw LoopbackPlaybackServerError.invalidRangeHeader
+                return .ignored
             }
             endInclusive = min(requestedEnd, contentLength - 1)
         }
-        return try HTTPByteRange(start: start, endInclusive: endInclusive)
+        guard
+            let range = try? HTTPByteRange(
+                start: start,
+                endInclusive: endInclusive
+            )
+        else {
+            return .ignored
+        }
+        return .satisfiable(range)
     }
 
     private func sendStatus(
@@ -525,6 +622,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         )
         return route.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
+
+    private var expectedHostHeader: String? {
+        lock.withLock {
+            port.map { "127.0.0.1:\($0.rawValue)" }
+        }
+    }
 }
 
 private struct LoopbackHTTPRequest: Sendable {
@@ -554,7 +657,11 @@ private struct LoopbackHTTPRequest: Sendable {
             let name = line[..<separator].trimmingCharacters(in: .whitespaces)
             let value = line[line.index(after: separator)...]
                 .trimmingCharacters(in: .whitespaces)
-            headers[name.lowercased()] = value
+            let normalizedName = name.lowercased()
+            guard normalizedName != "host" || headers[normalizedName] == nil else {
+                throw LoopbackPlaybackServerError.invalidHTTPRequest
+            }
+            headers[normalizedName] = value
         }
         return Self(
             method: String(requestLine[0]),

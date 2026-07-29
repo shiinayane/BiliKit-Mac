@@ -26,10 +26,7 @@ public struct GuestVideoUseCase: Sendable {
         self.repository = repository
     }
 
-    public func prepareVideo(
-        bvid: String,
-        quality: Int = 32
-    ) async throws -> GuestVideoContext {
+    public func prepareVideo(bvid: String) async throws -> GuestVideoContext {
         async let detail = repository.videoDetail(for: bvid)
         async let pages = repository.pages(for: bvid)
         let (resolvedDetail, resolvedPages) = try await (detail, pages)
@@ -41,8 +38,7 @@ public struct GuestVideoUseCase: Sendable {
         }
         let playback = try await repository.playback(
             for: bvid,
-            cid: selectedPage.cid,
-            quality: quality
+            cid: selectedPage.cid
         )
         try Task.checkCancellation()
 

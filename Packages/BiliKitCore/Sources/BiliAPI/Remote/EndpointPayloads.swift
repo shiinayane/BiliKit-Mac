@@ -150,6 +150,9 @@ struct DASHRepresentationPayload: Decodable, Sendable {
     let codecs: String
     let mimeType: String
     let bandwidth: Int?
+    let width: Int?
+    let height: Int?
+    let frameRate: String?
     let baseURL: String
     let backupURLs: [String]
     let segmentBase: DASHSegmentBasePayload
@@ -170,6 +173,9 @@ struct DASHRepresentationPayload: Decodable, Sendable {
         case mimeType = "mime_type"
         case mimeTypeCamel = "mimeType"
         case bandwidth
+        case width
+        case height
+        case frameRate = "frame_rate"
         case baseURL = "base_url"
         case baseURLCamel = "baseUrl"
         case backupURLs = "backup_url"
@@ -187,6 +193,9 @@ struct DASHRepresentationPayload: Decodable, Sendable {
             try container.decodeIfPresent(String.self, forKey: .mimeType)
             ?? container.decode(String.self, forKey: .mimeTypeCamel)
         bandwidth = try container.decodeIfPresent(Int.self, forKey: .bandwidth)
+        width = try container.decodeIfPresent(Int.self, forKey: .width)
+        height = try container.decodeIfPresent(Int.self, forKey: .height)
+        frameRate = try container.decodeIfPresent(String.self, forKey: .frameRate)
         baseURL =
             try container.decodeIfPresent(String.self, forKey: .baseURL)
             ?? container.decode(String.self, forKey: .baseURLCamel)
@@ -213,16 +222,54 @@ struct DASHRepresentationPayload: Decodable, Sendable {
         guard let primaryURL = urls.first else {
             throw BiliAPIError.invalidMediaData
         }
+        let videoAttributes: VideoRepresentationAttributes?
+        switch kind {
+        case .video:
+            guard let width,
+                let height,
+                let frameRate = Self.videoFrameRate(from: frameRate),
+                let attributes = try? VideoRepresentationAttributes(
+                    width: width,
+                    height: height,
+                    frameRate: frameRate
+                )
+            else {
+                throw BiliAPIError.invalidMediaData
+            }
+            videoAttributes = attributes
+        case .audio:
+            videoAttributes = nil
+        }
         return MediaRepresentation(
             id: id,
             kind: kind,
             codecs: codecs,
             mimeType: mimeType,
             bandwidth: bandwidth,
+            videoAttributes: videoAttributes,
             primaryURL: primaryURL,
             backupURLs: Array(urls.dropFirst()),
             segmentBase: try segmentBase.model()
         )
+    }
+
+    private static func videoFrameRate(from value: String?) -> Double? {
+        guard let value, !value.isEmpty else { return nil }
+        let components = value.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        )
+        if components.count == 1 {
+            return Double(components[0])
+        }
+        guard components.count == 2,
+            let numerator = Double(components[0]),
+            let denominator = Double(components[1]),
+            denominator != 0
+        else {
+            return nil
+        }
+        return numerator / denominator
     }
 
     private static func validMediaURL(_ value: String) -> URL? {
@@ -528,7 +575,9 @@ struct SearchVideoPayload: Decodable, Sendable {
 
     private static func durationSeconds(_ value: String) -> Int? {
         let components = value.split(separator: ":").compactMap { Int($0) }
-        guard components.count == value.split(separator: ":").count else {
+        guard components.count == value.split(separator: ":").count,
+            components.allSatisfy({ $0 >= 0 })
+        else {
             return nil
         }
         switch components.count {

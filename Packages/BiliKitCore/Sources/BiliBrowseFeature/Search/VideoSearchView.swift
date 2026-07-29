@@ -144,6 +144,7 @@ private struct SearchResultsGrid: View {
                             GuestVideoCard(video: video)
                         }
                         .buttonStyle(VideoCardButtonStyle())
+                        .focusable(false)
                         .accessibilityHint("播放视频")
                         .accessibilityIdentifier("search.item.\(video.bvid)")
                     }
