@@ -98,10 +98,7 @@ public struct DASHToHLSBridge: Sendable {
             let videoMediaURL = try server.register(
                 .remote(
                     try LoopbackRemoteResource(
-                        candidateURLs: preferredCandidates(
-                            selected: videoIndex.sourceURL,
-                            all: video.urlCandidates
-                        ),
+                        sourceURL: videoIndex.sourceURL,
                         contentLength: videoLength,
                         contentType: video.mimeType,
                         headers: headers
@@ -112,10 +109,7 @@ public struct DASHToHLSBridge: Sendable {
             let audioMediaURL = try server.register(
                 .remote(
                     try LoopbackRemoteResource(
-                        candidateURLs: preferredCandidates(
-                            selected: audioIndex.sourceURL,
-                            all: audio.urlCandidates
-                        ),
+                        sourceURL: audioIndex.sourceURL,
                         contentLength: audioLength,
                         contentType: audio.mimeType,
                         headers: headers
@@ -159,13 +153,6 @@ public struct DASHToHLSBridge: Sendable {
             server.stop()
             throw error
         }
-    }
-
-    private func preferredCandidates(
-        selected: URL,
-        all candidates: [URL]
-    ) -> [URL] {
-        [selected] + candidates.filter { $0 != selected }
     }
 
     private func playlistResource(_ playlist: String) -> LoopbackPlaybackResource {

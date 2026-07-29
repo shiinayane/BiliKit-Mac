@@ -3,25 +3,22 @@ import Foundation
 @preconcurrency import Network
 
 public struct LoopbackRemoteResource: Sendable, Equatable {
-    public let candidateURLs: [URL]
+    public let sourceURL: URL
     public let contentLength: Int64
     public let contentType: String
     public let headers: [String: String]
 
     public init(
-        candidateURLs: [URL],
+        sourceURL: URL,
         contentLength: Int64,
         contentType: String,
         headers: [String: String] = [:]
     ) throws {
-        guard !candidateURLs.isEmpty else {
-            throw LoopbackPlaybackServerError.noRemoteCandidates
-        }
         guard contentLength > 0 else {
             throw LoopbackPlaybackServerError.invalidContentLength(contentLength)
         }
 
-        self.candidateURLs = candidateURLs
+        self.sourceURL = sourceURL
         self.contentLength = contentLength
         self.contentType = contentType
         self.headers = headers
@@ -52,7 +49,6 @@ public enum LoopbackPlaybackResource: Sendable, Equatable {
 }
 
 public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
-    case noRemoteCandidates
     case invalidContentLength(Int64)
     case invalidRoute(String)
     case notStarted
@@ -430,7 +426,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 return
             }
             let result = try await rangeClient.fetch(
-                from: remote.candidateURLs,
+                from: [remote.sourceURL],
                 range: requestedRange,
                 headers: remote.headers
             )

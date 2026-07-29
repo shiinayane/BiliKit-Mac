@@ -130,7 +130,7 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
-    func remoteResourceDoesNotMixCandidatesAcrossRanges() async throws {
+    func remoteResourceStaysOnItsPreparedSourceAcrossRanges() async throws {
         let primary = try #require(
             URL(string: "https://primary.example/media.mp4")
         )
@@ -149,7 +149,7 @@ struct LoopbackPlaybackServerTests {
         let url = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [primary, backup],
+                    sourceURL: primary,
                     contentLength: 4,
                     contentType: "video/mp4"
                 )
@@ -169,16 +169,11 @@ struct LoopbackPlaybackServerTests {
         )
 
         #expect((firstResponse as? HTTPURLResponse)?.statusCode == 206)
-        #expect((secondResponse as? HTTPURLResponse)?.statusCode == 206)
+        #expect((secondResponse as? HTTPURLResponse)?.statusCode == 502)
         #expect(firstBody == Data([0x41, 0x41]))
-        #expect(secondBody == Data([0x42, 0x42]))
+        #expect(secondBody.isEmpty)
         let requestedURLs = await transport.requestedURLs
-        withKnownIssue(
-            "Range fallback currently continues at the same offset on a different media URL."
-        ) {
-            #expect(requestedURLs == [primary, primary])
-        }
-        #expect(requestedURLs == [primary, primary, backup])
+        #expect(requestedURLs == [primary, primary])
     }
 
     @Test
@@ -404,7 +399,7 @@ struct LoopbackPlaybackServerTests {
         let url = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [remoteURL],
+                    sourceURL: remoteURL,
                     contentLength: Int64(media.count),
                     contentType: "video/mp4"
                 )
@@ -867,7 +862,7 @@ struct LoopbackPlaybackServerTests {
         let lowMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [lowRemoteURL],
+                    sourceURL: lowRemoteURL,
                     contentLength: Int64(lowVideoData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -877,7 +872,7 @@ struct LoopbackPlaybackServerTests {
         let highMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [highRemoteURL],
+                    sourceURL: highRemoteURL,
                     contentLength: Int64(highVideoData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -887,7 +882,7 @@ struct LoopbackPlaybackServerTests {
         let audioMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [audioRemoteURL],
+                    sourceURL: audioRemoteURL,
                     contentLength: Int64(audioData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -1105,7 +1100,7 @@ struct LoopbackPlaybackServerTests {
         let lowMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [lowRemoteURL],
+                    sourceURL: lowRemoteURL,
                     contentLength: Int64(lowVideoData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -1115,7 +1110,7 @@ struct LoopbackPlaybackServerTests {
         let highMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [highRemoteURL],
+                    sourceURL: highRemoteURL,
                     contentLength: Int64(highVideoData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -1125,7 +1120,7 @@ struct LoopbackPlaybackServerTests {
         let audioMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [audioRemoteURL],
+                    sourceURL: audioRemoteURL,
                     contentLength: Int64(audioData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -2105,7 +2100,7 @@ struct LoopbackPlaybackServerTests {
         let videoMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [videoRemoteURL],
+                    sourceURL: videoRemoteURL,
                     contentLength: Int64(videoData.count),
                     contentType: AVFileType.mp4.rawValue
                 )
@@ -2115,7 +2110,7 @@ struct LoopbackPlaybackServerTests {
         let audioMediaURL = try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: [audioRemoteURL],
+                    sourceURL: audioRemoteURL,
                     contentLength: Int64(audioData.count),
                     contentType: AVFileType.mp4.rawValue
                 )

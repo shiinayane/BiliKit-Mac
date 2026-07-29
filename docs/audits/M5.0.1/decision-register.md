@@ -13,7 +13,7 @@
 | M501-API-006 | 当前 endpoints 保留；WBI playurl 尚不能判断 | API／媒体交叉复核通过 | 非 WBI/WBI playurl 的当前响应差异 | 待定 |
 | MP-001 | 按 Apple 设备 profile 替换 master 元数据模型，并以同 item 原生 ABR 提供自动画质 | synthetic 同 item 自动降档 6/6；真实 quality 16/32 同 item 自动降档已现场观察；补齐且确认识别尺寸／帧率后结果不变 | 当前 production 仍只生成单 variant；validator 与 HLS peak bandwidth 仍未验证；恢复升档时机无公开控制契约 | V1 只提供自动画质，不提供手动档位；不为恢复升档设置 peak cap、首档或额外 buffer 参数，使用 AVPlayer 默认策略 |
 | MP-002 | 当前 direct SIDX v0 子集保留；完整时间线正确性尚不能判断 | 主 Agent 已完成一个公开匿名样本的音视频结构 probe | 单样本均为 v0/direct/EPT 0；仍缺不同内容与 representation 形态 | 待定 |
-| MP-003 | representation 固定到索引来源；失败时整体重准备 | 独立复核完成；确定性 loopback 已复现 A、A、B 请求序列和跨对象 206 拼接 | 真实 CDN 内容不一致发生率未知，但不再影响机制裁决 | 待定 |
+| MP-003 | representation 固定到索引来源；失败时终止当前 representation，是否自动整项重准备另行裁决 | 已将 remote resource 收紧为单一 `sourceURL`；SIDX 准备阶段仍可选择成功候选，后续 Range 只访问所选来源；2 项定点测试及 package gate（230 tests，1 个其他 known issue）通过 | 单一来源已消除跨对象拼接；自动整项重准备尚未实现，需在上层重试与透明自动恢复之间作产品裁决 | 固定来源实施完成；自动整项重准备待裁决 |
 | MP-004 | 替换统一 502；按 range 类型分别制定 HTTP 策略 | 已实施：single closed/open/suffix 返回 206，不可满足返回 416＋完整长度，in-memory 忽略 multi/未知 unit，HEAD 忽略 Range；remote 语法错误不触发 upstream；2 项定点测试及 package gate（230 tests，8 个既有 known issues）通过 | AVPlayer 是否实际发送边界 Range 只影响发生率，不影响已完成的 HTTP 机制裁决 | 实施完成 |
 | MP-005 | 恢复 AVPlayer 默认等待；不保留无 recovery owner 的 `false` | 已删除生产覆盖值；starvation 回归验证默认 waiting 后自动恢复，MP-006 故障注入显式隔离其测试开关；定点测试及 package gate（230 tests，4 个其他 known issues）通过 | 真实弱网发生率与体验仍未知，但不再影响 owner 裁决 | 实施完成 |
 | MP-006 | 增加 item-identity scoped 的持续失败出口 | 已持续观察 item status 与 failed-to-end；同 item 只发布一次稳定 `PlaybackItemFailed`，旧 item 通知被忽略，首次失败/替换/stop 均清 observer；2 项定点测试及 package gate（230 tests，2 个其他 known issues）通过 | 真实错误类型、发生率及 access/error log 诊断仍未采集 | 实施完成 |
