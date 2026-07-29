@@ -1,6 +1,7 @@
 # BiliKit macOS 路线图
 
-> 更新时间：2026-07-26。本文只描述当前 `main` 的产品基线、尚未完成的结果和实施顺序。
+> 更新时间：2026-07-29。本文只描述当前 `main` 的产品基线、产品大方向和唯一已选择的
+> 后续阶段。
 > 完成状态以当前代码、自动测试和必要的真实行为证据共同判断；旧计划、分支、worktree、
 > checkpoint、测试数量和 CI run ID 不构成现行契约。
 
@@ -93,69 +94,35 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M4.5-slice-c-2026-07-25.md`](./validation/M4.5-slice-c-2026-07-25.md)
 - [`validation/M4.5-high-refresh-card-scroll-2026-07-24.md`](./validation/M4.5-high-refresh-card-scroll-2026-07-24.md)
 
-## 4. 当前实施队列
+### M5.0–M5.0.1：原生日用导航与外部事实审计
 
-### M5.0：日用状态保留与真实返回上下文
+- 热门、搜索与历史使用原生平级导航；视频页使用系统层级返回并保留来源工作集和语义
+  滚动位置。
+- 播放退出、卡片选中残留、字幕默认行为、自动画质与相关生命周期缺口已经过定点修复。
+- 外部 API、媒体、认证、并发、原生 UI、缓存、辅助功能、性能、架构与分发已完成
+  M5.0.1 审计；尚未实施的判断不因审计完成自动进入生产。
 
-状态：进行中；2026-07-26 已开始原生导航与窗口内工作集切片，M5.0 Gate 尚未关闭。
+证据：
 
-目标：
+- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)
+- [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
+- [`audits/M5.0.1/`](./audits/M5.0.1/)
 
-- 普通 tab 往返或从视频页返回时，已成功内容立即可见，不自动重复请求。
-- 恢复用户离开前可识别的真实视图上下文，不以“选中项重新可见”替代滚动/视口结果。
-- 刷新是独立意图；刷新中保留旧内容，失败不清空仍有效的同一 identity 数据。
-- route、query、刷新和关窗后的迟到结果不能覆盖当前状态。
+## 4. 后续方向
 
-当前 revision 已选择 macOS 15 `TabView(.sidebarAdaptable)` 表达搜索／热门／历史三个
-平级来源，每个 Tab 内以 `NavigationStack(path:)` 推入类型化播放 destination，系统
-pop 负责返回。App 不再用 `AppRoute` 和 `AppReturnSnapshot` 重建来源页面；热门／最后
-搜索分别从 Browse Feature 的每窗口双工作集读取 presentation，Tab 与
-`NavigationStack` 负责来源返回；App shell 为热门、搜索和历史各持有一个以视频
-identity 为目标的原生 `ScrollPosition`，不再维护数值 offset。新搜索词或登录身份
-变化会重置对应位置，同一工作集的 Tab 往返继续保留。视频卡片不再具有持久 selected
-API 或高亮分支。完整边界见
-[`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)。
+下一阶段尚未选择，不以旧编号或旧顺序自动启动。确定下一项后，本节只展开该一个阶段的
+用户结果、进入条件与完成证据；完成或重新裁决后再替换，不提前书写更后面的 phase。
 
-完成证据至少包括确定性请求/取消测试，以及热门、搜索、tab 往返、视频进入/返回和窗口
-尺寸变化的真实 UI 路径。首次修复不引入数据库、通用 cache、图片 pipeline 或媒体缓存。
-当前定向 Package/App 测试已通过；未签名 fixture XCUI runner 在 worker 启动阶段
-阻塞，签名 runner 能启动测试但 App 激活停在 `Running Background`，均未进入用户
-路径，尚不能作为 UI 通过证据。完整 App Gate 已通过；直接 UI 验收、review 与 CI
-仍待完成。
+已经确认但尚未排期的事项统一登记在
+[`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)。候选登记不表示顺序、
+版本承诺或实施授权。
 
-### M5.1：首页个性推荐
+长期方向仍包括：
 
-状态：等待 M5.0。
-
-- 对 App 端与 Web 端候选做最小、脱敏的结构和登录边界比较。
-- 只选择一个生产来源；热门不能作为推荐 fallback 或完成证据。
-- 首页使用稳定 item identity、明确刷新/追加/失败语义和有界内存工作集。
-- 接入前补充 endpoint DTO、来源策略、取消、分页和真实样本验证。
-
-### M5.2：相关推荐与连续观看
-
-状态：等待 M5.1。
-
-- 视频页取得真实相关推荐并支持 A → B → C 同窗口切换。
-- 保持单一 player host；新 identity 必须取消并隔离旧详情、媒体、字幕、弹幕和推荐结果。
-- 返回来源页面时仍满足 M5.0 的上下文恢复结果。
-
-### M5.3：核心播放缺口
-
-状态：按真实日用反馈选择，不预建功能。
-
-只处理阻塞 v1 闭环的最窄控制或交互缺口。独立播放器、mini player、画中画、完整媒体键、
-拖入 URL 和高级窗口恢复默认进入 v1.1 候选。
-
-### M6：v1 发布准备
-
-状态：等待 M5 核心闭环。
-
-- 对支持的 macOS 版本和目标硬件完成签名、权限、Keychain、播放、字幕、弹幕、窗口与
-  辅助功能回归。
-- 固定隐私说明、第三方许可、非官方品牌边界、失败文案和日志脱敏。
-- 验证归档、升级、卸载和本地数据清理边界。
-- 只有代码、自动 Gate、真实行为与发布文档一致时才形成可发布候选。
+- 个性推荐首页，复用现有响应式视频网格；
+- 相关推荐与同窗口连续观看；
+- 日用播放体验收口；
+- v1 发布准备。
 
 ## 5. v1 非目标
 
@@ -166,5 +133,6 @@ API 或高亮分支。完整边界见
 - 评论、关注、收藏、稍后再看等写操作。
 - 服务端观看进度写入和完整评论阅读；它们是独立的 v1.1 候选。
 
-新增目标必须先更新产品范围和路线图，不能通过顺手增加 endpoint、占位 target 或通用
-基础设施进入当前实现。
+新增产品范围必须先更新产品愿景；已经接受但尚未排期的事项进入候选登记。只有被选为
+唯一下一阶段时才更新本路线图，不能通过顺手增加 endpoint、占位 target 或通用基础设施
+进入当前实现。

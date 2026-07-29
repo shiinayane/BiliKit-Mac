@@ -1,7 +1,8 @@
 # M5.0.1 外部事实全面审计
 
-状态：十条审计线与五个横向清单已完成初审和独立交叉复核；五组最小真实验证已完成，
-期间仅实施用户逐项授权的窄修复。尚未冻结 Gate 5 修改路线。
+状态：已完成并冻结的带日期审计。十条审计线、五个横向清单、独立交叉复核、五组最小
+真实验证及用户逐项授权的窄修复均已完成。本目录保留当时事实和裁决，不决定当前实施
+顺序。
 
 本目录保存审计发现、证据边界和已授权修复的验证结果。执行规则见
 [`../../development/M5.0.1-external-facts-audit-contract.md`](../../development/M5.0.1-external-facts-audit-contract.md)。
@@ -15,7 +16,7 @@
 
 完整工具链、工程与 reference 快照见 [`baseline.md`](./baseline.md)。
 
-## 当前阶段
+## 历史执行阶段
 
 1. Gate 0：冻结基线和文件 owner；
 2. Gate 1：完成十条审计线与五个横向清单的全量枚举；
@@ -55,5 +56,6 @@
 - `STATE-001`、`UI-008`、`MP-013`、`MP-014`、`M501-PRIV-003`、
   `M501-ENG-004` 与 `M501-PRIV-007` 已在用户逐项授权后完成窄修复；其余候选判断仍以
   `decision-register.md` 为准，不能因验证结束自动进入实施。
-- 下一阶段是用户 review 并冻结 Gate 5 修改路线；`.searchable`、格式化、wrapper／
-  protocol 清理和 CI action SHA 等只在进入相应实施批次时运行登记表所列等价 gate。
+- Gate 5 已由用户 review 冻结；尚未实施的候选已迁入
+  [`../../product/PRODUCT-CANDIDATES.md`](../../product/PRODUCT-CANDIDATES.md) 或继续
+  保留为带触发条件的审计判断。审计完成不授权其进入生产。
