@@ -79,6 +79,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private var listener: NWListener?
     private var port: NWEndpoint.Port?
     private var routes: [String: LoopbackPlaybackResource] = [:]
+    private var requestCounts: [String: Int] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var connectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 
@@ -208,6 +209,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             listener = nil
             port = nil
             routes.removeAll()
+            requestCounts.removeAll()
             connections.removeAll()
             connectionTasks.removeAll()
             return state
@@ -230,6 +232,13 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 activeConnectionCount: connections.count,
                 activeTaskCount: connectionTasks.count
             )
+        }
+    }
+
+    func requestCount(method: String, at relativePath: String) throws -> Int {
+        let route = try url(for: relativePath).path
+        return lock.withLock {
+            requestCounts[requestKey(method: method, target: route), default: 0]
         }
     }
 
@@ -333,6 +342,12 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             sendStatus(404, reason: "Not Found", on: connection)
             return
         }
+        lock.withLock {
+            requestCounts[
+                requestKey(method: request.method, target: request.target),
+                default: 0
+            ] += 1
+        }
 
         let task = Task { [weak self, weak connection] in
             guard let self, let connection else { return }
@@ -351,6 +366,10 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         lock.withLock {
             connectionTasks[id] = task
         }
+    }
+
+    private func requestKey(method: String, target: String) -> String {
+        "\(method.uppercased()) \(target)"
     }
 
     private func respond(

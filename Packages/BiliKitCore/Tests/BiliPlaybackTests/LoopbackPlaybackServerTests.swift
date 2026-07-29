@@ -589,6 +589,13 @@ struct LoopbackPlaybackServerTests {
             named: "video-avc-256x144.mp4"
         )
         let audioData = try fixtureData(named: "audio-aac")
+        let subtitleBody = """
+            WEBVTT
+
+            00:00:00.000 --> 00:00:01.500
+            本地原生字幕验证
+
+            """
         let lowVideoFixture = try makeFixtureTrack(
             id: 64,
             kind: .video,
@@ -674,13 +681,6 @@ struct LoopbackPlaybackServerTests {
             #EXT-X-ENDLIST
 
             """
-        let subtitleBody = """
-            WEBVTT
-
-            00:00:00.000 --> 00:00:01.500
-            本地原生字幕验证
-
-            """
         let masterPlaylist = """
             #EXTM3U
             #EXT-X-VERSION:7
@@ -762,6 +762,15 @@ struct LoopbackPlaybackServerTests {
                 in: legibleGroup
             ) == nil
         )
+        player.play()
+        try await waitUntilPlaybackTime(player, reaches: 0.15)
+        player.pause()
+        #expect(
+            try server.requestCount(
+                method: "GET",
+                at: "unified/subtitles-zh.vtt"
+            ) == 0
+        )
 
         let subtitleOption = try #require(legibleGroup.options.first)
         item.select(subtitleOption, in: legibleGroup)
@@ -771,7 +780,11 @@ struct LoopbackPlaybackServerTests {
             ) == subtitleOption
         )
         player.play()
-        try await waitUntilPlaybackTime(player, reaches: 0.15)
+        try await waitUntilRequest(
+            method: "GET",
+            at: "unified/subtitles-zh.vtt",
+            on: server
+        )
         player.pause()
 
         #expect(
@@ -2470,6 +2483,23 @@ struct LoopbackPlaybackServerTests {
             if player.currentItem?.status == .failed {
                 throw player.currentItem?.error
                     ?? LoopbackFixtureError.itemFailedWithoutError
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw LoopbackFixtureError.timedOut
+    }
+
+    private func waitUntilRequest(
+        method: String,
+        at relativePath: String,
+        on server: LoopbackPlaybackServer
+    ) async throws {
+        for _ in 0..<100 {
+            if try server.requestCount(
+                method: method,
+                at: relativePath
+            ) > 0 {
+                return
             }
             try await Task.sleep(for: .milliseconds(50))
         }

@@ -61,7 +61,7 @@
 | AX-003 | 卡片自绘焦点 ring 尚不能判断 | 独立复核通过 | 缺 Full Keyboard Access/对照 | 待定 |
 | AX-004 | Reduce Motion 与弹幕策略需产品裁决 | 独立复核将强制替换降级 | 已有 App 内细粒度控制 | 不让 Reduce Motion 自动删减弹幕功能；弹幕作为标志性功能保留全部模式与用户控制 |
 | AX-005 | 保留语义字体；200% 布局未决 | 独立复核并限定 Mac 标签语义 | 缺真实多尺寸/本地化验证 | 待定 |
-| AX-006 | 暂保留 overlay；legible track 联合 spike | 独立复核通过并区分 subtitles/captions | 系统偏好、非对白 captions、VoiceOver 未证 | 接受有限起播等待换取原生字幕；字幕默认关闭；具体等待预算与按需正文路径仍需 spike |
+| AX-006 | 暂保留 overlay；原生 legible 正文按需路径已证 | 同一 `AVPlayerItem` 默认关闭字幕并开始播放时 WebVTT 正文 GET 为 0，选择 legible option 后才请求；轨道目录仍须在 master 发布前冻结 | production 尚无 JSON→WebVTT 按需生成 route、identity/cancel/长度契约；系统样式、非对白 captions、VoiceOver 未证 | spike 完成；接受有限目录等待，正文不阻塞首播；是否在 V1 替换 overlay 待实施成本裁决 |
 | AX-007 | 保留原生账户 Button；焦点/反馈未决 | 独立复核通过 | 缺键盘/VoiceOver/contrast 路径 | 待定 |
 | M501-PERF-001 | 保留 M4 历史快照及当前树同类快照；均不当全产品无泄漏保证 | 当前树 80 events/s × 1081 秒跨 4 段 PASS，stop 后计数归零、RSS 回落 | 合成长测不含真实 AVPlayer/CDN，单机 Debug | 保留可比较快照；禁止过度声明 |
 | M501-PERF-002 | 清理路径保留；当前重复路径未观察到持续累积 | 10 次播放往返、3 次窗口循环、Allocations/RSS/lsof 组合完成 | 无 Memory Graph，不能宣称零 retain cycle | 保留；不作全局无泄漏声明 |

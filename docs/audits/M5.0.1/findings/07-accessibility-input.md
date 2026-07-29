@@ -216,20 +216,24 @@ VoiceOver、Accessibility Inspector、Full Keyboard Access 或系统 Reduce Moti
   video variant、独立 audio rendition 与一个 WebVTT subtitle rendition；
   `AVURLAsset` 读取到两个 bitrate variant 及其 resolution/frame-rate，
   `.legible` group 有一项，默认未选择，显式选择后成为当前 option。它证明 bridge
-  方向可行；AVPlayerView 菜单样式、系统字幕样式与 VoiceOver 仍未实测。
+  方向可行。2026-07-29 在同一真实 `AVPlayerItem` 上增加 loopback GET 观测：
+  默认关闭字幕并开始播放时正文请求数为 0，选择 option 后才请求 WebVTT 正文。
+  AVPlayerView 菜单样式、系统字幕样式与 VoiceOver 仍未实测。
 - **本地测试实际证明的范围**：
   `unifiedMasterExposesAdaptiveVariantsAndNativeSubtitles` 证明 AVFoundation
-  media-selection 和默认关闭语义；两个 synthetic variant 当前共用同一 128×72
-  媒体，只证明 variant 模型，不证明不同真实清晰度切换。也没有证明偏好语言、
-  AVPlayerView 菜单、字幕样式或 VoiceOver 朗读。
+  media-selection、默认关闭和正文按需 GET 语义；两个 synthetic variant 已使用
+  不同分辨率媒体，但仍不证明真实 B 站内容的字幕生成、偏好语言、AVPlayerView 菜单、
+  字幕样式或 VoiceOver 朗读。
 - **判断**：原生 `.legible` **替换方向可行**，不再因 bridge 能力待定；生产替换仍取决于
-  字幕正文能否在有界起播等待内冻结、真实清晰度 master 以及 VoiceOver/系统菜单验证。
-  在这些 Gate 关闭前保留当前 overlay。
+  字幕轨道目录能否在有界起播等待内冻结。正文不必阻塞首播，但 B 站 JSON 字幕需要新增
+  请求时 WebVTT 生成 route，并明确内容长度、identity、取消与失败语义。在这些 Gate
+  关闭前保留当前 overlay。
 - **风险**：影响高；听障用户仍能看见文字，但可能无法沿用系统字幕偏好、样式和选择；
   视障用户可能遭遇不断变化的 AX 内容。错误迁移又可能重新引入字幕错配，恢复成本中等。
-- **下一步最小验证**：用两个不同分辨率的合成或脱敏真实 representation 验证切换；
-  再用 AVPlayerView 验证菜单、系统样式和 identity，并对当前 overlay 做 VoiceOver
-  对照。任何 production 迁移须受媒体 red-zone 契约约束。
+- **下一步最小验证**：先设计不预取正文的 generated loopback resource，验证请求时
+  JSON→WebVTT、长度契约、取消、失败和 A→B→A identity；再用 AVPlayerView 验证菜单、
+  系统样式和 VoiceOver，并与当前 overlay 对照。任何 production 迁移须受媒体
+  red-zone 契约约束。
 - **与其他 finding 的依赖或冲突**：依赖媒体 finding 的 DASH→HLS、字幕 identity 和
   seek 裁决；不能为了 UI 原生化牺牲已修复的字幕正确性。
 
