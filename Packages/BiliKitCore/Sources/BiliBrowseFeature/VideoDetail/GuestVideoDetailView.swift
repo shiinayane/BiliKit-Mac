@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliUI
 import Foundation
 import SwiftUI
 
@@ -166,15 +167,21 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                     Text("P\(page.index)  \(page.title)")
                         .lineLimit(2)
                     Spacer(minLength: 12)
-                    Text(Self.duration(page.durationSeconds))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(
+                        VideoDurationFormatting.string(
+                            seconds: page.durationSeconds
+                        )
+                    )
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(
                     "第 \(page.index) 分 P，\(page.title)，"
-                        + Self.duration(page.durationSeconds)
+                        + VideoDurationFormatting.string(
+                            seconds: page.durationSeconds
+                        )
                 )
                 .accessibilityAddTraits(
                     page.id == context.selectedPage.id ? [.isSelected] : []
@@ -183,21 +190,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
             }
         }
         .font(.title3)
-    }
-
-    private static func duration(_ seconds: Int) -> String {
-        let hours = seconds / 3_600
-        let minutes = seconds % 3_600 / 60
-        let remainingSeconds = seconds % 60
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                remainingSeconds
-            )
-        }
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
 

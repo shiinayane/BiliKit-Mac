@@ -223,10 +223,9 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 
 - **finding_id**：UI-006
 - **审计线与涉及能力**：Apple／Swift 原生格式化；视频时长和历史进度。
-- **当前实现（文件、符号、调用链）**：
-  `GuestVideoCard.swift:98-111`、`GuestVideoDetailView.swift:188-201`、
-  `WatchHistoryView.swift:260-276` 三次手写秒数拆分和 `String(format:)`；
-  输出用于卡片、分 P AX label 与观看进度。
+- **当前实现（文件、符号、调用链）**：已实施共享
+  `BiliUI.VideoDurationFormatting`，以 `Duration.TimeFormatStyle` 输出卡片、分 P、
+  AX label 与观看进度；三份手写秒数拆分已删除。搜索 duration parser 拒绝负分量。
 - **它声称提供的职责**：把非负秒数显示成 `m:ss` 或 `h:mm:ss`。
 - **外部事实来源**：
   当前 Foundation SDK interface
@@ -243,22 +242,20 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
   `.hourMinuteSecond` 与显式 padding 在这些样本中也相等；实现仍应显式写出
   `padMinuteToLength: 1`／`padHourToLength: 1` 以表达产品契约。
 - **本地测试实际证明的范围**：
-  `WatchHistoryCardFormattingTests` 与 `PlaybackPageLayoutTests` 证明当前固定字符串；
-  本轮直接 Foundation 对照证明列举的非负边界与三种 locale，不证明其他数字系统或未来
-  Foundation 版本。热门、详情、分 P 与历史 payload 在 adapter 边界拒绝负 duration；
-  搜索字符串 parser 当前没有同一 guard。负数样本显示候选 style 与旧算法会产生不同且
-  都不适合作为视频时长的输出。
-- **判断**：验证支持**替换**为一个共享 helper，按 `< 3600` 选择显式 padding 的
+  `VideoDurationFormattingTests` 固定 12 个非负边界和三种 locale；
+  `WatchHistoryCardFormattingTests` 保留完成态／progress clamp 回归；
+  `BiliAPIClientTests.searchRejectsNegativeDuration` 证明搜索负值映射为 nil。package gate
+  237 项通过；这些证据不证明其他数字系统或未来 Foundation 版本。
+- **判断**：**替换已实施**。共享 helper 按 `< 3600` 选择显式 padding 的
   `.minuteSecond`，否则选择 `.hourMinuteSecond`，再使用最低 macOS 13 可用的
   `Duration.TimeFormatStyle`；
   format style 删除重复整数拆分，但不会自动消除产品对两种 pattern 的选择。保留“已看完”
-  和 progress clamp 等领域语义，不把协议时长解析混进 UI formatter。实施前先让搜索
-  duration parser 对负值返回 nil，使共享 helper 的非负输入契约在所有调用链成立。
+  和 progress clamp 等领域语义，不把协议时长解析混进 UI formatter。搜索 parser
+  已让负值返回 nil，使共享 helper 的非负输入契约在 production 调用链成立。
 - **风险**：影响低。列举的 locale、边界与超长小时完全等价；剩余风险是搜索异常负值、
   未列举数字系统和未来 Foundation 行为。替换可逐调用点回退。
-- **下一步最小验证**：实施批次先补搜索负 duration 的 decoder 回归，再为共享 helper
-  固定本轮边界和三 locale 样本；随后删除三份实现并运行 package gate。无需为已经逐字
-  相等的候选另做截图 Gate。
+- **下一步最小验证**：本项实施已关闭；无需为逐字等价的替换另做截图 Gate。未来
+  Foundation／最低系统版本变更时复跑 locale 边界测试。
 - **与其他 finding 的依赖或冲突**：日期和“万／亿”压缩包含 B 站中文产品语义，
   本 finding 不主张一并删除。
 

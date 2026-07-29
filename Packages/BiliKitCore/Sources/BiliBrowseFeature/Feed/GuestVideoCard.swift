@@ -67,7 +67,9 @@ struct GuestVideoCard: View {
                     systemImage: "text.bubble.fill"
                 ),
             ],
-            coverTrailingText: durationSeconds.map(Self.duration),
+            coverTrailingText: durationSeconds.map {
+                VideoDurationFormatting.string(seconds: $0)
+            },
             footerLeadingText: "\(ownerName) · "
                 + VideoMetadataFormatting.publishedDate(publishedAt)
         )
@@ -93,20 +95,5 @@ struct GuestVideoCard: View {
         )
         components?.path += "@\(width)w_\(height)h_1c.webp"
         return components?.url ?? url
-    }
-
-    private static func duration(_ seconds: Int) -> String {
-        let hours = seconds / 3_600
-        let minutes = seconds % 3_600 / 60
-        let remainingSeconds = seconds % 60
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                remainingSeconds
-            )
-        }
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }

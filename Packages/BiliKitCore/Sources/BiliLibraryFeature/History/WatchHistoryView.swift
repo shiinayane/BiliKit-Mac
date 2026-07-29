@@ -228,7 +228,8 @@ enum WatchHistoryCardFormatting {
         if duration > 0, progress >= duration {
             return "已看完"
         }
-        return "\(durationText(progress))/\(durationText(duration))"
+        return "\(VideoDurationFormatting.string(seconds: progress))/"
+            + VideoDurationFormatting.string(seconds: duration)
     }
 
     static func viewedAt(
@@ -258,20 +259,5 @@ enum WatchHistoryCardFormatting {
             hour,
             minute
         )
-    }
-
-    private static func durationText(_ seconds: Int) -> String {
-        let hours = seconds / 3_600
-        let minutes = seconds % 3_600 / 60
-        let remainingSeconds = seconds % 60
-        if hours > 0 {
-            return String(
-                format: "%d:%02d:%02d",
-                hours,
-                minutes,
-                remainingSeconds
-            )
-        }
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }

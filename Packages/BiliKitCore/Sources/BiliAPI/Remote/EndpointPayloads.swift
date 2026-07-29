@@ -575,7 +575,9 @@ struct SearchVideoPayload: Decodable, Sendable {
 
     private static func durationSeconds(_ value: String) -> Int? {
         let components = value.split(separator: ":").compactMap { Int($0) }
-        guard components.count == value.split(separator: ":").count else {
+        guard components.count == value.split(separator: ":").count,
+            components.allSatisfy({ $0 >= 0 })
+        else {
             return nil
         }
         switch components.count {

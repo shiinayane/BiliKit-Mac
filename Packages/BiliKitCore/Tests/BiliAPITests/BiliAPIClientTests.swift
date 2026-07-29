@@ -107,6 +107,41 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func searchRejectsNegativeDuration() async throws {
+        let response = try fixtureResponse("search")
+        let source = try #require(
+            String(data: response.body, encoding: .utf8)
+        )
+        let body = try #require(
+            source.replacingOccurrences(
+                of: "\"duration\": \"01:02:03\"",
+                with: "\"duration\": \"-01:02:03\""
+            ).data(using: .utf8)
+        )
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                HTTPResponse(
+                    statusCode: response.statusCode,
+                    headers: response.headers,
+                    body: body
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        let page = try await client.searchVideos(
+            keyword: "macOS",
+            page: 1
+        )
+
+        #expect(page.videos[0].durationSeconds == nil)
+    }
+
+    @Test
     func searchReusesSameDayWBIKey() async throws {
         let transport = RecordingTransport(
             responses: [
