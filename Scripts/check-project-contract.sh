@@ -34,13 +34,23 @@ assert_occurrences 1 \
     "$quality_gate_file" \
     "统一质量 Gate 必须强制执行 Swift 格式检查"
 assert_occurrences 1 \
-    'Run App quality gate (includes strict Swift format lint)' \
+    'Run selected quality gate (includes strict Swift format lint)' \
     "$ci_file" \
-    "CI 必须明确通过统一 App Gate 执行 strict Swift 格式检查"
+    "CI 必须明确通过统一 Gate 执行 strict Swift 格式检查"
 assert_occurrences 1 \
-    'run: sh Scripts/run-quality-gates.sh app' \
+    'run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"' \
     "$ci_file" \
-    "CI 必须运行统一 App Gate"
+    "CI 必须运行所选择的统一 Gate"
+assert_occurrences 1 \
+    'sh Scripts/select-quality-gate.sh)' \
+    "$ci_file" \
+    "CI 必须通过仓库脚本选择质量 Gate"
+[ "$(printf '%s\n' 'docs/ROADMAP.md' | sh Scripts/select-quality-gate.sh)" = "static" ] \
+    || fail "纯 Markdown 变更必须只选择 static Gate"
+[ "$(printf '%s\n' 'docs/ROADMAP.md' 'Packages/BiliKitCore/Sources/Foo.swift' | sh Scripts/select-quality-gate.sh)" = "app" ] \
+    || fail "包含代码的变更必须选择 app Gate"
+[ "$(printf '' | sh Scripts/select-quality-gate.sh)" = "app" ] \
+    || fail "无法识别变更路径时必须保守选择 app Gate"
 assert_occurrences 1 \
     'xcrun swift-format --version' \
     "$ci_file" \

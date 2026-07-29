@@ -288,10 +288,9 @@ struct BiliSubtitleRepositoryTests {
 
     @Test
     func resetInvalidatesCatalogThatFinishesAfterViewClosed() async throws {
-        let catalogTransport = SubtitleDelayedTransport(
+        let catalogTransport = SubtitleBlockingCatalogTransport(
             navigationResponse: try fixtureResponse("nav"),
-            catalogResponse: try catalogResponse(),
-            delay: .milliseconds(80)
+            catalogResponse: try catalogResponse()
         )
         let bodyTransport = SubtitleRecordingTransport(
             responses: [try fixtureResponse("subtitle-body")]
@@ -307,9 +306,12 @@ struct BiliSubtitleRepositoryTests {
         let request = Task {
             try await repository.tracks(for: identity)
         }
-        try await Task.sleep(for: .milliseconds(10))
+        try await waitUntil {
+            await catalogTransport.catalogRequestStarted
+        }
 
         await repository.reset(for: identity)
+        await catalogTransport.completeCatalogRequest()
 
         await #expect(throws: CancellationError.self) {
             try await request.value
@@ -416,6 +418,17 @@ struct BiliSubtitleRepositoryTests {
             body: try Data(contentsOf: url)
         )
     }
+
+    private func waitUntil(
+        _ condition: () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await condition())
+    }
 }
 
 private actor SubtitleRecordingTransport: HTTPTransport {
@@ -459,27 +472,33 @@ private actor SubtitleRecordingAuthorizer: HTTPRequestAuthorizing {
     }
 }
 
-private actor SubtitleDelayedTransport: HTTPTransport {
+private actor SubtitleBlockingCatalogTransport: HTTPTransport {
     let navigationResponse: HTTPResponse
     let catalogResponse: HTTPResponse
-    let delay: Duration
+    private(set) var catalogRequestStarted = false
+    private var catalogContinuation: CheckedContinuation<HTTPResponse, Never>?
 
     init(
         navigationResponse: HTTPResponse,
-        catalogResponse: HTTPResponse,
-        delay: Duration
+        catalogResponse: HTTPResponse
     ) {
         self.navigationResponse = navigationResponse
         self.catalogResponse = catalogResponse
-        self.delay = delay
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         if request.url.path == "/x/web-interface/nav" {
             return navigationResponse
         }
-        try? await Task.sleep(for: delay)
-        return catalogResponse
+        catalogRequestStarted = true
+        return await withCheckedContinuation { continuation in
+            catalogContinuation = continuation
+        }
+    }
+
+    func completeCatalogRequest() {
+        catalogContinuation?.resume(returning: catalogResponse)
+        catalogContinuation = nil
     }
 }
 

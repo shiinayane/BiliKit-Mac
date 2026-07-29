@@ -52,7 +52,22 @@ jobs:
             git diff --check HEAD^ HEAD
           fi
 
-      - name: Run App quality gate (includes strict Swift format lint)
+      - name: Select quality gate
+        id: quality-gate
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          mode=app
+          if [[ "${{ github.event_name }}" == "pull_request" ]] &&
+             git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            mode=$(git diff --name-only "${BASE_SHA}"...HEAD |
+              sh Scripts/select-quality-gate.sh)
+          fi
+          echo "mode=${mode}" >>"$GITHUB_OUTPUT"
+          echo "Selected quality gate: ${mode}"
+
+      - name: Run selected quality gate (includes strict Swift format lint)
         env:
           BILIKIT_DERIVED_DATA_PATH: ${{ runner.temp }}/BiliKitMac-derived
-        run: sh Scripts/run-quality-gates.sh app
+        run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"

@@ -123,13 +123,18 @@ struct SubtitleViewModelTests {
                 && model.selectedTrackID == "track-standard"
                 && model.tracks.contains { $0.id == "track-automatic" }
         }
+        try await waitUntilAsync {
+            await repository.hasStartedCueRequest("track-standard")
+        }
         model.selectTrack("track-automatic")
         await model.waitForCurrentTask()
+        try await waitUntilAsync {
+            await repository.hasCompletedCueRequest("track-standard")
+        }
         timeline.publish(snapshot(position: 2, state: .playing))
         try await waitForCue("自动生成字幕", in: model)
         #expect(model.currentCueText == "自动生成字幕")
 
-        try await Task.sleep(for: .milliseconds(100))
         #expect(model.selectedTrackID == "track-automatic")
         #expect(model.currentCueText == "自动生成字幕")
 
@@ -509,6 +514,8 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
     private let cueDelays: [String: Duration]
     private var cueRequests = 0
     private var cueFailuresRemaining: Int
+    private var startedCueTracks: Set<String> = []
+    private var completedCueTracks: Set<String> = []
 
     init(
         tracks: Result<[SubtitleTrack], SubtitleApplicationError> = .success([
@@ -544,6 +551,8 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
         identity: PlaybackItemIdentity
     ) async throws -> [SubtitleCue] {
         cueRequests += 1
+        markCueRequestStarted(trackID)
+        defer { markCueRequestCompleted(trackID) }
         if cueFailuresRemaining > 0 {
             cueFailuresRemaining -= 1
             throw SubtitleApplicationError.unavailable
@@ -578,6 +587,22 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
 
     func cueRequestCount() -> Int {
         cueRequests
+    }
+
+    func hasStartedCueRequest(_ trackID: String) -> Bool {
+        startedCueTracks.contains(trackID)
+    }
+
+    func hasCompletedCueRequest(_ trackID: String) -> Bool {
+        completedCueTracks.contains(trackID)
+    }
+
+    private func markCueRequestStarted(_ trackID: String) {
+        startedCueTracks.insert(trackID)
+    }
+
+    private func markCueRequestCompleted(_ trackID: String) {
+        completedCueTracks.insert(trackID)
     }
 }
 
