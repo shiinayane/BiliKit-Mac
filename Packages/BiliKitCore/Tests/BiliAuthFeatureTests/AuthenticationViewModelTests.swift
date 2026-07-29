@@ -22,9 +22,8 @@ struct AuthenticationViewModelTests {
         let cancelledAfterRegistration = Task {
             try await counter.wait(until: 2)
         }
-        while await counter.pendingWaiterCount == 0 {
-            try Task.checkCancellation()
-            await Task.yield()
+        try await waitUntil {
+            await counter.pendingWaiterCount > 0
         }
         cancelledAfterRegistration.cancel()
         await #expect(throws: CancellationError.self) {
@@ -233,6 +232,17 @@ struct AuthenticationViewModelTests {
 
         #expect(model.state == .signedOut)
         #expect(await service.observedCalls() == ["request", "cancel"])
+    }
+
+    private func waitUntil(
+        _ condition: () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await condition())
     }
 }
 
