@@ -122,14 +122,11 @@ struct LoopbackPlaybackServerTests {
         }
         let diagnostics = server.diagnosticsSnapshot()
 
-        withKnownIssue(
-            "Loopback start does not observe task cancellation or stop its listener."
-        ) {
-            #expect(cancellationObserved)
-            #expect(!diagnostics.isRunning)
-        }
-        #expect(!cancellationObserved)
-        #expect(diagnostics.isRunning)
+        #expect(cancellationObserved)
+        #expect(!diagnostics.isRunning)
+
+        try await server.start()
+        #expect(server.diagnosticsSnapshot().isRunning)
     }
 
     @Test

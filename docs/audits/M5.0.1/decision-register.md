@@ -30,7 +30,7 @@
 | M501-CONC-002 | 保留字幕 A→B→A 串行 reset worker | 独立复核通过 | 需避免把它误作 endpoint 正确性保障 | 待定 |
 | M501-CONC-003 | 保留 observer bag；真实返回清理成立，完整对象图释放不作过度声明 | STATE-001 修复后 suite 2/2；10 次返回、3 次窗口循环无 listener；已识别 trace 类型 0 persistent | 缺 Memory Graph 精确对象代际 | 保留；owner/player 改动时补 Memory Graph |
 | M501-CONC-004 | 仓库内为死 API；删除须先裁决 public product 兼容承诺 | 独立复核将“删除”降级 | `BiliDanmaku` 是否对外发布未知 | 待定 |
-| M501-CONC-005 | 显式区分/管理 owned session；loopback start 必须接入 task cancellation | 真实 `NWListener` 确认 task 取消后 start 仍成功且 listener 继续运行 | owned URLSession 仍缺直接计数；正常上层显式 stop 的累积风险未测 | 待定 |
+| M501-CONC-005 | 显式区分/管理 owned session；loopback start 必须接入 task cancellation | 005a 已实施：取消会以 `CancellationError` 恢复 exactly-once continuation、清理本次 listener，且随后可重新启动；定点测试及 package gate（230 tests，6 个其他 known issues）通过 | 005b owned URLSession 仍缺直接计数；正常上层显式 stop 的累积风险未测 | 005a 实施完成；005b 待实施 |
 | M501-CONC-006 | 当前 scope 无分 P 选择，生命周期不适用 | 独立复核完成 | 未来纳入时需复用唯一 identity 入口 | 待定 |
 | M501-PRIV-001 | 保留当前 Keychain 策略 | Apple Development 签名 test host 的隔离 service add/update/read/属性/delete 全通过 | 不证明 Developer ID、升级或卸载 | 当前验证完成 |
 | M501-PRIV-002 | 保留 live composition 与专用 transport 的 ephemeral/no-cookie/redirect reject | 独立复核并限定构造范围 | public defaults/probes 不同 | 待定 |

@@ -158,9 +158,16 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             self.listener = listener
         }
 
-        try await withCheckedThrowingContinuation { continuation in
-            startBox.install(continuation)
-            listener.start(queue: queue)
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                startBox.install(continuation)
+                listener.start(queue: queue)
+            }
+            try Task.checkCancellation()
+        } onCancel: {
+            startBox.resume(throwing: CancellationError())
+            self.cancelStart(listener)
         }
     }
 
@@ -245,6 +252,15 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
         connection.start(queue: queue)
         receiveRequestHeader(on: connection, id: id, accumulated: Data())
+    }
+
+    private func cancelStart(_ listener: NWListener) {
+        lock.withLock {
+            guard self.listener === listener else { return }
+            self.listener = nil
+            port = nil
+            listener.cancel()
+        }
     }
 
     private func receiveRequestHeader(
