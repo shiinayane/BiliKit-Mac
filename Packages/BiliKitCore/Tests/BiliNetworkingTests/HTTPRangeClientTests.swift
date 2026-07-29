@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliNetworking
 
+@Suite(.timeLimit(.minutes(1)))
 struct HTTPRangeClientTests {
     @Test
     func sendsRangeHeaderAndAcceptsMatchingPartialResponse() async throws {
@@ -108,8 +109,8 @@ struct HTTPRangeClientTests {
         let task = Task {
             try await client.fetch(from: [first, second], range: range)
         }
-        while !(await transport.hasStarted) {
-            await Task.yield()
+        try await waitUntil {
+            await transport.hasStarted
         }
         task.cancel()
 
@@ -153,6 +154,17 @@ struct HTTPRangeClientTests {
 
         #expect(result.sourceURL == safe)
         #expect(await transport.requests.map(\.url) == [safe])
+    }
+
+    private func waitUntil(
+        _ condition: () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await condition())
     }
 }
 

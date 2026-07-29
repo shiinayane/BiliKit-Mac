@@ -107,20 +107,21 @@ struct PlaybackTimelineStoreTests {
     }
 
     @Test
-    func cancellingSubscriberRemovesContinuation() async {
+    func cancellingSubscriberRemovesContinuation() async throws {
         let store = PlaybackTimelineStore()
         let stream = store.updates()
         let consumer = Task { @MainActor in
             for await _ in stream {}
         }
 
-        await Task.yield()
         #expect(store.subscriberCount == 1)
         consumer.cancel()
         await consumer.value
 
-        for _ in 0..<20 where store.subscriberCount != 0 {
-            await Task.yield()
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while store.subscriberCount != 0, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
         }
         #expect(store.subscriberCount == 0)
     }

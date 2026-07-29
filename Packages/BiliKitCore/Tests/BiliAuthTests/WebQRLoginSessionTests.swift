@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliAuth
 
+@Suite(.timeLimit(.minutes(1)))
 struct WebQRLoginSessionTests {
     @Test
     func requestsQRCodeAndKeepsRawValuesOutOfDescription() async throws {
@@ -317,8 +318,8 @@ struct WebQRLoginSessionTests {
             try await session.validateAndStorePendingCredential()
         }
 
-        while !(await transport.validationStarted) {
-            await Task.yield()
+        try await waitUntil {
+            await transport.validationStarted
         }
         let newState = try await session.requestQRCode()
         #expect(newState.description == "awaiting-scan")
@@ -438,8 +439,8 @@ struct WebQRLoginSessionTests {
         let session = WebQRLoginSession(transport: transport)
         let task = Task { try await session.requestQRCode() }
 
-        while !(await transport.hasStarted) {
-            await Task.yield()
+        try await waitUntil {
+            await transport.hasStarted
         }
         task.cancel()
 
@@ -491,8 +492,8 @@ struct WebQRLoginSessionTests {
         let session = WebQRLoginSession(transport: transport)
         let first = Task { try await session.requestQRCode() }
 
-        while !(await transport.firstRequestStarted) {
-            await Task.yield()
+        try await waitUntil {
+            await transport.firstRequestStarted
         }
         let secondState = try await session.requestQRCode()
         #expect(secondState.description == "awaiting-scan")
@@ -516,8 +517,8 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let firstPoll = Task { try await session.pollOnce() }
 
-        while !(await transport.firstPollStarted) {
-            await Task.yield()
+        try await waitUntil {
+            await transport.firstPollStarted
         }
         let secondState = try await session.pollOnce()
         #expect(secondState.description == "awaiting-scan")
@@ -527,6 +528,17 @@ struct WebQRLoginSessionTests {
             try await firstPoll.value
         }
         #expect(await session.state.description == "awaiting-scan")
+    }
+
+    private func waitUntil(
+        _ condition: () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await condition())
     }
 }
 
