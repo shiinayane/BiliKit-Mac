@@ -60,10 +60,10 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
 - **finding_id**：UI-002
 - **审计线与涉及能力**：Apple 原生 UI；`NSViewRepresentable`、搜索、焦点和 Return。
 - **当前实现（文件、符号、调用链）**：
-  `BiliKitMac/Platform/CenteredSearchField.swift:4-55` 包装 `NSSearchField`，
-  coordinator 手动同步字符串、target/action 提交和 AX label/help；
-  `BiliKitMac/App/AppShellView.swift:200-220` 把它固定为 340 pt 的
-  `.principal` toolbar item。
+  `SearchTabRoot` 已在实际导航内容上使用
+  `.searchable(text:placement:.toolbarPrincipal,prompt:)` 与
+  `.onSubmit(of:.search)`；`CenteredSearchField` AppKit bridge、固定 340 pt
+  宽度和专用 test-only native searchable spike 已删除。
 - **它声称提供的职责**：在 toolbar 中居中搜索框、双向绑定搜索 draft、按 Return
   提交，并补充搜索字段辅助语义。
 - **外部事实来源**：
@@ -93,20 +93,20 @@ Apple App 观察发生于 2026-07-27、macOS 26.5.2（25F84），界面语言为
     为空；内容取得焦点后按 Command-F 不会把焦点移到该搜索字段；
   - 保留截图只证明布局，未运行熟练 VoiceOver 朗读。
 - **本地测试实际证明的范围**：
-  `SliceCAccessibilityTests.appKitSearchFieldPublishesLabelHelpAndIdentifier`
-  只证明生成的 `NSSearchField` 有三个 AX 属性；旧 fixture XCUI 曾证明点击后 Return
-  可提交。它们不证明 bridge 比 `.searchable` 多出不可替代的行为。
-- **判断**：**替换已具备实现条件，但不是逐属性等价**。
+  既有 UI-F008 签名 probe 证明原生字段在 1320 pt 的布局、Return 和 Escape；当前完整
+  app gate 证明 production 迁移可编译并通过现有 unit tests。更新后的核心 XCUI 已按
+  SearchField role 覆盖 Escape、Return 与 Tab 往返，但本机 test worker 未
+  materialize，本轮没有执行这些断言。
+- **判断**：**替换已实施，但不是逐属性等价**。
   `.searchable(text:placement:.toolbarPrincipal,prompt:)` +
-  `.onSubmit(of:.search)` 已证明居中、绑定、Return 与 Escape；可以删除 AppKit bridge。
+  `.onSubmit(of:.search)` 已取代 AppKit bridge。
   V1 不应把现有 340 pt 固定宽度、`search.field` identifier 或 Command-F 当成原生 API
   自动保留的契约。若产品要求进入 Tab 后立即聚焦，仍需另行采用并验证
   `isPresented`/`.searchFocused`，不能由 TV 私有 App 观察推断。
 - **风险**：影响中、恢复容易；原生 principal 宽度由系统决定，本机由 340 pt 变为
   544 pt，现有 UI 测试不能继续依赖 `search.field`。原生字段已有 SearchField role
   与 prompt，但 VoiceOver 朗读、窄窗口 toolbar 压缩和 Tab 往返仍未验证。
-- **下一步最小验证**：实施时把 modifier 放在 `SearchTabRoot` 的实际导航内容上，
-  保留提交时机与搜索请求语义；把 XCUI 查询改为 role/prompt。随后验证 1080 pt
+- **下一步最小验证**：本机 UI runner 恢复后运行已更新的核心 fixture，补验 1080 pt
   窄窗口、Tab 往返、清除按钮和一次熟练 VoiceOver 任务。Command-F 若成为产品要求，
   需单独增加菜单命令，不属于 bridge 删除的阻塞项。
 - **与其他 finding 的依赖或冲突**：依赖 AX-001、AX-002；搜索请求与工作集属于

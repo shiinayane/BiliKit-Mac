@@ -14,7 +14,6 @@
         let usesCompactWindow: Bool
         let usesDarkAppearance: Bool
         let usesLargeText: Bool
-        let usesNativeSearchableProbe: Bool
 
         static var current: UITestConfiguration {
             parse(arguments: ProcessInfo.processInfo.arguments)
@@ -29,10 +28,7 @@
                 usesDarkAppearance:
                     isEnabled && arguments.contains("-ui-testing-dark"),
                 usesLargeText:
-                    isEnabled && arguments.contains("-ui-testing-large-text"),
-                usesNativeSearchableProbe:
-                    isEnabled
-                    && arguments.contains("-ui-testing-native-searchable")
+                    isEnabled && arguments.contains("-ui-testing-large-text")
             )
         }
     }
@@ -41,55 +37,23 @@
         let configuration: UITestConfiguration
 
         var body: some View {
-            Group {
-                if configuration.usesNativeSearchableProbe {
-                    UITestNativeSearchableView()
-                } else {
-                    UITestContentView()
-                }
-            }
-            .background(
-                UITestWindowConfigurator(
-                    contentSize: configuration.usesCompactWindow
-                        ? CGSize(width: 1_080, height: 680)
-                        : CGSize(width: 1_320, height: 820)
+            UITestContentView()
+                .background(
+                    UITestWindowConfigurator(
+                        contentSize: configuration.usesCompactWindow
+                            ? CGSize(width: 1_080, height: 680)
+                            : CGSize(width: 1_320, height: 820)
+                    )
                 )
-            )
-            .preferredColorScheme(
-                configuration.usesDarkAppearance ? .dark : .light
-            )
-            .environment(
-                \.dynamicTypeSize,
-                configuration.usesLargeText
-                    ? .accessibility1
-                    : .large
-            )
-        }
-    }
-
-    private struct UITestNativeSearchableView: View {
-        @State private var text = ""
-        @State private var submittedText = ""
-
-        var body: some View {
-            NavigationStack {
-                VStack(spacing: 16) {
-                    Button("内容区域") {}
-                        .accessibilityIdentifier("native.search.content")
-
-                    Text(submittedText)
-                        .accessibilityIdentifier("native.search.submitted")
-                }
-                .navigationTitle("搜索")
-                .searchable(
-                    text: $text,
-                    placement: .toolbarPrincipal,
-                    prompt: "搜索 B 站视频"
+                .preferredColorScheme(
+                    configuration.usesDarkAppearance ? .dark : .light
                 )
-                .onSubmit(of: .search) {
-                    submittedText = text
-                }
-            }
+                .environment(
+                    \.dynamicTypeSize,
+                    configuration.usesLargeText
+                        ? .accessibility1
+                        : .large
+                )
         }
     }
 

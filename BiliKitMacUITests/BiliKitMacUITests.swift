@@ -20,9 +20,12 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(feedGrid.waitForExistence(timeout: 5))
 
         sidebarTab("搜索", in: app).click()
-        let searchField = element("search.field", in: app)
+        let searchField = app.searchFields.firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.click()
+        searchField.typeText("临时")
+        searchField.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(searchField.value as? String, "")
         searchField.typeText("示例")
         searchField.typeKey(.return, modifierFlags: [])
 
@@ -44,6 +47,14 @@ final class BiliKitMacUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
+        sidebarTab("热门", in: app).click()
+        sidebarTab("搜索", in: app).click()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.searchFields.firstMatch.value as? String, "示例")
+        XCTAssertTrue(
+            element("search.results", in: app)
+                .waitForExistence(timeout: 5)
+        )
         sidebarTab("热门", in: app).click()
         let popularResult = element("feed.item.fixture-video-1", in: app)
         XCTAssertTrue(popularResult.waitForExistence(timeout: 5))
@@ -125,74 +136,6 @@ final class BiliKitMacUITests: XCTestCase {
             )
             XCTAssertEqual(part.isSelected, index == 1)
         }
-    }
-
-    @MainActor
-    func testNativeSearchableBehaviorProbe() throws {
-        let arguments = [
-            "-ui-testing",
-            "-ui-testing-native-searchable",
-        ]
-        let app = launchFixture(arguments: arguments)
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5))
-        let searchField = app.searchFields.firstMatch
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-
-        let fieldFrame = searchField.frame
-        let centerOffset = fieldFrame.midX - window.frame.midX
-        print(
-            [
-                "M501 native-searchable",
-                "width=\(Int(fieldFrame.width.rounded()))",
-                "center-offset=\(Int(centerOffset.rounded()))",
-                "label=\(searchField.label)",
-                "identifier=\(searchField.identifier)",
-                "placeholder=\(searchField.placeholderValue ?? "<nil>")",
-            ].joined(separator: " ")
-        )
-
-        let attachment = XCTAttachment(screenshot: window.screenshot())
-        attachment.name = "M501 Native Searchable"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        searchField.click()
-        searchField.typeText("示例")
-        searchField.typeKey(.return, modifierFlags: [])
-        let submittedText = element("native.search.submitted", in: app)
-        expectation(
-            for: NSPredicate(format: "value == %@", "示例"),
-            evaluatedWith: submittedText
-        )
-        waitForExpectations(timeout: 2)
-        app.terminate()
-
-        let escapeApp = launchFixture(arguments: arguments)
-        let escapeSearchField = escapeApp.searchFields.firstMatch
-        XCTAssertTrue(escapeSearchField.waitForExistence(timeout: 5))
-        escapeSearchField.click()
-        escapeSearchField.typeText("临时")
-        escapeSearchField.typeKey(.escape, modifierFlags: [])
-        let valueAfterEscape = escapeSearchField.value as? String
-        print(
-            "M501 native-searchable escape-value="
-                + (valueAfterEscape ?? "<nil>")
-        )
-        escapeApp.terminate()
-
-        let commandApp = launchFixture(arguments: arguments)
-        let commandSearchField = commandApp.searchFields.firstMatch
-        XCTAssertTrue(commandSearchField.waitForExistence(timeout: 5))
-        element("native.search.content", in: commandApp).click()
-        commandApp.typeKey("f", modifierFlags: .command)
-        let commandFFocused = commandApp.searchFields
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch.exists
-        print(
-            "M501 native-searchable command-f-focused="
-                + String(commandFFocused)
-        )
     }
 
     @MainActor

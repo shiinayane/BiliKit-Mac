@@ -177,16 +177,13 @@ private struct SearchTabRoot: View {
         .navigationTitle("搜索")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                CenteredSearchField(
-                    text: $searchDraft,
-                    placeholder: "搜索 B 站视频",
-                    onSubmit: onSubmit
-                )
-                .frame(width: 340)
-                .accessibilityIdentifier("search.field")
-            }
+        .searchable(
+            text: $searchDraft,
+            placement: .toolbarPrincipal,
+            prompt: "搜索 B 站视频"
+        )
+        .onSubmit(of: .search) {
+            onSubmit()
         }
     }
 }

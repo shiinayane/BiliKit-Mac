@@ -40,7 +40,7 @@
 | M501-PRIV-006 | fixture 未见明显违规；不能用 secret scan 关闭整体隐私 | 独立复核并降低 provenance 强度 | 二进制 fixture 来源仍是仓库自述 | 待定 |
 | M501-PRIV-007 | 保留 loopback bind/token/path；严格 Host 校验已实施 | 独立 nc 子进程确认合法 authority 200，错误 token/path 404，任意、缺失、重复、异常 Host 400，断连清零且 stop 后端口关闭；package gate 224 项通过 | 不提供本机进程身份认证；listener cancel 到端口拒绝连接是异步传播 | 当前验证完成，重大安全暂停解除 |
 | UI-001 | 保留 TabView/NavigationStack/单 player owner | 独立复核并校正与 Music 的差异 | BiliKit 切 Tab 主动退出深层播放 | 理想行为为保留每 Tab 深层 destination；实现复杂时允许推迟到 v1 之后 |
-| UI-002 | 用挂在实际导航内容上的 `.searchable(..., placement: .toolbarPrincipal)` 与 `.onSubmit(of: .search)` 替换 `CenteredSearchField` | 签名 XCUI 证明 1320 pt 窗口下精确居中、Return 提交、Escape 清空；`.toolbar` 右置对照与栈外 modifier 失败进一步限定实现结构 | 系统宽度由 340 pt 变为本机 544 pt；原生字段无现有 AX identifier，Command-F 不自动聚焦；窄窗口与 VoiceOver 未验 | 验证完成，可进入独立实施；不承诺固定宽度／Command-F |
+| UI-002 | 用挂在实际导航内容上的 `.searchable(..., placement: .toolbarPrincipal)` 与 `.onSubmit(of: .search)` 替换 `CenteredSearchField` | 已实施：production modifier 挂在 `SearchTabRoot` 内容上，AppKit bridge 与专用 spike 已删除；完整 app gate（237 package tests、App build、App unit tests）通过；既有签名 XCUI 已证明 1320 pt 居中、Return 与 Escape | 系统宽度由 340 pt 变为本机 544 pt；原生字段无旧 AX identifier，Command-F 不自动聚焦；当前 1080 pt、Tab 往返、清除按钮与 VoiceOver XCUI 因本机 worker 未 materialize 未执行 | 实施完成；不承诺固定宽度／Command-F，待恢复 UI runner 后补验剩余路径 |
 | UI-003 | 保留 tabViewSidebarBottomBar 与账户位置 | 独立复核通过 | 键盘焦点/反馈见 AX-007 | 待定 |
 | UI-004 | 保留每 Tab 语义 ScrollPosition | 独立复核通过 | 搜索/历史/resize 真实路径未测 | 待定 |
 | UI-005 | 保留 GeometryReader 职责；1080 pt 下限未决 | 独立复核通过 | 缺窄窗口与大文字证据 | 待定 |
@@ -57,7 +57,7 @@
 | STATE-007 | 保留弹幕三段结构工作集；不因一次 RSS 不回落改变容量 | 同一进程最后三合法段共 2,047 条，cache 3→0；RSS 高水位约 +34.7 MiB | reset 后即时 RSS 未下降，未用对象图区分 allocator retained pages；单视频 Debug 样本 | 验证完成；owner/event 结构改变时复跑并补 Allocations/Memory Graph |
 | STATE-008 | 保留无 App-managed 内容持久化 | 独立复核并限定系统行为未知 | 缺签名安装后的 container 检查 | 待定 |
 | AX-001 | VoiceOver 可用性尚不能判断 | 独立复核通过 | 未跑熟练 VoiceOver 路径 | 待定 |
-| AX-002 | 保留 onExitCommand；菜单/完整键盘未决 | 独立复核通过 | 未跑菜单、Command-F、全屏、输入冲突 | 待定 |
+| AX-002 | 搜索 Return／Escape 交给原生 `.searchable`；播放返回只保留系统 Back | UI-F008 已证明原生搜索 Return／Escape；UI-009 已裁决并删除无效 `onExitCommand` | 菜单、Command-F、全屏、输入冲突和完整键盘可达性仍未验证 | V1 不要求直接键盘返回；其余输入覆盖待定 |
 | AX-003 | 卡片自绘焦点 ring 尚不能判断 | 独立复核通过 | 缺 Full Keyboard Access/对照 | 待定 |
 | AX-004 | Reduce Motion 与弹幕策略需产品裁决 | 独立复核将强制替换降级 | 已有 App 内细粒度控制 | 不让 Reduce Motion 自动删减弹幕功能；弹幕作为标志性功能保留全部模式与用户控制 |
 | AX-005 | 保留语义字体；200% 布局未决 | 独立复核并限定 Mac 标签语义 | 缺真实多尺寸/本地化验证 | 待定 |

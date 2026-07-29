@@ -50,12 +50,12 @@ VoiceOver、Accessibility Inspector、Full Keyboard Access 或系统 Reduce Moti
 - **finding_id**：AX-002
 - **审计线与涉及能力**：键盘、Return、Escape、菜单命令、全屏和播放器输入。
 - **当前实现（文件、符号、调用链）**：
-  `CenteredSearchField.swift:13-21,50-54` 以 `NSSearchField` action 接收 Return；
-  `AppShellView.swift:287-310` 用 `.onExitCommand` 在播放 destination 调用
-  `dismiss()`；全仓未发现 production `.commands`、`CommandGroup`、
+  `SearchTabRoot` 用原生 `.searchable` 与 `.onSubmit(of: .search)` 接收 Return，
+  Escape 由系统搜索字段处理；播放页不再保留已证无效的 `.onExitCommand`，V1 只依赖
+  系统 Back。全仓未发现 production `.commands`、`CommandGroup`、
   `.keyboardShortcut` 或 `.onKeyPress`。`WindowGroup` 与 `AVPlayerView` 仍可能提供
   系统默认菜单／全屏／播放输入。
-- **它声称提供的职责**：Return 提交搜索，Escape 从播放返回；其余输入交给系统控件。
+- **它声称提供的职责**：Return 提交搜索、系统 Back 返回；其余输入交给系统控件。
 - **外部事实来源**：
   - 当前 SDK interface
     `SwiftUI.swiftmodule/arm64e-apple-macos.swiftinterface:12814-12831` 说明
@@ -76,8 +76,9 @@ VoiceOver、Accessibility Inspector、Full Keyboard Access 或系统 Reduce Moti
   fixture XCUI 编码了点击搜索框后 Return，以及播放页上向 app 发送 Escape；
   旧 Slice C 曾通过，M5.0 当前 revision 的 XCUI runner 没有进入产品路径。
   没有测试读取 menu bar、全屏、快捷键 discoverability 或输入冲突。
-- **判断**：**尚不能判断**。保留 `.onExitCommand`；不要改成全局 key monitor。
-  是否需要搜索、刷新、播放等菜单命令，要由真实键盘任务和产品频率决定。
+- **判断**：搜索 Return／Escape 已原生化；播放直接键盘返回按产品裁决不属于 V1
+  承诺，不引入全局 key monitor。是否需要搜索、刷新、播放等菜单命令，仍要由真实键盘
+  任务和产品频率决定。
 - **风险**：影响中；缺少菜单会降低可发现性，错误全局拦截 Escape／Space 又可能破坏
   搜索输入、sheet 或 AVPlayerView 的原生行为。通常可恢复。
 - **下一步最小验证**：签名 App 仅键盘走完整核心路径，逐项检查 Tab／Shift-Tab、

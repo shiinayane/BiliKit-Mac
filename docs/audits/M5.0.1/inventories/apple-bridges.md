@@ -6,18 +6,18 @@
 
 | 符号 | 位置 | 当前声称的职责 | 属性 |
 | --- | --- | --- | --- |
-| `CenteredSearchField` | `BiliKitMac/Platform/CenteredSearchField.swift:4` | toolbar 中居中的 `NSSearchField`、Return 提交和 AX 属性 | production |
 | `AVPlayerContainerView` | `BiliKitMac/Platform/PlayerHostView.swift:67` | 把 `AVPlayerView` 与弹幕 overlay 安装到同一原生 surface | production |
 | `DanmakuPlayerView` | `BiliKitMac/Platform/PlayerHostView.swift:112` | 使用 `AVPlayerView.contentOverlayView` 承载弹幕 | production |
-| `UITestWindowConfigurator` | `BiliKitMac/Composition/UITestContentView.swift:60` | fixture 窗口尺寸配置 | DEBUG fixture |
+| `UITestWindowConfigurator` | `BiliKitMac/Composition/UITestContentView.swift` | fixture 窗口尺寸配置 | DEBUG fixture |
 
 `PlayerHostLifecycleProbe` 只在注入时记录 host 创建／dismantle，不是系统资源释放证明，必须
 与 player、overlay、observer 和 loopback owner 分开审计。
 
+UI-002 已用 production `.searchable(..., placement: .toolbarPrincipal)` 取代
+`CenteredSearchField`；搜索不再包含 AppKit bridge。
+
 ## 手写 Binding
 
-- `AppShellView.swift:142-169`：Tab selection、搜索 draft、按当前 Tab 投影的 playback
-  path；
 - `SubtitleControlsView.swift:29-32`：Picker selection 到 ViewModel method；
 - `DanmakuControlsView.swift:10-38`：四个 Toggle 到 ViewModel methods。
 
@@ -34,14 +34,13 @@
 - `AppShellView.swift:29`：`TabView(.sidebarAdaptable)`；
 - `AppShellView.swift:128`：每 Tab 的类型化 `NavigationStack(path:)`；
 - `AppShellView.swift:18-26` 及三个列表 View：以视频 identity 为目标的
-  `ScrollPosition`；
-- `AppShellView.swift:308`：播放 destination 的 `.onExitCommand`。
+  `ScrollPosition`。
 
 ## 自定义格式化候选
 
 - `VideoMetadataFormatting`：播放量、相对日期和完整发布日期；
-- `WatchHistoryCardFormatting`：进度、相对观看时间和 duration；
-- `GuestVideoCard.duration` 与 `GuestVideoDetailView.duration`：重复时长格式化；
+- `WatchHistoryCardFormatting`：历史进度状态与相对观看时间；
+- `VideoDurationFormatting`：使用原生 `Duration.TimeFormatStyle` 的共享视频时长输出；
 - `EndpointPayloads.durationSeconds`：远端 `mm:ss`／`hh:mm:ss` 解析，属于协议解析而非
   UI 格式化。
 
