@@ -63,9 +63,12 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
   `AVURLAsset` 确实读取到两个不同分辨率的 bitrate variant 和声明的视频属性，并同时
   读取独立音频和 `.legible` 字幕组。另一个四秒 synthetic runtime test 在同一
   `AVPlayerItem` 先观察到 132 kbps 高档，再限制交付并观察到 82 kbps 低档，连续
-  6/6 通过，且 item identity 不变。这证明原生自动降档机制可穿过当前 loopback/HLS
+  6/6 通过，且 item identity 不变。这证明原生自动降档机制曾穿过当前 loopback/HLS
   形态；人工恢复后未观察到升档，因为 transport 对高档单独施加了失败/延迟惩罚，不能
-  把该结果外推为均匀网络恢复行为。
+  把该结果外推为均匀网络恢复行为。后续 CI run `30427865650` 中，同一探针在 macOS 15
+  只请求高档并超时、macOS 26 通过，进一步证明网络诱发的切换时机不是跨系统确定性
+  契约。该探针改为通过 `BILIKIT_RUN_ABR_POLICY_PROBE=1` 显式启用，不再阻塞 Gate；
+  Gate 只固定多档 variant、默认自动参数和同一 item 的项目自有契约。
   后续签名 test-only probe 又把同一真实样本的 quality 16/32 与共享 AAC 实际组成两个
   variant。AVPlayer 识别为两个 variant，从高档启动；对全部音视频 Range 使用动态共享
   总吞吐限制后自动降到低档，`currentItem` 未替换。恢复到高档声明带宽的 4 倍后，最后

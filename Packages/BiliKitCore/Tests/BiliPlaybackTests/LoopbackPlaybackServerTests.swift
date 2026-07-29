@@ -812,7 +812,14 @@ struct LoopbackPlaybackServerTests {
         )
     }
 
-    @Test
+    @Test(
+        .enabled(
+            if: ProcessInfo.processInfo.environment[
+                "BILIKIT_RUN_ABR_POLICY_PROBE"
+            ] == "1",
+            "AVPlayer network adaptation timing is not deterministic across OS versions."
+        )
+    )
     @MainActor
     func automaticABRDowngradesWithinOnePlayerItem()
         async throws
@@ -1700,6 +1707,10 @@ struct LoopbackPlaybackServerTests {
         let variants = try await asset.load(.variants)
 
         #expect(variants.count == 2)
+        #expect(item.preferredPeakBitRate == 0)
+        #expect(item.preferredMaximumResolution == .zero)
+        #expect(item.preferredForwardBufferDuration == 0)
+        #expect(!item.startsOnFirstEligibleVariant)
         #expect(
             Set(
                 variants.compactMap {
