@@ -104,6 +104,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         coordinator: Coordinator
     ) {
         view.danmakuOverlay.detachSurface()
+        view.player = nil
         coordinator.lifecycleProbe?.didDismantle(view)
     }
 }

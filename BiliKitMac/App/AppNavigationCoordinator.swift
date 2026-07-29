@@ -17,34 +17,19 @@ final class AppNavigationCoordinator {
         didSet {
             guard selectedTab != oldValue else { return }
             let previousPath = playbackPath(for: oldValue)
-            setPlaybackPath([], for: oldValue)
+            replacePlaybackPath([], for: oldValue)
             reconcilePlayback(from: previousPath, to: [])
         }
     }
-    var searchPlaybackPath: [PlaybackDestination] = [] {
-        didSet {
-            guard selectedTab == .search else { return }
-            reconcilePlayback(from: oldValue, to: searchPlaybackPath)
-        }
-    }
-    var popularPlaybackPath: [PlaybackDestination] = [] {
-        didSet {
-            guard selectedTab == .popular else { return }
-            reconcilePlayback(from: oldValue, to: popularPlaybackPath)
-        }
-    }
-    var historyPlaybackPath: [PlaybackDestination] = [] {
-        didSet {
-            guard selectedTab == .history else { return }
-            reconcilePlayback(from: oldValue, to: historyPlaybackPath)
-        }
-    }
+    private(set) var searchPlaybackPath: [PlaybackDestination] = []
+    private(set) var popularPlaybackPath: [PlaybackDestination] = []
+    private(set) var historyPlaybackPath: [PlaybackDestination] = []
     var playbackPath: [PlaybackDestination] {
         get {
             playbackPath(for: selectedTab)
         }
         set {
-            setPlaybackPath(newValue, for: selectedTab)
+            updatePlaybackPath(newValue, for: selectedTab)
         }
     }
     var searchDraft = ""
@@ -71,12 +56,24 @@ final class AppNavigationCoordinator {
     }
 
     func resetForWindowClosure() {
-        playbackPath.removeAll()
-        searchPlaybackPath.removeAll()
-        popularPlaybackPath.removeAll()
-        historyPlaybackPath.removeAll()
+        let previousPath = playbackPath
+        replacePlaybackPath([], for: .search)
+        replacePlaybackPath([], for: .popular)
+        replacePlaybackPath([], for: .history)
+        reconcilePlayback(from: previousPath, to: [])
         selectedTab = .popular
         searchDraft = ""
+    }
+
+    func updatePlaybackPath(
+        _ path: [PlaybackDestination],
+        for tab: AppTab
+    ) {
+        guard selectedTab == tab else { return }
+        let previousPath = playbackPath(for: tab)
+        guard previousPath != path else { return }
+        replacePlaybackPath(path, for: tab)
+        reconcilePlayback(from: previousPath, to: path)
     }
 
     func playbackPath(for tab: AppTab) -> [PlaybackDestination] {
@@ -106,7 +103,7 @@ final class AppNavigationCoordinator {
         }
     }
 
-    private func setPlaybackPath(
+    private func replacePlaybackPath(
         _ path: [PlaybackDestination],
         for tab: AppTab
     ) {

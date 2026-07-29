@@ -14,7 +14,10 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
 }
 
 @MainActor
-public final class AVPlayerEngine: PlaybackControlling {
+public final class AVPlayerEngine:
+    PlaybackControlling,
+    PlaybackTimelineProviding
+{
     public let player: AVPlayer
     public let events: AsyncStream<PlayerEvent>
 

@@ -96,9 +96,10 @@ struct AppNavigationCoordinatorTests {
         )
 
         coordinator.selectedTab = .search
-        coordinator.searchPlaybackPath = [
-            PlaybackDestination(bvid: "BV1SearchPath")
-        ]
+        coordinator.updatePlaybackPath(
+            [PlaybackDestination(bvid: "BV1SearchPath")],
+            for: .search
+        )
 
         #expect(
             coordinator.playbackPath(for: .search) == [
@@ -107,6 +108,26 @@ struct AppNavigationCoordinatorTests {
         )
         #expect(coordinator.playbackPath(for: .popular).isEmpty)
         #expect(coordinator.playbackPath(for: .history).isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func inactiveTabCannotPublishPlaybackDestination() {
+        var events: [String] = []
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { events.append("start:\($0)") },
+            stopPlayback: { events.append("stop") }
+        )
+
+        coordinator.updatePlaybackPath(
+            [PlaybackDestination(bvid: "BV1InactivePath")],
+            for: .search
+        )
+        coordinator.selectedTab = .search
+
+        #expect(coordinator.playbackPath(for: .search).isEmpty)
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(events.isEmpty)
     }
 
     @Test

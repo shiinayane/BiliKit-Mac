@@ -30,7 +30,7 @@ struct AppShellView: View {
 
         TabView(selection: $navigationCoordinator.selectedTab) {
             Tab(value: AppTab.search) {
-                tabNavigation(path: $navigationCoordinator.searchPlaybackPath) {
+                tabNavigation(path: playbackPathBinding(for: .search)) {
                     SearchTabRoot(
                         model: browseModel,
                         searchDraft: $navigationCoordinator.searchDraft,
@@ -45,7 +45,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.popular) {
-                tabNavigation(path: $navigationCoordinator.popularPlaybackPath) {
+                tabNavigation(path: playbackPathBinding(for: .popular)) {
                     PopularTabRoot(
                         model: browseModel,
                         scrollPosition: $popularScrollPosition,
@@ -57,7 +57,7 @@ struct AppShellView: View {
             }
 
             Tab(value: AppTab.history) {
-                tabNavigation(path: $navigationCoordinator.historyPlaybackPath) {
+                tabNavigation(path: playbackPathBinding(for: .history)) {
                     HistoryTabRoot(
                         model: historyModel,
                         isSignedIn: authenticationModel.isSignedIn,
@@ -139,6 +139,19 @@ struct AppShellView: View {
                     )
                 }
         }
+    }
+
+    private func playbackPathBinding(
+        for tab: AppTab
+    ) -> Binding<[PlaybackDestination]> {
+        Binding(
+            get: {
+                navigationCoordinator.playbackPath(for: tab)
+            },
+            set: { path in
+                navigationCoordinator.updatePlaybackPath(path, for: tab)
+            }
+        )
     }
 }
 
