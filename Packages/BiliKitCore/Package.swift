@@ -85,6 +85,7 @@ let package = Package(
                 "BiliAPI",
                 "BiliApplication",
                 "BiliModels",
+                "BiliNetworking",
                 "BiliPlayback",
             ]
         ),

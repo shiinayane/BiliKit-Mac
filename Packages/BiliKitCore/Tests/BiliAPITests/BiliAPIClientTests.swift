@@ -274,6 +274,24 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func playbackNeverRequestsCredentialAuthorization() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try fixtureResponse("playurl")]
+            ),
+            requestAuthorizer: authorizer
+        )
+
+        _ = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(await authorizer.capturedPaths().isEmpty)
+    }
+
+    @Test
     func playURLRejectsInvalidVideoFrameRate() async throws {
         let fixture = try fixtureResponse("playurl")
         let invalidBody = String(decoding: fixture.body, as: UTF8.self)

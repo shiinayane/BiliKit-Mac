@@ -56,6 +56,14 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://i0.hdslb.com/x/web-interface/nav", .get),
             ("http://127.0.0.1:8080/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/popular", .get),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
             ("https://api.bilibili.com/x/web-interface/nav?extra=1", .get),
             ("https://api.bilibili.com/x/web-interface/history/cursor?ps=20", .get),
             (

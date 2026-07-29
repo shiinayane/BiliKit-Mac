@@ -2,6 +2,7 @@
 import BiliAPI
 import BiliApplication
 import BiliModels
+import BiliNetworking
 import BiliPlayback
 import Darwin
 import Foundation
@@ -29,7 +30,19 @@ struct BiliPlaybackProbe {
     }
 
     private static func run(_ configuration: ProbeConfiguration) async throws {
-        let client = BiliAPIClient()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.httpShouldSetCookies = false
+        sessionConfiguration.httpCookieStorage = nil
+        sessionConfiguration.urlCache = nil
+        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        sessionConfiguration.timeoutIntervalForRequest = 15
+        sessionConfiguration.timeoutIntervalForResource = 30
+        let client = BiliAPIClient(
+            transport: URLSessionTransport(
+                configuration: sessionConfiguration,
+                redirectPolicy: .reject
+            )
+        )
         let cid: Int64
         if let configuredCID = configuration.cid {
             cid = configuredCID
