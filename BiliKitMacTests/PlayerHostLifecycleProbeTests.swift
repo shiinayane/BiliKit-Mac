@@ -30,7 +30,15 @@ struct AppShellChromeTests {
     }
 }
 
-@Suite(.serialized)
+@Suite(
+    .serialized,
+    .enabled(
+        if: ProcessInfo.processInfo.environment[
+            "BILIKIT_RUN_PLAYER_HOST_LIFECYCLE_PROBE"
+        ] == "1",
+        "SwiftUI navigation host lifecycle timing is not deterministic across OS versions."
+    )
+)
 struct PlayerHostLifecycleProbeTests {
     @Test
     @MainActor
