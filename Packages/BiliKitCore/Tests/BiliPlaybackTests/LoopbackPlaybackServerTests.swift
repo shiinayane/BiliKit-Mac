@@ -1026,26 +1026,13 @@ struct LoopbackPlaybackServerTests {
     @Test
     @MainActor
     func automaticWaitingRecoversFromRangeStarvation() async throws {
-        let systemDefault = try await recoverableStallTrial(
-            automaticallyWaitsToMinimizeStalling: true
-        )
-        let disabled = try await recoverableStallTrial(
-            automaticallyWaitsToMinimizeStalling: false
-        )
+        let systemDefault = try await recoverableStallTrial()
 
         #expect(
             systemDefault.stallStatus == .waitingToPlayAtSpecifiedRate
         )
         #expect(systemDefault.blockedRequestCount >= 1)
         #expect(systemDefault.recoveredAutomatically)
-        withKnownIssue(
-            "Disabling AVPlayer automatic waiting exposes starvation as paused without a recovery owner."
-        ) {
-            #expect(disabled.stallStatus == .waitingToPlayAtSpecifiedRate)
-            #expect(disabled.recoveredAutomatically)
-        }
-        #expect(disabled.blockedRequestCount >= 1)
-        #expect(disabled.stallStatus == .paused)
     }
 
     @Test
@@ -1735,6 +1722,7 @@ struct LoopbackPlaybackServerTests {
                 rangeClient: HTTPRangeClient(transport: transport)
             )
         )
+        engine.player.automaticallyWaitsToMinimizeStalling = false
         engine.player.isMuted = true
         let eventRecorder = PlayerEventRecorder()
         let eventTask = Task {
@@ -2041,22 +2029,18 @@ struct LoopbackPlaybackServerTests {
     }
 
     @MainActor
-    private func recoverableStallTrial(
-        automaticallyWaitsToMinimizeStalling: Bool
-    ) async throws -> RecoverableStallResult {
+    private func recoverableStallTrial() async throws -> RecoverableStallResult {
         let videoData = try fixtureBase64Data(
             named: "video-avc-256x144-4s-global-sidx.mp4"
         )
         let audioData = try fixtureBase64Data(
             named: "audio-aac-4s-global-sidx.mp4"
         )
-        let suffix =
-            automaticallyWaitsToMinimizeStalling ? "default" : "disabled"
         let videoRemoteURL = try #require(
-            URL(string: "https://media.example.invalid/stall-\(suffix)-video.mp4")
+            URL(string: "https://media.example.invalid/stall-video.mp4")
         )
         let audioRemoteURL = try #require(
-            URL(string: "https://media.example.invalid/stall-\(suffix)-audio.mp4")
+            URL(string: "https://media.example.invalid/stall-audio.mp4")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -2148,9 +2132,6 @@ struct LoopbackPlaybackServerTests {
         item.preferredForwardBufferDuration = 0.25
         let player = AVPlayer(playerItem: item)
         #expect(player.automaticallyWaitsToMinimizeStalling)
-        if !automaticallyWaitsToMinimizeStalling {
-            player.automaticallyWaitsToMinimizeStalling = false
-        }
         player.isMuted = true
         let playerLayer = AVPlayerLayer(player: player)
         playerLayer.frame = CGRect(x: 0, y: 0, width: 256, height: 144)

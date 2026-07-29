@@ -36,7 +36,6 @@ public final class AVPlayerEngine: PlayerEngine, PlaybackControlling {
         let stream = AsyncStream<PlayerEvent>.makeStream()
         events = stream.stream
         eventContinuation = stream.continuation
-        player.automaticallyWaitsToMinimizeStalling = false
         timeline.onEnded = { [weak self] in
             self?.emit(.stateChanged(.ended))
         }
