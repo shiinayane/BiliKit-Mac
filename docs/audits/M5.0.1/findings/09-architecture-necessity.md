@@ -126,12 +126,10 @@
 
 - **finding_id**：ARCH-004
 - **审计线与涉及能力**：adapter 内部 wrapper、history service。
-- **当前实现（文件、符号、调用链）**：
-  `BiliAPIClient.swift:6-13` 定义 `BiliWatchHistoryService`，唯一实现是同文件
-  `BiliAPIClient`；唯一调用者是同 target 的
-  `BiliWatchHistoryRepository.service`（`BiliWatchHistoryRepository.swift:4-19`）。
-  审计基线 tests 没有该 protocol fake，也没有第二个 service；2026-07-28 为冻结删除前的
-  error mapping 新增一个定点 fake，它是测试取证脚手架，不形成 production 边界。
+- **当前实现（文件、符号、调用链）**：已实施删除。
+  `BiliWatchHistoryRepository` 直持 `BiliAPIClient`，`AppEnvironment.live` 以
+  `client:` 注入；`BiliWatchHistoryService` 及其 test fake 已不存在。Application
+  `WatchHistoryRepository` port 继续隔离 Feature／UseCase 与 BiliAPI。
 - **它声称提供的职责**：让 repository 不直接持有 concrete client；但两者都在
   `BiliAPI` target，protocol 没有隔离 endpoint、平台、安全或 target。
 - **外部事实来源**：不适用；一实现/一调用者本身不是删除条件，关键是这里连测试或 target
@@ -140,19 +138,19 @@
 - **真实行为证据**：实际调用仍为
   `BiliWatchHistoryRepository → BiliAPIClient.watchHistory`；protocol 不改变 runtime
   行为或错误 mapping。
-- **本地测试实际证明的范围**：history UseCase/Feature tests fake 的是
-  `WatchHistoryRepository`（真实 Application 边界）。新增 repository 定点测试确认
-  authentication、restriction、service code、transport、invalid response、未知错误及
-  cancellation 的现有映射，共 9 个 case 通过；它冻结行为，不证明内部 service protocol
-  必须存在。
-- **判断：删除** `BiliWatchHistoryService`，repository 直接持有 `BiliAPIClient`。
+- **本地测试实际证明的范围**：history UseCase/Feature tests 继续 fake
+  `WatchHistoryRepository`（真实 Application 边界）。repository 定点测试现以可控
+  concrete `BiliAPIClient` transport 驱动 authentication、restriction、service code、
+  HTTP／未知 transport、invalid request 与 cancellation，共 9 项通过；完整 app gate
+  通过。
+- **判断：删除已实施**。`BiliWatchHistoryService` 已删除，repository 直接持有
+  `BiliAPIClient`。
   `BiliWatchHistoryRepository` 自身仍保留，因为它把 `BiliAPIError` 映射到 Application
   error，并实现真实 `WatchHistoryRepository` port。
 - **风险：影响、触发条件、可恢复性**：未来若出现第二个底层 history client，可在有事实
   时重新引入；当前删除只减少同 target dispatch，build 可完全恢复遗漏。
-- **下一步最小验证**：前置 error mapping 测试已补齐。实施时将测试输入改由可控
-  `BiliAPIClient` transport 产生，避免为测试保留 `BiliWatchHistoryService`，再删除
-  protocol、让 repository 直接持有 concrete client，并运行 package gate。
+- **下一步最小验证**：本项关闭；未来只有出现第二个真实 history client 或新的 target
+  边界时才重新登记抽象，不为测试便利恢复 protocol。
 - **与其他 finding 的依赖或冲突**：不与 ARCH-001 的
   `WatchHistoryRepository` 保留结论冲突。
 

@@ -18,7 +18,7 @@
 | `HTTPTransport` | `URLSessionTransport` | 网络 transport；测试和 probes 有 fake |
 | `HTTPTransportInvalidating` | `URLSessionTransport` | session 取消和替换 |
 | `PlayerEngine` | `AVPlayerEngine` | 更宽的播放控制与 event stream |
-| `BiliWatchHistoryService` | `BiliAPIClient` | 同 BiliAPI target 的 history 转发 |
+| `BiliWatchHistoryService`（已删除） | `BiliAPIClient` | ARCH-004 证实为同 target 一对一转发 |
 | `DanmakuPresentationControlling` | `DanmakuPresentationController` | Feature controls 与 renderer/session |
 | `DanmakuPresentationSink` | `DanmakuPresentationController` | session 输出与呈现 |
 | `DanmakuRenderingBackend` | `CoreAnimationDanmakuRenderer` | 调度／presentation 与 Core Animation |
@@ -37,8 +37,9 @@
 | `SubtitleUseCase` | identity／track 输入验证和 reset 转发 | `SubtitleViewModel` |
 | `DanmakuSegmentUseCase` | segment index／identity 与返回 index 验证 | `DanmakuSession` |
 
-20 个手写 protocol 已完成调用者／实现／删除后变化复核。当前明确删除候选为
-`PlayerEngine` 及其无人消费的 event stream、`BiliWatchHistoryService`；`SubtitleUseCase`
+初始 20 个手写 protocol 已完成调用者／实现／删除后变化复核；ARCH-004 已删除
+`BiliWatchHistoryService`，当前余 19 个。明确删除候选只剩 `PlayerEngine` protocol；
+其 event stream 已被 MP-006 证明有失败出口职责，不随 protocol 删除。`SubtitleUseCase`
 仍持有 Application 输入 guard，只有 guard 获得等价唯一归属后才是删除候选。测试 fake
 数量只能证明可替换点被使用，不能单独证明 production protocol 必要。
 

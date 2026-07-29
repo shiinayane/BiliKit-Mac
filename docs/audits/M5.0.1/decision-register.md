@@ -71,7 +71,7 @@
 | ARCH-001 | 保留有平台/网络/安全边界的 Application ports | 独立复核通过 | 无 | 待定 |
 | ARCH-002 | 五个 UseCase 均保留；SubtitleUseCase 不进入当前清理 | 非法 identity/track 的 6 个定点 case 均在 repository 前失败 | guard 尚无更安全且更简单的唯一归属 | 已验证，保留 |
 | ARCH-003 | 只删除零调用者 PlayerEngine protocol/conformance；保留 event stream | 调用图仍无 protocol-typed 使用；MP-006 测试已实际消费 events 并定义持续失败出口 | PlayerState 合并与 production 失败消费由 MP-006 裁决 | 已验证，待实施 |
-| ARCH-004 | 删除 BiliWatchHistoryService，repository 直持 concrete client | 当前仍是一实现／一 production 调用者；9 个 error/cancellation mapping case 已冻结 | 实施时测试须改由可控 transport 驱动，不能为 fake 保留 protocol | 已验证，待实施 |
+| ARCH-004 | 删除 `BiliWatchHistoryService`，repository 直持 concrete client | 已实施：`BiliWatchHistoryRepository` 直持 `BiliAPIClient`，composition 已迁移；7 类 API mapping、Cancellation 和未知 transport 共 9 项由可控 concrete client 路径通过；完整 app gate（237 package tests、App build、App unit tests）通过 | 未改变 Application `WatchHistoryRepository` port、cursor 编排或错误分类 | 实施完成 |
 | ARCH-005 | 保留 Networking/Auth/Danmaku 平台协议 | 独立复核通过 | invalidation 是否强制见 CONC-005 | 待定 |
 | ARCH-006 | 保留 11 个 library target | 独立复核通过并修正计数 | 10 个 library product 的发布面见工程线 | 待定 |
 | ARCH-007 | 保留 4 个不同权限/证据 probe | 独立复核通过 | output/transport 必须按隐私 finding 整改 | 待定 |

@@ -125,7 +125,7 @@ struct AppEnvironment {
         )
         return AppEnvironment(
             repository: BiliGuestRepository(client: api),
-            historyRepository: BiliWatchHistoryRepository(service: api),
+            historyRepository: BiliWatchHistoryRepository(client: api),
             subtitleRepository: BiliSubtitleRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: AVPlayerEngine(),

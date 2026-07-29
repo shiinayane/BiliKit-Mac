@@ -3,14 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-public protocol BiliWatchHistoryService: Sendable {
-    func watchHistory(
-        after continuation: WatchHistoryContinuation?,
-        pageSize: Int
-    ) async throws -> WatchHistoryPage
-}
-
-public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalidating {
+public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
             preconditionFailure("Static API base URL must be valid")
