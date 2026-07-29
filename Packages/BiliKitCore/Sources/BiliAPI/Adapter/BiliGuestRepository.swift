@@ -34,11 +34,24 @@ public struct BiliGuestRepository: GuestContentRepository {
 
     public func playback(
         for bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        try await mapError {
+            try await client.playback(for: bvid, cid: cid)
+        }
+    }
+
+    public func playback(
+        for bvid: String,
         cid: Int64,
         quality: Int
     ) async throws -> VideoPlayback {
         try await mapError {
-            try await client.playback(for: bvid, cid: cid, quality: quality)
+            try await client.playback(
+                for: bvid,
+                cid: cid,
+                quality: quality
+            )
         }
     }
 

@@ -33,11 +33,11 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
 
 - **finding_id**：`MP-001`
 - **审计线与涉及能力**：媒体播放；DASH→HLS、HLS Multivariant Playlist。
-- **当前实现**：`DASHToHLSBridge.prepare` 选择一组视频/音频 representation，
-  `HLSPlaylistBuilder.makeMasterPlaylist` 只生成一个 `EXT-X-STREAM-INF`，写入
-  `BANDWIDTH`、`CODECS` 和 `AUDIO`，但没有 `RESOLUTION` 或 `FRAME-RATE`。带宽是 API
-  两个 representation 的 `bandwidth` 相加，未证明其等同于 HLS peak segment bit
-  rate。
+- **当前实现**：8A/8B 已实施。`DASHToHLSBridge.prepare` 并行准备服务返回的全部 AVC
+  视频 representation 与共享音频；`HLSPlaylistBuilder` 从 SIDX byte range 与 duration
+  计算 peak／average segment bit rate，生成含 `BANDWIDTH`、`AVERAGE-BANDWIDTH`、
+  `RESOLUTION`、`FRAME-RATE`、`CODECS` 和 `AUDIO` 的多 variant master。生产
+  `AVPlayerEngine` 把它交给单一 `AVPlayerItem`；显式 representation 选择仅保留给探针。
 - **它声称提供职责**：把 DASH representation 暴露为 AVPlayer 可识别的 HLS master。
 - **外部事实来源**：[HLS Authoring Specification for Apple Devices](https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices/)
   对 Apple 设备 profile 要求含视频 variant 提供 `RESOLUTION`、`FRAME-RATE`、
@@ -76,18 +76,16 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
   相同路径仍是高档启动、自动降档、恢复 45 秒未升档。因此尺寸/帧率不是本样本恢复升档
   的缺失开关；但单样本、未证实的 HLS bandwidth 值和 AVPlayer 不公开的 hysteresis
   仍不足以否决其他条件或更长窗口升档。
-- **判断**：**替换**。V1 产品裁决为只提供“自动”画质，不提供手动档位；因此 master
-  必须按 Apple 设备 profile 正确表达多个可用 variant，把运行时选择交给 AVPlayer ABR。
-  当前相加值仅是“未证明符合 peak aggregate 语义”，不能直接定性为数值错误。V1 不需要
+- **判断**：**替换已实施**。V1 只提供“自动”画质，不提供手动档位；master 已按
+  Apple 设备 profile 表达多个可用 variant，把运行时选择交给 AVPlayer ABR。V1 不需要
   为精确手动画质设计 item/player 切换。
 - **风险**：中。AVPlayer 当前可能宽容接受，但错误属性会影响兼容性、轨道选择和诊断；
   增加多 variant 又会扩大播放策略范围，不能顺手进行。
-- **下一步最小验证**：先补齐生产模型目前丢弃的 width/height/frameRate，并从真实
-  representation 计算 Apple profile 所需字段；再用脱敏 playlist 运行 Apple
-  `mediastreamvalidator`。真实同 item 自动降档已经建立；生产实施后仍需以最终
-  `BANDWIDTH`/`AVERAGE-BANDWIDTH` 在多条内容上复核稳态选择与 stall。恢复升档不再阻塞
-  V1；V1 不承诺固定秒数回到最高档，也不为此设置 `preferredPeakBitRate`、
-  `startsOnFirstEligibleVariant`、额外 buffer 参数或自制强制升档。
+- **下一步最小验证**：当前 Xcode 未提供 Apple `mediastreamvalidator`，因此该项记录为
+  工具边界；未来工具可用时以脱敏 production playlist 补跑。真实最终 master 的多内容
+  switching set、稳态选择与 stall 作为后续现场验证。恢复升档不阻塞 V1；V1 不承诺固定
+  秒数回到最高档，也不设置 `preferredPeakBitRate`、`startsOnFirstEligibleVariant`、
+  额外 buffer 参数或自制强制升档。
 - **依赖/冲突**：依赖 API 审计确认 width/height/frameRate/bandwidth 的远端语义；
   V1 自动画质要求本轮实现自适应码率，但不要求任何手动清晰度 UI。
 
@@ -429,10 +427,10 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
 
 - **finding_id**：`MP-011`
 - **审计线与涉及能力**：播放 API、画质能力、codec 选择与 HLS variant 建模。
-- **当前实现**：`BiliAPIClient.playback` 默认请求 `qn=32`，固定使用 `fnval=16`、
-  `fourk=0`，并在解码后只保留 AVC 视频；`AVPlayerEngine` 仍只从返回集合中选一个视频
-  representation 交给 bridge。当前生产路径既没有请求 4K，也没有把服务端的完整画质集合
-  暴露为自适应或手动清晰度选项。
+- **当前实现**：`BiliAPIClient.playback` 默认请求 `qn=120`、`fnval=976`、
+  `fourk=1`，解码后仍只保留 AVC 视频；`AVPlayerEngine` 把返回的全部 AVC
+  representation 交给多 variant bridge，由单一 item 自动选择。Application／Feature
+  不暴露固定 quality；显式 quality 仅留在 BiliAPI 诊断边界。
 - **它声称提供职责**：按请求质量取得一组可播放 DASH representation，并转换为
   AVPlayer 可消费的媒体。
 - **外部事实来源**：B 站没有供第三方客户端依赖的公开稳定 playurl 契约；因此
@@ -455,7 +453,8 @@ deleted，因此只可作为历史线索，不计入“两份活跃 OSS”的当
   对返回 codec 的硬件解码与性能满足产品要求。
 - **判断**：B 站当前 endpoint 和该内容的能力目录明确支持 quality 120（4K），但
   **匿名身份不能取得 4K 媒体 representation**。普通登录与会员身份能否实际取得 4K
-  **尚不能判断**；当前 BiliKit 能覆盖 4K 则可明确判为 **不能**。
+  **尚不能判断**。BiliKit 已能在服务实际返回 AVC 4K 且设备可播放时把它纳入自动 ABR，
+  但这不等于产品保证 4K。
 - **风险**：若 UI 仅依据固定编号宣称 4K，会把内容能力、账户权限和 codec 支持混为一谈；
   若继续只保留 AVC，也可能在服务端主要返回 HEVC/AV1 高画质时错误降档。
 - **下一步最小验证**：匿名矩阵已完成。登录态仍有产品决策价值，但现有 authorizer

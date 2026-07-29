@@ -209,8 +209,7 @@ struct BiliAPIClientTests {
 
         let playback = try await client.playback(
             for: "BV1FixtureA1",
-            cid: 900_001,
-            quality: 32
+            cid: 900_001
         )
 
         let video = try #require(playback.manifest.videoRepresentations.first)
@@ -233,7 +232,9 @@ struct BiliAPIClientTests {
             url: request.url,
             resolvingAgainstBaseURL: false
         )?.queryItems
-        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "16")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
     }
 

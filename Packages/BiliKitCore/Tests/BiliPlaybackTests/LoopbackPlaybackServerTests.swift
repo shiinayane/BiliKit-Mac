@@ -501,9 +501,15 @@ struct LoopbackPlaybackServerTests {
             mediaURI: audioMediaURL
         )
         let masterPlaylist = try HLSMasterPlaylistBuilder().build(
-            video: videoFixture.representation,
-            videoPlaylistURI: videoPlaylistURL,
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: videoFixture.representation,
+                    index: videoFixture.index,
+                    playlistURI: videoPlaylistURL
+                )
+            ],
             audio: audioFixture.representation,
+            audioIndex: audioFixture.index,
             audioPlaylistURI: audioPlaylistURL
         )
         _ = try server.register(
@@ -1438,9 +1444,15 @@ struct LoopbackPlaybackServerTests {
             mediaURI: audioMediaURL
         )
         let masterPlaylist = try HLSMasterPlaylistBuilder().build(
-            video: videoFixture.representation,
-            videoPlaylistURI: videoPlaylistURL,
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: videoFixture.representation,
+                    index: videoFixture.index,
+                    playlistURI: videoPlaylistURL
+                )
+            ],
             audio: audioFixture.representation,
+            audioIndex: audioFixture.index,
             audioPlaylistURI: audioPlaylistURL
         )
 
@@ -1584,6 +1596,121 @@ struct LoopbackPlaybackServerTests {
         #expect(requests.contains { $0.url == backupAudio })
         #expect(item.status == .readyToPlay)
         _ = player
+    }
+
+    @Test
+    @MainActor
+    func engineBuildsOneAdaptiveItemFromAllVideoRepresentations() async throws {
+        let lowVideoData = try fixtureBase64Data(
+            named: "video-avc-128x72-4s-global-sidx.mp4"
+        )
+        let highVideoData = try fixtureBase64Data(
+            named: "video-avc-256x144-4s-global-sidx.mp4"
+        )
+        let audioData = try fixtureBase64Data(
+            named: "audio-aac-4s-global-sidx.mp4"
+        )
+        let lowURL = try #require(
+            URL(string: "https://adaptive.example/video-low")
+        )
+        let highURL = try #require(
+            URL(string: "https://adaptive.example/video-high")
+        )
+        let audioURL = try #require(
+            URL(string: "https://adaptive.example/audio")
+        )
+        let lowVideo = try makeFixtureTrack(
+            id: 64,
+            kind: .video,
+            codecs: "avc1.4d400a",
+            bandwidth: 50_000,
+            data: lowVideoData,
+            primaryURL: lowURL,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 128,
+                height: 72,
+                frameRate: 24
+            )
+        ).representation
+        let highVideo = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400c",
+            bandwidth: 100_000,
+            data: highVideoData,
+            primaryURL: highURL,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 256,
+                height: 144,
+                frameRate: 24
+            )
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 32_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [
+                lowURL: lowVideoData,
+                highURL: highVideoData,
+                audioURL: audioData,
+            ],
+            failingURLs: []
+        )
+        let engine = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(transport: transport)
+            )
+        )
+        engine.player.isMuted = true
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1AdaptiveFixture",
+            cid: 900_002
+        )
+
+        try await engine.load(
+            PlaybackRequest(
+                manifest: PlaybackManifest(
+                    videoRepresentations: [highVideo, lowVideo],
+                    audioRepresentations: [audio]
+                )
+            ),
+            identity: identity
+        )
+        let item = try #require(engine.player.currentItem)
+        let itemIdentity = ObjectIdentifier(item)
+        let asset = try #require(item.asset as? AVURLAsset)
+        let variants = try await asset.load(.variants)
+
+        #expect(variants.count == 2)
+        #expect(
+            Set(
+                variants.compactMap {
+                    $0.videoAttributes?.presentationSize
+                }
+            ) == [
+                CGSize(width: 128, height: 72),
+                CGSize(width: 256, height: 144),
+            ]
+        )
+        #expect(
+            await transport.requests.contains { $0.url == lowURL }
+        )
+        #expect(
+            await transport.requests.contains { $0.url == highURL }
+        )
+
+        engine.play()
+        try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
+        #expect(
+            engine.player.currentItem.map(ObjectIdentifier.init)
+                == itemIdentity
+        )
+        engine.stop()
     }
 
     @Test
@@ -2216,15 +2343,31 @@ struct LoopbackPlaybackServerTests {
         bandwidth: Int,
         data: Data,
         primaryURL: URL? = nil,
-        backupURLs: [URL] = []
+        backupURLs: [URL] = [],
+        videoAttributes: VideoRepresentationAttributes? = nil
     ) throws -> (representation: MediaRepresentation, index: SegmentIndex) {
         let sidx = try #require(firstTopLevelBox(named: "sidx", in: data))
+        let resolvedVideoAttributes: VideoRepresentationAttributes? =
+            if kind == .video {
+                if let videoAttributes {
+                    videoAttributes
+                } else {
+                    try VideoRepresentationAttributes(
+                        width: 128,
+                        height: 72,
+                        frameRate: 24
+                    )
+                }
+            } else {
+                nil
+            }
         let representation = MediaRepresentation(
             id: id,
             kind: kind,
             codecs: codecs,
             mimeType: kind == .video ? "video/mp4" : "audio/mp4",
             bandwidth: bandwidth,
+            videoAttributes: resolvedVideoAttributes,
             primaryURL: try primaryURL ?? #require(
                 URL(string: "https://fixture.invalid/\(id)")
             ),

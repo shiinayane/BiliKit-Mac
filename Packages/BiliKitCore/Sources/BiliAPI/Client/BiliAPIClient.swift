@@ -130,7 +130,7 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
     public func playback(
         for bvid: String,
         cid: Int64,
-        quality: Int = 32
+        quality: Int = 120
     ) async throws -> VideoPlayback {
         guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
             throw BiliAPIError.invalidRequest
@@ -142,9 +142,9 @@ public actor BiliAPIClient: BiliWatchHistoryService, AuthenticatedSessionInvalid
                 URLQueryItem(name: "bvid", value: bvid),
                 URLQueryItem(name: "cid", value: String(cid)),
                 URLQueryItem(name: "qn", value: String(quality)),
-                URLQueryItem(name: "fnval", value: "16"),
+                URLQueryItem(name: "fnval", value: "976"),
                 URLQueryItem(name: "fnver", value: "0"),
-                URLQueryItem(name: "fourk", value: "0"),
+                URLQueryItem(name: "fourk", value: "1"),
             ],
             referer: referer
         )

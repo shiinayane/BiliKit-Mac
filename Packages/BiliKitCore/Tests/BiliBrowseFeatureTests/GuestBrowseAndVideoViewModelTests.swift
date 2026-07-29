@@ -373,8 +373,7 @@ private actor WorksetRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
     }
@@ -490,8 +489,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
     }
@@ -543,8 +541,7 @@ private actor FeedSwitchingRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
     }
@@ -612,8 +609,7 @@ private actor RetryingSearchRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
     }
@@ -657,8 +653,7 @@ private actor SwitchingGuestRepositoryStub: GuestContentRepository {
 
     func playback(
         for bvid: String,
-        cid: Int64,
-        quality: Int
+        cid: Int64
     ) async throws -> VideoPlayback {
         fixture(for: bvid).playback
     }

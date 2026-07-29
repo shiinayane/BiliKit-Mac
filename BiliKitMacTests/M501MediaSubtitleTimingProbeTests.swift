@@ -562,15 +562,10 @@ final class M501MediaSubtitleTimingProbeTests: XCTestCase {
         guard let contentLength = loaded.completeMediaLength else {
             throw M501ProbeError.missingMediaLength
         }
-        let candidates =
-            [loaded.sourceURL]
-            + representation.urlCandidates.filter {
-                $0 != loaded.sourceURL
-            }
         return try server.register(
             .remote(
                 try LoopbackRemoteResource(
-                    candidateURLs: candidates,
+                    sourceURL: loaded.sourceURL,
                     contentLength: contentLength,
                     contentType: representation.mimeType,
                     headers: headers

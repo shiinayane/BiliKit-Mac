@@ -64,34 +64,56 @@ struct HLSPlaylistBuilderTests {
             id: 80,
             kind: .video,
             codecs: "avc1.640032",
-            bandwidth: 2_000_000
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 60_000.0 / 1_001.0
+            )
         )
         let audio = try makeRepresentation(
             id: 30_280,
             kind: .audio,
             codecs: "mp4a.40.2",
-            bandwidth: 192_000
+            bandwidth: nil
+        )
+        let videoIndex = try makeIndex(
+            byteCounts: [1_000, 2_000],
+            durations: [1, 1]
+        )
+        let audioIndex = try makeIndex(
+            byteCounts: [500, 500],
+            durations: [1, 1]
         )
 
         let playlist = try HLSMasterPlaylistBuilder().build(
-            video: video,
-            videoPlaylistURI: try #require(
-                URL(string: "bilikit-playlist://video/80.m3u8")
-            ),
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: try #require(
+                        URL(string: "bilikit-playlist://video/80.m3u8")
+                    )
+                )
+            ],
             audio: audio,
+            audioIndex: audioIndex,
             audioPlaylistURI: try #require(
                 URL(string: "bilikit-playlist://audio/30280.m3u8")
             )
         )
 
         #expect(playlist.contains("GROUP-ID=\"audio-30280\""))
-        #expect(playlist.contains("BANDWIDTH=2192000"))
+        #expect(playlist.contains("BANDWIDTH=20000"))
+        #expect(playlist.contains("AVERAGE-BANDWIDTH=16000"))
+        #expect(playlist.contains("RESOLUTION=1920x1080"))
+        #expect(playlist.contains("FRAME-RATE=59.940"))
         #expect(playlist.contains("CODECS=\"avc1.640032,mp4a.40.2\""))
         #expect(playlist.contains("bilikit-playlist://video/80.m3u8"))
     }
 
     @Test
-    func rejectsMasterPlaylistWhenBandwidthIsUnavailable() throws {
+    func rejectsMasterPlaylistWithoutVideoAttributes() throws {
         let video = try makeRepresentation(
             id: 80,
             kind: .video,
@@ -104,18 +126,28 @@ struct HLSPlaylistBuilderTests {
             codecs: "mp4a.40.2",
             bandwidth: 192_000
         )
+        let index = try makeIndex(
+            byteCounts: [1_000],
+            durations: [1]
+        )
 
         #expect(
-            throws: HLSPlaylistBuilderError.missingBandwidth(
+            throws: HLSPlaylistBuilderError.missingVideoAttributes(
                 representationID: 80
             )
         ) {
             try HLSMasterPlaylistBuilder().build(
-                video: video,
-                videoPlaylistURI: #require(
-                    URL(string: "bilikit-playlist://video/80.m3u8")
-                ),
+                videoVariants: [
+                    HLSVideoVariant(
+                        representation: video,
+                        index: index,
+                        playlistURI: #require(
+                            URL(string: "bilikit-playlist://video/80.m3u8")
+                        )
+                    )
+                ],
                 audio: audio,
+                audioIndex: index,
                 audioPlaylistURI: #require(
                     URL(string: "bilikit-playlist://audio/30280.m3u8")
                 )
@@ -127,7 +159,8 @@ struct HLSPlaylistBuilderTests {
         id: Int,
         kind: MediaKind,
         codecs: String,
-        bandwidth: Int?
+        bandwidth: Int?,
+        videoAttributes: VideoRepresentationAttributes? = nil
     ) throws -> MediaRepresentation {
         MediaRepresentation(
             id: id,
@@ -135,11 +168,42 @@ struct HLSPlaylistBuilderTests {
             codecs: codecs,
             mimeType: kind == .video ? "video/mp4" : "audio/mp4",
             bandwidth: bandwidth,
+            videoAttributes: videoAttributes,
             primaryURL: try #require(URL(string: "https://cdn.example/\(id)")),
             segmentBase: SegmentBase(
                 initialization: try MediaByteRange(start: 0, endInclusive: 99),
                 index: try MediaByteRange(start: 100, endInclusive: 155)
             )
+        )
+    }
+
+    private func makeIndex(
+        byteCounts: [Int64],
+        durations: [UInt32]
+    ) throws -> SegmentIndex {
+        #expect(byteCounts.count == durations.count)
+        var offset: Int64 = 0
+        let references = try zip(byteCounts, durations).map {
+            byteCount,
+            duration in
+            defer { offset += byteCount }
+            return SegmentReference(
+                byteRange: try MediaByteRange(
+                    start: offset,
+                    endInclusive: offset + byteCount - 1
+                ),
+                duration: duration,
+                startsWithSAP: true,
+                sapType: 1,
+                sapDeltaTime: 0
+            )
+        }
+        return SegmentIndex(
+            referenceID: 1,
+            timescale: 1,
+            earliestPresentationTime: 0,
+            firstOffset: 0,
+            references: references
         )
     }
 }

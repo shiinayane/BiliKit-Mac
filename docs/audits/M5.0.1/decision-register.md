@@ -11,7 +11,7 @@
 | M501-API-004 | 保留五项 Keychain 凭据；refresh 属于新产品／威胁模型 | 独立复核完成并收紧 | 当前 refresh 协议事实不足 | v1 不做 refresh token；后续可按真实协议和产品需求实施 |
 | M501-API-005 | 保留 endpoint 级 Cookie allowlist 与 production redirect reject | 独立复核完成；已限定 production composition | 公开 API client 默认 transport 不自动具备同一边界 | 待定 |
 | M501-API-006 | 当前 endpoints 保留；WBI playurl 尚不能判断 | API／媒体交叉复核通过 | 非 WBI/WBI playurl 的当前响应差异 | 待定 |
-| MP-001 | 按 Apple 设备 profile 替换 master 元数据模型，并以同 item 原生 ABR 提供自动画质 | 8A 已实施：production 模型与 API adapter 保留并校验 `width`、`height`、分数／整数 `frame_rate`；非法值失败关闭；23 项定点测试及 package gate（234 tests，0 known issues）通过。既有 synthetic 与真实 quality 16/32 均已观察到同 item 自动降档 | 8B 尚未实施：production 仍只生成单 variant；`BANDWIDTH`／`AVERAGE-BANDWIDTH` 计算、switching set 兼容性和 validator 尚未关闭；恢复升档时机无公开控制契约 | V1 只提供自动画质，不提供手动档位；不为恢复升档设置 peak cap、首档或额外 buffer 参数，使用 AVPlayer 默认策略 |
+| MP-001 | 按 Apple 设备 profile 替换 master 元数据模型，并以同 item 原生 ABR 提供自动画质 | 8A/8B 已实施：production 保留并校验视频尺寸／帧率；从 SIDX 实际 byte range 与 duration 计算峰值／平均码率；把全部可用 AVC representation 组成同一 master，由单一 `AVPlayerItem` 原生选择；production 双 variant 回归与完整 app gate（235 package tests，0 known issues）通过 | Apple `mediastreamvalidator` 当前工具链不可用；多内容 switching set、真实最终 master、登录态 4K 和恢复升档时机仍未验证，不作为 V1 自动模式完成条件 | V1 自动画质实施完成；不提供手动档位，不设置 peak cap、首档或额外 buffer 参数，使用 AVPlayer 默认策略 |
 | MP-002 | 当前 direct SIDX v0 子集保留；完整时间线正确性尚不能判断 | 主 Agent 已完成一个公开匿名样本的音视频结构 probe | 单样本均为 v0/direct/EPT 0；仍缺不同内容与 representation 形态 | 待定 |
 | MP-003 | representation 固定到索引来源；来源失败时终止当前 representation | 已将 remote resource 收紧为单一 `sourceURL`；SIDX 准备阶段仍可选择成功候选，后续 Range 只访问所选来源；2 项定点测试及 package gate（230 tests，1 个其他 known issue）通过 | 单一来源已消除跨对象拼接；真实 CDN 内容不一致与中途失败发生率仍未知 | 固定来源实施完成；V1 不自动整项重准备 |
 | MP-004 | 替换统一 502；按 range 类型分别制定 HTTP 策略 | 已实施：single closed/open/suffix 返回 206，不可满足返回 416＋完整长度，in-memory 忽略 multi/未知 unit，HEAD 忽略 Range；remote 语法错误不触发 upstream；2 项定点测试及 package gate（230 tests，8 个既有 known issues）通过 | AVPlayer 是否实际发送边界 Range 只影响发生率，不影响已完成的 HTTP 机制裁决 | 实施完成 |
@@ -21,7 +21,7 @@
 | MP-008 | wire-level 空 message 合法；endpoint 空 body 语义尚不能判断 | 独立复核推翻原“替换”判断 | 缺脱敏 HTTP 现场样本 | 待定 |
 | MP-009 | 当前 session/identity 内记忆失败 segment，不自动重试；重建 session 后清除 | 已实施：恒失败后再接收 128 次 timeline update 仍只请求当前／下一段各一次；替换 identity 可重新请求，stop 后零请求，同 identity 重建 session 可恢复；7 项定点测试及 package gate（232 tests，0 known issues）通过 | 真实错误类型、发生率及用户感知仍未知；V1 不引入次数、timeout 或 backoff 参数 | 实施完成 |
 | MP-010 | 保留基础时间源；字幕 overlap/location 尚不能判断 | 主 Agent 复核，待产品／无障碍线 | 缺不含文本的结构分布证据 | 待定 |
-| MP-011 | 服务端 4K 可用性按内容与身份现场验证；当前客户端不宣称覆盖 | 代码、四个 OSS 与匿名最小现场请求已交叉核对 | 匿名目录有 120 但无 120 representation；登录/会员态仍受 playurl Cookie allowlist 裁决阻塞 | V1 自动模式可在服务实际返回且设备可播放时把 4K 纳入 ABR；不提供 4K 手动选择 |
+| MP-011 | 服务端 4K 可用性按内容与身份现场验证；客户端只消费服务实际返回的可播放 representation | production 默认以 `qn=120`、`fnval=976`、`fourk=1` 请求能力集合，并会把返回的 AVC 档位纳入原生 ABR；代码、四个 OSS 与匿名最小现场请求已交叉核对 | 匿名目录有 120 但无 120 representation；登录/会员态仍受 playurl Cookie allowlist 裁决阻塞；HEVC/AV1 未纳入本轮 | V1 不宣称保证 4K；服务实际返回且当前 codec／设备可播放时自动纳入，不提供手动选择 |
 | MP-012 | 否决单 player item 替换为“用户无感”；双 player/surface 与 snapshot 遮罩降为后续候选 | Apple SDK、B 站 Web 当前脚本、三个活跃 OSS、一次失败反证与五次 synthetic AVPlayer 对照已完成 | Web 普通画质为单 video/MSE fast switch；OSS 未证明真正双 surface/audio；本地双 player 尚未测真实交接与资源峰值 | V1 不做精确手动画质，因此不继续投入双 player；有实际需求后再重新验证 |
 | MP-013 | 只对 trim 后空白弹幕逐条跳过；其他字段失败语义与全部资源上限保持不变 | 真实中段定位、四个 OSS 对照、定点回归与同一中段 production probe 均通过 | 其他无效字段的真实发生率与安全分类仍未知，不预先扩大容错 | 用户授权最小定点修复，已实施并验证 |
 | MP-014 | decoder 边界保留事件并取 `colorRgb & 0x00FFFFFF`；普通彩色与会员渐变未来以独立模型字段扩展 | 三个 protobuf OSS 对照；宽色值定点回归；同一真实第 6 段成功解码／调度 843 条 | 非公开协议仍未知高位服务语义；当前 renderer 尚未显示普通彩色或会员渐变 | 用户授权最小定点修复，已实施并通过真实复核 |
