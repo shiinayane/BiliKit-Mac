@@ -40,7 +40,7 @@
 | M501-PRIV-006 | fixture 未见明显违规；不能用 secret scan 关闭整体隐私 | 独立复核并降低 provenance 强度 | 二进制 fixture 来源仍是仓库自述 | 待定 |
 | M501-PRIV-007 | 保留 loopback bind/token/path；严格 Host 校验已实施 | 独立 nc 子进程确认合法 authority 200，错误 token/path 404，任意、缺失、重复、异常 Host 400，断连清零且 stop 后端口关闭；package gate 224 项通过 | 不提供本机进程身份认证；listener cancel 到端口拒绝连接是异步传播 | 当前验证完成，重大安全暂停解除 |
 | UI-001 | 保留 TabView/NavigationStack/单 player owner | 独立复核并校正与 Music 的差异 | BiliKit 切 Tab 主动退出深层播放 | 理想行为为保留每 Tab 深层 destination；实现复杂时允许推迟到 v1 之后 |
-| UI-002 | 用挂在实际导航内容上的 `.searchable` 与 `.onSubmit(of: .search)` 替换 `CenteredSearchField` | 已实施：production modifier 挂在 `SearchTabRoot` 内容上，AppKit bridge 与专用 spike 已删除；Xcode 26+ 使用 `.toolbarPrincipal`，Xcode 16.4 因 SDK 无该成员而编译期回退 `.toolbar`；既有签名 XCUI 已证明 principal 在 1320 pt 居中、Return 与 Escape | 旧工具链构建的搜索框不保证居中；原生字段无旧 AX identifier，Command-F 不自动聚焦；当前 1080 pt、Tab 往返、清除按钮与 VoiceOver XCUI 因本机 worker 未 materialize 未执行 | 实施完成；保持最低工具链可编译，不承诺旧 SDK 构建与 principal 布局等价 |
+| UI-002 | 用挂在实际导航内容上的 `.searchable` 与 `.onSubmit(of: .search)` 替换 `CenteredSearchField` | 已实施：production modifier 挂在 `SearchTabRoot` 内容上，AppKit bridge 与专用 spike 已删除；Xcode 26+ 使用 `.toolbarPrincipal`，Xcode 16.4 因 SDK 无该成员而编译期回退 `.toolbar`；CI run `30432618397` 的 Xcode 16.4／26.5 完整 App Gate 均通过；既有签名 XCUI 已证明 principal 在 1320 pt 居中、Return 与 Escape | 旧工具链构建的搜索框不保证居中；原生字段无旧 AX identifier，Command-F 不自动聚焦；当前 1080 pt、Tab 往返、清除按钮与 VoiceOver XCUI 因本机 worker 未 materialize 未执行 | 实施完成；保持最低工具链可编译，不承诺旧 SDK 构建与 principal 布局等价 |
 | UI-003 | 保留 tabViewSidebarBottomBar 与账户位置 | 独立复核通过 | 键盘焦点/反馈见 AX-007 | 待定 |
 | UI-004 | 保留每 Tab 语义 ScrollPosition | 独立复核通过 | 搜索/历史/resize 真实路径未测 | 待定 |
 | UI-005 | 保留 GeometryReader 职责；1080 pt 下限未决 | 独立复核通过 | 缺窄窗口与大文字证据 | 待定 |
