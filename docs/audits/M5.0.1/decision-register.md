@@ -19,7 +19,7 @@
 | MP-006 | 增加 item-identity scoped 的持续失败出口 | 已持续观察 item status 与 failed-to-end；同 item 只发布一次稳定 `PlaybackItemFailed`，旧 item 通知被忽略，首次失败/替换/stop 均清 observer；2 项定点测试及 package gate（230 tests，2 个其他 known issues）通过 | 真实错误类型、发生率及 access/error log 诊断仍未采集 | 实施完成 |
 | MP-007 | 保留共享播放器时间线；zero-tolerance seek 尚不能判断 | 主 Agent 复核，待性能线 | 缺 seek latency/落点误差测量 | 待定 |
 | MP-008 | wire-level 空 message 合法；endpoint 空 body 语义尚不能判断 | 独立复核推翻原“替换”判断 | 缺脱敏 HTTP 现场样本 | 待定 |
-| MP-009 | 将失败重试从 timeline update 解耦并设有界策略 | 恒失败对照确认 128 次 update 产生 256 次同 identity 请求 | 真实错误类型、callback 频率和具体重试上限未定 | 待定 |
+| MP-009 | 当前 session/identity 内记忆失败 segment，不自动重试；重建 session 后清除 | 已实施：恒失败后再接收 128 次 timeline update 仍只请求当前／下一段各一次；替换 identity 可重新请求，stop 后零请求，同 identity 重建 session 可恢复；7 项定点测试及 package gate（232 tests，0 known issues）通过 | 真实错误类型、发生率及用户感知仍未知；V1 不引入次数、timeout 或 backoff 参数 | 实施完成 |
 | MP-010 | 保留基础时间源；字幕 overlap/location 尚不能判断 | 主 Agent 复核，待产品／无障碍线 | 缺不含文本的结构分布证据 | 待定 |
 | MP-011 | 服务端 4K 可用性按内容与身份现场验证；当前客户端不宣称覆盖 | 代码、四个 OSS 与匿名最小现场请求已交叉核对 | 匿名目录有 120 但无 120 representation；登录/会员态仍受 playurl Cookie allowlist 裁决阻塞 | V1 自动模式可在服务实际返回且设备可播放时把 4K 纳入 ABR；不提供 4K 手动选择 |
 | MP-012 | 否决单 player item 替换为“用户无感”；双 player/surface 与 snapshot 遮罩降为后续候选 | Apple SDK、B 站 Web 当前脚本、三个活跃 OSS、一次失败反证与五次 synthetic AVPlayer 对照已完成 | Web 普通画质为单 video/MSE fast switch；OSS 未证明真正双 surface/audio；本地双 player 尚未测真实交接与资源峰值 | V1 不做精确手动画质，因此不继续投入双 player；有实际需求后再重新验证 |
@@ -65,7 +65,7 @@
 | AX-007 | 保留原生账户 Button；焦点/反馈未决 | 独立复核通过 | 缺键盘/VoiceOver/contrast 路径 | 待定 |
 | M501-PERF-001 | 保留 M4 历史快照及当前树同类快照；均不当全产品无泄漏保证 | 当前树 80 events/s × 1081 秒跨 4 段 PASS，stop 后计数归零、RSS 回落 | 合成长测不含真实 AVPlayer/CDN，单机 Debug | 保留可比较快照；禁止过度声明 |
 | M501-PERF-002 | 清理路径保留；当前重复路径未观察到持续累积 | 10 次播放往返、3 次窗口循环、Allocations/RSS/lsof 组合完成 | 无 Memory Graph，不能宣称零 retain cycle | 保留；不作全局无泄漏声明 |
-| M501-PERF-003 | 弹幕失败改为与 timeline 解耦的有界策略 | 独立复核通过 | 无需先制造真实服务风暴 | 待定 |
+| M501-PERF-003 | 弹幕失败改为 session-scoped terminal marker，与 timeline 解耦 | MP-009 已实施；128 次 timeline update 后请求数保持为 2，替换、stop 与重建路径均有确定性回归 | 未制造真实服务风暴；不证明真实错误发生率或恢复体验 | 实施完成 |
 | M501-PERF-004 | 播放器弱网/错误性能未决 | 独立复核通过 | 缺本地可控 stall/seek/error trace | 待定 |
 | M501-PERF-005 | V1 不造图片框架并统一使用 AsyncImage；完整重建缺少复用作为后续基线 | 真实 App 短样本无 250 ms hang；完整重建 50/50 重请求，LazyVGrid 回滚 5/6 样本无新增请求 | resize、真实 Tab、Release/macOS15、内存类别未覆盖 | 用户已裁决；V1 关闭，Xcode 27 后与 STATE-005 共同重评 |
 | ARCH-001 | 保留有平台/网络/安全边界的 Application ports | 独立复核通过 | 无 | 待定 |
