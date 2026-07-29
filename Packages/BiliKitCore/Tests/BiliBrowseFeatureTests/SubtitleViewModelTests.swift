@@ -18,7 +18,7 @@ struct SubtitleViewModelTests {
     )
 
     @Test
-    func timelineDrivesCueAcrossPauseRateAndBackwardSeek() async throws {
+    func catalogDefaultsToOffAndSelectedTrackFollowsTimeline() async throws {
         let repository = SubtitleRepositoryStub()
         let timeline = SubtitleTimelineStub()
         let model = makeModel(repository: repository, timeline: timeline)
@@ -28,7 +28,13 @@ struct SubtitleViewModelTests {
 
         #expect(model.state == .ready(identity))
         #expect(model.tracks.count == 2)
+        #expect(model.selectedTrackID == nil)
+        #expect(await repository.cueRequestCount() == 0)
+
+        model.selectTrack("track-standard")
+        await model.waitForCurrentTask()
         #expect(model.selectedTrackID == "track-standard")
+        #expect(await repository.cueRequestCount() == 1)
 
         timeline.publish(snapshot(position: 2, state: .playing))
         try await waitForCue("第一条手写字幕", in: model)
@@ -54,11 +60,38 @@ struct SubtitleViewModelTests {
     }
 
     @Test
+    func retryAfterTrackFailureRetriesTheSelectedTrack() async {
+        let repository = SubtitleRepositoryStub(cueFailuresRemaining: 1)
+        let model = makeModel(
+            repository: repository,
+            timeline: SubtitleTimelineStub()
+        )
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-standard")
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .failed(identity, .unavailable))
+        #expect(model.selectedTrackID == "track-standard")
+        #expect(await repository.cueRequestCount() == 1)
+
+        model.retry()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .ready(identity))
+        #expect(model.selectedTrackID == "track-standard")
+        #expect(await repository.cueRequestCount() == 2)
+    }
+
+    @Test
     func turningOffAndSwitchingTrackReplacesPresentedCue() async throws {
         let repository = SubtitleRepositoryStub()
         let timeline = SubtitleTimelineStub()
         let model = makeModel(repository: repository, timeline: timeline)
         model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-standard")
         await model.waitForCurrentTask()
         timeline.publish(snapshot(position: 2, state: .playing))
         try await waitForCue("第一条手写字幕", in: model)
@@ -83,6 +116,8 @@ struct SubtitleViewModelTests {
         let model = makeModel(repository: repository, timeline: timeline)
 
         model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-standard")
         try await waitUntil {
             model.state == .loadingTrack(identity)
                 && model.selectedTrackID == "track-standard"
@@ -99,6 +134,8 @@ struct SubtitleViewModelTests {
         #expect(model.currentCueText == "自动生成字幕")
 
         model.selectVideo(oldIdentity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-standard")
         await model.waitForCurrentTask()
         timeline.publish(
             snapshot(position: 2, identity: oldIdentity, state: .playing)
@@ -127,6 +164,8 @@ struct SubtitleViewModelTests {
         let model = makeModel(repository: repository, timeline: timeline)
 
         model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-\(identity.cid)")
         do {
             try await waitUntilAsync {
                 await repository.oldCueRequestStarted()
@@ -136,6 +175,8 @@ struct SubtitleViewModelTests {
 
             model.selectVideo(oldIdentity)
             #expect(model.currentCueText == nil)
+            await model.waitForCurrentTask()
+            model.selectTrack("track-\(oldIdentity.cid)")
             await model.waitForCurrentTask()
             timeline.publish(
                 snapshot(
@@ -181,6 +222,8 @@ struct SubtitleViewModelTests {
 
         model.selectVideo(identity)
         await model.waitForCurrentTask()
+        model.selectTrack("track-\(identity.cid)")
+        await model.waitForCurrentTask()
         #expect(model.state == .ready(identity))
 
         do {
@@ -194,6 +237,13 @@ struct SubtitleViewModelTests {
             try await waitUntilAsync {
                 await repository.staleResetCompleted()
             }
+            try await waitUntil {
+                model.state == .ready(identity)
+                    && model.tracks.contains {
+                        $0.id == "track-\(identity.cid)"
+                    }
+            }
+            model.selectTrack("track-\(identity.cid)")
             try await waitUntilAsync {
                 await repository.repeatedCueRequestStarted()
             }
@@ -233,6 +283,8 @@ struct SubtitleViewModelTests {
 
         model.selectVideo(identity)
         await model.waitForCurrentTask()
+        model.selectTrack("track-\(identity.cid)")
+        await model.waitForCurrentTask()
         #expect(model.state == .ready(identity))
 
         do {
@@ -248,6 +300,13 @@ struct SubtitleViewModelTests {
             try await waitUntilAsync {
                 await repository.staleResetCompleted()
             }
+            try await waitUntil {
+                model.state == .ready(identity)
+                    && model.tracks.contains {
+                        $0.id == "track-\(identity.cid)"
+                    }
+            }
+            model.selectTrack("track-\(identity.cid)")
             try await waitUntilAsync {
                 await repository.repeatedCueRequestStarted()
             }
@@ -276,6 +335,8 @@ struct SubtitleViewModelTests {
         )
 
         model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-\(identity.cid)")
         await model.waitForCurrentTask()
         #expect(model.state == .ready(identity))
 
@@ -314,6 +375,8 @@ struct SubtitleViewModelTests {
         )
 
         model.selectVideo(identity)
+        await model.waitForCurrentTask()
+        model.selectTrack("track-\(identity.cid)")
         await model.waitForCurrentTask()
         #expect(model.state == .ready(identity))
 
@@ -444,6 +507,8 @@ struct SubtitleViewModelTests {
 private actor SubtitleRepositoryStub: SubtitleRepository {
     private let tracksResult: Result<[SubtitleTrack], SubtitleApplicationError>
     private let cueDelays: [String: Duration]
+    private var cueRequests = 0
+    private var cueFailuresRemaining: Int
 
     init(
         tracks: Result<[SubtitleTrack], SubtitleApplicationError> = .success([
@@ -460,10 +525,12 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
                 kind: .automatic
             ),
         ]),
-        cueDelays: [String: Duration] = [:]
+        cueDelays: [String: Duration] = [:],
+        cueFailuresRemaining: Int = 0
     ) {
         tracksResult = tracks
         self.cueDelays = cueDelays
+        self.cueFailuresRemaining = cueFailuresRemaining
     }
 
     func tracks(
@@ -476,6 +543,11 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
         for trackID: String,
         identity: PlaybackItemIdentity
     ) async throws -> [SubtitleCue] {
+        cueRequests += 1
+        if cueFailuresRemaining > 0 {
+            cueFailuresRemaining -= 1
+            throw SubtitleApplicationError.unavailable
+        }
         if let delay = cueDelays[trackID] {
             try await Task.sleep(for: delay)
         }
@@ -503,6 +575,10 @@ private actor SubtitleRepositoryStub: SubtitleRepository {
     }
 
     func reset(for identity: PlaybackItemIdentity) async {}
+
+    func cueRequestCount() -> Int {
+        cueRequests
+    }
 }
 
 private actor LateCueSubtitleRepository: SubtitleRepository {
