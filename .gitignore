@@ -21,3 +21,7 @@ DerivedData/
 # nor redistribution inputs, and the directory is intentionally absent from the
 # Xcode project. See docs/README.md for the policy.
 /references/
+
+# Personal project-learning notes. They describe one local checkout and are not
+# a project contract or release input.
+/docs/_local/
