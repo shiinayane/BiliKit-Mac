@@ -49,6 +49,9 @@ BiliKit App = App/ + Composition/ + Platform/
 - 修复优先复现问题；异步测试使用事件、状态或 continuation 判断完成，固定时间只作超时。
 - 外部 CLI 在受限网络中报告认证或连接失败时，先在获准联网的等价只读环境复核，
   不要直接要求用户重新登录或修改凭据。
+- 需要隔离开发时，默认新建独立的 Codex managed Worktree 对话；不要在现有对话中手动
+  执行 `git worktree add`，也不要通过切换工作目录跨工作树修改。只有用户明确要求时才使用
+  Local、Handoff、permanent worktree 或手工 Git worktree。
 - 保留已有工作树改动。没有用户明确要求时，不提交、不推送、不创建 PR、不改写 Git 历史。
 - reviewer、subagent、Plan mode 和专项 Skill 都按任务需要使用，不是必经流程。
 
