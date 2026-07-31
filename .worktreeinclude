@@ -1,0 +1,3 @@
+# Give newly created Codex managed worktrees a read-only snapshot of the local
+# project-learning notes. The Local checkout remains their source of truth.
+docs/_local/
