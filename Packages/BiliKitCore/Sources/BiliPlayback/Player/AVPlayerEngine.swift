@@ -232,7 +232,7 @@ public final class AVPlayerEngine:
         timeline.explicitSeekCompleted(at: seconds)
     }
 
-    /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle`。
+    /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
         loadGeneration = UUID()
         loadTask?.cancel()
