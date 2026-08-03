@@ -1,6 +1,10 @@
 import BiliApplication
 import SwiftUI
 
+/// 把视频准备状态连接到字幕与弹幕的播放 identity 生命周期。
+///
+/// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
+/// `nil`，由 `.task(id:)` 完整 reset 两条支线。网络任务仍由各 ViewModel 自己拥有。
 public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: GuestVideoViewModel
     private let subtitleModel: SubtitleViewModel

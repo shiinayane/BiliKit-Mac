@@ -2,6 +2,10 @@ import AVKit
 import BiliDanmaku
 import SwiftUI
 
+/// 把唯一 `AVPlayer` 宿主与字幕、弹幕 overlay 组合为稳定的播放 surface。
+///
+/// 响应式页面可以重排这个 View，但不应创建第二个 player host；AppKit host 的销毁会
+/// 主动断开 player 并释放弹幕 surface ownership。
 struct PlayerHostView<Overlay: View>: View {
     let player: AVPlayer
     let danmakuRenderer: CoreAnimationDanmakuRenderer
@@ -99,6 +103,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         }
     }
 
+    /// 在 SwiftUI 销毁宿主时先撤销弹幕 surface，再断开 AVPlayer，避免旧 host 继续呈现。
     static func dismantleNSView(
         _ view: DanmakuPlayerView,
         coordinator: Coordinator

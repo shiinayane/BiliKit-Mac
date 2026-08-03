@@ -3,6 +3,11 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
+/// Bilibili endpoint/DTO adapter；把远端协议限制在 `BiliAPI`，并返回稳定模型。
+///
+/// 匿名请求永不经过 authorizer。只有显式认证 endpoint 才临时授权；响应在解码前还要满足
+/// 状态、大小与 Content-Type 边界。actor 隔离可变 transport/WBI cache；跨 `await` 可重入，
+/// 用户意图的取消与写回代次仍由上层 owner 管理。
 public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
@@ -120,6 +125,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.map { try $0.model() }
     }
 
+    /// 取得匿名 AVC/AAC DASH 清单与媒体所需的非认证 header，不下载媒体正文。
     public func playback(
         for bvid: String,
         cid: Int64,
@@ -272,6 +278,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.model(pageSize: pageSize)
     }
 
+    /// 登出时取消旧 transport 中的请求、换入干净 session，并丢弃可能来自登录会话的 WBI key。
     public func invalidateAuthenticatedSession() {
         if let invalidating = transport as? any HTTPTransportInvalidating {
             invalidating.invalidateAndCancel()

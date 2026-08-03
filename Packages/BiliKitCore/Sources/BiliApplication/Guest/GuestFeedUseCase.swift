@@ -11,6 +11,7 @@ public enum GuestFeedContent: Sendable, Equatable {
     case search(query: String, page: SearchPage)
 }
 
+/// 在进入 adapter 前验证并规范化 Feed 意图的一次性用例。
 public struct GuestFeedUseCase: Sendable {
     private let repository: any GuestContentRepository
 
@@ -18,6 +19,7 @@ public struct GuestFeedUseCase: Sendable {
         self.repository = repository
     }
 
+    /// 执行一个独立请求；取消和“哪次意图仍可写回 UI”由上层 ViewModel 保留。
     public func execute(_ request: GuestFeedRequest) async throws -> GuestFeedContent {
         switch request {
         case .popular(let page, let pageSize):

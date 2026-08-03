@@ -15,6 +15,7 @@ public protocol DanmakuSegmentRepository: Sendable {
     ) async throws -> DanmakuSegment
 }
 
+/// 验证弹幕分段请求边界，并拒绝 adapter 返回与请求 index 不一致的结果。
 public struct DanmakuSegmentUseCase: Sendable {
     public static let maximumSegmentIndex = 10_000
 

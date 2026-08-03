@@ -24,6 +24,7 @@ struct WebCredentialCookie: Codable, Sendable, Equatable,
     var customMirror: Mirror { Mirror(self, children: [:], displayStyle: .struct) }
 }
 
+/// 经白名单、结构与大小验证的完整 Web Cookie 集合；描述与反射均不暴露值。
 struct WebCredential: Sendable, Equatable,
     CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
 {
@@ -76,6 +77,7 @@ enum WebCredentialCodingError: Error, Sendable, Equatable {
     case unsupportedVersion(Int)
 }
 
+/// 为 Keychain payload 提供版本化编码，并在解码后重新验证全部 Cookie 约束。
 enum WebCredentialCodec {
     static let currentVersion = 1
 

@@ -11,6 +11,10 @@ public enum BiliRequestAuthorizationError: Error, Sendable, Equatable {
     case validationUnavailable
 }
 
+/// 从 Keychain 按需读取 Cookie，并只授权代码内精确列出的 Bilibili API 请求。
+///
+/// 调用方声明“需要认证”并不足够：scheme、host、port、method、path、query 与现有 Cookie
+/// header 都会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
     private static let maximumResponseSize = 256 * 1_024
     private static let navigationValidationURL: URL = {
@@ -48,6 +52,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         }
     }
 
+    /// 返回附带短生命周期 Cookie header 的新请求；原请求不会被原地共享或缓存。
     public func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
         guard Self.isAllowed(request) else {
             throw BiliRequestAuthorizationError.requestNotAllowed
@@ -102,6 +107,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         transportInvalidator?()
     }
 
+    /// 验证已存凭据当前是否仍登录；明确失效会清除，验证不可用则保留并抛错。
     public func restoreLoginState() async throws -> Bool {
         let request = HTTPRequest(
             url: Self.navigationValidationURL,

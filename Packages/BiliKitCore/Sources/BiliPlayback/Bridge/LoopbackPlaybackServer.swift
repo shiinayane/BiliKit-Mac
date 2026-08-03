@@ -69,6 +69,10 @@ private enum LoopbackRangeRequest {
     case unsatisfiable
 }
 
+/// 向 AVPlayer 暴露最小、会话隔离的 HTTP/1.1 HLS/Range surface。
+///
+/// Server 只绑定 `127.0.0.1`，要求随机 path 与精确 Host，并对远端媒体强制 Range。
+/// `stop` 会原子移除 listener、route、connection 与上游 Task，可安全重复调用。
 public final class LoopbackPlaybackServer: @unchecked Sendable {
     private static let maximumHeaderBytes = 16 * 1_024
 
@@ -96,6 +100,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         stop()
     }
 
+    /// 启动并等待 listener 得到实际端口；调用方取消会同步撤销未完成的启动。
     public func start() async throws {
         if lock.withLock({ self.listener != nil && self.port != nil }) {
             return
@@ -168,6 +173,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
+    /// 把资源登记在本 session token 下；返回 URL 不泄露远端来源。
     public func register(
         _ resource: LoopbackPlaybackResource,
         at relativePath: String
@@ -194,6 +200,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         )
     }
 
+    /// 关闭 listener、所有活动连接与远端 Range Task，并清空内存 route。
     public func stop() {
         let state = lock.withLock {
             () -> (

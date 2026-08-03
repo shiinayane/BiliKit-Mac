@@ -5,6 +5,10 @@ import Observation
 
 @MainActor
 @Observable
+/// 拥有恢复、登录、轮询与登出的单一 UI Task，并仅发布非秘密认证状态和二维码图像。
+///
+/// generation 拒绝旧操作写回；轮询同时受总时限与次数上限约束。Cookie、QR key 与完整 URL
+/// 始终留在 `BiliAuth` adapter，失败重试也保持原操作类型，避免把登出失败误当成登录失败。
 public final class AuthenticationViewModel {
     public private(set) var state: AuthenticationState = .signedOut
     public private(set) var qrCodeImage: CGImage?
@@ -132,6 +136,7 @@ public final class AuthenticationViewModel {
         logout()
     }
 
+    /// 在 sheet/窗口生命周期结束时取消临时登录工作，但不会把已登录状态当作可取消挑战。
     public func cancelTransientWork() {
         switch state {
         case .restoring, .requestingQRCode, .awaitingScan, .awaitingConfirmation,

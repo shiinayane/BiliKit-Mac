@@ -1,6 +1,10 @@
 import BiliNetworking
 import Foundation
 
+/// 拥有一次 Web QR challenge、轮询序列与尚未持久化的候选凭据。
+///
+/// generation 隔离新旧二维码，poll ID 隔离同一二维码的并发轮询；取消或未知协议状态会
+/// 失败关闭并清除临时秘密。成功响应仍须登录态验证后才能写入 Keychain。
 public actor WebQRLoginSession {
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://passport.bilibili.com") else {
@@ -194,6 +198,7 @@ public actor WebQRLoginSession {
         }
     }
 
+    /// 使 challenge、待验证凭据及所有旧轮询结果失效，但不修改已持久化凭据。
     public func cancel() {
         generation &+= 1
         latestPollID &+= 1
@@ -212,6 +217,7 @@ public actor WebQRLoginSession {
         return try await validate(pendingCredential)
     }
 
+    /// 一次性消费候选凭据，验证登录态与有效期后才提交 Keychain。
     public func validateAndStorePendingCredential() async throws -> Bool {
         let pendingCredential = try takePendingCredential()
         guard try await validate(pendingCredential) else { return false }

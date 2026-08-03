@@ -9,6 +9,9 @@ public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
     case missingCompleteMediaLength(representationID: Int)
 }
 
+/// 一次已启动的 loopback HLS 会话；其生命周期就是底层 server 的生命周期。
+///
+/// owner 必须在替换播放项或失败时调用 `stop`；`deinit` 只是最后一道幂等清理保障。
 public final class PreparedPlaybackAsset: @unchecked Sendable {
     public let url: URL
     private let server: LoopbackPlaybackServer
@@ -27,6 +30,9 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
     }
 }
 
+/// 把 DASH representation 的 SIDX/Range 语义转换为 AVPlayer 可消费的本机 HLS 会话。
+///
+/// Bridge 只构造内存 playlist 与按需代理，不下载完整媒体；任一步失败都会停止已启动 server。
 public struct DASHToHLSBridge: Sendable {
     private let rangeClient: HTTPRangeClient
     private let indexLoader: RepresentationIndexLoader
@@ -64,6 +70,7 @@ public struct DASHToHLSBridge: Sendable {
         )
     }
 
+    /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
     public func prepare(
         videos: [MediaRepresentation],
         audio: MediaRepresentation,

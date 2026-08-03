@@ -1,6 +1,7 @@
 import BiliModels
 import Foundation
 
+/// 跨播放器、字幕与弹幕共享的播放项目身份；日志描述会主动隐藏真实内容标识。
 public struct PlaybackItemIdentity: Sendable, Hashable {
     public let bvid: String
     public let cid: Int64
@@ -27,6 +28,9 @@ public enum PlaybackTimelineState: Sendable, Equatable {
     case failed
 }
 
+/// 平台无关的媒体时间事实。
+///
+/// `discontinuityGeneration` 在换项、seek 或时间跳变时前进，消费者不能只比较秒数来判断连续性。
 public struct PlaybackTimelineSnapshot: Sendable, Equatable {
     public let identity: PlaybackItemIdentity?
     public let positionSeconds: Double
@@ -67,12 +71,14 @@ public struct PlaybackTimelineSnapshot: Sendable, Equatable {
 }
 
 @MainActor
+/// 字幕和弹幕消费的唯一播放时钟；新订阅者应先得到当前快照。
 public protocol PlaybackTimelineProviding: AnyObject {
     var currentTimelineSnapshot: PlaybackTimelineSnapshot { get }
     func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot>
 }
 
 @MainActor
+/// Feature 可驱动的最小播放命令边界；具体 AVPlayer 和 bridge 生命周期留在 adapter。
 public protocol PlaybackControlling: AnyObject {
     func load(
         _ playback: VideoPlayback,
@@ -87,6 +93,7 @@ package struct PlaybackTimelineItemToken: Sendable, Equatable {
 }
 
 @MainActor
+/// 以不可复用 item token 拒绝旧 AVPlayer observer 写回的时间线状态容器。
 package final class PlaybackTimelineStore {
     package private(set) var currentSnapshot = PlaybackTimelineSnapshot.idle
     package var subscriberCount: Int { continuations.count }
@@ -102,6 +109,7 @@ package final class PlaybackTimelineStore {
         }
     }
 
+    /// 创建只保留最新值的订阅，并在消费方结束时移除 continuation。
     package func updates() -> AsyncStream<PlaybackTimelineSnapshot> {
         let subscriptionID = UUID()
         let stream = AsyncStream<PlaybackTimelineSnapshot>.makeStream(

@@ -1,3 +1,4 @@
+/// Feature 可观察的非秘密认证状态；不携带二维码 payload、Cookie 或 Keychain 细节。
 public enum AuthenticationState: Sendable, Equatable {
     case signedOut
     case restoring
@@ -18,6 +19,9 @@ public enum AuthenticationFailure: Error, Sendable, Equatable {
     case credentialUnavailable
 }
 
+/// 认证 adapter 暴露给 Presentation 的用户意图边界。
+///
+/// 每次调用返回 adapter 的当前安全投影；调用方仍负责 UI Task 的取消与迟到结果隔离。
 public protocol AuthenticationServicing: Sendable {
     func restore() async -> AuthenticationState
     func requestQRCode() async -> AuthenticationState
@@ -27,6 +31,7 @@ public protocol AuthenticationServicing: Sendable {
     func logout() async -> AuthenticationState
 }
 
+/// 登出时由认证 owner 通知仍可能持有已授权在途请求的会话。
 public protocol AuthenticatedSessionInvalidating: Sendable {
     func invalidateAuthenticatedSession() async
 }

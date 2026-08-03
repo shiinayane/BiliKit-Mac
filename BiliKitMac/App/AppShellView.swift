@@ -3,6 +3,10 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
+/// 描述窗口的原生 Tab/NavigationStack 外壳，同时保留每个来源独立的路径与滚动位置。
+///
+/// 系统返回通过 path Binding 回写 coordinator，使播放停止与视觉导航保持同一事实来源；
+/// SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
 struct AppShellView: View {
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel

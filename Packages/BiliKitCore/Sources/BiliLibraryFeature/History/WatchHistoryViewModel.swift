@@ -20,6 +20,9 @@ public enum WatchHistoryState: Sendable, Equatable {
 
 @MainActor
 @Observable
+/// 拥有当前登录会话的历史工作集、分页 continuation 与请求 generation。
+///
+/// `reset` 会清除个性化内容；普通路由停用只取消在途请求，并在分页中断时保留已显示条目。
 public final class WatchHistoryViewModel {
     public private(set) var state: WatchHistoryState = .idle
 
@@ -125,6 +128,7 @@ public final class WatchHistoryViewModel {
         }
     }
 
+    /// 取消请求并从内存删除全部个性化历史，供登出与窗口关闭调用。
     public func reset() {
         generation += 1
         task?.cancel()
@@ -137,6 +141,7 @@ public final class WatchHistoryViewModel {
         task = nil
     }
 
+    /// 停用页面请求而不抹掉已加载条目；迟到结果仍由 generation 拒绝。
     public func deactivateRoute() {
         generation += 1
         task?.cancel()

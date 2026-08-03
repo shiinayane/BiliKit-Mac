@@ -1,5 +1,6 @@
 import Foundation
 
+/// 在诊断输出前遮蔽已知敏感 query/header；它不是发送请求前的授权或来源校验器。
 public struct HTTPLogRedactor: Sendable {
     private let sensitiveQueryKeys: Set<String>
     private let sensitiveHeaderNames: Set<String>

@@ -12,6 +12,10 @@ import Foundation
 import SwiftUI
 
 @MainActor
+/// App 的 Composition Root：创建具体 adapter，并把它们收窄为 Feature 所需的 port。
+///
+/// 这里刻意同时看见 API、认证、播放和弹幕实现。一个环境只创建一个 `AVPlayerEngine`，
+/// 字幕、弹幕、视频模型与 AppKit player host 必须共享它的播放 identity 和时间线。
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     private let guestContentRepository: any GuestContentRepository
@@ -101,6 +105,10 @@ struct AppEnvironment {
         )
     }
 
+    /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
+    ///
+    /// 只有显式声明为已认证的 API 请求才经过 authorizer；登出还会替换 API 的
+    /// ephemeral transport，使旧认证会话中的在途请求失效。
     static func live() -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {

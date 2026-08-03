@@ -140,6 +140,10 @@ public enum HTTPRangeClientError: Error, Sendable, Equatable {
     case allCandidatesFailed([HTTPRangeAttempt])
 }
 
+/// 逐候选执行严格 HTTP Range 读取的无状态 client。
+///
+/// 成功必须同时满足公共 HTTPS、`206`、精确 `Content-Range` 与正文长度；取消立即传播，
+/// 不会伪装成候选失败后继续请求其他 CDN。
 public struct HTTPRangeClient: Sendable {
     private let transport: any HTTPTransport
     private let urlPolicy: PublicHTTPSURLPolicy
@@ -166,6 +170,10 @@ public struct HTTPRangeClient: Sendable {
         self.urlPolicy = urlPolicy
     }
 
+    /// 按顺序尝试来源并返回首个完全验证的响应。
+    ///
+    /// 失败记录包含候选 URL 与分类结果，但不保留响应正文或底层 Error 文本；因此不能直接
+    /// 把 `HTTPRangeAttempt` 当作可公开日志，调用方仍须按敏感远端 URL 处理。
     public func fetch(
         from candidateURLs: [URL],
         range: HTTPByteRange,

@@ -28,6 +28,10 @@ public struct DanmakuRendererStatistics: Sendable, Equatable {
 }
 
 @MainActor
+/// 在调度 batch 与具体 renderer 之间执行 identity/generation 检查、lane 分配与容量治理。
+///
+/// surface owner ID 防止旧 `AVPlayerView` 的迟到 resize/detach 操作清空新宿主；换 identity、
+/// seek generation 或显式清屏都会同步清空 allocator 与 backend。
 public final class DanmakuPresentationController:
     DanmakuPresentationSink,
     DanmakuRenderingBackendDelegate
@@ -56,6 +60,7 @@ public final class DanmakuPresentationController:
         )
     }
 
+    /// 只呈现与快照 identity 和 discontinuity generation 完全匹配的 batch。
     public func apply(_ update: DanmakuPresentationUpdate) {
         guard let updateIdentity = update.snapshot.identity else {
             stopPresentation()

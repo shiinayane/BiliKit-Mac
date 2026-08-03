@@ -14,6 +14,10 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
 }
 
 @MainActor
+/// AVPlayer、DASH→HLS 会话与统一播放时间线的唯一资源 owner。
+///
+/// 每次 load 用 UUID generation 取代旧准备流程；迟到 bridge/readiness 结果必须自毁而不能
+/// 安装到当前 player。`stop` 同时释放 item、任务、loopback server、observer 与时间线 identity。
 public final class AVPlayerEngine:
     PlaybackControlling,
     PlaybackTimelineProviding
@@ -62,6 +66,7 @@ public final class AVPlayerEngine:
         timeline.updates()
     }
 
+    /// 准备并安装一个新播放项目；调用方取消会沿 generation 边界清理本次全部资源。
     public func load(
         _ request: PlaybackRequest,
         identity: PlaybackItemIdentity
@@ -205,6 +210,7 @@ public final class AVPlayerEngine:
         try timeline.setRate(rate)
     }
 
+    /// 执行精确 seek，并只为一次用户 seek 发布一个 discontinuity generation。
     public func seek(to time: Duration) async throws {
         guard player.currentItem != nil else {
             throw AVPlayerEngineError.seekFailed
@@ -226,6 +232,7 @@ public final class AVPlayerEngine:
         timeline.explicitSeekCompleted(at: seconds)
     }
 
+    /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle`。
     public func stop() {
         loadGeneration = UUID()
         loadTask?.cancel()

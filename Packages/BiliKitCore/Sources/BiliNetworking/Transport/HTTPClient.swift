@@ -40,6 +40,7 @@ public struct HTTPResponse: Sendable, Equatable {
     }
 }
 
+/// 不包含业务或认证语义的 HTTP 传输边界，便于按用途注入独立 session。
 public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
@@ -53,6 +54,7 @@ public enum HTTPClientError: Error, Sendable, Equatable {
     case unacceptableStatusCode(Int)
 }
 
+/// 只统一成功状态检查的轻量 client；来源、大小、Content-Type 与解码限制仍由调用方负责。
 public actor HTTPClient {
     private let transport: any HTTPTransport
 
@@ -72,6 +74,9 @@ public actor HTTPClient {
     }
 }
 
+/// `URLSession` adapter；实际 Cookie、缓存与重定向行为取决于注入的 session。
+///
+/// 默认 `.shared` 不提供认证、媒体或字幕所需的隔离保证；这些调用方必须注入用途专属配置。
 public final class URLSessionTransport: HTTPTransport, HTTPTransportInvalidating,
     @unchecked Sendable
 {
