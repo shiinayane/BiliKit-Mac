@@ -17,6 +17,10 @@ struct GuestFeedPresentation: Sendable, Equatable {
 
 @MainActor
 @Observable
+/// 拥有热门与最后一次搜索两份独立工作集，以及当前路由的请求 Task。
+///
+/// `generation + activeRequestIdentity` 共同阻止已取消或已切路由的结果写回；进入播放页时
+/// 普通 deactivate 会保留当前两份工作集，`reset` 则清空两者；不同请求会替换对应工作集。
 public final class GuestBrowseViewModel {
     public private(set) var state: GuestFeedState = .idle
     private(set) var activeRequestIdentity: GuestFeedRequest?
@@ -91,6 +95,7 @@ public final class GuestBrowseViewModel {
         refresh(request)
     }
 
+    /// 停止当前路由工作，但把规范化后的状态保存回对应工作集供返回时恢复。
     public func deactivateRoute() {
         generation += 1
         loadTask?.cancel()
@@ -103,6 +108,7 @@ public final class GuestBrowseViewModel {
         refreshError = nil
     }
 
+    /// 取消请求并丢弃两份内存工作集，适用于窗口关闭而非普通页面 push/pop。
     public func reset() {
         deactivateRoute()
         popularWorkset = FeedWorkset()

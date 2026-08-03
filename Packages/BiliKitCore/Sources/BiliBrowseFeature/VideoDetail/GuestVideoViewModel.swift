@@ -16,6 +16,9 @@ public enum GuestVideoState: Sendable, Equatable {
 
 @MainActor
 @Observable
+/// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一 generation。
+///
+/// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
     public private(set) var state: GuestVideoState = .idle
 
@@ -32,6 +35,7 @@ public final class GuestVideoViewModel {
         self.playback = playback
     }
 
+    /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
     public func loadVideo(_ bvid: String) {
         generation += 1
         let currentGeneration = generation
@@ -48,6 +52,7 @@ public final class GuestVideoViewModel {
         }
     }
 
+    /// 取消内容准备并停止播放 adapter，作为离开播放目的地的最终清理边界。
     public func reset() {
         generation += 1
         loadTask?.cancel()

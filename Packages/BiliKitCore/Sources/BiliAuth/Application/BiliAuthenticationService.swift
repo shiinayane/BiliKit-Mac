@@ -2,6 +2,10 @@ import BiliApplication
 import CoreGraphics
 import Foundation
 
+/// 认证流程 owner，串行协调 QR session、凭据验证、Keychain authorizer 与登出。
+///
+/// `generation` 隔离旧操作；`requiresLogout` 阻止凭据状态不确定时伪装成安全 signed-out。
+/// 新 QR 登录须校验并持久化成功才发布 `.signedIn`；恢复路径会重新验证既存凭据。
 public actor BiliAuthenticationService: AuthenticationServicing {
     private var loginSession: WebQRLoginSession
     private var authorizer: BiliCredentialRequestAuthorizer
@@ -38,6 +42,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 
+    /// 从 Keychain 恢复后再次向登录态 endpoint 验证；临时网络失败不会删除凭据。
     public func restore() async -> AuthenticationState {
         generation &+= 1
         let operationGeneration = generation
@@ -115,6 +120,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         return state
     }
 
+    /// 消费一次待提交凭据，在同一 QR generation 内完成远端验证与原子持久化。
     public func finalizeLogin() async -> AuthenticationState {
         guard state == .finalizing else { return state }
         let operationGeneration = generation
@@ -156,6 +162,9 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         return state
     }
 
+    /// 先取消临时工作并删除本地凭据，再失效所有认证 session，最后发布退出结果。
+    ///
+    /// 删除 Keychain 失败时仍重建网络 session，但保持失败状态，不能声称本机已安全退出。
     public func logout() async -> AuthenticationState {
         generation &+= 1
         let activeSession = loginSession

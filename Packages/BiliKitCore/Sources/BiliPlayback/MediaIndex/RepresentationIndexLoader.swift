@@ -18,6 +18,7 @@ public struct LoadedSegmentIndex: Sendable, Equatable {
     }
 }
 
+/// 从候选 CDN 严格读取并解析 SIDX，同时保留实际成功的来源供媒体代理复用。
 public struct RepresentationIndexLoader: Sendable {
     private let rangeClient: HTTPRangeClient
     private let parser: SIDXParser

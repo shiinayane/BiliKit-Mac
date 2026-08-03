@@ -9,6 +9,9 @@ public enum SubtitleApplicationError: Error, Sendable, Equatable {
     case unavailable
 }
 
+/// 字幕目录与正文的 identity-scoped port。
+///
+/// `reset` 是 adapter 清除当前身份 URL 映射的生命周期操作，不是一般缓存清理。
 public protocol SubtitleRepository: Sendable {
     func tracks(
         for identity: PlaybackItemIdentity
@@ -22,6 +25,7 @@ public protocol SubtitleRepository: Sendable {
     func reset(for identity: PlaybackItemIdentity) async
 }
 
+/// 在 adapter 前验证字幕 identity/track 输入，同时保持取消原样传播。
 public struct SubtitleUseCase: Sendable {
     private let repository: any SubtitleRepository
 

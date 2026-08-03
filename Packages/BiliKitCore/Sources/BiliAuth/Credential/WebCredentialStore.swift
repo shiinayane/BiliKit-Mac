@@ -14,6 +14,7 @@ enum WebCredentialStoreError: Error, Sendable, Equatable {
     case operationFailed(OSStatus)
 }
 
+/// Web 凭据的唯一持久化 adapter，使用不可同步、仅本机解锁时可读的 Data Protection Keychain。
 struct KeychainWebCredentialStore: WebCredentialStoring, Sendable {
     static let productionService = "com.shiinayane.BiliKitMac.web-auth"
     static let productionAccount = "web-credential"
@@ -50,6 +51,7 @@ struct KeychainWebCredentialStore: WebCredentialStoring, Sendable {
         }
     }
 
+    /// 新增或原子替换固定 service/account 下的单个版本化 credential item。
     func save(_ credential: WebCredential) throws {
         let encoded: Data
         do {

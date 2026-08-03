@@ -11,6 +11,10 @@ import BiliLibraryFeature
 import SwiftUI
 
 @MainActor
+/// 保存一个窗口内必须同代且跨 SwiftUI `body` 重算保持稳定的对象图。
+///
+/// 尤其是视频、字幕、弹幕模型与 `playerContent` 必须共享 `AppEnvironment` 中同一个
+/// `AVPlayerEngine`；分别重建会造成画面、时间线与 overlay 指向不同播放项目。
 private final class AppWindowOwner {
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
@@ -71,6 +75,10 @@ private final class AppWindowOwner {
     }
 }
 
+/// 窗口级生命周期入口，连接导航激活、认证变化与最终资源清理。
+///
+/// 页面 View 只表达局部意图；关窗时需要在这里清除 Browse/History 工作集、认证临时任务，
+/// 并借导航路径清空统一停止播放、字幕和弹幕资源。
 struct AppRootView: View {
     @State private var windowOwner: AppWindowOwner
     @State private var isAuthenticationPresented = false
@@ -187,6 +195,7 @@ struct AppRootView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 提交规范化搜索意图；编辑中的 draft 本身不会触发网络请求。
     private func performSearch() {
         guard !normalizedSearchDraft.isEmpty else { return }
         navigationCoordinator.searchDraft = normalizedSearchDraft
@@ -205,6 +214,7 @@ struct AppRootView: View {
         }
     }
 
+    /// 激活当前 Tab 对应的 Browse 工作集并等待当前模型任务；任务所有权与取消仍由 ViewModel 管理。
     private func applyBrowseActivation(
         for activation: BrowseActivation
     ) async {

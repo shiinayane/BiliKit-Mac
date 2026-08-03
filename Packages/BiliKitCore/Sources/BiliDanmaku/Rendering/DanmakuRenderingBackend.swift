@@ -37,6 +37,10 @@ public protocol DanmakuRenderingBackendDelegate: AnyObject {
 }
 
 @MainActor
+/// Renderer 的最小平台 port。
+///
+/// `clearAll` 只移除活动对象；`stop` 还把播放速率归零。尺寸变化允许实现清空无法安全
+/// 迁移的对象，因此 controller 必须同步重置 lane allocator。
 public protocol DanmakuRenderingBackend: AnyObject {
     var delegate: (any DanmakuRenderingBackendDelegate)? { get set }
 

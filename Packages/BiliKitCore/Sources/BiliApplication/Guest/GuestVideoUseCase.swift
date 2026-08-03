@@ -1,5 +1,6 @@
 import BiliModels
 
+/// 播放页一次准备所聚合的详情、分 P、选中分 P 与播放清单。
 public struct GuestVideoContext: Sendable, Equatable {
     public let detail: VideoDetail
     public let pages: [VideoPage]
@@ -19,6 +20,9 @@ public struct GuestVideoContext: Sendable, Equatable {
     }
 }
 
+/// 并行取得详情与分 P，再为排序后的首分 P 取得播放清单。
+///
+/// 用例不拥有播放器，也不保留可变状态；任何一个阶段取消都会阻止后续播放请求或结果返回。
 public struct GuestVideoUseCase: Sendable {
     private let repository: any GuestContentRepository
 

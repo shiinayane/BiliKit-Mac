@@ -46,6 +46,7 @@ public struct DanmakuFilter: Sendable, Equatable {
     }
 }
 
+/// 某一播放 identity/generation 的增量呈现指令；`clearsExisting` 表示时间不再连续。
 public struct DanmakuBatch: Sendable, Equatable {
     public let identity: PlaybackItemIdentity
     public let discontinuityGeneration: UInt64
@@ -65,6 +66,10 @@ public struct DanmakuBatch: Sendable, Equatable {
     }
 }
 
+/// 以统一媒体时间线调度弹幕，并维护有界分段缓存与去重游标。
+///
+/// identity、discontinuity 或时间回跳会清除投递记录并先发清屏 batch；暂停和倍速直接使用
+/// timeline 快照，不创建独立 wall-clock timer。
 public struct DanmakuScheduler: Sendable {
     public static let segmentDurationSeconds = 360.0
     public static let maximumCachedSegments = 3
@@ -144,6 +149,7 @@ public struct DanmakuScheduler: Sendable {
         return indices
     }
 
+    /// 消费相邻快照之间首次出现的事件；不连续时只返回清屏指令，不补喷跨越区间。
     public mutating func consume(
         _ snapshot: PlaybackTimelineSnapshot
     ) -> DanmakuBatch? {

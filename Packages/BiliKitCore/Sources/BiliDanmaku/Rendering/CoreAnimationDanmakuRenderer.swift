@@ -5,6 +5,10 @@ import Foundation
 import QuartzCore
 
 @MainActor
+/// 有硬上限的 Core Animation 弹幕 backend，负责 layer identity、动画时钟与最终回收。
+///
+/// `renderEpoch + objectIdentity` 使旧动画 completion 无法删除同 ID 的新 layer；清屏、
+/// resize 和 stop 都会推进 epoch 并同步移除活动对象。
 public final class CoreAnimationDanmakuRenderer:
     DanmakuRenderingBackend
 {
@@ -130,6 +134,7 @@ public final class CoreAnimationDanmakuRenderer:
         removeAllEntries()
     }
 
+    /// 在保持当前 layer 局部时间连续的前提下暂停或调整动画速率。
     public func setPlaybackRate(_ rate: Double) {
         let newRate = rate.isFinite ? max(rate, 0) : 0
         guard Double(rootLayer.speed) != newRate else { return }

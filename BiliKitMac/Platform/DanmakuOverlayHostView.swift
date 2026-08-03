@@ -2,6 +2,10 @@ import AppKit
 import BiliDanmaku
 
 @MainActor
+/// 将 renderer 的 layer 挂到当前 `AVPlayerView` overlay，并独占其尺寸更新权。
+///
+/// `ownerID` 防止已拆除 host 的迟到 layout/detach 清空新 host；零尺寸只表示 surface
+/// 尚未完成布局，不会扩大为另一个渲染会话。
 final class DanmakuOverlayView: NSView {
     private let renderer: CoreAnimationDanmakuRenderer
     private let controller: DanmakuPresentationController
@@ -44,6 +48,7 @@ final class DanmakuOverlayView: NSView {
         nil
     }
 
+    /// 仅由当前 surface owner 发布布局尺寸；尺寸变化会清空无法安全迁移的活动弹幕。
     func updateSurfaceIfNeeded() {
         guard bounds.size != previousSize else { return }
         previousSize = bounds.size
@@ -63,6 +68,7 @@ final class DanmakuOverlayView: NSView {
         )
     }
 
+    /// 撤销当前 host 的 ownership；不是 owner 时不会触碰后来接管的 surface。
     func detachSurface() {
         guard isSurfaceAttached else { return }
         isSurfaceAttached = false

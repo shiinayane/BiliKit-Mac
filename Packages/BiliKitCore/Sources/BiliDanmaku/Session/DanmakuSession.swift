@@ -10,6 +10,10 @@ public enum DanmakuSessionState: Sendable, Equatable {
 }
 
 @MainActor
+/// 弹幕数据、时间线订阅、分段加载与 presentation 的会话 owner。
+///
+/// 同时最多加载两个 segment，失败 segment 在当前 identity 内不自动重试；generation 阻止
+/// 切视频或 stop 后的迟到结果写回。`stop` 必须取消所有任务并清空 scheduler/presentation。
 public final class DanmakuSession: DanmakuPresentationControlling {
     public private(set) var state: DanmakuSessionState = .idle
 
@@ -46,6 +50,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         }
     }
 
+    /// 提供调试/观察用的有界 batch 流；presentation sink 仍是生产呈现主路径。
     public func batches() -> AsyncStream<DanmakuBatch> {
         let id = UUID()
         let stream = AsyncStream<DanmakuBatch>.makeStream(
@@ -106,6 +111,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         )
     }
 
+    /// 幂等结束整个会话，而不只是隐藏弹幕图层。
     public func stop() {
         presentationSink?.stopPresentation()
         generation &+= 1

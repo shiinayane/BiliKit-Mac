@@ -20,6 +20,10 @@ public enum SubtitleViewState: Sendable, Equatable {
 
 @MainActor
 @Observable
+/// 拥有当前视频的字幕目录、正文、时间线订阅与跨 identity reset 顺序。
+///
+/// 切换视频时先让串行 reset worker 清理上一 identity，再加载下一目录；这避免 A→B→A
+/// 中迟到的旧 A reset 清掉新 A。内容 generation 另行隔离切轨与网络迟到结果。
 public final class SubtitleViewModel {
     private struct LoadIntent {
         let identity: PlaybackItemIdentity
@@ -58,6 +62,7 @@ public final class SubtitleViewModel {
         resetTask?.cancel()
     }
 
+    /// 选择新的播放身份；目录可以预载，但默认不选择轨道，也不会请求正文。
     public func selectVideo(_ identity: PlaybackItemIdentity) {
         guard self.identity != identity else { return }
         let previousIdentity = self.identity
@@ -83,6 +88,7 @@ public final class SubtitleViewModel {
         startPendingLoadIfReady()
     }
 
+    /// 切换正文请求；传入 `nil` 明确关闭字幕并清空已加载 cue。
     public func selectTrack(_ trackID: String?) {
         guard let identity else { return }
         if let trackID, !tracks.contains(where: { $0.id == trackID }) {
@@ -129,6 +135,7 @@ public final class SubtitleViewModel {
         reset(preservingIdentityForRetry: false)
     }
 
+    /// 登出时清除已授权取得的数据，但保留 identity 供重新认证后显式 retry。
     public func suspendForAuthentication() {
         reset(preservingIdentityForRetry: true)
     }
@@ -237,6 +244,7 @@ public final class SubtitleViewModel {
         }
     }
 
+    /// 合并待清理 identity，并用单一 worker 保证 reset 与下一次目录加载不会交错。
     private func enqueueReset(for identity: PlaybackItemIdentity?) {
         if let identity, pendingResetIdentity == nil {
             pendingResetIdentity = identity

@@ -3,6 +3,10 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
+/// 保存当前播放 identity 的字幕轨→正文 URL 映射，并按需读取正文。
+///
+/// URL 不越过 adapter；正文使用独立无 Cookie、无缓存、拒绝重定向的 transport。
+/// generation 与 identity 共同防止旧目录或正文结果进入新视频。
 public actor BiliSubtitleRepository: SubtitleRepository {
     private static let maximumBodySize = 2 * 1_024 * 1_024
 
@@ -133,6 +137,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         }
     }
 
+    /// 仅清理仍匹配的 identity，避免迟到的旧 reset 清除后来加载的映射。
     public func reset(for identity: PlaybackItemIdentity) {
         guard currentIdentity == identity else { return }
         generation &+= 1

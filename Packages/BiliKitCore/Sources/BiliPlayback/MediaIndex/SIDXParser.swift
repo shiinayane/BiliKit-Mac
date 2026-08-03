@@ -57,6 +57,9 @@ public enum SIDXParserError: Error, Sendable, Equatable {
     case unexpectedTrailingBytes(Int)
 }
 
+/// 解析独立的 ISO BMFF `sidx` box，并把相对引用换算为经过溢出检查的绝对字节范围。
+///
+/// 当前只接受直接媒体引用、v0/v1 与无尾随字节的完整 box；不支持的结构会失败关闭。
 public struct SIDXParser: Sendable {
     public init() {}
 

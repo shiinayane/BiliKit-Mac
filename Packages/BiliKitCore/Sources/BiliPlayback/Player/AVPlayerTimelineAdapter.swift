@@ -4,6 +4,10 @@ import Foundation
 import os
 
 @MainActor
+/// 把 AVPlayer/KVO/notification 事件投影为平台无关、identity-safe 的播放时间线。
+///
+/// 所有 callback 都同时核对当前 `AVPlayerItem` 与 item token；observer bag 在替换、失败和
+/// clear 时统一释放，避免旧 item 继续推进字幕或弹幕。
 final class AVPlayerTimelineAdapter {
     var onEnded: (@MainActor () -> Void)?
     var onFailed: (@MainActor () -> Void)?
@@ -35,6 +39,7 @@ final class AVPlayerTimelineAdapter {
         failedToken = nil
     }
 
+    /// 为当前 item 安装位置、速率、状态、结束、失败与时间跳变观察，并替换旧观察集合。
     func installObservers(for item: AVPlayerItem) {
         observers.reset()
         guard let token else { return }

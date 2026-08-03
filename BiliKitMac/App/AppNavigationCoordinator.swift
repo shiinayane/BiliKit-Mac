@@ -12,6 +12,10 @@ struct PlaybackDestination: Hashable {
 
 @MainActor
 @Observable
+/// 协调窗口内的顶层 Tab、原生导航路径与播放生命周期副作用。
+///
+/// Coordinator 不拥有播放器；它把路径是否存在视为播放资源是否应存活的事实，
+/// 因而系统返回、切换 Tab 与关窗都通过同一条 `startPlayback`/`stopPlayback` 边界收口。
 final class AppNavigationCoordinator {
     var selectedTab: AppTab = .popular {
         didSet {
@@ -45,6 +49,7 @@ final class AppNavigationCoordinator {
         self.stopPlayback = stopPlayback
     }
 
+    /// 用当前 Tab 的类型化路径打开视频，并由路径差异触发播放准备。
     func openPlayback(_ bvid: String) {
         guard !bvid.isEmpty else { return }
         playbackPath = [PlaybackDestination(bvid: bvid)]
@@ -55,6 +60,7 @@ final class AppNavigationCoordinator {
         startPlayback(bvid)
     }
 
+    /// 清空所有 Tab 的播放路径，并只对当前可见播放目的地执行一次停止副作用。
     func resetForWindowClosure() {
         let previousPath = playbackPath
         replacePlaybackPath([], for: .search)
@@ -65,6 +71,7 @@ final class AppNavigationCoordinator {
         searchDraft = ""
     }
 
+    /// 接收 `NavigationStack` 的系统回写；非当前 Tab 的迟到回写不会改变播放 owner。
     func updatePlaybackPath(
         _ path: [PlaybackDestination],
         for tab: AppTab

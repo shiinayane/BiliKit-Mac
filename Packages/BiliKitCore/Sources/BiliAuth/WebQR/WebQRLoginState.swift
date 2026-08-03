@@ -1,3 +1,4 @@
+/// QR adapter 的内部安全状态投影；描述不包含 key、URL、Cookie 或服务端正文。
 public enum WebQRLoginState: Sendable, Equatable, CustomStringConvertible {
     case signedOut
     case requestingQRCode
@@ -65,6 +66,7 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
     }
 }
 
+/// 只保留协议形状的脱敏观察，用于审计未知状态，不保存任何字段值。
 public struct WebQRStatusObservation: Sendable, Equatable,
     CustomStringConvertible, CustomDebugStringConvertible
 {

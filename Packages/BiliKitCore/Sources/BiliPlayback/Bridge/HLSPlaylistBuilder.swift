@@ -15,6 +15,9 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case unsafeURI
 }
 
+/// 将一个 representation 的已验证 SIDX 引用编码为内存 VOD media playlist。
+///
+/// 输入必须具有非空分段与正 timescale；输出只引用调用方提供的安全 URI，不持有网络资源。
 public struct HLSMediaPlaylistBuilder: Sendable {
     public init() {}
 
@@ -104,6 +107,9 @@ public struct HLSVideoVariant: Sendable, Equatable {
     }
 }
 
+/// 把一个或多个视频 variant 与单一音频 representation 组合成 AVPlayer 的 ABR master playlist。
+///
+/// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
 public struct HLSMasterPlaylistBuilder: Sendable {
     public init() {}
 

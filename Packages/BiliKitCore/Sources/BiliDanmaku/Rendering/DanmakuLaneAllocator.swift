@@ -1,6 +1,9 @@
 import BiliModels
 import Foundation
 
+/// 在固定 surface 与活动数量上限内分配弹幕轨道，并阻止滚动弹幕追尾。
+///
+/// allocator 只使用媒体时间计算占用/过期；renderer completion 通过 `remove` 回收相同事件。
 public struct DanmakuLaneAllocator: Sendable {
     private struct ActivePlacement: Sendable {
         let placement: DanmakuLanePlacement
