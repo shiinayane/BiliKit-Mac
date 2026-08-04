@@ -136,6 +136,11 @@ public final class WatchHistoryViewModel {
         state = .idle
     }
 
+    @available(*, deprecated, message: "Use deactivateRoute() for route cancellation.")
+    public func cancelTransientWork() {
+        deactivateRoute()
+    }
+
     /// 停用页面请求而不抹掉已加载条目；迟到结果仍由 generation 拒绝。
     public func deactivateRoute() {
         generation += 1
