@@ -216,5 +216,4 @@ enum PlaybackPageLayout {
             ? .wideParts
             : .compactParts
     }
-
 }
