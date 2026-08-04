@@ -81,6 +81,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 真实匿名样本 Gate
 
+> 退役说明（2026-08-04）：以下一次性 runner 已从仓库移除，命令只记录当时的验证方式，
+> 不能作为当前可执行入口。
+
 执行：
 
 ```sh

@@ -78,6 +78,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 已登录字幕探针运行方式
 
+> 退役说明（2026-08-04）：以下一次性 runner 已从仓库移除，命令只记录当时的验证方式，
+> 不能作为当前可执行入口。
+
 先在签名 BiliKit App 中确认当前为已登录状态，并选择一条确实带字幕的公开视频。运行仓库提供的脚本：
 
 ```sh
