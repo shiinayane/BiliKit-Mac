@@ -24,7 +24,7 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                         partsRail
                     }
                 }
-                .accessibilityIdentifier(mode.accessibilityIdentifier)
+                .accessibilityIdentifier("playback.destination")
             }
         }
         .navigationTitle(context.detail.title)
@@ -197,17 +197,6 @@ enum PlaybackPageLayoutMode: Equatable {
     case singlePart
     case compactParts
     case wideParts
-
-    var accessibilityIdentifier: String {
-        switch self {
-        case .singlePart:
-            "playback.layout.single"
-        case .compactParts:
-            "playback.layout.compact"
-        case .wideParts:
-            "playback.layout.wide"
-        }
-    }
 }
 
 enum PlaybackPageLayout {
@@ -228,11 +217,4 @@ enum PlaybackPageLayout {
             : .compactParts
     }
 
-    static func playerSize(availableWidth: CGFloat) -> CGSize {
-        let width = max(
-            0,
-            availableWidth - horizontalContentPadding * 2
-        )
-        return CGSize(width: width, height: width / playerAspectRatio)
-    }
 }

@@ -10,14 +10,16 @@ import SwiftUI
 @main
 struct BiliKitMacApp: App {
     #if DEBUG
-        private let uiTestConfiguration = UITestConfiguration.current
+        private let usesUITestFixture = ProcessInfo.processInfo.arguments.contains(
+            "-ui-testing"
+        )
     #endif
 
     var body: some Scene {
         WindowGroup {
             #if DEBUG
-                if uiTestConfiguration.isEnabled {
-                    UITestConfiguredRoot(configuration: uiTestConfiguration)
+                if usesUITestFixture {
+                    UITestContentView()
                 } else {
                     AppRootView()
                 }
@@ -25,13 +27,6 @@ struct BiliKitMacApp: App {
                 AppRootView()
             #endif
         }
-        #if DEBUG
-            .defaultSize(
-                width: uiTestConfiguration.usesCompactWindow ? 1_080 : 1_320,
-                height: uiTestConfiguration.usesCompactWindow ? 680 : 820
-            )
-        #else
-            .defaultSize(width: 1_320, height: 820)
-        #endif
+        .defaultSize(width: 1_320, height: 820)
     }
 }

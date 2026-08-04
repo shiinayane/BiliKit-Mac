@@ -1,5 +1,4 @@
 #if DEBUG
-    import AppKit
     import BiliApplication
     import BiliAuthFeature
     import BiliBrowseFeature
@@ -7,118 +6,14 @@
     import BiliModels
     import CoreGraphics
     import Foundation
-    import Observation
     import SwiftUI
 
-    struct UITestConfiguration {
-        let isEnabled: Bool
-        let usesCompactWindow: Bool
-        let usesDarkAppearance: Bool
-        let usesLargeText: Bool
-
-        static var current: UITestConfiguration {
-            parse(arguments: ProcessInfo.processInfo.arguments)
-        }
-
-        static func parse(arguments: [String]) -> UITestConfiguration {
-            let isEnabled = arguments.contains("-ui-testing")
-            return UITestConfiguration(
-                isEnabled: isEnabled,
-                usesCompactWindow:
-                    isEnabled && arguments.contains("-ui-testing-compact"),
-                usesDarkAppearance:
-                    isEnabled && arguments.contains("-ui-testing-dark"),
-                usesLargeText:
-                    isEnabled && arguments.contains("-ui-testing-large-text")
-            )
-        }
-    }
-
-    struct UITestConfiguredRoot: View {
-        let configuration: UITestConfiguration
-
-        var body: some View {
-            UITestContentView()
-                .background(
-                    UITestWindowConfigurator(
-                        contentSize: configuration.usesCompactWindow
-                            ? CGSize(width: 1_080, height: 680)
-                            : CGSize(width: 1_320, height: 820)
-                    )
-                )
-                .preferredColorScheme(
-                    configuration.usesDarkAppearance ? .dark : .light
-                )
-                .environment(
-                    \.dynamicTypeSize,
-                    configuration.usesLargeText
-                        ? .accessibility1
-                        : .large
-                )
-        }
-    }
-
-    private struct UITestWindowConfigurator: NSViewRepresentable {
-        let contentSize: CGSize
-
-        func makeNSView(context: Context) -> WindowConfiguringView {
-            WindowConfiguringView(contentSize: contentSize)
-        }
-
-        func updateNSView(
-            _ view: WindowConfiguringView,
-            context: Context
-        ) {
-            view.contentSize = contentSize
-            view.applyIfPossible()
-        }
-    }
-
-    private final class WindowConfiguringView: NSView {
-        var contentSize: CGSize
-
-        init(contentSize: CGSize) {
-            self.contentSize = contentSize
-            super.init(frame: .zero)
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            applyIfPossible()
-            DispatchQueue.main.async { [weak self] in
-                self?.applyIfPossible()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.applyIfPossible()
-            }
-        }
-
-        func applyIfPossible() {
-            guard let window else { return }
-            window.isRestorable = false
-            guard
-                abs(window.contentLayoutRect.width - contentSize.width) > 1
-                    || abs(window.contentLayoutRect.height - contentSize.height) > 1
-            else {
-                return
-            }
-            window.setContentSize(contentSize)
-        }
-    }
-
-    private struct UITestContentView: View {
+    struct UITestContentView: View {
         private let content: AppRootView
-        private let playback: UITestPlayback
 
         init() {
             let repository = UITestGuestRepository()
             let playback = UITestPlayback()
-            self.playback = playback
             let browseModel = GuestBrowseViewModel(
                 useCase: GuestFeedUseCase(repository: repository)
             )
@@ -126,12 +21,9 @@
                 useCase: GuestVideoUseCase(repository: repository),
                 playback: playback
             )
-            let timeline = UITestTimeline()
             let subtitleModel = SubtitleViewModel(
-                useCase: SubtitleUseCase(
-                    repository: UITestSubtitleRepository()
-                ),
-                timeline: timeline
+                useCase: SubtitleUseCase(repository: UITestSubtitleRepository()),
+                timeline: UITestTimeline()
             )
             let danmakuModel = DanmakuControlsViewModel(
                 presentation: UITestDanmakuPresentation()
@@ -141,9 +33,7 @@
                 qrCodeProvider: UITestQRCodeProvider()
             )
             let historyModel = WatchHistoryViewModel(
-                useCase: WatchHistoryUseCase(
-                    repository: UITestHistoryRepository()
-                )
+                useCase: WatchHistoryUseCase(repository: UITestHistoryRepository())
             )
             let navigationCoordinator = AppNavigationCoordinator(
                 startPlayback: { bvid in
@@ -177,23 +67,14 @@
         }
 
         var body: some View {
-            content.overlay(alignment: .topTrailing) {
-                Text(playback.isLoaded ? "播放中" : "播放已停止")
-                    .font(.caption2)
-                    .opacity(0.01)
-                    .accessibilityIdentifier(
-                        playback.isLoaded
-                            ? "playback.status.playing"
-                            : "playback.status.stopped"
-                    )
-            }
+            content
         }
     }
 
     private struct UITestGuestRepository: GuestContentRepository {
         func popular(page: Int, pageSize: Int) async throws -> PopularPage {
             PopularPage(
-                videos: Self.popularVideos,
+                videos: [Self.popularVideo],
                 pageNumber: page,
                 pageSize: pageSize
             )
@@ -201,11 +82,11 @@
 
         func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
             SearchPage(
-                videos: Self.searchVideos,
+                videos: [],
                 pageNumber: page,
-                pageSize: Self.searchVideos.count,
-                totalResults: Self.searchVideos.count,
-                totalPages: 1
+                pageSize: 0,
+                totalResults: 0,
+                totalPages: 0
             )
         }
 
@@ -213,11 +94,11 @@
             VideoDetail(
                 bvid: bvid,
                 title: "自制播放页示例",
-                summary: "用于验证布局、键盘和辅助显示的本机假值。",
+                summary: "用于验证本机导航往返的假值。",
                 coverURL: nil,
                 owner: Self.owner,
                 statistics: Self.statistics,
-                durationSeconds: 4_205,
+                durationSeconds: 1_205,
                 publishedAt: Self.publishedAt,
                 dimension: VideoDimension(width: 1_920, height: 1_080, rotation: 0)
             )
@@ -228,21 +109,9 @@
                 VideoPage(
                     cid: 101,
                     index: 1,
-                    title: "示例章节一",
+                    title: "示例章节",
                     durationSeconds: 1_205
-                ),
-                VideoPage(
-                    cid: 102,
-                    index: 2,
-                    title: "示例章节二",
-                    durationSeconds: 1_400
-                ),
-                VideoPage(
-                    cid: 103,
-                    index: 3,
-                    title: "示例章节三",
-                    durationSeconds: 1_600
-                ),
+                )
             ]
         }
 
@@ -259,59 +128,33 @@
             )
         }
 
-        private static let owner = VideoOwner(
-            id: 1,
-            name: "示例创作者"
-        )
+        private static let owner = VideoOwner(id: 1, name: "示例创作者")
         private static let statistics = VideoStatistics(
             viewCount: 123_456,
             danmakuCount: 7_890,
             likeCount: 4_321
         )
         private static let publishedAt = Date(timeIntervalSince1970: 1_785_000_000)
-
-        private static let popularVideos = (1...8).map { index in
-            PopularVideo(
-                bvid: "fixture-video-\(index)",
-                title: "自制热门示例 \(index)：用于检查两行标题与文字放大",
-                coverURL: nil,
-                owner: owner,
-                statistics: statistics,
-                durationSeconds: 600 + index * 37,
-                publishedAt: publishedAt
-            )
-        }
-
-        private static let searchVideos = (1...4).map { index in
-            SearchVideo(
-                bvid: "fixture-search-\(index)",
-                title: "自制搜索结果 \(index)",
-                coverURL: nil,
-                owner: owner,
-                statistics: statistics,
-                durationSeconds: 900 + index * 15,
-                publishedAt: publishedAt
-            )
-        }
+        private static let popularVideo = PopularVideo(
+            bvid: "fixture-video-1",
+            title: "自制热门示例",
+            coverURL: nil,
+            owner: owner,
+            statistics: statistics,
+            durationSeconds: 637,
+            publishedAt: publishedAt
+        )
     }
 
     @MainActor
-    @Observable
     private final class UITestPlayback: PlaybackControlling {
-        private(set) var isLoaded = false
-
         func load(
             _ playback: VideoPlayback,
             identity: PlaybackItemIdentity
-        ) async throws {
-            isLoaded = true
-        }
+        ) async throws {}
 
         func pause() {}
-
-        func stop() {
-            isLoaded = false
-        }
+        func stop() {}
     }
 
     @MainActor
@@ -344,11 +187,8 @@
     }
 
     @MainActor
-    private final class UITestDanmakuPresentation:
-        DanmakuPresentationControlling
-    {
+    private final class UITestDanmakuPresentation: DanmakuPresentationControlling {
         func start(for identity: PlaybackItemIdentity) {}
-
         func setEnabled(_ enabled: Bool) {}
 
         func setModeVisibility(
