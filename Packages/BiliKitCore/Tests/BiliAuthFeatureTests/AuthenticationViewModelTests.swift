@@ -32,12 +32,14 @@ struct AuthenticationViewModelTests {
         )
     }
 
-    @Test
+    @Test(arguments: StaleQRCodeCompletion.allCases)
     @MainActor
-    func newerLoginIntentPreventsOldResultFromOverwritingState() async throws {
+    func newerLoginIntentPreventsOldQRCodeFromOverwritingState(
+        completion: StaleQRCodeCompletion
+    ) async throws {
         let service = AuthenticationServiceStub(
-            requestStates: [.failed(.network), .expired],
-            suspendsFirstRequest: true
+            requestStates: [.awaitingScan, .expired],
+            suspendedFirstImageCompletion: completion
         )
         let model = AuthenticationViewModel(
             service: service,
@@ -46,14 +48,15 @@ struct AuthenticationViewModelTests {
         )
 
         model.startLogin()
-        try await service.waitForFirstRequestStart()
+        try await service.waitForFirstImageStart()
         let supersededTask = try #require(model.taskSnapshotForTesting())
         model.startLogin()
         await model.waitForCurrentTask()
-        await service.releaseFirstRequest()
+        await service.releaseFirstImage()
         await supersededTask.value
 
         #expect(model.state == .expired)
+        #expect(model.qrCodeImage == nil)
     }
 
     @Test
@@ -216,12 +219,12 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private let finalizeState: AuthenticationState
     private let cancelState: AuthenticationState
     private let logoutState: AuthenticationState
-    private let suspendsFirstRequest: Bool
-    private var requestCount = 0
+    private let suspendedFirstImageCompletion: StaleQRCodeCompletion?
+    private var imageCount = 0
     private var calls: [String] = []
-    private var firstRequestReleased = false
-    private let firstRequestEvents = TestEventCounter()
-    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var firstImageReleased = false
+    private let firstImageEvents = TestEventCounter()
+    private var imageReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         requestStates: [AuthenticationState] = [],
@@ -230,7 +233,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         finalizeState: AuthenticationState = .signedOut,
         cancelState: AuthenticationState = .signedOut,
         logoutState: AuthenticationState = .signedOut,
-        suspendsFirstRequest: Bool = false
+        suspendedFirstImageCompletion: StaleQRCodeCompletion? = nil
     ) {
         self.requestStates = requestStates
         self.pollStates = pollStates
@@ -238,7 +241,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         self.finalizeState = finalizeState
         self.cancelState = cancelState
         self.logoutState = logoutState
-        self.suspendsFirstRequest = suspendsFirstRequest
+        self.suspendedFirstImageCompletion = suspendedFirstImageCompletion
     }
 
     func restore() -> AuthenticationState {
@@ -247,22 +250,9 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     }
 
     func requestQRCode() async -> AuthenticationState {
-        requestCount += 1
-        let currentRequest = requestCount
         calls.append("request")
         guard !requestStates.isEmpty else { return .failed(.invalidResponse) }
-        let result = requestStates.removeFirst()
-        if currentRequest == 1, suspendsFirstRequest {
-            await firstRequestEvents.signal()
-            await withCheckedContinuation { continuation in
-                if firstRequestReleased {
-                    continuation.resume()
-                } else {
-                    releaseWaiters.append(continuation)
-                }
-            }
-        }
-        return result
+        return requestStates.removeFirst()
     }
 
     func pollOnce() -> AuthenticationState {
@@ -276,9 +266,26 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         return finalizeState
     }
 
-    func makeQRCodeImage(scale: Int) -> CGImage? {
+    func makeQRCodeImage(scale: Int) async throws -> CGImage? {
+        imageCount += 1
         calls.append("image")
-        return nil
+        guard imageCount == 1, let suspendedFirstImageCompletion else {
+            return nil
+        }
+        await firstImageEvents.signal()
+        await withCheckedContinuation { continuation in
+            if firstImageReleased {
+                continuation.resume()
+            } else {
+                imageReleaseWaiters.append(continuation)
+            }
+        }
+        switch suspendedFirstImageCompletion {
+        case .image:
+            return Self.makeFixtureImage()
+        case .failure:
+            throw QRCodeFixtureError()
+        }
     }
 
     func cancelLogin() -> AuthenticationState {
@@ -295,18 +302,31 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         calls
     }
 
-    func waitForFirstRequestStart() async throws {
+    func waitForFirstImageStart() async throws {
         do {
-            try await firstRequestEvents.wait(until: 1)
+            try await firstImageEvents.wait(until: 1)
         } catch {
-            releaseFirstRequest()
+            releaseFirstImage()
             throw error
         }
     }
 
-    func releaseFirstRequest() {
-        firstRequestReleased = true
-        resume(&releaseWaiters)
+    func releaseFirstImage() {
+        firstImageReleased = true
+        resume(&imageReleaseWaiters)
+    }
+
+    private static func makeFixtureImage() -> CGImage? {
+        let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+        return context?.makeImage()
     }
 
     private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
@@ -317,6 +337,13 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         }
     }
 }
+
+enum StaleQRCodeCompletion: CaseIterable, Sendable {
+    case image
+    case failure
+}
+
+private struct QRCodeFixtureError: Error {}
 
 private actor TestEventCounter {
     private struct Waiter {
