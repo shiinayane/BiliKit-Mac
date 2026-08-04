@@ -28,7 +28,6 @@ public final class DanmakuSession: DanmakuPresentationControlling {
     private var timelineTask: Task<Void, Never>?
     private var loadTasks: [Int: Task<Void, Never>] = [:]
     private var failedSegmentIndices: Set<Int> = []
-    private var continuations: [UUID: AsyncStream<DanmakuBatch>.Continuation] = [:]
 
     public init(
         useCase: DanmakuSegmentUseCase,
@@ -45,24 +44,6 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         for task in loadTasks.values {
             task.cancel()
         }
-        for continuation in continuations.values {
-            continuation.finish()
-        }
-    }
-
-    /// 提供调试/观察用的有界 batch 流；presentation sink 仍是生产呈现主路径。
-    public func batches() -> AsyncStream<DanmakuBatch> {
-        let id = UUID()
-        let stream = AsyncStream<DanmakuBatch>.makeStream(
-            bufferingPolicy: .bufferingNewest(4)
-        )
-        continuations[id] = stream.continuation
-        stream.continuation.onTermination = { [weak self] _ in
-            Task { @MainActor in
-                self?.continuations.removeValue(forKey: id)
-            }
-        }
-        return stream.stream
     }
 
     public func start(for identity: PlaybackItemIdentity) {
@@ -144,11 +125,6 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         presentationSink?.apply(
             DanmakuPresentationUpdate(snapshot: snapshot, batch: batch)
         )
-        if let batch {
-            for continuation in continuations.values {
-                continuation.yield(batch)
-            }
-        }
         let required = scheduler.desiredSegmentIndices(for: snapshot)
         for index in required
         where
