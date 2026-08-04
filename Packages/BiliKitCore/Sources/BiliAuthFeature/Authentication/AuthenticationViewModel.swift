@@ -240,8 +240,15 @@ public final class AuthenticationViewModel {
         switch nextState {
         case .awaitingScan, .awaitingConfirmation:
             do {
-                qrCodeImage = try await qrCodeProvider.makeQRCodeImage(scale: 12)
+                let image = try await qrCodeProvider.makeQRCodeImage(scale: 12)
+                guard generation == operationGeneration, !Task.isCancelled else {
+                    return false
+                }
+                qrCodeImage = image
             } catch {
+                guard generation == operationGeneration, !Task.isCancelled else {
+                    return false
+                }
                 state = .failed(.invalidResponse)
                 qrCodeImage = nil
             }
