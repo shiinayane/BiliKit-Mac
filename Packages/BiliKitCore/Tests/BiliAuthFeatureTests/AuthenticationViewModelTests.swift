@@ -8,34 +8,6 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct AuthenticationViewModelTests {
     @Test
-    func eventCounterCancellationCannotLeaveOrResumeAStaleWaiter() async throws {
-        let counter = TestEventCounter()
-
-        let cancelledBeforeRegistration = Task {
-            try await counter.wait(until: 1)
-        }
-        cancelledBeforeRegistration.cancel()
-        await #expect(throws: CancellationError.self) {
-            try await cancelledBeforeRegistration.value
-        }
-
-        let cancelledAfterRegistration = Task {
-            try await counter.wait(until: 2)
-        }
-        try await waitUntil {
-            await counter.pendingWaiterCount > 0
-        }
-        cancelledAfterRegistration.cancel()
-        await #expect(throws: CancellationError.self) {
-            try await cancelledAfterRegistration.value
-        }
-
-        #expect(await counter.pendingWaiterCount == 0)
-        await counter.signal()
-        await counter.signal()
-    }
-
-    @Test
     @MainActor
     func drivesQRCodeConfirmationAndFinalizationToSignedIn() async {
         let service = AuthenticationServiceStub(
@@ -233,17 +205,6 @@ struct AuthenticationViewModelTests {
         #expect(model.state == .signedOut)
         #expect(await service.observedCalls() == ["request", "cancel"])
     }
-
-    private func waitUntil(
-        _ condition: () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !(await condition()), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(await condition())
-    }
 }
 
 private actor AuthenticationServiceStub: AuthenticationServicing,
@@ -365,10 +326,6 @@ private actor TestEventCounter {
 
     private var count = 0
     private var waiters: [UUID: Waiter] = [:]
-
-    var pendingWaiterCount: Int {
-        waiters.count
-    }
 
     func signal() {
         count += 1

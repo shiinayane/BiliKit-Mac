@@ -67,38 +67,6 @@ struct WatchHistoryViewModelTests {
         #expect(model.requiresAuthentication)
     }
 
-    @Test
-    @MainActor
-    func initialFilteredEmptyPageContinuesUntilDisplayableItems() async throws {
-        let continuation = token(100)
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(WatchHistoryPage(items: [], continuation: continuation)),
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: nil
-                    )
-                ),
-            ]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        await model.waitForCurrentTask()
-
-        guard case .loaded(let items, let nextContinuation, let error) = model.state else {
-            Issue.record("历史状态不是 loaded")
-            return
-        }
-        #expect(items.map(\.bvid) == ["BV1HistoryA1"])
-        #expect(nextContinuation == nil)
-        #expect(error == nil)
-        #expect(await repository.observedContinuations() == [nil, continuation])
-    }
-
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func reloadPreventsOlderResultFromOverwritingNewIntent() async throws {

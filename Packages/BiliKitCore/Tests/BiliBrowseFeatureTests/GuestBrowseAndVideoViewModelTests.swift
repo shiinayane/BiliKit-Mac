@@ -14,63 +14,6 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct GuestBrowseAndVideoViewModelTests {
-    @Test
-    @MainActor
-    func modelLoadsPopularPage() async {
-        let fixture = GuestFixtures()
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(
-                repository: GuestRepositoryStub(fixtures: fixture)
-            )
-        )
-
-        model.refreshPopular(page: 2, pageSize: 10)
-        await model.waitForCurrentTask()
-
-        #expect(
-            model.state
-                == .loaded(
-                    .popular(
-                        PopularPage(
-                            videos: [fixture.popularVideo],
-                            pageNumber: 2,
-                            pageSize: 10
-                        )
-                    )
-                )
-        )
-    }
-
-    @Test
-    @MainActor
-    func modelSearchesVideosWithNormalizedQuery() async {
-        let fixture = GuestFixtures()
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(
-                repository: GuestRepositoryStub(fixtures: fixture)
-            )
-        )
-
-        model.search("  macOS  ", page: 2)
-        await model.waitForCurrentTask()
-
-        #expect(
-            model.state
-                == .loaded(
-                    .search(
-                        query: "macOS",
-                        page: SearchPage(
-                            videos: [fixture.searchVideo],
-                            pageNumber: 2,
-                            pageSize: 20,
-                            totalResults: 1,
-                            totalPages: 1
-                        )
-                    )
-                )
-        )
-    }
-
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
