@@ -6,14 +6,17 @@
     import BiliModels
     import CoreGraphics
     import Foundation
+    import Observation
     import SwiftUI
 
     struct UITestContentView: View {
         private let content: AppRootView
+        private let playback: UITestPlayback
 
         init() {
             let repository = UITestGuestRepository()
             let playback = UITestPlayback()
+            self.playback = playback
             let browseModel = GuestBrowseViewModel(
                 useCase: GuestFeedUseCase(repository: repository)
             )
@@ -67,7 +70,16 @@
         }
 
         var body: some View {
-            content
+            content.overlay(alignment: .topTrailing) {
+                Text(playback.isLoaded ? "播放中" : "播放已停止")
+                    .font(.caption2)
+                    .opacity(0.01)
+                    .accessibilityIdentifier(
+                        playback.isLoaded
+                            ? "playback.status.playing"
+                            : "playback.status.stopped"
+                    )
+            }
         }
     }
 
@@ -147,14 +159,22 @@
     }
 
     @MainActor
+    @Observable
     private final class UITestPlayback: PlaybackControlling {
+        private(set) var isLoaded = false
+
         func load(
             _ playback: VideoPlayback,
             identity: PlaybackItemIdentity
-        ) async throws {}
+        ) async throws {
+            isLoaded = true
+        }
 
         func pause() {}
-        func stop() {}
+
+        func stop() {
+            isLoaded = false
+        }
     }
 
     @MainActor
