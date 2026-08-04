@@ -1,46 +1,5 @@
 import SwiftUI
 
-package struct VideoCardInteractionState: Sendable, Equatable {
-    package let isHovered: Bool
-    package let isPressed: Bool
-    package let increasedContrast: Bool
-    package let reduceMotion: Bool
-
-    package init(
-        isHovered: Bool,
-        isPressed: Bool,
-        increasedContrast: Bool,
-        reduceMotion: Bool
-    ) {
-        self.isHovered = isHovered
-        self.isPressed = isPressed
-        self.increasedContrast = increasedContrast
-        self.reduceMotion = reduceMotion
-    }
-}
-
-package struct VideoCardInteractionAppearance: Sendable, Equatable {
-    package let surfaceOpacity: Double
-    package let strokeOpacity: Double
-    package let strokeWidth: CGFloat
-    package let contentOpacity: Double
-    package let scale: CGFloat
-}
-
-package enum VideoCardInteractionPolicy {
-    package static func appearance(
-        for state: VideoCardInteractionState
-    ) -> VideoCardInteractionAppearance {
-        VideoCardInteractionAppearance(
-            surfaceOpacity: state.isPressed ? 0.14 : (state.isHovered ? 0.08 : 0),
-            strokeOpacity: state.isHovered ? 1 : 0,
-            strokeWidth: state.increasedContrast ? 2 : 1,
-            contentOpacity: state.isPressed ? 0.82 : 1,
-            scale: state.isPressed && !state.reduceMotion ? 0.985 : 1
-        )
-    }
-}
-
 package struct VideoCardButtonStyle: ButtonStyle {
     package init() {}
 
@@ -59,13 +18,12 @@ private struct VideoCardInteractionBody: View {
     @State private var isHovered = false
 
     private var appearance: VideoCardInteractionAppearance {
-        VideoCardInteractionPolicy.appearance(
-            for: VideoCardInteractionState(
-                isHovered: isHovered,
-                isPressed: configuration.isPressed,
-                increasedContrast: colorSchemeContrast == .increased,
-                reduceMotion: reduceMotion
-            )
+        VideoCardInteractionAppearance(
+            surfaceOpacity: configuration.isPressed ? 0.14 : (isHovered ? 0.08 : 0),
+            strokeOpacity: isHovered ? 1 : 0,
+            strokeWidth: colorSchemeContrast == .increased ? 2 : 1,
+            contentOpacity: configuration.isPressed ? 0.82 : 1,
+            scale: configuration.isPressed && !reduceMotion ? 0.985 : 1
         )
     }
 
@@ -92,4 +50,12 @@ private struct VideoCardInteractionBody: View {
             )
             .onHover { isHovered = $0 }
     }
+}
+
+private struct VideoCardInteractionAppearance: Equatable {
+    let surfaceOpacity: Double
+    let strokeOpacity: Double
+    let strokeWidth: CGFloat
+    let contentOpacity: Double
+    let scale: CGFloat
 }
