@@ -28,7 +28,7 @@ struct AppEnvironment {
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
     init(
-        repository: any GuestContentRepository,
+        guestContentRepository: any GuestContentRepository,
         historyRepository: any WatchHistoryRepository,
         subtitleRepository: any SubtitleRepository,
         danmakuRepository: any DanmakuSegmentRepository,
@@ -36,7 +36,7 @@ struct AppEnvironment {
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
-        self.guestContentRepository = repository
+        self.guestContentRepository = guestContentRepository
         self.historyRepository = historyRepository
         self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
@@ -132,7 +132,7 @@ struct AppEnvironment {
             additionalSessionInvalidators: [api]
         )
         return AppEnvironment(
-            repository: BiliGuestRepository(client: api),
+            guestContentRepository: BiliGuestRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(client: api),
             subtitleRepository: BiliSubtitleRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
