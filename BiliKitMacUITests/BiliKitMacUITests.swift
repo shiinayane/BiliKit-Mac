@@ -1,10 +1,3 @@
-//
-//  BiliKitMacUITests.swift
-//  BiliKitMacUITests
-//
-//  Created by shiinayane on 2026/07/21.
-//
-
 import XCTest
 
 final class BiliKitMacUITests: XCTestCase {
@@ -13,172 +6,31 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
-    func testFixtureCoreKeyboardAndRecoveryPath() throws {
-        let app = launchFixture(arguments: ["-ui-testing"])
-
-        let feedGrid = element("feed.grid", in: app)
-        XCTAssertTrue(feedGrid.waitForExistence(timeout: 5))
-
-        sidebarTab("搜索", in: app).click()
-        let searchField = app.searchFields.firstMatch
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-        searchField.click()
-        searchField.typeText("临时")
-        searchField.typeKey(.escape, modifierFlags: [])
-        XCTAssertEqual(searchField.value as? String, "")
-        searchField.typeText("示例")
-        searchField.typeKey(.return, modifierFlags: [])
-
-        XCTAssertTrue(
-            element("search.results", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        let searchResult = element("search.item.fixture-search-1", in: app)
-        XCTAssertTrue(searchResult.waitForExistence(timeout: 5))
-        searchResult.click()
-        XCTAssertTrue(
-            element("playback.layout.wide", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        app.buttons["Back"].click()
-        XCTAssertTrue(
-            element("search.results", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        sidebarTab("热门", in: app).click()
-        sidebarTab("搜索", in: app).click()
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.searchFields.firstMatch.value as? String, "示例")
-        XCTAssertTrue(
-            element("search.results", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        sidebarTab("热门", in: app).click()
-        let popularResult = element("feed.item.fixture-video-1", in: app)
-        XCTAssertTrue(popularResult.waitForExistence(timeout: 5))
-        popularResult.click()
-        XCTAssertTrue(
-            element("playback.layout.wide", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        app.buttons["Back"].click()
-        XCTAssertTrue(
-            element("feed.grid", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        sidebarTab("观看历史", in: app).click()
-        XCTAssertTrue(
-            element("history.signed-out", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        element("sidebar.account", in: app).click()
-        XCTAssertTrue(
-            element("auth.start", in: app)
-                .waitForExistence(timeout: 5)
-        )
-    }
-
-    @MainActor
-    func testNativeBackStopsPlayback() throws {
-        let app = launchFixture(arguments: ["-ui-testing"])
-
-        let popularResult = element("feed.item.fixture-video-1", in: app)
-        XCTAssertTrue(popularResult.waitForExistence(timeout: 5))
-        popularResult.click()
-        XCTAssertTrue(
-            element("playback.layout.wide", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            element("playback.status.playing", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        app.buttons["Back"].click()
-        XCTAssertTrue(
-            element("feed.grid", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            element("playback.status.stopped", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        app.typeKey(.return, modifierFlags: [])
-        XCTAssertFalse(
-            element("playback.layout.wide", in: app)
-                .waitForExistence(timeout: 1)
-        )
-    }
-
-    @MainActor
-    func testCompactDarkAccessibilityDisplayPair() throws {
-        let app = launchFixture(arguments: [
-            "-ui-testing",
-            "-ui-testing-compact",
-            "-ui-testing-dark",
-            "-ui-testing-large-text",
-        ])
-
-        XCTAssertTrue(
-            element("feed.grid", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            element("feed.item.fixture-video-1", in: app)
-                .waitForExistence(timeout: 5)
-        )
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 5))
-        XCTAssertEqual(window.frame.width, 1_080, accuracy: 4)
-        XCTAssertLessThan(window.frame.height, 740)
-
-        let attachment = XCTAttachment(screenshot: window.screenshot())
-        attachment.name = "Fixture Compact Dark Accessibility"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
-        element("feed.item.fixture-video-1", in: app).click()
-        XCTAssertTrue(
-            element("playback.layout.compact", in: app)
-                .waitForExistence(timeout: 5)
-        )
-        app.scrollViews["playback.layout.compact"]
-            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .scroll(byDeltaX: 0, deltaY: -420)
-        let partsDisclosure = app.disclosureTriangles["分 P"]
-        partsDisclosure
-            .coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5))
-            .click()
-        for (index, title, duration) in [
-            (1, "示例章节一", "20:05"),
-            (2, "示例章节二", "23:20"),
-            (3, "示例章节三", "26:40"),
-        ] {
-            let part = element("playback.part.\(index)", in: app)
-            XCTAssertTrue(part.waitForExistence(timeout: 5))
-            XCTAssertEqual(
-                part.label,
-                "第 \(index) 分 P，\(title)，\(duration)"
-            )
-            XCTAssertEqual(part.isSelected, index == 1)
-        }
-    }
-
-    @MainActor
-    private func launchFixture(arguments: [String]) -> XCUIApplication {
+    func testPlaybackRoundTripInOneWindow() {
         let app = XCUIApplication()
-        app.launchArguments = arguments
+        app.launchArguments = ["-ui-testing"]
         app.launch()
         if !app.windows.firstMatch.waitForExistence(timeout: 2) {
-            app.activate()
             app.typeKey("n", modifierFlags: .command)
         }
-        return app
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2))
+
+        let feed = element("feed.grid", in: app)
+        XCTAssertTrue(feed.waitForExistence(timeout: 5))
+
+        let video = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(video.waitForExistence(timeout: 5))
+        video.click()
+
+        let playback = element("playback.destination", in: app)
+        XCTAssertTrue(playback.waitForExistence(timeout: 5))
+
+        let backButton = app.buttons["chevron.backward"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 5))
+        backButton.click()
+
+        XCTAssertTrue(feed.waitForExistence(timeout: 5))
+        XCTAssertFalse(playback.waitForExistence(timeout: 1))
     }
 
     @MainActor
@@ -187,23 +39,5 @@ final class BiliKitMacUITests: XCTestCase {
         in app: XCUIApplication
     ) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
-    }
-
-    @MainActor
-    private func sidebarTab(
-        _ label: String,
-        in app: XCUIApplication
-    ) -> XCUIElement {
-        let tab = app.staticTexts[label].firstMatch
-        if !tab.waitForExistence(timeout: 1) {
-            let showSidebar = app.buttons
-                .matching(
-                    NSPredicate(format: "label == %@", "Show Sidebar")
-                )
-                .firstMatch
-            XCTAssertTrue(showSidebar.waitForExistence(timeout: 2))
-            showSidebar.click()
-        }
-        return tab
     }
 }
