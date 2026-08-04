@@ -156,15 +156,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 M1 收尾矩阵使用 30 秒连续播放、6 轮双向 seek 和 12 次播放项目替换，同时检查视频时间戳相对 AVPlayer timebase 的最大偏差，以及进程最终 RSS 增长。该矩阵已在 GitHub Actions 的 macOS 15 runner 上通过；它只通过手动触发入口运行，不属于 push/PR 必过检查。
 
-## 显式运行弹幕数据与调度探针
+## 弹幕数据与调度验证记录
 
-M4.3 探针使用生产 `BiliAPI` protobuf decoder 和 `BiliDanmaku` 调度器处理首段普通弹幕，只输出解码/调度计数，不输出 BVID、CID、弹幕正文、用户标识或响应 body：
-
-```sh
-zsh Scripts/run-m4-danmaku-probe.sh
-```
-
-脚本交互读取 BVID，CID 留空时自动选择首分 P。它不会自动进入 CI；M4.3 Gate 和当前边界见 [M4 弹幕数据与调度验证记录](docs/validation/M4-danmaku-data-scheduler-2026-07-22.md)。
+M4.3 曾通过一次性本机探针验证生产 `BiliAPI` protobuf decoder 和 `BiliDanmaku`
+调度器。该探针现已退役，不再作为可执行入口；当时的脱敏证据和适用边界保留在
+[M4 弹幕数据与调度验证记录](docs/validation/M4-danmaku-data-scheduler-2026-07-22.md)。
 
 ## 安全与实现边界
 
