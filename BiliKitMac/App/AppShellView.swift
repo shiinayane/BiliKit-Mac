@@ -19,6 +19,10 @@ struct AppShellView: View {
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
+    let playbackSidebarContent:
+        (
+            (String, @escaping (String) -> Void) -> AnyView
+        )?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var popularScrollPosition = ScrollPosition(
         idType: String.self
@@ -35,7 +39,9 @@ struct AppShellView: View {
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             Group {
-                if navigationCoordinator.currentPlaybackBVID == nil {
+                if let playbackBVID = navigationCoordinator.currentPlaybackBVID {
+                    playbackSidebar(for: playbackBVID)
+                } else {
                     AppNavigationSidebar(
                         selection: $navigationCoordinator.selectedTab,
                         isSignedIn: authenticationModel.isSignedIn,
@@ -43,8 +49,6 @@ struct AppShellView: View {
                             isAuthenticationPresented = true
                         }
                     )
-                } else {
-                    PlaybackContextUnavailableSidebar()
                 }
             }
             .id(sidebarContextID)
@@ -90,6 +94,18 @@ struct AppShellView: View {
         navigationCoordinator.currentPlaybackBVID == nil
             ? "navigation"
             : "playback"
+    }
+
+    @ViewBuilder
+    private func playbackSidebar(for bvid: String) -> some View {
+        if let playbackSidebarContent {
+            playbackSidebarContent(
+                bvid,
+                navigationCoordinator.openPlayback
+            )
+        } else {
+            PlaybackContextUnavailableSidebar()
+        }
     }
 
     @ViewBuilder

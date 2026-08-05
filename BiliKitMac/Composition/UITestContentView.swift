@@ -14,7 +14,15 @@
         private let playback: UITestPlayback
 
         init() {
-            let repository = UITestGuestRepository()
+            let arguments = ProcessInfo.processInfo.arguments
+            let usesContextualNavigator =
+                arguments.contains("-ui-testing")
+                && arguments.contains("-ui-testing-contextual-navigator")
+            let repository = UITestGuestRepository(
+                featuredBVID: usesContextualNavigator
+                    ? ContextualNavigatorUITestFixture.initialBVID
+                    : "fixture-video-1"
+            )
             let playback = UITestPlayback()
             self.playback = playback
             let browseModel = GuestBrowseViewModel(
@@ -65,7 +73,15 @@
                             .foregroundStyle(.white.opacity(0.75))
                             .accessibilityHidden(true)
                     }
-                )
+                ),
+                playbackSidebarContent: usesContextualNavigator
+                    ? { bvid, onSelectRecommendation in
+                        ContextualNavigatorUITestFixture.sidebar(
+                            bvid: bvid,
+                            onSelectRecommendation: onSelectRecommendation
+                        )
+                    }
+                    : nil
             )
         }
 
@@ -84,9 +100,11 @@
     }
 
     private struct UITestGuestRepository: GuestContentRepository {
+        let featuredBVID: String
+
         func popular(page: Int, pageSize: Int) async throws -> PopularPage {
             PopularPage(
-                videos: [Self.popularVideo],
+                videos: [Self.popularVideo(bvid: featuredBVID)],
                 pageNumber: page,
                 pageSize: pageSize
             )
@@ -147,15 +165,17 @@
             likeCount: 4_321
         )
         private static let publishedAt = Date(timeIntervalSince1970: 1_785_000_000)
-        private static let popularVideo = PopularVideo(
-            bvid: "fixture-video-1",
-            title: "自制热门示例",
-            coverURL: nil,
-            owner: owner,
-            statistics: statistics,
-            durationSeconds: 637,
-            publishedAt: publishedAt
-        )
+        private static func popularVideo(bvid: String) -> PopularVideo {
+            PopularVideo(
+                bvid: bvid,
+                title: "自制热门示例",
+                coverURL: nil,
+                owner: owner,
+                statistics: statistics,
+                durationSeconds: 637,
+                publishedAt: publishedAt
+            )
+        }
     }
 
     @MainActor
