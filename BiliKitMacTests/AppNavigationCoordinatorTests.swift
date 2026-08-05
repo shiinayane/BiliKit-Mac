@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BiliKit
@@ -5,129 +6,81 @@ import Testing
 struct AppNavigationCoordinatorTests {
     @Test
     @MainActor
-    func playbackReturnAndSecondPlaybackHaveOneSideEffectOwner() {
+    func nativeBackReturnsEachSourceInOnePop() {
+        for source in [AppTab.search, .popular, .history] {
+            var stopCount = 0
+            let coordinator = AppNavigationCoordinator(
+                startPlayback: { _ in },
+                stopPlayback: { stopCount += 1 }
+            )
+            coordinator.selectedTab = source
+
+            coordinator.openPlayback("BV1Source")
+            #expect(coordinator.playbackPath.count == 1)
+            coordinator.playbackPath.removeLast()
+            coordinator.playbackPath.removeAll()
+
+            #expect(coordinator.selectedTab == source)
+            #expect(coordinator.playbackPath.isEmpty)
+            #expect(coordinator.currentPlaybackBVID == nil)
+            #expect(stopCount == 1)
+        }
+    }
+
+    @Test
+    @MainActor
+    func replacementKeepsSurfaceSourceAndDraftWhileOrderingSideEffects() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0)") },
             stopPlayback: { events.append("stop") }
         )
+        coordinator.selectedTab = .search
+        coordinator.searchDraft = "手写搜索词"
 
         coordinator.openPlayback("BV1RouteA")
-        coordinator.playbackPath.removeLast()
+        let surfaceID = coordinator.playbackPath.first?.surfaceID
         coordinator.openPlayback("BV1RouteB")
+        coordinator.openPlayback("BV1RouteC")
 
+        #expect(coordinator.playbackPath.count == 1)
+        #expect(coordinator.playbackPath.first?.surfaceID == surfaceID)
+        #expect(coordinator.currentPlaybackBVID == "BV1RouteC")
+        #expect(coordinator.selectedTab == .search)
+        #expect(coordinator.searchDraft == "手写搜索词")
         #expect(
             events == [
                 "start:BV1RouteA",
                 "stop",
                 "start:BV1RouteB",
-            ]
-        )
-        #expect(
-            coordinator.playbackPath == [
-                PlaybackDestination(bvid: "BV1RouteB")
+                "stop",
+                "start:BV1RouteC",
             ]
         )
     }
 
     @Test
     @MainActor
-    func returnRestoresSearchSourceAndQueryWithoutRestartingPlayback() {
-        var startCount = 0
-        var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in startCount += 1 },
-            stopPlayback: { stopCount += 1 }
-        )
-        coordinator.selectedTab = .search
-        coordinator.searchDraft = "手写搜索词"
-
-        coordinator.openPlayback("BV1SearchA")
-        coordinator.playbackPath.removeLast()
-
-        #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
-        #expect(coordinator.searchDraft == "手写搜索词")
-        #expect(startCount == 1)
-        #expect(stopCount == 1)
-    }
-
-    @Test
-    @MainActor
-    func closingWindowStopsPlaybackOnceAndResetsNativeNavigation() {
-        var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in },
-            stopPlayback: { stopCount += 1 }
-        )
-
-        coordinator.openPlayback("BV1CloseA")
-        coordinator.resetForWindowClosure()
-        coordinator.resetForWindowClosure()
-
-        #expect(stopCount == 1)
-        #expect(coordinator.selectedTab == .popular)
-        #expect(coordinator.playbackPath.isEmpty)
-    }
-
-    @Test
-    @MainActor
-    func selectingAnotherTabPopsPlaybackAndStopsOnce() {
-        var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in },
-            stopPlayback: { stopCount += 1 }
-        )
-
-        coordinator.openPlayback("BV1SidebarA")
-        coordinator.selectedTab = .search
-
-        #expect(stopCount == 1)
-        #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
-    }
-
-    @Test
-    @MainActor
-    func eachTabProjectsItsOwnNativeNavigationPath() {
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in },
-            stopPlayback: {}
-        )
-
-        coordinator.selectedTab = .search
-        coordinator.updatePlaybackPath(
-            [PlaybackDestination(bvid: "BV1SearchPath")],
-            for: .search
-        )
-
-        #expect(
-            coordinator.playbackPath(for: .search) == [
-                PlaybackDestination(bvid: "BV1SearchPath")
-            ]
-        )
-        #expect(coordinator.playbackPath(for: .popular).isEmpty)
-        #expect(coordinator.playbackPath(for: .history).isEmpty)
-    }
-
-    @Test
-    @MainActor
-    func inactiveTabCannotPublishPlaybackDestination() {
+    func nonemptyPathWriteCannotForgeOrReplacePlayback() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0)") },
             stopPlayback: { events.append("stop") }
         )
+        let forgedDestination = PlaybackDestination(surfaceID: UUID())
 
-        coordinator.updatePlaybackPath(
-            [PlaybackDestination(bvid: "BV1InactivePath")],
-            for: .search
-        )
-        coordinator.selectedTab = .search
-
-        #expect(coordinator.playbackPath(for: .search).isEmpty)
+        coordinator.playbackPath = [forgedDestination]
         #expect(coordinator.playbackPath.isEmpty)
-        #expect(events.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
+
+        coordinator.openPlayback("BV1Actual")
+        let actualDestination = coordinator.playbackPath.first
+        coordinator.playbackPath = [forgedDestination]
+
+        #expect(coordinator.playbackPath.count == 1)
+        #expect(coordinator.playbackPath.first == actualDestination)
+        #expect(coordinator.currentPlaybackBVID == "BV1Actual")
+        #expect(events == ["start:BV1Actual"])
     }
 
     @Test
@@ -143,11 +96,12 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback("BV1SameA")
 
         #expect(startCount == 1)
+        #expect(coordinator.playbackPath.count == 1)
     }
 
     @Test
     @MainActor
-    func playbackRetryUsesTheAppOwnerWithoutChangingPath() {
+    func retryKeepsSurfaceAndMediaIdentity() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0)") },
@@ -155,55 +109,68 @@ struct AppNavigationCoordinatorTests {
         )
 
         coordinator.openPlayback("BV1RetryA")
+        let destination = coordinator.playbackPath.first
         coordinator.retryPlayback()
 
-        #expect(
-            events == [
-                "start:BV1RetryA",
-                "start:BV1RetryA",
-            ]
-        )
-        #expect(
-            coordinator.playbackPath == [
-                PlaybackDestination(bvid: "BV1RetryA")
-            ]
-        )
+        #expect(coordinator.playbackPath.first == destination)
+        #expect(coordinator.currentPlaybackBVID == "BV1RetryA")
+        #expect(events == ["start:BV1RetryA", "start:BV1RetryA"])
     }
 
     @Test
     @MainActor
-    func historyTabRemainsTheSourceWhilePlaybackIsPushed() {
+    func selectingAnotherSourceClosesPlaybackExactlyOnce() {
+        var stopCount = 0
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: { stopCount += 1 }
+        )
+
+        coordinator.openPlayback("BV1SidebarA")
+        coordinator.selectedTab = .search
+        coordinator.selectedTab = .search
+
+        #expect(coordinator.selectedTab == .search)
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(stopCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func windowClosureIsIdempotentAndResetsWindowState() {
         var stopCount = 0
         let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 }
         )
         coordinator.selectedTab = .history
-        coordinator.openPlayback("BV1HistoryA")
+        coordinator.searchDraft = "待清理草稿"
+        coordinator.openPlayback("BV1CloseA")
 
-        #expect(
-            coordinator.playbackPath == [
-                PlaybackDestination(bvid: "BV1HistoryA")
-            ]
-        )
-        #expect(coordinator.selectedTab == .history)
-        #expect(stopCount == 0)
+        coordinator.resetForWindowClosure()
+        coordinator.resetForWindowClosure()
+
+        #expect(stopCount == 1)
+        #expect(coordinator.selectedTab == .popular)
+        #expect(coordinator.searchDraft.isEmpty)
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
     }
 
     @Test
     @MainActor
-    func nativePathPopStopsPlaybackExactlyOnce() {
-        var stopCount = 0
+    func emptyBVIDDoesNotCreatePlaybackState() {
+        var events: [String] = []
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in },
-            stopPlayback: { stopCount += 1 }
+            startPlayback: { events.append("start:\($0)") },
+            stopPlayback: { events.append("stop") }
         )
-        coordinator.openPlayback("BV1NativeBack")
 
-        coordinator.playbackPath.removeLast()
-        coordinator.playbackPath.removeAll()
+        coordinator.openPlayback("")
 
-        #expect(stopCount == 1)
         #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(events.isEmpty)
     }
 }
