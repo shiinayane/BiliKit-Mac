@@ -18,6 +18,29 @@ final class BiliKitMacUITests: XCTestCase {
 
         let feed = element("feed.grid", in: app)
         XCTAssertTrue(feed.waitForExistence(timeout: 5))
+        let navigationSidebar = element("sidebar.navigation", in: app)
+        XCTAssertTrue(navigationSidebar.waitForExistence(timeout: 5))
+
+        let searchSource = element("sidebar.search", in: app)
+        XCTAssertTrue(searchSource.waitForExistence(timeout: 5))
+        searchSource.click()
+        XCTAssertTrue(
+            element("search.prompt", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        let historySource = element("sidebar.history", in: app)
+        XCTAssertTrue(historySource.waitForExistence(timeout: 5))
+        historySource.click()
+        XCTAssertTrue(
+            element("history.signed-out", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        let popularSource = element("sidebar.popular", in: app)
+        XCTAssertTrue(popularSource.waitForExistence(timeout: 5))
+        popularSource.click()
+        XCTAssertTrue(feed.waitForExistence(timeout: 5))
 
         let video = element("feed.item.fixture-video-1", in: app)
         XCTAssertTrue(video.waitForExistence(timeout: 5))
@@ -25,6 +48,11 @@ final class BiliKitMacUITests: XCTestCase {
 
         let playback = element("playback.destination", in: app)
         XCTAssertTrue(playback.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            element("sidebar.playback-context", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(navigationSidebar.waitForNonExistence(timeout: 5))
         XCTAssertTrue(
             element("playback.status.playing", in: app)
                 .waitForExistence(timeout: 5)
@@ -35,11 +63,16 @@ final class BiliKitMacUITests: XCTestCase {
         backButton.click()
 
         XCTAssertTrue(feed.waitForExistence(timeout: 5))
+        XCTAssertTrue(navigationSidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            element("sidebar.playback-context", in: app)
+                .waitForNonExistence(timeout: 5)
+        )
         XCTAssertTrue(
             element("playback.status.stopped", in: app)
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertFalse(playback.waitForExistence(timeout: 1))
+        XCTAssertTrue(playback.waitForNonExistence(timeout: 5))
     }
 
     @MainActor

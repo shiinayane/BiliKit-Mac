@@ -3,7 +3,7 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
-/// 描述窗口的原生 Tab/NavigationStack 外壳，同时保留每个来源独立的路径与滚动位置。
+/// 描述窗口的原生 NavigationSplitView/NavigationStack 外壳，并保留来源状态与滚动位置。
 ///
 /// 系统返回通过 path Binding 回写 coordinator，使播放停止与视觉导航保持同一事实来源；
 /// SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
@@ -19,6 +19,7 @@ struct AppShellView: View {
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var popularScrollPosition = ScrollPosition(
         idType: String.self
     )
@@ -32,59 +33,48 @@ struct AppShellView: View {
     var body: some View {
         @Bindable var navigationCoordinator = navigationCoordinator
 
-        TabView(selection: $navigationCoordinator.selectedTab) {
-            Tab(value: AppTab.search) {
-                tabNavigation(path: playbackPathBinding(for: .search)) {
-                    SearchTabRoot(
-                        model: browseModel,
-                        searchDraft: $navigationCoordinator.searchDraft,
-                        submittedSearchQuery: submittedSearchQuery,
-                        scrollPosition: $searchScrollPosition,
-                        onSelect: navigationCoordinator.openPlayback,
-                        onSubmit: onSubmitSearch
-                    )
-                }
-            } label: {
-                Label("搜索", systemImage: "magnifyingglass")
-            }
-
-            Tab(value: AppTab.popular) {
-                tabNavigation(path: playbackPathBinding(for: .popular)) {
-                    PopularTabRoot(
-                        model: browseModel,
-                        scrollPosition: $popularScrollPosition,
-                        onSelect: navigationCoordinator.openPlayback
-                    )
-                }
-            } label: {
-                Label("热门", systemImage: "flame")
-            }
-
-            Tab(value: AppTab.history) {
-                tabNavigation(path: playbackPathBinding(for: .history)) {
-                    HistoryTabRoot(
-                        model: historyModel,
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            Group {
+                if navigationCoordinator.playbackPath.isEmpty {
+                    AppNavigationSidebar(
+                        selection: $navigationCoordinator.selectedTab,
                         isSignedIn: authenticationModel.isSignedIn,
-                        scrollPosition: $historyScrollPosition,
-                        onSelect: navigationCoordinator.openPlayback,
                         onPresentAuthentication: {
                             isAuthenticationPresented = true
-                        },
-                        onAuthenticationRequired: {
-                            historyModel.reset()
-                            authenticationModel.revalidate()
                         }
                     )
+                } else {
+                    PlaybackContextUnavailableSidebar()
                 }
-            } label: {
-                Label("观看历史", systemImage: "clock.arrow.circlepath")
+            }
+            .id(sidebarContextID)
+            .navigationSplitViewColumnWidth(
+                min: 300,
+                ideal: 320,
+                max: 320
+            )
+        } detail: {
+            NavigationStack(
+                path: playbackPathBinding(
+                    for: navigationCoordinator.selectedTab
+                )
+            ) {
+                selectedSourceRoot
+                    .navigationDestination(
+                        for: PlaybackDestination.self
+                    ) { _ in
+                        PlaybackDestinationView(
+                            model: videoModel,
+                            subtitleModel: subtitleModel,
+                            danmakuModel: danmakuModel,
+                            playerContent: playerContent,
+                            onRetry: navigationCoordinator.retryPlayback
+                        )
+                    }
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .tabViewSidebarBottomBar {
-            accountButton
-        }
-        .frame(minWidth: 1_080, minHeight: 680)
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 760, minHeight: 560)
         .sheet(isPresented: $isAuthenticationPresented) {
             AuthenticationView(model: authenticationModel)
         }
@@ -100,48 +90,47 @@ struct AppShellView: View {
         }
     }
 
-    private var accountButton: some View {
-        Button {
-            isAuthenticationPresented = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.hierarchical)
-
-                Text(authenticationModel.isSignedIn ? "账号" : "登录")
-
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .accessibilityHint(
-            authenticationModel.isSignedIn
-                ? "打开账号管理"
-                : "打开扫码登录"
-        )
-        .accessibilityIdentifier("sidebar.account")
+    private var sidebarContextID: String {
+        navigationCoordinator.playbackPath.isEmpty
+            ? "navigation"
+            : "playback"
     }
 
-    private func tabNavigation<Content: View>(
-        path: Binding<[PlaybackDestination]>,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        NavigationStack(path: path) {
-            content()
-                .navigationDestination(for: PlaybackDestination.self) { _ in
-                    PlaybackDestinationView(
-                        model: videoModel,
-                        subtitleModel: subtitleModel,
-                        danmakuModel: danmakuModel,
-                        playerContent: playerContent,
-                        onRetry: navigationCoordinator.retryPlayback
-                    )
+    @ViewBuilder
+    private var selectedSourceRoot: some View {
+        switch navigationCoordinator.selectedTab {
+        case .search:
+            SearchTabRoot(
+                model: browseModel,
+                searchDraft: Binding(
+                    get: { navigationCoordinator.searchDraft },
+                    set: { navigationCoordinator.searchDraft = $0 }
+                ),
+                submittedSearchQuery: submittedSearchQuery,
+                scrollPosition: $searchScrollPosition,
+                onSelect: navigationCoordinator.openPlayback,
+                onSubmit: onSubmitSearch
+            )
+        case .popular:
+            PopularTabRoot(
+                model: browseModel,
+                scrollPosition: $popularScrollPosition,
+                onSelect: navigationCoordinator.openPlayback
+            )
+        case .history:
+            HistoryTabRoot(
+                model: historyModel,
+                isSignedIn: authenticationModel.isSignedIn,
+                scrollPosition: $historyScrollPosition,
+                onSelect: navigationCoordinator.openPlayback,
+                onPresentAuthentication: {
+                    isAuthenticationPresented = true
+                },
+                onAuthenticationRequired: {
+                    historyModel.reset()
+                    authenticationModel.revalidate()
                 }
+            )
         }
     }
 
