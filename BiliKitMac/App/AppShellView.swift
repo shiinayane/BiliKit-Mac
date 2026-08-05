@@ -35,7 +35,7 @@ struct AppShellView: View {
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             Group {
-                if navigationCoordinator.playbackPath.isEmpty {
+                if navigationCoordinator.currentPlaybackBVID == nil {
                     AppNavigationSidebar(
                         selection: $navigationCoordinator.selectedTab,
                         isSignedIn: authenticationModel.isSignedIn,
@@ -54,11 +54,7 @@ struct AppShellView: View {
                 max: 320
             )
         } detail: {
-            NavigationStack(
-                path: playbackPathBinding(
-                    for: navigationCoordinator.selectedTab
-                )
-            ) {
+            NavigationStack(path: $navigationCoordinator.playbackPath) {
                 selectedSourceRoot
                     .navigationDestination(
                         for: PlaybackDestination.self
@@ -91,7 +87,7 @@ struct AppShellView: View {
     }
 
     private var sidebarContextID: String {
-        navigationCoordinator.playbackPath.isEmpty
+        navigationCoordinator.currentPlaybackBVID == nil
             ? "navigation"
             : "playback"
     }
@@ -132,19 +128,6 @@ struct AppShellView: View {
                 }
             )
         }
-    }
-
-    private func playbackPathBinding(
-        for tab: AppTab
-    ) -> Binding<[PlaybackDestination]> {
-        Binding(
-            get: {
-                navigationCoordinator.playbackPath(for: tab)
-            },
-            set: { path in
-                navigationCoordinator.updatePlaybackPath(path, for: tab)
-            }
-        )
     }
 }
 
