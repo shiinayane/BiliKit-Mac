@@ -96,6 +96,168 @@ struct VideoDetailLifecycleTests {
         window.contentView = NSView()
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func replacementKeepsPlayerSurfaceUntilReset() async {
+        let first = VideoDetailLifecycleFixture(
+            bvid: "BV1LifecycleFirst",
+            cid: 900_001,
+            title: "第一个视频"
+        )
+        let replacement = VideoDetailLifecycleFixture(
+            bvid: "BV1LifecycleReplacement",
+            cid: 900_002,
+            title: "替换视频"
+        )
+        let repository = ReplacementLifecycleRepository(
+            first: first,
+            replacement: replacement
+        )
+        let player = ControlledReplacementPlayback()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+        let subtitleModel = SubtitleViewModel(
+            useCase: SubtitleUseCase(
+                repository: EmptySubtitleRepository()
+            ),
+            timeline: IdleTimeline()
+        )
+        let presentation = RecordingPresentation()
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: presentation
+        )
+        let playerSurface = PlayerSurfaceRecorder()
+        let hostingView = NSHostingView(
+            rootView: AnyView(
+                VideoPlaybackView(
+                    model: videoModel,
+                    subtitleModel: subtitleModel,
+                    danmakuModel: danmakuModel,
+                    onRetry: {}
+                ) {
+                    PlayerSurfaceProbe(
+                        recorder: playerSurface,
+                        phase: PlayerSurfacePhase(videoModel.state)
+                    )
+                }
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.layoutIfNeeded()
+
+        videoModel.loadVideo(first.bvid)
+        #expect(
+            await waitUntil {
+                guard case .ready(let context) = videoModel.state else {
+                    return false
+                }
+                return context.detail.bvid == first.bvid
+                    && playerSurface.createdIdentities.count == 1
+                    && presentation.startedIdentities.last?.bvid == first.bvid
+            }
+        )
+        let surfaceIdentity = playerSurface.createdIdentities[0]
+        let stopCountBeforeReplacement = presentation.stopCount
+
+        videoModel.loadVideo(replacement.bvid)
+        #expect(
+            await waitUntilAsync {
+                guard
+                    case .loading(let bvid) = videoModel.state,
+                    bvid == replacement.bvid
+                else {
+                    return false
+                }
+                return await repository.replacementRequestHasStarted()
+                    && playerSurface.lastUpdatedPhase == .loading
+                    && subtitleModel.state == .idle
+                    && presentation.stopCount
+                        == stopCountBeforeReplacement + 1
+            }
+        )
+        #expect(player.loadedIdentities == [first.identity])
+        #expect(player.stopCallCount == 1)
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(playerSurface.dismantledIdentities.isEmpty)
+
+        await repository.failReplacementRequest()
+        await videoModel.waitForCurrentTask()
+        hostingView.layoutSubtreeIfNeeded()
+        #expect(
+            await waitUntil {
+                if case .failed(let bvid, .content) = videoModel.state {
+                    return bvid == replacement.bvid
+                        && playerSurface.lastUpdatedPhase == .failed
+                }
+                return false
+            }
+        )
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(playerSurface.dismantledIdentities.isEmpty)
+
+        videoModel.loadVideo(replacement.bvid)
+        #expect(
+            await waitUntil {
+                guard
+                    case .preparingPlayback(let context) = videoModel.state
+                else {
+                    return false
+                }
+                return context.detail.bvid == replacement.bvid
+                    && playerSurface.lastUpdatedPhase == .preparing
+                    && player.loadedIdentities == [
+                        first.identity,
+                        replacement.identity,
+                    ]
+                    && presentation.startedIdentities.last?.bvid
+                        == replacement.bvid
+            }
+        )
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(playerSurface.dismantledIdentities.isEmpty)
+
+        player.succeedPendingLoad()
+        await videoModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                if case .ready(let context) = videoModel.state {
+                    return context.detail.bvid == replacement.bvid
+                        && playerSurface.lastUpdatedPhase == .ready
+                }
+                return false
+            }
+        )
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(playerSurface.dismantledIdentities.isEmpty)
+
+        videoModel.reset()
+        #expect(
+            await waitUntil {
+                playerSurface.dismantledIdentities == [surfaceIdentity]
+                    && subtitleModel.state == .idle
+            }
+        )
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(player.stopCallCount == 3)
+        #expect(
+            presentation.startedIdentities == [
+                first.identity,
+                replacement.identity,
+            ]
+        )
+        #expect(presentation.stopCount == stopCountBeforeReplacement + 2)
+
+        window.contentView = NSView()
+    }
+
     @MainActor
     private func waitUntil(
         _ condition: @MainActor () -> Bool
@@ -108,21 +270,49 @@ struct VideoDetailLifecycleTests {
         }
         return true
     }
+
+    @MainActor
+    private func waitUntilAsync(
+        _ condition: @MainActor () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !(await condition()) {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return true
+    }
 }
 
 private struct VideoDetailLifecycleFixture: Sendable {
-    let bvid = "BV1LifecycleFixture"
-    let page = VideoPage(
-        cid: 900_001,
-        index: 1,
-        title: "P1",
-        durationSeconds: 120
-    )
+    let bvid: String
+    let page: VideoPage
+    let title: String
+
+    init(
+        bvid: String = "BV1LifecycleFixture",
+        cid: Int64 = 900_001,
+        title: String = "生命周期测试视频"
+    ) {
+        self.bvid = bvid
+        page = VideoPage(
+            cid: cid,
+            index: 1,
+            title: "P1",
+            durationSeconds: 120
+        )
+        self.title = title
+    }
+
+    var identity: PlaybackItemIdentity {
+        PlaybackItemIdentity(bvid: bvid, cid: page.cid)
+    }
 
     var detail: VideoDetail {
         VideoDetail(
             bvid: bvid,
-            title: "生命周期测试视频",
+            title: title,
             summary: "手写测试数据",
             coverURL: nil,
             owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
@@ -184,6 +374,75 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
     }
 }
 
+private actor ReplacementLifecycleRepository: GuestContentRepository {
+    let first: VideoDetailLifecycleFixture
+    let replacement: VideoDetailLifecycleFixture
+    private var blocksReplacement = true
+    private var replacementRequestStarted = false
+    private var blockedRequest: CheckedContinuation<Void, any Error>?
+
+    init(
+        first: VideoDetailLifecycleFixture,
+        replacement: VideoDetailLifecycleFixture
+    ) {
+        self.first = first
+        self.replacement = replacement
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        if bvid == replacement.bvid, blocksReplacement {
+            try await withCheckedThrowingContinuation { continuation in
+                blockedRequest = continuation
+                replacementRequestStarted = true
+            }
+        }
+        return fixture(for: bvid).detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [fixture(for: bvid).page]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        fixture(for: bvid).playback
+    }
+
+    func replacementRequestHasStarted() -> Bool {
+        replacementRequestStarted
+    }
+
+    func failReplacementRequest() {
+        blocksReplacement = false
+        blockedRequest?.resume(
+            throwing: GuestApplicationError.transportFailure
+        )
+        blockedRequest = nil
+    }
+
+    private func fixture(
+        for bvid: String
+    ) -> VideoDetailLifecycleFixture {
+        bvid == first.bvid ? first : replacement
+    }
+}
+
 @MainActor
 private final class ControlledFailingPlayback: PlaybackControlling {
     private(set) var loadCallCount = 0
@@ -209,7 +468,108 @@ private final class ControlledFailingPlayback: PlaybackControlling {
     }
 }
 
+@MainActor
+private final class ControlledReplacementPlayback: PlaybackControlling {
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var stopCallCount = 0
+    private var pendingLoad: CheckedContinuation<Void, any Error>?
+
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        loadedIdentities.append(identity)
+        guard loadedIdentities.count > 1 else { return }
+        try await withCheckedThrowingContinuation { continuation in
+            pendingLoad = continuation
+        }
+    }
+
+    func pause() {}
+
+    func stop() {
+        stopCallCount += 1
+    }
+
+    func succeedPendingLoad() {
+        pendingLoad?.resume()
+        pendingLoad = nil
+    }
+}
+
 private struct ControlledPlaybackFailure: Error {}
+
+@MainActor
+private final class PlayerSurfaceRecorder {
+    private(set) var createdIdentities: [ObjectIdentifier] = []
+    private(set) var dismantledIdentities: [ObjectIdentifier] = []
+    private(set) var updatedPhases: [PlayerSurfacePhase] = []
+
+    var lastUpdatedPhase: PlayerSurfacePhase? {
+        updatedPhases.last
+    }
+
+    func recordCreation(of view: NSView) {
+        createdIdentities.append(ObjectIdentifier(view))
+    }
+
+    func recordDismantle(of view: NSView) {
+        dismantledIdentities.append(ObjectIdentifier(view))
+    }
+
+    func recordUpdate(phase: PlayerSurfacePhase) {
+        updatedPhases.append(phase)
+    }
+}
+
+private struct PlayerSurfaceProbe: NSViewRepresentable {
+    let recorder: PlayerSurfaceRecorder
+    let phase: PlayerSurfacePhase
+
+    func makeCoordinator() -> PlayerSurfaceRecorder {
+        recorder
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.recordCreation(of: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.recordUpdate(phase: phase)
+    }
+
+    static func dismantleNSView(
+        _ nsView: NSView,
+        coordinator: PlayerSurfaceRecorder
+    ) {
+        coordinator.recordDismantle(of: nsView)
+    }
+}
+
+private enum PlayerSurfacePhase: Equatable {
+    case idle
+    case loading
+    case preparing
+    case ready
+    case failed
+
+    init(_ state: GuestVideoState) {
+        switch state {
+        case .idle:
+            self = .idle
+        case .loading:
+            self = .loading
+        case .preparingPlayback:
+            self = .preparing
+        case .ready:
+            self = .ready
+        case .failed:
+            self = .failed
+        }
+    }
+}
 
 private actor EmptySubtitleRepository: SubtitleRepository {
     func tracks(

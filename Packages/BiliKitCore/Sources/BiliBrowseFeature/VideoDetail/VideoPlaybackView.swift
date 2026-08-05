@@ -11,6 +11,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
     private let playerContent: () -> PlayerContent
+    @State private var retainedContext: GuestVideoContext?
 
     public init(
         model: GuestVideoViewModel,
@@ -24,44 +25,39 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         self.danmakuModel = danmakuModel
         self.onRetry = onRetry
         self.playerContent = playerContent
+        _retainedContext = State(initialValue: nil)
     }
 
     @ViewBuilder
     public var body: some View {
         Group {
-            switch model.state {
+            if let currentContext {
+                ZStack {
+                    GuestVideoDetailView(
+                        context: currentContext,
+                        isPreparingPlayback: showsPlaybackActivity,
+                        subtitleModel: subtitleModel,
+                        danmakuModel: danmakuModel,
+                        playerContent: playerContent
+                    )
+                    .disabled(blocksRetainedContext)
+                    .allowsHitTesting(!blocksRetainedContext)
+                    .accessibilityHidden(blocksRetainedContext)
+
+                    retainedContextOverlay
+                }
+            } else {
+                emptyState
+            }
+        }
+        .onChange(of: model.state, initial: true) { _, state in
+            switch state {
+            case .preparingPlayback(let context), .ready(let context):
+                retainedContext = context
             case .idle:
-                ContentUnavailableView(
-                    "选择一个视频",
-                    systemImage: "play.rectangle",
-                    description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
-                )
-                .accessibilityIdentifier("detail.empty")
-            case .loading:
-                ProgressView("正在加载视频详情…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .preparingPlayback(let context):
-                GuestVideoDetailView(
-                    context: context,
-                    isPreparingPlayback: true,
-                    subtitleModel: subtitleModel,
-                    danmakuModel: danmakuModel,
-                    playerContent: playerContent
-                )
-            case .ready(let context):
-                GuestVideoDetailView(
-                    context: context,
-                    isPreparingPlayback: false,
-                    subtitleModel: subtitleModel,
-                    danmakuModel: danmakuModel,
-                    playerContent: playerContent
-                )
-            case .failed(_, let failure):
-                BrowseFailureView(
-                    title: failure.title,
-                    message: failure.message,
-                    retry: onRetry
-                )
+                retainedContext = nil
+            case .loading, .failed:
+                break
             }
         }
         .task(id: playbackIdentity) {
@@ -72,6 +68,85 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             }
             subtitleModel.selectVideo(playbackIdentity)
             danmakuModel.selectVideo(playbackIdentity)
+        }
+    }
+
+    private var currentContext: GuestVideoContext? {
+        switch model.state {
+        case .preparingPlayback(let context), .ready(let context):
+            context
+        case .loading, .failed:
+            retainedContext
+        case .idle:
+            nil
+        }
+    }
+
+    private var showsPlaybackActivity: Bool {
+        if case .preparingPlayback = model.state {
+            return true
+        }
+        return false
+    }
+
+    private var blocksRetainedContext: Bool {
+        switch model.state {
+        case .loading, .failed:
+            true
+        case .idle, .preparingPlayback, .ready:
+            false
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        switch model.state {
+        case .idle:
+            ContentUnavailableView(
+                "选择一个视频",
+                systemImage: "play.rectangle",
+                description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
+            )
+            .accessibilityIdentifier("detail.empty")
+        case .loading:
+            ProgressView("正在加载视频详情…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("playback.loading")
+        case .failed(_, let failure):
+            BrowseFailureView(
+                title: failure.title,
+                message: failure.message,
+                retry: onRetry
+            )
+            .accessibilityIdentifier("playback.failure")
+        case .preparingPlayback, .ready:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var retainedContextOverlay: some View {
+        switch model.state {
+        case .loading:
+            ZStack {
+                Rectangle()
+                    .fill(.background)
+                ProgressView("正在加载所选视频…")
+                    .controlSize(.large)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("playback.replacement.loading")
+        case .failed(_, let failure):
+            BrowseFailureView(
+                title: failure.title,
+                message: failure.message,
+                retry: onRetry
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.background)
+            .accessibilityIdentifier("playback.replacement.failure")
+        case .idle, .preparingPlayback, .ready:
+            EmptyView()
         }
     }
 
