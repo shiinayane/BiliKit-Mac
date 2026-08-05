@@ -2,6 +2,7 @@
     import BiliApplication
     import BiliAuthFeature
     import BiliBrowseFeature
+    import BiliDanmaku
     import BiliLibraryFeature
     import BiliModels
     import CoreGraphics
@@ -11,20 +12,26 @@
 
     struct UITestContentView: View {
         private let content: AppRootView
-        private let playback: UITestPlayback
+        @State private var playback: UITestLocalAVPlayerPlayback
+        private let dynamicTypeSize: DynamicTypeSize
 
         init() {
             let arguments = ProcessInfo.processInfo.arguments
             let usesContextualNavigator =
                 arguments.contains("-ui-testing")
                 && arguments.contains("-ui-testing-contextual-navigator")
+            dynamicTypeSize =
+                arguments.contains("-ui-testing-large-text")
+                ? .accessibility3
+                : .large
             let repository = UITestGuestRepository(
                 featuredBVID: usesContextualNavigator
                     ? ContextualNavigatorUITestFixture.initialBVID
-                    : "fixture-video-1"
+                    : "fixture-video-1",
+                includesSourceFixtures: usesContextualNavigator
             )
-            let playback = UITestPlayback()
-            self.playback = playback
+            let playback = UITestLocalAVPlayerPlayback()
+            _playback = State(initialValue: playback)
             let browseModel = GuestBrowseViewModel(
                 useCase: GuestFeedUseCase(repository: repository)
             )
@@ -40,11 +47,17 @@
                 presentation: UITestDanmakuPresentation()
             )
             let authenticationModel = AuthenticationViewModel(
-                service: UITestAuthenticationService(),
+                service: UITestAuthenticationService(
+                    restoresSignedIn: usesContextualNavigator
+                ),
                 qrCodeProvider: UITestQRCodeProvider()
             )
             let historyModel = WatchHistoryViewModel(
-                useCase: WatchHistoryUseCase(repository: UITestHistoryRepository())
+                useCase: WatchHistoryUseCase(
+                    repository: UITestHistoryRepository(
+                        includesFixture: usesContextualNavigator
+                    )
+                )
             )
             let navigationCoordinator = AppNavigationCoordinator(
                 startPlayback: { bvid in
@@ -65,15 +78,7 @@
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
-                playerContent: AnyView(
-                    ZStack {
-                        Color.black
-                        Image(systemName: "play.rectangle")
-                            .font(.largeTitle)
-                            .foregroundStyle(.white.opacity(0.75))
-                            .accessibilityHidden(true)
-                    }
-                ),
+                playerContent: Self.makePlayerContent(playback: playback),
                 playbackSidebarContent: usesContextualNavigator
                     ? { bvid, onSelectRecommendation in
                         ContextualNavigatorUITestFixture.sidebar(
@@ -87,20 +92,54 @@
 
         var body: some View {
             content.overlay(alignment: .topTrailing) {
-                Text(playback.isLoaded ? "播放中" : "播放已停止")
-                    .font(.caption2)
-                    .opacity(0.01)
-                    .accessibilityIdentifier(
-                        playback.isLoaded
-                            ? "playback.status.playing"
-                            : "playback.status.stopped"
-                    )
+                VStack {
+                    Text(playback.isLoaded ? "播放中" : "播放已停止")
+                        .accessibilityIdentifier(
+                            playback.isLoaded
+                                ? "playback.status.playing"
+                                : "playback.status.stopped"
+                        )
+                    Text("Local AVPlayer fixture")
+                        .accessibilityLabel(playback.probeValue)
+                        .accessibilityIdentifier("local-avplayer.timeline")
+                }
+                .font(.caption2)
+                .opacity(0.01)
             }
+            .environment(\.dynamicTypeSize, dynamicTypeSize)
+        }
+
+        private static func makePlayerContent(
+            playback: UITestLocalAVPlayerPlayback
+        ) -> AnyView {
+            let renderer = CoreAnimationDanmakuRenderer()
+            let controller = DanmakuPresentationController(
+                backend: renderer,
+                configuration: DanmakuLaneConfiguration(
+                    surfaceWidth: 0,
+                    surfaceHeight: 0,
+                    laneHeight: 36,
+                    minimumHorizontalGap: 12,
+                    maximumActiveCount:
+                        DanmakuLaneConfiguration.hardMaximumActiveCount,
+                    displayAreaFraction: 1
+                )
+            )
+            return AnyView(
+                PlayerHostView(
+                    player: playback.player,
+                    danmakuRenderer: renderer,
+                    danmakuController: controller
+                ) {
+                    EmptyView()
+                }
+            )
         }
     }
 
     private struct UITestGuestRepository: GuestContentRepository {
         let featuredBVID: String
+        let includesSourceFixtures: Bool
 
         func popular(page: Int, pageSize: Int) async throws -> PopularPage {
             PopularPage(
@@ -112,11 +151,11 @@
 
         func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
             SearchPage(
-                videos: [],
+                videos: includesSourceFixtures ? [Self.searchVideo] : [],
                 pageNumber: page,
-                pageSize: 0,
-                totalResults: 0,
-                totalPages: 0
+                pageSize: includesSourceFixtures ? 1 : 0,
+                totalResults: includesSourceFixtures ? 1 : 0,
+                totalPages: includesSourceFixtures ? 1 : 0
             )
         }
 
@@ -165,6 +204,15 @@
             likeCount: 4_321
         )
         private static let publishedAt = Date(timeIntervalSince1970: 1_785_000_000)
+        private static let searchVideo = SearchVideo(
+            bvid: "fixture-search-A",
+            title: "自制搜索示例",
+            coverURL: nil,
+            owner: owner,
+            statistics: statistics,
+            durationSeconds: 541,
+            publishedAt: publishedAt
+        )
         private static func popularVideo(bvid: String) -> PopularVideo {
             PopularVideo(
                 bvid: bvid,
@@ -175,25 +223,6 @@
                 durationSeconds: 637,
                 publishedAt: publishedAt
             )
-        }
-    }
-
-    @MainActor
-    @Observable
-    private final class UITestPlayback: PlaybackControlling {
-        private(set) var isLoaded = false
-
-        func load(
-            _ playback: VideoPlayback,
-            identity: PlaybackItemIdentity
-        ) async throws {
-            isLoaded = true
-        }
-
-        func pause() {}
-
-        func stop() {
-            isLoaded = false
         }
     }
 
@@ -241,7 +270,11 @@
     }
 
     private struct UITestAuthenticationService: AuthenticationServicing {
-        func restore() async -> AuthenticationState { .signedOut }
+        let restoresSignedIn: Bool
+
+        func restore() async -> AuthenticationState {
+            restoresSignedIn ? .signedIn : .signedOut
+        }
         func requestQRCode() async -> AuthenticationState { .signedOut }
         func pollOnce() async -> AuthenticationState { .signedOut }
         func finalizeLogin() async -> AuthenticationState { .signedOut }
@@ -254,11 +287,28 @@
     }
 
     private struct UITestHistoryRepository: WatchHistoryRepository {
+        let includesFixture: Bool
+
         func watchHistory(
             after continuation: WatchHistoryContinuation?,
             pageSize: Int
         ) async throws -> WatchHistoryPage {
-            WatchHistoryPage(items: [], continuation: nil)
+            WatchHistoryPage(
+                items: includesFixture
+                    ? [
+                        WatchHistoryItem(
+                            bvid: "fixture-history-A",
+                            title: "自制历史示例",
+                            coverURL: nil,
+                            owner: VideoOwner(id: 2, name: "历史夹具创作者"),
+                            progressSeconds: 120,
+                            durationSeconds: 600,
+                            viewedAt: Date(timeIntervalSince1970: 1_785_000_000)
+                        )
+                    ]
+                    : [],
+                continuation: nil
+            )
         }
     }
 #endif

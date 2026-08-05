@@ -30,11 +30,21 @@
 
         var body: some View {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(
+                    alignment: .leading,
+                    spacing: 16,
+                    pinnedViews: [.sectionHeaders]
+                ) {
                     header
-                    partControls
-                    comments
-                    recommendations
+                    Section {
+                        comments
+                        recommendations
+                    } header: {
+                        partControls
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.bar)
+                    }
                 }
                 .padding(16)
             }
@@ -86,6 +96,10 @@
                         Text(comment.body)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(
+                        .leading,
+                        CGFloat(min(comment.replyDepth, 2)) * 16
+                    )
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("fixture.comment.\(comment.id)")
                 }
@@ -118,12 +132,38 @@
             SyntheticComment(
                 id: "primary",
                 author: "Fixture Reader",
-                body: "Synthetic content for navigation validation only."
+                body: "Synthetic content for navigation validation only.",
+                replyDepth: 0
             ),
             SyntheticComment(
                 id: "reply",
                 author: "Fixture Reply",
-                body: "这条回复不来自远端，也不代表生产评论能力。"
+                body: "这条回复不来自远端，也不代表生产评论能力。",
+                replyDepth: 1
+            ),
+            SyntheticComment(
+                id: "mixed",
+                author: "Example 読者",
+                body: "Mixed Chinese, English and 日本語 verify native wrapping.",
+                replyDepth: 0
+            ),
+            SyntheticComment(
+                id: "nested-reply",
+                author: "Fixture Nested Reply",
+                body: "Second-level hierarchy stays bounded in the sidebar.",
+                replyDepth: 2
+            ),
+            SyntheticComment(
+                id: "long",
+                author: "长文本夹具",
+                body: "这是一段用于形成独立滚动范围的合成长文本。它只验证分栏中的换行、滚动位置和媒体 identity 切换，不代表生产评论内容。",
+                replyDepth: 0
+            ),
+            SyntheticComment(
+                id: "last",
+                author: "Fixture Last Reader",
+                body: "The final synthetic comment makes scroll restoration observable.",
+                replyDepth: 0
             ),
         ]
 
@@ -143,6 +183,7 @@
         let id: String
         let author: String
         let body: String
+        let replyDepth: Int
     }
 
     private struct SyntheticRecommendation {
