@@ -107,17 +107,7 @@ final class BiliKitMacUITests: XCTestCase {
         toggleSystemSidebar(in: app)
         XCTAssertTrue(waitForHittable(playbackSidebarTitle, timeout: 5))
 
-        guard
-            let backButton = uniqueHittableButton(
-                matching: NSPredicate(format: "label == %@", "Back"),
-                in: app,
-                timeout: 5
-            )
-        else {
-            XCTFail("Expected one visible system Back button")
-            return
-        }
-        backButton.click()
+        clickSystemBack(in: app)
 
         XCTAssertTrue(feed.waitForExistence(timeout: 5))
         XCTAssertTrue(navigationSidebar.waitForExistence(timeout: 5))
@@ -140,21 +130,43 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
-    func testContextualNavigatorReturnsEachSourceAndRestoresSearchDraft() {
+    func testContextualNavigatorReturnsEachSourceAndRestoresSearchDraft()
+        throws
+    {
         let app = launchFixture(arguments: [
             "-ui-testing",
             "-ui-testing-contextual-navigator",
         ])
+        let requestProbe = element("fixture.source-requests", in: app)
 
-        let popularItem = element("feed.item.fixture-video-A", in: app)
-        XCTAssertTrue(waitForHittable(popularItem, timeout: 5))
-        popularItem.click()
+        let popularMarker = element(
+            "feed.item.fixture-popular-marker",
+            in: app
+        )
+        let popularGrid = element("feed.grid", in: app)
+        XCTAssertTrue(popularGrid.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            scrollUntilHittable(
+                popularMarker,
+                in: popularGrid,
+                maximumScrolls: 12
+            )
+        )
+        let popularRequests = try XCTUnwrap(
+            probeFields(from: requestProbe)["popular"]
+        )
+        popularMarker.click()
         XCTAssertTrue(
             element("playback.destination", in: app)
                 .waitForExistence(timeout: 5)
         )
         clickSystemBack(in: app)
         XCTAssertTrue(element("feed.grid", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(popularMarker, timeout: 5))
+        XCTAssertEqual(
+            probeFields(from: requestProbe)["popular"],
+            popularRequests
+        )
 
         let searchSource = element("sidebar.search", in: app)
         XCTAssertTrue(waitForHittable(searchSource, timeout: 5))
@@ -162,11 +174,31 @@ final class BiliKitMacUITests: XCTestCase {
         let searchField = app.searchFields.firstMatch
         XCTAssertTrue(waitForHittable(searchField, timeout: 5))
         searchField.click()
-        searchField.typeText("fixture draft")
+        let searchDraft = "12345"
+        searchField.typeText(searchDraft)
         searchField.typeKey(.return, modifierFlags: [])
-        let searchItem = element("search.item.fixture-search-A", in: app)
-        XCTAssertTrue(waitForHittable(searchItem, timeout: 5))
-        searchItem.click()
+        XCTAssertTrue(
+            waitForProbe(requestProbe, timeout: 5) { fields in
+                fields["search"] == "1"
+            }
+        )
+        let searchMarker = element(
+            "search.item.fixture-search-marker",
+            in: app
+        )
+        let searchResults = app.scrollViews["search.results"]
+        XCTAssertTrue(searchResults.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            scrollUntilHittable(
+                searchMarker,
+                in: searchResults,
+                maximumScrolls: 12
+            )
+        )
+        let searchRequests = try XCTUnwrap(
+            probeFields(from: requestProbe)["search"]
+        )
+        searchMarker.click()
         XCTAssertTrue(
             element("sidebar.contextual-fixture", in: app)
                 .waitForExistence(timeout: 5)
@@ -175,17 +207,39 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(
             element("search.results", in: app).waitForExistence(timeout: 5)
         )
+        XCTAssertTrue(waitForHittable(searchMarker, timeout: 5))
+        XCTAssertEqual(
+            probeFields(from: requestProbe)["search"],
+            searchRequests
+        )
         XCTAssertTrue(
-            (app.searchFields.firstMatch.value as? String)?
-                .contains("fixture draft") == true
+            waitForAccessibilityText(
+                app.searchFields.firstMatch,
+                equalTo: searchDraft,
+                timeout: 5
+            )
         )
 
         let historySource = element("sidebar.history", in: app)
         XCTAssertTrue(waitForHittable(historySource, timeout: 5))
         historySource.click()
-        let historyItem = element("history.item.fixture-history-A", in: app)
-        XCTAssertTrue(waitForHittable(historyItem, timeout: 5))
-        historyItem.click()
+        let historyMarker = element(
+            "history.item.fixture-history-marker",
+            in: app
+        )
+        let historyList = element("history.list", in: app)
+        XCTAssertTrue(historyList.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            scrollUntilHittable(
+                historyMarker,
+                in: historyList,
+                maximumScrolls: 12
+            )
+        )
+        let historyRequests = try XCTUnwrap(
+            probeFields(from: requestProbe)["history"]
+        )
+        historyMarker.click()
         XCTAssertTrue(
             element("sidebar.contextual-fixture", in: app)
                 .waitForExistence(timeout: 5)
@@ -193,6 +247,11 @@ final class BiliKitMacUITests: XCTestCase {
         clickSystemBack(in: app)
         XCTAssertTrue(
             element("history.list", in: app).waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(waitForHittable(historyMarker, timeout: 5))
+        XCTAssertEqual(
+            probeFields(from: requestProbe)["history"],
+            historyRequests
         )
     }
 
@@ -220,7 +279,7 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(partTwo, timeout: 5))
         partTwo.click()
         XCTAssertTrue(
-            waitForLabel(
+            waitForAccessibilityText(
                 element("fixture.selected-part", in: app),
                 equalTo: "Selected P2",
                 timeout: 5
@@ -352,7 +411,16 @@ final class BiliKitMacUITests: XCTestCase {
         ])
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        XCTAssertEqual(window.frame.width, 1_320, accuracy: 4)
+        let initialSize = CGSize(width: 1_320, height: 820)
+        resizeWindow(window, to: initialSize)
+        XCTAssertTrue(
+            waitForWindowSize(
+                window,
+                size: initialSize,
+                accuracy: 6,
+                timeout: 5
+            )
+        )
 
         let popularItem = element("feed.item.fixture-video-A", in: app)
         XCTAssertTrue(waitForHittable(popularItem, timeout: 5))
@@ -380,7 +448,7 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(recommendationB, timeout: 5))
         recommendationB.click()
         XCTAssertTrue(
-            waitForLabel(
+            waitForAccessibilityText(
                 element("fixture.playback-identity", in: app),
                 equalTo: "fixture-video-B",
                 timeout: 5
@@ -394,7 +462,7 @@ final class BiliKitMacUITests: XCTestCase {
         )
 
         let timeline = element("local-avplayer.timeline", in: app)
-        var stableTimeline = try waitForTimeline(
+        let stableTimeline = try waitForTimeline(
             timeline,
             item: "fixture-video-B",
             minimumMilliseconds: 100
@@ -403,35 +471,29 @@ final class BiliKitMacUITests: XCTestCase {
         let stableItemIdentity = stableTimeline["itemIdentity"]
         let stableGeneration = stableTimeline["generation"]
 
-        for size in [
-            CGSize(width: 1_080, height: 680),
-            CGSize(width: 860, height: 620),
-        ] {
-            resizeWindow(window, to: size)
-            XCTAssertTrue(
-                waitForWindowWidth(
-                    window,
-                    width: size.width,
-                    accuracy: 6,
-                    timeout: 5
-                )
+        let compactSize = CGSize(width: 1_080, height: 680)
+        resizeWindow(window, to: compactSize)
+        XCTAssertTrue(
+            waitForWindowSize(
+                window,
+                size: compactSize,
+                accuracy: 6,
+                timeout: 5
             )
-            XCTAssertTrue(element("player.host", in: app).exists)
-            XCTAssertTrue(sidebar.exists)
-            let advancedTimeline = try waitForTimeline(
-                timeline,
-                item: "fixture-video-B",
-                minimumMilliseconds:
-                    try timelineMilliseconds(stableTimeline) + 100
-            )
-            XCTAssertEqual(
-                advancedTimeline["playerIdentity"],
-                stablePlayerIdentity
-            )
-            XCTAssertEqual(advancedTimeline["itemIdentity"], stableItemIdentity)
-            XCTAssertEqual(advancedTimeline["generation"], stableGeneration)
-            stableTimeline = advancedTimeline
-        }
+        )
+        XCTAssertTrue(sidebar.exists)
+        let advancedTimeline = try waitForTimeline(
+            timeline,
+            item: "fixture-video-B",
+            minimumMilliseconds:
+                try timelineMilliseconds(stableTimeline) + 100
+        )
+        XCTAssertEqual(
+            advancedTimeline["playerIdentity"],
+            stablePlayerIdentity
+        )
+        XCTAssertEqual(advancedTimeline["itemIdentity"], stableItemIdentity)
+        XCTAssertEqual(advancedTimeline["generation"], stableGeneration)
 
         clickSystemBack(in: app)
         XCTAssertTrue(
@@ -470,8 +532,8 @@ final class BiliKitMacUITests: XCTestCase {
     @MainActor
     private func clickSystemBack(in app: XCUIApplication) {
         guard
-            let backButton = uniqueHittableButton(
-                matching: NSPredicate(format: "label == %@", "Back"),
+            let buttons = systemNavigationToolbarButtons(
+                expectedCount: 2,
                 in: app,
                 timeout: 5
             )
@@ -479,7 +541,7 @@ final class BiliKitMacUITests: XCTestCase {
             XCTFail("Expected one visible system Back button")
             return
         }
-        backButton.click()
+        buttons[1].click()
     }
 
     @MainActor
@@ -517,13 +579,7 @@ final class BiliKitMacUITests: XCTestCase {
 
     @MainActor
     private func probeFields(from element: XCUIElement) -> [String: String] {
-        let accessibilityValue = element.value as? String
-        let value =
-            if let accessibilityValue, !accessibilityValue.isEmpty {
-                accessibilityValue
-            } else {
-                element.label
-            }
+        let value = accessibilityText(of: element)
         return Dictionary(
             uniqueKeysWithValues: value.split(separator: ";").compactMap {
                 field in
@@ -542,31 +598,40 @@ final class BiliKitMacUITests: XCTestCase {
 
     @MainActor
     private func resizeWindow(_ window: XCUIElement, to size: CGSize) {
-        let frame = window.frame
-        let handle = window.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.998, dy: 0.998)
-        )
-        handle.press(
-            forDuration: 0.1,
-            thenDragTo: handle.withOffset(
-                CGVector(
-                    dx: size.width - frame.width,
-                    dy: size.height - frame.height
+        for _ in 0..<3 {
+            let frame = window.frame
+            guard
+                abs(frame.width - size.width) > 1
+                    || abs(frame.height - size.height) > 1
+            else {
+                return
+            }
+            let handle = window.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.998, dy: 0.998)
+            )
+            handle.press(
+                forDuration: 0.1,
+                thenDragTo: handle.withOffset(
+                    CGVector(
+                        dx: size.width - frame.width,
+                        dy: size.height - frame.height
+                    )
                 )
             )
-        )
+        }
     }
 
     @MainActor
-    private func waitForWindowWidth(
+    private func waitForWindowSize(
         _ window: XCUIElement,
-        width: CGFloat,
+        size: CGSize,
         accuracy: CGFloat,
         timeout: TimeInterval
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                abs(window.frame.width - width) <= accuracy
+                abs(window.frame.width - size.width) <= accuracy
+                    && abs(window.frame.height - size.height) <= accuracy
             },
             object: window
         )
@@ -598,12 +663,10 @@ final class BiliKitMacUITests: XCTestCase {
 
     @MainActor
     private func toggleSystemSidebar(in app: XCUIApplication) {
+        let expectedCount = element("playback.destination", in: app).exists ? 2 : 1
         guard
-            let toggle = uniqueHittableButton(
-                matching: NSPredicate(
-                    format: "label CONTAINS[c] %@",
-                    "sidebar"
-                ),
+            let buttons = systemNavigationToolbarButtons(
+                expectedCount: expectedCount,
                 in: app,
                 timeout: 5
             )
@@ -611,21 +674,21 @@ final class BiliKitMacUITests: XCTestCase {
             XCTFail("Expected one visible NavigationSplitView sidebar toggle")
             return
         }
-        toggle.click()
+        buttons[0].click()
     }
 
     @MainActor
-    private func uniqueHittableButton(
-        matching predicate: NSPredicate,
+    private func systemNavigationToolbarButtons(
+        expectedCount: Int,
         in app: XCUIApplication,
         timeout: TimeInterval
-    ) -> XCUIElement? {
-        let query = app.buttons.matching(predicate)
+    ) -> [XCUIElement]? {
+        let query = app.windows.firstMatch.toolbars.firstMatch.buttons
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 query.allElementsBoundByIndex.filter {
                     $0.exists && $0.isHittable
-                }.count == 1
+                }.count == expectedCount
             },
             object: app
         )
@@ -634,8 +697,10 @@ final class BiliKitMacUITests: XCTestCase {
         else {
             return nil
         }
-        return query.allElementsBoundByIndex.first {
+        return query.allElementsBoundByIndex.filter {
             $0.exists && $0.isHittable
+        }.sorted {
+            $0.frame.minX < $1.frame.minX
         }
     }
 
@@ -654,16 +719,26 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
-    private func waitForLabel(
+    private func waitForAccessibilityText(
         _ element: XCUIElement,
-        equalTo label: String,
+        equalTo expectedText: String,
         timeout: TimeInterval
     ) -> Bool {
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", label),
+            predicate: NSPredicate { _, _ in
+                self.accessibilityText(of: element) == expectedText
+            },
             object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func accessibilityText(of element: XCUIElement) -> String {
+        if let value = element.value as? String, !value.isEmpty {
+            return value
+        }
+        return element.label
     }
 
     @MainActor

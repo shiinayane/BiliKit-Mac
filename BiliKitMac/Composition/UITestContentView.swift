@@ -13,6 +13,7 @@
     struct UITestContentView: View {
         private let content: AppRootView
         @State private var playback: UITestLocalAVPlayerPlayback
+        @State private var sourceRequests: UITestSourceRequestRecorder
         private let dynamicTypeSize: DynamicTypeSize
 
         init() {
@@ -20,6 +21,8 @@
             let usesContextualNavigator =
                 arguments.contains("-ui-testing")
                 && arguments.contains("-ui-testing-contextual-navigator")
+            let sourceRequests = UITestSourceRequestRecorder()
+            _sourceRequests = State(initialValue: sourceRequests)
             dynamicTypeSize =
                 arguments.contains("-ui-testing-large-text")
                 ? .accessibility3
@@ -28,7 +31,8 @@
                 featuredBVID: usesContextualNavigator
                     ? ContextualNavigatorUITestFixture.initialBVID
                     : "fixture-video-1",
-                includesSourceFixtures: usesContextualNavigator
+                includesSourceFixtures: usesContextualNavigator,
+                requestRecorder: sourceRequests
             )
             let playback = UITestLocalAVPlayerPlayback()
             _playback = State(initialValue: playback)
@@ -55,7 +59,8 @@
             let historyModel = WatchHistoryViewModel(
                 useCase: WatchHistoryUseCase(
                     repository: UITestHistoryRepository(
-                        includesFixture: usesContextualNavigator
+                        includesFixture: usesContextualNavigator,
+                        requestRecorder: sourceRequests
                     )
                 )
             )
@@ -102,6 +107,9 @@
                     Text("Local AVPlayer fixture")
                         .accessibilityLabel(playback.probeValue)
                         .accessibilityIdentifier("local-avplayer.timeline")
+                    Text("Source request counts")
+                        .accessibilityLabel(sourceRequests.probeValue)
+                        .accessibilityIdentifier("fixture.source-requests")
                 }
                 .font(.caption2)
                 .opacity(0.01)
@@ -140,21 +148,27 @@
     private struct UITestGuestRepository: GuestContentRepository {
         let featuredBVID: String
         let includesSourceFixtures: Bool
+        let requestRecorder: UITestSourceRequestRecorder
 
         func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-            PopularPage(
-                videos: [Self.popularVideo(bvid: featuredBVID)],
+            await requestRecorder.recordPopular()
+            return PopularPage(
+                videos: includesSourceFixtures
+                    ? Self.popularVideos(featuredBVID: featuredBVID)
+                    : [Self.popularVideo(bvid: featuredBVID)],
                 pageNumber: page,
                 pageSize: pageSize
             )
         }
 
         func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-            SearchPage(
-                videos: includesSourceFixtures ? [Self.searchVideo] : [],
+            await requestRecorder.recordSearch()
+            let videos = includesSourceFixtures ? Self.searchVideos : []
+            return SearchPage(
+                videos: videos,
                 pageNumber: page,
-                pageSize: includesSourceFixtures ? 1 : 0,
-                totalResults: includesSourceFixtures ? 1 : 0,
+                pageSize: videos.count,
+                totalResults: videos.count,
                 totalPages: includesSourceFixtures ? 1 : 0
             )
         }
@@ -204,15 +218,36 @@
             likeCount: 4_321
         )
         private static let publishedAt = Date(timeIntervalSince1970: 1_785_000_000)
-        private static let searchVideo = SearchVideo(
-            bvid: "fixture-search-A",
-            title: "自制搜索示例",
-            coverURL: nil,
-            owner: owner,
-            statistics: statistics,
-            durationSeconds: 541,
-            publishedAt: publishedAt
-        )
+        private static let searchVideos = (0..<18).map { index in
+            SearchVideo(
+                bvid: index == 0
+                    ? "fixture-search-A"
+                    : index == 17
+                        ? "fixture-search-marker"
+                        : "fixture-search-\(index)",
+                title: "自制搜索示例 \(index + 1)",
+                coverURL: nil,
+                owner: owner,
+                statistics: statistics,
+                durationSeconds: 541,
+                publishedAt: publishedAt
+            )
+        }
+
+        private static func popularVideos(
+            featuredBVID: String
+        ) -> [PopularVideo] {
+            (0..<18).map { index in
+                popularVideo(
+                    bvid: index == 0
+                        ? featuredBVID
+                        : index == 17
+                            ? "fixture-popular-marker"
+                            : "fixture-popular-\(index)"
+                )
+            }
+        }
+
         private static func popularVideo(bvid: String) -> PopularVideo {
             PopularVideo(
                 bvid: bvid,
@@ -288,27 +323,59 @@
 
     private struct UITestHistoryRepository: WatchHistoryRepository {
         let includesFixture: Bool
+        let requestRecorder: UITestSourceRequestRecorder
 
         func watchHistory(
             after continuation: WatchHistoryContinuation?,
             pageSize: Int
         ) async throws -> WatchHistoryPage {
-            WatchHistoryPage(
+            await requestRecorder.recordHistory()
+            return WatchHistoryPage(
                 items: includesFixture
-                    ? [
-                        WatchHistoryItem(
-                            bvid: "fixture-history-A",
-                            title: "自制历史示例",
-                            coverURL: nil,
-                            owner: VideoOwner(id: 2, name: "历史夹具创作者"),
-                            progressSeconds: 120,
-                            durationSeconds: 600,
-                            viewedAt: Date(timeIntervalSince1970: 1_785_000_000)
-                        )
-                    ]
+                    ? Self.items
                     : [],
                 continuation: nil
             )
+        }
+
+        private static let items = (0..<18).map { index in
+            WatchHistoryItem(
+                bvid: index == 0
+                    ? "fixture-history-A"
+                    : index == 17
+                        ? "fixture-history-marker"
+                        : "fixture-history-\(index)",
+                title: "自制历史示例 \(index + 1)",
+                coverURL: nil,
+                owner: VideoOwner(id: 2, name: "历史夹具创作者"),
+                progressSeconds: 120,
+                durationSeconds: 600,
+                viewedAt: Date(timeIntervalSince1970: 1_785_000_000)
+            )
+        }
+    }
+
+    @MainActor
+    @Observable
+    private final class UITestSourceRequestRecorder {
+        private(set) var popularCount = 0
+        private(set) var searchCount = 0
+        private(set) var historyCount = 0
+
+        var probeValue: String {
+            "popular=\(popularCount);search=\(searchCount);history=\(historyCount)"
+        }
+
+        func recordPopular() {
+            popularCount += 1
+        }
+
+        func recordSearch() {
+            searchCount += 1
+        }
+
+        func recordHistory() {
+            historyCount += 1
         }
     }
 #endif
