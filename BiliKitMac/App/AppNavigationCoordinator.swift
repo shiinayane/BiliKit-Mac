@@ -62,7 +62,6 @@ final class AppNavigationCoordinator {
         guard currentPlaybackBVID != bvid else { return }
 
         if var activePlayback {
-            stopPlayback()
             activePlayback.bvid = bvid
             self.activePlayback = activePlayback
         } else {

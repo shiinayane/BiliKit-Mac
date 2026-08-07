@@ -51,9 +51,7 @@ struct AppNavigationCoordinatorTests {
         #expect(
             events == [
                 "start:BV1RouteA",
-                "stop",
                 "start:BV1RouteB",
-                "stop",
                 "start:BV1RouteC",
             ]
         )
