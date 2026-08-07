@@ -21,6 +21,11 @@
             let usesContextualNavigator =
                 arguments.contains("-ui-testing")
                 && arguments.contains("-ui-testing-contextual-navigator")
+            let usesMinimalPlaybackContext =
+                arguments.contains("-ui-testing")
+                && arguments.contains(
+                    "-ui-testing-single-part-empty-summary"
+                )
             let sourceRequests = UITestSourceRequestRecorder()
             _sourceRequests = State(initialValue: sourceRequests)
             dynamicTypeSize =
@@ -32,6 +37,7 @@
                     ? ContextualNavigatorUITestFixture.initialBVID
                     : "fixture-video-1",
                 includesSourceFixtures: usesContextualNavigator,
+                usesMinimalPlaybackContext: usesMinimalPlaybackContext,
                 requestRecorder: sourceRequests
             )
             let playback = UITestLocalAVPlayerPlayback()
@@ -148,6 +154,7 @@
     private struct UITestGuestRepository: GuestContentRepository {
         let featuredBVID: String
         let includesSourceFixtures: Bool
+        let usesMinimalPlaybackContext: Bool
         let requestRecorder: UITestSourceRequestRecorder
 
         func popular(page: Int, pageSize: Int) async throws -> PopularPage {
@@ -177,7 +184,9 @@
             VideoDetail(
                 bvid: bvid,
                 title: "自制播放页示例",
-                summary: "用于验证本机导航往返的假值。",
+                summary: usesMinimalPlaybackContext
+                    ? ""
+                    : "用于验证本机导航往返的假值。",
                 coverURL: nil,
                 owner: Self.owner,
                 statistics: Self.statistics,
@@ -188,14 +197,29 @@
         }
 
         func pages(for bvid: String) async throws -> [VideoPage] {
-            [
+            let pages = [
                 VideoPage(
                     cid: 101,
                     index: 1,
                     title: "示例章节",
                     durationSeconds: 1_205
-                )
+                ),
+                VideoPage(
+                    cid: 102,
+                    index: 2,
+                    title: "布局迁移与状态边界",
+                    durationSeconds: 1_401
+                ),
+                VideoPage(
+                    cid: 103,
+                    index: 3,
+                    title: "辅助功能验证",
+                    durationSeconds: 1_600
+                ),
             ]
+            return usesMinimalPlaybackContext
+                ? [pages[0]]
+                : pages
         }
 
         func playback(

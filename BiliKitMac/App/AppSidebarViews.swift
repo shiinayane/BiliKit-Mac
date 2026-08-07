@@ -60,15 +60,3 @@ struct AppNavigationSidebar: View {
         .accessibilityIdentifier("sidebar.account")
     }
 }
-
-/// 在生产评论能力尚未接入时准确表达播放上下文 Sidebar 的能力边界。
-struct PlaybackContextUnavailableSidebar: View {
-    var body: some View {
-        ContentUnavailableView(
-            "评论尚未接入",
-            systemImage: "text.bubble",
-            description: Text("当前版本不会伪造评论或相关推荐内容。")
-        )
-        .accessibilityIdentifier("sidebar.playback-context")
-    }
-}

@@ -11,26 +11,12 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     let playerContent: () -> PlayerContent
 
     var body: some View {
-        GeometryReader { geometry in
-            if let mode = PlaybackPageLayout.mode(
-                availableWidth: geometry.size.width,
-                pageCount: context.pages.count
-            ) {
-                HStack(spacing: 0) {
-                    mainContent(mode: mode)
-
-                    if mode == .wideParts {
-                        Divider()
-                        partsRail
-                    }
-                }
-                .accessibilityIdentifier("playback.destination")
-            }
-        }
-        .navigationTitle(context.detail.title)
+        mainContent
+            .accessibilityIdentifier("playback.destination")
+            .navigationTitle(context.detail.title)
     }
 
-    private func mainContent(mode: PlaybackPageLayoutMode) -> some View {
+    private var mainContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 metadata
@@ -41,23 +27,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
 
                 Divider()
                 DanmakuControlsView(model: danmakuModel)
-
-                if mode == .compactParts {
-                    Divider()
-                    DisclosureGroup("分 P") {
-                        partsList
-                            .padding(.top, 10)
-                    }
-                    .font(.title3)
-                }
-
-                if !context.detail.summary.isEmpty {
-                    Divider()
-                    Text(context.detail.summary)
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
             }
             .padding(
                 .horizontal,
@@ -77,33 +46,44 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                 .font(.title.weight(.semibold))
                 .textSelection(.enabled)
 
-            HStack(spacing: 16) {
-                Label(
-                    context.detail.owner.name,
-                    systemImage: "person.crop.circle"
-                )
-                Label(
-                    VideoMetadataFormatting.compactCount(
-                        context.detail.statistics.viewCount
-                    ),
-                    systemImage: "play"
-                )
-                Label(
-                    VideoMetadataFormatting.compactCount(
-                        context.detail.statistics.danmakuCount
-                    ),
-                    systemImage: "text.bubble"
-                )
-                Label(
-                    VideoMetadataFormatting.fullPublishedDate(
-                        context.detail.publishedAt
-                    ),
-                    systemImage: "calendar"
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    metadataItems
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    metadataItems
+                }
             }
             .font(.body)
             .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var metadataItems: some View {
+        Label(
+            context.detail.owner.name,
+            systemImage: "person.crop.circle"
+        )
+        Label(
+            VideoMetadataFormatting.compactCount(
+                context.detail.statistics.viewCount
+            ),
+            systemImage: "play"
+        )
+        Label(
+            VideoMetadataFormatting.compactCount(
+                context.detail.statistics.danmakuCount
+            ),
+            systemImage: "text.bubble"
+        )
+        Label(
+            VideoMetadataFormatting.fullPublishedDate(
+                context.detail.publishedAt
+            ),
+            systemImage: "calendar"
+        )
     }
 
     private var player: some View {
@@ -128,92 +108,10 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
         .background(.black)
         .accessibilityIdentifier("playback.player.container")
     }
-
-    private var partsRail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("分 P")
-                    .font(.title3.weight(.semibold))
-                partsList
-            }
-            .padding(
-                .horizontal,
-                PlaybackPageLayout.horizontalContentPadding
-            )
-            .padding(
-                .vertical,
-                PlaybackPageLayout.verticalContentPadding
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(width: PlaybackPageLayout.partsRailWidth)
-        .accessibilityIdentifier("playback.parts.rail")
-    }
-
-    private var partsList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(context.pages) { page in
-                HStack(spacing: 10) {
-                    Image(
-                        systemName: page.id == context.selectedPage.id
-                            ? "play.circle.fill"
-                            : "circle"
-                    )
-                    .foregroundStyle(
-                        page.id == context.selectedPage.id
-                            ? Color.accentColor
-                            : Color.secondary
-                    )
-                    Text("P\(page.index)  \(page.title)")
-                        .lineLimit(2)
-                    Spacer(minLength: 12)
-                    Text(
-                        VideoDurationFormatting.string(
-                            seconds: page.durationSeconds
-                        )
-                    )
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(
-                    "第 \(page.index) 分 P，\(page.title)，"
-                        + VideoDurationFormatting.string(
-                            seconds: page.durationSeconds
-                        )
-                )
-                .accessibilityAddTraits(
-                    page.id == context.selectedPage.id ? [.isSelected] : []
-                )
-                .accessibilityIdentifier("playback.part.\(page.index)")
-            }
-        }
-        .font(.title3)
-    }
-}
-
-enum PlaybackPageLayoutMode: Equatable {
-    case singlePart
-    case compactParts
-    case wideParts
 }
 
 enum PlaybackPageLayout {
     static let horizontalContentPadding: CGFloat = 40
     static let verticalContentPadding: CGFloat = 24
-    static let partsRailWidth: CGFloat = 400
     static let playerAspectRatio: CGFloat = 16.0 / 9.0
-    static let widePartsThreshold: CGFloat = 1_000
-
-    static func mode(
-        availableWidth: CGFloat,
-        pageCount: Int
-    ) -> PlaybackPageLayoutMode? {
-        guard pageCount > 0 else { return nil }
-        guard pageCount > 1 else { return .singlePart }
-        return availableWidth >= widePartsThreshold
-            ? .wideParts
-            : .compactParts
-    }
 }

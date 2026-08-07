@@ -53,9 +53,9 @@ struct AppShellView: View {
             }
             .id(sidebarContextID)
             .navigationSplitViewColumnWidth(
-                min: 300,
-                ideal: 320,
-                max: 320
+                min: sidebarMinimumWidth,
+                ideal: sidebarIdealWidth,
+                max: sidebarMaximumWidth
             )
         } detail: {
             NavigationStack(path: $navigationCoordinator.playbackPath) {
@@ -104,8 +104,23 @@ struct AppShellView: View {
                 navigationCoordinator.openPlayback
             )
         } else {
-            PlaybackContextUnavailableSidebar()
+            PlaybackContextSidebar(
+                model: videoModel,
+                onRetry: navigationCoordinator.retryPlayback
+            )
         }
+    }
+
+    private var sidebarMinimumWidth: CGFloat {
+        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 320
+    }
+
+    private var sidebarIdealWidth: CGFloat {
+        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 360
+    }
+
+    private var sidebarMaximumWidth: CGFloat {
+        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 440
     }
 
     @ViewBuilder
