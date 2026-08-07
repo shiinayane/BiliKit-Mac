@@ -18,3 +18,8 @@ public protocol GuestContentRepository: Sendable {
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
 }
+
+/// 当前视频相关推荐所需的独立匿名只读 port。
+public protocol RelatedVideoRepository: Sendable {
+    func relatedVideos(to bvid: String) async throws -> [RelatedVideo]
+}

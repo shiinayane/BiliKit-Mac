@@ -1,0 +1,21 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": [
+    {
+      "bvid": "BV1RelatedA1",
+      "title": "合成相关推荐 A",
+      "pic": "//image.example.invalid/related-a.jpg",
+      "owner": { "name": "相关作者甲" },
+      "stat": { "view": 22222, "danmaku": 222 },
+      "duration": 222
+    },
+    {
+      "bvid": "BV1RelatedB2",
+      "title": "合成相关推荐 B",
+      "pic": null,
+      "owner": { "name": "相关作者乙" },
+      "stat": { "view": 33333, "danmaku": 333 }
+    }
+  ]
+}

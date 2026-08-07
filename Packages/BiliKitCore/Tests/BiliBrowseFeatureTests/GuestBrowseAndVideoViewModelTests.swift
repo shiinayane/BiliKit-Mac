@@ -555,6 +555,143 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(player.loadedIdentities.map(\.cid) == [900_001, 900_001])
         #expect(player.stopCallCount == 2)
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func relatedVideoABARejectsOldSameBVIDResult() async throws {
+        let fixture = GuestFixtures()
+        let relatedRepository = RelatedVideoABARepositoryStub()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: RecordingPlayerEngine(),
+            relatedVideoUseCase: RelatedVideoUseCase(
+                repository: relatedRepository
+            )
+        )
+
+        model.loadVideo("BV1RelatedAA")
+        try await relatedRepository.waitForRequestCount(1)
+        let oldA = try #require(model.relatedVideoTaskSnapshotForTesting())
+        model.loadVideo("BV1RelatedBB")
+        try await relatedRepository.waitForRequestCount(2)
+        model.loadVideo("BV1RelatedAA")
+        try await relatedRepository.waitForRequestCount(3)
+
+        let newResult = RelatedVideo.testFixture(bvid: "BV1CurrentAA1")
+        await relatedRepository.releaseRequest(2, videos: [newResult])
+        await model.waitForCurrentRelatedVideoTask()
+        #expect(
+            model.relatedVideoState
+                == .loaded(bvid: "BV1RelatedAA", videos: [newResult])
+        )
+
+        await relatedRepository.releaseRequest(
+            0,
+            videos: [.testFixture(bvid: "BV1StaleAAA1")]
+        )
+        await oldA.value
+        await relatedRepository.releaseRequest(1, videos: [])
+
+        #expect(
+            model.relatedVideoState
+                == .loaded(bvid: "BV1RelatedAA", videos: [newResult])
+        )
+    }
+
+    @Test
+    @MainActor
+    func relatedVideoFailureRetriesWithoutReloadingPlayback() async {
+        let fixture = GuestFixtures()
+        let relatedRepository = RetryingRelatedVideoRepositoryStub()
+        let player = RecordingPlayerEngine()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: player,
+            relatedVideoUseCase: RelatedVideoUseCase(
+                repository: relatedRepository
+            )
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        await model.waitForCurrentRelatedVideoTask()
+        #expect(
+            model.relatedVideoState
+                == .failed(bvid: fixture.bvid, error: .transportFailure)
+        )
+
+        model.retryRelatedVideos()
+        await model.waitForCurrentRelatedVideoTask()
+
+        #expect(
+            model.relatedVideoState
+                == .loaded(
+                    bvid: fixture.bvid,
+                    videos: [.testFixture(bvid: "BV1RetryVid1")]
+                )
+        )
+        #expect(player.loadedPlaybacks.count == 1)
+        #expect(await relatedRepository.callCount == 2)
+    }
+}
+
+private actor RelatedVideoABARepositoryStub: RelatedVideoRepository {
+    private var continuations: [CheckedContinuation<[RelatedVideo], Never>?] = []
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+            let waiters = requestWaiters
+            requestWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitForRequestCount(_ count: Int) async throws {
+        while continuations.count < count {
+            await withCheckedContinuation { continuation in
+                requestWaiters.append(continuation)
+            }
+        }
+    }
+
+    func releaseRequest(_ index: Int, videos: [RelatedVideo]) {
+        continuations[index]?.resume(returning: videos)
+        continuations[index] = nil
+    }
+}
+
+private actor RetryingRelatedVideoRepositoryStub: RelatedVideoRepository {
+    private(set) var callCount = 0
+
+    func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
+        callCount += 1
+        guard callCount > 1 else {
+            throw GuestApplicationError.transportFailure
+        }
+        return [.testFixture(bvid: "BV1RetryVid1")]
+    }
+}
+
+extension RelatedVideo {
+    fileprivate static func testFixture(bvid: String) -> RelatedVideo {
+        RelatedVideo(
+            bvid: bvid,
+            title: "合成相关推荐",
+            coverURL: nil,
+            ownerName: "测试作者",
+            viewCount: 100,
+            danmakuCount: 10,
+            durationSeconds: 120
+        )
+    }
 }
 
 private actor WorksetRepositoryStub: GuestContentRepository {

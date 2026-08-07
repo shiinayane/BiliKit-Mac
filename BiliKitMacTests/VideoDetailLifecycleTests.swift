@@ -112,10 +112,14 @@ struct VideoDetailLifecycleTests {
             first: first,
             replacement: replacement
         )
+        let relatedRepository = RelatedLifecycleRepository()
         let player = ControlledReplacementPlayback()
         let videoModel = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: player
+            playback: player,
+            relatedVideoUseCase: RelatedVideoUseCase(
+                repository: relatedRepository
+            )
         )
         let presentation = RecordingPresentation()
         let danmakuModel = DanmakuControlsViewModel(
@@ -193,6 +197,29 @@ struct VideoDetailLifecycleTests {
         let playerViewIdentity = ObjectIdentifier(playerView)
         #expect(playerView.player === hostedPlayer)
         let stopCountBeforeReplacement = presentation.stopCount
+
+        #expect(
+            await waitUntilAsync {
+                await relatedRepository.firstRequestHasStarted()
+            }
+        )
+        await relatedRepository.releaseFirstRequest()
+        await videoModel.waitForCurrentRelatedVideoTask()
+        hostingView.layoutSubtreeIfNeeded()
+        #expect(
+            videoModel.relatedVideoState
+                == .loaded(
+                    bvid: first.bvid,
+                    videos: [relatedRepository.fixture]
+                )
+        )
+        #expect(player.loadedIdentities == [first.identity])
+        #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            playerViews(in: hostingView).first.map(ObjectIdentifier.init)
+                == Optional(playerViewIdentity)
+        )
 
         coordinator.openPlayback(replacement.bvid)
         #expect(
@@ -614,6 +641,37 @@ private actor ReplacementLifecycleRepository: GuestContentRepository {
         for bvid: String
     ) -> VideoDetailLifecycleFixture {
         bvid == first.bvid ? first : replacement
+    }
+}
+
+private actor RelatedLifecycleRepository: RelatedVideoRepository {
+    nonisolated let fixture = RelatedVideo(
+        bvid: "BV1RelatedA1",
+        title: "相关推荐",
+        coverURL: nil,
+        ownerName: "测试作者",
+        viewCount: 100,
+        danmakuCount: 10,
+        durationSeconds: 120
+    )
+    private var didStartFirstRequest = false
+    private var firstRequest: CheckedContinuation<[RelatedVideo], Never>?
+
+    func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
+        guard !didStartFirstRequest else { return [] }
+        didStartFirstRequest = true
+        return await withCheckedContinuation { continuation in
+            firstRequest = continuation
+        }
+    }
+
+    func firstRequestHasStarted() -> Bool {
+        didStartFirstRequest && firstRequest != nil
+    }
+
+    func releaseFirstRequest() {
+        firstRequest?.resume(returning: [fixture])
+        firstRequest = nil
     }
 }
 

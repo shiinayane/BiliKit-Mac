@@ -31,6 +31,50 @@ struct PopularVideoPayload: Decodable, Sendable {
     }
 }
 
+struct RelatedVideoPayload: Decodable, Sendable {
+    let bvid: String?
+    let title: String?
+    let pic: String?
+    let owner: RelatedVideoOwnerPayload?
+    let stat: RelatedVideoStatisticsPayload?
+    let duration: Int?
+
+    func model() throws -> RelatedVideo {
+        guard let bvid,
+            let title,
+            let owner,
+            let stat,
+            bvid.hasPrefix("BV"),
+            bvid.count == 12,
+            !title.isEmpty,
+            !owner.name.isEmpty,
+            stat.view >= 0,
+            stat.danmaku >= 0,
+            duration.map({ $0 >= 0 }) ?? true
+        else {
+            throw BiliAPIError.decodingFailed
+        }
+        return RelatedVideo(
+            bvid: bvid,
+            title: title,
+            coverURL: pic.flatMap(WebImageURL.parse),
+            ownerName: owner.name,
+            viewCount: stat.view,
+            danmakuCount: stat.danmaku,
+            durationSeconds: duration
+        )
+    }
+}
+
+struct RelatedVideoOwnerPayload: Decodable, Sendable {
+    let name: String
+}
+
+struct RelatedVideoStatisticsPayload: Decodable, Sendable {
+    let view: Int64
+    let danmaku: Int64
+}
+
 struct OwnerPayload: Decodable, Sendable {
     let mid: Int64
     let name: String

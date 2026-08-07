@@ -1,7 +1,7 @@
 import BiliApplication
 import BiliModels
 
-public struct BiliGuestRepository: GuestContentRepository {
+public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepository {
     private let client: BiliAPIClient
 
     public init(client: BiliAPIClient) {
@@ -29,6 +29,12 @@ public struct BiliGuestRepository: GuestContentRepository {
     public func pages(for bvid: String) async throws -> [VideoPage] {
         try await mapError {
             try await client.pages(for: bvid)
+        }
+    }
+
+    public func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
+        try await mapError {
+            try await client.relatedVideos(to: bvid)
         }
     }
 
