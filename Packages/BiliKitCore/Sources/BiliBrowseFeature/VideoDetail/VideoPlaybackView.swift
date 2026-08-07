@@ -11,7 +11,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
     private let playerContent: () -> PlayerContent
-    @State private var retainedContext: GuestVideoContext?
 
     public init(
         model: GuestVideoViewModel,
@@ -25,7 +24,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         self.danmakuModel = danmakuModel
         self.onRetry = onRetry
         self.playerContent = playerContent
-        _retainedContext = State(initialValue: nil)
     }
 
     @ViewBuilder
@@ -50,16 +48,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 emptyState
             }
         }
-        .onChange(of: model.state, initial: true) { _, state in
-            switch state {
-            case .preparingPlayback(let context), .ready(let context):
-                retainedContext = context
-            case .idle:
-                retainedContext = nil
-            case .loading, .failed:
-                break
-            }
-        }
         .task(id: playbackIdentity) {
             guard let playbackIdentity else {
                 subtitleModel.reset()
@@ -72,14 +60,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var currentContext: GuestVideoContext? {
-        switch model.state {
-        case .preparingPlayback(let context), .ready(let context):
-            context
-        case .loading, .failed:
-            retainedContext
-        case .idle:
-            nil
-        }
+        model.presentedContext
     }
 
     private var showsPlaybackActivity: Bool {

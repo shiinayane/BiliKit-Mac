@@ -21,6 +21,11 @@ public enum GuestVideoState: Sendable, Equatable {
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
     public private(set) var state: GuestVideoState = .idle
+    /// 供播放主区与上下文 Sidebar 共享的最近有效详情。
+    ///
+    /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
+    /// context 后原子替换，最终 reset 或当前请求取消回到 idle 时清空。
+    public private(set) var presentedContext: GuestVideoContext?
 
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
@@ -57,6 +62,7 @@ public final class GuestVideoViewModel {
         generation += 1
         loadTask?.cancel()
         loadTask = nil
+        presentedContext = nil
         state = .idle
         playback.stop()
     }
@@ -78,6 +84,7 @@ public final class GuestVideoViewModel {
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
 
+            presentedContext = context
             state = .preparingPlayback(context)
             try await playback.load(
                 context.playback,
@@ -91,6 +98,7 @@ public final class GuestVideoViewModel {
             state = .ready(context)
         } catch is CancellationError {
             guard generation == currentGeneration else { return }
+            presentedContext = nil
             state = .idle
         } catch let error as GuestApplicationError {
             guard generation == currentGeneration else { return }
