@@ -4,6 +4,7 @@
 
 - 状态：已接受（最低系统版本部分已被取代）
 - 日期：2026-07-21
+- Bundle Identifier 修订：2026-08-06
 
 ## 背景
 
@@ -22,10 +23,22 @@
 
 - 仓库、Xcode project 和内部 app target：`BiliKitMac`。
 - 用户可见 App、构建产品、可执行文件和 Swift app module：`BiliKit`。
-- bundle identifier：`com.shiinayane.BiliKitMac`。
+- 当前开发 bundle identifier：`com.shiinayane.BiliKitMac.dev`。它属于签名环境配置，不是
+  用户可见品牌或 Swift 模块名；取得正式开发者账号后允许显式更换。
 - 单元测试与 UI 测试 target 保留 `BiliKitMacTests`、`BiliKitMacUITests`。
 
 内部名称保留 `Mac` 是为了与原 BiliKit userscript 仓库区分；这不属于用户可见品牌不一致。
+
+App Debug／Release 必须使用同一个非空、格式合法的 Bundle Identifier。Keychain access
+group 固定写成 `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`，由签名身份的 App
+Identifier Prefix 与产品标识共同展开；工程契约检查的是两套配置一致和 entitlement 派生
+关系。静态契约明确记录当前 `.dev` 值，但不把它视为永久发布标识；将来更换开发者账号时，
+工程配置、契约记录与签名验证必须在同一个可 review 的变更中更新。
+
+更换 Bundle Identifier、Team 或 App Identifier Prefix 会形成新的 Keychain access group，
+旧签名身份下保存的登录凭据不能视为可迁移状态。开发期更换后应安全回到未登录并重新登录；
+不得扩大 access group、绕过 entitlement 或尝试读取旧 Team 的凭据。正式发布标识仍需在
+分发准备阶段单独确认，并重跑签名 Keychain smoke 与登录恢复验证。
 
 ### 模块
 
@@ -61,12 +74,16 @@ BiliAPI / BiliAuth / BiliPlayback / DanmakuKit / BiliPersistence → BiliModels
 - 播放与网络可以脱离 UI 使用 fixture 测试。
 - 单一 package manifest 降低早期工程维护成本，并保留清晰 target 边界。
 - 产品品牌与代码仓库关系明确。
+- 开发签名标识可以随账号准备状态更换，同时保持 Debug／Release 和 Keychain entitlement
+  一致。
 
 ### 负面影响
 
 - 不支持只能运行 macOS 13 或更早版本的设备。
 - Package target 之间的 public API 需要更谨慎设计。
 - App Feature 暂时没有独立编译边界。
+- 更换签名 Team 或 Bundle Identifier 后，既有 Keychain 登录态不会自动迁移，开发者需要
+  重新登录并重新收集签名验证证据。
 
 ## 验证
 
