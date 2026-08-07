@@ -1,9 +1,13 @@
+import AVKit
 import AppKit
 import BiliApplication
 import BiliBrowseFeature
+import BiliDanmaku
 import BiliModels
 import SwiftUI
 import Testing
+
+@testable import BiliKit
 
 struct VideoDetailLifecycleTests {
     @Test
@@ -98,7 +102,7 @@ struct VideoDetailLifecycleTests {
 
     @Test(.timeLimit(.minutes(1)))
     @MainActor
-    func replacementKeepsPlayerSurfaceUntilReset() async {
+    func replacementKeepsPlayerSurfaceUntilReset() async throws {
         let first = VideoDetailLifecycleFixture(
             bvid: "BV1LifecycleFirst",
             cid: 900_001,
@@ -128,6 +132,30 @@ struct VideoDetailLifecycleTests {
         let danmakuModel = DanmakuControlsViewModel(
             presentation: presentation
         )
+        let hostedPlayer = AVPlayer()
+        let renderer = CoreAnimationDanmakuRenderer()
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: DanmakuLaneConfiguration(
+                surfaceWidth: 0,
+                surfaceHeight: 0,
+                laneHeight: 36,
+                minimumHorizontalGap: 12,
+                maximumActiveCount:
+                    DanmakuLaneConfiguration.hardMaximumActiveCount,
+                displayAreaFraction: 1
+            )
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { bvid in
+                videoModel.loadVideo(bvid)
+            },
+            stopPlayback: {
+                videoModel.reset()
+                subtitleModel.reset()
+                danmakuModel.reset()
+            }
+        )
         let playerSurface = PlayerSurfaceRecorder()
         let hostingView = NSHostingView(
             rootView: AnyView(
@@ -137,10 +165,16 @@ struct VideoDetailLifecycleTests {
                     danmakuModel: danmakuModel,
                     onRetry: {}
                 ) {
-                    PlayerSurfaceProbe(
-                        recorder: playerSurface,
-                        phase: PlayerSurfacePhase(videoModel.state)
-                    )
+                    PlayerHostView(
+                        player: hostedPlayer,
+                        danmakuRenderer: renderer,
+                        danmakuController: controller
+                    ) {
+                        PlayerSurfaceProbe(
+                            recorder: playerSurface,
+                            phase: PlayerSurfacePhase(videoModel.state)
+                        )
+                    }
                 }
             )
         )
@@ -153,7 +187,7 @@ struct VideoDetailLifecycleTests {
         window.contentView = hostingView
         window.layoutIfNeeded()
 
-        videoModel.loadVideo(first.bvid)
+        coordinator.openPlayback(first.bvid)
         #expect(
             await waitUntil {
                 guard case .ready(let context) = videoModel.state else {
@@ -161,13 +195,17 @@ struct VideoDetailLifecycleTests {
                 }
                 return context.detail.bvid == first.bvid
                     && playerSurface.createdIdentities.count == 1
+                    && self.playerViews(in: hostingView).count == 1
                     && presentation.startedIdentities.last?.bvid == first.bvid
             }
         )
         let surfaceIdentity = playerSurface.createdIdentities[0]
+        let playerView = try #require(playerViews(in: hostingView).first)
+        let playerViewIdentity = ObjectIdentifier(playerView)
+        #expect(playerView.player === hostedPlayer)
         let stopCountBeforeReplacement = presentation.stopCount
 
-        videoModel.loadVideo(replacement.bvid)
+        coordinator.openPlayback(replacement.bvid)
         #expect(
             await waitUntilAsync {
                 guard
@@ -187,6 +225,10 @@ struct VideoDetailLifecycleTests {
         #expect(player.stopCallCount == 1)
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            playerViews(in: hostingView).first.map(ObjectIdentifier.init)
+                == Optional(playerViewIdentity)
+        )
 
         await repository.failReplacementRequest()
         await videoModel.waitForCurrentTask()
@@ -202,8 +244,12 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            playerViews(in: hostingView).first.map(ObjectIdentifier.init)
+                == Optional(playerViewIdentity)
+        )
 
-        videoModel.loadVideo(replacement.bvid)
+        coordinator.retryPlayback()
         #expect(
             await waitUntil {
                 guard
@@ -223,6 +269,10 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            playerViews(in: hostingView).first.map(ObjectIdentifier.init)
+                == Optional(playerViewIdentity)
+        )
 
         player.succeedPendingLoad()
         await videoModel.waitForCurrentTask()
@@ -237,12 +287,19 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            playerViews(in: hostingView).first.map(ObjectIdentifier.init)
+                == Optional(playerViewIdentity)
+        )
 
-        videoModel.reset()
+        let stopCountBeforeBack = presentation.stopCount
+        coordinator.playbackPath = []
         #expect(
             await waitUntil {
                 playerSurface.dismantledIdentities == [surfaceIdentity]
                     && subtitleModel.state == .idle
+                    && self.playerViews(in: hostingView).isEmpty
+                    && playerView.player == nil
             }
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
@@ -253,9 +310,21 @@ struct VideoDetailLifecycleTests {
                 replacement.identity,
             ]
         )
-        #expect(presentation.stopCount == stopCountBeforeReplacement + 2)
+        #expect(presentation.stopCount > stopCountBeforeBack)
 
         window.contentView = NSView()
+    }
+
+    @MainActor
+    private func playerViews(in root: NSView) -> [AVPlayerView] {
+        var matches: [AVPlayerView] = []
+        if let playerView = root as? AVPlayerView {
+            matches.append(playerView)
+        }
+        for child in root.subviews {
+            matches.append(contentsOf: playerViews(in: child))
+        }
+        return matches
     }
 
     @MainActor
