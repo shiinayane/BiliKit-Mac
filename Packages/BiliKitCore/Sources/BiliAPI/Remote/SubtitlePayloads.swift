@@ -43,6 +43,7 @@ struct SubtitleTrackPayload: Decodable, Sendable {
     let displayName: String
     let subtitleURL: String
     let aiType: Int?
+    let aiStatus: Int?
 
     private enum CodingKeys: String, CodingKey {
         case numericID = "id"
@@ -51,6 +52,7 @@ struct SubtitleTrackPayload: Decodable, Sendable {
         case displayName = "lan_doc"
         case subtitleURL = "subtitle_url"
         case aiType = "ai_type"
+        case aiStatus = "ai_status"
     }
 
     func resourceIfAvailable() throws -> SubtitleRemoteTrack? {
@@ -78,10 +80,22 @@ struct SubtitleTrackPayload: Decodable, Sendable {
                 id: id,
                 languageCode: languageCode,
                 displayName: displayName,
-                kind: (aiType ?? 0) > 0 ? .automatic : .standard
+                kind: trackKind(languageCode: languageCode)
             ),
             url: url
         )
+    }
+
+    /// 只提升已由脱敏真实目录验证过的完整组合。
+    private func trackKind(languageCode: String) -> SubtitleTrackKind {
+        switch (languageCode, aiType, aiStatus) {
+        case ("zh", 0, 0):
+            return .standard
+        case ("ai-zh", 0, 2), ("ai-en", 1, 2), ("ai-ja", 1, 2):
+            return .automatic
+        default:
+            return .unknown
+        }
     }
 
     private static func nonempty(_ value: String) -> String? {

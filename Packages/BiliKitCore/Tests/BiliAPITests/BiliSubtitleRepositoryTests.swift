@@ -14,6 +14,48 @@ struct BiliSubtitleRepositoryTests {
     )
 
     @Test
+    func catalogClassifiesOnlyVerifiedSubtitleMetadataCombinations() throws {
+        let payload = try JSONDecoder().decode(
+            SubtitleCatalogPayload.self,
+            from: Data(
+                #"""
+                {
+                  "need_login_subtitle": false,
+                  "subtitle": {
+                    "subtitles": [
+                      {"id": 1, "lan": "zh", "lan_doc": "中文", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/1.json", "ai_type": 0, "ai_status": 0},
+                      {"id": 2, "lan": "ai-zh", "lan_doc": "中文", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/2.json", "ai_type": 0, "ai_status": 2},
+                      {"id": 3, "lan": "ai-en", "lan_doc": "English", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/3.json", "ai_type": 1, "ai_status": 2},
+                      {"id": 4, "lan": "ai-ja", "lan_doc": "日本語", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/4.json", "ai_type": 1, "ai_status": 2},
+                      {"id": 5, "lan": "ai-fr", "lan_doc": "Français", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/5.json", "ai_type": 9, "ai_status": 7},
+                      {"id": 6, "lan": "ai-fr", "lan_doc": "Français", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/6.json", "ai_type": 1, "ai_status": 2},
+                      {"id": 7, "lan": "ai-ZH", "lan_doc": "中文", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/7.json", "ai_type": 0, "ai_status": 2},
+                      {"id": 8, "lan": "zh-Hans", "lan_doc": "中文", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/8.json", "ai_type": 0, "ai_status": 0},
+                      {"id": 9, "lan": "en", "lan_doc": "English", "subtitle_url": "https://aisubtitle.hdslb.com/bfs/subtitle/9.json"}
+                    ]
+                  }
+                }
+                """#.utf8
+            )
+        )
+
+        let tracks = try payload.resources().map(\.track)
+
+        #expect(
+            tracks.map(\.languageCode) == [
+                "zh", "ai-zh", "ai-en", "ai-ja", "ai-fr", "ai-fr", "ai-ZH",
+                "zh-Hans", "en",
+            ]
+        )
+        #expect(
+            tracks.map(\.kind) == [
+                .standard, .automatic, .automatic, .automatic, .unknown, .unknown,
+                .unknown, .unknown, .unknown,
+            ]
+        )
+    }
+
+    @Test
     func catalogAndBodyDecodeThroughSeparatedAuthorizationBoundary() async throws {
         let catalogTransport = SubtitleRecordingTransport(
             responses: [
@@ -45,7 +87,7 @@ struct BiliSubtitleRepositoryTests {
         #expect(tracks.count == 1)
         #expect(track.languageCode == "zh-CN")
         #expect(track.displayName == "中文（简体）")
-        #expect(track.kind == .standard)
+        #expect(track.kind == .unknown)
         #expect(cues.count == 2)
         #expect(cues[0].startSeconds == 1.25)
         #expect(cues[0].endSeconds == 3.5)

@@ -35,6 +35,10 @@ public final class SubtitleViewModel {
     public private(set) var selectedTrackID: String?
     public private(set) var currentCueText: String?
 
+    public var displayOptions: [SubtitleDisplayOption] {
+        SubtitleDisplayPolicy.options(for: tracks)
+    }
+
     @ObservationIgnored private let useCase: SubtitleUseCase
     @ObservationIgnored private let timeline: any PlaybackTimelineProviding
     @ObservationIgnored private var contentTask: Task<Void, Never>?

@@ -18,6 +18,47 @@ struct SubtitleViewModelTests {
     )
 
     @Test
+    func catalogExposesVerifiedUserLabelsWithoutSelectingATrack() async {
+        let repository = SubtitleRepositoryStub(
+            tracks: .success([
+                SubtitleTrack(
+                    id: "standard-zh",
+                    languageCode: "zh",
+                    displayName: "中文",
+                    kind: .standard
+                ),
+                SubtitleTrack(
+                    id: "automatic-zh",
+                    languageCode: "ai-zh",
+                    displayName: "中文",
+                    kind: .automatic
+                ),
+                SubtitleTrack(
+                    id: "automatic-en",
+                    languageCode: "ai-en",
+                    displayName: "English",
+                    kind: .automatic
+                ),
+            ])
+        )
+        let model = makeModel(
+            repository: repository,
+            timeline: SubtitleTimelineStub()
+        )
+
+        model.selectVideo(identity)
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.displayOptions.map(\.label) == [
+                "中文", "中文（AI）", "English",
+            ]
+        )
+        #expect(model.selectedTrackID == nil)
+        #expect(await repository.cueRequestCount() == 0)
+    }
+
+    @Test
     func catalogDefaultsToOffAndSelectedTrackFollowsTimeline() async throws {
         let repository = SubtitleRepositoryStub()
         let timeline = SubtitleTimelineStub()
