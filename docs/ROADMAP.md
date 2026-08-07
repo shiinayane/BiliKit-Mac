@@ -151,6 +151,10 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - VoiceOver 与 Full Keyboard Access 真实检查分别确认阅读／焦点顺序；AX identifier、截图或
   build 不能替代真人辅助功能结论。
 
+阶段验证记录：
+[`M5.0-playback-context-sidebar-2026-08-07.md`](./validation/M5.0-playback-context-sidebar-2026-08-07.md)。
+自动化与独立审查已经通过；在用户确认真人辅助功能检查前，本阶段仍保持进行中。
+
 已经确认但尚未排期的事项统一登记在
 [`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)。候选登记不表示顺序、
 版本承诺或实施授权。完成或重新裁决当前阶段后，本节再替换为下一个唯一阶段。
