@@ -100,13 +100,13 @@ final class NativeSubtitleStage2ProductionProbeTests: XCTestCase {
 
         item.select(group.options[0], in: group)
         engine.play()
-        try await waitUntil {
+        try await Self.waitUntil {
             await repository.cueRequestCount == 1
         }
         engine.pause()
 
         engine.stop()
-        try await waitUntil {
+        try await Self.waitUntil {
             await repository.resetCount == 1
         }
         XCTAssertNil(engine.player.currentItem)
@@ -117,7 +117,7 @@ final class NativeSubtitleStage2ProductionProbeTests: XCTestCase {
         )
     }
 
-    private func waitUntil(
+    private static func waitUntil(
         _ condition: @escaping @Sendable () async -> Bool
     ) async throws {
         let clock = ContinuousClock()
