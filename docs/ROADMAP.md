@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 更新时间：2026-07-29。本文只描述当前 `main` 的产品基线、产品大方向和唯一已选择的
+> 更新时间：2026-08-07。本文只描述当前 `main` 的产品基线、产品大方向和唯一已选择的
 > 后续阶段。
 > 完成状态以当前代码、自动测试和必要的真实行为证据共同判断；旧计划、分支、worktree、
 > checkpoint、测试数量和 CI run ID 不构成现行契约。
@@ -108,21 +108,52 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
 - [`audits/M5.0.1/`](./audits/M5.0.1/)
 
-## 4. 后续方向
+## 4. 唯一当前阶段：播放工作台上下文侧栏
 
-下一阶段尚未选择，不以旧编号或旧顺序自动启动。确定下一项后，本节只展开该一个阶段的
-用户结果、进入条件与完成证据；完成或重新裁决后再替换，不提前书写更后面的 phase。
+当前阶段把已经通过独立布局 spike 比较的“观看工作台”方向收口为生产信息架构。spike
+中的评论、推荐、分 P 选择和播放器均为合成内容，只提供布局与交互证据，不作为生产代码
+或能力完成证据。
+
+### 用户结果
+
+- 播放状态继续使用同一个系统 `NavigationSplitView` sidebar：依次显示真实可折叠简介、
+  真实紧凑分 P 目录和诚实的评论 unavailable state。
+- 单分 P 隐藏整个目录；多分 P 显示当前项、标题和时长。当前阶段保持只读，不把尚未接通
+  的 CID 切换伪装成可用操作。
+- detail 主区收口为标题与元信息、唯一播放器、字幕和弹幕控制；简介、分 P 和旧 400 pt
+  右栏不再重复出现。
+- 窄窗口优先保证播放器宽度，sidebar 继续通过系统行为收起和恢复；简介展开、分 P 展开、
+  sidebar 显隐、窗口 resize 和媒体替换均不得创建第二个 player host。
+
+### 实施边界
+
+- 先统一 detail 与 sidebar 共用的稳定展示 context，再原子完成 sidebar 接入和 detail
+  重排；不能留下两处同时显示简介或分 P 的中间生产状态。
+- 保持一个 `NavigationSplitView`、detail 内一个 `NavigationStack(path:)`、单层
+  `PlaybackDestination` 和一个 `AppWindowOwner`／`AVPlayerEngine`／`PlayerHostView`。
+- A → B 仍只替换媒体 identity；系统返回恢复来源入口、搜索草稿、工作集和语义滚动位置。
+- 不增加 endpoint、Repository、第二个 Package、空 target、通用 Store 或本地持久化。
+- 评论继续显示能力未接入；不加入合成评论、评论读取或写操作。
+- 横向相关推荐已经确定为后续播放工作台方向，但本阶段不建立占位 View、数据模型、fixture
+  seam 或网络实现，也不把它登记为当前并行阶段。
+- 分 P 点击与 CID／字幕／弹幕切换生命周期不在本阶段实施。
+
+### 完成证据
+
+- 状态测试证明首次加载、A → B 加载／失败／重试、generation 隔离和 reset 下，detail 与
+  sidebar 使用同一展示 context；旧内容在替换状态下不会保持可交互或进入辅助阅读路径。
+- 结构测试证明单分 P 隐藏、多分 P 与空／非空简介呈现准确，只读分 P 不暴露虚假 action
+  语义。
+- App 生命周期测试证明 sidebar 显隐、简介／分 P disclosure、目标窗口 resize 和媒体替换
+  前后只有一个真实 `AVPlayerView`，Back／关窗后完成拆除与资源清理。
+- 最高适用 `app` Gate 通过；在真实 macOS 窗口中复核 1320×820 → 1080×680、系统 Back、
+  sidebar toggle、长文本、大字体和真实本地播放时间线。
+- VoiceOver 与 Full Keyboard Access 真实检查分别确认阅读／焦点顺序；AX identifier、截图或
+  build 不能替代真人辅助功能结论。
 
 已经确认但尚未排期的事项统一登记在
 [`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)。候选登记不表示顺序、
-版本承诺或实施授权。
-
-长期方向仍包括：
-
-- 个性推荐首页，复用现有响应式视频网格；
-- 相关推荐与同窗口连续观看；
-- 日用播放体验收口；
-- v1 发布准备。
+版本承诺或实施授权。完成或重新裁决当前阶段后，本节再替换为下一个唯一阶段。
 
 ## 5. v1 非目标
 
