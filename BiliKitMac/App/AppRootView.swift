@@ -13,7 +13,7 @@ import SwiftUI
 /// 窗口级生命周期入口，连接导航激活、认证变化与最终资源清理。
 ///
 /// 页面 View 只表达局部意图；关窗时需要在这里清除 Browse/History 工作集、认证临时任务，
-/// 并借导航路径清空统一停止播放、字幕和弹幕资源。
+/// 并借导航路径清空统一停止播放、原生字幕和弹幕资源。
 struct AppRootView: View {
     @State private var windowOwner: AppWindowOwner
     @State private var isAuthenticationPresented = false
@@ -34,7 +34,6 @@ struct AppRootView: View {
         navigationCoordinator: AppNavigationCoordinator,
         browseModel: GuestBrowseViewModel,
         videoModel: GuestVideoViewModel,
-        subtitleModel: SubtitleViewModel,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
@@ -49,12 +48,10 @@ struct AppRootView: View {
                 navigationCoordinator: navigationCoordinator,
                 browseModel: browseModel,
                 videoModel: videoModel,
-                subtitleModel: subtitleModel,
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
-                playerContent: playerContent,
-                subtitlePresentationMode: .legacyOverlay
+                playerContent: playerContent
             )
         )
     }
@@ -64,12 +61,10 @@ struct AppRootView: View {
             navigationCoordinator: navigationCoordinator,
             browseModel: browseModel,
             videoModel: videoModel,
-            subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,
             authenticationModel: authenticationModel,
             historyModel: historyModel,
             playerContent: playerContent,
-            subtitlePresentationMode: windowOwner.subtitlePresentationMode,
             isAuthenticationPresented: $isAuthenticationPresented,
             submittedSearchQuery: submittedSearchQuery,
             onSubmitSearch: performSearch,
@@ -83,17 +78,10 @@ struct AppRootView: View {
             await authenticationModel.waitForCurrentTask()
         }
         .onChange(of: authenticationModel.isSignedIn) { _, isSignedIn in
-            if isSignedIn {
-                switch windowOwner.subtitlePresentationMode {
-                case .legacyOverlay:
-                    subtitleModel.retry()
-                case .nativePlayer:
-                    navigationCoordinator.retryPlayback()
-                }
-                return
-            }
             navigationCoordinator.closePlaybackForAuthenticationChange()
-            historyModel.reset()
+            if !isSignedIn {
+                historyModel.reset()
+            }
         }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -120,10 +108,6 @@ struct AppRootView: View {
 
     private var videoModel: GuestVideoViewModel {
         windowOwner.videoModel
-    }
-
-    private var subtitleModel: SubtitleViewModel {
-        windowOwner.subtitleModel
     }
 
     private var danmakuModel: DanmakuControlsViewModel {

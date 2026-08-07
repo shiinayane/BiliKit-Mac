@@ -1,35 +1,24 @@
 import BiliApplication
 import SwiftUI
 
-public enum SubtitlePresentationMode: Sendable, Equatable {
-    case legacyOverlay
-    case nativePlayer
-}
-
-/// 把视频准备状态连接到字幕与弹幕的播放 identity 生命周期。
+/// 把视频准备状态连接到弹幕的播放 identity 生命周期。
 ///
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
-/// `nil`，由 `.task(id:)` 完整 reset 两条支线。网络任务仍由各 ViewModel 自己拥有。
+/// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
 public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: GuestVideoViewModel
-    private let subtitleModel: SubtitleViewModel
     private let danmakuModel: DanmakuControlsViewModel
-    private let subtitlePresentationMode: SubtitlePresentationMode
     private let onRetry: () -> Void
     private let playerContent: () -> PlayerContent
 
     public init(
         model: GuestVideoViewModel,
-        subtitleModel: SubtitleViewModel,
         danmakuModel: DanmakuControlsViewModel,
-        subtitlePresentationMode: SubtitlePresentationMode = .legacyOverlay,
         onRetry: @escaping () -> Void,
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
-        self.subtitleModel = subtitleModel
         self.danmakuModel = danmakuModel
-        self.subtitlePresentationMode = subtitlePresentationMode
         self.onRetry = onRetry
         self.playerContent = playerContent
     }
@@ -42,9 +31,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                     GuestVideoDetailView(
                         context: currentContext,
                         isPreparingPlayback: showsPlaybackActivity,
-                        subtitleModel: subtitleModel,
                         danmakuModel: danmakuModel,
-                        subtitlePresentationMode: subtitlePresentationMode,
                         playerContent: playerContent
                     )
                     .disabled(blocksRetainedContext)
@@ -59,15 +46,8 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         }
         .task(id: playbackIdentity) {
             guard let playbackIdentity else {
-                subtitleModel.reset()
                 danmakuModel.reset()
                 return
-            }
-            switch subtitlePresentationMode {
-            case .legacyOverlay:
-                subtitleModel.selectVideo(playbackIdentity)
-            case .nativePlayer:
-                subtitleModel.reset()
             }
             danmakuModel.selectVideo(playbackIdentity)
         }

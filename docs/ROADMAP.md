@@ -67,7 +67,8 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 ### M4：字幕、弹幕与播放生命周期
 
 - 播放器向上提供唯一 identity、位置、时长、速率、状态和 discontinuity generation。
-- 字幕目录、正文解析、切轨、暂停、倍速、seek、替换与迟到结果隔离已接通。
+- 字幕目录与按需正文经 loopback HLS WebVTT 进入 AVPlayer 原生字幕菜单，默认关闭；
+  切轨、暂停、倍速、seek、替换与迟到结果隔离已接通。
 - 弹幕 protobuf decoder、分段调度、有界预取/缓存/去重和 Core Animation renderer 已接通。
 - 播放替换、窗口关闭和 stop 后的任务、订阅、server、renderer 与 layer 清理已有受控证据。
 
@@ -80,6 +81,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M4.4-renderer-production-2026-07-23.md`](./validation/M4.4-renderer-production-2026-07-23.md)
 - [`validation/M4-closeout-2026-07-23.md`](./validation/M4-closeout-2026-07-23.md)
 - [`validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md`](./validation/M4.6-subtitle-lifecycle-roadmap-2026-07-25.md)
+- [`validation/native-avplayer-subtitles-2026-08-07.md`](./validation/native-avplayer-subtitles-2026-08-07.md)
 - [`security/M4-data-privacy.md`](./security/M4-data-privacy.md)
 
 ### M4.5：macOS 界面基线
@@ -122,7 +124,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
   `(bvid, cid)` 切换 playurl、播放器 item、字幕和弹幕；目录使用最多同时显示 5 行的
   独立滚动 `List`，标题显示总数，行高随文字尺寸缩放；折叠后重新展开会定位当前分 P，
   不会因分 P 数量撑长整个 sidebar。
-- detail 主区收口为标题与元信息、唯一播放器、字幕和弹幕控制；简介、分 P 和旧 400 pt
+- detail 主区收口为标题与元信息、带系统字幕菜单的唯一播放器和弹幕控制；简介、分 P 和旧 400 pt
   右栏不再重复出现。
 - 窄窗口优先保证播放器宽度，sidebar 继续通过系统行为收起和恢复；简介展开、分 P 展开、
   sidebar 显隐、窗口 resize 和媒体替换均不得创建第二个 player host。

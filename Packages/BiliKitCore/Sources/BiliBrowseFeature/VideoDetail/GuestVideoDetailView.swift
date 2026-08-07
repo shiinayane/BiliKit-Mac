@@ -6,9 +6,7 @@ import SwiftUI
 struct GuestVideoDetailView<PlayerContent: View>: View {
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
-    let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
-    let subtitlePresentationMode: SubtitlePresentationMode
     let playerContent: () -> PlayerContent
 
     var body: some View {
@@ -22,11 +20,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
             VStack(alignment: .leading, spacing: 18) {
                 metadata
                 player
-
-                if subtitlePresentationMode == .legacyOverlay {
-                    Divider()
-                    SubtitleControlsView(model: subtitleModel)
-                }
 
                 Divider()
                 DanmakuControlsView(model: danmakuModel)
