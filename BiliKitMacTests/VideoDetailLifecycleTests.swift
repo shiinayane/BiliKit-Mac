@@ -62,6 +62,7 @@ struct VideoDetailLifecycleTests {
         #expect(
             await waitUntil {
                 player.loadCallCount == 1
+                    && videoModel.presentedContext?.detail.bvid == fixture.bvid
                     && presentation.startedIdentities.count == 1
                     && subtitleModel.state != .idle
             }
@@ -72,7 +73,9 @@ struct VideoDetailLifecycleTests {
         #expect(
             await waitUntil {
                 if case .failed = videoModel.state {
-                    return subtitleModel.state == .idle
+                    return videoModel.presentedContext?.detail.bvid
+                        == fixture.bvid
+                        && subtitleModel.state == .idle
                         && presentation.stopCount == baselineStopCount + 1
                 }
                 return false
@@ -194,6 +197,7 @@ struct VideoDetailLifecycleTests {
                     return false
                 }
                 return context.detail.bvid == first.bvid
+                    && videoModel.presentedContext?.detail.bvid == first.bvid
                     && playerSurface.createdIdentities.count == 1
                     && self.playerViews(in: hostingView).count == 1
                     && presentation.startedIdentities.last?.bvid == first.bvid
@@ -215,6 +219,7 @@ struct VideoDetailLifecycleTests {
                     return false
                 }
                 return await repository.replacementRequestHasStarted()
+                    && videoModel.presentedContext?.detail.bvid == first.bvid
                     && playerSurface.lastUpdatedPhase == .loading
                     && subtitleModel.state == .idle
                     && presentation.stopCount
@@ -237,6 +242,7 @@ struct VideoDetailLifecycleTests {
             await waitUntil {
                 if case .failed(let bvid, .content) = videoModel.state {
                     return bvid == replacement.bvid
+                        && videoModel.presentedContext?.detail.bvid == first.bvid
                         && playerSurface.lastUpdatedPhase == .failed
                 }
                 return false
@@ -258,6 +264,8 @@ struct VideoDetailLifecycleTests {
                     return false
                 }
                 return context.detail.bvid == replacement.bvid
+                    && videoModel.presentedContext?.detail.bvid
+                        == replacement.bvid
                     && playerSurface.lastUpdatedPhase == .preparing
                     && player.loadedIdentities == [
                         first.identity,
@@ -297,6 +305,7 @@ struct VideoDetailLifecycleTests {
         #expect(
             await waitUntil {
                 playerSurface.dismantledIdentities == [surfaceIdentity]
+                    && videoModel.presentedContext == nil
                     && subtitleModel.state == .idle
                     && self.playerViews(in: hostingView).isEmpty
                     && playerView.player == nil

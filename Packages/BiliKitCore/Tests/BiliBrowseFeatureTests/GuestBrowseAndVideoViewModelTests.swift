@@ -204,6 +204,7 @@ struct GuestBrowseAndVideoViewModelTests {
             playback: fixture.playback
         )
         #expect(model.state == .ready(context))
+        #expect(model.presentedContext == context)
         #expect(player.loadedPlaybacks == [fixture.playback])
         #expect(
             player.loadedIdentities == [
@@ -232,7 +233,70 @@ struct GuestBrowseAndVideoViewModelTests {
         model.reset()
 
         #expect(model.state == .idle)
+        #expect(model.presentedContext == nil)
         #expect(player.stopCallCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func playbackFailureRetainsTheNewPresentedContext() async {
+        let first = GuestFixtures(bvid: "BV1PresentedA", title: "视频 A")
+        let replacement = GuestFixtures(
+            bvid: "BV1PresentedB",
+            title: "视频 B"
+        )
+        let repository = VideoOutcomeRepositoryStub(
+            fixtures: [first, replacement]
+        )
+        let player = SelectiveFailingPlayerEngine(
+            failingBVID: replacement.bvid
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+
+        model.loadVideo(first.bvid)
+        await model.waitForCurrentTask()
+        #expect(model.presentedContext?.detail.bvid == first.bvid)
+
+        model.loadVideo(replacement.bvid)
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.state
+                == .failed(
+                    bvid: replacement.bvid,
+                    failure: .playback
+                )
+        )
+        #expect(model.presentedContext?.detail.bvid == replacement.bvid)
+    }
+
+    @Test
+    @MainActor
+    func currentCancellationClearsPresentedContextWhenReturningToIdle() async {
+        let first = GuestFixtures(bvid: "BV1CancelA", title: "视频 A")
+        let cancelled = GuestFixtures(bvid: "BV1CancelB", title: "视频 B")
+        let repository = VideoOutcomeRepositoryStub(
+            fixtures: [first, cancelled],
+            cancelledBVID: cancelled.bvid
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(first.bvid)
+        await model.waitForCurrentTask()
+        #expect(model.presentedContext?.detail.bvid == first.bvid)
+
+        model.loadVideo(cancelled.bvid)
+        #expect(model.presentedContext?.detail.bvid == first.bvid)
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .idle)
+        #expect(model.presentedContext == nil)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -262,6 +326,7 @@ struct GuestBrowseAndVideoViewModelTests {
             return
         }
         #expect(context.detail.bvid == fast.detail.bvid)
+        #expect(model.presentedContext?.detail.bvid == fast.detail.bvid)
         #expect(player.loadedPlaybacks.count == 1)
         #expect(player.stopCallCount == 1)
         #expect(
@@ -435,6 +500,60 @@ private actor GuestRepositoryStub: GuestContentRepository {
         cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
+    }
+}
+
+private actor VideoOutcomeRepositoryStub: GuestContentRepository {
+    private let fixturesByBVID: [String: GuestFixtures]
+    private let cancelledBVID: String?
+
+    init(
+        fixtures: [GuestFixtures],
+        cancelledBVID: String? = nil
+    ) {
+        fixturesByBVID = Dictionary(
+            uniqueKeysWithValues: fixtures.map { ($0.bvid, $0) }
+        )
+        self.cancelledBVID = cancelledBVID
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        if bvid == cancelledBVID {
+            throw CancellationError()
+        }
+        return try fixture(for: bvid).detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [try fixture(for: bvid).page]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        try fixture(for: bvid).playback
+    }
+
+    private func fixture(for bvid: String) throws -> GuestFixtures {
+        guard let fixture = fixturesByBVID[bvid] else {
+            throw GuestApplicationError.invalidResponse
+        }
+        return fixture
     }
 }
 
@@ -705,3 +824,27 @@ private final class RecordingPlayerEngine: PlaybackControlling {
         stopCallCount += 1
     }
 }
+
+@MainActor
+private final class SelectiveFailingPlayerEngine: PlaybackControlling {
+    let failingBVID: String
+
+    init(failingBVID: String) {
+        self.failingBVID = failingBVID
+    }
+
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        if identity.bvid == failingBVID {
+            throw SelectivePlaybackFailure()
+        }
+    }
+
+    func pause() {}
+
+    func stop() {}
+}
+
+private struct SelectivePlaybackFailure: Error {}
