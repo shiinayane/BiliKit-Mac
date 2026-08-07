@@ -7,7 +7,7 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
-    func testPlaybackRoundTripInOneWindow() {
+    func testPlaybackRoundTripInOneWindow() throws {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ui-testing",
@@ -19,7 +19,18 @@ final class BiliKitMacUITests: XCTestCase {
             app.activate()
             app.typeKey("n", modifierFlags: .command)
         }
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2))
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 2))
+        let expandedSize = CGSize(width: 1_320, height: 820)
+        resizeWindow(window, to: expandedSize)
+        XCTAssertTrue(
+            waitForWindowSize(
+                window,
+                size: expandedSize,
+                accuracy: 6,
+                timeout: 5
+            )
+        )
 
         let feed = element("feed.grid", in: app)
         XCTAssertTrue(feed.waitForExistence(timeout: 5))
@@ -83,17 +94,52 @@ final class BiliKitMacUITests: XCTestCase {
 
         let playback = element("playback.destination", in: app)
         XCTAssertTrue(playback.waitForExistence(timeout: 5))
+        let timeline = element("local-avplayer.timeline", in: app)
+        let initialTimeline = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds: 100
+        )
         let playbackSidebar = element("sidebar.playback-context", in: app)
         XCTAssertTrue(playbackSidebar.waitForExistence(timeout: 5))
-        let playbackSidebarTitle = app.staticTexts["评论尚未接入"]
-        XCTAssertTrue(waitForHittable(playbackSidebarTitle, timeout: 5))
+        let summary = element("sidebar.playback-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        let summaryToggle = app.disclosureTriangles["简介"]
+        XCTAssertTrue(waitForHittable(summaryToggle, timeout: 5))
+        summaryToggle.click()
+        XCTAssertTrue(
+            element("sidebar.playback-summary.text", in: app)
+                .waitForNonExistence(timeout: 5)
+        )
+        let parts = element("sidebar.playback-parts", in: app)
+        XCTAssertTrue(parts.waitForExistence(timeout: 5))
+        let selectedPart = element("sidebar.playback-part.1", in: app)
+        let unselectedPart = element("sidebar.playback-part.3", in: app)
+        XCTAssertTrue(selectedPart.waitForExistence(timeout: 5))
+        XCTAssertTrue(unselectedPart.waitForExistence(timeout: 5))
+        XCTAssertTrue(selectedPart.isSelected)
+        XCTAssertFalse(unselectedPart.isSelected)
+        XCTAssertFalse(app.buttons["sidebar.playback-part.1"].exists)
+        XCTAssertFalse(app.buttons["sidebar.playback-part.3"].exists)
+        let commentsUnavailable = element(
+            "sidebar.playback-comments-unavailable",
+            in: app
+        )
+        XCTAssertTrue(commentsUnavailable.waitForExistence(timeout: 5))
+        XCTAssertFalse(element("playback.parts.rail", in: app).exists)
+        XCTAssertFalse(element("playback.part.1", in: app).exists)
         XCTAssertTrue(navigationSidebar.waitForNonExistence(timeout: 5))
         XCTAssertTrue(
             element("playback.status.playing", in: app)
                 .waitForExistence(timeout: 5)
         )
         toggleSystemSidebar(in: app)
-        XCTAssertTrue(waitForNotHittable(playbackSidebarTitle, timeout: 5))
+        XCTAssertTrue(
+            waitForNotHittable(
+                app.disclosureTriangles["分 P"],
+                timeout: 5
+            )
+        )
         XCTAssertTrue(
             waitForNoKeyboardFocus(
                 in: playbackSidebar,
@@ -105,7 +151,40 @@ final class BiliKitMacUITests: XCTestCase {
             element("playback.status.playing", in: app).exists
         )
         toggleSystemSidebar(in: app)
-        XCTAssertTrue(waitForHittable(playbackSidebarTitle, timeout: 5))
+        XCTAssertTrue(
+            waitForHittable(
+                app.disclosureTriangles["分 P"],
+                timeout: 5
+            )
+        )
+        let compactSize = CGSize(width: 1_080, height: 680)
+        resizeWindow(window, to: compactSize)
+        XCTAssertTrue(
+            waitForWindowSize(
+                window,
+                size: compactSize,
+                accuracy: 6,
+                timeout: 5
+            )
+        )
+        let resizedTimeline = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds:
+                try timelineMilliseconds(initialTimeline) + 100
+        )
+        XCTAssertEqual(
+            resizedTimeline["playerIdentity"],
+            initialTimeline["playerIdentity"]
+        )
+        XCTAssertEqual(
+            resizedTimeline["itemIdentity"],
+            initialTimeline["itemIdentity"]
+        )
+        XCTAssertEqual(
+            resizedTimeline["generation"],
+            initialTimeline["generation"]
+        )
 
         clickSystemBack(in: app)
 
@@ -126,6 +205,35 @@ final class BiliKitMacUITests: XCTestCase {
                 within: [navigationSidebar, feed],
                 timeout: 5
             )
+        )
+    }
+
+    @MainActor
+    func testPlaybackSidebarHidesEmptySummaryAndSinglePart() {
+        let app = launchFixture(arguments: [
+            "-ui-testing",
+            "-ui-testing-single-part-empty-summary",
+        ])
+        let video = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(video.waitForExistence(timeout: 5))
+        video.click()
+
+        XCTAssertTrue(
+            element("sidebar.playback-context", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(element("sidebar.playback-summary", in: app).exists)
+        XCTAssertFalse(element("sidebar.playback-parts", in: app).exists)
+        XCTAssertFalse(element("sidebar.playback-part.1", in: app).exists)
+        XCTAssertTrue(
+            element("sidebar.playback-comments-unavailable", in: app)
+                .waitForExistence(timeout: 5)
+        )
+
+        clickSystemBack(in: app)
+        XCTAssertTrue(
+            element("playback.status.stopped", in: app)
+                .waitForExistence(timeout: 5)
         )
     }
 
