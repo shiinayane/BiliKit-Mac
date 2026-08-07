@@ -7,6 +7,9 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
     let danmakuModel: DanmakuControlsViewModel
+    let relatedVideoState: RelatedVideoState
+    let onSelectRelatedVideo: (String) -> Void
+    let onRetryRelatedVideos: () -> Void
     let playerContent: () -> PlayerContent
 
     var body: some View {
@@ -23,6 +26,16 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
 
                 Divider()
                 DanmakuControlsView(model: danmakuModel)
+
+                RelatedVideoShelf(
+                    state: shelfState,
+                    onSelect: onSelectRelatedVideo,
+                    onRetry: onRetryRelatedVideos
+                )
+                .padding(
+                    .horizontal,
+                    -PlaybackPageLayout.horizontalContentPadding
+                )
             }
             .padding(
                 .horizontal,
@@ -33,6 +46,33 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                 PlaybackPageLayout.verticalContentPadding
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var shelfState: RelatedVideoShelfState {
+        switch relatedVideoState {
+        case .idle, .loading:
+            .loading
+        case .loaded(let bvid, let videos) where bvid == context.detail.bvid:
+            .loaded(
+                videos.map {
+                    RelatedVideoShelfItem(
+                        bvid: $0.bvid,
+                        title: $0.title,
+                        coverURL: $0.coverURL,
+                        ownerName: $0.ownerName,
+                        viewCount: $0.viewCount,
+                        danmakuCount: $0.danmakuCount,
+                        durationSeconds: $0.durationSeconds
+                    )
+                }
+            )
+        case .empty(let bvid) where bvid == context.detail.bvid:
+            .empty
+        case .failed(let bvid, _) where bvid == context.detail.bvid:
+            .failure
+        case .loaded, .empty, .failed:
+            .loading
         }
     }
 

@@ -9,6 +9,8 @@ struct BiliAPIProbe {
             switch try Configuration(arguments: CommandLine.arguments).mode {
             case .search(let keyword, let page):
                 try await runSearch(keyword: keyword, page: page)
+            case .related:
+                try await runRelated()
             case .m4Contract(let bvid, let cid):
                 try await M4ContractProbe().run(bvid: bvid, cid: cid)
             }
@@ -25,6 +27,16 @@ struct BiliAPIProbe {
             )
             exit(EXIT_FAILURE)
         }
+    }
+
+    private static func runRelated() async throws {
+        let client = BiliAPIClient(transport: SearchProbeTransport())
+        guard let sample = try await client.popular(pageSize: 1).videos.first
+        else {
+            throw ProbeError.emptyResponse
+        }
+        let videos = try await client.relatedVideos(to: sample.bvid)
+        print("related: count=\(videos.count) production-decoder=ready")
     }
 
     private static func runSearch(keyword: String, page: Int) async throws {
@@ -191,6 +203,7 @@ private enum ProbeError: String, Error {
 private struct Configuration {
     enum Mode {
         case search(keyword: String, page: Int)
+        case related
         case m4Contract(bvid: String, cid: Int64)
     }
 
@@ -205,6 +218,8 @@ private struct Configuration {
         }
         let values = try SecureProbeInput.load(path: arguments[1])
         switch values["mode"] {
+        case "related":
+            mode = .related
         case "m4-contract":
             guard
                 let bvid = values["bvid"],

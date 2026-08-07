@@ -66,7 +66,9 @@ struct AppShellView: View {
                             model: videoModel,
                             danmakuModel: danmakuModel,
                             playerContent: playerContent,
-                            onRetry: navigationCoordinator.retryPlayback
+                            onRetry: navigationCoordinator.retryPlayback,
+                            onSelectRelatedVideo:
+                                navigationCoordinator.openPlayback
                         )
                     }
             }
@@ -165,12 +167,14 @@ private struct PlaybackDestinationView: View {
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
     let onRetry: () -> Void
+    let onSelectRelatedVideo: (String) -> Void
 
     var body: some View {
         VideoPlaybackView(
             model: model,
             danmakuModel: danmakuModel,
-            onRetry: onRetry
+            onRetry: onRetry,
+            onSelectRelatedVideo: onSelectRelatedVideo
         ) {
             playerContent
         }

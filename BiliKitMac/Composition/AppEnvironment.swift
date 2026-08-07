@@ -21,6 +21,7 @@ struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     let playbackPreferencesController: PlaybackPreferencesController
     private let guestContentRepository: any GuestContentRepository
+    private let relatedVideoRepository: any RelatedVideoRepository
     private let historyRepository: any WatchHistoryRepository
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
@@ -30,6 +31,7 @@ struct AppEnvironment {
 
     init(
         guestContentRepository: any GuestContentRepository,
+        relatedVideoRepository: any RelatedVideoRepository,
         historyRepository: any WatchHistoryRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
@@ -42,6 +44,7 @@ struct AppEnvironment {
             "AVPlayerEngine must own native subtitle presentation"
         )
         self.guestContentRepository = guestContentRepository
+        self.relatedVideoRepository = relatedVideoRepository
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
@@ -74,7 +77,10 @@ struct AppEnvironment {
     func makeVideoViewModel() -> GuestVideoViewModel {
         GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: guestContentRepository),
-            playback: playerEngine
+            playback: playerEngine,
+            relatedVideoUseCase: RelatedVideoUseCase(
+                repository: relatedVideoRepository
+            )
         )
     }
 
@@ -146,8 +152,10 @@ struct AppEnvironment {
             player: player,
             subtitleUseCase: SubtitleUseCase(repository: subtitleRepository)
         )
+        let guestRepository = BiliGuestRepository(client: api)
         return AppEnvironment(
-            guestContentRepository: BiliGuestRepository(client: api),
+            guestContentRepository: guestRepository,
+            relatedVideoRepository: guestRepository,
             historyRepository: BiliWatchHistoryRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,

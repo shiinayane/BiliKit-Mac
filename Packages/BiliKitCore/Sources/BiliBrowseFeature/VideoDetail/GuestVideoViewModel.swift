@@ -21,6 +21,14 @@ public enum GuestVideoState: Sendable, Equatable {
     )
 }
 
+public enum RelatedVideoState: Sendable, Equatable {
+    case idle
+    case loading(bvid: String)
+    case loaded(bvid: String, videos: [RelatedVideo])
+    case empty(bvid: String)
+    case failed(bvid: String, error: GuestApplicationError)
+}
+
 @MainActor
 @Observable
 /// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一 generation。
@@ -28,6 +36,7 @@ public enum GuestVideoState: Sendable, Equatable {
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
     public private(set) var state: GuestVideoState = .idle
+    public private(set) var relatedVideoState: RelatedVideoState = .idle
     /// 供播放主区与上下文 Sidebar 共享的最近有效详情。
     ///
     /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
@@ -40,17 +49,22 @@ public final class GuestVideoViewModel {
 
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
+    @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var relatedVideoTask: Task<Void, Never>?
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var relatedVideoGeneration = 0
 
     public init(
         useCase: GuestVideoUseCase,
-        playback: any PlaybackControlling
+        playback: any PlaybackControlling,
+        relatedVideoUseCase: RelatedVideoUseCase? = nil
     ) {
         self.useCase = useCase
         self.playback = playback
+        self.relatedVideoUseCase = relatedVideoUseCase
         playbackFailureTask = Task { [weak self, playback] in
             for await event in playback.playbackFailureEvents() {
                 guard !Task.isCancelled else { return }
@@ -61,6 +75,7 @@ public final class GuestVideoViewModel {
 
     deinit {
         loadTask?.cancel()
+        relatedVideoTask?.cancel()
         playbackFailureTask?.cancel()
     }
 
@@ -76,6 +91,7 @@ public final class GuestVideoViewModel {
         presentedPlaybackIdentity = nil
         playbackIntent = nil
         state = .loading(bvid: bvid)
+        loadRelatedVideos(for: bvid)
         loadTask = Task { [weak self] in
             await self?.performLoad(
                 bvid: bvid,
@@ -132,11 +148,20 @@ public final class GuestVideoViewModel {
         }
     }
 
+    public func retryRelatedVideos() {
+        guard case .failed(let bvid, _) = relatedVideoState else { return }
+        loadRelatedVideos(for: bvid)
+    }
+
     /// 取消内容准备并停止播放 adapter，作为离开播放目的地的最终清理边界。
     public func reset() {
         generation += 1
+        relatedVideoGeneration += 1
         loadTask?.cancel()
         loadTask = nil
+        relatedVideoTask?.cancel()
+        relatedVideoTask = nil
+        relatedVideoState = .idle
         presentedContext = nil
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
@@ -151,6 +176,63 @@ public final class GuestVideoViewModel {
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
         loadTask
+    }
+
+    public func waitForCurrentRelatedVideoTask() async {
+        await relatedVideoTask?.value
+    }
+
+    func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
+        relatedVideoTask
+    }
+
+    private func loadRelatedVideos(for bvid: String) {
+        relatedVideoGeneration += 1
+        let currentGeneration = relatedVideoGeneration
+        relatedVideoTask?.cancel()
+        guard let relatedVideoUseCase else {
+            relatedVideoState = .empty(bvid: bvid)
+            relatedVideoTask = nil
+            return
+        }
+        relatedVideoState = .loading(bvid: bvid)
+        relatedVideoTask = Task { [weak self] in
+            do {
+                let videos = try await relatedVideoUseCase.relatedVideos(
+                    to: bvid
+                )
+                try Task.checkCancellation()
+                guard let self,
+                    self.relatedVideoGeneration == currentGeneration
+                else { return }
+                self.relatedVideoState =
+                    videos.isEmpty
+                    ? .empty(bvid: bvid)
+                    : .loaded(bvid: bvid, videos: videos)
+                self.relatedVideoTask = nil
+            } catch is CancellationError {
+                guard let self,
+                    self.relatedVideoGeneration == currentGeneration
+                else { return }
+                self.relatedVideoState = .idle
+                self.relatedVideoTask = nil
+            } catch let error as GuestApplicationError {
+                guard let self,
+                    self.relatedVideoGeneration == currentGeneration
+                else { return }
+                self.relatedVideoState = .failed(bvid: bvid, error: error)
+                self.relatedVideoTask = nil
+            } catch {
+                guard let self,
+                    self.relatedVideoGeneration == currentGeneration
+                else { return }
+                self.relatedVideoState = .failed(
+                    bvid: bvid,
+                    error: .unavailable
+                )
+                self.relatedVideoTask = nil
+            }
+        }
     }
 
     private func performLoad(

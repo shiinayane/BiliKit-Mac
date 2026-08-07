@@ -9,17 +9,20 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: GuestVideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
+    private let onSelectRelatedVideo: (String) -> Void
     private let playerContent: () -> PlayerContent
 
     public init(
         model: GuestVideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
         onRetry: @escaping () -> Void,
+        onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
         self.danmakuModel = danmakuModel
         self.onRetry = onRetry
+        self.onSelectRelatedVideo = onSelectRelatedVideo
         self.playerContent = playerContent
     }
 
@@ -32,6 +35,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                         context: currentContext,
                         isPreparingPlayback: showsPlaybackActivity,
                         danmakuModel: danmakuModel,
+                        relatedVideoState: model.relatedVideoState,
+                        onSelectRelatedVideo: onSelectRelatedVideo,
+                        onRetryRelatedVideos: model.retryRelatedVideos,
                         playerContent: playerContent
                     )
                     .disabled(blocksRetainedContext)

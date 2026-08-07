@@ -113,6 +113,19 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return detail
     }
 
+    /// 匿名读取相关推荐；该路径永不请求认证授权器。
+    public func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
+        guard Self.isValidBVID(bvid) else {
+            throw BiliAPIError.invalidRequest
+        }
+        let payload: [RelatedVideoPayload] = try await get(
+            path: "/x/web-interface/archive/related",
+            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            referer: Self.videoReferer(bvid)
+        )
+        return try payload.map { try $0.model() }
+    }
+
     public func pages(for bvid: String) async throws -> [VideoPage] {
         guard Self.isValidBVID(bvid) else {
             throw BiliAPIError.invalidRequest
