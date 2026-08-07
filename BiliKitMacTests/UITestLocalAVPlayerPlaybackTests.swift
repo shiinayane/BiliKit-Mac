@@ -18,7 +18,11 @@ struct UITestLocalAVPlayerPlaybackTests {
             cid: 102
         )
 
-        try await playback.load(Self.emptyPlayback, identity: first)
+        try await playback.load(
+            Self.emptyPlayback,
+            identity: first,
+            intent: PlaybackLoadIntent()
+        )
         #expect(
             await waitUntil {
                 playback.status == "playing"
@@ -30,7 +34,11 @@ struct UITestLocalAVPlayerPlaybackTests {
         let firstItemIdentity = ObjectIdentifier(firstItem)
         let firstGeneration = playback.itemGeneration
 
-        try await playback.load(Self.emptyPlayback, identity: replacement)
+        try await playback.load(
+            Self.emptyPlayback,
+            identity: replacement,
+            intent: PlaybackLoadIntent()
+        )
         #expect(
             await waitUntil {
                 playback.status == "playing"
@@ -71,7 +79,11 @@ struct UITestLocalAVPlayerPlaybackTests {
             cid: 103
         )
         let loadTask = Task {
-            try await playback.load(Self.emptyPlayback, identity: identity)
+            try await playback.load(
+                Self.emptyPlayback,
+                identity: identity,
+                intent: PlaybackLoadIntent()
+            )
         }
 
         #expect(

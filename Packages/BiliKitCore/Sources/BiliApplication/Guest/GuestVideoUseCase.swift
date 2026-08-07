@@ -53,4 +53,27 @@ public struct GuestVideoUseCase: Sendable {
             playback: playback
         )
     }
+
+    /// 复用同一视频已经取得的详情与分 P，只为指定 CID 重新取得播放清单。
+    public func preparePage(
+        in context: GuestVideoContext,
+        cid: Int64
+    ) async throws -> GuestVideoContext {
+        guard let selectedPage = context.pages.first(where: { $0.cid == cid })
+        else {
+            throw GuestApplicationError.invalidRequest
+        }
+        let playback = try await repository.playback(
+            for: context.detail.bvid,
+            cid: selectedPage.cid
+        )
+        try Task.checkCancellation()
+
+        return GuestVideoContext(
+            detail: context.detail,
+            pages: context.pages,
+            selectedPage: selectedPage,
+            playback: playback
+        )
+    }
 }

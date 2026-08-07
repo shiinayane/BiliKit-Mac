@@ -12,6 +12,7 @@ public struct PlaybackContextSidebar: View {
     private let onRetry: () -> Void
     @State private var isSummaryExpanded = true
     @State private var arePartsExpanded = true
+    @ScaledMetric(relativeTo: .callout) private var partRowHeight: CGFloat = 40
 
     public init(
         model: GuestVideoViewModel,
@@ -77,58 +78,150 @@ public struct PlaybackContextSidebar: View {
     }
 
     private func partsSection(_ context: GuestVideoContext) -> some View {
-        DisclosureGroup("分 P", isExpanded: $arePartsExpanded) {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(context.pages) { page in
-                    partRow(
-                        page,
-                        isSelected: page.id == context.selectedPage.id
-                    )
+        ScrollViewReader { proxy in
+            DisclosureGroup(isExpanded: $arePartsExpanded) {
+                List {
+                    ForEach(context.pages) { page in
+                        partRow(
+                            page,
+                            identity: PlaybackItemIdentity(
+                                bvid: context.detail.bvid,
+                                cid: page.cid
+                            )
+                        )
+                        .id(page.cid)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .frame(height: partsListHeight(pageCount: context.pages.count))
+                .padding(.top, 8)
+                .accessibilityIdentifier("sidebar.playback-parts.list")
+            } label: {
+                Text("分 P（\(context.pages.count)）")
+                    .accessibilityIdentifier("sidebar.playback-parts")
+            }
+            .font(.headline)
+            .onChange(of: arePartsExpanded) { _, isExpanded in
+                guard isExpanded,
+                    let selectedCID = model.presentedPlaybackIdentity?.cid,
+                    context.pages.contains(where: { $0.cid == selectedCID })
+                else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo(selectedCID, anchor: .center)
                 }
             }
-            .padding(.top, 8)
         }
-        .font(.headline)
-        .accessibilityIdentifier("sidebar.playback-parts")
     }
 
     private func partRow(
         _ page: VideoPage,
-        isSelected: Bool
+        identity: PlaybackItemIdentity
     ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: isSelected ? "play.circle.fill" : "circle")
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+        let isSelected = model.presentedPlaybackIdentity == identity
+        let isRequested = model.requestedPlaybackIdentity == identity
+        let isFailed = isRequested && isPageFailure
+        let isLoading = isRequested && !isSelected && !isFailed
+        let accessibilityStatus = accessibilityStatus(
+            isLoading: isLoading,
+            isFailed: isFailed
+        )
+        return Button {
+            if isFailed {
+                model.retry()
+            } else {
+                model.selectPage(cid: page.cid)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Group {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(
+                            systemName: isFailed
+                                ? "exclamationmark.circle"
+                                : (isSelected ? "play.circle.fill" : "circle")
+                        )
+                        .foregroundStyle(
+                            isFailed
+                                ? Color.red
+                                : (isSelected ? Color.accentColor : .secondary)
+                        )
+                    }
+                }
+                .frame(width: 16, height: 16)
+                .accessibilityHidden(true)
 
-            Text("P\(page.index)")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 30, alignment: .leading)
+                Text("P\(page.index)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 30, alignment: .leading)
 
-            Text(page.title)
-                .font(.callout)
-                .lineLimit(2)
+                Text(page.title)
+                    .font(.callout)
+                    .lineLimit(2)
+                    .layoutPriority(1)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            Text(
-                VideoDurationFormatting.string(
-                    seconds: page.durationSeconds
+                Text(
+                    VideoDurationFormatting.string(
+                        seconds: page.durationSeconds
+                    )
                 )
-            )
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            }
+            .contentShape(.rect)
         }
-        .padding(.vertical, 5)
+        .buttonStyle(.plain)
+        .disabled(isSelected || isLoading)
+        .frame(minHeight: partRowHeight)
+        .listRowInsets(
+            EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "第 \(page.index) 分 P，\(page.title)，"
                 + VideoDurationFormatting.string(
                     seconds: page.durationSeconds
                 )
+                + (accessibilityStatus.map { "，\($0)" } ?? "")
         )
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityHint(
+            isFailed
+                ? "点按重试"
+                : (isSelected
+                    ? ""
+                    : (isLoading ? "" : "切换到此分 P"))
+        )
+        .help(isFailed ? "加载失败，点按重试" : "")
         .accessibilityIdentifier("sidebar.playback-part.\(page.index)")
+    }
+
+    private func partsListHeight(pageCount: Int) -> CGFloat {
+        CGFloat(min(pageCount, 5)) * partRowHeight + 4
+    }
+
+    private func accessibilityStatus(
+        isLoading: Bool,
+        isFailed: Bool
+    ) -> String? {
+        if isFailed { return "加载失败，可重试" }
+        if isLoading { return "正在载入" }
+        return nil
+    }
+
+    private var isPageFailure: Bool {
+        if case .failedPage = model.state {
+            return true
+        }
+        return false
     }
 
     private var commentsUnavailableSection: some View {
@@ -148,7 +241,7 @@ public struct PlaybackContextSidebar: View {
         switch model.state {
         case .loading, .failed:
             true
-        case .idle, .preparingPlayback, .ready:
+        case .idle, .loadingPage, .preparingPlayback, .ready, .failedPage:
             false
         }
     }
@@ -156,11 +249,11 @@ public struct PlaybackContextSidebar: View {
     @ViewBuilder
     private var emptyState: some View {
         switch model.state {
-        case .loading, .preparingPlayback:
+        case .loading, .loadingPage, .preparingPlayback:
             ProgressView("正在加载视频上下文…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("sidebar.playback-loading")
-        case .failed(_, let failure):
+        case .failed(_, let failure), .failedPage(_, _, let failure):
             failureView(failure)
         case .idle:
             ContentUnavailableView(
@@ -188,7 +281,7 @@ public struct PlaybackContextSidebar: View {
             failureView(failure)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.background)
-        case .idle, .preparingPlayback, .ready:
+        case .idle, .loadingPage, .preparingPlayback, .ready, .failedPage:
             EmptyView()
         }
     }
@@ -199,10 +292,18 @@ public struct PlaybackContextSidebar: View {
         } description: {
             Text(failure.message)
         } actions: {
-            Button("重试", action: onRetry)
+            Button("重试", action: retryAction)
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("sidebar.playback-failure-retry")
         }
         .accessibilityIdentifier("sidebar.playback-failure")
+    }
+
+    private func retryAction() {
+        if case .failedPage = model.state {
+            model.retry()
+        } else {
+            onRetry()
+        }
     }
 }

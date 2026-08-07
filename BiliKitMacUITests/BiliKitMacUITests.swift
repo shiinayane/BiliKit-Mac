@@ -119,8 +119,8 @@ final class BiliKitMacUITests: XCTestCase {
         XCTAssertTrue(unselectedPart.waitForExistence(timeout: 5))
         XCTAssertTrue(selectedPart.isSelected)
         XCTAssertFalse(unselectedPart.isSelected)
-        XCTAssertFalse(app.buttons["sidebar.playback-part.1"].exists)
-        XCTAssertFalse(app.buttons["sidebar.playback-part.3"].exists)
+        XCTAssertTrue(app.buttons["sidebar.playback-part.1"].exists)
+        XCTAssertTrue(app.buttons["sidebar.playback-part.3"].exists)
         let commentsUnavailable = element(
             "sidebar.playback-comments-unavailable",
             in: app
@@ -136,7 +136,7 @@ final class BiliKitMacUITests: XCTestCase {
         toggleSystemSidebar(in: app)
         XCTAssertTrue(
             waitForNotHittable(
-                app.disclosureTriangles["分 P"],
+                app.disclosureTriangles["分 P（7）"],
                 timeout: 5
             )
         )
@@ -153,9 +153,33 @@ final class BiliKitMacUITests: XCTestCase {
         toggleSystemSidebar(in: app)
         XCTAssertTrue(
             waitForHittable(
-                app.disclosureTriangles["分 P"],
+                app.disclosureTriangles["分 P（7）"],
                 timeout: 5
             )
+        )
+        XCTAssertTrue(waitForHittable(unselectedPart, timeout: 5))
+        unselectedPart.click()
+        let switchedTimeline = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds: 100,
+            minimumGeneration:
+                try XCTUnwrap(Int(initialTimeline["generation"] ?? "")) + 1
+        )
+        XCTAssertEqual(
+            switchedTimeline["playerIdentity"],
+            initialTimeline["playerIdentity"]
+        )
+        XCTAssertNotEqual(
+            switchedTimeline["itemIdentity"],
+            initialTimeline["itemIdentity"]
+        )
+        XCTAssertEqual(switchedTimeline["lastStopped"], "fixture-video-1")
+        XCTAssertTrue(
+            element("sidebar.playback-part.3", in: app).isSelected
+        )
+        XCTAssertFalse(
+            element("sidebar.playback-part.1", in: app).isSelected
         )
         let compactSize = CGSize(width: 1_080, height: 680)
         resizeWindow(window, to: compactSize)
@@ -171,7 +195,7 @@ final class BiliKitMacUITests: XCTestCase {
             timeline,
             item: "fixture-video-1",
             minimumMilliseconds:
-                try timelineMilliseconds(initialTimeline) + 100
+                try timelineMilliseconds(switchedTimeline) + 100
         )
         XCTAssertEqual(
             resizedTimeline["playerIdentity"],
@@ -179,11 +203,11 @@ final class BiliKitMacUITests: XCTestCase {
         )
         XCTAssertEqual(
             resizedTimeline["itemIdentity"],
-            initialTimeline["itemIdentity"]
+            switchedTimeline["itemIdentity"]
         )
         XCTAssertEqual(
             resizedTimeline["generation"],
-            initialTimeline["generation"]
+            switchedTimeline["generation"]
         )
 
         clickSystemBack(in: app)
@@ -205,6 +229,100 @@ final class BiliKitMacUITests: XCTestCase {
                 within: [navigationSidebar, feed],
                 timeout: 5
             )
+        )
+    }
+
+    @MainActor
+    func testProductionPartSelectionReplacesLocalPlayerItemAndCleansOnBack()
+        throws
+    {
+        let app = launchFixture(arguments: ["-ui-testing"])
+        let video = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(waitForHittable(video, timeout: 5))
+        video.click()
+
+        let timeline = element("local-avplayer.timeline", in: app)
+        let first = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds: 100
+        )
+        let firstGeneration = try XCTUnwrap(Int(first["generation"] ?? ""))
+        let playerIdentity = try XCTUnwrap(first["playerIdentity"])
+        let firstItemIdentity = try XCTUnwrap(first["itemIdentity"])
+
+        let firstPart = element("sidebar.playback-part.1", in: app)
+        let partsList = element("sidebar.playback-parts.list", in: app)
+        let seventhPart = element("sidebar.playback-part.7", in: app)
+        XCTAssertTrue(firstPart.waitForExistence(timeout: 5))
+        XCTAssertTrue(partsList.waitForExistence(timeout: 5))
+        XCTAssertTrue(firstPart.isSelected)
+        XCTAssertTrue(seventhPart.exists)
+        XCTAssertFalse(seventhPart.isHittable)
+        XCTAssertTrue(
+            scrollUntilHittable(
+                seventhPart,
+                in: partsList,
+                timeout: 5
+            )
+        )
+        XCTAssertFalse(seventhPart.isSelected)
+        seventhPart.click()
+
+        let replacement = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds: 100,
+            minimumGeneration: firstGeneration + 1
+        )
+        XCTAssertEqual(replacement["playerIdentity"], playerIdentity)
+        XCTAssertNotEqual(replacement["itemIdentity"], firstItemIdentity)
+        XCTAssertEqual(replacement["lastStopped"], "fixture-video-1")
+        XCTAssertTrue(
+            element("sidebar.playback-part.7", in: app).isSelected
+        )
+        XCTAssertFalse(
+            element("sidebar.playback-part.1", in: app).isSelected
+        )
+
+        let partsToggle = app.disclosureTriangles["分 P（7）"]
+        XCTAssertTrue(waitForHittable(partsToggle, timeout: 5))
+        partsToggle.click()
+        XCTAssertTrue(waitForNotHittable(partsList, timeout: 5))
+        partsToggle.click()
+        XCTAssertTrue(partsList.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForVisible(
+                element("sidebar.playback-part.7", in: app),
+                in: partsList,
+                timeout: 5
+            )
+        )
+        let restoredTimeline = try waitForTimeline(
+            timeline,
+            item: "fixture-video-1",
+            minimumMilliseconds: try timelineMilliseconds(replacement) + 100
+        )
+        XCTAssertEqual(restoredTimeline["playerIdentity"], playerIdentity)
+        XCTAssertEqual(
+            restoredTimeline["itemIdentity"],
+            replacement["itemIdentity"]
+        )
+        XCTAssertEqual(
+            restoredTimeline["generation"],
+            replacement["generation"]
+        )
+
+        clickSystemBack(in: app)
+        XCTAssertTrue(
+            waitForProbe(timeline, timeout: 5) { fields in
+                fields["item"] == "none"
+                    && fields["observerCount"] == "0"
+                    && fields["installed"] == "0"
+                    && fields["activeItems"] == "0"
+                    && fields["activeObservers"] == "0"
+                    && fields["activeMediaDirectories"] == "0"
+            }
         )
     }
 
@@ -656,7 +774,8 @@ final class BiliKitMacUITests: XCTestCase {
     private func waitForTimeline(
         _ element: XCUIElement,
         item: String,
-        minimumMilliseconds: Int
+        minimumMilliseconds: Int,
+        minimumGeneration: Int? = nil
     ) throws -> [String: String] {
         XCTAssertTrue(element.waitForExistence(timeout: 5))
         XCTAssertTrue(
@@ -665,6 +784,9 @@ final class BiliKitMacUITests: XCTestCase {
                     && fields["status"] == "playing"
                     && (Int(fields["timeMillis"] ?? "") ?? 0)
                         >= minimumMilliseconds
+                    && minimumGeneration.map {
+                        (Int(fields["generation"] ?? "") ?? 0) >= $0
+                    } ?? true
             }
         )
         return probeFields(from: element)
@@ -865,6 +987,25 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
+    private func scrollUntilHittable(
+        _ element: XCUIElement,
+        in container: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        var scrollCount = 0
+        while Date() < deadline, scrollCount < 12 {
+            if element.exists && element.isHittable {
+                return true
+            }
+            let delta = -max(container.frame.height * 0.75, 60)
+            container.scroll(byDeltaX: 0, deltaY: delta)
+            scrollCount += 1
+        }
+        return element.exists && element.isHittable
+    }
+
+    @MainActor
     private func waitForNotHittable(
         _ element: XCUIElement,
         timeout: TimeInterval
@@ -872,6 +1013,24 @@ final class BiliKitMacUITests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 !element.exists || !element.isHittable
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForVisible(
+        _ element: XCUIElement,
+        in container: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                guard element.exists, container.exists else { return false }
+                let intersection = element.frame.intersection(container.frame)
+                return !intersection.isNull
+                    && intersection.height >= element.frame.height * 0.8
             },
             object: element
         )

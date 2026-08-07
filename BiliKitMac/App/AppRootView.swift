@@ -85,8 +85,8 @@ struct AppRootView: View {
                 subtitleModel.retry()
                 return
             }
+            navigationCoordinator.closePlaybackForAuthenticationChange()
             historyModel.reset()
-            subtitleModel.suspendForAuthentication()
         }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

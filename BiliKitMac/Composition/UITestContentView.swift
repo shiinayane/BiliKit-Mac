@@ -216,6 +216,30 @@
                     title: "辅助功能验证",
                     durationSeconds: 1_600
                 ),
+                VideoPage(
+                    cid: 104,
+                    index: 4,
+                    title: "长目录滚动",
+                    durationSeconds: 980
+                ),
+                VideoPage(
+                    cid: 105,
+                    index: 5,
+                    title: "边界状态",
+                    durationSeconds: 760
+                ),
+                VideoPage(
+                    cid: 106,
+                    index: 6,
+                    title: "键盘访问",
+                    durationSeconds: 620
+                ),
+                VideoPage(
+                    cid: 107,
+                    index: 7,
+                    title: "末项切换：长标题 mixed English 与日本語可读性验证",
+                    durationSeconds: 540
+                ),
             ]
             return usesMinimalPlaybackContext
                 ? [pages[0]]

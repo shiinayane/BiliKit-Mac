@@ -158,6 +158,28 @@ struct AppNavigationCoordinatorTests {
 
     @Test
     @MainActor
+    func authenticationChangeClosesPlaybackWithoutLosingSourceContext() {
+        var stopCount = 0
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: { stopCount += 1 }
+        )
+        coordinator.selectedTab = .search
+        coordinator.searchDraft = "保留的来源草稿"
+        coordinator.openPlayback("BV1Logout")
+
+        coordinator.closePlaybackForAuthenticationChange()
+        coordinator.closePlaybackForAuthenticationChange()
+
+        #expect(stopCount == 1)
+        #expect(coordinator.selectedTab == .search)
+        #expect(coordinator.searchDraft == "保留的来源草稿")
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
+    }
+
+    @Test
+    @MainActor
     func emptyBVIDDoesNotCreatePlaybackState() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(

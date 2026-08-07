@@ -78,6 +78,11 @@ final class AppNavigationCoordinator {
         startPlayback(bvid)
     }
 
+    /// 登出只关闭当前播放，不改变来源 Tab 或尚未提交的搜索草稿。
+    func closePlaybackForAuthenticationChange() {
+        closePlayback()
+    }
+
     /// 关闭当前播放，并恢复一个新窗口应有的来源与搜索草稿。
     func resetForWindowClosure() {
         closePlayback()

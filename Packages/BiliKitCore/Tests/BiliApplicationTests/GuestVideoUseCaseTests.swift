@@ -28,6 +28,35 @@ struct GuestVideoUseCaseTests {
         }
         #expect(await repository.playbackCIDs().isEmpty)
     }
+
+    @Test
+    func replacesOnlyTheSelectedCIDWithinPreparedContext() async throws {
+        let repository = GuestRepositoryStub()
+        let useCase = GuestVideoUseCase(repository: repository)
+        let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+
+        let replacement = try await useCase.preparePage(
+            in: initial,
+            cid: 900_002
+        )
+
+        #expect(replacement.detail == initial.detail)
+        #expect(replacement.pages == initial.pages)
+        #expect(replacement.selectedPage.cid == 900_002)
+        #expect(await repository.playbackCIDs() == [900_001, 900_002])
+    }
+
+    @Test
+    func rejectsCIDOutsidePreparedPagesWithoutPlaybackRequest() async throws {
+        let repository = GuestRepositoryStub()
+        let useCase = GuestVideoUseCase(repository: repository)
+        let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+
+        await #expect(throws: GuestApplicationError.invalidRequest) {
+            try await useCase.preparePage(in: initial, cid: 999_999)
+        }
+        #expect(await repository.playbackCIDs() == [900_001])
+    }
 }
 
 private actor GuestRepositoryStub: GuestContentRepository {
