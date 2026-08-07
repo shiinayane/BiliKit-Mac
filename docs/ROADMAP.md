@@ -136,7 +136,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - A → B 仍只替换媒体 identity；系统返回恢复来源入口、搜索草稿、工作集和语义滚动位置。
 - 同 BVID 分 P 切换不增加导航层级；BVID 级展示上下文与请求中／已呈现媒体 identity 分离，
   loading、failure 与 retry 不把旧分 P 继续标作当前媒体。
-- 不增加 endpoint、Repository、第二个 Package、空 target、通用 Store 或本地持久化。
+- 不增加 endpoint、Repository、第二个 Package、空 target、通用 Store 或媒体内容／播放进度持久化；播放器音量、静音和首选倍速可作为设备级非内容偏好保存。
 - 评论继续显示能力未接入；不加入合成评论、评论读取或写操作。
 - 横向相关推荐已经确定为后续播放工作台方向，但本阶段不建立占位 View、数据模型、fixture
   seam 或网络实现，也不把它登记为当前并行阶段。
