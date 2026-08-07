@@ -21,11 +21,12 @@ final class AVPlayerTimelineAdapter {
     private let observers = PlayerTimelineObserverBag()
     private var token: PlaybackTimelineItemToken?
     private var failedToken: PlaybackTimelineItemToken?
-    private var preferredPlaybackRate: Float = 1
     private var pendingExplicitSeekPosition: Double?
 
     init(player: AVPlayer) {
         self.player = player
+        let initialRate = Self.validatedPlaybackRate(player.defaultRate) ?? 1
+        player.defaultRate = initialRate
     }
 
     func updates() -> AsyncStream<PlaybackTimelineSnapshot> {
@@ -65,9 +66,6 @@ final class AVPlayerTimelineAdapter {
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item else {
                     return
-                }
-                if player.rate > 0 {
-                    self.preferredPlaybackRate = player.rate
                 }
                 self.store.update(token: token, rate: Double(player.rate))
             }
@@ -205,10 +203,12 @@ final class AVPlayerTimelineAdapter {
 
     func play() {
         guard let token else { return }
-        player.playImmediately(atRate: preferredPlaybackRate)
+        let preferredRate = Self.validatedPlaybackRate(player.defaultRate) ?? 1
+        player.defaultRate = preferredRate
+        player.playImmediately(atRate: preferredRate)
         store.update(
             token: token,
-            rate: Double(preferredPlaybackRate),
+            rate: Double(preferredRate),
             state: .playing
         )
     }
@@ -223,9 +223,9 @@ final class AVPlayerTimelineAdapter {
         guard rate.isFinite, (0.25...4).contains(rate) else {
             throw AVPlayerEngineError.invalidPlaybackRate
         }
-        preferredPlaybackRate = Float(rate)
+        player.defaultRate = Float(rate)
         guard player.rate > 0, let token else { return }
-        player.rate = preferredPlaybackRate
+        player.rate = Float(rate)
         store.update(token: token, rate: rate, state: .playing)
     }
 
@@ -273,6 +273,11 @@ final class AVPlayerTimelineAdapter {
         let seconds = CMTimeGetSeconds(time)
         guard seconds.isFinite, seconds >= 0 else { return nil }
         return seconds
+    }
+
+    private static func validatedPlaybackRate(_ rate: Float) -> Float? {
+        guard rate.isFinite, (0.25...4).contains(rate) else { return nil }
+        return rate
     }
 }
 

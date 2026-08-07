@@ -24,4 +24,22 @@ struct BiliKitMacTests {
         #expect(authenticationModel.state == .signedOut)
         #expect(historyModel.state == .idle)
     }
+
+    @Test
+    @MainActor
+    func windowOwnerRetainsPlaybackPreferencesObservation() {
+        weak var weakController: PlaybackPreferencesController?
+        var owner: AppWindowOwner?
+
+        do {
+            let environment = AppEnvironment.live()
+            weakController = environment.playbackPreferencesController
+            owner = AppWindowOwner(environment: environment)
+        }
+
+        #expect(weakController != nil)
+        withExtendedLifetime(owner) {}
+        owner = nil
+        #expect(weakController == nil)
+    }
 }

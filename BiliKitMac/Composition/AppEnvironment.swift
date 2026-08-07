@@ -1,3 +1,4 @@
+import AVFoundation
 import BiliAPI
 import BiliApplication
 import BiliAuth
@@ -18,6 +19,7 @@ import SwiftUI
 /// 字幕、弹幕、视频模型与 AppKit player host 必须共享它的播放 identity 和时间线。
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
+    let playbackPreferencesController: PlaybackPreferencesController
     private let guestContentRepository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
     private let subtitleRepository: any SubtitleRepository
@@ -33,6 +35,7 @@ struct AppEnvironment {
         subtitleRepository: any SubtitleRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
+        playbackPreferencesController: PlaybackPreferencesController,
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
@@ -40,6 +43,7 @@ struct AppEnvironment {
         self.historyRepository = historyRepository
         self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
+        self.playbackPreferencesController = playbackPreferencesController
         let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(
             backend: renderer,
@@ -131,12 +135,17 @@ struct AppEnvironment {
         let authenticationService = BiliAuthenticationService(
             additionalSessionInvalidators: [api]
         )
+        let player = AVPlayer()
+        let playbackPreferencesController = PlaybackPreferencesController(
+            player: player
+        )
         return AppEnvironment(
             guestContentRepository: BiliGuestRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(client: api),
             subtitleRepository: BiliSubtitleRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
-            playerEngine: AVPlayerEngine(),
+            playerEngine: AVPlayerEngine(player: player),
+            playbackPreferencesController: playbackPreferencesController,
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService

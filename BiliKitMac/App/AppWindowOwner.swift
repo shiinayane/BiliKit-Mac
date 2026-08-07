@@ -17,6 +17,7 @@ final class AppWindowOwner {
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
+    private let playbackPreferencesController: PlaybackPreferencesController?
 
     convenience init(environment: AppEnvironment) {
         let browseModel = environment.makeBrowseViewModel()
@@ -43,7 +44,8 @@ final class AppWindowOwner {
             historyModel: environment.makeWatchHistoryViewModel(),
             playerContent: environment.makePlayerView(
                 subtitleModel: subtitleModel
-            )
+            ),
+            playbackPreferencesController: environment.playbackPreferencesController
         )
     }
 
@@ -55,7 +57,8 @@ final class AppWindowOwner {
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
-        playerContent: AnyView
+        playerContent: AnyView,
+        playbackPreferencesController: PlaybackPreferencesController? = nil
     ) {
         self.navigationCoordinator = navigationCoordinator
         self.browseModel = browseModel
@@ -65,5 +68,6 @@ final class AppWindowOwner {
         self.authenticationModel = authenticationModel
         self.historyModel = historyModel
         self.playerContent = playerContent
+        self.playbackPreferencesController = playbackPreferencesController
     }
 }
