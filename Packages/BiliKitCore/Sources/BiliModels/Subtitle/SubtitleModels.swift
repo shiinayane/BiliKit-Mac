@@ -1,6 +1,7 @@
 public enum SubtitleTrackKind: Sendable, Equatable {
     case standard
     case automatic
+    case unknown
 }
 
 public struct SubtitleTrack: Sendable, Equatable, Identifiable {

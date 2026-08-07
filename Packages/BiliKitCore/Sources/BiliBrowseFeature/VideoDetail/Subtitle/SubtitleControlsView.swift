@@ -32,8 +32,8 @@ struct SubtitleControlsView: View {
                     )
                 ) {
                     Text("关闭").tag(String?.none)
-                    ForEach(model.tracks) { track in
-                        Text(track.label).tag(Optional(track.id))
+                    ForEach(model.displayOptions) { option in
+                        Text(option.label).tag(Optional(option.trackID))
                     }
                 }
                 .labelsHidden()
@@ -62,17 +62,6 @@ extension SubtitleFailure {
             "字幕格式暂不支持"
         case .unavailable:
             "字幕加载失败"
-        }
-    }
-}
-
-extension SubtitleTrack {
-    fileprivate var label: String {
-        switch kind {
-        case .standard:
-            displayName
-        case .automatic:
-            "\(displayName)（自动生成）"
         }
     }
 }
