@@ -11,7 +11,7 @@ import Testing
 struct PlayerHostViewIdentityTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
-    func contentOverlayCaptureRoutesVerticalWheelToEnclosingSwiftUIScrollView()
+    func playerSurfaceCaptureRoutesVerticalWheelWithoutLocalMonitor()
         async throws
     {
         let renderer = CoreAnimationDanmakuRenderer()
@@ -49,13 +49,31 @@ struct PlayerHostViewIdentityTests {
                 in: hostingView
             )
         )
+        #expect(playerView.showsFullScreenToggleButton)
+        #expect(playerView.allowsPictureInPicturePlayback)
         let scrollCaptureView = try #require(
             firstView(
-                ofType: PlayerScrollCaptureView.self,
+                ofType: PlayerScrollWheelCaptureView.self,
                 in: playerView
             )
         )
         #expect(scrollCaptureView.superview === playerView.contentOverlayView)
+        let danmakuOverlay = try #require(
+            firstView(
+                ofType: DanmakuOverlayView.self,
+                in: playerView
+            )
+        )
+        let overlaySubviews = try #require(
+            playerView.contentOverlayView?.subviews
+        )
+        let danmakuIndex = try #require(
+            overlaySubviews.firstIndex { $0 === danmakuOverlay }
+        )
+        let captureIndex = try #require(
+            overlaySubviews.firstIndex { $0 === scrollCaptureView }
+        )
+        #expect(captureIndex > danmakuIndex)
         #expect(!scrollCaptureView.isAccessibilityElement())
         let scrollView = try #require(
             firstAncestor(ofType: NSScrollView.self, from: playerView)
@@ -73,17 +91,7 @@ struct PlayerHostViewIdentityTests {
         let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
         #expect(event.hasPreciseScrollingDeltas)
 
-        let videoPoint = NSPoint(
-            x: playerView.bounds.midX,
-            y: playerView.bounds.height * 0.75
-        )
-        let eventTarget = try #require(
-            playerView.hitTest(
-                playerView.convert(videoPoint, to: playerView.superview)
-            )
-        )
-        #expect(eventTarget === scrollCaptureView)
-        eventTarget.scrollWheel(with: event)
+        scrollCaptureView.scrollWheel(with: event)
 
         #expect(
             await waitUntil(in: hostingView) {
@@ -93,11 +101,53 @@ struct PlayerHostViewIdentityTests {
 
         let scrolledOrigin = scrollView.contentView.bounds.origin
         let horizontalEvent = try makeScrollWheelEvent(deltaX: -80, deltaY: 0)
-        eventTarget.scrollWheel(with: horizontalEvent)
+        scrollCaptureView.scrollWheel(with: horizontalEvent)
         hostingView.layoutSubtreeIfNeeded()
         #expect(scrollView.contentView.bounds.origin == scrolledOrigin)
 
         window.contentView = NSView()
+    }
+
+    @Test
+    @MainActor
+    func contentOverlayCaptureOnlyParticipatesInScrollWheelHitTesting() {
+        #expect(
+            PlayerScrollWheelCaptureView.capturesEvent(
+                ofType: .scrollWheel
+            )
+        )
+        #expect(
+            !PlayerScrollWheelCaptureView.capturesEvent(
+                ofType: .leftMouseDown
+            )
+        )
+        #expect(
+            !PlayerScrollWheelCaptureView.capturesEvent(
+                ofType: .magnify
+            )
+        )
+        #expect(!PlayerScrollWheelCaptureView.capturesEvent(ofType: nil))
+    }
+
+    @Test
+    @MainActor
+    func contentOverlayCaptureOwnsExactlyOneMomentaryRateBadge() {
+        let capture = PlayerScrollWheelCaptureView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 450)
+        )
+
+        #expect(!capture.hasMomentaryRateBadge)
+        capture.showMomentaryRateBadge(.fast)
+        #expect(capture.hasMomentaryRateBadge)
+        #expect(capture.subviews.count == 1)
+
+        capture.showMomentaryRateBadge(.slow)
+        #expect(capture.hasMomentaryRateBadge)
+        #expect(capture.subviews.count == 1)
+
+        capture.clearMomentaryRateBadge()
+        #expect(!capture.hasMomentaryRateBadge)
+        #expect(capture.subviews.isEmpty)
     }
 
     @Test
@@ -320,6 +370,282 @@ struct PlayerHostViewIdentityTests {
         )
     }
 
+    @Test
+    func momentaryRateBadgeUsesNativeSymbolsAndRequestedLabels() {
+        #expect(PlayerMomentaryRate.fast.label == "2X")
+        #expect(PlayerMomentaryRate.fast.symbolName == "forward.fill")
+        #expect(PlayerMomentaryRate.slow.label == "0.5X")
+        #expect(PlayerMomentaryRate.slow.symbolName == "backward.fill")
+    }
+
+    @Test
+    func ordinaryBufferingDoesNotCancelTheScrollInputSession() {
+        #expect(
+            !PlayerMomentaryRateSessionPolicy.shouldCancel(
+                hasActiveSession: false,
+                timeControlStatus: .paused
+            )
+        )
+        #expect(
+            PlayerMomentaryRateSessionPolicy.shouldCancel(
+                hasActiveSession: true,
+                timeControlStatus: .paused
+            )
+        )
+        #expect(
+            !PlayerMomentaryRateSessionPolicy.shouldCancel(
+                hasActiveSession: true,
+                timeControlStatus: .waitingToPlayAtSpecifiedRate
+            )
+        )
+        #expect(
+            !PlayerMomentaryRateSessionPolicy.shouldCancel(
+                hasActiveSession: true,
+                timeControlStatus: .playing
+            )
+        )
+    }
+
+    @Test
+    @MainActor
+    func preciseHorizontalGestureCanReserveWholeSequenceForMomentaryRate() {
+        var router = PlayerScrollWheelRouter()
+        #expect(
+            router.route(
+                deltaX: 0.2,
+                deltaY: 0.1,
+                phase: .began,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .pending
+        )
+        #expect(
+            router.route(
+                deltaX: 8,
+                deltaY: 0.2,
+                phase: .changed,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+        #expect(
+            router.route(
+                deltaX: 0,
+                deltaY: -30,
+                phase: .changed,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+        #expect(
+            router.route(
+                deltaX: 0,
+                deltaY: 0,
+                phase: .ended,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+        #expect(
+            router.route(
+                deltaX: 12,
+                deltaY: 0,
+                phase: [],
+                momentumPhase: .began,
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+        #expect(
+            router.route(
+                deltaX: 0,
+                deltaY: 0,
+                phase: [],
+                momentumPhase: .ended,
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+    }
+
+    @Test
+    @MainActor
+    func unphasedAndNonPreciseHorizontalWheelRemainNative() {
+        var unphasedRouter = PlayerScrollWheelRouter()
+        #expect(
+            unphasedRouter.route(
+                deltaX: 40,
+                deltaY: 0,
+                phase: [],
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .player
+        )
+
+        var nonPreciseRouter = PlayerScrollWheelRouter()
+        #expect(
+            nonPreciseRouter.route(
+                deltaX: 40,
+                deltaY: 0,
+                phase: .began,
+                momentumPhase: [],
+                isPrecise: false,
+                allowsMomentaryRate: true
+            ) == .player
+        )
+    }
+
+    @Test
+    @MainActor
+    func horizontalRateGestureActivatesAfterThresholdAndEndsBeforeMomentum() {
+        var gesture = PlayerHorizontalRateGestureState()
+        #expect(
+            gesture.handle(
+                deltaX: -1,
+                phase: .began,
+                momentumPhase: []
+            ) == .none
+        )
+        #expect(
+            gesture.handle(
+                deltaX: -20,
+                phase: .changed,
+                momentumPhase: []
+            ) == .none
+        )
+        #expect(
+            gesture.handle(
+                deltaX: -10,
+                phase: .changed,
+                momentumPhase: []
+            ) == .begin(.fast)
+        )
+        #expect(
+            gesture.handle(
+                deltaX: 12,
+                phase: .changed,
+                momentumPhase: []
+            ) == .none
+        )
+        #expect(
+            gesture.handle(
+                deltaX: 0,
+                phase: .ended,
+                momentumPhase: []
+            ) == .end
+        )
+        #expect(
+            gesture.handle(
+                deltaX: 18,
+                phase: [],
+                momentumPhase: .began
+            ) == .none
+        )
+    }
+
+    @Test
+    @MainActor
+    func horizontalRateGestureUsesOppositeDirectionForSlowRate() {
+        var gesture = PlayerHorizontalRateGestureState()
+        _ = gesture.handle(
+            deltaX: 4,
+            phase: .began,
+            momentumPhase: []
+        )
+        #expect(
+            gesture.handle(
+                deltaX: 26,
+                phase: .changed,
+                momentumPhase: []
+            ) == .begin(.slow)
+        )
+        #expect(gesture.cancel() == .end)
+    }
+
+    @Test
+    @MainActor
+    func deviceRelativeHorizontalDeltaIgnoresNaturalScrollingPreference() {
+        #expect(
+            PlayerScrollWheelSurfaceCapture.deviceRelativeDeltaX(
+                20,
+                isDirectionInverted: true
+            ) == -20
+        )
+        #expect(
+            PlayerScrollWheelSurfaceCapture.deviceRelativeDeltaX(
+                -20,
+                isDirectionInverted: false
+            ) == -20
+        )
+    }
+
+    @Test
+    @MainActor
+    func horizontalRateGestureEndsWhenMomentumArrivesWithoutDirectEnd() {
+        var gesture = PlayerHorizontalRateGestureState()
+        _ = gesture.handle(
+            deltaX: -30,
+            phase: .began,
+            momentumPhase: []
+        )
+        _ = gesture.handle(
+            deltaX: -1,
+            phase: .changed,
+            momentumPhase: []
+        )
+
+        #expect(
+            gesture.handle(
+                deltaX: -12,
+                phase: [],
+                momentumPhase: .began
+            ) == .end
+        )
+    }
+
+    @Test
+    @MainActor
+    func scrollWheelRouterQuarantinesCancelledGestureRemainder() {
+        var router = PlayerScrollWheelRouter()
+        #expect(
+            router.route(
+                deltaX: -12,
+                deltaY: 0,
+                phase: .began,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .momentaryRate
+        )
+
+        router.cancelInputSession()
+
+        #expect(
+            router.route(
+                deltaX: -40,
+                deltaY: 0,
+                phase: .changed,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .discard
+        )
+        #expect(
+            router.route(
+                deltaX: -30,
+                deltaY: 0,
+                phase: [],
+                momentumPhase: .began,
+                allowsMomentaryRate: true
+            ) == .discard
+        )
+        #expect(
+            router.route(
+                deltaX: 0,
+                deltaY: 8,
+                phase: .began,
+                momentumPhase: [],
+                allowsMomentaryRate: true
+            ) == .outerScroll
+        )
+    }
+
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func realAVPlayerViewIdentitySurvivesUpdatesAndDetachesOnRemoval()
@@ -505,9 +831,7 @@ private struct PlayerHostScrollRoutingHarness: View {
                     player: player,
                     danmakuRenderer: renderer,
                     danmakuController: controller
-                ) {
-                    EmptyView()
-                }
+                )
                 .frame(height: 300)
                 Color.clear.frame(height: 900)
             }

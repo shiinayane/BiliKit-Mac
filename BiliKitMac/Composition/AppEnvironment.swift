@@ -87,7 +87,13 @@ struct AppEnvironment {
             PlayerHostView(
                 player: playerEngine.player,
                 danmakuRenderer: danmakuRenderer,
-                danmakuController: danmakuController
+                danmakuController: danmakuController,
+                beginMomentaryPlaybackRate: { [playerEngine] rate in
+                    try? playerEngine.beginMomentaryPlaybackRate(Double(rate))
+                },
+                endMomentaryPlaybackRate: { [playerEngine] sessionID in
+                    playerEngine.endMomentaryPlaybackRate(sessionID: sessionID)
+                }
             )
         )
     }
