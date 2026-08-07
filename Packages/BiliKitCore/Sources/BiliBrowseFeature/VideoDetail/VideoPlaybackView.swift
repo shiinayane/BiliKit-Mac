@@ -72,7 +72,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
 
     private var blocksRetainedContext: Bool {
         switch model.state {
-        case .loading, .failed:
+        case .loading, .loadingPage, .failed, .failedPage:
             true
         case .idle, .preparingPlayback, .ready:
             false
@@ -89,15 +89,15 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
             )
             .accessibilityIdentifier("detail.empty")
-        case .loading:
+        case .loading, .loadingPage:
             ProgressView("正在加载视频详情…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("playback.loading")
-        case .failed(_, let failure):
+        case .failed(_, let failure), .failedPage(_, _, let failure):
             BrowseFailureView(
                 title: failure.title,
                 message: failure.message,
-                retry: onRetry
+                retry: retryAction
             )
             .accessibilityIdentifier("playback.failure")
         case .preparingPlayback, .ready:
@@ -108,7 +108,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     @ViewBuilder
     private var retainedContextOverlay: some View {
         switch model.state {
-        case .loading:
+        case .loading, .loadingPage:
             ZStack {
                 Rectangle()
                     .fill(.background)
@@ -117,11 +117,11 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("playback.replacement.loading")
-        case .failed(_, let failure):
+        case .failed(_, let failure), .failedPage(_, _, let failure):
             BrowseFailureView(
                 title: failure.title,
                 message: failure.message,
-                retry: onRetry
+                retry: retryAction
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.background)
@@ -138,8 +138,16 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 bvid: context.detail.bvid,
                 cid: context.selectedPage.cid
             )
-        case .idle, .loading, .failed:
+        case .idle, .loading, .loadingPage, .failed, .failedPage:
             nil
+        }
+    }
+
+    private func retryAction() {
+        if case .failedPage = model.state {
+            model.retry()
+        } else {
+            onRetry()
         }
     }
 }

@@ -108,7 +108,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
 - [`audits/M5.0.1/`](./audits/M5.0.1/)
 
-## 4. 唯一当前阶段：播放工作台上下文侧栏
+## 4. 唯一当前阶段：播放工作台上下文侧栏与真实分 P
 
 当前阶段把已经通过独立布局 spike 比较的“观看工作台”方向收口为生产信息架构。spike
 中的评论、推荐、分 P 选择和播放器均为合成内容，只提供布局与交互证据，不作为生产代码
@@ -118,8 +118,10 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 
 - 播放状态继续使用同一个系统 `NavigationSplitView` sidebar：依次显示真实可折叠简介、
   真实紧凑分 P 目录和诚实的评论 unavailable state。
-- 单分 P 隐藏整个目录；多分 P 显示当前项、标题和时长。当前阶段保持只读，不把尚未接通
-  的 CID 切换伪装成可用操作。
+- 单分 P 隐藏整个目录；多分 P 显示当前项、标题和时长，并可在同一播放目的地内按真实
+  `(bvid, cid)` 切换 playurl、播放器 item、字幕和弹幕；目录使用最多同时显示 5 行的
+  独立滚动 `List`，标题显示总数，行高随文字尺寸缩放；折叠后重新展开会定位当前分 P，
+  不会因分 P 数量撑长整个 sidebar。
 - detail 主区收口为标题与元信息、唯一播放器、字幕和弹幕控制；简介、分 P 和旧 400 pt
   右栏不再重复出现。
 - 窄窗口优先保证播放器宽度，sidebar 继续通过系统行为收起和恢复；简介展开、分 P 展开、
@@ -132,18 +134,25 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - 保持一个 `NavigationSplitView`、detail 内一个 `NavigationStack(path:)`、单层
   `PlaybackDestination` 和一个 `AppWindowOwner`／`AVPlayerEngine`／`PlayerHostView`。
 - A → B 仍只替换媒体 identity；系统返回恢复来源入口、搜索草稿、工作集和语义滚动位置。
+- 同 BVID 分 P 切换不增加导航层级；BVID 级展示上下文与请求中／已呈现媒体 identity 分离，
+  loading、failure 与 retry 不把旧分 P 继续标作当前媒体。
 - 不增加 endpoint、Repository、第二个 Package、空 target、通用 Store 或本地持久化。
 - 评论继续显示能力未接入；不加入合成评论、评论读取或写操作。
 - 横向相关推荐已经确定为后续播放工作台方向，但本阶段不建立占位 View、数据模型、fixture
   seam 或网络实现，也不把它登记为当前并行阶段。
-- 分 P 点击与 CID／字幕／弹幕切换生命周期不在本阶段实施。
 
 ### 完成证据
 
 - 状态测试证明首次加载、A → B 加载／失败／重试、generation 隔离和 reset 下，detail 与
   sidebar 使用同一展示 context；旧内容在替换状态下不会保持可交互或进入辅助阅读路径。
-- 结构测试证明单分 P 隐藏、多分 P 与空／非空简介呈现准确，只读分 P 不暴露虚假 action
-  语义。
+- 分 P 状态测试证明 CID replacement、目标失败／重试、P1 → P2 → P1 ABA、reset 与迟到结果
+  隔离；播放器 ready 后的异步 item failure 也必须按 identity 与不可复用 load intent 进入
+  诚实失败状态并清理 item、bridge、字幕与弹幕。签名 XCUI 证明生产分 P Button 在同一
+  player identity 下替换本地真实
+  `AVPlayerItem`，长目录可在有界 `List` 内滚动，Back 后清理 item、observer 与临时媒体资源。
+- 结构测试证明单分 P 隐藏、多分 P 与空／非空简介呈现准确；真实分 P Button 的 selected、
+  loading、failure 与 retry 语义与当前请求／呈现 identity 一致，并在 AX label 中稳定表达
+  状态而非只依赖可关闭的 hint。
 - App 生命周期测试证明 sidebar 显隐、简介／分 P disclosure、目标窗口 resize 和媒体替换
   前后只有一个真实 `AVPlayerView`，Back／关窗后完成拆除与资源清理。
 - 最高适用 `app` Gate 通过；在真实 macOS 窗口中复核 1320×820 → 1080×680、系统 Back、

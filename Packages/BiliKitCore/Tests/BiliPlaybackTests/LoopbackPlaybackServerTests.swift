@@ -2023,8 +2023,15 @@ struct LoopbackPlaybackServerTests {
                 await eventRecorder.append(event)
             }
         }
+        let failureRecorder = PlaybackFailureRecorder()
+        let failureTask = Task {
+            for await event in engine.playbackFailureEvents() {
+                await failureRecorder.append(event)
+            }
+        }
         defer {
             eventTask.cancel()
+            failureTask.cancel()
             engine.stop()
         }
         let identity = PlaybackItemIdentity(
@@ -2053,16 +2060,22 @@ struct LoopbackPlaybackServerTests {
         )
 
         try await waitUntilAsync {
-            await eventRecorder.failureEvents().count == 1
+            let eventCount = await eventRecorder.failureEvents().count
+            let identityCount = await failureRecorder.identities().count
+            return eventCount == 1
+                && identityCount == 1
                 && engine.currentTimelineSnapshot.state == .failed
         }
         let failureEvents = await eventRecorder.failureEvents()
+        let failureIdentities = await failureRecorder.identities()
 
         #expect(
             failureEvents
                 == [.failed(message: "PlaybackItemFailed")]
         )
         #expect(engine.currentTimelineSnapshot.state == .failed)
+        #expect(failureIdentities == [identity])
+        #expect(engine.player.currentItem == nil)
     }
 
     @Test
@@ -3292,6 +3305,18 @@ private actor PlayerEventRecorder {
             if case .failed = $0 { return true }
             return false
         }
+    }
+}
+
+private actor PlaybackFailureRecorder {
+    private var recordedEvents: [PlaybackFailureEvent] = []
+
+    func append(_ event: PlaybackFailureEvent) {
+        recordedEvents.append(event)
+    }
+
+    func identities() -> [PlaybackItemIdentity] {
+        recordedEvents.map(\.identity)
     }
 }
 

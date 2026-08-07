@@ -27,10 +27,13 @@ public final class AVPlayerEngine:
 
     private let bridge: DASHToHLSBridge
     private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
+    private let failureEvents: AsyncStream<PlaybackFailureEvent>
+    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
     private let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
     private var readinessTask: Task<Void, any Error>?
     private var loadGeneration = UUID()
+    private var loadIntent: PlaybackLoadIntent?
     private var preparedAsset: PreparedPlaybackAsset?
 
     public init(
@@ -43,6 +46,11 @@ public final class AVPlayerEngine:
         let stream = AsyncStream<PlayerEvent>.makeStream()
         events = stream.stream
         eventContinuation = stream.continuation
+        let failureStream = AsyncStream<PlaybackFailureEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        failureEvents = failureStream.stream
+        failureContinuation = failureStream.continuation
         timeline.onEnded = { [weak self] in
             self?.emit(.stateChanged(.ended))
         }
@@ -56,6 +64,7 @@ public final class AVPlayerEngine:
         readinessTask?.cancel()
         preparedAsset?.stop()
         eventContinuation.finish()
+        failureContinuation.finish()
     }
 
     public var currentTimelineSnapshot: PlaybackTimelineSnapshot {
@@ -66,10 +75,15 @@ public final class AVPlayerEngine:
         timeline.updates()
     }
 
+    public func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        failureEvents
+    }
+
     /// 准备并安装一个新播放项目；调用方取消会沿 generation 边界清理本次全部资源。
     public func load(
         _ request: PlaybackRequest,
-        identity: PlaybackItemIdentity
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent = PlaybackLoadIntent()
     ) async throws {
         let generation = UUID()
         try await withTaskCancellationHandler {
@@ -77,6 +91,7 @@ public final class AVPlayerEngine:
             try await performLoad(
                 request,
                 identity: identity,
+                intent: intent,
                 generation: generation
             )
         } onCancel: {
@@ -99,12 +114,29 @@ public final class AVPlayerEngine:
         )
     }
 
+    public func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) async throws {
+        try await load(
+            PlaybackRequest(
+                manifest: playback.manifest,
+                mediaHeaders: playback.mediaHeaders
+            ),
+            identity: identity,
+            intent: intent
+        )
+    }
+
     private func performLoad(
         _ request: PlaybackRequest,
         identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
         generation: UUID
     ) async throws {
         loadGeneration = generation
+        loadIntent = intent
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -183,6 +215,7 @@ public final class AVPlayerEngine:
     private func cancelLoad(generation: UUID) {
         guard loadGeneration == generation else { return }
         loadGeneration = UUID()
+        loadIntent = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -235,6 +268,7 @@ public final class AVPlayerEngine:
     /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
         loadGeneration = UUID()
+        loadIntent = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -294,9 +328,22 @@ public final class AVPlayerEngine:
     }
 
     private func handleCurrentItemFailure() {
+        guard let identity = timeline.currentSnapshot.identity,
+            let intent = loadIntent
+        else { return }
+        loadGeneration = UUID()
+        loadIntent = nil
+        loadTask?.cancel()
+        loadTask = nil
+        readinessTask?.cancel()
+        readinessTask = nil
         player.pause()
+        player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
         preparedAsset = nil
+        failureContinuation.yield(
+            PlaybackFailureEvent(identity: identity, intent: intent)
+        )
         emit(.failed(message: "PlaybackItemFailed"))
     }
 }

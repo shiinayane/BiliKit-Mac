@@ -17,6 +17,25 @@ extension PlaybackItemIdentity: CustomStringConvertible, CustomDebugStringConver
     public var debugDescription: String { description }
 }
 
+/// 一次不可复用的媒体加载意图；用于区分同一 `(bvid, cid)` 的 ABA 会话。
+public struct PlaybackLoadIntent: Sendable, Hashable {
+    private let value: UUID
+
+    public init() {
+        value = UUID()
+    }
+}
+
+public struct PlaybackFailureEvent: Sendable, Equatable {
+    public let identity: PlaybackItemIdentity
+    public let intent: PlaybackLoadIntent
+
+    public init(identity: PlaybackItemIdentity, intent: PlaybackLoadIntent) {
+        self.identity = identity
+        self.intent = intent
+    }
+}
+
 public enum PlaybackTimelineState: Sendable, Equatable {
     case idle
     case loading
@@ -80,9 +99,12 @@ public protocol PlaybackTimelineProviding: AnyObject {
 @MainActor
 /// Feature 可驱动的最小播放命令边界；具体 AVPlayer 和 bridge 生命周期留在 adapter。
 public protocol PlaybackControlling: AnyObject {
+    /// 只发布 adapter 已按当前 item token／generation 验证过的终态失败。
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent>
     func load(
         _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
     ) async throws
     func pause()
     func stop()

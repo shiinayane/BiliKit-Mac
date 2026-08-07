@@ -82,6 +82,12 @@
             mediaStore.directoryExists
         }
 
+        func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+            AsyncStream { continuation in
+                continuation.finish()
+            }
+        }
+
         var probeValue: String {
             [
                 "item=\(itemAlias)",
@@ -103,7 +109,8 @@
 
         func load(
             _ playback: VideoPlayback,
-            identity: PlaybackItemIdentity
+            identity: PlaybackItemIdentity,
+            intent: PlaybackLoadIntent
         ) async throws {
             loadGeneration += 1
             let requestedGeneration = loadGeneration

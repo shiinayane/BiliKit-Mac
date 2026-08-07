@@ -335,6 +335,226 @@ struct GuestBrowseAndVideoViewModelTests {
             ) == true
         )
     }
+
+    @Test
+    @MainActor
+    func pageSelectionReplacesCIDAndResetClearsBothIdentities() async {
+        let fixture = GuestFixtures()
+        let repository = PartSwitchRepositoryStub(fixtures: fixture)
+        let player = RecordingPlayerEngine()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        let firstIdentity = PlaybackItemIdentity(
+            bvid: fixture.bvid,
+            cid: 900_001
+        )
+        let secondIdentity = PlaybackItemIdentity(
+            bvid: fixture.bvid,
+            cid: 900_002
+        )
+        #expect(model.presentedPlaybackIdentity == firstIdentity)
+
+        model.selectPage(cid: 900_002)
+        #expect(model.requestedPlaybackIdentity == secondIdentity)
+        #expect(model.presentedPlaybackIdentity == nil)
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedContext?.selectedPage.cid == 900_002)
+        #expect(model.presentedPlaybackIdentity == secondIdentity)
+        #expect(player.loadedIdentities == [firstIdentity, secondIdentity])
+        #expect(player.stopCallCount == 1)
+
+        model.selectPage(cid: 900_002)
+        #expect(player.loadedIdentities == [firstIdentity, secondIdentity])
+        model.reset()
+        #expect(model.presentedContext == nil)
+        #expect(model.requestedPlaybackIdentity == nil)
+        #expect(model.presentedPlaybackIdentity == nil)
+        #expect(player.stopCallCount == 2)
+    }
+
+    @Test
+    @MainActor
+    func failedPageSelectionRetriesOnlyTheTargetCID() async {
+        let fixture = GuestFixtures()
+        let repository = PartSwitchRepositoryStub(
+            fixtures: fixture,
+            failingCIDOnce: 900_002
+        )
+        let player = RecordingPlayerEngine()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        model.selectPage(cid: 900_002)
+        await model.waitForCurrentTask()
+        guard case .failedPage(_, let targetPage, .content) = model.state else {
+            Issue.record("目标分 P 未进入内容失败状态")
+            return
+        }
+        #expect(targetPage.cid == 900_002)
+        #expect(model.presentedPlaybackIdentity == nil)
+        #expect(model.requestedPlaybackIdentity?.cid == 900_002)
+
+        model.retry()
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedContext?.selectedPage.cid == 900_002)
+        #expect(model.presentedPlaybackIdentity?.cid == 900_002)
+        #expect(await repository.playbackCIDs() == [900_001, 900_002, 900_002])
+        #expect(player.loadedIdentities.map(\.cid) == [900_001, 900_002])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func postReadyFailureClearsPresentedIdentityAndRetriesCurrentCID()
+        async throws
+    {
+        let fixture = GuestFixtures()
+        let repository = PartSwitchRepositoryStub(fixtures: fixture)
+        let player = PostReadyFailurePlayer()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        let identity = try #require(model.presentedPlaybackIdentity)
+
+        player.fail(identity)
+        await player.waitForStopCallCount(1)
+
+        guard case .failedPage(_, let targetPage, .playback) = model.state else {
+            Issue.record("ready 后失败未进入当前 CID 的失败状态")
+            return
+        }
+        #expect(targetPage.cid == identity.cid)
+        #expect(model.requestedPlaybackIdentity == identity)
+        #expect(model.presentedPlaybackIdentity == nil)
+
+        model.retry()
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedPlaybackIdentity == identity)
+        #expect(player.loadedIdentities == [identity, identity])
+        #expect(player.stopCallCount == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func failureBeforeLoadReturnsCannotRestoreReadyState() async throws {
+        let fixture = GuestFixtures()
+        let repository = PartSwitchRepositoryStub(fixtures: fixture)
+        let player = FailureBeforeLoadReturnsPlayer()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        let identity = PlaybackItemIdentity(
+            bvid: fixture.bvid,
+            cid: 900_001
+        )
+
+        guard case .failedPage(_, let targetPage, .playback) = model.state else {
+            Issue.record("load 返回前的 item failure 被错误恢复为 ready")
+            return
+        }
+        #expect(targetPage.cid == identity.cid)
+        #expect(model.requestedPlaybackIdentity == identity)
+        #expect(model.presentedPlaybackIdentity == nil)
+        #expect(player.stopCallCount == 1)
+
+        model.retry()
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedPlaybackIdentity == identity)
+        #expect(player.loadedIdentities == [identity, identity])
+        #expect(player.stopCallCount == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func delayedOldSameCIDFailureCannotStopNewABAIntent() async throws {
+        let fixture = GuestFixtures()
+        let repository = PartSwitchRepositoryStub(fixtures: fixture)
+        let player = DelayedABAPlayback()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        let firstIdentity = PlaybackItemIdentity(
+            bvid: fixture.bvid,
+            cid: 900_001
+        )
+        let oldIntent = try #require(player.loadedIntents.first)
+
+        model.selectPage(cid: 900_002)
+        await model.waitForCurrentTask()
+        model.selectPage(cid: 900_001)
+        await player.waitForThirdLoad()
+
+        await player.publishFailure(
+            PlaybackFailureEvent(identity: firstIdentity, intent: oldIntent)
+        )
+        await player.waitForFailureRequestCount(2)
+        guard case .preparingPlayback = model.state else {
+            Issue.record("旧 A failure 错误停止了新 A intent")
+            return
+        }
+        #expect(player.stopCallCount == 2)
+
+        player.releaseThirdLoad()
+        await model.waitForCurrentTask()
+        await player.finishFailures()
+
+        #expect(model.presentedPlaybackIdentity == firstIdentity)
+        #expect(player.loadedIdentities.map(\.cid) == [900_001, 900_002, 900_001])
+        #expect(player.loadedIntents[0] != player.loadedIntents[2])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func rapidPageABARejectsTheLateSupersededResult() async throws {
+        let fixture = GuestFixtures()
+        let repository = ABAPartRepositoryStub(fixtures: fixture)
+        let player = RecordingPlayerEngine()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        model.selectPage(cid: 900_002)
+        try await repository.waitForRequest(cid: 900_002)
+        let supersededP2 = try #require(model.taskSnapshotForTesting())
+
+        model.selectPage(cid: 900_001)
+        try await repository.waitForRequest(cid: 900_001)
+        await repository.release(cid: 900_001)
+        await model.waitForCurrentTask()
+        await repository.release(cid: 900_002)
+        await supersededP2.value
+
+        #expect(model.presentedContext?.selectedPage.cid == 900_001)
+        #expect(model.presentedPlaybackIdentity?.cid == 900_001)
+        #expect(player.loadedIdentities.map(\.cid) == [900_001, 900_001])
+        #expect(player.stopCallCount == 2)
+    }
 }
 
 private actor WorksetRepositoryStub: GuestContentRepository {
@@ -500,6 +720,134 @@ private actor GuestRepositoryStub: GuestContentRepository {
         cid: Int64
     ) async throws -> VideoPlayback {
         fixtures.playback
+    }
+}
+
+private actor PartSwitchRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    private var failingCIDOnce: Int64?
+    private var observedPlaybackCIDs: [Int64] = []
+
+    init(fixtures: GuestFixtures, failingCIDOnce: Int64? = nil) {
+        self.fixtures = fixtures
+        self.failingCIDOnce = failingCIDOnce
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [
+            fixtures.page,
+            VideoPage(
+                cid: 900_002,
+                index: 2,
+                title: "P2",
+                durationSeconds: 180
+            ),
+        ]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        observedPlaybackCIDs.append(cid)
+        if failingCIDOnce == cid {
+            failingCIDOnce = nil
+            throw GuestApplicationError.transportFailure
+        }
+        return fixtures.playback
+    }
+
+    func playbackCIDs() -> [Int64] {
+        observedPlaybackCIDs
+    }
+}
+
+private actor ABAPartRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    private var initialRequestCompleted = false
+    private var requestEvents: [Int64: TestEventCounter] = [:]
+    private var waiters: [Int64: [CheckedContinuation<Void, Never>]] = [:]
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [
+            fixtures.page,
+            VideoPage(
+                cid: 900_002,
+                index: 2,
+                title: "P2",
+                durationSeconds: 180
+            ),
+        ]
+    }
+
+    func playback(
+        for bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        if !initialRequestCompleted {
+            initialRequestCompleted = true
+            return fixtures.playback
+        }
+        let event = requestEvents[cid] ?? TestEventCounter()
+        requestEvents[cid] = event
+        await event.signal()
+        await withCheckedContinuation { continuation in
+            waiters[cid, default: []].append(continuation)
+        }
+        return fixtures.playback
+    }
+
+    func waitForRequest(cid: Int64) async throws {
+        let event = requestEvents[cid] ?? TestEventCounter()
+        requestEvents[cid] = event
+        try await event.wait(until: 1)
+    }
+
+    func release(cid: Int64) {
+        let pending = waiters.removeValue(forKey: cid) ?? []
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 
@@ -808,9 +1156,14 @@ private final class RecordingPlayerEngine: PlaybackControlling {
     private(set) var pauseCallCount = 0
     private(set) var stopCallCount = 0
 
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        finishedPlaybackFailureEvents()
+    }
+
     func load(
         _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
     ) async throws {
         loadedPlaybacks.append(playback)
         loadedIdentities.append(identity)
@@ -833,9 +1186,14 @@ private final class SelectiveFailingPlayerEngine: PlaybackControlling {
         self.failingBVID = failingBVID
     }
 
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        finishedPlaybackFailureEvents()
+    }
+
     func load(
         _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
     ) async throws {
         if identity.bvid == failingBVID {
             throw SelectivePlaybackFailure()
@@ -847,4 +1205,258 @@ private final class SelectiveFailingPlayerEngine: PlaybackControlling {
     func stop() {}
 }
 
+@MainActor
+private final class PostReadyFailurePlayer: PlaybackControlling {
+    private struct StopWaiter {
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let failures: AsyncStream<PlaybackFailureEvent>
+    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
+    private var stopWaiters: [StopWaiter] = []
+    private var loadedIntents: [PlaybackItemIdentity: PlaybackLoadIntent] = [:]
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var stopCallCount = 0
+
+    init() {
+        let stream = AsyncStream<PlaybackFailureEvent>.makeStream()
+        failures = stream.stream
+        failureContinuation = stream.continuation
+    }
+
+    deinit {
+        failureContinuation.finish()
+    }
+
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        failures
+    }
+
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) async throws {
+        loadedIdentities.append(identity)
+        loadedIntents[identity] = intent
+    }
+
+    func pause() {}
+
+    func stop() {
+        stopCallCount += 1
+        let ready = stopWaiters.filter {
+            stopCallCount >= $0.expectedCount
+        }
+        stopWaiters.removeAll {
+            stopCallCount >= $0.expectedCount
+        }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
+
+    func fail(_ identity: PlaybackItemIdentity) {
+        guard let intent = loadedIntents[identity] else { return }
+        failureContinuation.yield(
+            PlaybackFailureEvent(identity: identity, intent: intent)
+        )
+    }
+
+    func waitForStopCallCount(_ expectedCount: Int) async {
+        guard stopCallCount < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            stopWaiters.append(
+                StopWaiter(
+                    expectedCount: expectedCount,
+                    continuation: continuation
+                )
+            )
+        }
+    }
+}
+
+@MainActor
+private final class FailureBeforeLoadReturnsPlayer: PlaybackControlling {
+    private let failures: AsyncStream<PlaybackFailureEvent>
+    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
+    private var blockedLoad: CheckedContinuation<Void, Never>?
+    private var shouldFailNextLoad = true
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var stopCallCount = 0
+
+    init() {
+        let stream = AsyncStream<PlaybackFailureEvent>.makeStream()
+        failures = stream.stream
+        failureContinuation = stream.continuation
+    }
+
+    deinit {
+        failureContinuation.finish()
+    }
+
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        failures
+    }
+
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) async throws {
+        loadedIdentities.append(identity)
+        guard shouldFailNextLoad else { return }
+        shouldFailNextLoad = false
+        failureContinuation.yield(
+            PlaybackFailureEvent(identity: identity, intent: intent)
+        )
+        await withCheckedContinuation { continuation in
+            blockedLoad = continuation
+        }
+    }
+
+    func pause() {}
+
+    func stop() {
+        stopCallCount += 1
+        blockedLoad?.resume()
+        blockedLoad = nil
+    }
+}
+
+@MainActor
+private final class DelayedABAPlayback: PlaybackControlling {
+    private let failureSource: FailureEventSource
+    private let failures: AsyncStream<PlaybackFailureEvent>
+    private var thirdLoadContinuation: CheckedContinuation<Void, Never>?
+    private var thirdLoadWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var loadedIntents: [PlaybackLoadIntent] = []
+    private(set) var stopCallCount = 0
+
+    init() {
+        let source = FailureEventSource()
+        failureSource = source
+        failures = AsyncStream(unfolding: {
+            await source.next()
+        })
+    }
+
+    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+        failures
+    }
+
+    func load(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) async throws {
+        loadedIdentities.append(identity)
+        loadedIntents.append(intent)
+        guard loadedIdentities.count == 3 else { return }
+        let waiters = thirdLoadWaiters
+        thirdLoadWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            thirdLoadContinuation = continuation
+        }
+    }
+
+    func pause() {}
+
+    func stop() {
+        stopCallCount += 1
+    }
+
+    func waitForThirdLoad() async {
+        guard loadedIdentities.count < 3 else { return }
+        await withCheckedContinuation { continuation in
+            thirdLoadWaiters.append(continuation)
+        }
+    }
+
+    func releaseThirdLoad() {
+        thirdLoadContinuation?.resume()
+        thirdLoadContinuation = nil
+    }
+
+    func publishFailure(_ event: PlaybackFailureEvent) async {
+        await failureSource.send(event)
+    }
+
+    func waitForFailureRequestCount(_ expectedCount: Int) async {
+        await failureSource.waitForRequestCount(expectedCount)
+    }
+
+    func finishFailures() async {
+        await failureSource.finish()
+    }
+}
+
+private actor FailureEventSource {
+    private var queuedEvents: [PlaybackFailureEvent] = []
+    private var pendingNext: CheckedContinuation<PlaybackFailureEvent?, Never>?
+    private var requestCount = 0
+    private var requestWaiters:
+        [(expectedCount: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var isFinished = false
+
+    func next() async -> PlaybackFailureEvent? {
+        requestCount += 1
+        resumeSatisfiedRequestWaiters()
+        if !queuedEvents.isEmpty {
+            return queuedEvents.removeFirst()
+        }
+        guard !isFinished else { return nil }
+        return await withCheckedContinuation { continuation in
+            pendingNext = continuation
+        }
+    }
+
+    func send(_ event: PlaybackFailureEvent) {
+        guard !isFinished else { return }
+        if let pendingNext {
+            self.pendingNext = nil
+            pendingNext.resume(returning: event)
+        } else {
+            queuedEvents.append(event)
+        }
+    }
+
+    func waitForRequestCount(_ expectedCount: Int) async {
+        guard requestCount < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((expectedCount, continuation))
+        }
+    }
+
+    func finish() {
+        isFinished = true
+        queuedEvents.removeAll()
+        pendingNext?.resume(returning: nil)
+        pendingNext = nil
+    }
+
+    private func resumeSatisfiedRequestWaiters() {
+        let satisfied = requestWaiters.filter {
+            requestCount >= $0.expectedCount
+        }
+        requestWaiters.removeAll {
+            requestCount >= $0.expectedCount
+        }
+        for waiter in satisfied {
+            waiter.continuation.resume()
+        }
+    }
+}
+
 private struct SelectivePlaybackFailure: Error {}
+
+private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+    AsyncStream { continuation in
+        continuation.finish()
+    }
+}
