@@ -590,13 +590,6 @@ struct LoopbackPlaybackServerTests {
             named: "video-avc-256x144.mp4"
         )
         let audioData = try fixtureData(named: "audio-aac")
-        let subtitleBody = """
-            WEBVTT
-
-            00:00:00.000 --> 00:00:01.500
-            本地原生字幕验证
-
-            """
         let lowVideoFixture = try makeFixtureTrack(
             id: 64,
             kind: .video,
@@ -618,6 +611,18 @@ struct LoopbackPlaybackServerTests {
             bandwidth: 96_000,
             data: audioData
         )
+        let subtitleMPEGTimestamp = try mpegTSTimestamp(
+            for: lowVideoFixture.index
+        )
+        #expect(subtitleMPEGTimestamp == 7_500)
+        let subtitleBody = """
+            WEBVTT
+            X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:\(subtitleMPEGTimestamp)
+
+            00:00:00.000 --> 00:00:01.500
+            本地原生字幕验证
+
+            """
 
         let server = LoopbackPlaybackServer()
         try await server.start()
@@ -636,6 +641,12 @@ struct LoopbackPlaybackServerTests {
         let audioPlaylistURL = try server.url(for: "unified/audio.m3u8")
         let subtitlePlaylistURL = try server.url(
             for: "unified/subtitles-zh.m3u8"
+        )
+        let aiSubtitlePlaylistURL = try server.url(
+            for: "unified/subtitles-zh-ai.m3u8"
+        )
+        let englishSubtitlePlaylistURL = try server.url(
+            for: "unified/subtitles-en.m3u8"
         )
         let lowVideoMediaURL = try server.register(
             .inMemory(
@@ -682,11 +693,21 @@ struct LoopbackPlaybackServerTests {
             #EXT-X-ENDLIST
 
             """
+        let aiSubtitlePlaylist = subtitlePlaylist.replacingOccurrences(
+            of: "subtitles-zh.vtt",
+            with: "subtitles-zh-ai.vtt"
+        )
+        let englishSubtitlePlaylist = subtitlePlaylist.replacingOccurrences(
+            of: "subtitles-zh.vtt",
+            with: "subtitles-en.vtt"
+        )
         let masterPlaylist = """
             #EXTM3U
             #EXT-X-VERSION:7
             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,AUTOSELECT=YES,URI="\(audioPlaylistURL.absoluteString)"
-            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="中文",LANGUAGE="zh",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="\(subtitlePlaylistURL.absoluteString)"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="中文",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="\(subtitlePlaylistURL.absoluteString)"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="中文（AI）",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="\(aiSubtitlePlaylistURL.absoluteString)"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="English",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="\(englishSubtitlePlaylistURL.absoluteString)"
             #EXT-X-STREAM-INF:BANDWIDTH=196000,AVERAGE-BANDWIDTH=196000,RESOLUTION=256x144,FRAME-RATE=24.000,CODECS="avc1.4d400c,mp4a.40.2",AUDIO="audio",SUBTITLES="subtitles"
             \(highVideoPlaylistURL.absoluteString)
             #EXT-X-STREAM-INF:BANDWIDTH=146000,AVERAGE-BANDWIDTH=146000,RESOLUTION=128x72,FRAME-RATE=24.000,CODECS="avc1.4d400b,mp4a.40.2",AUDIO="audio",SUBTITLES="subtitles"
@@ -711,11 +732,33 @@ struct LoopbackPlaybackServerTests {
             at: "unified/subtitles-zh.m3u8"
         )
         _ = try server.register(
+            playlistResource(aiSubtitlePlaylist),
+            at: "unified/subtitles-zh-ai.m3u8"
+        )
+        _ = try server.register(
+            playlistResource(englishSubtitlePlaylist),
+            at: "unified/subtitles-en.m3u8"
+        )
+        _ = try server.register(
             .inMemory(
                 data: Data(subtitleBody.utf8),
                 contentType: "text/vtt"
             ),
             at: "unified/subtitles-zh.vtt"
+        )
+        _ = try server.register(
+            .inMemory(
+                data: Data(subtitleBody.utf8),
+                contentType: "text/vtt"
+            ),
+            at: "unified/subtitles-zh-ai.vtt"
+        )
+        _ = try server.register(
+            .inMemory(
+                data: Data(subtitleBody.utf8),
+                contentType: "text/vtt"
+            ),
+            at: "unified/subtitles-en.vtt"
         )
         _ = try server.register(
             playlistResource(masterPlaylist),
@@ -735,6 +778,9 @@ struct LoopbackPlaybackServerTests {
 
         try await waitUntilReadyToPlay(item)
         let variants = try await asset.load(.variants)
+        let audibleGroup = try #require(
+            try await asset.loadMediaSelectionGroup(for: .audible)
+        )
         let legibleGroup = try #require(
             try await asset.loadMediaSelectionGroup(for: .legible)
         )
@@ -757,7 +803,16 @@ struct LoopbackPlaybackServerTests {
                 $0.videoAttributes?.nominalFrameRate == 24
             }
         )
-        #expect(legibleGroup.options.count == 1)
+        #expect(player.appliesMediaSelectionCriteriaAutomatically)
+        #expect(
+            item.currentMediaSelection.selectedMediaOption(in: audibleGroup)
+                != nil
+        )
+        #expect(legibleGroup.options.count == 3)
+        #expect(
+            Set(legibleGroup.options.map(\.displayName))
+                == ["中文", "中文（AI）", "English"]
+        )
         #expect(
             item.currentMediaSelection.selectedMediaOption(
                 in: legibleGroup
@@ -772,8 +827,22 @@ struct LoopbackPlaybackServerTests {
                 at: "unified/subtitles-zh.vtt"
             ) == 0
         )
+        #expect(
+            try server.requestCount(
+                method: "GET",
+                at: "unified/subtitles-zh-ai.vtt"
+            ) == 0
+        )
+        #expect(
+            try server.requestCount(
+                method: "GET",
+                at: "unified/subtitles-en.vtt"
+            ) == 0
+        )
 
-        let subtitleOption = try #require(legibleGroup.options.first)
+        let subtitleOption = try #require(
+            legibleGroup.options.first(where: { $0.displayName == "中文" })
+        )
         item.select(subtitleOption, in: legibleGroup)
         #expect(
             item.currentMediaSelection.selectedMediaOption(
@@ -810,6 +879,31 @@ struct LoopbackPlaybackServerTests {
             highItem.accessLog()?.events.contains {
                 $0.indicatedBitrate == 196_000
             } == true
+        )
+
+        let manualAsset = AVURLAsset(url: masterURL)
+        let manualItem = AVPlayerItem(asset: manualAsset)
+        let manualPlayer = AVPlayer()
+        manualPlayer.appliesMediaSelectionCriteriaAutomatically = false
+        manualPlayer.replaceCurrentItem(with: manualItem)
+        try await waitUntilReadyToPlay(manualItem)
+        let manualAudibleGroup = try #require(
+            try await manualAsset.loadMediaSelectionGroup(for: .audible)
+        )
+        let manualLegibleGroup = try #require(
+            try await manualAsset.loadMediaSelectionGroup(for: .legible)
+        )
+
+        #expect(!manualPlayer.appliesMediaSelectionCriteriaAutomatically)
+        #expect(
+            manualItem.currentMediaSelection.selectedMediaOption(
+                in: manualAudibleGroup
+            ) != nil
+        )
+        #expect(
+            manualItem.currentMediaSelection.selectedMediaOption(
+                in: manualLegibleGroup
+            ) == nil
         )
     }
 
@@ -2311,6 +2405,18 @@ struct LoopbackPlaybackServerTests {
         )
     }
 
+    private func mpegTSTimestamp(for index: SegmentIndex) throws -> UInt64 {
+        guard index.timescale > 0 else {
+            throw LoopbackFixtureError.invalidTimestampMap
+        }
+        let product = index.earliestPresentationTime
+            .multipliedReportingOverflow(by: 90_000)
+        guard !product.overflow else {
+            throw LoopbackFixtureError.invalidTimestampMap
+        }
+        return product.partialValue / UInt64(index.timescale)
+    }
+
     @MainActor
     private func recoverableStallTrial() async throws -> RecoverableStallResult {
         let videoData = try fixtureBase64Data(
@@ -2901,6 +3007,7 @@ private enum LoopbackFixtureError: Error {
     case timedOut
     case missingPort
     case invalidIndependentResponse
+    case invalidTimestampMap
 }
 
 private actor FixtureRangeTransport: HTTPTransport {
