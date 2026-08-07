@@ -162,6 +162,7 @@ public final class AVPlayerEngine:
         readinessTask = nil
         preparedAsset?.stop()
         preparedAsset = nil
+        player.pause()
         player.replaceCurrentItem(with: nil)
         let pendingSubtitleReset = enqueueSubtitleReset()
         timeline.begin(identity: identity)
@@ -276,6 +277,16 @@ public final class AVPlayerEngine:
 
     public func setRate(_ rate: Double) throws {
         try timeline.setRate(rate)
+    }
+
+    /// 临时改变当前播放速率，但不覆盖用户选择的永久速率。
+    public func beginMomentaryPlaybackRate(_ rate: Double) throws -> UUID? {
+        try timeline.beginMomentaryRate(rate)
+    }
+
+    /// 结束仍匹配的临时速率会话；过期会话不会影响新的播放项目或用户改速。
+    public func endMomentaryPlaybackRate(sessionID: UUID) {
+        timeline.endMomentaryRate(sessionID: sessionID)
     }
 
     /// 执行精确 seek，并只为一次用户 seek 发布一个 discontinuity generation。

@@ -3,12 +3,46 @@ import BiliApplication
 import Foundation
 import os
 
+enum MomentaryRateRestorationAction: Equatable {
+    case none
+    case setCurrentRate
+    case resumeAtDefaultRate
+}
+
+enum MomentaryRateRestorationPolicy {
+    static func action(
+        timeControlStatus: AVPlayer.TimeControlStatus,
+        currentRate: Float,
+        momentaryRate: Float
+    ) -> MomentaryRateRestorationAction {
+        let stillUsesMomentaryRate =
+            abs(currentRate - momentaryRate) < 0.01
+        switch timeControlStatus {
+        case .paused:
+            return .none
+        case .playing:
+            return stillUsesMomentaryRate ? .setCurrentRate : .none
+        case .waitingToPlayAtSpecifiedRate:
+            return currentRate == 0 || stillUsesMomentaryRate
+                ? .resumeAtDefaultRate : .none
+        @unknown default:
+            return .none
+        }
+    }
+}
+
 @MainActor
 /// 把 AVPlayer/KVO/notification 事件投影为平台无关、identity-safe 的播放时间线。
 ///
 /// 所有 callback 都同时核对当前 `AVPlayerItem` 与 item token；observer bag 在替换、失败和
 /// clear 时统一释放，避免旧 item 继续推进字幕或弹幕。
 final class AVPlayerTimelineAdapter {
+    private struct MomentaryRateSession {
+        let id: UUID
+        let item: AVPlayerItem
+        let rate: Float
+    }
+
     var onEnded: (@MainActor () -> Void)?
     var onFailed: (@MainActor () -> Void)?
 
@@ -21,6 +55,7 @@ final class AVPlayerTimelineAdapter {
     private let observers = PlayerTimelineObserverBag()
     private var token: PlaybackTimelineItemToken?
     private var failedToken: PlaybackTimelineItemToken?
+    private var momentaryRateSession: MomentaryRateSession?
     private var pendingExplicitSeekPosition: Double?
 
     init(player: AVPlayer) {
@@ -34,6 +69,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func begin(identity: PlaybackItemIdentity) {
+        momentaryRateSession = nil
         observers.reset()
         pendingExplicitSeekPosition = nil
         token = store.beginItem(identity: identity)
@@ -121,6 +157,7 @@ final class AVPlayerTimelineAdapter {
                     rate: 0,
                     state: .ended
                 )
+                self.momentaryRateSession = nil
                 self.onEnded?()
             }
         }
@@ -195,6 +232,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func markFailed() {
+        momentaryRateSession = nil
         observers.reset()
         guard let token else { return }
         failedToken = token
@@ -215,6 +253,7 @@ final class AVPlayerTimelineAdapter {
 
     func pause() {
         guard let token else { return }
+        momentaryRateSession = nil
         player.pause()
         store.update(token: token, rate: 0, state: .paused)
     }
@@ -223,10 +262,67 @@ final class AVPlayerTimelineAdapter {
         guard rate.isFinite, (0.25...4).contains(rate) else {
             throw AVPlayerEngineError.invalidPlaybackRate
         }
+        momentaryRateSession = nil
         player.defaultRate = Float(rate)
         guard player.rate > 0, let token else { return }
         player.rate = Float(rate)
         store.update(token: token, rate: rate, state: .playing)
+    }
+
+    func beginMomentaryRate(_ rate: Double) throws -> UUID? {
+        guard rate.isFinite, (0.25...4).contains(rate) else {
+            throw AVPlayerEngineError.invalidPlaybackRate
+        }
+        guard let token,
+            let item = player.currentItem,
+            player.rate > 0
+        else {
+            return nil
+        }
+
+        let session = MomentaryRateSession(
+            id: UUID(),
+            item: item,
+            rate: Float(rate)
+        )
+        momentaryRateSession = session
+        player.rate = session.rate
+        store.update(token: token, rate: rate, state: .playing)
+        return session.id
+    }
+
+    func endMomentaryRate(sessionID: UUID) {
+        guard let session = momentaryRateSession,
+            session.id == sessionID
+        else {
+            return
+        }
+        momentaryRateSession = nil
+
+        guard player.currentItem === session.item, let token
+        else {
+            return
+        }
+        let restorationAction = MomentaryRateRestorationPolicy.action(
+            timeControlStatus: player.timeControlStatus,
+            currentRate: player.rate,
+            momentaryRate: session.rate
+        )
+        switch restorationAction {
+        case .none:
+            return
+        case .setCurrentRate:
+            player.rate = player.defaultRate
+        case .resumeAtDefaultRate:
+            player.play()
+        }
+        let restoredState: PlaybackTimelineState =
+            player.timeControlStatus == .playing ? .playing : .buffering
+        store.update(
+            token: token,
+            rate: Double(player.defaultRate),
+            state: restoredState
+        )
     }
 
     func prepareExplicitSeek(to positionSeconds: Double) {
@@ -246,6 +342,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func clear() {
+        momentaryRateSession = nil
         observers.reset()
         pendingExplicitSeekPosition = nil
         store.clear(token: token)
@@ -264,6 +361,7 @@ final class AVPlayerTimelineAdapter {
         else { return }
 
         failedToken = token
+        momentaryRateSession = nil
         observers.reset()
         store.markFailed(token: token)
         onFailed?()

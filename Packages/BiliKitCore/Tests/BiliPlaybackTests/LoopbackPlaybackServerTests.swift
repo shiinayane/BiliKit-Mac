@@ -1854,6 +1854,38 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
+    func momentaryRateRestorationPreservesPauseAndRecoversBuffering() {
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: .paused,
+                currentRate: 0,
+                momentaryRate: 2
+            ) == .none
+        )
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: .playing,
+                currentRate: 2,
+                momentaryRate: 2
+            ) == .setCurrentRate
+        )
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: .waitingToPlayAtSpecifiedRate,
+                currentRate: 0,
+                momentaryRate: 2
+            ) == .resumeAtDefaultRate
+        )
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: .waitingToPlayAtSpecifiedRate,
+                currentRate: 1.5,
+                momentaryRate: 2
+            ) == .none
+        )
+    }
+
+    @Test
     @MainActor
     func engineFreezesNativeCatalogDefaultsOffAndSerializesResetAcrossABA()
         async throws
@@ -2221,16 +2253,41 @@ struct LoopbackPlaybackServerTests {
         #expect(engine.currentTimelineSnapshot.identity == identity)
         #expect(engine.currentTimelineSnapshot.state == .ready)
 
-        try engine.setRate(2)
+        try engine.setRate(1.25)
         engine.play()
         try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
         #expect(engine.currentTimelineSnapshot.positionSeconds > 0)
         #expect(engine.currentTimelineSnapshot.rate > 1)
         #expect(engine.currentTimelineSnapshot.state == .playing)
 
+        let normalMomentarySession = try #require(
+            try engine.beginMomentaryPlaybackRate(2)
+        )
+        #expect(abs(engine.player.rate - 2) < 0.01)
+        engine.endMomentaryPlaybackRate(
+            sessionID: normalMomentarySession
+        )
+        #expect(abs(engine.player.rate - 1.25) < 0.01)
+
+        let pausedMomentarySession = try #require(
+            try engine.beginMomentaryPlaybackRate(0.5)
+        )
         engine.pause()
+        engine.endMomentaryPlaybackRate(
+            sessionID: pausedMomentarySession
+        )
         #expect(engine.currentTimelineSnapshot.rate == 0)
         #expect(engine.currentTimelineSnapshot.state == .paused)
+        engine.play()
+        #expect(abs(engine.player.rate - 1.25) < 0.01)
+
+        let userOverrideSession = try #require(
+            try engine.beginMomentaryPlaybackRate(2)
+        )
+        try engine.setRate(1.5)
+        engine.endMomentaryPlaybackRate(sessionID: userOverrideSession)
+        #expect(abs(engine.player.rate - 1.5) < 0.01)
+        try engine.setRate(1.25)
 
         try await engine.seek(to: .seconds(0.7))
         #expect(engine.currentTimelineSnapshot.positionSeconds >= 0.65)
@@ -2247,7 +2304,11 @@ struct LoopbackPlaybackServerTests {
             bvid: "BV1TimelineReplacement",
             cid: 900_002
         )
+        let staleMomentarySession = try #require(
+            try engine.beginMomentaryPlaybackRate(2)
+        )
         try await engine.load(request, identity: replacementIdentity)
+        engine.endMomentaryPlaybackRate(sessionID: staleMomentarySession)
         #expect(engine.player.currentItem !== firstItem)
         NotificationCenter.default.post(
             name: AVPlayerItem.failedToPlayToEndTimeNotification,
@@ -2256,10 +2317,16 @@ struct LoopbackPlaybackServerTests {
         await Task { @MainActor in }.value
         #expect(engine.currentTimelineSnapshot.identity == replacementIdentity)
         #expect(engine.currentTimelineSnapshot.state == .ready)
+        engine.play()
+        #expect(abs(engine.player.rate - 1.25) < 0.01)
 
         let seekGeneration = engine.currentTimelineSnapshot
             .discontinuityGeneration
+        let stoppedMomentarySession = try #require(
+            try engine.beginMomentaryPlaybackRate(0.5)
+        )
         engine.stop()
+        engine.endMomentaryPlaybackRate(sessionID: stoppedMomentarySession)
         #expect(engine.player.currentItem == nil)
         #expect(engine.currentTimelineSnapshot.identity == nil)
         #expect(engine.currentTimelineSnapshot.state == .idle)
