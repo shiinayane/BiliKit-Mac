@@ -140,16 +140,24 @@ private struct PlayerMomentaryRateBadge: View {
 private struct PlayerMomentaryRateBadgeBackground: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: Capsule())
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(.white.opacity(0.18), lineWidth: 0.5)
-                }
-        }
+        #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                content.glassEffect(.regular, in: Capsule())
+            } else {
+                fallbackBackground(content)
+            }
+        #else
+            fallbackBackground(content)
+        #endif
+    }
+
+    private func fallbackBackground(_ content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(0.18), lineWidth: 0.5)
+            }
     }
 }
 
