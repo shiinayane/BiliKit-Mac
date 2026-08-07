@@ -67,7 +67,7 @@ assert_occurrences 1 \
     || fail "缺少出站网络 entitlement"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "$entitlements_file")" = "true" ] \
     || fail "缺少 loopback server entitlement"
-[ "$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$entitlements_file")" = '$(AppIdentifierPrefix)com.shiinayane.BiliKitMac' ] \
+[ "$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$entitlements_file")" = '$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)' ] \
     || fail "Keychain access group 与 App 标识不一致"
 if /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:1' "$entitlements_file" >/dev/null 2>&1; then
     fail "Keychain access group 必须保持最小单项集合"
@@ -81,9 +81,9 @@ assert_occurrences 2 \
     "$project_file" \
     "App Debug/Release 必须使用同一 entitlement 文件"
 assert_occurrences 2 \
-    'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac;' \
+    'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac.dev;' \
     "$project_file" \
-    "App Debug/Release bundle identifier 必须统一"
+    "App Debug/Release 必须使用当前开发 bundle identifier"
 assert_occurrences 2 \
     'PRODUCT_NAME = BiliKit;' \
     "$project_file" \
