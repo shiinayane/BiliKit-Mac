@@ -86,13 +86,19 @@ struct SubtitleTrackPayload: Decodable, Sendable {
         )
     }
 
-    /// 只提升已由脱敏真实目录验证过的完整组合。
+    /// AI 语义由语言标记与已知字段值共同决定；异常或缺失组合保持 unknown。
     private func trackKind(languageCode: String) -> SubtitleTrackKind {
-        switch (languageCode, aiType, aiStatus) {
+        let normalizedLanguageCode = languageCode.lowercased()
+        if normalizedLanguageCode.hasPrefix("ai-"),
+            normalizedLanguageCode.count > 3,
+            aiStatus == 2,
+            aiType == 0 || aiType == 1
+        {
+            return .automatic
+        }
+        switch (normalizedLanguageCode, aiType, aiStatus) {
         case ("zh", 0, 0):
             return .standard
-        case ("ai-zh", 0, 2), ("ai-en", 1, 2), ("ai-ja", 1, 2):
-            return .automatic
         default:
             return .unknown
         }

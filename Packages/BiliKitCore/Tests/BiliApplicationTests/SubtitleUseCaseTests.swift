@@ -38,7 +38,7 @@ struct SubtitleUseCaseTests {
         #expect(options.map(\.trackID) == tracks.map(\.id))
         #expect(
             options.map(\.label) == [
-                "中文", "中文（AI）", "English", "日本語",
+                "中文", "中文（AI）", "English（AI）", "日本語（AI）",
             ]
         )
     }
@@ -102,7 +102,7 @@ struct SubtitleUseCaseTests {
                     kind: .standard
                 ),
                 automaticEnglish,
-            ]).map(\.label) == ["English", "English"]
+            ]).map(\.label) == ["English", "English（AI）"]
         )
         #expect(
             SubtitleDisplayPolicy.options(for: [
@@ -113,6 +113,36 @@ struct SubtitleUseCaseTests {
                     kind: .automatic
                 )
             ]).map(\.label) == ["中文（AI）"]
+        )
+    }
+
+    @Test
+    func displayPolicyLabelsAutomaticTracksWithoutLanguageAllowlist() {
+        let options = SubtitleDisplayPolicy.options(for: [
+            SubtitleTrack(
+                id: "automatic-fr",
+                languageCode: "ai-fr",
+                displayName: "Français",
+                kind: .automatic
+            ),
+            SubtitleTrack(
+                id: "automatic-ko",
+                languageCode: "ai-ko",
+                displayName: "한국어",
+                kind: .automatic
+            ),
+            SubtitleTrack(
+                id: "unknown-fr",
+                languageCode: "ai-fr",
+                displayName: "Français",
+                kind: .unknown
+            ),
+        ])
+
+        #expect(
+            options.map(\.label) == [
+                "Français（AI）", "한국어（AI）", "Français",
+            ]
         )
     }
 

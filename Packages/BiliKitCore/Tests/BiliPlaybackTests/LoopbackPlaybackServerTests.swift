@@ -1855,6 +1855,290 @@ struct LoopbackPlaybackServerTests {
 
     @Test
     @MainActor
+    func engineFreezesNativeCatalogDefaultsOffAndResetsAcrossABA() async throws {
+        let videoData = try fixtureBase64Data(
+            named: "video-avc-256x144-4s-global-sidx.mp4"
+        )
+        let audioData = try fixtureBase64Data(
+            named: "audio-aac-4s-global-sidx.mp4"
+        )
+        let videoURL = try #require(
+            URL(string: "https://native-subtitle.example/video")
+        )
+        let audioURL = try #require(
+            URL(string: "https://native-subtitle.example/audio")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400c",
+            bandwidth: 100_000,
+            data: videoData,
+            primaryURL: videoURL,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 256,
+                height: 144,
+                frameRate: 24
+            )
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 32_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let subtitleRepository = NativeSubtitleFixtureRepository()
+        let engine = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(transport: transport)
+            ),
+            subtitleUseCase: SubtitleUseCase(
+                repository: subtitleRepository
+            )
+        )
+        engine.player.isMuted = true
+        let request = PlaybackRequest(
+            manifest: PlaybackManifest(
+                videoRepresentations: [video],
+                audioRepresentations: [audio]
+            )
+        )
+        let firstA = PlaybackItemIdentity(bvid: "BV1NativeA", cid: 101)
+        let itemB = PlaybackItemIdentity(bvid: "BV1NativeB", cid: 202)
+
+        try await engine.load(request, identity: firstA)
+        let item = try #require(engine.player.currentItem)
+        let group = try #require(
+            try await item.asset.loadMediaSelectionGroup(for: .legible)
+        )
+        #expect(
+            group.options.map(\.displayName) == [
+                "中文",
+                "中文（AI）",
+                "English（AI）",
+            ]
+        )
+        #expect(
+            item.currentMediaSelection.selectedMediaOption(in: group) == nil
+        )
+        #expect(await subtitleRepository.cueRequestCount == 0)
+
+        item.select(group.options[0], in: group)
+        engine.play()
+        try await waitUntilAsync {
+            await subtitleRepository.cueRequestCount == 1
+        }
+        engine.pause()
+
+        try await engine.load(request, identity: itemB)
+        try await engine.load(request, identity: firstA)
+        engine.stop()
+        try await waitUntilAsync {
+            await subtitleRepository.resetCalls.count == 3
+        }
+        #expect(await subtitleRepository.resetCalls == [firstA, itemB, firstA])
+    }
+
+    @Test
+    @MainActor
+    func nativeCatalogFailureFallsBackToMediaOnly() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(
+            URL(string: "https://media-only.example/video")
+        )
+        let audioURL = try #require(
+            URL(string: "https://media-only.example/audio")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let engine = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(transport: transport)
+            ),
+            subtitleUseCase: SubtitleUseCase(
+                repository: FailingNativeSubtitleRepository()
+            )
+        )
+        engine.player.isMuted = true
+
+        try await engine.load(
+            PlaybackRequest(
+                manifest: PlaybackManifest(
+                    videoRepresentations: [video],
+                    audioRepresentations: [audio]
+                )
+            ),
+            identity: PlaybackItemIdentity(
+                bvid: "BV1MediaOnly",
+                cid: 303
+            )
+        )
+
+        let item = try #require(engine.player.currentItem)
+        let asset = try #require(item.asset as? AVURLAsset)
+        let masterBody = try await URLSession.shared.data(from: asset.url).0
+        let master = try #require(
+            String(data: masterBody, encoding: .utf8)
+        )
+        #expect(!master.contains("TYPE=SUBTITLES"))
+        #expect(item.status == .readyToPlay)
+        engine.stop()
+    }
+
+    @Test
+    @MainActor
+    func unsafeNativeSubtitleLabelFallsBackToMediaOnly() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(
+            URL(string: "https://unsafe-subtitle.example/video")
+        )
+        let audioURL = try #require(
+            URL(string: "https://unsafe-subtitle.example/audio")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let engine = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(transport: transport)
+            ),
+            subtitleUseCase: SubtitleUseCase(
+                repository: UnsafeLabelNativeSubtitleRepository()
+            )
+        )
+        engine.player.isMuted = true
+
+        try await engine.load(
+            PlaybackRequest(
+                manifest: PlaybackManifest(
+                    videoRepresentations: [video],
+                    audioRepresentations: [audio]
+                )
+            ),
+            identity: PlaybackItemIdentity(
+                bvid: "BV1UnsafeSubtitle",
+                cid: 304
+            )
+        )
+
+        let item = try #require(engine.player.currentItem)
+        let asset = try #require(item.asset as? AVURLAsset)
+        let masterBody = try await URLSession.shared.data(from: asset.url).0
+        let master = try #require(String(data: masterBody, encoding: .utf8))
+        #expect(!master.contains("TYPE=SUBTITLES"))
+        #expect(item.status == .readyToPlay)
+        engine.stop()
+    }
+
+    @Test
+    func subtitleCatalogGraceDoesNotWaitForNoncooperativeRepository() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(
+            URL(string: "https://subtitle-timeout.example/video")
+        )
+        let audioURL = try #require(
+            URL(string: "https://subtitle-timeout.example/audio")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let repository = NoncooperativeNativeSubtitleRepository()
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport),
+            subtitleCatalogGrace: .milliseconds(20)
+        )
+        let source = NativeSubtitleSource(
+            useCase: SubtitleUseCase(repository: repository),
+            identity: PlaybackItemIdentity(
+                bvid: "BV1SubtitleTimeout",
+                cid: 305
+            )
+        )
+        let clock = ContinuousClock()
+        let prepareTask = Task {
+            try await bridge.prepare(
+                videos: [video],
+                audio: audio,
+                headers: [:],
+                subtitleSource: source
+            )
+        }
+        try await waitUntilAsync { await repository.started }
+        let start = clock.now
+        let prepared = try await prepareTask.value
+        defer { prepared.stop() }
+        let elapsed = start.duration(to: clock.now)
+        await repository.release()
+
+        let masterBody = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterBody, encoding: .utf8))
+        #expect(elapsed < .milliseconds(500))
+        #expect(!master.contains("TYPE=SUBTITLES"))
+    }
+
+    @Test
+    @MainActor
     func enginePublishesTimelineAndClearsItWhenStopped() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
@@ -3424,6 +3708,131 @@ private actor PlaybackFailureRecorder {
 
     func identities() -> [PlaybackItemIdentity] {
         recordedEvents.map(\.identity)
+    }
+}
+
+private actor NativeSubtitleFixtureRepository: SubtitleRepository {
+    private(set) var cueRequestCount = 0
+    private(set) var resetCalls: [PlaybackItemIdentity] = []
+
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) -> [SubtitleTrack] {
+        [
+            SubtitleTrack(
+                id: "standard-zh",
+                languageCode: "zh",
+                displayName: "中文",
+                kind: .standard
+            ),
+            SubtitleTrack(
+                id: "automatic-zh",
+                languageCode: "ai-zh",
+                displayName: "中文",
+                kind: .automatic
+            ),
+            SubtitleTrack(
+                id: "automatic-en",
+                languageCode: "ai-en",
+                displayName: "English",
+                kind: .automatic
+            ),
+        ]
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) -> [SubtitleCue] {
+        cueRequestCount += 1
+        return [
+            SubtitleCue(
+                startSeconds: 0,
+                endSeconds: 3,
+                text: "Native subtitle fixture"
+            )
+        ]
+    }
+
+    func reset(for identity: PlaybackItemIdentity) {
+        resetCalls.append(identity)
+    }
+}
+
+private struct FailingNativeSubtitleRepository: SubtitleRepository {
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleTrack] {
+        throw SubtitleApplicationError.transportFailure
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) async throws -> [SubtitleCue] {
+        throw SubtitleApplicationError.transportFailure
+    }
+
+    func reset(for identity: PlaybackItemIdentity) async {}
+}
+
+private struct UnsafeLabelNativeSubtitleRepository: SubtitleRepository {
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) -> [SubtitleTrack] {
+        [
+            SubtitleTrack(
+                id: "unsafe",
+                languageCode: "unknown",
+                displayName: "unsafe\\label",
+                kind: .unknown
+            )
+        ]
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) -> [SubtitleCue] {
+        []
+    }
+
+    func reset(for identity: PlaybackItemIdentity) async {}
+}
+
+private actor NoncooperativeNativeSubtitleRepository: SubtitleRepository {
+    private(set) var started = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func tracks(
+        for identity: PlaybackItemIdentity
+    ) async -> [SubtitleTrack] {
+        started = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        return [
+            SubtitleTrack(
+                id: "late",
+                languageCode: "zh",
+                displayName: "中文",
+                kind: .standard
+            )
+        ]
+    }
+
+    func cues(
+        for trackID: String,
+        identity: PlaybackItemIdentity
+    ) -> [SubtitleCue] {
+        []
+    }
+
+    func reset(for identity: PlaybackItemIdentity) async {}
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

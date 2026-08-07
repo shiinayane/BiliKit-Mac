@@ -8,6 +8,7 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     let isPreparingPlayback: Bool
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
+    let subtitlePresentationMode: SubtitlePresentationMode
     let playerContent: () -> PlayerContent
 
     var body: some View {
@@ -22,8 +23,10 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                 metadata
                 player
 
-                Divider()
-                SubtitleControlsView(model: subtitleModel)
+                if subtitlePresentationMode == .legacyOverlay {
+                    Divider()
+                    SubtitleControlsView(model: subtitleModel)
+                }
 
                 Divider()
                 DanmakuControlsView(model: danmakuModel)

@@ -7,6 +7,8 @@ public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
     case duplicateVideoRepresentationID(Int)
     case missingCompleteMediaLength(representationID: Int)
+    case subtitleCatalogTimedOut
+    case inconsistentSubtitleTimeline
 }
 
 /// 一次已启动的 loopback HLS 会话；其生命周期就是底层 server 的生命周期。
@@ -16,7 +18,10 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
     public let url: URL
     private let server: LoopbackPlaybackServer
 
-    fileprivate init(url: URL, server: LoopbackPlaybackServer) {
+    fileprivate init(
+        url: URL,
+        server: LoopbackPlaybackServer
+    ) {
         self.url = url
         self.server = server
     }
@@ -37,24 +42,39 @@ public struct DASHToHLSBridge: Sendable {
     private let rangeClient: HTTPRangeClient
     private let indexLoader: RepresentationIndexLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
+    private let subtitlePlaylistBuilder: HLSSubtitlePlaylistBuilder
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
+    private let webVTTEncoder: WebVTTEncoder
+    private let subtitleCatalogGrace: Duration
     private let serverFactory: @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
 
-    public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
+    public init(
+        rangeClient: HTTPRangeClient = HTTPRangeClient(),
+        subtitleCatalogGrace: Duration = .seconds(2)
+    ) {
         self.init(
             rangeClient: rangeClient,
+            subtitleCatalogGrace: subtitleCatalogGrace,
             serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
         )
     }
 
     init(
         rangeClient: HTTPRangeClient,
+        subtitleCatalogGrace: Duration = .seconds(2),
         serverFactory: @escaping @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
     ) {
+        precondition(
+            subtitleCatalogGrace > .zero,
+            "Subtitle catalog grace must be positive"
+        )
         self.rangeClient = rangeClient
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
+        subtitlePlaylistBuilder = HLSSubtitlePlaylistBuilder()
         masterPlaylistBuilder = HLSMasterPlaylistBuilder()
+        webVTTEncoder = WebVTTEncoder()
+        self.subtitleCatalogGrace = subtitleCatalogGrace
         self.serverFactory = serverFactory
     }
 
@@ -66,7 +86,8 @@ public struct DASHToHLSBridge: Sendable {
         try await prepare(
             videos: [video],
             audio: audio,
-            headers: headers
+            headers: headers,
+            subtitleSource: nil
         )
     }
 
@@ -75,6 +96,20 @@ public struct DASHToHLSBridge: Sendable {
         videos: [MediaRepresentation],
         audio: MediaRepresentation,
         headers: [String: String] = [:]
+    ) async throws -> PreparedPlaybackAsset {
+        try await prepare(
+            videos: videos,
+            audio: audio,
+            headers: headers,
+            subtitleSource: nil
+        )
+    }
+
+    func prepare(
+        videos: [MediaRepresentation],
+        audio: MediaRepresentation,
+        headers: [String: String],
+        subtitleSource: NativeSubtitleSource?
     ) async throws -> PreparedPlaybackAsset {
         guard !videos.isEmpty else {
             throw DASHToHLSBridgeError.missingVideoRepresentation
@@ -100,6 +135,11 @@ public struct DASHToHLSBridge: Sendable {
             )
         }
 
+        let catalogTask = subtitleSource.map { source in
+            Task { try await source.catalog() }
+        }
+        defer { catalogTask?.cancel() }
+
         async let loadedAudio = indexLoader.load(
             for: audio,
             headers: headers
@@ -114,32 +154,39 @@ public struct DASHToHLSBridge: Sendable {
                 representationID: audio.id
             )
         }
+        let subtitleCatalog = try await freezeCatalog(catalogTask)
 
         let server = serverFactory(rangeClient)
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")
             let audioPlaylistURL = try server.url(for: "audio/\(audio.id).m3u8")
-            let audioMediaURL = try server.register(
-                .remote(
-                    try LoopbackRemoteResource(
-                        sourceURL: audioIndex.sourceURL,
-                        contentLength: audioLength,
-                        contentType: audio.mimeType,
-                        headers: headers
+            let audioMediaPath = "media/audio/\(audio.id).mp4"
+            let audioMediaURL = try server.url(for: audioMediaPath)
+            var registrations = [
+                LoopbackRouteRegistration(
+                    relativePath: audioMediaPath,
+                    resource: .remote(
+                        try LoopbackRemoteResource(
+                            sourceURL: audioIndex.sourceURL,
+                            contentLength: audioLength,
+                            contentType: audio.mimeType,
+                            headers: headers
+                        )
                     )
-                ),
-                at: "media/audio/\(audio.id).mp4"
-            )
+                )
+            ]
 
             let audioPlaylist = try mediaPlaylistBuilder.build(
                 representation: audio,
                 index: audioIndex.index,
                 mediaURI: audioMediaURL
             )
-            _ = try server.register(
-                playlistResource(audioPlaylist),
-                at: "audio/\(audio.id).m3u8"
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: "audio/\(audio.id).m3u8",
+                    resource: playlistResource(audioPlaylist)
+                )
             )
 
             var variants: [HLSVideoVariant] = []
@@ -153,25 +200,31 @@ public struct DASHToHLSBridge: Sendable {
                 let videoPlaylistURL = try server.url(
                     for: "video/\(video.id).m3u8"
                 )
-                let videoMediaURL = try server.register(
-                    .remote(
-                        try LoopbackRemoteResource(
-                            sourceURL: videoIndex.sourceURL,
-                            contentLength: videoLength,
-                            contentType: video.mimeType,
-                            headers: headers
+                let videoMediaPath = "media/video/\(video.id).mp4"
+                let videoMediaURL = try server.url(for: videoMediaPath)
+                registrations.append(
+                    LoopbackRouteRegistration(
+                        relativePath: videoMediaPath,
+                        resource: .remote(
+                            try LoopbackRemoteResource(
+                                sourceURL: videoIndex.sourceURL,
+                                contentLength: videoLength,
+                                contentType: video.mimeType,
+                                headers: headers
+                            )
                         )
-                    ),
-                    at: "media/video/\(video.id).mp4"
+                    )
                 )
                 let videoPlaylist = try mediaPlaylistBuilder.build(
                     representation: video,
                     index: videoIndex.index,
                     mediaURI: videoMediaURL
                 )
-                _ = try server.register(
-                    playlistResource(videoPlaylist),
-                    at: "video/\(video.id).m3u8"
+                registrations.append(
+                    LoopbackRouteRegistration(
+                        relativePath: "video/\(video.id).m3u8",
+                        resource: playlistResource(videoPlaylist)
+                    )
                 )
                 variants.append(
                     HLSVideoVariant(
@@ -182,22 +235,173 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
 
-            let masterPlaylist = try masterPlaylistBuilder.build(
-                videoVariants: variants,
-                audio: audio,
-                audioIndex: audioIndex.index,
-                audioPlaylistURI: audioPlaylistURL
+            let mediaRegistrationCount = registrations.count
+            let masterPlaylist: String
+            do {
+                let subtitleRenditions = try makeSubtitleRoutes(
+                    catalog: subtitleCatalog,
+                    source: subtitleSource,
+                    videoIndices: videoIndices.map(\.index),
+                    registrations: &registrations,
+                    server: server
+                )
+                masterPlaylist = try masterPlaylistBuilder.build(
+                    videoVariants: variants,
+                    audio: audio,
+                    audioIndex: audioIndex.index,
+                    audioPlaylistURI: audioPlaylistURL,
+                    subtitleRenditions: subtitleRenditions
+                )
+            } catch {
+                registrations.removeSubrange(mediaRegistrationCount...)
+                masterPlaylist = try masterPlaylistBuilder.build(
+                    videoVariants: variants,
+                    audio: audio,
+                    audioIndex: audioIndex.index,
+                    audioPlaylistURI: audioPlaylistURL
+                )
+            }
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: "master.m3u8",
+                    resource: playlistResource(masterPlaylist)
+                )
             )
-            _ = try server.register(
-                playlistResource(masterPlaylist),
-                at: "master.m3u8"
-            )
+            _ = try server.register(registrations)
 
-            return PreparedPlaybackAsset(url: masterURL, server: server)
+            return PreparedPlaybackAsset(
+                url: masterURL,
+                server: server
+            )
         } catch {
             server.stop()
             throw error
         }
+    }
+
+    private func freezeCatalog(
+        _ catalogTask: Task<[NativeSubtitleCatalogEntry], any Error>?
+    ) async throws -> [NativeSubtitleCatalogEntry] {
+        guard let catalogTask else { return [] }
+        let relay = CatalogResultRelay<[NativeSubtitleCatalogEntry]>()
+        let observer = Task {
+            do {
+                relay.resolve(.success(try await catalogTask.value))
+            } catch {
+                relay.resolve(.failure(error))
+            }
+        }
+        let timeout = Task {
+            do {
+                try await Task.sleep(for: subtitleCatalogGrace)
+                catalogTask.cancel()
+                relay.resolve(
+                    .failure(DASHToHLSBridgeError.subtitleCatalogTimedOut)
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                relay.resolve(.failure(error))
+            }
+        }
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await relay.value()
+            } onCancel: {
+                catalogTask.cancel()
+                relay.resolve(.failure(CancellationError()))
+            }
+            timeout.cancel()
+            observer.cancel()
+            return result
+        } catch is CancellationError where Task.isCancelled {
+            timeout.cancel()
+            observer.cancel()
+            catalogTask.cancel()
+            throw CancellationError()
+        } catch {
+            timeout.cancel()
+            observer.cancel()
+            catalogTask.cancel()
+            return []
+        }
+    }
+
+    private func makeSubtitleRoutes(
+        catalog: [NativeSubtitleCatalogEntry],
+        source: NativeSubtitleSource?,
+        videoIndices: [SegmentIndex],
+        registrations: inout [LoopbackRouteRegistration],
+        server: LoopbackPlaybackServer
+    ) throws -> [HLSSubtitleRendition] {
+        guard let source, !catalog.isEmpty else { return [] }
+        guard let videoIndex = videoIndices.first,
+            videoIndices.dropFirst().allSatisfy({
+                hasMatchingSubtitleTimeline($0, canonical: videoIndex)
+            })
+        else {
+            throw DASHToHLSBridgeError.inconsistentSubtitleTimeline
+        }
+        let duration =
+            videoIndices.map { index in
+                index.references.reduce(0.0) {
+                    $0 + Double($1.duration) / Double(index.timescale)
+                }
+            }.max() ?? 0
+
+        return try catalog.enumerated().map { offset, entry in
+            let playlistPath = "subtitle/\(offset).m3u8"
+            let bodyPath = "subtitle/generated/\(offset).vtt"
+            let playlistURL = try server.url(for: playlistPath)
+            let bodyURL = try server.url(for: bodyPath)
+            let generated = try LoopbackGeneratedResource(
+                contentType: "text/vtt; charset=utf-8",
+                maximumContentLength: 2 * 1_024 * 1_024
+            ) {
+                let cues = try await source.cues(for: entry.trackID)
+                return try webVTTEncoder.encode(
+                    cues: cues,
+                    earliestPresentationTime: videoIndex.earliestPresentationTime,
+                    timescale: videoIndex.timescale
+                )
+            }
+            let playlist = try subtitlePlaylistBuilder.build(
+                segmentURI: bodyURL,
+                duration: duration
+            )
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: playlistPath,
+                    resource: playlistResource(playlist)
+                )
+            )
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: bodyPath,
+                    resource: .generated(generated)
+                )
+            )
+            return HLSSubtitleRendition(
+                name: entry.label,
+                playlistURI: playlistURL
+            )
+        }
+    }
+
+    func hasMatchingSubtitleTimeline(
+        _ candidate: SegmentIndex,
+        canonical: SegmentIndex
+    ) -> Bool {
+        guard candidate.timescale > 0, canonical.timescale > 0 else {
+            return false
+        }
+        let canonicalStart =
+            Double(canonical.earliestPresentationTime)
+            / Double(canonical.timescale)
+        let candidateStart =
+            Double(candidate.earliestPresentationTime)
+            / Double(candidate.timescale)
+        return abs(candidateStart - canonicalStart) <= 1.0 / 90_000.0
     }
 
     private func loadVideoIndices(
@@ -235,5 +439,38 @@ public struct DASHToHLSBridge: Sendable {
             data: Data(playlist.utf8),
             contentType: "application/vnd.apple.mpegurl"
         )
+    }
+}
+
+private final class CatalogResultRelay<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Result<Value, any Error>, Never>?
+    private var result: Result<Value, any Error>?
+
+    func value() async throws -> Value {
+        let result: Result<Value, any Error> = await withCheckedContinuation {
+            continuation in
+            let pending = lock.withLock { () -> Result<Value, any Error>? in
+                if let storedResult = self.result { return storedResult }
+                self.continuation = continuation
+                return nil
+            }
+            if let pending {
+                continuation.resume(returning: pending)
+            }
+        }
+        return try result.get()
+    }
+
+    func resolve(_ result: Result<Value, any Error>) {
+        let continuation = lock.withLock {
+            () -> CheckedContinuation<Result<Value, any Error>, Never>? in
+            guard self.result == nil else { return nil }
+            self.result = result
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: result)
     }
 }

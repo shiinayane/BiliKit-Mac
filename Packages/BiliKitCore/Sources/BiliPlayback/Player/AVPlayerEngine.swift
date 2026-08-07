@@ -26,6 +26,7 @@ public final class AVPlayerEngine:
     public let events: AsyncStream<PlayerEvent>
 
     private let bridge: DASHToHLSBridge
+    private let subtitleUseCase: SubtitleUseCase?
     private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
     private let failureEvents: AsyncStream<PlaybackFailureEvent>
     private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
@@ -35,13 +36,20 @@ public final class AVPlayerEngine:
     private var loadGeneration = UUID()
     private var loadIntent: PlaybackLoadIntent?
     private var preparedAsset: PreparedPlaybackAsset?
+    private var subtitleIdentity: PlaybackItemIdentity?
+    private var subtitleResetTask: Task<Void, Never>?
 
     public init(
         player: AVPlayer = AVPlayer(),
-        bridge: DASHToHLSBridge = DASHToHLSBridge()
+        bridge: DASHToHLSBridge = DASHToHLSBridge(),
+        subtitleUseCase: SubtitleUseCase? = nil
     ) {
         self.player = player
         self.bridge = bridge
+        self.subtitleUseCase = subtitleUseCase
+        if subtitleUseCase != nil {
+            player.appliesMediaSelectionCriteriaAutomatically = false
+        }
         timeline = AVPlayerTimelineAdapter(player: player)
         let stream = AsyncStream<PlayerEvent>.makeStream()
         events = stream.stream
@@ -63,12 +71,23 @@ public final class AVPlayerEngine:
         loadTask?.cancel()
         readinessTask?.cancel()
         preparedAsset?.stop()
+        if let subtitleUseCase, let subtitleIdentity {
+            let previousReset = subtitleResetTask
+            Task {
+                await previousReset?.value
+                await subtitleUseCase.reset(for: subtitleIdentity)
+            }
+        }
         eventContinuation.finish()
         failureContinuation.finish()
     }
 
     public var currentTimelineSnapshot: PlaybackTimelineSnapshot {
         timeline.currentSnapshot
+    }
+
+    public var nativeSubtitlesEnabled: Bool {
+        subtitleUseCase != nil
     }
 
     public func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
@@ -144,16 +163,29 @@ public final class AVPlayerEngine:
         preparedAsset?.stop()
         preparedAsset = nil
         player.replaceCurrentItem(with: nil)
+        let pendingSubtitleReset = enqueueSubtitleReset()
         timeline.begin(identity: identity)
         emit(.stateChanged(.loading))
 
         let videos = try selectedVideos(for: request)
         let audio = try selectedAudio(for: request)
+        await pendingSubtitleReset?.value
+        try Task.checkCancellation()
+        guard loadGeneration == generation else {
+            throw CancellationError()
+        }
+        let subtitleSource = subtitleUseCase.map {
+            NativeSubtitleSource(useCase: $0, identity: identity)
+        }
+        if subtitleSource != nil {
+            subtitleIdentity = identity
+        }
         let task = Task {
             try await bridge.prepare(
                 videos: videos,
                 audio: audio,
-                headers: request.mediaHeaders
+                headers: request.mediaHeaders,
+                subtitleSource: subtitleSource
             )
         }
         loadTask = task
@@ -191,6 +223,7 @@ public final class AVPlayerEngine:
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
                 timeline.clear()
+                _ = enqueueSubtitleReset()
                 emit(.stateChanged(.idle))
             }
             throw CancellationError()
@@ -202,6 +235,7 @@ public final class AVPlayerEngine:
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
                 timeline.markFailed()
+                _ = enqueueSubtitleReset()
                 emit(
                     .failed(
                         message: String(reflecting: type(of: error))
@@ -224,6 +258,7 @@ public final class AVPlayerEngine:
         preparedAsset = nil
         player.replaceCurrentItem(with: nil)
         timeline.clear()
+        _ = enqueueSubtitleReset()
         emit(.stateChanged(.idle))
     }
 
@@ -278,6 +313,7 @@ public final class AVPlayerEngine:
         preparedAsset?.stop()
         preparedAsset = nil
         timeline.clear()
+        _ = enqueueSubtitleReset()
         emit(.stateChanged(.idle))
     }
 
@@ -341,9 +377,25 @@ public final class AVPlayerEngine:
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
         preparedAsset = nil
+        _ = enqueueSubtitleReset()
         failureContinuation.yield(
             PlaybackFailureEvent(identity: identity, intent: intent)
         )
         emit(.failed(message: "PlaybackItemFailed"))
+    }
+
+    @discardableResult
+    private func enqueueSubtitleReset() -> Task<Void, Never>? {
+        guard let subtitleUseCase, let identity = subtitleIdentity else {
+            return subtitleResetTask
+        }
+        subtitleIdentity = nil
+        let previousReset = subtitleResetTask
+        let task = Task {
+            await previousReset?.value
+            await subtitleUseCase.reset(for: identity)
+        }
+        subtitleResetTask = task
+        return task
     }
 }

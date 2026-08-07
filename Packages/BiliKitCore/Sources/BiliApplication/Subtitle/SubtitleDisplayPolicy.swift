@@ -34,11 +34,12 @@ public enum SubtitleDisplayPolicy {
         for track: SubtitleTrack,
         sourceLabel: String
     ) -> String {
-        switch (track.languageCode, track.kind, sourceLabel) {
-        case ("ai-zh", .automatic, "中文"):
-            return "中文（AI）"
-        default:
+        guard track.kind == .automatic else {
             return sourceLabel
         }
+        guard !sourceLabel.hasSuffix("（AI）") else {
+            return sourceLabel
+        }
+        return sourceLabel + "（AI）"
     }
 }

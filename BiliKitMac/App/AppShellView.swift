@@ -16,6 +16,7 @@ struct AppShellView: View {
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
+    let subtitlePresentationMode: SubtitlePresentationMode
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
@@ -68,6 +69,7 @@ struct AppShellView: View {
                             subtitleModel: subtitleModel,
                             danmakuModel: danmakuModel,
                             playerContent: playerContent,
+                            subtitlePresentationMode: subtitlePresentationMode,
                             onRetry: navigationCoordinator.retryPlayback
                         )
                     }
@@ -167,6 +169,7 @@ private struct PlaybackDestinationView: View {
     let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
+    let subtitlePresentationMode: SubtitlePresentationMode
     let onRetry: () -> Void
 
     var body: some View {
@@ -174,6 +177,7 @@ private struct PlaybackDestinationView: View {
             model: model,
             subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,
+            subtitlePresentationMode: subtitlePresentationMode,
             onRetry: onRetry
         ) {
             playerContent

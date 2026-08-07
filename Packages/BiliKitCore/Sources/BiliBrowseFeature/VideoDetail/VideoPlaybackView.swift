@@ -1,6 +1,11 @@
 import BiliApplication
 import SwiftUI
 
+public enum SubtitlePresentationMode: Sendable, Equatable {
+    case legacyOverlay
+    case nativePlayer
+}
+
 /// 把视频准备状态连接到字幕与弹幕的播放 identity 生命周期。
 ///
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
@@ -9,6 +14,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: GuestVideoViewModel
     private let subtitleModel: SubtitleViewModel
     private let danmakuModel: DanmakuControlsViewModel
+    private let subtitlePresentationMode: SubtitlePresentationMode
     private let onRetry: () -> Void
     private let playerContent: () -> PlayerContent
 
@@ -16,12 +22,14 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         model: GuestVideoViewModel,
         subtitleModel: SubtitleViewModel,
         danmakuModel: DanmakuControlsViewModel,
+        subtitlePresentationMode: SubtitlePresentationMode = .legacyOverlay,
         onRetry: @escaping () -> Void,
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
         self.subtitleModel = subtitleModel
         self.danmakuModel = danmakuModel
+        self.subtitlePresentationMode = subtitlePresentationMode
         self.onRetry = onRetry
         self.playerContent = playerContent
     }
@@ -36,6 +44,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                         isPreparingPlayback: showsPlaybackActivity,
                         subtitleModel: subtitleModel,
                         danmakuModel: danmakuModel,
+                        subtitlePresentationMode: subtitlePresentationMode,
                         playerContent: playerContent
                     )
                     .disabled(blocksRetainedContext)
@@ -54,7 +63,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 danmakuModel.reset()
                 return
             }
-            subtitleModel.selectVideo(playbackIdentity)
+            switch subtitlePresentationMode {
+            case .legacyOverlay:
+                subtitleModel.selectVideo(playbackIdentity)
+            case .nativePlayer:
+                subtitleModel.reset()
+            }
             danmakuModel.selectVideo(playbackIdentity)
         }
     }

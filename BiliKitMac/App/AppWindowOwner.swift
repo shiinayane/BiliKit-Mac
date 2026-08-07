@@ -18,6 +18,7 @@ final class AppWindowOwner {
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
     private let playbackPreferencesController: PlaybackPreferencesController?
+    let subtitlePresentationMode: SubtitlePresentationMode
 
     convenience init(environment: AppEnvironment) {
         let browseModel = environment.makeBrowseViewModel()
@@ -45,7 +46,8 @@ final class AppWindowOwner {
             playerContent: environment.makePlayerView(
                 subtitleModel: subtitleModel
             ),
-            playbackPreferencesController: environment.playbackPreferencesController
+            playbackPreferencesController: environment.playbackPreferencesController,
+            subtitlePresentationMode: environment.subtitlePresentationMode
         )
     }
 
@@ -58,7 +60,8 @@ final class AppWindowOwner {
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView,
-        playbackPreferencesController: PlaybackPreferencesController? = nil
+        playbackPreferencesController: PlaybackPreferencesController? = nil,
+        subtitlePresentationMode: SubtitlePresentationMode = .legacyOverlay
     ) {
         self.navigationCoordinator = navigationCoordinator
         self.browseModel = browseModel
@@ -69,5 +72,6 @@ final class AppWindowOwner {
         self.historyModel = historyModel
         self.playerContent = playerContent
         self.playbackPreferencesController = playbackPreferencesController
+        self.subtitlePresentationMode = subtitlePresentationMode
     }
 }

@@ -14,7 +14,7 @@ struct BiliSubtitleRepositoryTests {
     )
 
     @Test
-    func catalogClassifiesOnlyVerifiedSubtitleMetadataCombinations() throws {
+    func catalogClassifiesAutomaticMetadataWithoutLanguageAllowlist() throws {
         let payload = try JSONDecoder().decode(
             SubtitleCatalogPayload.self,
             from: Data(
@@ -49,8 +49,8 @@ struct BiliSubtitleRepositoryTests {
         )
         #expect(
             tracks.map(\.kind) == [
-                .standard, .automatic, .automatic, .automatic, .unknown, .unknown,
-                .unknown, .unknown, .unknown,
+                .standard, .automatic, .automatic, .automatic, .unknown,
+                .automatic, .automatic, .unknown, .unknown,
             ]
         )
     }

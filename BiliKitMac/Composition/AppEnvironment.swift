@@ -28,6 +28,7 @@ struct AppEnvironment {
     private let danmakuRenderer: CoreAnimationDanmakuRenderer
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
+    let subtitlePresentationMode: SubtitlePresentationMode
 
     init(
         guestContentRepository: any GuestContentRepository,
@@ -37,8 +38,14 @@ struct AppEnvironment {
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
         authenticationService: any AuthenticationServicing,
-        authenticationQRCodeProvider: any AuthenticationQRCodeProviding
+        authenticationQRCodeProvider: any AuthenticationQRCodeProviding,
+        subtitlePresentationMode: SubtitlePresentationMode = .legacyOverlay
     ) {
+        precondition(
+            playerEngine.nativeSubtitlesEnabled
+                == (subtitlePresentationMode == .nativePlayer),
+            "Subtitle presentation mode must match the AVPlayerEngine owner"
+        )
         self.guestContentRepository = guestContentRepository
         self.historyRepository = historyRepository
         self.subtitleRepository = subtitleRepository
@@ -58,6 +65,11 @@ struct AppEnvironment {
         )
         self.authenticationService = authenticationService
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
+        self.subtitlePresentationMode = subtitlePresentationMode
+    }
+
+    var nativeSubtitlesEnabled: Bool {
+        playerEngine.nativeSubtitlesEnabled
     }
 
     func makeBrowseViewModel() -> GuestBrowseViewModel {
@@ -85,13 +97,16 @@ struct AppEnvironment {
     }
 
     func makePlayerView(subtitleModel: SubtitleViewModel) -> AnyView {
-        AnyView(
+        let subtitlePresentationMode = subtitlePresentationMode
+        return AnyView(
             PlayerHostView(
                 player: playerEngine.player,
                 danmakuRenderer: danmakuRenderer,
                 danmakuController: danmakuController
             ) {
-                SubtitleOverlayView(model: subtitleModel)
+                if subtitlePresentationMode == .legacyOverlay {
+                    SubtitleOverlayView(model: subtitleModel)
+                }
             }
         )
     }
@@ -113,7 +128,9 @@ struct AppEnvironment {
     ///
     /// 只有显式声明为已认证的 API 请求才经过 authorizer；登出还会替换 API 的
     /// ephemeral transport，使旧认证会话中的在途请求失效。
-    static func live() -> AppEnvironment {
+    static func live(
+        subtitlePresentationMode: SubtitlePresentationMode = .nativePlayer
+    ) -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {
             let configuration = URLSessionConfiguration.ephemeral
@@ -139,17 +156,27 @@ struct AppEnvironment {
         let playbackPreferencesController = PlaybackPreferencesController(
             player: player
         )
+        let subtitleRepository = BiliSubtitleRepository(client: api)
+        let nativeSubtitleUseCase =
+            subtitlePresentationMode == .nativePlayer
+            ? SubtitleUseCase(repository: subtitleRepository)
+            : nil
+        let playerEngine = AVPlayerEngine(
+            player: player,
+            subtitleUseCase: nativeSubtitleUseCase
+        )
         return AppEnvironment(
             guestContentRepository: BiliGuestRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(client: api),
-            subtitleRepository: BiliSubtitleRepository(client: api),
+            subtitleRepository: subtitleRepository,
             danmakuRepository: BiliDanmakuRepository(client: api),
-            playerEngine: AVPlayerEngine(player: player),
+            playerEngine: playerEngine,
             playbackPreferencesController: playbackPreferencesController,
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService
-            )
+            ),
+            subtitlePresentationMode: subtitlePresentationMode
         )
     }
 

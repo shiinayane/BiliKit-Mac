@@ -25,9 +25,139 @@ public struct LoopbackRemoteResource: Sendable, Equatable {
     }
 }
 
+public enum LoopbackGeneratedResourceError: Error, Sendable, Equatable {
+    case invalidMaximumContentLength(Int)
+    case invalidMaximumLoadAttempts(Int)
+    case invalidGeneratedContentLength(Int)
+    case loadAttemptsExhausted
+}
+
+/// 首次请求时生成正文；成功后只缓存于当前 loopback 会话，失败可由后续请求重试。
+public final class LoopbackGeneratedResource: @unchecked Sendable, Equatable {
+    public let contentType: String
+
+    private let lock = NSLock()
+    private let maximumContentLength: Int
+    private let loader: @Sendable () async throws -> Data
+    private var generation: UInt64 = 0
+    private var remainingLoadAttempts: Int
+    private var invalidated = false
+    private var cachedBody: Data?
+    private var loadTask: Task<Data, any Error>?
+
+    public init(
+        contentType: String,
+        maximumContentLength: Int,
+        maximumLoadAttempts: Int = 2,
+        loader: @escaping @Sendable () async throws -> Data
+    ) throws {
+        guard maximumContentLength > 0 else {
+            throw LoopbackGeneratedResourceError.invalidMaximumContentLength(
+                maximumContentLength
+            )
+        }
+        guard maximumLoadAttempts > 0 else {
+            throw LoopbackGeneratedResourceError.invalidMaximumLoadAttempts(
+                maximumLoadAttempts
+            )
+        }
+        self.contentType = contentType
+        self.maximumContentLength = maximumContentLength
+        self.remainingLoadAttempts = maximumLoadAttempts
+        self.loader = loader
+    }
+
+    public static func == (
+        lhs: LoopbackGeneratedResource,
+        rhs: LoopbackGeneratedResource
+    ) -> Bool {
+        lhs === rhs
+    }
+
+    fileprivate func resolve() async throws -> Data {
+        let pending = lock.withLock { () -> (UInt64, Task<Data, any Error>, Data?) in
+            guard !invalidated else {
+                return (generation, Task { throw CancellationError() }, nil)
+            }
+            if let cachedBody {
+                let cached = cachedBody
+                return (generation, Task { cached }, cached)
+            }
+            if let loadTask {
+                return (generation, loadTask, nil)
+            }
+            guard remainingLoadAttempts > 0 else {
+                return (
+                    generation,
+                    Task {
+                        throw LoopbackGeneratedResourceError.loadAttemptsExhausted
+                    },
+                    nil
+                )
+            }
+            remainingLoadAttempts -= 1
+            generation &+= 1
+            let loadGeneration = generation
+            let task = Task {
+                try await generateAndCache(generation: loadGeneration)
+            }
+            loadTask = task
+            return (generation, task, nil)
+        }
+        if let cached = pending.2 {
+            return cached
+        }
+
+        let body = try await pending.1.value
+        try Task.checkCancellation()
+        return body
+    }
+
+    private func generateAndCache(generation loadGeneration: UInt64) async throws -> Data {
+        do {
+            let body = try await loader()
+            guard !body.isEmpty, body.count <= maximumContentLength else {
+                throw LoopbackGeneratedResourceError.invalidGeneratedContentLength(
+                    body.count
+                )
+            }
+            let accepted = lock.withLock { () -> Bool in
+                guard generation == loadGeneration, !invalidated else {
+                    return false
+                }
+                cachedBody = body
+                loadTask = nil
+                return true
+            }
+            guard accepted else { throw CancellationError() }
+            return body
+        } catch {
+            lock.withLock {
+                if generation == loadGeneration {
+                    loadTask = nil
+                }
+            }
+            throw error
+        }
+    }
+
+    fileprivate func cancel() {
+        let task = lock.withLock { () -> Task<Data, any Error>? in
+            generation &+= 1
+            invalidated = true
+            cachedBody = nil
+            let task = loadTask
+            loadTask = nil
+            return task
+        }
+        task?.cancel()
+    }
+}
+
 public enum LoopbackPlaybackResource: Sendable, Equatable {
     case inMemory(data: Data, contentType: String)
     case remote(LoopbackRemoteResource)
+    case generated(LoopbackGeneratedResource)
 
     fileprivate var contentLength: Int64 {
         switch self {
@@ -35,6 +165,8 @@ public enum LoopbackPlaybackResource: Sendable, Equatable {
             Int64(data.count)
         case .remote(let resource):
             resource.contentLength
+        case .generated:
+            preconditionFailure("Generated resources must be resolved before responding")
         }
     }
 
@@ -44,13 +176,29 @@ public enum LoopbackPlaybackResource: Sendable, Equatable {
             contentType
         case .remote(let resource):
             resource.contentType
+        case .generated(let resource):
+            resource.contentType
         }
+    }
+}
+
+public struct LoopbackRouteRegistration: Sendable, Equatable {
+    public let relativePath: String
+    public let resource: LoopbackPlaybackResource
+
+    public init(
+        relativePath: String,
+        resource: LoopbackPlaybackResource
+    ) {
+        self.relativePath = relativePath
+        self.resource = resource
     }
 }
 
 public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case invalidContentLength(Int64)
     case invalidRoute(String)
+    case duplicateRoute(String)
     case notStarted
     case listenerFailed(String)
     case invalidHTTPRequest
@@ -86,6 +234,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private var requestCounts: [String: Int] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var connectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var connectionTargets: [ObjectIdentifier: String] = [:]
 
     public init(
         rangeClient: HTTPRangeClient = HTTPRangeClient(),
@@ -178,12 +327,70 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         _ resource: LoopbackPlaybackResource,
         at relativePath: String
     ) throws -> URL {
-        let url = try url(for: relativePath)
-        let route = url.path
-        lock.withLock {
-            routes[route] = resource
+        try register([
+            LoopbackRouteRegistration(
+                relativePath: relativePath,
+                resource: resource
+            )
+        ])[0]
+    }
+
+    /// 先验证完整集合，再在同一锁内登记，避免 master 可见时轨道 route 仍不完整。
+    public func register(
+        _ registrations: [LoopbackRouteRegistration]
+    ) throws -> [URL] {
+        var seen = Set<String>()
+        let prepared = try registrations.map { registration in
+            let url = try url(for: registration.relativePath)
+            guard seen.insert(url.path).inserted else {
+                throw LoopbackPlaybackServerError.duplicateRoute(
+                    registration.relativePath
+                )
+            }
+            return (url, registration.resource)
         }
-        return url
+        try lock.withLock {
+            for (url, _) in prepared where routes[url.path] != nil {
+                throw LoopbackPlaybackServerError.duplicateRoute(url.path)
+            }
+            for (url, resource) in prepared {
+                routes[url.path] = resource
+            }
+        }
+        return prepared.map(\.0)
+    }
+
+    public func unregister(relativePaths: [String]) throws {
+        let routesToRemove = try relativePaths.map { try url(for: $0).path }
+        let state = lock.withLock {
+            () -> (
+                [LoopbackPlaybackResource],
+                [NWConnection],
+                [Task<Void, Never>]
+            ) in
+            let removed = routesToRemove.compactMap { routes.removeValue(forKey: $0) }
+            let routeSet = Set(routesToRemove)
+            let connectionIDs = connectionTargets.compactMap { id, target in
+                routeSet.contains(target) ? id : nil
+            }
+            let connectionsToCancel = connectionIDs.compactMap {
+                connections.removeValue(forKey: $0)
+            }
+            let tasksToCancel = connectionIDs.compactMap {
+                connectionTasks.removeValue(forKey: $0)
+            }
+            for id in connectionIDs {
+                connectionTargets.removeValue(forKey: id)
+            }
+            return (removed, connectionsToCancel, tasksToCancel)
+        }
+        cancelGeneratedResources(in: state.0)
+        for connection in state.1 {
+            connection.cancel()
+        }
+        for task in state.2 {
+            task.cancel()
+        }
     }
 
     public func url(for relativePath: String) throws -> URL {
@@ -206,12 +413,14 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             () -> (
                 NWListener?,
                 [NWConnection],
-                [Task<Void, Never>]
+                [Task<Void, Never>],
+                [LoopbackPlaybackResource]
             ) in
             let state = (
                 listener,
                 Array(connections.values),
-                Array(connectionTasks.values)
+                Array(connectionTasks.values),
+                Array(routes.values)
             )
             listener = nil
             port = nil
@@ -219,6 +428,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             requestCounts.removeAll()
             connections.removeAll()
             connectionTasks.removeAll()
+            connectionTargets.removeAll()
             return state
         }
 
@@ -229,6 +439,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         for task in state.2 {
             task.cancel()
         }
+        cancelGeneratedResources(in: state.3)
     }
 
     func diagnosticsSnapshot() -> LoopbackPlaybackServerDiagnostics {
@@ -343,17 +554,23 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             sendStatus(400, reason: "Bad Request", on: connection)
             return
         }
-        guard request.target.hasPrefix("/\(sessionToken)/"),
-            let resource = lock.withLock({ routes[request.target] })
-        else {
+        guard request.target.hasPrefix("/\(sessionToken)/") else {
             sendStatus(404, reason: "Not Found", on: connection)
             return
         }
-        lock.withLock {
-            requestCounts[
-                requestKey(method: request.method, target: request.target),
-                default: 0
-            ] += 1
+        guard
+            let resource = lock.withLock({ () -> LoopbackPlaybackResource? in
+                guard let resource = routes[request.target] else { return nil }
+                connectionTargets[id] = request.target
+                requestCounts[
+                    requestKey(method: request.method, target: request.target),
+                    default: 0
+                ] += 1
+                return resource
+            })
+        else {
+            sendStatus(404, reason: "Not Found", on: connection)
+            return
         }
 
         let task = Task { [weak self, weak connection] in
@@ -370,8 +587,19 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 self.sendStatus(502, reason: "Bad Gateway", on: connection)
             }
         }
-        lock.withLock {
+        let accepted = lock.withLock { () -> Bool in
+            guard connections[id] != nil,
+                connectionTargets[id] == request.target,
+                routes[request.target] == resource
+            else {
+                return false
+            }
             connectionTasks[id] = task
+            return true
+        }
+        if !accepted {
+            task.cancel()
+            connection.cancel()
         }
     }
 
@@ -384,6 +612,19 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         with resource: LoopbackPlaybackResource,
         on connection: NWConnection
     ) async throws {
+        if case .generated(let generated) = resource {
+            let body = try await generated.resolve()
+            try Task.checkCancellation()
+            try await respond(
+                to: request,
+                with: .inMemory(
+                    data: body,
+                    contentType: generated.contentType
+                ),
+                on: connection
+            )
+            return
+        }
         if request.method == "HEAD" {
             sendResponse(
                 status: 200,
@@ -469,6 +710,8 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 body: result.body,
                 on: connection
             )
+        case .generated:
+            preconditionFailure("Generated resource was not resolved")
         }
     }
 
@@ -611,6 +854,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private func removeConnection(_ id: ObjectIdentifier) {
         let task = lock.withLock { () -> Task<Void, Never>? in
             connections.removeValue(forKey: id)
+            connectionTargets.removeValue(forKey: id)
             return connectionTasks.removeValue(forKey: id)
         }
         task?.cancel()
@@ -628,6 +872,14 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             CharacterSet(charactersIn: "-._/")
         )
         return route.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private func cancelGeneratedResources(
+        in resources: [LoopbackPlaybackResource]
+    ) {
+        for case .generated(let resource) in resources {
+            resource.cancel()
+        }
     }
 
     private var expectedHostHeader: String? {

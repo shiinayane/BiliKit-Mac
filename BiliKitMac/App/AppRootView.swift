@@ -53,7 +53,8 @@ struct AppRootView: View {
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
-                playerContent: playerContent
+                playerContent: playerContent,
+                subtitlePresentationMode: .legacyOverlay
             )
         )
     }
@@ -68,6 +69,7 @@ struct AppRootView: View {
             authenticationModel: authenticationModel,
             historyModel: historyModel,
             playerContent: playerContent,
+            subtitlePresentationMode: windowOwner.subtitlePresentationMode,
             isAuthenticationPresented: $isAuthenticationPresented,
             submittedSearchQuery: submittedSearchQuery,
             onSubmitSearch: performSearch,
@@ -82,7 +84,12 @@ struct AppRootView: View {
         }
         .onChange(of: authenticationModel.isSignedIn) { _, isSignedIn in
             if isSignedIn {
-                subtitleModel.retry()
+                switch windowOwner.subtitlePresentationMode {
+                case .legacyOverlay:
+                    subtitleModel.retry()
+                case .nativePlayer:
+                    navigationCoordinator.retryPlayback()
+                }
                 return
             }
             navigationCoordinator.closePlaybackForAuthenticationChange()

@@ -51,7 +51,7 @@ struct SubtitleViewModelTests {
 
         #expect(
             model.displayOptions.map(\.label) == [
-                "中文", "中文（AI）", "English",
+                "中文", "中文（AI）", "English（AI）",
             ]
         )
         #expect(model.selectedTrackID == nil)

@@ -11,6 +11,7 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case invalidSegmentDuration
     case invalidCalculatedBitRate
     case bandwidthOverflow
+    case invalidSubtitleDuration
     case unsafeAttributeValue
     case unsafeURI
 }
@@ -107,6 +108,48 @@ public struct HLSVideoVariant: Sendable, Equatable {
     }
 }
 
+public struct HLSSubtitleRendition: Sendable, Equatable {
+    public let name: String
+    public let playlistURI: URL
+
+    public init(name: String, playlistURI: URL) {
+        self.name = name
+        self.playlistURI = playlistURI
+    }
+}
+
+/// 为一个完整 WebVTT 正文构造单分段 VOD playlist。
+public struct HLSSubtitlePlaylistBuilder: Sendable {
+    public init() {}
+
+    public func build(
+        segmentURI: URL,
+        duration: Double
+    ) throws -> String {
+        guard duration.isFinite, duration > 0 else {
+            throw HLSPlaylistBuilderError.invalidSubtitleDuration
+        }
+        let uri = try safePlaylistURI(segmentURI)
+        let targetDuration = max(1, Int(ceil(duration)))
+        let formattedDuration = String(
+            format: "%.6f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            duration
+        )
+        return [
+            "#EXTM3U",
+            "#EXT-X-VERSION:7",
+            "#EXT-X-TARGETDURATION:\(targetDuration)",
+            "#EXT-X-MEDIA-SEQUENCE:0",
+            "#EXT-X-PLAYLIST-TYPE:VOD",
+            "#EXTINF:\(formattedDuration),",
+            uri,
+            "#EXT-X-ENDLIST",
+            "",
+        ].joined(separator: "\n")
+    }
+}
+
 /// 把一个或多个视频 variant 与单一音频 representation 组合成 AVPlayer 的 ABR master playlist。
 ///
 /// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
@@ -117,7 +160,8 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         videoVariants: [HLSVideoVariant],
         audio: MediaRepresentation,
         audioIndex: SegmentIndex,
-        audioPlaylistURI: URL
+        audioPlaylistURI: URL,
+        subtitleRenditions: [HLSSubtitleRendition] = []
     ) throws -> String {
         guard !videoVariants.isEmpty else {
             throw HLSPlaylistBuilderError.noVideoVariants
@@ -139,6 +183,15 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             "#EXT-X-VERSION:7",
             "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"Audio \(audio.id)\",DEFAULT=YES,AUTOSELECT=YES,URI=\"\(audioURI)\"",
         ]
+
+        let subtitleGroupID = "subtitles"
+        for rendition in subtitleRenditions {
+            let name = try safeAttribute(rendition.name)
+            let uri = try safeURI(rendition.playlistURI)
+            lines.append(
+                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"\(subtitleGroupID)\",NAME=\"\(name)\",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI=\"\(uri)\""
+            )
+        }
 
         for variant in videoVariants {
             let video = variant.representation
@@ -175,9 +228,12 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 locale: Locale(identifier: "en_US_POSIX"),
                 attributes.frameRate
             )
-            lines.append(
+            var streamAttributes =
                 "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height),FRAME-RATE=\(frameRate),CODECS=\"\(videoCodecs),\(audioCodecs)\",AUDIO=\"\(audioGroupID)\""
-            )
+            if !subtitleRenditions.isEmpty {
+                streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
+            }
+            lines.append(streamAttributes)
             lines.append(videoURI)
         }
 
@@ -256,9 +312,10 @@ public struct HLSMasterPlaylistBuilder: Sendable {
 
     private func safeAttribute(_ value: String) throws -> String {
         guard !value.isEmpty,
-            !value.contains("\r"),
-            !value.contains("\n"),
-            !value.contains("\"")
+            value.utf8.count <= 128,
+            !value.contains("\""),
+            !value.contains("\\"),
+            !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
         else {
             throw HLSPlaylistBuilderError.unsafeAttributeValue
         }
@@ -266,14 +323,18 @@ public struct HLSMasterPlaylistBuilder: Sendable {
     }
 
     private func safeURI(_ url: URL) throws -> String {
-        let value = url.absoluteString
-        guard !value.isEmpty,
-            !value.contains("\r"),
-            !value.contains("\n"),
-            !value.contains("\"")
-        else {
-            throw HLSPlaylistBuilderError.unsafeURI
-        }
-        return value
+        try safePlaylistURI(url)
     }
+}
+
+private func safePlaylistURI(_ url: URL) throws -> String {
+    let value = url.absoluteString
+    guard !value.isEmpty,
+        !value.contains("\""),
+        !value.contains("\\"),
+        !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+    else {
+        throw HLSPlaylistBuilderError.unsafeURI
+    }
+    return value
 }
