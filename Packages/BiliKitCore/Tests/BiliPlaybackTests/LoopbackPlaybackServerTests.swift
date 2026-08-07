@@ -1855,7 +1855,9 @@ struct LoopbackPlaybackServerTests {
 
     @Test
     @MainActor
-    func engineFreezesNativeCatalogDefaultsOffAndResetsAcrossABA() async throws {
+    func engineFreezesNativeCatalogDefaultsOffAndSerializesResetAcrossABA()
+        async throws
+    {
         let videoData = try fixtureBase64Data(
             named: "video-avc-256x144-4s-global-sidx.mp4"
         )
@@ -1936,13 +1938,44 @@ struct LoopbackPlaybackServerTests {
         }
         engine.pause()
 
-        try await engine.load(request, identity: itemB)
-        try await engine.load(request, identity: firstA)
-        engine.stop()
-        try await waitUntilAsync {
-            await subtitleRepository.resetCalls.count == 3
+        let blockedBLoad = Task {
+            try await engine.load(request, identity: itemB)
         }
-        #expect(await subtitleRepository.resetCalls == [firstA, itemB, firstA])
+        try await waitUntilAsync {
+            await subtitleRepository.resetCalls.count == 1
+        }
+        let replacementALoad = Task {
+            try await engine.load(request, identity: firstA)
+        }
+        #expect(await subtitleRepository.trackRequests == [firstA])
+
+        await subtitleRepository.releaseCurrentReset()
+        do {
+            try await blockedBLoad.value
+            Issue.record("Superseded B load unexpectedly completed")
+        } catch is CancellationError {
+            // The newer A generation must reject B after the old reset returns.
+        }
+        try await replacementALoad.value
+        #expect(await subtitleRepository.trackRequests == [firstA, firstA])
+
+        let stoppedBLoad = Task {
+            try await engine.load(request, identity: itemB)
+        }
+        try await waitUntilAsync {
+            await subtitleRepository.resetCalls.count == 2
+        }
+        engine.stop()
+        await subtitleRepository.releaseCurrentReset()
+        do {
+            try await stoppedBLoad.value
+            Issue.record("Stopped B load unexpectedly completed")
+        } catch is CancellationError {
+            // stop invalidates the queued load before subtitle preparation.
+        }
+        #expect(await subtitleRepository.trackRequests == [firstA, firstA])
+        #expect(await subtitleRepository.resetCalls == [firstA, firstA])
+        #expect(engine.player.currentItem == nil)
     }
 
     @Test
@@ -3713,12 +3746,15 @@ private actor PlaybackFailureRecorder {
 
 private actor NativeSubtitleFixtureRepository: SubtitleRepository {
     private(set) var cueRequestCount = 0
+    private(set) var trackRequests: [PlaybackItemIdentity] = []
     private(set) var resetCalls: [PlaybackItemIdentity] = []
+    private var resetContinuation: CheckedContinuation<Void, Never>?
 
     func tracks(
         for identity: PlaybackItemIdentity
     ) -> [SubtitleTrack] {
-        [
+        trackRequests.append(identity)
+        return [
             SubtitleTrack(
                 id: "standard-zh",
                 languageCode: "zh",
@@ -3754,8 +3790,16 @@ private actor NativeSubtitleFixtureRepository: SubtitleRepository {
         ]
     }
 
-    func reset(for identity: PlaybackItemIdentity) {
+    func reset(for identity: PlaybackItemIdentity) async {
         resetCalls.append(identity)
+        await withCheckedContinuation { continuation in
+            resetContinuation = continuation
+        }
+    }
+
+    func releaseCurrentReset() {
+        resetContinuation?.resume()
+        resetContinuation = nil
     }
 }
 

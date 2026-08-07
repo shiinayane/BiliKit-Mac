@@ -11,12 +11,10 @@ struct AppShellView: View {
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
-    let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
-    let subtitlePresentationMode: SubtitlePresentationMode
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
@@ -66,10 +64,8 @@ struct AppShellView: View {
                     ) { _ in
                         PlaybackDestinationView(
                             model: videoModel,
-                            subtitleModel: subtitleModel,
                             danmakuModel: danmakuModel,
                             playerContent: playerContent,
-                            subtitlePresentationMode: subtitlePresentationMode,
                             onRetry: navigationCoordinator.retryPlayback
                         )
                     }
@@ -166,18 +162,14 @@ struct AppShellView: View {
 
 private struct PlaybackDestinationView: View {
     let model: GuestVideoViewModel
-    let subtitleModel: SubtitleViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
-    let subtitlePresentationMode: SubtitlePresentationMode
     let onRetry: () -> Void
 
     var body: some View {
         VideoPlaybackView(
             model: model,
-            subtitleModel: subtitleModel,
             danmakuModel: danmakuModel,
-            subtitlePresentationMode: subtitlePresentationMode,
             onRetry: onRetry
         ) {
             playerContent

@@ -55,7 +55,7 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 
 M4.0 已形成匿名与已登录边界、字幕正文来源、二进制弹幕响应、负向 fixture、依赖选择和清理规则的可重复基线，因此允许进入 M4.1。该结论只关闭实现前 Gate，不证明远端接口长期稳定，也不替代 M4.2/M4.3 必须使用这些 fixture 固定的生产 decoder 负向测试。
 
-M4.2 已将字幕负向 fixture 接入生产 decoder。字幕目录最初使用 `/x/player/v2`；2026-07-26 根据真实错配观察与多个独立客户端的既有修复迁移到精确授权的 `/x/player/wbi/v2`。字幕 URL 不离开 `BiliAPI`；正文只能由无 Cookie、无缓存、拒绝重定向的专用 ephemeral transport 请求；当前只允许 `https://aisubtitle.hdslb.com:443/bfs/...`。轨道、cue 与播放 identity 只存在于内存，切换视频、分 P、轨道、关闭详情或登出均通过取消和 generation 清理旧状态。
+M4.2 已将字幕负向 fixture 接入生产 decoder。字幕目录最初使用 `/x/player/v2`；2026-07-26 根据真实错配观察与多个独立客户端的既有修复迁移到精确授权的 `/x/player/wbi/v2`。字幕 URL 不离开 `BiliAPI`；正文只能由无 Cookie、无缓存、拒绝重定向的专用 ephemeral transport 请求；当前只允许 `https://aisubtitle.hdslb.com:443/bfs/...`。轨道、cue 与播放 identity 只存在于内存；`AVPlayerEngine` 是原生字幕 item、loopback route 与 server 的唯一 owner，切换视频、分 P、关闭详情或登出都会通过 stop/generation 清除旧状态。
 
 现场目录可能包含 `subtitle_url` 为空字符串的不可用占位轨。生产 decoder 只忽略这种明确无正文来源的条目；非空但无法解析、来源不可信或字段异常的条目仍使整个目录失败关闭。探针必须实际出现生产 decoder 的 ready 标志，不能把“全部轨道均为空占位”造成的 skip 当作 Gate 通过。
 

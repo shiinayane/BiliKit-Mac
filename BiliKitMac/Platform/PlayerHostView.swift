@@ -2,37 +2,21 @@ import AVKit
 import BiliDanmaku
 import SwiftUI
 
-/// 把唯一 `AVPlayer` 宿主与字幕、弹幕 overlay 组合为稳定的播放 surface。
+/// 把唯一 `AVPlayer` 宿主与弹幕 overlay 组合为稳定的播放 surface。
 ///
 /// 响应式页面可以重排这个 View，但不应创建第二个 player host；AppKit host 的销毁会
 /// 主动断开 player 并释放弹幕 surface ownership。
-struct PlayerHostView<Overlay: View>: View {
+struct PlayerHostView: View {
     let player: AVPlayer
     let danmakuRenderer: CoreAnimationDanmakuRenderer
     let danmakuController: DanmakuPresentationController
-    let overlay: () -> Overlay
-
-    init(
-        player: AVPlayer,
-        danmakuRenderer: CoreAnimationDanmakuRenderer,
-        danmakuController: DanmakuPresentationController,
-        @ViewBuilder overlay: @escaping () -> Overlay
-    ) {
-        self.player = player
-        self.danmakuRenderer = danmakuRenderer
-        self.danmakuController = danmakuController
-        self.overlay = overlay
-    }
 
     var body: some View {
-        ZStack {
-            AVPlayerContainerView(
-                player: player,
-                renderer: danmakuRenderer,
-                controller: danmakuController
-            )
-            overlay()
-        }
+        AVPlayerContainerView(
+            player: player,
+            renderer: danmakuRenderer,
+            controller: danmakuController
+        )
     }
 }
 

@@ -49,10 +49,6 @@
                 useCase: GuestVideoUseCase(repository: repository),
                 playback: playback
             )
-            let subtitleModel = SubtitleViewModel(
-                useCase: SubtitleUseCase(repository: UITestSubtitleRepository()),
-                timeline: UITestTimeline()
-            )
             let danmakuModel = DanmakuControlsViewModel(
                 presentation: UITestDanmakuPresentation()
             )
@@ -76,7 +72,6 @@
                 },
                 stopPlayback: {
                     videoModel.reset()
-                    subtitleModel.reset()
                     danmakuModel.reset()
                 }
             )
@@ -85,7 +80,6 @@
                 navigationCoordinator: navigationCoordinator,
                 browseModel: browseModel,
                 videoModel: videoModel,
-                subtitleModel: subtitleModel,
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
@@ -144,9 +138,7 @@
                     player: playback.player,
                     danmakuRenderer: renderer,
                     danmakuController: controller
-                ) {
-                    EmptyView()
-                }
+                )
             )
         }
     }
@@ -307,35 +299,6 @@
                 publishedAt: publishedAt
             )
         }
-    }
-
-    @MainActor
-    private final class UITestTimeline: PlaybackTimelineProviding {
-        let currentTimelineSnapshot = PlaybackTimelineSnapshot.idle
-
-        func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
-            AsyncStream { continuation in
-                continuation.yield(.idle)
-                continuation.finish()
-            }
-        }
-    }
-
-    private struct UITestSubtitleRepository: SubtitleRepository {
-        func tracks(
-            for identity: PlaybackItemIdentity
-        ) async throws -> [SubtitleTrack] {
-            []
-        }
-
-        func cues(
-            for trackID: String,
-            identity: PlaybackItemIdentity
-        ) async throws -> [SubtitleCue] {
-            []
-        }
-
-        func reset(for identity: PlaybackItemIdentity) async {}
     }
 
     @MainActor

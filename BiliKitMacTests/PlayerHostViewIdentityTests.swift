@@ -174,11 +174,12 @@ private struct PlayerHostHarness: View {
 
     var body: some View {
         if state.isPresented {
-            PlayerHostView(
-                player: player,
-                danmakuRenderer: renderer,
-                danmakuController: controller
-            ) {
+            ZStack {
+                PlayerHostView(
+                    player: player,
+                    danmakuRenderer: renderer,
+                    danmakuController: controller
+                )
                 PlayerHostReconciliationProbe(
                     marker: state.updateMarker,
                     recorder: reconciliation

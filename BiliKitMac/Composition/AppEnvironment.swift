@@ -16,39 +16,33 @@ import SwiftUI
 /// App 的 Composition Root：创建具体 adapter，并把它们收窄为 Feature 所需的 port。
 ///
 /// 这里刻意同时看见 API、认证、播放和弹幕实现。一个环境只创建一个 `AVPlayerEngine`，
-/// 字幕、弹幕、视频模型与 AppKit player host 必须共享它的播放 identity 和时间线。
+/// 原生字幕、弹幕、视频模型与 AppKit player host 必须共享它的播放 identity 和时间线。
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     let playbackPreferencesController: PlaybackPreferencesController
     private let guestContentRepository: any GuestContentRepository
     private let historyRepository: any WatchHistoryRepository
-    private let subtitleRepository: any SubtitleRepository
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
     private let danmakuRenderer: CoreAnimationDanmakuRenderer
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
-    let subtitlePresentationMode: SubtitlePresentationMode
 
     init(
         guestContentRepository: any GuestContentRepository,
         historyRepository: any WatchHistoryRepository,
-        subtitleRepository: any SubtitleRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
         authenticationService: any AuthenticationServicing,
-        authenticationQRCodeProvider: any AuthenticationQRCodeProviding,
-        subtitlePresentationMode: SubtitlePresentationMode = .legacyOverlay
+        authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
         precondition(
-            playerEngine.nativeSubtitlesEnabled
-                == (subtitlePresentationMode == .nativePlayer),
-            "Subtitle presentation mode must match the AVPlayerEngine owner"
+            playerEngine.nativeSubtitlesEnabled,
+            "AVPlayerEngine must own native subtitle presentation"
         )
         self.guestContentRepository = guestContentRepository
         self.historyRepository = historyRepository
-        self.subtitleRepository = subtitleRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
         let renderer = CoreAnimationDanmakuRenderer()
@@ -65,7 +59,6 @@ struct AppEnvironment {
         )
         self.authenticationService = authenticationService
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
-        self.subtitlePresentationMode = subtitlePresentationMode
     }
 
     var nativeSubtitlesEnabled: Bool {
@@ -85,29 +78,17 @@ struct AppEnvironment {
         )
     }
 
-    func makeSubtitleViewModel() -> SubtitleViewModel {
-        SubtitleViewModel(
-            useCase: SubtitleUseCase(repository: subtitleRepository),
-            timeline: playerEngine
-        )
-    }
-
     func makeDanmakuViewModel() -> DanmakuControlsViewModel {
         DanmakuControlsViewModel(presentation: danmakuSession)
     }
 
-    func makePlayerView(subtitleModel: SubtitleViewModel) -> AnyView {
-        let subtitlePresentationMode = subtitlePresentationMode
-        return AnyView(
+    func makePlayerView() -> AnyView {
+        AnyView(
             PlayerHostView(
                 player: playerEngine.player,
                 danmakuRenderer: danmakuRenderer,
                 danmakuController: danmakuController
-            ) {
-                if subtitlePresentationMode == .legacyOverlay {
-                    SubtitleOverlayView(model: subtitleModel)
-                }
-            }
+            )
         )
     }
 
@@ -128,9 +109,7 @@ struct AppEnvironment {
     ///
     /// 只有显式声明为已认证的 API 请求才经过 authorizer；登出还会替换 API 的
     /// ephemeral transport，使旧认证会话中的在途请求失效。
-    static func live(
-        subtitlePresentationMode: SubtitlePresentationMode = .nativePlayer
-    ) -> AppEnvironment {
+    static func live() -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {
             let configuration = URLSessionConfiguration.ephemeral
@@ -157,26 +136,20 @@ struct AppEnvironment {
             player: player
         )
         let subtitleRepository = BiliSubtitleRepository(client: api)
-        let nativeSubtitleUseCase =
-            subtitlePresentationMode == .nativePlayer
-            ? SubtitleUseCase(repository: subtitleRepository)
-            : nil
         let playerEngine = AVPlayerEngine(
             player: player,
-            subtitleUseCase: nativeSubtitleUseCase
+            subtitleUseCase: SubtitleUseCase(repository: subtitleRepository)
         )
         return AppEnvironment(
             guestContentRepository: BiliGuestRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(client: api),
-            subtitleRepository: subtitleRepository,
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,
             playbackPreferencesController: playbackPreferencesController,
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService
-            ),
-            subtitlePresentationMode: subtitlePresentationMode
+            )
         )
     }
 

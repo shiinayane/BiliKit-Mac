@@ -1,9 +1,12 @@
 import AVKit
 import AppKit
 import BiliApplication
+import BiliAuthFeature
 import BiliBrowseFeature
 import BiliDanmaku
+import BiliLibraryFeature
 import BiliModels
+import CoreGraphics
 import SwiftUI
 import Testing
 
@@ -21,12 +24,6 @@ struct VideoDetailLifecycleTests {
             ),
             playback: player
         )
-        let subtitleModel = SubtitleViewModel(
-            useCase: SubtitleUseCase(
-                repository: EmptySubtitleRepository()
-            ),
-            timeline: IdleTimeline()
-        )
         let presentation = RecordingPresentation()
         let danmakuModel = DanmakuControlsViewModel(
             presentation: presentation
@@ -35,7 +32,6 @@ struct VideoDetailLifecycleTests {
             rootView: AnyView(
                 VideoPlaybackView(
                     model: videoModel,
-                    subtitleModel: subtitleModel,
                     danmakuModel: danmakuModel,
                     onRetry: {}
                 ) {
@@ -64,7 +60,6 @@ struct VideoDetailLifecycleTests {
                 player.loadCallCount == 1
                     && videoModel.presentedContext?.detail.bvid == fixture.bvid
                     && presentation.startedIdentities.count == 1
-                    && subtitleModel.state != .idle
             }
         )
 
@@ -75,7 +70,6 @@ struct VideoDetailLifecycleTests {
                 if case .failed = videoModel.state {
                     return videoModel.presentedContext?.detail.bvid
                         == fixture.bvid
-                        && subtitleModel.state == .idle
                         && presentation.stopCount == baselineStopCount + 1
                 }
                 return false
@@ -87,7 +81,6 @@ struct VideoDetailLifecycleTests {
             await waitUntil {
                 player.loadCallCount == 2
                     && presentation.startedIdentities.count == 2
-                    && subtitleModel.state != .idle
             }
         )
 
@@ -95,220 +88,10 @@ struct VideoDetailLifecycleTests {
         await videoModel.waitForCurrentTask()
         #expect(
             await waitUntil {
-                subtitleModel.state == .idle
-                    && presentation.stopCount == baselineStopCount + 2
+                presentation.stopCount == baselineStopCount + 2
             }
         )
 
-        window.contentView = NSView()
-    }
-
-    @Test
-    @MainActor
-    func partPlaybackFailureRetryAndResetReplaceDependentIdentities() async {
-        let fixture = VideoDetailLifecycleFixture()
-        let secondPage = VideoPage(
-            cid: 900_002,
-            index: 2,
-            title: "P2",
-            durationSeconds: 180
-        )
-        let repository = PartLifecycleRepository(
-            fixture: fixture,
-            secondPage: secondPage
-        )
-        let player = FailingPartPlayback(failingCID: secondPage.cid)
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
-            playback: player
-        )
-        let subtitleModel = SubtitleViewModel(
-            useCase: SubtitleUseCase(repository: EmptySubtitleRepository()),
-            timeline: IdleTimeline()
-        )
-        let presentation = RecordingPresentation()
-        let danmakuModel = DanmakuControlsViewModel(
-            presentation: presentation
-        )
-        let hostingView = NSHostingView(
-            rootView: AnyView(
-                VideoPlaybackView(
-                    model: videoModel,
-                    subtitleModel: subtitleModel,
-                    danmakuModel: danmakuModel,
-                    onRetry: {}
-                ) {
-                    EmptyView()
-                }
-            )
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
-
-        videoModel.loadVideo(fixture.bvid)
-        await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                videoModel.presentedPlaybackIdentity == fixture.identity
-                    && subtitleModel.state
-                        == .unavailable(fixture.identity)
-                    && presentation.startedIdentities.last
-                        == fixture.identity
-            }
-        )
-        let stopCountBeforeFailure = presentation.stopCount
-
-        videoModel.selectPage(cid: secondPage.cid)
-        await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                guard
-                    case .failedPage(
-                        _,
-                        secondPage,
-                        .playback
-                    ) = videoModel.state
-                else {
-                    return false
-                }
-                return secondPage.cid == 900_002
-                    && videoModel.requestedPlaybackIdentity
-                        == PlaybackItemIdentity(
-                            bvid: fixture.bvid,
-                            cid: secondPage.cid
-                        )
-                    && videoModel.presentedPlaybackIdentity == nil
-                    && subtitleModel.state == .idle
-                    && presentation.stopCount > stopCountBeforeFailure
-            }
-        )
-
-        videoModel.retry()
-        await videoModel.waitForCurrentTask()
-        let secondIdentity = PlaybackItemIdentity(
-            bvid: fixture.bvid,
-            cid: secondPage.cid
-        )
-        #expect(
-            await waitUntil {
-                guard case .ready(let context) = videoModel.state else {
-                    return false
-                }
-                return context.selectedPage.cid == secondPage.cid
-                    && videoModel.presentedPlaybackIdentity == secondIdentity
-                    && subtitleModel.state == .unavailable(secondIdentity)
-                    && presentation.startedIdentities.last == secondIdentity
-            }
-        )
-        #expect(
-            player.loadedIdentities == [
-                fixture.identity,
-                secondIdentity,
-                secondIdentity,
-            ]
-        )
-
-        let stopCountBeforeReset = presentation.stopCount
-        videoModel.reset()
-        #expect(
-            await waitUntil {
-                videoModel.state == .idle
-                    && videoModel.requestedPlaybackIdentity == nil
-                    && videoModel.presentedPlaybackIdentity == nil
-                    && subtitleModel.state == .idle
-                    && presentation.stopCount > stopCountBeforeReset
-            }
-        )
-
-        window.contentView = NSView()
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func postReadyFailureStopsSubtitleAndDanmakuBeforeRetry() async {
-        let fixture = VideoDetailLifecycleFixture()
-        let player = PostReadyLifecyclePlayback()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
-                repository: VideoDetailLifecycleRepository(fixture: fixture)
-            ),
-            playback: player
-        )
-        let subtitleModel = SubtitleViewModel(
-            useCase: SubtitleUseCase(repository: EmptySubtitleRepository()),
-            timeline: IdleTimeline()
-        )
-        let presentation = RecordingPresentation()
-        let danmakuModel = DanmakuControlsViewModel(
-            presentation: presentation
-        )
-        let hostingView = NSHostingView(
-            rootView: AnyView(
-                VideoPlaybackView(
-                    model: videoModel,
-                    subtitleModel: subtitleModel,
-                    danmakuModel: danmakuModel,
-                    onRetry: {}
-                ) {
-                    EmptyView()
-                }
-            )
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
-
-        videoModel.loadVideo(fixture.bvid)
-        await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                videoModel.presentedPlaybackIdentity == fixture.identity
-                    && subtitleModel.state
-                        == .unavailable(fixture.identity)
-                    && presentation.startedIdentities.last
-                        == fixture.identity
-            }
-        )
-        let stopCountBeforeFailure = presentation.stopCount
-
-        player.fail(fixture.identity)
-        await player.waitForStopCallCount(1)
-        #expect(
-            await waitUntil {
-                guard case .failedPage(_, _, .playback) = videoModel.state else {
-                    return false
-                }
-                return videoModel.presentedPlaybackIdentity == nil
-                    && subtitleModel.state == .idle
-                    && presentation.stopCount > stopCountBeforeFailure
-            }
-        )
-
-        videoModel.retry()
-        await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                videoModel.presentedPlaybackIdentity == fixture.identity
-                    && subtitleModel.state
-                        == .unavailable(fixture.identity)
-                    && presentation.startedIdentities.last
-                        == fixture.identity
-            }
-        )
-        #expect(player.loadedIdentities == [fixture.identity, fixture.identity])
-
-        videoModel.reset()
         window.contentView = NSView()
     }
 
@@ -334,12 +117,6 @@ struct VideoDetailLifecycleTests {
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
         )
-        let subtitleModel = SubtitleViewModel(
-            useCase: SubtitleUseCase(
-                repository: EmptySubtitleRepository()
-            ),
-            timeline: IdleTimeline()
-        )
         let presentation = RecordingPresentation()
         let danmakuModel = DanmakuControlsViewModel(
             presentation: presentation
@@ -364,7 +141,6 @@ struct VideoDetailLifecycleTests {
             },
             stopPlayback: {
                 videoModel.reset()
-                subtitleModel.reset()
                 danmakuModel.reset()
             }
         )
@@ -373,15 +149,15 @@ struct VideoDetailLifecycleTests {
             rootView: AnyView(
                 VideoPlaybackView(
                     model: videoModel,
-                    subtitleModel: subtitleModel,
                     danmakuModel: danmakuModel,
                     onRetry: {}
                 ) {
-                    PlayerHostView(
-                        player: hostedPlayer,
-                        danmakuRenderer: renderer,
-                        danmakuController: controller
-                    ) {
+                    ZStack {
+                        PlayerHostView(
+                            player: hostedPlayer,
+                            danmakuRenderer: renderer,
+                            danmakuController: controller
+                        )
                         PlayerSurfaceProbe(
                             recorder: playerSurface,
                             phase: PlayerSurfacePhase(videoModel.state)
@@ -430,7 +206,6 @@ struct VideoDetailLifecycleTests {
                 return await repository.replacementRequestHasStarted()
                     && videoModel.presentedContext?.detail.bvid == first.bvid
                     && playerSurface.lastUpdatedPhase == .loading
-                    && subtitleModel.state == .idle
                     && presentation.stopCount
                         == stopCountBeforeReplacement + 1
             }
@@ -515,7 +290,6 @@ struct VideoDetailLifecycleTests {
             await waitUntil {
                 playerSurface.dismantledIdentities == [surfaceIdentity]
                     && videoModel.presentedContext == nil
-                    && subtitleModel.state == .idle
                     && self.playerViews(in: hostingView).isEmpty
                     && playerView.player == nil
             }
@@ -529,6 +303,119 @@ struct VideoDetailLifecycleTests {
             ]
         )
         #expect(presentation.stopCount > stopCountBeforeBack)
+
+        window.contentView = NSView()
+    }
+
+    @Test
+    @MainActor
+    func authenticationChangeClosesPlaybackWithoutImplicitRestore() async {
+        let fixture = VideoDetailLifecycleFixture()
+        let repository = VideoDetailLifecycleRepository(fixture: fixture)
+        let playback = RecordingLifecyclePlayback()
+        let browseModel = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: playback
+        )
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: RecordingPresentation()
+        )
+        let authenticationService = LifecycleAuthenticationService(
+            restoreState: .signedOut
+        )
+        let authenticationModel = AuthenticationViewModel(
+            service: authenticationService,
+            qrCodeProvider: LifecycleQRCodeProvider()
+        )
+        let historyModel = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: EmptyLifecycleHistoryRepository()
+            )
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { bvid in
+                videoModel.loadVideo(bvid)
+            },
+            stopPlayback: {
+                videoModel.reset()
+                danmakuModel.reset()
+            }
+        )
+        let hostingView = NSHostingView(
+            rootView: AppRootView(
+                navigationCoordinator: coordinator,
+                browseModel: browseModel,
+                videoModel: videoModel,
+                danmakuModel: danmakuModel,
+                authenticationModel: authenticationModel,
+                historyModel: historyModel,
+                playerContent: AnyView(EmptyView())
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.layoutIfNeeded()
+        await Task.yield()
+        await authenticationModel.waitForCurrentTask()
+        #expect(!authenticationModel.isSignedIn)
+
+        coordinator.openPlayback(fixture.bvid)
+        await videoModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                playback.loadedIdentities == [fixture.identity]
+                    && videoModel.presentedContext?.detail.bvid == fixture.bvid
+            }
+        )
+
+        let loadCountBeforeSignIn = playback.loadedIdentities.count
+        let stopCountBeforeSignIn = playback.stopCallCount
+        await authenticationService.setRestoreState(.signedIn)
+        authenticationModel.revalidate()
+        await authenticationModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                authenticationModel.isSignedIn
+                    && videoModel.state == .idle
+                    && coordinator.currentPlaybackBVID == nil
+            }
+        )
+        #expect(playback.loadedIdentities.count == loadCountBeforeSignIn)
+        #expect(playback.stopCallCount == stopCountBeforeSignIn + 1)
+
+        coordinator.openPlayback(fixture.bvid)
+        await videoModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                playback.loadedIdentities == [
+                    fixture.identity,
+                    fixture.identity,
+                ]
+                    && coordinator.currentPlaybackBVID == fixture.bvid
+            }
+        )
+        let loadCountBeforeLogout = playback.loadedIdentities.count
+        let stopCountBeforeLogout = playback.stopCallCount
+
+        authenticationModel.logout()
+        await authenticationModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                !authenticationModel.isSignedIn
+                    && videoModel.state == .idle
+                    && coordinator.currentPlaybackBVID == nil
+            }
+        )
+        #expect(playback.loadedIdentities.count == loadCountBeforeLogout)
+        #expect(playback.stopCallCount == stopCountBeforeLogout + 1)
 
         window.contentView = NSView()
     }
@@ -730,48 +617,6 @@ private actor ReplacementLifecycleRepository: GuestContentRepository {
     }
 }
 
-private actor PartLifecycleRepository: GuestContentRepository {
-    let fixture: VideoDetailLifecycleFixture
-    let secondPage: VideoPage
-
-    init(
-        fixture: VideoDetailLifecycleFixture,
-        secondPage: VideoPage
-    ) {
-        self.fixture = fixture
-        self.secondPage = secondPage
-    }
-
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
-    }
-
-    func videoDetail(for bvid: String) async throws -> VideoDetail {
-        fixture.detail
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        [fixture.page, secondPage]
-    }
-
-    func playback(
-        for bvid: String,
-        cid: Int64
-    ) async throws -> VideoPlayback {
-        fixture.playback
-    }
-}
-
 @MainActor
 private final class ControlledFailingPlayback: PlaybackControlling {
     private(set) var loadCallCount = 0
@@ -836,15 +681,18 @@ private final class ControlledReplacementPlayback: PlaybackControlling {
     }
 }
 
-@MainActor
-private final class FailingPartPlayback: PlaybackControlling {
-    private let failingCID: Int64
-    private var hasFailedTarget = false
-    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+private struct ControlledPlaybackFailure: Error {}
 
-    init(failingCID: Int64) {
-        self.failingCID = failingCID
+private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
+    AsyncStream { continuation in
+        continuation.finish()
     }
+}
+
+@MainActor
+private final class RecordingLifecyclePlayback: PlaybackControlling {
+    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var stopCallCount = 0
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
         finishedPlaybackFailureEvents()
@@ -856,94 +704,12 @@ private final class FailingPartPlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async throws {
         loadedIdentities.append(identity)
-        if identity.cid == failingCID, !hasFailedTarget {
-            hasFailedTarget = true
-            throw ControlledPlaybackFailure()
-        }
-    }
-
-    func pause() {}
-
-    func stop() {}
-}
-
-@MainActor
-private final class PostReadyLifecyclePlayback: PlaybackControlling {
-    private struct StopWaiter {
-        let expectedCount: Int
-        let continuation: CheckedContinuation<Void, Never>
-    }
-
-    private let failures: AsyncStream<PlaybackFailureEvent>
-    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
-    private var stopWaiters: [StopWaiter] = []
-    private var loadedIntents: [PlaybackItemIdentity: PlaybackLoadIntent] = [:]
-    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
-    private(set) var stopCallCount = 0
-
-    init() {
-        let stream = AsyncStream<PlaybackFailureEvent>.makeStream()
-        failures = stream.stream
-        failureContinuation = stream.continuation
-    }
-
-    deinit {
-        failureContinuation.finish()
-    }
-
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        failures
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        loadedIdentities.append(identity)
-        loadedIntents[identity] = intent
     }
 
     func pause() {}
 
     func stop() {
         stopCallCount += 1
-        let ready = stopWaiters.filter {
-            stopCallCount >= $0.expectedCount
-        }
-        stopWaiters.removeAll {
-            stopCallCount >= $0.expectedCount
-        }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
-
-    func fail(_ identity: PlaybackItemIdentity) {
-        guard let intent = loadedIntents[identity] else { return }
-        failureContinuation.yield(
-            PlaybackFailureEvent(identity: identity, intent: intent)
-        )
-    }
-
-    func waitForStopCallCount(_ expectedCount: Int) async {
-        guard stopCallCount < expectedCount else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append(
-                StopWaiter(
-                    expectedCount: expectedCount,
-                    continuation: continuation
-                )
-            )
-        }
-    }
-}
-
-private struct ControlledPlaybackFailure: Error {}
-
-private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-    AsyncStream { continuation in
-        continuation.finish()
     }
 }
 
@@ -1023,34 +789,6 @@ private enum PlayerSurfacePhase: Equatable {
     }
 }
 
-private actor EmptySubtitleRepository: SubtitleRepository {
-    func tracks(
-        for identity: PlaybackItemIdentity
-    ) async throws -> [SubtitleTrack] {
-        []
-    }
-
-    func cues(
-        for trackID: String,
-        identity: PlaybackItemIdentity
-    ) async throws -> [SubtitleCue] {
-        []
-    }
-
-    func reset(for identity: PlaybackItemIdentity) async {}
-}
-
-@MainActor
-private final class IdleTimeline: PlaybackTimelineProviding {
-    let currentTimelineSnapshot = PlaybackTimelineSnapshot.idle
-
-    func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
-        AsyncStream { continuation in
-            continuation.yield(.idle)
-        }
-    }
-}
-
 @MainActor
 private final class RecordingPresentation: DanmakuPresentationControlling {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
@@ -1070,5 +808,37 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
 
     func stop() {
         stopCount += 1
+    }
+}
+
+private actor LifecycleAuthenticationService: AuthenticationServicing {
+    private var restoreState: AuthenticationState
+
+    init(restoreState: AuthenticationState) {
+        self.restoreState = restoreState
+    }
+
+    func setRestoreState(_ state: AuthenticationState) {
+        restoreState = state
+    }
+
+    func restore() async -> AuthenticationState { restoreState }
+    func requestQRCode() async -> AuthenticationState { .signedOut }
+    func pollOnce() async -> AuthenticationState { .signedOut }
+    func finalizeLogin() async -> AuthenticationState { .signedOut }
+    func cancelLogin() async -> AuthenticationState { .signedOut }
+    func logout() async -> AuthenticationState { .signedOut }
+}
+
+private struct LifecycleQRCodeProvider: AuthenticationQRCodeProviding {
+    func makeQRCodeImage(scale: Int) async throws -> CGImage? { nil }
+}
+
+private struct EmptyLifecycleHistoryRepository: WatchHistoryRepository {
+    func watchHistory(
+        after continuation: WatchHistoryContinuation?,
+        pageSize: Int
+    ) async throws -> WatchHistoryPage {
+        WatchHistoryPage(items: [], continuation: nil)
     }
 }
