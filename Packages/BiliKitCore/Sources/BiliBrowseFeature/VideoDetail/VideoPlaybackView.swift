@@ -64,17 +64,19 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var showsPlaybackActivity: Bool {
-        if case .preparingPlayback = model.state {
-            return true
+        switch model.state {
+        case .loadingPage, .preparingPlayback:
+            true
+        case .idle, .loading, .ready, .failed, .failedPage:
+            false
         }
-        return false
     }
 
     private var blocksRetainedContext: Bool {
         switch model.state {
-        case .loading, .loadingPage, .failed, .failedPage:
+        case .loading, .failed, .failedPage:
             true
-        case .idle, .preparingPlayback, .ready:
+        case .idle, .loadingPage, .preparingPlayback, .ready:
             false
         }
     }
@@ -89,9 +91,11 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
             )
             .accessibilityIdentifier("detail.empty")
-        case .loading, .loadingPage:
-            ProgressView("正在加载视频详情…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .loading:
+            VideoDetailSkeleton(loadingLabel: "正在加载视频详情")
+                .accessibilityIdentifier("playback.loading")
+        case .loadingPage:
+            VideoDetailSkeleton(loadingLabel: "正在加载所选分 P")
                 .accessibilityIdentifier("playback.loading")
         case .failed(_, let failure), .failedPage(_, _, let failure):
             BrowseFailureView(
@@ -108,15 +112,11 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     @ViewBuilder
     private var retainedContextOverlay: some View {
         switch model.state {
-        case .loading, .loadingPage:
-            ZStack {
-                Rectangle()
-                    .fill(.background)
-                ProgressView("正在加载所选视频…")
-                    .controlSize(.large)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("playback.replacement.loading")
+        case .loading:
+            VideoDetailSkeleton(loadingLabel: "正在加载所选视频")
+                .accessibilityIdentifier("playback.replacement.loading")
+        case .loadingPage:
+            EmptyView()
         case .failed(_, let failure), .failedPage(_, _, let failure):
             BrowseFailureView(
                 title: failure.title,

@@ -27,8 +27,7 @@ public struct PopularFeedView: View {
         let presentation = model.presentation(for: request)
         switch presentation.state {
         case .idle, .loading:
-            ProgressView("正在加载热门视频…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VideoCardGridSkeleton(loadingLabel: "正在加载热门视频")
                 .accessibilityIdentifier("feed.loading")
         case .loaded(.popular(let page)) where page.videos.isEmpty:
             ContentUnavailableView(
@@ -52,8 +51,7 @@ public struct PopularFeedView: View {
             )
             .accessibilityIdentifier("feed.failure")
         default:
-            ProgressView("正在切换到热门视频…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VideoCardGridSkeleton(loadingLabel: "正在切换到热门视频")
                 .accessibilityIdentifier("feed.transitioning")
         }
     }
