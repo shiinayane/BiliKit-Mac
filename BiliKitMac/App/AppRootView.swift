@@ -77,9 +77,16 @@ struct AppRootView: View {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
         }
-        .onChange(of: authenticationModel.isSignedIn) { _, isSignedIn in
+        .onChange(of: authenticationModel.sessionPhase) {
+            previousPhase,
+            phase in
+            guard previousPhase != .unresolved, phase != .unresolved,
+                previousPhase != phase
+            else {
+                return
+            }
             navigationCoordinator.closePlaybackForAuthenticationChange()
-            if !isSignedIn {
+            if phase == .signedOut {
                 historyModel.reset()
             }
         }

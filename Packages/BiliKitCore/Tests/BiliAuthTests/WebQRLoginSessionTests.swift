@@ -211,7 +211,7 @@ struct WebQRLoginSessionTests {
         _ = try await session.pollOnce()
         let stored = try await session.validateAndStorePendingCredential()
 
-        #expect(stored)
+        #expect(stored == .signedIn(nil))
         #expect(store.saveCount == 1)
         #expect(try store.load()?.cookies.count == 5)
     }
@@ -246,7 +246,7 @@ struct WebQRLoginSessionTests {
         _ = try await session.pollOnce()
         let stored = try await session.validateAndStorePendingCredential()
 
-        #expect(!stored)
+        #expect(stored == .signedOut)
         #expect(store.saveCount == 0)
         #expect(try store.load() == nil)
     }

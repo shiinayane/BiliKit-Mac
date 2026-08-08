@@ -319,7 +319,7 @@
         let restoresSignedIn: Bool
 
         func restore() async -> AuthenticationState {
-            restoresSignedIn ? .signedIn : .signedOut
+            restoresSignedIn ? .signedIn(nil) : .signedOut
         }
         func requestQRCode() async -> AuthenticationState { .signedOut }
         func pollOnce() async -> AuthenticationState { .signedOut }

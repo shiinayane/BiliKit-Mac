@@ -1,9 +1,10 @@
+import BiliAuthFeature
 import SwiftUI
 
 /// 使用系统 Sidebar List 表达窗口内当前可用的平级来源。
 struct AppNavigationSidebar: View {
     @Binding var selection: AppTab
-    let isSignedIn: Bool
+    let accountState: AccountPresentationState
     let onPresentAuthentication: () -> Void
 
     var body: some View {
@@ -51,7 +52,7 @@ struct AppNavigationSidebar: View {
             HStack(spacing: 12) {
                 accountAvatar
 
-                Text(isSignedIn ? "账号" : "登录")
+                Text(accountTitle)
 
                 Spacer(minLength: 0)
             }
@@ -61,8 +62,32 @@ struct AppNavigationSidebar: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .accessibilityHint(isSignedIn ? "打开账号管理" : "打开扫码登录")
+        .accessibilityHint(accountAccessibilityHint)
         .accessibilityIdentifier("sidebar.account")
+    }
+
+    private var accountTitle: String {
+        switch accountState {
+        case .resolving, .unavailable:
+            "账号"
+        case .signedOut:
+            "登录"
+        case .signedIn:
+            "账号"
+        }
+    }
+
+    private var accountAccessibilityHint: String {
+        switch accountState {
+        case .resolving:
+            "正在检查本机登录状态"
+        case .unavailable:
+            "打开账号以重试恢复"
+        case .signedOut:
+            "打开扫码登录"
+        case .signedIn:
+            "打开账号管理"
+        }
     }
 
     private var accountAvatar: some View {

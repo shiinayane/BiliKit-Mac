@@ -397,9 +397,9 @@ struct VideoDetailLifecycleTests {
         window.contentView = NSView()
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
-    func authenticationChangeClosesPlaybackWithoutImplicitRestore() async {
+    func onlyResolvedAuthenticationBoundaryClosesPlayback() async throws {
         let fixture = VideoDetailLifecycleFixture()
         let repository = VideoDetailLifecycleRepository(fixture: fixture)
         let playback = RecordingLifecyclePlayback()
@@ -414,7 +414,8 @@ struct VideoDetailLifecycleTests {
             presentation: RecordingPresentation()
         )
         let authenticationService = LifecycleAuthenticationService(
-            restoreState: .signedOut
+            restoreState: .signedIn(nil),
+            blocksFirstRestore: true
         )
         let authenticationModel = AuthenticationViewModel(
             service: authenticationService,
@@ -453,9 +454,8 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
-        await Task.yield()
-        await authenticationModel.waitForCurrentTask()
-        #expect(!authenticationModel.isSignedIn)
+        try await authenticationService.waitForFirstRestoreStart()
+        #expect(authenticationModel.sessionState == .unresolved)
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
@@ -466,20 +466,39 @@ struct VideoDetailLifecycleTests {
             }
         )
 
-        let loadCountBeforeSignIn = playback.loadedIdentities.count
-        let stopCountBeforeSignIn = playback.stopCallCount
-        await authenticationService.setRestoreState(.signedIn)
+        let loadCountBeforeRestore = playback.loadedIdentities.count
+        let stopCountBeforeRestore = playback.stopCallCount
+        await authenticationService.releaseFirstRestore()
+        await authenticationModel.waitForCurrentTask()
+        #expect(authenticationModel.sessionState == .signedIn(nil))
+        #expect(coordinator.currentPlaybackBVID == fixture.bvid)
+        #expect(playback.loadedIdentities.count == loadCountBeforeRestore)
+        #expect(playback.stopCallCount == stopCountBeforeRestore)
+
+        let identity = AccountIdentity(
+            id: 42,
+            displayName: "测试账号",
+            avatarURL: nil
+        )
+        await authenticationService.setRestoreState(.signedIn(identity))
+        let stopCountBeforeIdentity = playback.stopCallCount
         authenticationModel.revalidate()
+        await authenticationModel.waitForCurrentTask()
+        #expect(authenticationModel.sessionState == .signedIn(identity))
+        #expect(coordinator.currentPlaybackBVID == fixture.bvid)
+        #expect(playback.stopCallCount == stopCountBeforeIdentity)
+
+        let stopCountBeforeLogout = playback.stopCallCount
+        authenticationModel.logout()
         await authenticationModel.waitForCurrentTask()
         #expect(
             await waitUntil {
-                authenticationModel.isSignedIn
+                authenticationModel.sessionState == .signedOut
                     && videoModel.state == .idle
                     && coordinator.currentPlaybackBVID == nil
             }
         )
-        #expect(playback.loadedIdentities.count == loadCountBeforeSignIn)
-        #expect(playback.stopCallCount == stopCountBeforeSignIn + 1)
+        #expect(playback.stopCallCount == stopCountBeforeLogout + 1)
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
@@ -492,20 +511,21 @@ struct VideoDetailLifecycleTests {
                     && coordinator.currentPlaybackBVID == fixture.bvid
             }
         )
-        let loadCountBeforeLogout = playback.loadedIdentities.count
-        let stopCountBeforeLogout = playback.stopCallCount
+        let loadCountBeforeSignIn = playback.loadedIdentities.count
+        let stopCountBeforeSignIn = playback.stopCallCount
 
-        authenticationModel.logout()
+        await authenticationService.setRestoreState(.signedIn(identity))
+        authenticationModel.revalidate()
         await authenticationModel.waitForCurrentTask()
         #expect(
             await waitUntil {
-                !authenticationModel.isSignedIn
+                authenticationModel.sessionState == .signedIn(identity)
                     && videoModel.state == .idle
                     && coordinator.currentPlaybackBVID == nil
             }
         )
-        #expect(playback.loadedIdentities.count == loadCountBeforeLogout)
-        #expect(playback.stopCallCount == stopCountBeforeLogout + 1)
+        #expect(playback.loadedIdentities.count == loadCountBeforeSignIn)
+        #expect(playback.stopCallCount == stopCountBeforeSignIn + 1)
 
         window.contentView = NSView()
     }
@@ -1001,16 +1021,60 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
 
 private actor LifecycleAuthenticationService: AuthenticationServicing {
     private var restoreState: AuthenticationState
+    private let blocksFirstRestore: Bool
+    private var restoreCount = 0
+    private var firstRestoreStarted = false
+    private var firstRestoreReleased = false
+    private var restoreStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(restoreState: AuthenticationState) {
+    init(
+        restoreState: AuthenticationState,
+        blocksFirstRestore: Bool = false
+    ) {
         self.restoreState = restoreState
+        self.blocksFirstRestore = blocksFirstRestore
     }
 
     func setRestoreState(_ state: AuthenticationState) {
         restoreState = state
     }
 
-    func restore() async -> AuthenticationState { restoreState }
+    func restore() async -> AuthenticationState {
+        restoreCount += 1
+        if blocksFirstRestore, restoreCount == 1 {
+            firstRestoreStarted = true
+            resume(&restoreStartWaiters)
+            await withCheckedContinuation { continuation in
+                if firstRestoreReleased {
+                    continuation.resume()
+                } else {
+                    restoreReleaseWaiters.append(continuation)
+                }
+            }
+        }
+        return restoreState
+    }
+
+    func waitForFirstRestoreStart() async throws {
+        if firstRestoreStarted { return }
+        await withCheckedContinuation { continuation in
+            restoreStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseFirstRestore() {
+        firstRestoreReleased = true
+        resume(&restoreReleaseWaiters)
+    }
+
+    private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
+    }
     func requestQRCode() async -> AuthenticationState { .signedOut }
     func pollOnce() async -> AuthenticationState { .signedOut }
     func finalizeLogin() async -> AuthenticationState { .signedOut }

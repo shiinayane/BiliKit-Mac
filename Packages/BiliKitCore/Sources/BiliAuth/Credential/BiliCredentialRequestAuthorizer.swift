@@ -108,7 +108,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     }
 
     /// 验证已存凭据当前是否仍登录；明确失效会清除，验证不可用则保留并抛错。
-    public func restoreLoginState() async throws -> Bool {
+    func restoreAccountSession() async throws -> NavigationAuthenticationResult {
         let request = HTTPRequest(
             url: Self.navigationValidationURL,
             headers: [
@@ -124,7 +124,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             BiliRequestAuthorizationError.expiredCredential,
             BiliRequestAuthorizationError.invalidCredential
         {
-            return false
+            return .signedOut
         }
 
         let response: HTTPResponse
@@ -138,7 +138,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         guard response.body.count <= Self.maximumResponseSize,
             Self.looksLikeJSON(response),
             let envelope = try? JSONDecoder().decode(
-                NavigationEnvelope.self,
+                NavigationAuthenticationEnvelope.self,
                 from: response.body
             ),
             envelope.code == 0,
@@ -146,11 +146,12 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         else {
             throw BiliRequestAuthorizationError.validationUnavailable
         }
-        guard data.isLogin else {
+        let result = data.authenticationResult
+        guard case .signedIn = result else {
             try purgeStoredCredential()
-            return false
+            return .signedOut
         }
-        return true
+        return result
     }
 
     private static func isAllowed(_ request: HTTPRequest) -> Bool {
@@ -284,14 +285,5 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             configuration: configuration,
             redirectPolicy: .reject
         )
-    }
-
-    private struct NavigationEnvelope: Decodable {
-        let code: Int
-        let data: NavigationData?
-    }
-
-    private struct NavigationData: Decodable {
-        let isLogin: Bool
     }
 }
