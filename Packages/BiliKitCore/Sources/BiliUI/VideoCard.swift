@@ -41,16 +41,20 @@ package struct VideoCard: View {
     }
 
     package var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VideoCardLayout(showsLeading: showsAvatar) {
             cover
-            details
+        } leading: {
+            avatar
+        } title: {
+            titleContent
+        } footer: {
+            footer
         }
         .accessibilityElement(children: .combine)
     }
 
     private var cover: some View {
         Color.secondary.opacity(0.12)
-            .aspectRatio(16 / 9, contentMode: .fit)
             .overlay {
                 AsyncImage(url: coverURL) { phase in
                     switch phase {
@@ -93,48 +97,42 @@ package struct VideoCard: View {
                     .accessibilityHidden(true)
                 )
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private var details: some View {
-        HStack(alignment: .top, spacing: 10) {
-            if showsAvatar {
-                AsyncImage(url: avatarURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .foregroundStyle(.quaternary)
-                    }
-                }
-                .frame(width: 34, height: 34)
-                .clipShape(Circle())
-                .accessibilityHidden(true)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.title3.weight(.medium))
-                    .lineLimit(2, reservesSpace: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 8) {
-                    Text(footerLeadingText)
-                        .lineLimit(1)
-                    if let footerTrailingText {
-                        Spacer(minLength: 8)
-                        Text(footerTrailingText)
-                            .lineLimit(1)
-                            .monospacedDigit()
-                    }
-                }
-                .font(.body)
-                .foregroundStyle(.secondary)
+    private var avatar: some View {
+        AsyncImage(url: avatarURL) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+            default:
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .foregroundStyle(.quaternary)
             }
         }
+        .accessibilityHidden(true)
+    }
+
+    private var titleContent: some View {
+        Text(title)
+            .font(.title3.weight(.medium))
+            .lineLimit(2, reservesSpace: true)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Text(footerLeadingText)
+                .lineLimit(1)
+            if let footerTrailingText {
+                Spacer(minLength: 8)
+                Text(footerTrailingText)
+                    .lineLimit(1)
+                    .monospacedDigit()
+            }
+        }
+        .font(.body)
+        .foregroundStyle(.secondary)
     }
 }

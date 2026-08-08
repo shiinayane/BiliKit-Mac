@@ -34,30 +34,27 @@ package struct VideoCardGridSkeleton: View {
 
 private struct VideoCardSkeleton: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            RoundedRectangle(cornerRadius: 10)
+        VideoCardLayout(showsLeading: true) {
+            Rectangle()
                 .fill(.quaternary)
-                .aspectRatio(16 / 9, contentMode: .fit)
-
-            HStack(alignment: .top, spacing: 10) {
-                Circle()
+        } leading: {
+            Circle()
+                .fill(.quaternary)
+        } title: {
+            VStack(alignment: .leading, spacing: 8) {
+                RoundedRectangle(cornerRadius: 4)
                     .fill(.quaternary)
-                    .frame(width: 34, height: 34)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.quaternary)
-                        .frame(height: 18)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.quaternary)
-                        .frame(maxWidth: 180)
-                        .frame(height: 18)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.quinary)
-                        .frame(maxWidth: 130)
-                        .frame(height: 14)
-                }
+                    .frame(height: 18)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(.quaternary)
+                    .frame(maxWidth: 180)
+                    .frame(height: 18)
             }
+        } footer: {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(.quinary)
+                .frame(maxWidth: 130)
+                .frame(height: 14)
         }
     }
 }
