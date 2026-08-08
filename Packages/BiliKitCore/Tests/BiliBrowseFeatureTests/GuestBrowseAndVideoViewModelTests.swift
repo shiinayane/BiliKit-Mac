@@ -701,6 +701,213 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(player.loadedPlaybacks.count == 1)
         #expect(await relatedRepository.callCount == 2)
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func uploaderSignatureLoadsWithoutBlockingReadyDetail() async throws {
+        let fixture = GuestFixtures()
+        let signatureRepository = SequencedUploaderSignatureRepository()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: RecordingPlayerEngine(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
+            )
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        try await signatureRepository.waitForRequestCount(1)
+
+        #expect(model.presentedContext?.detail == fixture.detail)
+        #expect(model.uploaderSignatureState == .loading)
+
+        await signatureRepository.releaseRequest(0, signature: "公开签名")
+        await model.waitForCurrentUploaderSignatureTask()
+
+        #expect(model.uploaderSignatureState == .loaded("公开签名"))
+    }
+
+    @Test
+    @MainActor
+    func uploaderSignatureFailureHidesOnlyEnhancement() async {
+        let fixture = GuestFixtures()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: RecordingPlayerEngine(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: FailingUploaderSignatureRepository()
+            )
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        await model.waitForCurrentUploaderSignatureTask()
+
+        #expect(
+            model.state
+                == .ready(
+                    GuestVideoContext(
+                        detail: fixture.detail,
+                        pages: [fixture.page],
+                        selectedPage: fixture.page,
+                        playback: fixture.playback
+                    )
+                )
+        )
+        #expect(model.uploaderSignatureState == .loaded(nil))
+    }
+
+    @Test
+    @MainActor
+    func pageSwitchDoesNotReloadUploaderSignature() async {
+        let fixture = GuestFixtures()
+        let signatureRepository = CountingUploaderSignatureRepositoryStub()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: PartSwitchRepositoryStub(fixtures: fixture)
+            ),
+            playback: RecordingPlayerEngine(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
+            )
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        await model.waitForCurrentUploaderSignatureTask()
+        model.selectPage(cid: 900_002)
+        await model.waitForCurrentTask()
+
+        #expect(model.uploaderSignatureState == .loaded("公开签名"))
+        #expect(await signatureRepository.callCount == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func uploaderSignatureABARejectsOldSameOwnerResult() async throws {
+        let first = GuestFixtures(bvid: "BV1SignatureA", title: "视频 A")
+        let second = GuestFixtures(bvid: "BV1SignatureB", title: "视频 B")
+        let signatureRepository = SequencedUploaderSignatureRepository()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: VideoOutcomeRepositoryStub(
+                    fixtures: [first, second]
+                )
+            ),
+            playback: RecordingPlayerEngine(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
+            )
+        )
+
+        model.loadVideo(first.bvid)
+        await model.waitForCurrentTask()
+        try await signatureRepository.waitForRequestCount(1)
+        let oldA = try #require(
+            model.uploaderSignatureTaskSnapshotForTesting()
+        )
+
+        model.loadVideo(second.bvid)
+        await model.waitForCurrentTask()
+        try await signatureRepository.waitForRequestCount(2)
+        model.loadVideo(first.bvid)
+        await model.waitForCurrentTask()
+        try await signatureRepository.waitForRequestCount(3)
+
+        await signatureRepository.releaseRequest(2, signature: "新 A 签名")
+        await model.waitForCurrentUploaderSignatureTask()
+        await signatureRepository.releaseRequest(0, signature: "旧 A 签名")
+        await oldA.value
+        await signatureRepository.releaseRequest(1, signature: "旧 B 签名")
+
+        #expect(model.presentedContext?.detail.bvid == first.bvid)
+        #expect(model.uploaderSignatureState == .loaded("新 A 签名"))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func resetCancelsAndIsolatesLateUploaderSignature() async throws {
+        let fixture = GuestFixtures()
+        let signatureRepository = SequencedUploaderSignatureRepository()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: RecordingPlayerEngine(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
+            )
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        try await signatureRepository.waitForRequestCount(1)
+        let cancelledTask = try #require(
+            model.uploaderSignatureTaskSnapshotForTesting()
+        )
+        model.reset()
+        await signatureRepository.releaseRequest(0, signature: "迟到签名")
+        await cancelledTask.value
+
+        #expect(model.state == .idle)
+        #expect(model.presentedContext == nil)
+        #expect(model.uploaderSignatureState == .loaded(nil))
+    }
+}
+
+private struct FailingUploaderSignatureRepository:
+    UploaderSignatureRepository
+{
+    func signature(for ownerID: Int64) async throws -> String? {
+        throw GuestApplicationError.transportFailure
+    }
+}
+
+private actor CountingUploaderSignatureRepositoryStub:
+    UploaderSignatureRepository
+{
+    private(set) var callCount = 0
+
+    func signature(for ownerID: Int64) async throws -> String? {
+        callCount += 1
+        return "公开签名"
+    }
+}
+
+private actor SequencedUploaderSignatureRepository:
+    UploaderSignatureRepository
+{
+    private var continuations: [CheckedContinuation<String?, Never>?] = []
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func signature(for ownerID: Int64) async throws -> String? {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+            let waiters = requestWaiters
+            requestWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitForRequestCount(_ count: Int) async throws {
+        while continuations.count < count {
+            await withCheckedContinuation { continuation in
+                requestWaiters.append(continuation)
+            }
+        }
+    }
+
+    func releaseRequest(_ index: Int, signature: String?) {
+        continuations[index]?.resume(returning: signature)
+        continuations[index] = nil
+    }
 }
 
 private actor RelatedVideoABARepositoryStub: RelatedVideoRepository {

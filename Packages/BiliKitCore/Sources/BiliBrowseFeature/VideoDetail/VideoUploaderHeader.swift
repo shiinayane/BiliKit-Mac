@@ -8,6 +8,7 @@ import SwiftUI
 /// 资料来源时只需更新 owner 数据，Sidebar 的布局与播放生命周期保持不变。
 struct VideoUploaderHeader: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isSignatureExpanded = false
     @ScaledMetric(relativeTo: .callout)
     private var signatureSkeletonHeight =
         VideoUploaderHeaderMetrics.signatureSkeletonHeight
@@ -43,6 +44,8 @@ struct VideoUploaderHeader: View {
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("UP 主，\(content.name)")
 
                 signature
                     .animation(
@@ -51,13 +54,14 @@ struct VideoUploaderHeader: View {
                         ),
                         value: content.signature
                     )
+                    .onChange(of: content.signature) {
+                        isSignatureExpanded = false
+                    }
             }
-            .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(content.accessibilityLabel)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.playback-uploader")
     }
 
@@ -72,17 +76,64 @@ struct VideoUploaderHeader: View {
                     height: signatureSkeletonHeight
                 )
                 .transition(.opacity)
-                .accessibilityHidden(true)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("签名正在加载")
         case .text(let signature):
-            Text(signature)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .transition(.opacity)
+            ViewThatFits(in: .horizontal) {
+                signatureText(signature, lineLimit: 1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier(
+                        "sidebar.playback-uploader.signature"
+                    )
+
+                Button {
+                    withAnimation(
+                        LoadingStateTransition.animation(
+                            reduceMotion: reduceMotion
+                        )
+                    ) {
+                        isSignatureExpanded.toggle()
+                    }
+                } label: {
+                    signatureText(
+                        signature,
+                        lineLimit: isSignatureExpanded ? nil : 1
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("UP 主签名")
+                .accessibilityValue(
+                    isSignatureExpanded ? "已展开，\(signature)" : "已收起，\(signature)"
+                )
+                .accessibilityHint(
+                    isSignatureExpanded ? "点击收起" : "点击展开完整签名"
+                )
+                .accessibilityIdentifier(
+                    "sidebar.playback-uploader.signature"
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .transition(.opacity)
         case .hidden:
             EmptyView()
         }
+    }
+
+    private func signatureText(
+        _ signature: String,
+        lineLimit: Int?
+    ) -> some View {
+        Text(signature)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(lineLimit)
+            .truncationMode(.tail)
+            .multilineTextAlignment(.leading)
     }
 
     private var avatar: some View {
@@ -136,7 +187,7 @@ enum VideoUploaderHeaderMetrics {
     static let signatureSkeletonHeight: CGFloat = 14
 }
 
-enum VideoUploaderSignatureState: Equatable, Sendable {
+public enum VideoUploaderSignatureState: Equatable, Sendable {
     case loading
     case loaded(String?)
 }

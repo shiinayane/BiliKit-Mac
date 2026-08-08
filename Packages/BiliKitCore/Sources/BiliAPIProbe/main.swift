@@ -11,6 +11,8 @@ struct BiliAPIProbe {
                 try await runSearch(keyword: keyword, page: page)
             case .related:
                 try await runRelated()
+            case .uploaderSignature:
+                try await runUploaderSignature()
             case .m4Contract(let bvid, let cid):
                 try await M4ContractProbe().run(bvid: bvid, cid: cid)
             }
@@ -39,6 +41,35 @@ struct BiliAPIProbe {
         print("related: count=\(videos.count) production-decoder=ready")
     }
 
+    private static func runUploaderSignature() async throws {
+        let client = BiliAPIClient(
+            transport: UploaderSignatureProbeTransport()
+        )
+        guard let sample = try await client.popular(pageSize: 1).videos.first
+        else {
+            throw ProbeError.emptyResponse
+        }
+        let signature = try await client.uploaderSignature(
+            for: sample.owner.id
+        )
+        let count = signature?.count ?? 0
+        let lengthRange: String
+        switch count {
+        case 0:
+            lengthRange = "empty"
+        case 1...80:
+            lengthRange = "1-80"
+        case 81...256:
+            lengthRange = "81-256"
+        default:
+            lengthRange = "over-256"
+        }
+        print(
+            "uploader-signature: business=success mid-match=true "
+                + "sign-present=\(count > 0) length-range=\(lengthRange)"
+        )
+    }
+
     private static func runSearch(keyword: String, page: Int) async throws {
         let page = try await BiliAPIClient(
             transport: SearchProbeTransport()
@@ -50,6 +81,26 @@ struct BiliAPIProbe {
 
     private static func writeError(_ message: String) {
         FileHandle.standardError.write(Data(message.utf8))
+    }
+}
+
+private actor UploaderSignatureProbeTransport: HTTPTransport {
+    private let transport: URLSessionTransport
+
+    init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        transport = URLSessionTransport(
+            configuration: configuration,
+            redirectPolicy: .reject
+        )
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        try await transport.send(request)
     }
 }
 
@@ -204,6 +255,7 @@ private struct Configuration {
     enum Mode {
         case search(keyword: String, page: Int)
         case related
+        case uploaderSignature
         case m4Contract(bvid: String, cid: Int64)
     }
 
@@ -220,6 +272,8 @@ private struct Configuration {
         switch values["mode"] {
         case "related":
             mode = .related
+        case "uploader-signature":
+            mode = .uploaderSignature
         case "m4-contract":
             guard
                 let bvid = values["bvid"],

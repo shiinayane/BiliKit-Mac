@@ -1,0 +1,16 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "card": {
+      "mid": "10001",
+      "name": "虚构作者",
+      "face": "https://image.example.invalid/avatar.jpg",
+      "sign": "用影像记录生活",
+      "fans": 123,
+      "likes": 456,
+      "vip": { "type": 2 },
+      "sex": "保密"
+    }
+  }
+}

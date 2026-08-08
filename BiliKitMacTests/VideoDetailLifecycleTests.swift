@@ -112,13 +112,19 @@ struct VideoDetailLifecycleTests {
             first: first,
             replacement: replacement
         )
-        let relatedRepository = RelatedLifecycleRepository()
+        let relatedRepository = RelatedLifecycleRepository(
+            replacementBVID: replacement.bvid
+        )
+        let signatureRepository = LifecycleUploaderSignatureRepository()
         let player = ControlledReplacementPlayback()
         let videoModel = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player,
             relatedVideoUseCase: RelatedVideoUseCase(
                 repository: relatedRepository
+            ),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
             )
         )
         let presentation = RecordingPresentation()
@@ -148,13 +154,17 @@ struct VideoDetailLifecycleTests {
                 danmakuModel.reset()
             }
         )
+        let selectRelatedVideo: (String) -> Void = { bvid in
+            coordinator.openPlayback(bvid)
+        }
         let playerSurface = PlayerSurfaceRecorder()
         let hostingView = NSHostingView(
             rootView: AnyView(
                 VideoPlaybackView(
                     model: videoModel,
                     danmakuModel: danmakuModel,
-                    onRetry: {}
+                    onRetry: {},
+                    onSelectRelatedVideo: selectRelatedVideo
                 ) {
                     ZStack {
                         PlayerHostView(
@@ -243,6 +253,8 @@ struct VideoDetailLifecycleTests {
                 )
         )
         #expect(player.loadedIdentities == [first.identity])
+        await videoModel.waitForCurrentUploaderSignatureTask()
+        #expect(videoModel.uploaderSignatureState == .loaded("首个签名"))
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
         #expect(
@@ -257,7 +269,7 @@ struct VideoDetailLifecycleTests {
         let replacementViewportOrigin = scrollToBottom(detailScrollView)
         #expect(replacementViewportOrigin.y > 0)
 
-        coordinator.openPlayback(replacement.bvid)
+        selectRelatedVideo(relatedRepository.fixture.bvid)
         #expect(
             await waitUntilAsync {
                 guard
@@ -353,6 +365,7 @@ struct VideoDetailLifecycleTests {
 
         player.succeedPendingLoad()
         await videoModel.waitForCurrentTask()
+        await videoModel.waitForCurrentUploaderSignatureTask()
         #expect(
             await waitUntil {
                 if case .ready(let context) = videoModel.state {
@@ -363,6 +376,8 @@ struct VideoDetailLifecycleTests {
             }
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
+        #expect(videoModel.uploaderSignatureState == .loaded("替换后签名"))
+        #expect(await signatureRepository.callCount == 2)
         #expect(playerSurface.dismantledIdentities.isEmpty)
         #expect(
             playerViews(in: hostingView).first.map(ObjectIdentifier.init)
@@ -395,6 +410,45 @@ struct VideoDetailLifecycleTests {
         #expect(presentation.stopCount > stopCountBeforeBack)
 
         window.contentView = NSView()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func backCancelsPendingUploaderSignatureRequest()
+        async throws
+    {
+        let fixture = VideoDetailLifecycleFixture()
+        let signatureRepository = PendingLifecycleUploaderSignatureRepository()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: VideoDetailLifecycleRepository(fixture: fixture)
+            ),
+            playback: RecordingLifecyclePlayback(),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: signatureRepository
+            )
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { bvid in
+                videoModel.loadVideo(bvid)
+            },
+            stopPlayback: {
+                videoModel.reset()
+            }
+        )
+
+        coordinator.openPlayback(fixture.bvid)
+        await videoModel.waitForCurrentTask()
+        try await signatureRepository.waitForRequest()
+        #expect(videoModel.uploaderSignatureState == .loading)
+
+        coordinator.playbackPath = []
+        await signatureRepository.releaseLateResult()
+        try await signatureRepository.waitForCompletion()
+
+        #expect(videoModel.state == .idle)
+        #expect(videoModel.presentedContext == nil)
+        #expect(videoModel.uploaderSignatureState == .loaded(nil))
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -880,17 +934,21 @@ private actor ReplacementLifecycleRepository: GuestContentRepository {
 }
 
 private actor RelatedLifecycleRepository: RelatedVideoRepository {
-    nonisolated let fixture = RelatedVideo(
-        bvid: "BV1RelatedA1",
-        title: "相关推荐",
-        coverURL: nil,
-        ownerName: "测试作者",
-        viewCount: 100,
-        danmakuCount: 10,
-        durationSeconds: 120
-    )
+    nonisolated let fixture: RelatedVideo
     private var didStartFirstRequest = false
     private var firstRequest: CheckedContinuation<[RelatedVideo], Never>?
+
+    init(replacementBVID: String) {
+        fixture = RelatedVideo(
+            bvid: replacementBVID,
+            title: "相关推荐",
+            coverURL: nil,
+            ownerName: "测试作者",
+            viewCount: 100,
+            danmakuCount: 10,
+            durationSeconds: 120
+        )
+    }
 
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         guard !didStartFirstRequest else { return [] }
@@ -907,6 +965,63 @@ private actor RelatedLifecycleRepository: RelatedVideoRepository {
     func releaseFirstRequest() {
         firstRequest?.resume(returning: [fixture])
         firstRequest = nil
+    }
+}
+
+private actor LifecycleUploaderSignatureRepository:
+    UploaderSignatureRepository
+{
+    private(set) var callCount = 0
+
+    func signature(for ownerID: Int64) async throws -> String? {
+        callCount += 1
+        return callCount == 1 ? "首个签名" : "替换后签名"
+    }
+}
+
+private actor PendingLifecycleUploaderSignatureRepository:
+    UploaderSignatureRepository
+{
+    private var requestStarted = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var resultContinuation: CheckedContinuation<String?, Never>?
+    private var requestCompleted = false
+    private var completionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func signature(for ownerID: Int64) async throws -> String? {
+        requestStarted = true
+        for waiter in requestWaiters {
+            waiter.resume()
+        }
+        requestWaiters.removeAll()
+        let result = await withCheckedContinuation { continuation in
+            resultContinuation = continuation
+        }
+        requestCompleted = true
+        for waiter in completionWaiters {
+            waiter.resume()
+        }
+        completionWaiters.removeAll()
+        return result
+    }
+
+    func waitForRequest() async throws {
+        guard !requestStarted else { return }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append(continuation)
+        }
+    }
+
+    func releaseLateResult() {
+        resultContinuation?.resume(returning: "迟到签名")
+        resultContinuation = nil
+    }
+
+    func waitForCompletion() async throws {
+        guard !requestCompleted else { return }
+        await withCheckedContinuation { continuation in
+            completionWaiters.append(continuation)
+        }
     }
 }
 

@@ -89,6 +89,38 @@ struct OwnerPayload: Decodable, Sendable {
     }
 }
 
+struct UploaderCardDataPayload: Decodable, Sendable {
+    let card: UploaderCardPayload
+}
+
+struct UploaderCardPayload: Decodable, Sendable {
+    let mid: Int64
+    let sign: String
+
+    private enum CodingKeys: String, CodingKey {
+        case mid
+        case sign
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let numericMID = try? container.decode(Int64.self, forKey: .mid) {
+            mid = numericMID
+        } else {
+            let stringMID = try container.decode(String.self, forKey: .mid)
+            guard let numericMID = Int64(stringMID) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .mid,
+                    in: container,
+                    debugDescription: "Uploader MID is not an integer"
+                )
+            }
+            mid = numericMID
+        }
+        sign = try container.decode(String.self, forKey: .sign)
+    }
+}
+
 struct StatisticsPayload: Decodable, Sendable {
     let view: Int64
     let danmaku: Int64

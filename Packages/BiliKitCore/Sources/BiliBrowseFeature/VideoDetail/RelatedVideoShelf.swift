@@ -14,6 +14,14 @@ struct RelatedVideoShelfItem: Identifiable, Equatable, Sendable {
     var id: String { bvid }
 }
 
+struct RelatedVideoShelfSelection {
+    let onSelect: (String) -> Void
+
+    func select(_ item: RelatedVideoShelfItem) {
+        onSelect(item.bvid)
+    }
+}
+
 enum RelatedVideoShelfState: Equatable, Sendable {
     case loading
     case loaded([RelatedVideoShelfItem])
@@ -38,7 +46,7 @@ struct RelatedVideoShelf: View {
     private static let contentPadding: CGFloat = 40
 
     let state: RelatedVideoShelfState
-    let onSelect: (String) -> Void
+    let selection: RelatedVideoShelfSelection
     let onRetry: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -55,7 +63,7 @@ struct RelatedVideoShelf: View {
         onRetry: @escaping () -> Void
     ) {
         self.state = state
-        self.onSelect = onSelect
+        selection = RelatedVideoShelfSelection(onSelect: onSelect)
         self.onRetry = onRetry
     }
 
@@ -178,7 +186,7 @@ struct RelatedVideoShelf: View {
 
     private func card(_ item: RelatedVideoShelfItem) -> some View {
         Button {
-            onSelect(item.bvid)
+            selection.select(item)
         } label: {
             RelatedVideoCard(
                 item: item,
