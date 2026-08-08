@@ -18,6 +18,39 @@ sh Scripts/run-quality-gates.sh app
 - `app`：包含 `package`，并执行 App build-for-testing 和 App 测试。
 - CI 使用同一个 App 入口，不维护第二套 lint 或测试规则。
 
+## 构建产物生命周期
+
+Gate 默认使用适合日常迭代的稳定缓存。缓存位于当前 checkout 的
+`.build/bilikit-quality-gates/<checkout-key>/`；`checkout-key` 来自 canonical checkout
+路径。同一 checkout 会复用 SwiftPM scratch、Xcode DerivedData、Xcode package checkout
+以及 Clang／Swift module cache，不同 worktree 不共享这些可变状态。删除 checkout 时，这些
+默认产物也随之进入同一清理边界。
+
+验收或排查缓存污染时使用 fresh 模式：
+
+```sh
+BILIKIT_GATE_FRESH=1 sh Scripts/run-quality-gates.sh app
+```
+
+fresh 模式把 SwiftPM、Xcode、module cache 和精简日志都放入一次唯一、权限为 `0700` 的
+临时根。脚本在成功、失败、`HUP`、`INT` 和 `TERM` 退出路径上验证 marker 与精确路径后清理
+该根。需要保留失败现场时，唯一保留开关为：
+
+```sh
+BILIKIT_GATE_FRESH=1 \
+BILIKIT_GATE_RETAIN_ARTIFACTS=1 \
+BILIKIT_COMPACT_LOGS=1 \
+sh Scripts/run-quality-gates.sh app
+```
+
+脚本会明确打印保留位置。保留目录包含构建产物和完整 gate 日志，需要由调用者在诊断后清理。
+普通 compact 日志随 gate 退出清理；失败摘要仍打印最后 40 行。
+
+`BILIKIT_DERIVED_DATA_PATH` 继续作为日常模式的调用方管理兼容入口；fresh 模式拒绝该覆盖，
+以保证所有产物都位于唯一临时根。路径诊断可设置 `BILIKIT_GATE_PRINT_PATHS_ONLY=1`，它只输出
+解析后的缓存路径，不运行 gate。所有模式都显式设置 SwiftPM scratch/package cache、Xcode
+DerivedData/package cache 和 Clang／Swift module cache，避免回退到用户级 module cache。
+
 异步测试必须用可观察事件、状态、continuation 或显式闸门判断工作开始和完成；固定时长
 只能作为超时，不能用来推断状态已经稳定。
 
