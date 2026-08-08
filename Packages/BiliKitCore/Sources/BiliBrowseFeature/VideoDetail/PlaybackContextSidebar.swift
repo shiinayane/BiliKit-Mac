@@ -250,9 +250,10 @@ public struct PlaybackContextSidebar: View {
     private var emptyState: some View {
         switch model.state {
         case .loading, .loadingPage, .preparingPlayback:
-            ProgressView("正在加载视频上下文…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("sidebar.playback-loading")
+            PlaybackContextSidebarSkeleton(
+                loadingLabel: "正在加载视频上下文"
+            )
+            .accessibilityIdentifier("sidebar.playback-loading")
         case .failed(_, let failure), .failedPage(_, _, let failure):
             failureView(failure)
         case .idle:
@@ -270,12 +271,9 @@ public struct PlaybackContextSidebar: View {
     private var presentedContextOverlay: some View {
         switch model.state {
         case .loading:
-            ZStack {
-                Rectangle().fill(.background)
-                ProgressView("正在加载所选视频…")
-                    .controlSize(.large)
-            }
-            .accessibilityElement(children: .combine)
+            PlaybackContextSidebarSkeleton(
+                loadingLabel: "正在加载所选视频上下文"
+            )
             .accessibilityIdentifier("sidebar.playback-replacement-loading")
         case .failed(_, let failure):
             failureView(failure)

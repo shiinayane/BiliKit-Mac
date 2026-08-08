@@ -44,8 +44,7 @@ public struct VideoSearchView: View {
         switch presentation.state {
         case .idle, .loading:
             let query = request.searchQuery ?? ""
-            ProgressView("正在搜索“\(query)”…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            SearchResultsSkeleton(query: query)
                 .accessibilityIdentifier("search.loading")
         case .loaded(.search(let query, let page)) where page.videos.isEmpty:
             ContentUnavailableView.search(text: query)
@@ -90,6 +89,28 @@ public struct VideoSearchView: View {
             description: Text("输入关键词后按下 Return 或点击搜索。")
         )
         .accessibilityIdentifier("search.prompt")
+    }
+}
+
+private struct SearchResultsSkeleton: View {
+    let query: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("“\(query)”")
+                Spacer()
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(.quinary)
+                    .frame(width: 96, height: 12)
+                    .accessibilityHidden(true)
+            }
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            VideoCardGridSkeleton(loadingLabel: "正在搜索“\(query)”")
+        }
     }
 }
 

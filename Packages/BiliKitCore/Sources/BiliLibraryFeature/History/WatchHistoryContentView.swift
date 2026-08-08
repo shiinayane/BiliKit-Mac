@@ -12,8 +12,7 @@ struct WatchHistoryContentView: View {
     var body: some View {
         switch model.state {
         case .idle, .loading:
-            ProgressView("正在加载观看历史…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
                 .accessibilityIdentifier("history.loading")
         case .loaded(let items, let continuation, let loadMoreError):
             if items.isEmpty {
