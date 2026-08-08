@@ -91,9 +91,20 @@ struct VideoDetailSkeleton: View {
 struct PlaybackContextSidebarSkeleton: View {
     let loadingLabel: String
 
+    @ScaledMetric(relativeTo: .title3)
+    private var uploaderNameSkeletonHeight =
+        VideoUploaderHeaderMetrics.nameSkeletonHeight
+    @ScaledMetric(relativeTo: .callout)
+    private var uploaderSignatureSkeletonHeight =
+        VideoUploaderHeaderMetrics.signatureSkeletonHeight
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                uploader
+
+                Divider()
+
                 sectionTitle(width: 64)
                 textLine()
                 textLine(width: 0.9)
@@ -117,6 +128,37 @@ struct PlaybackContextSidebarSkeleton: View {
         .background(.background)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(loadingLabel)
+    }
+
+    private var uploader: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(.quaternary)
+                .frame(
+                    width: VideoUploaderHeaderMetrics.avatarSize,
+                    height: VideoUploaderHeaderMetrics.avatarSize
+                )
+
+            VStack(
+                alignment: .leading,
+                spacing: VideoUploaderHeaderMetrics.textSpacing
+            ) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(.quaternary)
+                    .frame(
+                        width: VideoUploaderHeaderMetrics.nameSkeletonWidth,
+                        height: uploaderNameSkeletonHeight
+                    )
+
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(.quinary)
+                    .frame(
+                        maxWidth:
+                            VideoUploaderHeaderMetrics.signatureSkeletonWidth
+                    )
+                    .frame(height: uploaderSignatureSkeletonHeight)
+            }
+        }
     }
 
     private func sectionTitle(width: CGFloat) -> some View {
