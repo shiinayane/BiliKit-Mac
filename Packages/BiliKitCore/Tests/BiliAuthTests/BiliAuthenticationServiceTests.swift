@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliModels
 import BiliNetworking
 import Foundation
 import Testing
@@ -15,7 +16,10 @@ struct BiliAuthenticationServiceTests {
                 "Set-Cookie": fixtureSetCookieHeader,
             ]
         )
-        let navigation = navigationResponse(isLogin: true)
+        let navigation = navigationResponse(
+            isLogin: true,
+            includesIdentity: true
+        )
         let store = MemoryWebCredentialStore()
         let session = WebQRLoginSession(
             transport: RecordingAuthTransport(
@@ -41,7 +45,9 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.pollOnce() == .finalizing)
         #expect(store.saveCount == 0)
 
-        #expect(await service.finalizeLogin() == .signedIn)
+        #expect(
+            await service.finalizeLogin() == .signedIn(fixtureAccountIdentity)
+        )
         #expect(store.saveCount == 1)
         #expect(try store.load() != nil)
     }
@@ -59,13 +65,18 @@ struct BiliAuthenticationServiceTests {
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
                 transport: RecordingAuthTransport(
-                    responses: [navigationResponse(isLogin: true)]
+                    responses: [
+                        navigationResponse(
+                            isLogin: true,
+                            includesIdentity: true
+                        )
+                    ]
                 )
             ),
             store: store
         )
 
-        #expect(await service.restore() == .signedIn)
+        #expect(await service.restore() == .signedIn(fixtureAccountIdentity))
     }
 
     @Test
@@ -110,7 +121,7 @@ struct BiliAuthenticationServiceTests {
             ]
         )
 
-        #expect(await service.restore() == .signedIn)
+        #expect(await service.restore() == .signedIn(nil))
         #expect(await service.logout() == .signedOut)
 
         #expect(try store.load() == nil)
@@ -167,7 +178,7 @@ struct BiliAuthenticationServiceTests {
             ]
         )
 
-        #expect(await service.restore() == .signedIn)
+        #expect(await service.restore() == .signedIn(nil))
         #expect(await service.logout() == .failed(.credentialUnavailable))
         #expect(await service.cancelLogin() == .failed(.credentialUnavailable))
 
@@ -206,12 +217,29 @@ struct BiliAuthenticationServiceTests {
     }
 }
 
-private func navigationResponse(isLogin: Bool) -> HTTPResponse {
-    HTTPResponse(
+private let fixtureAccountIdentity = AccountIdentity(
+    id: 42,
+    displayName: "Fixture Account",
+    avatarURL: URL(string: "https://i0.hdslb.com/fixture/avatar.png")
+)
+
+private func navigationResponse(
+    isLogin: Bool,
+    includesIdentity: Bool = false
+) -> HTTPResponse {
+    let identityFields: String
+    if includesIdentity {
+        identityFields =
+            ",\"mid\":42,\"uname\":\"  Fixture Account  \""
+            + ",\"face\":\"//i0.hdslb.com/fixture/avatar.png\""
+    } else {
+        identityFields = ""
+    }
+    return HTTPResponse(
         statusCode: 200,
         headers: ["Content-Type": "application/json"],
         body: Data(
-            #"{"code":0,"data":{"isLogin":\#(isLogin)}}"#.utf8
+            "{\"code\":0,\"data\":{\"isLogin\":\(isLogin)\(identityFields)}}".utf8
         )
     )
 }

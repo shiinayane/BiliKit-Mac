@@ -205,9 +205,9 @@ struct BiliCredentialRequestAuthorizerTests {
             transport: transport
         )
 
-        let isLoggedIn = try await authorizer.restoreLoginState()
+        let session = try await authorizer.restoreAccountSession()
 
-        #expect(isLoggedIn)
+        #expect(session == .signedIn(nil))
         let request = try #require(await transport.capturedRequest)
         #expect(request.url.absoluteString == "https://api.bilibili.com/x/web-interface/nav")
         #expect(request.headers["Cookie"]?.contains("SESSDATA=FIXTURE_") == true)
@@ -222,7 +222,7 @@ struct BiliCredentialRequestAuthorizerTests {
             store: MemoryWebCredentialStore(),
             transport: missingTransport
         )
-        #expect(try await missing.restoreLoginState() == false)
+        #expect(try await missing.restoreAccountSession() == .signedOut)
         #expect(await missingTransport.capturedRequest == nil)
 
         let invalidStore = MemoryWebCredentialStore(
@@ -234,7 +234,7 @@ struct BiliCredentialRequestAuthorizerTests {
                 response: navigationResponse(isLogin: false)
             )
         )
-        #expect(try await invalid.restoreLoginState() == false)
+        #expect(try await invalid.restoreAccountSession() == .signedOut)
         #expect(invalidStore.deleteCount == 1)
 
         let failedPurge = BiliCredentialRequestAuthorizer(
@@ -249,7 +249,7 @@ struct BiliCredentialRequestAuthorizerTests {
         await #expect(
             throws: BiliRequestAuthorizationError.credentialStoreUnavailable
         ) {
-            try await failedPurge.restoreLoginState()
+            try await failedPurge.restoreAccountSession()
         }
     }
 
@@ -262,7 +262,7 @@ struct BiliCredentialRequestAuthorizerTests {
         )
 
         await #expect(throws: BiliRequestAuthorizationError.validationUnavailable) {
-            try await authorizer.restoreLoginState()
+            try await authorizer.restoreAccountSession()
         }
         #expect(store.deleteCount == 0)
         #expect(try store.load() != nil)

@@ -13,7 +13,7 @@ struct AuthenticationViewModelTests {
         let service = AuthenticationServiceStub(
             requestStates: [.awaitingScan],
             pollStates: [.awaitingConfirmation, .finalizing],
-            finalizeState: .signedIn
+            finalizeState: .signedIn(nil)
         )
         let model = AuthenticationViewModel(
             service: service,
@@ -21,10 +21,13 @@ struct AuthenticationViewModelTests {
             pollInterval: .zero
         )
 
+        #expect(model.accountPresentationState == .resolving)
         model.startLogin()
         await model.waitForCurrentTask()
 
-        #expect(model.state == .signedIn)
+        #expect(model.state == .signedIn(nil))
+        #expect(model.sessionState == .signedIn(nil))
+        #expect(model.accountPresentationState == .signedIn(nil))
         #expect(model.qrCodeImage == nil)
         #expect(
             await service.observedCalls()
@@ -63,7 +66,7 @@ struct AuthenticationViewModelTests {
     @MainActor
     func restoreAndLogoutUseApplicationServiceWithoutExposingCredentials() async {
         let service = AuthenticationServiceStub(
-            restoreState: .signedIn,
+            restoreState: .signedIn(nil),
             logoutState: .signedOut
         )
         let model = AuthenticationViewModel(
@@ -74,14 +77,96 @@ struct AuthenticationViewModelTests {
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
-        #expect(model.state == .signedIn)
+        #expect(model.state == .signedIn(nil))
+        #expect(model.sessionState == .signedIn(nil))
 
         model.logout()
         #expect(model.state == .signingOut)
+        #expect(model.sessionState == .signedIn(nil))
         await model.waitForCurrentTask()
 
         #expect(model.state == .signedOut)
+        #expect(model.sessionState == .signedOut)
+        #expect(model.accountPresentationState == .signedOut)
         #expect(await service.observedCalls() == ["restore", "logout"])
+    }
+
+    @Test
+    @MainActor
+    func initialRestoreConfirmsSignedOutOnlyOnce() async {
+        let service = AuthenticationServiceStub(restoreState: .signedOut)
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        #expect(model.sessionState == .unresolved)
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedOut)
+        #expect(model.sessionState == .signedOut)
+        #expect(await service.observedCalls() == ["restore"])
+    }
+
+    @Test
+    @MainActor
+    func concurrentInitialRestoreCallsReuseTheInFlightIntent() async throws {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedIn(nil),
+            suspendsFirstRestore: true
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        try await service.waitForFirstRestoreStart()
+        model.restoreIfNeeded()
+
+        #expect(model.state == .restoring)
+        #expect(model.sessionState == .unresolved)
+        #expect(await service.observedCalls() == ["restore"])
+
+        await service.releaseFirstRestore()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedIn(nil))
+        #expect(model.sessionState == .signedIn(nil))
+        #expect(await service.observedCalls() == ["restore"])
+    }
+
+    @Test
+    @MainActor
+    func dismissingAuthenticationSheetDoesNotCancelWindowRestore() async throws {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedIn(nil),
+            suspendsFirstRestore: true
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        try await service.waitForFirstRestoreStart()
+        model.cancelPresentedLoginWork()
+
+        #expect(model.state == .restoring)
+        #expect(model.sessionState == .unresolved)
+        #expect(await service.observedCalls() == ["restore"])
+
+        await service.releaseFirstRestore()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedIn(nil))
+        #expect(model.sessionState == .signedIn(nil))
     }
 
     @Test
@@ -98,10 +183,13 @@ struct AuthenticationViewModelTests {
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
+        #expect(model.sessionState == .unresolved)
         model.retry()
         await model.waitForCurrentTask()
 
         #expect(model.state == .failed(.network))
+        #expect(model.sessionState == .unresolved)
+        #expect(model.accountPresentationState == .unavailable)
         #expect(model.canCancelFailure == false)
         #expect(await service.observedCalls() == ["restore", "restore"])
     }
@@ -127,6 +215,7 @@ struct AuthenticationViewModelTests {
         await model.waitForCurrentTask()
 
         #expect(model.state == .signedOut)
+        #expect(model.sessionState == .signedOut)
         #expect(!model.canClearLocalCredentials)
         #expect(await service.observedCalls() == ["restore", "logout"])
     }
@@ -161,7 +250,7 @@ struct AuthenticationViewModelTests {
     @MainActor
     func logoutFailureRetriesLogoutAndCannotBeCancelledAsLogin() async {
         let service = AuthenticationServiceStub(
-            restoreState: .signedIn,
+            restoreState: .signedIn(nil),
             logoutState: .failed(.credentialUnavailable)
         )
         let model = AuthenticationViewModel(
@@ -173,11 +262,15 @@ struct AuthenticationViewModelTests {
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
         model.logout()
+        #expect(model.sessionState == .signedIn(nil))
         await model.waitForCurrentTask()
+        #expect(model.sessionState == .signedIn(nil))
         model.retry()
         await model.waitForCurrentTask()
 
         #expect(model.state == .failed(.credentialUnavailable))
+        #expect(model.sessionState == .signedIn(nil))
+        #expect(model.accountPresentationState == .signedIn(nil))
         #expect(model.canCancelFailure == false)
         #expect(model.retryButtonTitle == "重试退出")
         #expect(
@@ -206,7 +299,33 @@ struct AuthenticationViewModelTests {
         await model.waitForCurrentTask()
 
         #expect(model.state == .signedOut)
+        #expect(model.sessionState == .unresolved)
         #expect(await service.observedCalls() == ["request", "cancel"])
+    }
+
+    @Test
+    @MainActor
+    func revalidationKeepsConfirmedSessionUntilTerminalResult() async {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedIn(nil)
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+        #expect(model.sessionState == .signedIn(nil))
+
+        model.revalidate()
+        #expect(model.state == .restoring)
+        #expect(model.sessionState == .signedIn(nil))
+        await model.waitForCurrentTask()
+
+        #expect(model.sessionState == .signedIn(nil))
+        #expect(await service.observedCalls() == ["restore", "restore"])
     }
 }
 
@@ -220,11 +339,16 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private let cancelState: AuthenticationState
     private let logoutState: AuthenticationState
     private let suspendedFirstImageCompletion: StaleQRCodeCompletion?
+    private let suspendsFirstRestore: Bool
     private var imageCount = 0
+    private var restoreCount = 0
     private var calls: [String] = []
     private var firstImageReleased = false
+    private var firstRestoreReleased = false
     private let firstImageEvents = TestEventCounter()
+    private let firstRestoreEvents = TestEventCounter()
     private var imageReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         requestStates: [AuthenticationState] = [],
@@ -233,7 +357,8 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         finalizeState: AuthenticationState = .signedOut,
         cancelState: AuthenticationState = .signedOut,
         logoutState: AuthenticationState = .signedOut,
-        suspendedFirstImageCompletion: StaleQRCodeCompletion? = nil
+        suspendedFirstImageCompletion: StaleQRCodeCompletion? = nil,
+        suspendsFirstRestore: Bool = false
     ) {
         self.requestStates = requestStates
         self.pollStates = pollStates
@@ -242,10 +367,22 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         self.cancelState = cancelState
         self.logoutState = logoutState
         self.suspendedFirstImageCompletion = suspendedFirstImageCompletion
+        self.suspendsFirstRestore = suspendsFirstRestore
     }
 
-    func restore() -> AuthenticationState {
+    func restore() async -> AuthenticationState {
         calls.append("restore")
+        restoreCount += 1
+        if suspendsFirstRestore, restoreCount == 1 {
+            await firstRestoreEvents.signal()
+            await withCheckedContinuation { continuation in
+                if firstRestoreReleased {
+                    continuation.resume()
+                } else {
+                    restoreReleaseWaiters.append(continuation)
+                }
+            }
+        }
         return restoreState
     }
 
@@ -314,6 +451,20 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     func releaseFirstImage() {
         firstImageReleased = true
         resume(&imageReleaseWaiters)
+    }
+
+    func waitForFirstRestoreStart() async throws {
+        do {
+            try await firstRestoreEvents.wait(until: 1)
+        } catch {
+            releaseFirstRestore()
+            throw error
+        }
+    }
+
+    func releaseFirstRestore() {
+        firstRestoreReleased = true
+        resume(&restoreReleaseWaiters)
     }
 
     private static func makeFixtureImage() -> CGImage? {

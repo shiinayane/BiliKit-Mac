@@ -38,7 +38,7 @@ let package = Package(
         .target(name: "BiliNetworking"),
         .target(
             name: "BiliAuth",
-            dependencies: ["BiliApplication", "BiliNetworking"]
+            dependencies: ["BiliApplication", "BiliModels", "BiliNetworking"]
         ),
         .target(
             name: "BiliAPI",
@@ -64,7 +64,7 @@ let package = Package(
         ),
         .target(
             name: "BiliAuthFeature",
-            dependencies: ["BiliApplication"]
+            dependencies: ["BiliApplication", "BiliModels"]
         ),
         .target(
             name: "BiliLibraryFeature",
@@ -113,7 +113,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BiliAuthTests",
-            dependencies: ["BiliAuth", "BiliNetworking"],
+            dependencies: ["BiliAuth", "BiliModels", "BiliNetworking"],
             resources: [
                 .copy("Fixtures")
             ]

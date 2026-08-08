@@ -43,7 +43,7 @@ struct AppShellView: View {
                 } else {
                     AppNavigationSidebar(
                         selection: $navigationCoordinator.selectedTab,
-                        isSignedIn: authenticationModel.isSignedIn,
+                        accountState: authenticationModel.accountPresentationState,
                         onPresentAuthentication: {
                             isAuthenticationPresented = true
                         }
@@ -82,10 +82,14 @@ struct AppShellView: View {
             guard previousQuery != query else { return }
             searchScrollPosition = ScrollPosition(idType: String.self)
         }
-        .onChange(of: authenticationModel.isSignedIn) {
-            previousIsSignedIn,
-            isSignedIn in
-            guard previousIsSignedIn != isSignedIn else { return }
+        .onChange(of: authenticationModel.sessionPhase) {
+            previousPhase,
+            phase in
+            guard previousPhase != .unresolved, phase != .unresolved,
+                previousPhase != phase
+            else {
+                return
+            }
             historyScrollPosition = ScrollPosition(idType: String.self)
         }
     }
@@ -147,7 +151,7 @@ struct AppShellView: View {
         case .history:
             HistoryTabRoot(
                 model: historyModel,
-                isSignedIn: authenticationModel.isSignedIn,
+                accountState: authenticationModel.accountPresentationState,
                 scrollPosition: $historyScrollPosition,
                 onSelect: navigationCoordinator.openPlayback,
                 onPresentAuthentication: {

@@ -51,16 +51,22 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         state = .restoring
 
         do {
-            let restored = try await activeAuthorizer.restoreLoginState()
+            let restored = try await activeAuthorizer.restoreAccountSession()
             guard generation == operationGeneration else { return state }
-            requiresLogout = restored
-            state = restored ? .signedIn : .signedOut
+            switch restored {
+            case .signedOut:
+                requiresLogout = false
+                state = .signedOut
+            case .signedIn(let identity):
+                requiresLogout = true
+                state = .signedIn(identity)
+            }
         } catch is CancellationError {
             guard generation == operationGeneration else { return state }
             state = .signedOut
         } catch let error as BiliRequestAuthorizationError {
             guard generation == operationGeneration else { return state }
-            // restoreLoginState only throws after credential access or validation
+            // restoreAccountSession only throws after credential access or validation
             // becomes unavailable. Keep logout as the sole signed-out transition.
             requiresLogout = true
             state = .failed(Self.map(error))
@@ -130,8 +136,14 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             let stored = try await activeSession.validateAndStorePendingCredential()
             guard generation == operationGeneration else { return state }
             qrCode = nil
-            requiresLogout = stored
-            state = stored ? .signedIn : .failed(.serviceUnavailable)
+            switch stored {
+            case .signedOut:
+                requiresLogout = false
+                state = .failed(.serviceUnavailable)
+            case .signedIn(let identity):
+                requiresLogout = true
+                state = .signedIn(identity)
+            }
         } catch is CancellationError {
             guard generation == operationGeneration else { return state }
             qrCode = nil

@@ -1,3 +1,12 @@
+import BiliModels
+
+/// 已经确认的账户会话事实；认证操作进行中不会把原有事实降级为未登录。
+public enum AccountSessionState: Sendable, Equatable {
+    case unresolved
+    case signedOut
+    case signedIn(AccountIdentity?)
+}
+
 /// Feature 可观察的非秘密认证状态；不携带二维码 payload、Cookie 或 Keychain 细节。
 public enum AuthenticationState: Sendable, Equatable {
     case signedOut
@@ -6,7 +15,7 @@ public enum AuthenticationState: Sendable, Equatable {
     case awaitingScan
     case awaitingConfirmation
     case finalizing
-    case signedIn
+    case signedIn(AccountIdentity?)
     case signingOut
     case expired
     case failed(AuthenticationFailure)

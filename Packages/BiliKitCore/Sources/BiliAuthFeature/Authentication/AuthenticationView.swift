@@ -23,7 +23,7 @@ public struct AuthenticationView: View {
             await model.waitForCurrentTask()
         }
         .onDisappear {
-            model.cancelTransientWork()
+            model.cancelPresentedLoginWork()
         }
     }
 

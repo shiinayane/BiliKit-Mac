@@ -59,7 +59,7 @@ struct SearchTabRoot: View {
 
 struct HistoryTabRoot: View {
     let model: WatchHistoryViewModel
-    let isSignedIn: Bool
+    let accountState: AccountPresentationState
     @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
@@ -69,7 +69,7 @@ struct HistoryTabRoot: View {
         content
             .navigationTitle("观看历史")
             .toolbar {
-                if isSignedIn {
+                if case .signedIn = accountState {
                     ToolbarItem(placement: .primaryAction) {
                         HistoryRefreshButton(model: model)
                     }
@@ -79,14 +79,15 @@ struct HistoryTabRoot: View {
 
     @ViewBuilder
     private var content: some View {
-        if isSignedIn {
+        switch accountState {
+        case .signedIn:
             WatchHistoryView(
                 model: model,
                 scrollPosition: $scrollPosition,
                 onSelect: onSelect,
                 onAuthenticationRequired: onAuthenticationRequired
             )
-        } else {
+        case .signedOut:
             ContentUnavailableView {
                 Label("登录后查看观看历史", systemImage: "person.crop.circle")
             } description: {
@@ -98,6 +99,24 @@ struct HistoryTabRoot: View {
                     .accessibilityIdentifier("history.login")
             }
             .accessibilityIdentifier("history.signed-out")
+        case .resolving:
+            ProgressView("正在检查登录状态…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("history.restoring")
+        case .unavailable:
+            ContentUnavailableView {
+                Label(
+                    "暂时无法确认登录状态",
+                    systemImage: "person.crop.circle.badge.exclamationmark"
+                )
+            } description: {
+                Text("本机登录状态没有被自动清除，请在账号页面重试。")
+            } actions: {
+                Button("查看账号状态", action: onPresentAuthentication)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("history.authentication-status")
+            }
+            .accessibilityIdentifier("history.authentication-unavailable")
         }
     }
 }

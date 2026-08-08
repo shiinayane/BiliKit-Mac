@@ -1,7 +1,32 @@
 import BiliApplication
+import BiliModels
 import CoreGraphics
 import Foundation
 import Observation
+
+public enum AccountSessionPhase: Sendable, Equatable {
+    case unresolved
+    case signedOut
+    case signedIn
+}
+
+/// 供产品界面使用的诚实账户呈现状态；不可用与确定登出保持区分。
+public enum AccountPresentationState: Sendable, Equatable {
+    case resolving
+    case unavailable
+    case signedOut
+    case signedIn(AccountIdentity?)
+
+    public var displayName: String? {
+        guard case .signedIn(let identity) = self else { return nil }
+        return identity?.displayName
+    }
+
+    public var avatarURL: URL? {
+        guard case .signedIn(let identity) = self else { return nil }
+        return identity?.avatarURL
+    }
+}
 
 @MainActor
 @Observable
@@ -11,10 +36,32 @@ import Observation
 /// 始终留在 `BiliAuth` adapter，失败重试也保持原操作类型，避免把登出失败误当成登录失败。
 public final class AuthenticationViewModel {
     public private(set) var state: AuthenticationState = .signedOut
+    public private(set) var sessionState: AccountSessionState = .unresolved
     public private(set) var qrCodeImage: CGImage?
 
-    public var isSignedIn: Bool {
-        state == .signedIn
+    public var sessionPhase: AccountSessionPhase {
+        switch sessionState {
+        case .unresolved:
+            .unresolved
+        case .signedOut:
+            .signedOut
+        case .signedIn:
+            .signedIn
+        }
+    }
+
+    public var accountPresentationState: AccountPresentationState {
+        switch sessionState {
+        case .unresolved:
+            if case .failed = state {
+                return .unavailable
+            }
+            return .resolving
+        case .signedOut:
+            return .signedOut
+        case .signedIn(let identity):
+            return .signedIn(identity)
+        }
     }
 
     public var canCancelFailure: Bool {
@@ -39,6 +86,7 @@ public final class AuthenticationViewModel {
     @ObservationIgnored private let maximumPollAttempts: Int
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var didStartInitialRestore = false
     @ObservationIgnored private var retryAction: RetryAction = .login
 
     public init(
@@ -67,11 +115,13 @@ public final class AuthenticationViewModel {
     }
 
     public func restoreIfNeeded() {
-        guard state == .signedOut else { return }
+        guard !didStartInitialRestore else { return }
+        didStartInitialRestore = true
         restore()
     }
 
     public func revalidate() {
+        didStartInitialRestore = true
         restore()
     }
 
@@ -80,7 +130,11 @@ public final class AuthenticationViewModel {
         begin(state: .restoring) { [weak self] operationGeneration in
             guard let self else { return }
             let nextState = await service.restore()
-            await apply(nextState, generation: operationGeneration)
+            await apply(
+                nextState,
+                generation: operationGeneration,
+                commitsConfirmedSession: true
+            )
         }
     }
 
@@ -127,7 +181,11 @@ public final class AuthenticationViewModel {
         begin(state: .signingOut) { [weak self] operationGeneration in
             guard let self else { return }
             let nextState = await service.logout()
-            await apply(nextState, generation: operationGeneration)
+            await apply(
+                nextState,
+                generation: operationGeneration,
+                commitsConfirmedSession: true
+            )
         }
     }
 
@@ -136,18 +194,27 @@ public final class AuthenticationViewModel {
         logout()
     }
 
-    /// 在 sheet/窗口生命周期结束时取消临时登录工作，但不会把已登录状态当作可取消挑战。
-    public func cancelTransientWork() {
+    /// Sheet 关闭时只取消由该登录界面发起的挑战，不接管窗口级启动恢复。
+    public func cancelPresentedLoginWork() {
         switch state {
-        case .restoring, .requestingQRCode, .awaitingScan, .awaitingConfirmation,
+        case .requestingQRCode, .awaitingScan, .awaitingConfirmation,
             .finalizing, .expired:
             cancelLogin()
         case .failed:
             if retryAction == .login {
                 cancelLogin()
             }
-        case .signedOut, .signedIn, .signingOut:
+        case .signedOut, .restoring, .signedIn, .signingOut:
             break
+        }
+    }
+
+    /// 窗口生命周期结束时取消所有临时认证工作，包括启动恢复。
+    public func cancelTransientWork() {
+        if state == .restoring {
+            cancelLogin()
+        } else {
+            cancelPresentedLoginWork()
         }
     }
 
@@ -213,7 +280,11 @@ public final class AuthenticationViewModel {
             }
             if polled == .finalizing {
                 let finalized = await service.finalizeLogin()
-                _ = await apply(finalized, generation: operationGeneration)
+                _ = await apply(
+                    finalized,
+                    generation: operationGeneration,
+                    commitsConfirmedSession: true
+                )
                 return
             }
         }
@@ -231,12 +302,16 @@ public final class AuthenticationViewModel {
     @discardableResult
     private func apply(
         _ nextState: AuthenticationState,
-        generation operationGeneration: Int
+        generation operationGeneration: Int,
+        commitsConfirmedSession: Bool = false
     ) async -> Bool {
         guard generation == operationGeneration, !Task.isCancelled else {
             return false
         }
         state = nextState
+        if commitsConfirmedSession {
+            updateConfirmedSession(from: nextState)
+        }
         switch nextState {
         case .awaitingScan, .awaitingConfirmation:
             do {
@@ -256,6 +331,18 @@ public final class AuthenticationViewModel {
             qrCodeImage = nil
         }
         return generation == operationGeneration && !Task.isCancelled
+    }
+
+    private func updateConfirmedSession(from nextState: AuthenticationState) {
+        switch nextState {
+        case .signedOut:
+            sessionState = .signedOut
+        case .signedIn(let identity):
+            sessionState = .signedIn(identity)
+        case .restoring, .requestingQRCode, .awaitingScan,
+            .awaitingConfirmation, .finalizing, .signingOut, .expired, .failed:
+            break
+        }
     }
 }
 

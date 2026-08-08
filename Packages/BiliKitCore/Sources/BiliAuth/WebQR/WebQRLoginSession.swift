@@ -214,13 +214,20 @@ public actor WebQRLoginSession {
 
     public func validatePendingCredential() async throws -> Bool {
         let pendingCredential = try takePendingCredential()
-        return try await validate(pendingCredential)
+        let result = try await validate(pendingCredential)
+        if case .signedIn = result {
+            return true
+        }
+        return false
     }
 
     /// 一次性消费候选凭据，验证登录态与有效期后才提交 Keychain。
-    public func validateAndStorePendingCredential() async throws -> Bool {
+    func validateAndStorePendingCredential() async throws
+        -> NavigationAuthenticationResult
+    {
         let pendingCredential = try takePendingCredential()
-        guard try await validate(pendingCredential) else { return false }
+        let result = try await validate(pendingCredential)
+        guard case .signedIn = result else { return .signedOut }
         guard !pendingCredential.credential.isExpired() else {
             throw WebQRLoginFailure.incompleteCredential
         }
@@ -229,7 +236,7 @@ public actor WebQRLoginSession {
         } catch {
             throw WebQRLoginFailure.credentialStoreUnavailable
         }
-        return true
+        return result
     }
 
     private func takePendingCredential() throws -> PendingCredential {
@@ -243,7 +250,9 @@ public actor WebQRLoginSession {
         return pendingCredential
     }
 
-    private func validate(_ pendingCredential: PendingCredential) async throws -> Bool {
+    private func validate(
+        _ pendingCredential: PendingCredential
+    ) async throws -> NavigationAuthenticationResult {
         let response = try await sendNavigationValidation(
             cookieHeader: pendingCredential.credential.cookieHeader
         )
@@ -251,16 +260,19 @@ public actor WebQRLoginSession {
         guard generation == pendingCredential.generation else {
             throw CancellationError()
         }
-        let envelope: NavigationEnvelope
+        let envelope: NavigationAuthenticationEnvelope
         do {
-            envelope = try decoder.decode(NavigationEnvelope.self, from: response.body)
+            envelope = try decoder.decode(
+                NavigationAuthenticationEnvelope.self,
+                from: response.body
+            )
         } catch {
             throw WebQRLoginFailure.invalidResponse
         }
         guard envelope.code == 0, let data = envelope.data else {
             throw WebQRLoginFailure.invalidResponse
         }
-        return data.isLogin
+        return data.authenticationResult
     }
 
     private func send(
@@ -592,13 +604,4 @@ private struct PollData: Decodable, Sendable {
         let allFields = try decoder.container(keyedBy: FieldKey.self)
         fieldNames = allFields.allKeys.map(\.stringValue)
     }
-}
-
-private struct NavigationEnvelope: Decodable, Sendable {
-    let code: Int
-    let data: NavigationData?
-}
-
-private struct NavigationData: Decodable, Sendable {
-    let isLogin: Bool
 }
