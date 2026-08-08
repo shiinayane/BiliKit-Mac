@@ -26,6 +26,9 @@
                 && arguments.contains(
                     "-ui-testing-single-part-empty-summary"
                 )
+            let usesAccountIdentity =
+                arguments.contains("-ui-testing")
+                && arguments.contains("-ui-testing-account-identity")
             let sourceRequests = UITestSourceRequestRecorder()
             _sourceRequests = State(initialValue: sourceRequests)
             dynamicTypeSize =
@@ -55,6 +58,10 @@
             let authenticationModel = AuthenticationViewModel(
                 service: UITestAuthenticationService(
                     restoresSignedIn: usesContextualNavigator
+                        || usesAccountIdentity,
+                    identity: usesAccountIdentity
+                        ? Self.accountIdentityFixture
+                        : nil
                 ),
                 qrCodeProvider: UITestQRCodeProvider()
             )
@@ -141,6 +148,12 @@
                 )
             )
         }
+
+        private static let accountIdentityFixture = AccountIdentity(
+            id: 42,
+            displayName: "Fixture Account",
+            avatarURL: nil
+        )
     }
 
     private struct UITestGuestRepository: GuestContentRepository {
@@ -317,9 +330,10 @@
 
     private struct UITestAuthenticationService: AuthenticationServicing {
         let restoresSignedIn: Bool
+        let identity: AccountIdentity?
 
         func restore() async -> AuthenticationState {
-            restoresSignedIn ? .signedIn(nil) : .signedOut
+            restoresSignedIn ? .signedIn(identity) : .signedOut
         }
         func requestQRCode() async -> AuthenticationState { .signedOut }
         func pollOnce() async -> AuthenticationState { .signedOut }

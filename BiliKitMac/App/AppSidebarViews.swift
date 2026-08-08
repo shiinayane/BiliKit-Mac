@@ -3,6 +3,7 @@ import SwiftUI
 
 /// 使用系统 Sidebar List 表达窗口内当前可用的平级来源。
 struct AppNavigationSidebar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: AppTab
     let accountState: AccountPresentationState
     let onPresentAuthentication: () -> Void
@@ -53,6 +54,8 @@ struct AppNavigationSidebar: View {
                 accountAvatar
 
                 Text(accountTitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: 0)
             }
@@ -73,7 +76,7 @@ struct AppNavigationSidebar: View {
         case .signedOut:
             "登录"
         case .signedIn:
-            "账号"
+            accountState.displayName ?? "账号"
         }
     }
 
@@ -91,12 +94,42 @@ struct AppNavigationSidebar: View {
     }
 
     private var accountAvatar: some View {
+        Group {
+            if let avatarURL = accountState.avatarURL {
+                AsyncImage(
+                    url: avatarURL,
+                    transaction: avatarLoadingTransaction
+                ) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .transition(.opacity)
+                    default:
+                        fallbackAvatar
+                            .transition(.opacity)
+                    }
+                }
+            } else {
+                fallbackAvatar
+            }
+        }
+        .frame(width: 32, height: 32)
+        .clipShape(Circle())
+        .accessibilityHidden(true)
+    }
+
+    private var fallbackAvatar: some View {
         Image(systemName: "person.crop.circle.fill")
             .resizable()
             .scaledToFit()
             .symbolRenderingMode(.hierarchical)
-            .frame(width: 32, height: 32)
-            .clipShape(Circle())
-            .accessibilityHidden(true)
+    }
+
+    private var avatarLoadingTransaction: Transaction {
+        Transaction(
+            animation: reduceMotion ? nil : .easeOut(duration: 0.16)
+        )
     }
 }
