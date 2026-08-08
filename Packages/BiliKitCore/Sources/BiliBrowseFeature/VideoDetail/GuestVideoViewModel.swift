@@ -37,6 +37,8 @@ public enum RelatedVideoState: Sendable, Equatable {
 public final class GuestVideoViewModel {
     public private(set) var state: GuestVideoState = .idle
     public private(set) var relatedVideoState: RelatedVideoState = .idle
+    public private(set) var uploaderSignatureState: VideoUploaderSignatureState =
+        .loaded(nil)
     /// 供播放主区与上下文 Sidebar 共享的最近有效详情。
     ///
     /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
@@ -52,21 +54,26 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
+    @ObservationIgnored private let uploaderSignatureUseCase: UploaderSignatureUseCase?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var relatedVideoTask: Task<Void, Never>?
+    @ObservationIgnored private var uploaderSignatureTask: Task<Void, Never>?
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var relatedVideoGeneration = 0
+    @ObservationIgnored private var uploaderSignatureGeneration = 0
 
     public init(
         useCase: GuestVideoUseCase,
         playback: any PlaybackControlling,
-        relatedVideoUseCase: RelatedVideoUseCase? = nil
+        relatedVideoUseCase: RelatedVideoUseCase? = nil,
+        uploaderSignatureUseCase: UploaderSignatureUseCase? = nil
     ) {
         self.useCase = useCase
         self.playback = playback
         self.relatedVideoUseCase = relatedVideoUseCase
+        self.uploaderSignatureUseCase = uploaderSignatureUseCase
         playbackFailureTask = Task { [weak self, playback] in
             for await event in playback.playbackFailureEvents() {
                 guard !Task.isCancelled else { return }
@@ -78,6 +85,7 @@ public final class GuestVideoViewModel {
     deinit {
         loadTask?.cancel()
         relatedVideoTask?.cancel()
+        uploaderSignatureTask?.cancel()
         playbackFailureTask?.cancel()
     }
 
@@ -86,6 +94,7 @@ public final class GuestVideoViewModel {
         generation += 1
         let currentGeneration = generation
         loadTask?.cancel()
+        cancelUploaderSignature()
         if state != .idle {
             playback.stop()
         }
@@ -164,6 +173,7 @@ public final class GuestVideoViewModel {
         relatedVideoTask?.cancel()
         relatedVideoTask = nil
         relatedVideoState = .idle
+        cancelUploaderSignature()
         presentedContext = nil
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
@@ -186,6 +196,14 @@ public final class GuestVideoViewModel {
 
     func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
         relatedVideoTask
+    }
+
+    public func waitForCurrentUploaderSignatureTask() async {
+        await uploaderSignatureTask?.value
+    }
+
+    func uploaderSignatureTaskSnapshotForTesting() -> Task<Void, Never>? {
+        uploaderSignatureTask
     }
 
     private func loadRelatedVideos(for bvid: String) {
@@ -247,6 +265,7 @@ public final class GuestVideoViewModel {
             guard generation == currentGeneration else { return }
 
             presentedContext = context
+            loadUploaderSignature(for: context.detail.owner.id)
             let identity = PlaybackItemIdentity(
                 bvid: context.detail.bvid,
                 cid: context.selectedPage.cid
@@ -379,5 +398,42 @@ public final class GuestVideoViewModel {
     ) {
         guard error == .authenticationInvalid else { return }
         authenticationRevalidationGeneration += 1
+    }
+
+    private func loadUploaderSignature(for ownerID: Int64) {
+        uploaderSignatureGeneration += 1
+        let currentGeneration = uploaderSignatureGeneration
+        uploaderSignatureTask?.cancel()
+        guard let uploaderSignatureUseCase else {
+            uploaderSignatureState = .loaded(nil)
+            uploaderSignatureTask = nil
+            return
+        }
+        uploaderSignatureState = .loading
+        uploaderSignatureTask = Task { [weak self] in
+            let signature: String?
+            do {
+                let resolved = try await uploaderSignatureUseCase.signature(
+                    for: ownerID
+                )
+                try Task.checkCancellation()
+                signature = resolved
+            } catch {
+                signature = nil
+            }
+            guard let self,
+                self.uploaderSignatureGeneration == currentGeneration,
+                !Task.isCancelled
+            else { return }
+            self.uploaderSignatureState = .loaded(signature)
+            self.uploaderSignatureTask = nil
+        }
+    }
+
+    private func cancelUploaderSignature() {
+        uploaderSignatureGeneration += 1
+        uploaderSignatureTask?.cancel()
+        uploaderSignatureTask = nil
+        uploaderSignatureState = .loaded(nil)
     }
 }

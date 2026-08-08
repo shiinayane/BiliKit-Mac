@@ -25,3 +25,8 @@ public protocol GuestContentRepository: Sendable {
 public protocol RelatedVideoRepository: Sendable {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo]
 }
+
+/// 播放页只读 UP 主签名所需的独立匿名 port。
+public protocol UploaderSignatureRepository: Sendable {
+    func signature(for ownerID: Int64) async throws -> String?
+}

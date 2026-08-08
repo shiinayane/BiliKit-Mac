@@ -22,6 +22,7 @@ struct AppEnvironment {
     let playbackPreferencesController: PlaybackPreferencesController
     private let guestContentRepository: any GuestContentRepository
     private let relatedVideoRepository: any RelatedVideoRepository
+    private let uploaderSignatureRepository: any UploaderSignatureRepository
     private let historyRepository: any WatchHistoryRepository
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
@@ -32,6 +33,7 @@ struct AppEnvironment {
     init(
         guestContentRepository: any GuestContentRepository,
         relatedVideoRepository: any RelatedVideoRepository,
+        uploaderSignatureRepository: any UploaderSignatureRepository,
         historyRepository: any WatchHistoryRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
@@ -45,6 +47,7 @@ struct AppEnvironment {
         )
         self.guestContentRepository = guestContentRepository
         self.relatedVideoRepository = relatedVideoRepository
+        self.uploaderSignatureRepository = uploaderSignatureRepository
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
@@ -80,6 +83,9 @@ struct AppEnvironment {
             playback: playerEngine,
             relatedVideoUseCase: RelatedVideoUseCase(
                 repository: relatedVideoRepository
+            ),
+            uploaderSignatureUseCase: UploaderSignatureUseCase(
+                repository: uploaderSignatureRepository
             )
         )
     }
@@ -156,6 +162,7 @@ struct AppEnvironment {
         return AppEnvironment(
             guestContentRepository: guestRepository,
             relatedVideoRepository: guestRepository,
+            uploaderSignatureRepository: guestRepository,
             historyRepository: BiliWatchHistoryRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,

@@ -129,6 +129,106 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func uploaderSignatureUsesExactAnonymousCardEndpoint() async throws {
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("uploader-card")]
+        )
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+
+        let signature = try await client.uploaderSignature(for: 10_001)
+
+        #expect(signature == "用影像记录生活")
+        let request = try #require(await transport.capturedRequests().first)
+        #expect(request.method == .get)
+        #expect(request.url.scheme == "https")
+        #expect(request.url.host == "api.bilibili.com")
+        #expect(request.url.port == nil)
+        #expect(request.url.path == "/x/web-interface/card")
+        #expect(
+            URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
+                .queryItems == [
+                    URLQueryItem(name: "mid", value: "10001"),
+                    URLQueryItem(name: "photo", value: "false"),
+                ]
+        )
+        #expect(request.headers["Cookie"] == nil)
+        #expect(request.headers["Authorization"] == nil)
+        #expect(await authorizer.capturedPaths().isEmpty)
+    }
+
+    @Test
+    func uploaderSignatureAcceptsNumericMID() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"card":{"mid":10001,"sign":"签名"}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        #expect(try await client.uploaderSignature(for: 10_001) == "签名")
+    }
+
+    @Test
+    func uploaderSignatureRejectsMismatchedMID() async {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"card":{"mid":"10002","sign":"签名"}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.decodingFailed) {
+            try await client.uploaderSignature(for: 10_001)
+        }
+    }
+
+    @Test
+    func uploaderSignaturePreservesBlankValueForApplicationNormalization()
+        async throws
+    {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"card":{"mid":"10001","sign":"  \n "}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        #expect(try await client.uploaderSignature(for: 10_001) == "  \n ")
+    }
+
+    @Test(arguments: [302, 307])
+    func uploaderSignatureRejectsRedirectResponse(statusCode: Int) async {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [HTTPResponse(statusCode: statusCode, body: Data())]
+            )
+        )
+
+        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
+            try await client.uploaderSignature(for: 10_001)
+        }
+    }
+
+    @Test
+    func uploaderSignatureRejectsBusinessFailure() async {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [jsonResponse(#"{"code":-352,"message":"blocked"}"#)]
+            )
+        )
+
+        await #expect(
+            throws: BiliAPIError.apiRejected(code: -352, message: "blocked")
+        ) {
+            try await client.uploaderSignature(for: 10_001)
+        }
+    }
+
+    @Test
     func searchUsesWBIAndNormalizesEndpointQuirks() async throws {
         let transport = RecordingTransport(
             responses: [
@@ -812,6 +912,14 @@ struct BiliAPIClientTests {
             statusCode: 200,
             headers: ["Content-Type": "application/json; charset=utf-8"],
             body: try Data(contentsOf: url)
+        )
+    }
+
+    private func jsonResponse(_ source: String) -> HTTPResponse {
+        HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(source.utf8)
         )
     }
 }

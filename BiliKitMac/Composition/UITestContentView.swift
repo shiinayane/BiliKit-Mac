@@ -50,7 +50,10 @@
             )
             let videoModel = GuestVideoViewModel(
                 useCase: GuestVideoUseCase(repository: repository),
-                playback: playback
+                playback: playback,
+                uploaderSignatureUseCase: UploaderSignatureUseCase(
+                    repository: repository
+                )
             )
             let danmakuModel = DanmakuControlsViewModel(
                 presentation: UITestDanmakuPresentation()
@@ -156,7 +159,9 @@
         )
     }
 
-    private struct UITestGuestRepository: GuestContentRepository {
+    private struct UITestGuestRepository: GuestContentRepository,
+        UploaderSignatureRepository
+    {
         let featuredBVID: String
         let includesSourceFixtures: Bool
         let usesMinimalPlaybackContext: Bool
@@ -199,6 +204,10 @@
                 publishedAt: Self.publishedAt,
                 dimension: VideoDimension(width: 1_920, height: 1_080, rotation: 0)
             )
+        }
+
+        func signature(for ownerID: Int64) async throws -> String? {
+            "用于验证窄侧栏中签名默认单行显示，点击后完整换行展开，再次点击恢复收起状态的公开假值。"
         }
 
         func pages(for bvid: String) async throws -> [VideoPage] {

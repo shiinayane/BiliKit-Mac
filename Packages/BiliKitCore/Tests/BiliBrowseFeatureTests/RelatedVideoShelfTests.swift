@@ -24,6 +24,27 @@ struct RelatedVideoShelfTests {
     }
 
     @Test
+    func selectionForwardsTheReplacementBVID() {
+        let item = RelatedVideoShelfItem(
+            bvid: "BV1Replacement",
+            title: "示例推荐",
+            coverURL: nil,
+            ownerName: "示例 UP 主",
+            viewCount: 1,
+            danmakuCount: 0,
+            durationSeconds: nil
+        )
+        var selectedBVID: String?
+        let selection = RelatedVideoShelfSelection { bvid in
+            selectedBVID = bvid
+        }
+
+        selection.select(item)
+
+        #expect(selectedBVID == item.bvid)
+    }
+
+    @Test
     func pagingAdvancesByTheVisibleCardCapacity() {
         let paging = RelatedVideoShelfPaging(
             itemCount: 8,

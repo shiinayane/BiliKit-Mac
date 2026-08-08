@@ -342,6 +342,48 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
+    func testUploaderSignatureButtonExpandsWithinSidebarAndCollapses() {
+        let app = launchFixture(arguments: ["-ui-testing"])
+        let video = element("feed.item.fixture-video-1", in: app)
+        XCTAssertTrue(waitForHittable(video, timeout: 5))
+        video.click()
+
+        let sidebar = element("sidebar.playback-context", in: app)
+        let signature = app.buttons[
+            "sidebar.playback-uploader.signature"
+        ]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(signature, timeout: 5))
+        XCTAssertEqual(signature.label, "UP 主签名")
+        XCTAssertTrue(accessibilityText(of: signature).hasPrefix("已收起，"))
+        let collapsedFrame = signature.frame
+
+        signature.click()
+
+        XCTAssertTrue(
+            waitForAccessibilityText(
+                signature,
+                beginningWith: "已展开，",
+                timeout: 5
+            )
+        )
+        XCTAssertGreaterThan(signature.frame.height, collapsedFrame.height)
+        XCTAssertGreaterThanOrEqual(signature.frame.minX, sidebar.frame.minX)
+        XCTAssertLessThanOrEqual(signature.frame.maxX, sidebar.frame.maxX)
+
+        signature.click()
+
+        XCTAssertTrue(
+            waitForAccessibilityText(
+                signature,
+                beginningWith: "已收起，",
+                timeout: 5
+            )
+        )
+        XCTAssertEqual(signature.frame.height, collapsedFrame.height, accuracy: 1)
+    }
+
+    @MainActor
     func testPlaybackSidebarHidesEmptySummaryAndSinglePart() {
         let app = launchFixture(arguments: [
             "-ui-testing",
@@ -972,6 +1014,21 @@ final class BiliKitMacUITests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 self.accessibilityText(of: element) == expectedText
+            },
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForAccessibilityText(
+        _ element: XCUIElement,
+        beginningWith expectedPrefix: String,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                self.accessibilityText(of: element).hasPrefix(expectedPrefix)
             },
             object: element
         )

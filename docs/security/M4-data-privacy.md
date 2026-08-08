@@ -46,11 +46,17 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 登录态 playurl 的 Cookie 必须在 API 响应前终止；映射后的 playback manifest 与媒体
   headers 不保留 Cookie。DASH SIDX/媒体 Range、图片、相关推荐与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- 播放侧栏 UP 主签名只允许匿名 `GET https://api.bilibili.com/x/web-interface/card`；query
+  只能包含正 `mid` 与固定 `photo=false`。响应 `data.card.mid` 必须与请求值一致，redirect、
+  HTTP／业务失败、解码失败与空白签名均只隐藏签名行。该请求不使用 Cookie、Authorization、
+  WBI、设备画像或登录授权器，也不传播 card 中的昵称、头像及其他资料字段。
 
 ## 5. Fixture、探针与验证记录
 
 - fixture 只能使用 `example.invalid`、虚构标识和自写文本；不保存现场响应 body。
 - 现场探针不得打印 BVID、CID、标题、字幕/弹幕正文、完整 URL、用户标识或凭据。
+- UP 主签名探针不得打印 MID、签名正文或完整 URL；只记录 HTTP／业务分类、MID 是否匹配、
+  签名是否存在与长度区间。
 - 验证记录可保存日期、系统、接口路径、认证需求、Content-Type、大小级别、字段名、计数和安全分类。
 - 真实 UI 截图若包含标题、账号、二维码、字幕或弹幕正文，不进入仓库。
 

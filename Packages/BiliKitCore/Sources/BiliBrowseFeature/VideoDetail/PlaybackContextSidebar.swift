@@ -51,7 +51,11 @@ public struct PlaybackContextSidebar: View {
     private func sidebarContent(_ context: GuestVideoContext) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                VideoUploaderHeader(owner: context.detail.owner)
+                VideoUploaderHeader(
+                    owner: context.detail.owner,
+                    signatureState: model.uploaderSignatureState
+                )
+                .id(context.detail.bvid)
 
                 Divider()
 
@@ -79,8 +83,10 @@ public struct PlaybackContextSidebar: View {
             Text(summary)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
                 .accessibilityIdentifier("sidebar.playback-summary.text")
         }
