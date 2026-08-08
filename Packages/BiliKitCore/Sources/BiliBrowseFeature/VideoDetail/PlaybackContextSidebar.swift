@@ -8,6 +8,7 @@ import SwiftUI
 /// `presentedContext` 让 Sidebar 与主区共享最近有效内容；替换视频的 loading／failed
 /// 状态会遮挡旧内容并从辅助树隐藏，避免把上一视频误读成当前上下文。
 public struct PlaybackContextSidebar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestVideoViewModel
     private let onRetry: () -> Void
     @State private var isSummaryExpanded = true
@@ -32,11 +33,17 @@ public struct PlaybackContextSidebar: View {
                         .accessibilityHidden(blocksPresentedContext)
 
                     presentedContextOverlay
+                        .transition(.opacity)
                 }
             } else {
                 emptyState
+                    .transition(.opacity)
             }
         }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: visualPhase
+        )
         .navigationTitle("观看辅助")
         .accessibilityIdentifier("sidebar.playback-context")
     }
@@ -243,6 +250,30 @@ public struct PlaybackContextSidebar: View {
             true
         case .idle, .loadingPage, .preparingPlayback, .ready, .failedPage:
             false
+        }
+    }
+
+    private var visualPhase: LoadingVisualPhase {
+        if model.presentedContext != nil {
+            switch model.state {
+            case .loading:
+                return .replacementLoading
+            case .failed:
+                return .failure
+            case .idle, .loadingPage, .preparingPlayback, .ready, .failedPage:
+                return .content
+            }
+        }
+
+        switch model.state {
+        case .idle:
+            return .idle
+        case .loading, .loadingPage, .preparingPlayback:
+            return .loading
+        case .failed, .failedPage:
+            return .failure
+        case .ready:
+            return .content
         }
     }
 

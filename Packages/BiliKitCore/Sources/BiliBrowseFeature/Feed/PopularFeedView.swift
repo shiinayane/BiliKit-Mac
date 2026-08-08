@@ -4,6 +4,7 @@ import BiliUI
 import SwiftUI
 
 public struct PopularFeedView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestBrowseViewModel
     private let request: GuestFeedRequest
     @Binding private var scrollPosition: ScrollPosition
@@ -22,9 +23,20 @@ public struct PopularFeedView: View {
         self.onSelect = onSelect
     }
 
-    @ViewBuilder
     public var body: some View {
         let presentation = model.presentation(for: request)
+        ZStack {
+            content(for: presentation)
+                .transition(.opacity)
+        }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: visualPhase(for: presentation.state)
+        )
+    }
+
+    @ViewBuilder
+    private func content(for presentation: GuestFeedPresentation) -> some View {
         switch presentation.state {
         case .idle, .loading:
             VideoCardGridSkeleton(loadingLabel: "正在加载热门视频")
@@ -55,9 +67,25 @@ public struct PopularFeedView: View {
                 .accessibilityIdentifier("feed.transitioning")
         }
     }
+
+    private func visualPhase(for state: GuestFeedState) -> LoadingVisualPhase {
+        switch state {
+        case .idle, .loading:
+            .loading
+        case .loaded(.popular(let page)) where page.videos.isEmpty:
+            .empty
+        case .loaded(.popular(_)):
+            .content
+        case .failed(request: .popular(_, _), error: _):
+            .failure
+        default:
+            .transitioning
+        }
+    }
 }
 
 private struct PopularGrid: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: GuestBrowseViewModel
     let page: PopularPage
     @Binding var scrollPosition: ScrollPosition
@@ -116,7 +144,15 @@ private struct PopularGrid: View {
                 await model.waitForCurrentTask()
             }
             .overlay(alignment: .top) {
-                refreshStatus
+                ZStack {
+                    refreshStatus
+                }
+                .animation(
+                    LoadingStateTransition.animation(
+                        reduceMotion: reduceMotion
+                    ),
+                    value: refreshVisualPhase
+                )
             }
         }
     }
@@ -130,12 +166,21 @@ private struct PopularGrid: View {
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityLabel("正在刷新热门视频")
+                .transition(.opacity)
         } else if let error = presentation.refreshError {
             Text(error.guestMessage)
                 .font(.caption)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityIdentifier("feed.refresh-failure")
+                .transition(.opacity)
         }
+    }
+
+    private var refreshVisualPhase: LoadingVisualPhase {
+        let presentation = model.presentation(for: request)
+        if presentation.isRefreshing { return .loading }
+        if presentation.refreshError != nil { return .failure }
+        return .idle
     }
 }
