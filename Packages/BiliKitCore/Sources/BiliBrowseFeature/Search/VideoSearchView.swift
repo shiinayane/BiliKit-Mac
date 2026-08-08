@@ -4,6 +4,7 @@ import BiliUI
 import SwiftUI
 
 public struct VideoSearchView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestBrowseViewModel
     private let submittedSearchQuery: String?
     @Binding private var scrollPosition: ScrollPosition
@@ -22,7 +23,34 @@ public struct VideoSearchView: View {
     }
 
     public var body: some View {
-        results
+        ZStack {
+            results
+                .transition(.opacity)
+        }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: visualPhase
+        )
+    }
+
+    private var visualPhase: LoadingVisualPhase {
+        guard let submittedSearchQuery else { return .idle }
+        let request = GuestFeedRequest.search(
+            query: submittedSearchQuery,
+            page: 1
+        )
+        switch model.presentation(for: request).state {
+        case .idle, .loading:
+            return .loading
+        case .loaded(.search(_, let page)) where page.videos.isEmpty:
+            return .empty
+        case .loaded(.search(_, _)):
+            return .content
+        case .failed(request: .search(_, _), error: _):
+            return .failure
+        default:
+            return .transitioning
+        }
     }
 
     @ViewBuilder
@@ -122,6 +150,7 @@ extension GuestFeedRequest {
 }
 
 private struct SearchResultsGrid: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: GuestBrowseViewModel
     let query: String
     let page: SearchPage
@@ -180,7 +209,15 @@ private struct SearchResultsGrid: View {
                 await model.waitForCurrentTask()
             }
             .overlay(alignment: .top) {
-                refreshStatus
+                ZStack {
+                    refreshStatus
+                }
+                .animation(
+                    LoadingStateTransition.animation(
+                        reduceMotion: reduceMotion
+                    ),
+                    value: refreshVisualPhase
+                )
             }
         }
     }
@@ -194,12 +231,21 @@ private struct SearchResultsGrid: View {
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityLabel("正在刷新搜索结果")
+                .transition(.opacity)
         } else if let error = presentation.refreshError {
             Text(error.guestMessage)
                 .font(.caption)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityIdentifier("search.refresh-failure")
+                .transition(.opacity)
         }
+    }
+
+    private var refreshVisualPhase: LoadingVisualPhase {
+        let presentation = model.presentation(for: request)
+        if presentation.isRefreshing { return .loading }
+        if presentation.refreshError != nil { return .failure }
+        return .idle
     }
 }

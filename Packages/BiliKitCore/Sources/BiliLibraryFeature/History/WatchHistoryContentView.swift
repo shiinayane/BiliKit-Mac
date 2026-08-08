@@ -4,12 +4,24 @@ import BiliUI
 import SwiftUI
 
 struct WatchHistoryContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: WatchHistoryViewModel
     @Binding var scrollPosition: ScrollPosition
     let onSelect: (String) -> Void
 
-    @ViewBuilder
     var body: some View {
+        ZStack {
+            content
+                .transition(.opacity)
+        }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: visualPhase
+        )
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch model.state {
         case .idle, .loading:
             VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
@@ -37,6 +49,19 @@ struct WatchHistoryContentView: View {
             )
         case .failed(let error):
             failure(error)
+        }
+    }
+
+    private var visualPhase: LoadingVisualPhase {
+        switch model.state {
+        case .idle, .loading:
+            .loading
+        case .loaded(let items, _, _) where items.isEmpty:
+            .empty
+        case .loaded, .loadingMore:
+            .content
+        case .failed:
+            .failure
         }
     }
 
@@ -107,10 +132,20 @@ struct WatchHistoryContentView: View {
                 if canLoadMore {
                     HStack {
                         Spacer()
-                        Button(isLoadingMore ? "正在加载…" : "加载更多") {
+                        Button {
                             model.loadMore()
+                        } label: {
+                            Text(isLoadingMore ? "正在加载…" : "加载更多")
+                                .contentTransition(.opacity)
+                                .frame(minWidth: 80)
                         }
                         .disabled(isLoadingMore)
+                        .animation(
+                            LoadingStateTransition.animation(
+                                reduceMotion: reduceMotion
+                            ),
+                            value: isLoadingMore
+                        )
                         .accessibilityIdentifier("history.load-more")
                         Spacer()
                     }

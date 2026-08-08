@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliUI
 import SwiftUI
 
 /// 把视频准备状态连接到弹幕的播放 identity 生命周期。
@@ -6,6 +7,7 @@ import SwiftUI
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
 /// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
 public struct VideoPlaybackView<PlayerContent: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestVideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
@@ -45,11 +47,17 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                     .accessibilityHidden(blocksRetainedContext)
 
                     retainedContextOverlay
+                        .transition(.opacity)
                 }
             } else {
                 emptyState
+                    .transition(.opacity)
             }
         }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: visualPhase
+        )
         .task(id: playbackIdentity) {
             guard let playbackIdentity else {
                 danmakuModel.reset()
@@ -78,6 +86,30 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             true
         case .idle, .loadingPage, .preparingPlayback, .ready:
             false
+        }
+    }
+
+    private var visualPhase: LoadingVisualPhase {
+        if currentContext != nil {
+            switch model.state {
+            case .loading:
+                return .replacementLoading
+            case .failed, .failedPage:
+                return .failure
+            case .idle, .loadingPage, .preparingPlayback, .ready:
+                return .content
+            }
+        }
+
+        switch model.state {
+        case .idle:
+            return .idle
+        case .loading, .loadingPage:
+            return .loading
+        case .failed, .failedPage:
+            return .failure
+        case .preparingPlayback, .ready:
+            return .content
         }
     }
 

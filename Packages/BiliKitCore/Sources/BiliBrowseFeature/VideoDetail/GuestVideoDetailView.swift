@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 
 struct GuestVideoDetailView<PlayerContent: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
     let danmakuModel: DanmakuControlsViewModel
@@ -128,14 +129,21 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                 .accessibilityIdentifier("player.host")
 
             if isPreparingPlayback {
-                Rectangle()
-                    .fill(.black.opacity(0.45))
-                ProgressView("正在准备播放…")
-                    .controlSize(.large)
-                    .font(.title3)
-                    .foregroundStyle(.white)
+                ZStack {
+                    Rectangle()
+                        .fill(.black.opacity(0.45))
+                    ProgressView("正在准备播放…")
+                        .controlSize(.large)
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                }
+                .transition(.opacity)
             }
         }
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: isPreparingPlayback
+        )
         .aspectRatio(
             PlaybackPageLayout.playerAspectRatio,
             contentMode: .fit

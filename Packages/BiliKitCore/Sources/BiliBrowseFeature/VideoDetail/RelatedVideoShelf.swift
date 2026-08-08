@@ -64,10 +64,32 @@ struct RelatedVideoShelf: View {
             header
                 .padding(.horizontal, Self.contentPadding)
 
-            content
+            ZStack(alignment: .topLeading) {
+                content
+                    .transition(.opacity)
+            }
+            .animation(
+                LoadingStateTransition.animation(reduceMotion: reduceMotion),
+                value: contentVisualPhase
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("related-videos.shelf")
+    }
+
+    private var contentVisualPhase: LoadingVisualPhase {
+        switch state {
+        case .loading:
+            .loading
+        case .loaded(let items) where items.isEmpty:
+            .empty
+        case .loaded:
+            .content
+        case .empty:
+            .empty
+        case .failure:
+            .failure
+        }
     }
 
     private var header: some View {
