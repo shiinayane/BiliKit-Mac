@@ -69,5 +69,5 @@ jobs:
 
       - name: Run selected quality gate (includes strict Swift format lint)
         env:
-          BILIKIT_DERIVED_DATA_PATH: ${{ runner.temp }}/BiliKitMac-derived
+          BILIKIT_GATE_FRESH: 1
         run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"

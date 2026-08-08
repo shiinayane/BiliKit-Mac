@@ -60,6 +60,22 @@ assert_occurrences 1 \
     'github_summary="${GITHUB_STEP_SUMMARY:-}"' \
     "$quality_gate_file" \
     "统一质量 Gate 必须向 GitHub Actions 输出阶段摘要"
+assert_occurrences 1 \
+    'BILIKIT_GATE_FRESH: 1' \
+    "$ci_file" \
+    "CI 必须使用可确定清理的 fresh Gate"
+assert_occurrences 1 \
+    'export SWIFTPM_MODULECACHE_OVERRIDE="$swift_module_cache_path"' \
+    "$quality_gate_file" \
+    "SwiftPM manifest module cache 必须位于 Gate 隔离根"
+assert_occurrences 2 \
+    'CLANG_MODULE_CACHE_PATH="$clang_module_cache_path" \\' \
+    "$quality_gate_file" \
+    "Xcode build 与 test 必须使用隔离的 Clang module cache"
+assert_occurrences 2 \
+    'SWIFT_MODULE_CACHE_PATH="$swift_module_cache_path" \\' \
+    "$quality_gate_file" \
+    "Xcode build 与 test 必须使用隔离的 Swift module cache"
 
 /usr/bin/plutil -lint "$entitlements_file" >/dev/null \
     || fail "entitlements 不是有效 plist"
