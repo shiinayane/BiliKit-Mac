@@ -4,33 +4,18 @@ struct VideoDetailSkeleton: View {
     let loadingLabel: String
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                metadata
-                player
-
-                Divider()
-                controls
-
-                RelatedVideoShelf(
-                    state: .loading,
-                    onSelect: { _ in },
-                    onRetry: {}
-                )
-                .padding(
-                    .horizontal,
-                    -PlaybackPageLayout.horizontalContentPadding
-                )
-            }
-            .padding(
-                .horizontal,
-                PlaybackPageLayout.horizontalContentPadding
+        PlaybackDetailLayout {
+            metadata
+        } player: {
+            player
+        } controls: {
+            controls
+        } related: {
+            RelatedVideoShelf(
+                state: .loading,
+                onSelect: { _ in },
+                onRetry: {}
             )
-            .padding(
-                .vertical,
-                PlaybackPageLayout.verticalContentPadding
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(.background)
         .accessibilityElement(children: .ignore)

@@ -31,24 +31,8 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     @ViewBuilder
     public var body: some View {
         Group {
-            if let currentContext {
-                ZStack {
-                    GuestVideoDetailView(
-                        context: currentContext,
-                        isPreparingPlayback: showsPlaybackActivity,
-                        danmakuModel: danmakuModel,
-                        relatedVideoState: model.relatedVideoState,
-                        onSelectRelatedVideo: onSelectRelatedVideo,
-                        onRetryRelatedVideos: model.retryRelatedVideos,
-                        playerContent: playerContent
-                    )
-                    .disabled(blocksRetainedContext)
-                    .allowsHitTesting(!blocksRetainedContext)
-                    .accessibilityHidden(blocksRetainedContext)
-
-                    retainedContextOverlay
-                        .transition(.opacity)
-                }
+            if usesDetailSurface {
+                detailSurface
             } else {
                 emptyState
                     .transition(.opacity)
@@ -65,6 +49,75 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             }
             danmakuModel.selectVideo(playbackIdentity)
         }
+    }
+
+    private var usesDetailSurface: Bool {
+        if currentContext != nil {
+            return true
+        }
+
+        switch model.state {
+        case .loading, .loadingPage:
+            return true
+        case .idle, .preparingPlayback, .ready, .failed, .failedPage:
+            return false
+        }
+    }
+
+    private var detailSurface: some View {
+        ScrollView {
+            detailSurfaceContent
+                .overlay(alignment: .topLeading) {
+                    if currentContext != nil, isLoadingReplacement {
+                        replacementLoadingOverlay
+                            .frame(
+                                maxWidth: .infinity,
+                                maxHeight: .infinity,
+                                alignment: .topLeading
+                            )
+                            .background(.background)
+                            .transition(.opacity)
+                    }
+                }
+        }
+        .overlay {
+            replacementFailureOverlay
+        }
+    }
+
+    private var isLoadingReplacement: Bool {
+        if case .loading = model.state {
+            return true
+        }
+        return false
+    }
+
+    @ViewBuilder
+    private var detailSurfaceContent: some View {
+        if let currentContext {
+            GuestVideoDetailView(
+                context: currentContext,
+                isPreparingPlayback: showsPlaybackActivity,
+                danmakuModel: danmakuModel,
+                relatedVideoState: model.relatedVideoState,
+                onSelectRelatedVideo: onSelectRelatedVideo,
+                onRetryRelatedVideos: model.retryRelatedVideos,
+                playerContent: playerContent
+            )
+            .disabled(blocksRetainedContext)
+            .allowsHitTesting(!blocksRetainedContext)
+            .accessibilityHidden(blocksRetainedContext)
+        } else {
+            VideoDetailSkeleton(loadingLabel: initialLoadingLabel)
+                .accessibilityIdentifier("playback.loading")
+        }
+    }
+
+    private var initialLoadingLabel: String {
+        if case .loadingPage = model.state {
+            return "正在加载所选分 P"
+        }
+        return "正在加载视频详情"
     }
 
     private var currentContext: GuestVideoContext? {
@@ -124,11 +177,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             )
             .accessibilityIdentifier("detail.empty")
         case .loading:
-            VideoDetailSkeleton(loadingLabel: "正在加载视频详情")
-                .accessibilityIdentifier("playback.loading")
+            EmptyView()
         case .loadingPage:
-            VideoDetailSkeleton(loadingLabel: "正在加载所选分 P")
-                .accessibilityIdentifier("playback.loading")
+            EmptyView()
         case .failed(_, let failure), .failedPage(_, _, let failure):
             BrowseFailureView(
                 title: failure.title,
@@ -142,24 +193,28 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     @ViewBuilder
-    private var retainedContextOverlay: some View {
-        switch model.state {
-        case .loading:
-            VideoDetailSkeleton(loadingLabel: "正在加载所选视频")
-                .accessibilityIdentifier("playback.replacement.loading")
-        case .loadingPage:
-            EmptyView()
-        case .failed(_, let failure), .failedPage(_, _, let failure):
-            BrowseFailureView(
-                title: failure.title,
-                message: failure.message,
-                retry: retryAction
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background)
-            .accessibilityIdentifier("playback.replacement.failure")
-        case .idle, .preparingPlayback, .ready:
-            EmptyView()
+    private var replacementLoadingOverlay: some View {
+        VideoDetailSkeleton(loadingLabel: "正在加载所选视频")
+            .accessibilityIdentifier("playback.replacement.loading")
+    }
+
+    @ViewBuilder
+    private var replacementFailureOverlay: some View {
+        if currentContext != nil {
+            switch model.state {
+            case .failed(_, let failure), .failedPage(_, _, let failure):
+                BrowseFailureView(
+                    title: failure.title,
+                    message: failure.message,
+                    retry: retryAction
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background)
+                .accessibilityIdentifier("playback.replacement.failure")
+                .transition(.opacity)
+            case .idle, .loading, .loadingPage, .preparingPlayback, .ready:
+                EmptyView()
+            }
         }
     }
 

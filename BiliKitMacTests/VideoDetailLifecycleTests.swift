@@ -181,6 +181,24 @@ struct VideoDetailLifecycleTests {
 
         coordinator.openPlayback(first.bvid)
         #expect(
+            await waitUntilAsync {
+                guard
+                    case .loading(let bvid) = videoModel.state,
+                    bvid == first.bvid
+                else {
+                    return false
+                }
+                return await repository.firstRequestHasStarted()
+            }
+        )
+        hostingView.layoutSubtreeIfNeeded()
+        let initialDetailScrollView = try #require(
+            verticallyScrollableViews(in: hostingView).first
+        )
+        #expect(verticallyScrollableViews(in: hostingView).count == 1)
+
+        await repository.releaseFirstRequest()
+        #expect(
             await waitUntil {
                 guard case .ready(let context) = videoModel.state else {
                     return false
@@ -195,7 +213,18 @@ struct VideoDetailLifecycleTests {
         let surfaceIdentity = playerSurface.createdIdentities[0]
         let playerView = try #require(playerViews(in: hostingView).first)
         let playerViewIdentity = ObjectIdentifier(playerView)
+        let detailScrollView = try #require(
+            firstAncestor(ofType: NSScrollView.self, from: playerView)
+        )
+        #expect(detailScrollView === initialDetailScrollView)
         #expect(playerView.player === hostedPlayer)
+        #expect(
+            await waitUntil {
+                self.verticallyScrollableViews(in: hostingView).map(
+                    ObjectIdentifier.init
+                ) == [ObjectIdentifier(detailScrollView)]
+            }
+        )
         let stopCountBeforeReplacement = presentation.stopCount
 
         #expect(
@@ -220,6 +249,13 @@ struct VideoDetailLifecycleTests {
             playerViews(in: hostingView).first.map(ObjectIdentifier.init)
                 == Optional(playerViewIdentity)
         )
+        #expect(
+            verticallyScrollableViews(in: hostingView).map(
+                ObjectIdentifier.init
+            ) == [ObjectIdentifier(detailScrollView)]
+        )
+        let replacementViewportOrigin = scrollToBottom(detailScrollView)
+        #expect(replacementViewportOrigin.y > 0)
 
         coordinator.openPlayback(replacement.bvid)
         #expect(
@@ -245,6 +281,18 @@ struct VideoDetailLifecycleTests {
             playerViews(in: hostingView).first.map(ObjectIdentifier.init)
                 == Optional(playerViewIdentity)
         )
+        hostingView.layoutSubtreeIfNeeded()
+        #expect(
+            verticallyScrollableViews(in: hostingView).map(
+                ObjectIdentifier.init
+            ) == [ObjectIdentifier(detailScrollView)]
+        )
+        #expect(
+            abs(
+                detailScrollView.contentView.bounds.origin.y
+                    - replacementViewportOrigin.y
+            ) < 2
+        )
 
         await repository.failReplacementRequest()
         await videoModel.waitForCurrentTask()
@@ -261,6 +309,11 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            verticallyScrollableViews(in: hostingView).map(
+                ObjectIdentifier.init
+            ) == [ObjectIdentifier(detailScrollView)]
+        )
         #expect(
             playerViews(in: hostingView).first.map(ObjectIdentifier.init)
                 == Optional(playerViewIdentity)
@@ -288,6 +341,11 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(playerSurface.dismantledIdentities.isEmpty)
+        #expect(
+            verticallyScrollableViews(in: hostingView).map(
+                ObjectIdentifier.init
+            ) == [ObjectIdentifier(detailScrollView)]
+        )
         #expect(
             playerViews(in: hostingView).first.map(ObjectIdentifier.init)
                 == Optional(playerViewIdentity)
@@ -323,6 +381,11 @@ struct VideoDetailLifecycleTests {
         )
         #expect(playerSurface.createdIdentities == [surfaceIdentity])
         #expect(player.stopCallCount == 3)
+        #expect(
+            !verticallyScrollableViews(in: hostingView).contains {
+                $0 === detailScrollView
+            }
+        )
         #expect(
             presentation.startedIdentities == [
                 first.identity,
@@ -460,6 +523,54 @@ struct VideoDetailLifecycleTests {
     }
 
     @MainActor
+    private func verticallyScrollableViews(in root: NSView) -> [NSScrollView] {
+        var matches: [NSScrollView] = []
+        if let scrollView = root as? NSScrollView,
+            let documentView = scrollView.documentView,
+            documentView.bounds.height > scrollView.contentView.bounds.height
+        {
+            matches.append(scrollView)
+        }
+        for child in root.subviews {
+            matches.append(contentsOf: verticallyScrollableViews(in: child))
+        }
+        return matches
+    }
+
+    @MainActor
+    private func firstAncestor<ViewType: NSView>(
+        ofType type: ViewType.Type,
+        from view: NSView
+    ) -> ViewType? {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let match = current as? ViewType {
+                return match
+            }
+            ancestor = current.superview
+        }
+        return nil
+    }
+
+    @MainActor
+    private func scrollToBottom(_ scrollView: NSScrollView) -> NSPoint {
+        guard let documentView = scrollView.documentView else {
+            return scrollView.contentView.bounds.origin
+        }
+        let origin = NSPoint(
+            x: scrollView.contentView.bounds.origin.x,
+            y: max(
+                0,
+                documentView.bounds.maxY
+                    - scrollView.contentView.bounds.height
+            )
+        )
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        return scrollView.contentView.bounds.origin
+    }
+
+    @MainActor
     private func waitUntil(
         _ condition: @MainActor () -> Bool
     ) async -> Bool {
@@ -578,8 +689,11 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
 private actor ReplacementLifecycleRepository: GuestContentRepository {
     let first: VideoDetailLifecycleFixture
     let replacement: VideoDetailLifecycleFixture
+    private var blocksFirst = true
     private var blocksReplacement = true
+    private var firstRequestStarted = false
     private var replacementRequestStarted = false
+    private var blockedFirstRequest: CheckedContinuation<Void, Never>?
     private var blockedRequest: CheckedContinuation<Void, any Error>?
 
     init(
@@ -605,6 +719,12 @@ private actor ReplacementLifecycleRepository: GuestContentRepository {
     }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
+        if bvid == first.bvid, blocksFirst {
+            await withCheckedContinuation { continuation in
+                blockedFirstRequest = continuation
+                firstRequestStarted = true
+            }
+        }
         if bvid == replacement.bvid, blocksReplacement {
             try await withCheckedThrowingContinuation { continuation in
                 blockedRequest = continuation
@@ -612,6 +732,16 @@ private actor ReplacementLifecycleRepository: GuestContentRepository {
             }
         }
         return fixture(for: bvid).detail
+    }
+
+    func firstRequestHasStarted() -> Bool {
+        firstRequestStarted
+    }
+
+    func releaseFirstRequest() {
+        blocksFirst = false
+        blockedFirstRequest?.resume()
+        blockedFirstRequest = nil
     }
 
     func pages(for bvid: String) async throws -> [VideoPage] {
