@@ -702,14 +702,22 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         else {
             return false
         }
-        let prefix = String(
-            decoding: response.body.prefix(256),
-            as: UTF8.self
-        ).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !prefix.hasPrefix("{")
-            && !prefix.hasPrefix("[")
-            && !prefix.hasPrefix("<html")
-            && !prefix.hasPrefix("<!doctype")
+        return !isKnownNonProtobufBody(response.body)
+    }
+
+    private static func isKnownNonProtobufBody(_ body: Data) -> Bool {
+        if (try? JSONSerialization.jsonObject(with: body)) != nil {
+            return true
+        }
+        guard let text = String(data: body, encoding: .utf8) else {
+            return false
+        }
+        let normalized =
+            text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return normalized.hasPrefix("<html")
+            || normalized.hasPrefix("<!doctype")
     }
 }
 

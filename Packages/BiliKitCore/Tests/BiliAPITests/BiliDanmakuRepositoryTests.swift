@@ -67,7 +67,12 @@ struct BiliDanmakuRepositoryTests {
             HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "application/octet-stream"],
-                body: Data("<!doctype html><title>blocked</title>".utf8)
+                body: Data(" \n{\"code\":-412}\n".utf8)
+            ),
+            HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "application/octet-stream"],
+                body: Data(" \n<!doctype html><title>blocked</title>".utf8)
             ),
         ] {
             let repository = repository(response: response)
@@ -75,6 +80,38 @@ struct BiliDanmakuRepositoryTests {
                 try await repository.segment(index: 1, for: identity)
             }
         }
+    }
+
+    @Test
+    func validProtobufLengthByteThatLooksLikeJSONIsAccepted() async throws {
+        var element = Bilikit_Danmaku_Element()
+        element.id = 1
+        element.progressMilliseconds = 1_000
+        element.mode = 1
+        element.fontSize = 25
+        element.colorRgb = 0xFF_FF_FF
+        element.content = String(repeating: "x", count: 96)
+        element.weight = 5
+        element.idString = "fixture"
+
+        let encodedElement = try element.serializedData()
+        #expect(encodedElement.count == 123)
+
+        var payload = Bilikit_Danmaku_SegmentReply()
+        payload.elements = [element]
+        let body = try payload.serializedData()
+        #expect(body.starts(with: [0x0A, 0x7B]))
+
+        let segment = try await repository(
+            response: HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "application/octet-stream"],
+                body: body
+            )
+        ).segment(index: 1, for: identity)
+
+        #expect(segment.events.count == 1)
+        #expect(segment.events.first?.id == "fixture")
     }
 
     @Test
