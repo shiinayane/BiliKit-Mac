@@ -51,6 +51,10 @@ public struct PlaybackContextSidebar: View {
     private func sidebarContent(_ context: GuestVideoContext) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
+                VideoUploaderHeader(owner: context.detail.owner)
+
+                Divider()
+
                 if !context.detail.summary.isEmpty {
                     summarySection(context.detail.summary)
                     Divider()

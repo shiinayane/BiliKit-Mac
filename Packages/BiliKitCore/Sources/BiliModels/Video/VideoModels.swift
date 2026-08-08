@@ -4,11 +4,18 @@ public struct VideoOwner: Sendable, Equatable {
     public let id: Int64
     public let name: String
     public let avatarURL: URL?
+    public let signature: String?
 
-    public init(id: Int64, name: String, avatarURL: URL? = nil) {
+    public init(
+        id: Int64,
+        name: String,
+        avatarURL: URL? = nil,
+        signature: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.avatarURL = avatarURL
+        self.signature = signature
     }
 }
 
