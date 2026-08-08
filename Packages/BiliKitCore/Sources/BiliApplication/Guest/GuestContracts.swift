@@ -2,6 +2,8 @@ import BiliModels
 
 public enum GuestApplicationError: Error, Sendable, Equatable {
     case invalidRequest
+    case authenticationInvalid
+    case authenticationUnavailable
     case requestRestricted
     case serviceRejected(code: Int)
     case transportFailure

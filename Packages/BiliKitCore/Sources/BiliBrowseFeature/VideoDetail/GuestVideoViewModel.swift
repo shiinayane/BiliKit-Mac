@@ -46,6 +46,8 @@ public final class GuestVideoViewModel {
     public private(set) var requestedPlaybackIdentity: PlaybackItemIdentity?
     /// 已经由播放器成功安装的媒体身份；切换开始和失败后必须为 nil。
     public private(set) var presentedPlaybackIdentity: PlaybackItemIdentity?
+    /// 仅在确认凭据失效时递增，由 App 层协调账户重校验；其他播放失败不能触发登出。
+    public private(set) var authenticationRevalidationGeneration = 0
 
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
@@ -271,6 +273,7 @@ public final class GuestVideoViewModel {
             state = .idle
         } catch let error as GuestApplicationError {
             guard generation == currentGeneration else { return }
+            recordAuthenticationInvalidationIfNeeded(error)
             state = .failed(bvid: bvid, failure: .content(error))
         } catch {
             guard generation == currentGeneration else { return }
@@ -320,6 +323,7 @@ public final class GuestVideoViewModel {
             presentedContext = nil
         } catch let error as GuestApplicationError {
             guard generation == currentGeneration else { return }
+            recordAuthenticationInvalidationIfNeeded(error)
             state = .failedPage(
                 context: context,
                 targetPage: targetPage,
@@ -368,5 +372,12 @@ public final class GuestVideoViewModel {
             targetPage: targetPage,
             failure: .playback
         )
+    }
+
+    private func recordAuthenticationInvalidationIfNeeded(
+        _ error: GuestApplicationError
+    ) {
+        guard error == .authenticationInvalid else { return }
+        authenticationRevalidationGeneration += 1
     }
 }

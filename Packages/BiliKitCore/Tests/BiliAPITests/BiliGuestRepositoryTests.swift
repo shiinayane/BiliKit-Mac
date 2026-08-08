@@ -16,12 +16,12 @@ struct BiliGuestRepositoryTests {
         }
     }
 
-    @Test
-    func mapsRestrictedResponseAtAdapterBoundary() async {
+    @Test(arguments: [403, 412])
+    func mapsRestrictedResponseAtAdapterBoundary(statusCode: Int) async {
         let repository = BiliGuestRepository(
             client: BiliAPIClient(
                 transport: FixedResponseTransport(
-                    response: HTTPResponse(statusCode: 403, body: Data())
+                    response: HTTPResponse(statusCode: statusCode, body: Data())
                 )
             )
         )

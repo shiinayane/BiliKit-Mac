@@ -28,7 +28,8 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
 
     private static func map(_ error: BiliAPIError) -> WatchHistoryError {
         switch error {
-        case .authorizationRequired,
+        case .authorizationRequired, .authenticationInvalid,
+            .authorizationUnavailable,
             .apiRejected(code: -101, message: _):
             .authenticationRequired
         case .apiRejected(code: -412, message: _),

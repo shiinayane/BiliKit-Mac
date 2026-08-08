@@ -90,6 +90,19 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - 不复用当前 `URLSession.shared` 的默认 transport 处理认证。后续如需共享 HTTP 抽象，应注入专用 session/transport，而不是扩大共享全局状态。
 - 授权器从 Keychain provider 获取不可公开的快照，只为精确允许的请求临时生成 `Cookie` header；调用结束后不缓存完整 header。
 
+### 4.3 登录态播放信息
+
+- 登录态自动画质只允许精确 `GET https://api.bilibili.com:443/x/player/playurl`，query 必须且
+  只能包含合法 `bvid`、正 `cid`、正 `qn`、`fnval=976`、`fnver=0`、`fourk=1`。
+- `qn` 与 `fourk` 只表达请求上限；产品能力只由响应中生产 decoder 可消费的 AVC/AAC
+  representations 决定，不承诺固定档位或 4K。
+- 只有 Keychain 明确不存在凭据时才使用既有匿名请求。凭据过期或损坏会清理并触发账户
+  重校验；Keychain/authorizer 故障、HTTP 403/412、业务拒绝、非 JSON 与 redirect 均失败
+  关闭，不自动匿名重试，也不增加 WBI、设备 Cookie、`dm_img_*` 或其他画像参数。
+- Cookie 在 playurl 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、相关推荐、
+  字幕正文与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
+  当前 item 上热换授权结果。
+
 ## 5. 状态机与提交规则
 
 ```text
@@ -125,7 +138,13 @@ signedIn
 
 以下本地 Gate 已满足：
 
-- 观看历史与字幕目录已接入精确授权；负向测试证明游客 endpoint、playurl、CDN、loopback、非白名单 endpoint 与跨主机重定向不会得到 Cookie。
+- 观看历史、字幕目录与精确 legacy playurl 已接入 endpoint 级授权；负向测试证明普通游客
+  endpoint、相关推荐、非白名单 endpoint 与跨主机重定向不会得到 Cookie。playurl 输出的
+  `mediaHeaders` 不含 Cookie，CDN 与 loopback 继续由既有隔离 transport 消费该白名单 header。
+- authorizer 精确匹配未编码 path；认证 API session 使用 epoch 隔离授权、send 与响应写回。
+  登出、已确认的 signed-in → signed-out，以及初次恢复确认本地凭据失效都会推进 epoch。旧
+  Cookie 请求不能跨入 replacement transport，忽略取消的旧响应也不能写回；登出先取消 QR
+  generation，迟到 validation 不能重新持久化凭据，清理期间也不允许 restore 重入。
 - 真实扫码、App 重启恢复、观看历史读取、详情/播放器跳转与界面登出已通过；第二次重启保持未登录，未登录历史入口回退账号 sheet。
 - 历史 sheet 关闭与登出会取消任务并清空个性化列表；验证记录不包含账号身份、历史标题、BVID 或秘密值。
 

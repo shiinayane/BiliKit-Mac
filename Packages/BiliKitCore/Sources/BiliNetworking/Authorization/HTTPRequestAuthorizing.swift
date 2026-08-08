@@ -6,3 +6,15 @@ import Foundation
 public protocol HTTPRequestAuthorizing: Sendable {
     func authorize(_ request: HTTPRequest) async throws -> HTTPRequest
 }
+
+/// 授权失败的稳定分类；调用方只能把明确的本地无凭据解释为游客状态。
+public enum HTTPRequestAuthorizationFailureKind: Sendable, Equatable {
+    case missingCredential
+    case invalidCredential
+    case unavailable
+    case denied
+}
+
+public protocol HTTPRequestAuthorizationFailure: Error {
+    var authorizationFailureKind: HTTPRequestAuthorizationFailureKind { get }
+}

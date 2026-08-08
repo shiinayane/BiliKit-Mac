@@ -80,6 +80,205 @@ struct BiliAuthenticationServiceTests {
     }
 
     @Test
+    func confirmedSessionBecomingSignedOutInvalidatesAuthenticatedAPIs() async throws {
+        let events = LogoutEventRecorder()
+        let store = MemoryWebCredentialStore(
+            credential: try makeFixtureCredential()
+        )
+        let service = BiliAuthenticationService(
+            loginSession: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport(
+                    responses: [
+                        navigationResponse(isLogin: true),
+                        navigationResponse(isLogin: false),
+                    ]
+                )
+            ),
+            loginSessionFactory: {
+                WebQRLoginSession(
+                    transport: RecordingAuthTransport(),
+                    credentialStore: store
+                )
+            },
+            authorizerFactory: {
+                BiliCredentialRequestAuthorizer(
+                    store: store,
+                    transport: RecordingAuthTransport()
+                )
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events)
+            ]
+        )
+
+        #expect(await service.restore() == .signedIn(nil))
+        #expect(events.values().isEmpty)
+
+        #expect(await service.restore() == .signedOut)
+        #expect(events.values() == ["api-invalidated"])
+        #expect(try store.load() == nil)
+    }
+
+    @Test
+    func initialSignedOutRestoreDoesNotInvalidateAnonymousAPIs() async {
+        let events = LogoutEventRecorder()
+        let store = MemoryWebCredentialStore()
+        let service = BiliAuthenticationService(
+            loginSession: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport()
+            ),
+            loginSessionFactory: {
+                WebQRLoginSession(
+                    transport: RecordingAuthTransport(),
+                    credentialStore: store
+                )
+            },
+            authorizerFactory: {
+                BiliCredentialRequestAuthorizer(
+                    store: store,
+                    transport: RecordingAuthTransport()
+                )
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events)
+            ]
+        )
+
+        #expect(await service.restore() == .signedOut)
+        #expect(events.values().isEmpty)
+    }
+
+    @Test
+    func initialInvalidStoredSessionInvalidatesAuthenticatedAPIs() async throws {
+        let events = LogoutEventRecorder()
+        let store = MemoryWebCredentialStore(
+            credential: try makeFixtureCredential()
+        )
+        let service = BiliAuthenticationService(
+            loginSession: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport(
+                    responses: [navigationResponse(isLogin: false)]
+                )
+            ),
+            loginSessionFactory: {
+                WebQRLoginSession(
+                    transport: RecordingAuthTransport(),
+                    credentialStore: store
+                )
+            },
+            authorizerFactory: {
+                BiliCredentialRequestAuthorizer(
+                    store: store,
+                    transport: RecordingAuthTransport()
+                )
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events)
+            ]
+        )
+
+        #expect(await service.restore() == .signedOut)
+        #expect(events.values() == ["api-invalidated"])
+        #expect(try store.load() == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func logoutCancelsLateCredentialFinalizationBeforeDeletingStore() async throws {
+        let store = MemoryWebCredentialStore()
+        let transport = SuspendingFinalizationTransport(
+            generateResponse: try fixtureResponse("qr-generate"),
+            pollResponse: try fixtureResponse(
+                "qr-poll-success",
+                headers: [
+                    "Content-Type": "application/json",
+                    "Set-Cookie": fixtureSetCookieHeader,
+                ]
+            ),
+            validationResponse: navigationResponse(isLogin: true)
+        )
+        let service = makeService(
+            session: WebQRLoginSession(
+                transport: transport,
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport()
+            ),
+            store: store
+        )
+
+        #expect(await service.requestQRCode() == .awaitingScan)
+        #expect(await service.pollOnce() == .finalizing)
+        let finalizeTask = Task { await service.finalizeLogin() }
+        await transport.waitUntilValidationStarts()
+
+        #expect(await service.logout() == .signedOut)
+        await transport.resumeValidation()
+        _ = await finalizeTask.value
+
+        #expect(try store.load() == nil)
+        #expect(store.saveCount == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func restoreCannotEnterWhileLogoutCleanupIsSuspended() async throws {
+        let store = MemoryWebCredentialStore(
+            credential: try makeFixtureCredential()
+        )
+        let invalidator = SuspendingAuthenticatedSessionInvalidator()
+        let service = BiliAuthenticationService(
+            loginSession: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport(
+                    responses: [navigationResponse(isLogin: true)]
+                )
+            ),
+            loginSessionFactory: {
+                WebQRLoginSession(
+                    transport: RecordingAuthTransport(),
+                    credentialStore: store
+                )
+            },
+            authorizerFactory: {
+                BiliCredentialRequestAuthorizer(
+                    store: store,
+                    transport: RecordingAuthTransport()
+                )
+            },
+            additionalSessionInvalidators: [invalidator]
+        )
+
+        #expect(await service.restore() == .signedIn(nil))
+        let logoutTask = Task { await service.logout() }
+        await invalidator.waitUntilInvalidationStarts()
+
+        #expect(await service.restore() == .signingOut)
+        await invalidator.resumeInvalidation()
+        #expect(await logoutTask.value == .signedOut)
+        #expect(try store.load() == nil)
+    }
+
+    @Test
     func logoutDeletesCredentialBeforeInvalidatingBothSessions() async throws {
         let events = LogoutEventRecorder()
         let store = EventCredentialStore(
@@ -128,9 +327,9 @@ struct BiliAuthenticationServiceTests {
         #expect(
             events.values() == [
                 "credential-deleted",
+                "api-invalidated",
                 "qr-invalidated",
                 "validation-invalidated",
-                "api-invalidated",
             ]
         )
     }
@@ -186,9 +385,9 @@ struct BiliAuthenticationServiceTests {
         #expect(
             events.values() == [
                 "credential-delete-failed",
+                "api-invalidated",
                 "qr-invalidated",
                 "validation-invalidated",
-                "api-invalidated",
             ]
         )
     }
@@ -341,5 +540,88 @@ private actor RecordingAuthenticatedSessionInvalidator:
 
     func invalidateAuthenticatedSession() {
         events.append("api-invalidated")
+    }
+}
+
+private actor SuspendingAuthenticatedSessionInvalidator:
+    AuthenticatedSessionInvalidating
+{
+    private var started = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var invalidationContinuation: CheckedContinuation<Void, Never>?
+
+    func invalidateAuthenticatedSession() async {
+        started = true
+        for waiter in startWaiters {
+            waiter.resume()
+        }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            invalidationContinuation = continuation
+        }
+    }
+
+    func waitUntilInvalidationStarts() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeInvalidation() {
+        invalidationContinuation?.resume()
+        invalidationContinuation = nil
+    }
+}
+
+private actor SuspendingFinalizationTransport: HTTPTransport {
+    private let generateResponse: HTTPResponse
+    private let pollResponse: HTTPResponse
+    private let validationResponse: HTTPResponse
+    private var requestCount = 0
+    private var validationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var validationContinuation: CheckedContinuation<Void, Never>?
+
+    init(
+        generateResponse: HTTPResponse,
+        pollResponse: HTTPResponse,
+        validationResponse: HTTPResponse
+    ) {
+        self.generateResponse = generateResponse
+        self.pollResponse = pollResponse
+        self.validationResponse = validationResponse
+    }
+
+    func send(_ request: HTTPRequest) async -> HTTPResponse {
+        requestCount += 1
+        switch requestCount {
+        case 1:
+            return generateResponse
+        case 2:
+            return pollResponse
+        default:
+            validationStarted = true
+            for waiter in startWaiters {
+                waiter.resume()
+            }
+            startWaiters.removeAll()
+            await withCheckedContinuation { continuation in
+                validationContinuation = continuation
+            }
+            return validationResponse
+        }
+    }
+
+    func waitUntilValidationStarts() async {
+        guard !validationStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeValidation() {
+        validationContinuation?.resume()
+        validationContinuation = nil
     }
 }

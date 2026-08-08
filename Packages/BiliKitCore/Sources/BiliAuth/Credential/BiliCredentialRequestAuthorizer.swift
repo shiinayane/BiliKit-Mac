@@ -1,7 +1,9 @@
 import BiliNetworking
 import Foundation
 
-public enum BiliRequestAuthorizationError: Error, Sendable, Equatable {
+public enum BiliRequestAuthorizationError:
+    HTTPRequestAuthorizationFailure, Sendable, Equatable
+{
     case requestNotAllowed
     case credentialHeaderAlreadyPresent
     case missingCredential
@@ -9,6 +11,19 @@ public enum BiliRequestAuthorizationError: Error, Sendable, Equatable {
     case invalidCredential
     case credentialStoreUnavailable
     case validationUnavailable
+
+    public var authorizationFailureKind: HTTPRequestAuthorizationFailureKind {
+        switch self {
+        case .missingCredential:
+            .missingCredential
+        case .expiredCredential, .invalidCredential:
+            .invalidCredential
+        case .credentialStoreUnavailable, .validationUnavailable:
+            .unavailable
+        case .requestNotAllowed, .credentialHeaderAlreadyPresent:
+            .denied
+        }
+    }
 }
 
 /// 从 Keychain 按需读取 Cookie，并只授权代码内精确列出的 Bilibili API 请求。
@@ -108,7 +123,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     }
 
     /// 验证已存凭据当前是否仍登录；明确失效会清除，验证不可用则保留并抛错。
-    func restoreAccountSession() async throws -> NavigationAuthenticationResult {
+    func restoreAccountSession() async throws -> StoredAccountSessionRestoreResult {
         let request = HTTPRequest(
             url: Self.navigationValidationURL,
             headers: [
@@ -120,11 +135,12 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         let authorized: HTTPRequest
         do {
             authorized = try await authorize(request)
-        } catch BiliRequestAuthorizationError.missingCredential,
-            BiliRequestAuthorizationError.expiredCredential,
+        } catch BiliRequestAuthorizationError.missingCredential {
+            return .signedOut(hadCredential: false)
+        } catch BiliRequestAuthorizationError.expiredCredential,
             BiliRequestAuthorizationError.invalidCredential
         {
-            return .signedOut
+            return .signedOut(hadCredential: true)
         }
 
         let response: HTTPResponse
@@ -146,12 +162,11 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         else {
             throw BiliRequestAuthorizationError.validationUnavailable
         }
-        let result = data.authenticationResult
-        guard case .signedIn = result else {
+        guard case .signedIn(let identity) = data.authenticationResult else {
             try purgeStoredCredential()
-            return .signedOut
+            return .signedOut(hadCredential: true)
         }
-        return result
+        return .signedIn(identity)
     }
 
     private static func isAllowed(_ request: HTTPRequest) -> Bool {
@@ -174,16 +189,49 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         else {
             return false
         }
-        switch components.path {
+        switch components.percentEncodedPath {
         case "/x/web-interface/nav":
             return components.queryItems?.isEmpty != false
         case "/x/web-interface/history/cursor":
             return isAllowedHistoryQuery(components.queryItems)
+        case "/x/player/playurl":
+            return isAllowedPlaybackQuery(components.queryItems)
         case "/x/player/wbi/v2":
             return isAllowedPlayerWBIQuery(components.queryItems)
         default:
             return false
         }
+    }
+
+    private static func isAllowedPlaybackQuery(
+        _ queryItems: [URLQueryItem]?
+    ) -> Bool {
+        guard let queryItems, queryItems.count == 6 else { return false }
+        var values: [String: String] = [:]
+        for item in queryItems {
+            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
+                return false
+            }
+        }
+        guard values.count == 6,
+            Set(values.keys) == ["bvid", "cid", "qn", "fnval", "fnver", "fourk"],
+            let bvid = values["bvid"],
+            bvid.count == 12,
+            bvid.hasPrefix("BV"),
+            bvid.allSatisfy({
+                $0.isASCII && ($0.isLetter || $0.isNumber)
+            }),
+            let cid = values["cid"].flatMap(Int64.init),
+            cid > 0,
+            let quality = values["qn"].flatMap(Int.init),
+            quality > 0,
+            values["fnval"] == "976",
+            values["fnver"] == "0",
+            values["fourk"] == "1"
+        else {
+            return false
+        }
+        return true
     }
 
     private static func isAllowedPlayerWBIQuery(

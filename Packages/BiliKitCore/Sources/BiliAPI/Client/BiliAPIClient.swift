@@ -5,9 +5,10 @@ import Foundation
 
 /// Bilibili endpoint/DTO adapter；把远端协议限制在 `BiliAPI`，并返回稳定模型。
 ///
-/// 匿名请求永不经过 authorizer。只有显式认证 endpoint 才临时授权；响应在解码前还要满足
-/// 状态、大小与 Content-Type 边界。actor 隔离可变 transport/WBI cache；跨 `await` 可重入，
-/// 用户意图的取消与写回代次仍由上层 owner 管理。
+/// 匿名请求永不经过 authorizer。只有显式认证 endpoint 与精确 legacy playurl 才临时授权；
+/// playurl 也只有在本地明确无凭据时保持匿名。响应在解码前还要满足状态、大小与
+/// Content-Type 边界。actor 隔离可变 transport/WBI cache；跨 `await` 可重入，用户意图的
+/// 取消与写回代次仍由上层 owner 管理。
 public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
@@ -30,6 +31,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private let timestampProvider: @Sendable () -> Int64
     private let wbiSigner = WBISigner()
     private var cachedWBIKey: CachedWBIKey?
+    private var authenticatedSessionEpoch: UInt64 = 0
 
     public init(
         transport: any HTTPTransport = URLSessionTransport(),
@@ -138,7 +140,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.map { try $0.model() }
     }
 
-    /// 取得匿名 AVC/AAC DASH 清单与媒体所需的非认证 header，不下载媒体正文。
+    /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
     public func playback(
         for bvid: String,
         cid: Int64,
@@ -148,18 +150,31 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw BiliAPIError.invalidRequest
         }
         let referer = Self.videoReferer(bvid)
-        let payload: PlayURLPayload = try await get(
-            path: "/x/player/playurl",
-            queryItems: [
-                URLQueryItem(name: "bvid", value: bvid),
-                URLQueryItem(name: "cid", value: String(cid)),
-                URLQueryItem(name: "qn", value: String(quality)),
-                URLQueryItem(name: "fnval", value: "976"),
-                URLQueryItem(name: "fnver", value: "0"),
-                URLQueryItem(name: "fourk", value: "1"),
-            ],
-            referer: referer
-        )
+        let queryItems = [
+            URLQueryItem(name: "bvid", value: bvid),
+            URLQueryItem(name: "cid", value: String(cid)),
+            URLQueryItem(name: "qn", value: String(quality)),
+            URLQueryItem(name: "fnval", value: "976"),
+            URLQueryItem(name: "fnver", value: "0"),
+            URLQueryItem(name: "fourk", value: "1"),
+        ]
+        let payload: PlayURLPayload
+        if requestAuthorizer != nil {
+            payload = try await get(
+                path: "/x/player/playurl",
+                queryItems: queryItems,
+                referer: referer,
+                requiresAuthentication: true,
+                permitsMissingCredentialFallback: true,
+                mapsAuthenticationInvalidation: true
+            )
+        } else {
+            payload = try await get(
+                path: "/x/player/playurl",
+                queryItems: queryItems,
+                referer: referer
+            )
+        }
 
         let video = try payload.dash.video
             .filter(\.isAVCVideo)
@@ -291,8 +306,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.model(pageSize: pageSize)
     }
 
-    /// 登出时取消旧 transport 中的请求、换入干净 session，并丢弃可能来自登录会话的 WBI key。
+    /// 认证会话失效时取消旧 transport 请求、换入干净 session，并丢弃关联 WBI key。
     public func invalidateAuthenticatedSession() {
+        authenticatedSessionEpoch &+= 1
         if let invalidating = transport as? any HTTPTransportInvalidating {
             invalidating.invalidateAndCancel()
         }
@@ -309,6 +325,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         queryItems: [URLQueryItem],
         referer: String,
         requiresAuthentication: Bool = false,
+        permitsMissingCredentialFallback: Bool = false,
+        mapsAuthenticationInvalidation: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let url = try endpoint(path: path, queryItems: queryItems)
@@ -316,6 +334,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             url: url,
             referer: referer,
             requiresAuthentication: requiresAuthentication,
+            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
             maximumResponseSize: maximumResponseSize
         )
     }
@@ -343,12 +363,15 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String,
         requiresAuthentication: Bool = false,
+        permitsMissingCredentialFallback: Bool = false,
+        mapsAuthenticationInvalidation: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let response = try await response(
             url: url,
             referer: referer,
             requiresAuthentication: requiresAuthentication,
+            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
             maximumResponseSize: maximumResponseSize
         )
 
@@ -357,6 +380,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             status = try decoder.decode(APIStatusEnvelope.self, from: response.body)
         } catch {
             throw BiliAPIError.decodingFailed
+        }
+        if mapsAuthenticationInvalidation, status.code == -101 {
+            throw BiliAPIError.authenticationInvalid
         }
         guard status.code == 0 else {
             throw BiliAPIError.apiRejected(
@@ -380,6 +406,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String,
         requiresAuthentication: Bool = false,
+        permitsMissingCredentialFallback: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> HTTPResponse {
         let baseRequest = HTTPRequest(
@@ -390,6 +417,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 "User-Agent": userAgent,
             ]
         )
+        let requestClient = httpClient
+        let requestSessionEpoch =
+            requiresAuthentication ? authenticatedSessionEpoch : nil
         let request: HTTPRequest
         if requiresAuthentication {
             guard let requestAuthorizer else {
@@ -399,19 +429,47 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 request = try await requestAuthorizer.authorize(baseRequest)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as any HTTPRequestAuthorizationFailure {
+                guard requestSessionEpoch == authenticatedSessionEpoch else {
+                    throw CancellationError()
+                }
+                switch error.authorizationFailureKind {
+                case .missingCredential where permitsMissingCredentialFallback:
+                    try Task.checkCancellation()
+                    request = baseRequest
+                case .invalidCredential:
+                    throw BiliAPIError.authenticationInvalid
+                case .missingCredential:
+                    throw BiliAPIError.authorizationRequired
+                case .unavailable, .denied:
+                    throw BiliAPIError.authorizationUnavailable
+                }
             } catch {
-                throw BiliAPIError.authorizationRequired
+                guard requestSessionEpoch == authenticatedSessionEpoch else {
+                    throw CancellationError()
+                }
+                throw BiliAPIError.authorizationUnavailable
             }
         } else {
             request = baseRequest
         }
+        if let requestSessionEpoch,
+            requestSessionEpoch != authenticatedSessionEpoch
+        {
+            throw CancellationError()
+        }
 
         let response: HTTPResponse
         do {
-            response = try await httpClient.send(request)
+            response = try await requestClient.send(request)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as HTTPClientError {
+            if let requestSessionEpoch,
+                requestSessionEpoch != authenticatedSessionEpoch
+            {
+                throw CancellationError()
+            }
             switch error {
             case .unacceptableStatusCode(let status):
                 throw BiliAPIError.httpStatus(status)
@@ -419,7 +477,17 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 throw BiliAPIError.transportFailure
             }
         } catch {
+            if let requestSessionEpoch,
+                requestSessionEpoch != authenticatedSessionEpoch
+            {
+                throw CancellationError()
+            }
             throw BiliAPIError.transportFailure
+        }
+        if let requestSessionEpoch,
+            requestSessionEpoch != authenticatedSessionEpoch
+        {
+            throw CancellationError()
         }
 
         guard response.body.count <= maximumResponseSize else {

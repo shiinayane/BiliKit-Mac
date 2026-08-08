@@ -43,6 +43,9 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 字幕正文 URL 必须单独验证 scheme、userinfo、端口、允许的主机和每次重定向；不得复用媒体 CDN 或游客图片的宽泛策略。M4.0 现场证据当前只确认 `aisubtitle.hdslb.com`，新增主机必须先失败关闭并取得同等级脱敏证据。
 - 目录、正文、弹幕元数据和分段分别设置 Content-Type 与大小上限。JSON、protobuf、HTML 错误页和空响应不能互相降级解析。
 - 取消、超时和换集必须终止网络与解码 Task；未知接口状态默认失败关闭。
+- 登录态 playurl 的 Cookie 必须在 API 响应前终止；映射后的 playback manifest 与媒体
+  headers 不保留 Cookie。DASH SIDX/媒体 Range、图片、相关推荐与 loopback 请求继续使用
+  各自无认证 transport，不能从播放信息请求继承授权状态。
 
 ## 5. Fixture、探针与验证记录
 

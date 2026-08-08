@@ -176,7 +176,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         switch error {
         case .invalidRequest:
             .invalidRequest
-        case .authorizationRequired:
+        case .authorizationRequired, .authenticationInvalid,
+            .authorizationUnavailable:
             .authenticationRequired
         case .transportFailure:
             .transportFailure
