@@ -20,33 +20,18 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     }
 
     private var mainContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                metadata
-                player
-
-                Divider()
-                DanmakuControlsView(model: danmakuModel)
-
-                RelatedVideoShelf(
-                    state: shelfState,
-                    onSelect: onSelectRelatedVideo,
-                    onRetry: onRetryRelatedVideos
-                )
-                .padding(
-                    .horizontal,
-                    -PlaybackPageLayout.horizontalContentPadding
-                )
-            }
-            .padding(
-                .horizontal,
-                PlaybackPageLayout.horizontalContentPadding
+        PlaybackDetailLayout {
+            metadata
+        } player: {
+            player
+        } controls: {
+            DanmakuControlsView(model: danmakuModel)
+        } related: {
+            RelatedVideoShelf(
+                state: shelfState,
+                onSelect: onSelectRelatedVideo,
+                onRetry: onRetryRelatedVideos
             )
-            .padding(
-                .vertical,
-                PlaybackPageLayout.verticalContentPadding
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -157,5 +142,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
 enum PlaybackPageLayout {
     static let horizontalContentPadding: CGFloat = 40
     static let verticalContentPadding: CGFloat = 24
+    static let sectionSpacing: CGFloat = 18
     static let playerAspectRatio: CGFloat = 16.0 / 9.0
 }
