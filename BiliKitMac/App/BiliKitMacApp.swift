@@ -17,15 +17,20 @@ struct BiliKitMacApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-                if usesUITestFixture {
-                    UITestContentView()
-                } else {
+            Group {
+                #if DEBUG
+                    if usesUITestFixture {
+                        UITestContentView()
+                    } else {
+                        AppRootView()
+                    }
+                #else
                     AppRootView()
-                }
-            #else
-                AppRootView()
-            #endif
+                #endif
+            }
+            .typesettingLanguage(
+                .explicit(Locale.Language(identifier: "zh-Hans"))
+            )
         }
         .defaultSize(width: 1_320, height: 820)
     }

@@ -12,6 +12,7 @@ import QuartzCore
 public final class CoreAnimationDanmakuRenderer:
     DanmakuRenderingBackend
 {
+    private static let simplifiedChineseLanguage = "zh-Hans"
     private static let maximumTextWidthPixels: CGFloat = 8_192
     private static let maximumTextHeightPixels: CGFloat = 512
     private static let maximumTextUTF16Length = 512
@@ -200,6 +201,8 @@ public final class CoreAnimationDanmakuRenderer:
                 .font: font,
                 .foregroundColor: NSColor.white,
                 .shadow: heavyInkShadow,
+                NSAttributedString.Key(kCTLanguageAttributeName as String):
+                    Self.simplifiedChineseLanguage,
             ]
         )
     }

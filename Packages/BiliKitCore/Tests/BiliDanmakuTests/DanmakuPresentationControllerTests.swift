@@ -1,6 +1,7 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import CoreText
 import QuartzCore
 import Testing
 
@@ -285,6 +286,45 @@ struct DanmakuPresentationControllerTests {
         #expect(shadow.shadowBlurRadius == 1.5)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
+    }
+
+    @Test
+    func coreAnimationTextCarriesSimplifiedChineseLanguage() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 200)
+        let fixture = DanmakuEvent(
+            id: "simplified-chinese-language",
+            timeSeconds: 1,
+            mode: .scrolling,
+            text: "弹幕字体/视频推荐/门骨直令",
+            fontSize: 24,
+            colorRGB: 0xFFFFFF,
+            weight: 1
+        )
+        let metrics = renderer.measure(fixture)
+        renderer.render(
+            placement(
+                event: fixture,
+                metrics: metrics,
+                originY: 20
+            )
+        )
+
+        let layer = try #require(renderer.textLayer(forEventID: fixture.id))
+        let attributed = try #require(layer.string as? NSAttributedString)
+        var languageRange = NSRange()
+        let language =
+            attributed.attribute(
+                NSAttributedString.Key(kCTLanguageAttributeName as String),
+                at: 0,
+                effectiveRange: &languageRange
+            ) as? String
+
+        #expect(language == "zh-Hans")
+        #expect(
+            languageRange
+                == NSRange(location: 0, length: attributed.length)
+        )
     }
 
     @Test

@@ -18,6 +18,7 @@ assert_occurrences() {
 }
 
 project_file="BiliKitMac.xcodeproj/project.pbxproj"
+app_entry_file="BiliKitMac/App/BiliKitMacApp.swift"
 entitlements_file="BiliKitMac/BiliKitMac.entitlements"
 package_file="Packages/BiliKitCore/Package.swift"
 package_resolution_file="Packages/BiliKitCore/Package.resolved"
@@ -92,6 +93,17 @@ assert_occurrences 2 \
     'ENABLE_APP_SANDBOX = YES;' \
     "$project_file" \
     "App Debug/Release 必须启用 App Sandbox"
+assert_occurrences 1 \
+    '.typesettingLanguage(' \
+    "$app_entry_file" \
+    "App 根内容必须明确设置排版语言"
+assert_occurrences 1 \
+    '.explicit(Locale.Language(identifier: "zh-Hans"))' \
+    "$app_entry_file" \
+    "App 根内容排版语言必须为简体中文"
+if grep -F '.environment(\.locale' "$app_entry_file" >/dev/null; then
+    fail "App 根内容不得通过 locale 强制排版语言"
+fi
 
 deployment_count=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { count += 1; if ($0 !~ /MACOSX_DEPLOYMENT_TARGET = 15\.0;/) bad += 1 } END { print count + 0, bad + 0 }' "$project_file")
 set -- $deployment_count
