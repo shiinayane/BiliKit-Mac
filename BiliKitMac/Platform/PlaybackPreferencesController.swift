@@ -14,14 +14,17 @@ struct PlaybackPreferences: Equatable, Sendable {
     let preferredRate: Float
 }
 
-protocol PlaybackPreferencesStoring: AnyObject {
+protocol PlaybackPreferencesStoring: AnyObject, Sendable {
     func load() -> PlaybackPreferences
     func saveVolume(_ volume: Float)
     func saveMuted(_ isMuted: Bool)
     func savePreferredRate(_ rate: Float)
 }
 
-final class UserDefaultsPlaybackPreferencesStore: PlaybackPreferencesStoring {
+/// `UserDefaults` 官方保证线程安全，但当前 SDK 尚未声明其为 `Sendable`。
+final class UserDefaultsPlaybackPreferencesStore:
+    PlaybackPreferencesStoring, @unchecked Sendable
+{
     private enum Key {
         static let volume = "player.volume"
         static let isMuted = "player.isMuted"
