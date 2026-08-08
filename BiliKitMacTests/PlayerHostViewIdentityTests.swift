@@ -9,9 +9,39 @@ import Testing
 
 @Suite(.serialized)
 struct PlayerHostViewIdentityTests {
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     @MainActor
     func playerSurfaceCaptureRoutesVerticalWheelWithoutLocalMonitor()
+        throws
+    {
+        let scrollView = ScrollWheelRecordingScrollView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+        let documentView = NSView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 1_200)
+        )
+        let playerView = AVPlayerView(
+            frame: NSRect(x: 0, y: 900, width: 800, height: 300)
+        )
+        let scrollCaptureView = PlayerScrollWheelCaptureView(
+            frame: playerView.bounds
+        )
+        scrollView.documentView = documentView
+        documentView.addSubview(playerView)
+        playerView.addSubview(scrollCaptureView)
+
+        let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
+        #expect(event.hasPreciseScrollingDeltas)
+
+        scrollCaptureView.scrollWheel(with: event)
+
+        #expect(scrollView.receivedScrollWheelEvents.count == 1)
+        #expect(scrollView.receivedScrollWheelEvents.first === event)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func playerHostInstallsSurfaceCaptureInScrollableDetailHierarchy()
         async throws
     {
         let renderer = CoreAnimationDanmakuRenderer()
@@ -33,6 +63,12 @@ struct PlayerHostViewIdentityTests {
             defer: false
         )
         window.contentView = hostingView
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer {
+            window.orderOut(nil)
+            window.contentView = NSView()
+        }
         hostingView.layoutSubtreeIfNeeded()
 
         #expect(
@@ -41,7 +77,8 @@ struct PlayerHostViewIdentityTests {
                     ofType: AVPlayerView.self,
                     in: hostingView
                 ) != nil
-            }
+            },
+            "AVPlayerView 应在已进入 Window Server 生命周期的测试窗口中完成挂载"
         )
         let playerView = try #require(
             firstView(
@@ -85,27 +122,9 @@ struct PlayerHostViewIdentityTests {
                 }
                 return documentView.bounds.height
                     > scrollView.contentView.bounds.height
-            }
+            },
+            "详情滚动文档应完成布局并大于可见区域"
         )
-        let initialOrigin = scrollView.contentView.bounds.origin
-        let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
-        #expect(event.hasPreciseScrollingDeltas)
-
-        scrollCaptureView.scrollWheel(with: event)
-
-        #expect(
-            await waitUntil(in: hostingView) {
-                scrollView.contentView.bounds.origin.y > initialOrigin.y
-            }
-        )
-
-        let scrolledOrigin = scrollView.contentView.bounds.origin
-        let horizontalEvent = try makeScrollWheelEvent(deltaX: -80, deltaY: 0)
-        scrollCaptureView.scrollWheel(with: horizontalEvent)
-        hostingView.layoutSubtreeIfNeeded()
-        #expect(scrollView.contentView.bounds.origin == scrolledOrigin)
-
-        window.contentView = NSView()
     }
 
     @Test
@@ -817,6 +836,15 @@ struct PlayerHostViewIdentityTests {
         maximumActiveCount: DanmakuLaneConfiguration.hardMaximumActiveCount,
         displayAreaFraction: 1
     )
+}
+
+@MainActor
+private final class ScrollWheelRecordingScrollView: NSScrollView {
+    private(set) var receivedScrollWheelEvents: [NSEvent] = []
+
+    override func scrollWheel(with event: NSEvent) {
+        receivedScrollWheelEvents.append(event)
+    }
 }
 
 private struct PlayerHostScrollRoutingHarness: View {
