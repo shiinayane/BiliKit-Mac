@@ -11,6 +11,8 @@ package struct VideoCardMetric: Sendable, Equatable {
 }
 
 package struct VideoCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let coverURL: URL?
     private let avatarURL: URL?
     private let showsAvatar: Bool
@@ -56,15 +58,20 @@ package struct VideoCard: View {
     private var cover: some View {
         Color.secondary.opacity(0.12)
             .overlay {
-                AsyncImage(url: coverURL) { phase in
+                AsyncImage(
+                    url: coverURL,
+                    transaction: imageLoadingTransaction
+                ) { phase in
                     switch phase {
                     case .success(let image):
                         image
                             .resizable()
                             .scaledToFill()
+                            .transition(.opacity)
                     default:
                         Image(systemName: "photo")
                             .foregroundStyle(.tertiary)
+                            .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -100,19 +107,32 @@ package struct VideoCard: View {
     }
 
     private var avatar: some View {
-        AsyncImage(url: avatarURL) { phase in
+        AsyncImage(
+            url: avatarURL,
+            transaction: imageLoadingTransaction
+        ) { phase in
             switch phase {
             case .success(let image):
                 image
                     .resizable()
                     .scaledToFill()
+                    .transition(.opacity)
             default:
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
                     .foregroundStyle(.quaternary)
+                    .transition(.opacity)
             }
         }
         .accessibilityHidden(true)
+    }
+
+    private var imageLoadingTransaction: Transaction {
+        Transaction(
+            animation: LoadingStateTransition.animation(
+                reduceMotion: reduceMotion
+            )
+        )
     }
 
     private var titleContent: some View {
