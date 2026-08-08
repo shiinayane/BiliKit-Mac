@@ -7,6 +7,15 @@ struct AppNavigationSidebar: View {
     let onPresentAuthentication: () -> Void
 
     var body: some View {
+        VStack(spacing: 0) {
+            navigationList
+            accountBar
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sidebar.navigation")
+    }
+
+    private var navigationList: some View {
         List(selection: selectionBinding) {
             Label("搜索", systemImage: "magnifyingglass")
                 .tag(AppTab.search)
@@ -21,12 +30,10 @@ struct AppNavigationSidebar: View {
                 .accessibilityIdentifier("sidebar.history")
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Divider()
-            accountButton
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("sidebar.navigation")
+    }
+
+    private var accountBar: some View {
+        accountButton
     }
 
     private var selectionBinding: Binding<AppTab?> {
@@ -41,10 +48,8 @@ struct AppNavigationSidebar: View {
 
     private var accountButton: some View {
         Button(action: onPresentAuthentication) {
-            HStack(spacing: 10) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.hierarchical)
+            HStack(spacing: 12) {
+                accountAvatar
 
                 Text(isSignedIn ? "账号" : "登录")
 
@@ -54,9 +59,19 @@ struct AppNavigationSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .accessibilityHint(isSignedIn ? "打开账号管理" : "打开扫码登录")
         .accessibilityIdentifier("sidebar.account")
+    }
+
+    private var accountAvatar: some View {
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .symbolRenderingMode(.hierarchical)
+            .frame(width: 32, height: 32)
+            .clipShape(Circle())
+            .accessibilityHidden(true)
     }
 }
