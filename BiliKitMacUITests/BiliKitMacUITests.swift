@@ -7,6 +7,21 @@ final class BiliKitMacUITests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmedAccountIdentityAppearsInStableSidebarAccountSlot() {
+        let app = launchFixture(
+            arguments: [
+                "-ui-testing",
+                "-ui-testing-account-identity",
+            ]
+        )
+        let account = element("sidebar.account", in: app)
+
+        XCTAssertTrue(waitForHittable(account, timeout: 5))
+        XCTAssertEqual(account.label, "Fixture Account")
+        XCTAssertFalse(app.buttons["登录"].exists)
+    }
+
+    @MainActor
     func testPlaybackRoundTripInOneWindow() throws {
         let app = XCUIApplication()
         app.launchArguments = [
