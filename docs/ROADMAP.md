@@ -96,19 +96,25 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M4.5-slice-c-2026-07-25.md`](./validation/M4.5-slice-c-2026-07-25.md)
 - [`validation/M4.5-high-refresh-card-scroll-2026-07-24.md`](./validation/M4.5-high-refresh-card-scroll-2026-07-24.md)
 
-### M5.0–M5.0.1：原生日用导航与外部事实审计
+### M5.0–M5.0.2：原生日用导航、外部事实审计与登录态自动画质
 
 - 热门、搜索与历史使用原生平级导航；视频页使用系统层级返回并保留来源工作集和语义
   滚动位置。
 - 播放退出、卡片选中残留、字幕默认行为、自动画质与相关生命周期缺口已经过定点修复。
 - 外部 API、媒体、认证、并发、原生 UI、缓存、辅助功能、性能、架构与分发已完成
   M5.0.1 审计；尚未实施的判断不因审计完成自动进入生产。
+- 登录态自动画质使用精确 legacy playurl endpoint 级 Cookie 授权；只有明确无本地凭据时
+  保持匿名。凭据故障、HTTP 403/412 与业务拒绝不匿名降级，Cookie 不进入媒体、图片、
+  相关推荐或 loopback。
+- 服务实际返回且 AVC/AAC decoder 可消费的全部 representations 继续进入既有单一
+  `AVPlayerItem` 原生 ABR；没有手动画质菜单、双播放器或 4K 保证。
 
 证据：
 
 - [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)
 - [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
 - [`audits/M5.0.1/`](./audits/M5.0.1/)
+- [`validation/authenticated-playback-quality-2026-08-08.md`](./validation/authenticated-playback-quality-2026-08-08.md)
 
 ## 4. 唯一当前阶段：播放工作台上下文侧栏与真实分 P
 

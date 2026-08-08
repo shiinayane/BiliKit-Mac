@@ -121,6 +121,7 @@ public final class AuthenticationViewModel {
     }
 
     public func revalidate() {
+        guard state != .signingOut else { return }
         didStartInitialRestore = true
         restore()
     }
@@ -177,6 +178,7 @@ public final class AuthenticationViewModel {
     }
 
     public func logout() {
+        guard state != .signingOut else { return }
         retryAction = .logout
         begin(state: .signingOut) { [weak self] operationGeneration in
             guard let self else { return }

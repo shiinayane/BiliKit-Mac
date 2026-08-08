@@ -81,11 +81,15 @@ public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepositor
 extension BiliAPIError {
     fileprivate var applicationError: GuestApplicationError {
         switch self {
-        case .invalidRequest, .authorizationRequired:
+        case .invalidRequest:
             .invalidRequest
+        case .authorizationRequired, .authenticationInvalid:
+            .authenticationInvalid
+        case .authorizationUnavailable:
+            .authenticationUnavailable
         case .transportFailure:
             .transportFailure
-        case .httpStatus(403), .nonJSONResponse,
+        case .httpStatus(403), .httpStatus(412), .nonJSONResponse,
             .apiRejected(code: -403, _), .apiRejected(code: -412, _):
             .requestRestricted
         case .apiRejected(let code, _):

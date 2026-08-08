@@ -14,6 +14,42 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct GuestBrowseAndVideoViewModelTests {
+    @Test(arguments: [
+        GuestApplicationError.authenticationInvalid,
+        .authenticationUnavailable,
+        .requestRestricted,
+    ])
+    @MainActor
+    func onlyInvalidAuthenticationRequestsAppRevalidation(
+        error: GuestApplicationError
+    ) async {
+        let fixture = GuestFixtures()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: PlaybackFailureRepositoryStub(
+                    fixtures: fixture,
+                    error: error
+                )
+            ),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.authenticationRevalidationGeneration
+                == (error == .authenticationInvalid ? 1 : 0)
+        )
+        #expect(
+            model.state
+                == GuestVideoState.failed(
+                    bvid: fixture.bvid,
+                    failure: GuestVideoFailure.content(error)
+                )
+        )
+    }
+
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
@@ -528,6 +564,34 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test(.timeLimit(.minutes(1)))
     @MainActor
+    func lateSupersededAuthenticationFailureCannotRequestRevalidation()
+        async throws
+    {
+        let fixture = GuestFixtures()
+        let repository = LateAuthenticationFailureRepositoryStub(
+            fixtures: fixture
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        model.selectPage(cid: 900_002)
+        try await repository.waitForBlockedRequest()
+        let supersededTask = try #require(model.taskSnapshotForTesting())
+        model.selectPage(cid: 900_001)
+        await model.waitForCurrentTask()
+        await repository.failBlockedRequest()
+        await supersededTask.value
+
+        #expect(model.authenticationRevalidationGeneration == 0)
+        #expect(model.presentedPlaybackIdentity?.cid == 900_001)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
     func rapidPageABARejectsTheLateSupersededResult() async throws {
         let fixture = GuestFixtures()
         let repository = ABAPartRepositoryStub(fixtures: fixture)
@@ -860,6 +924,42 @@ private actor GuestRepositoryStub: GuestContentRepository {
     }
 }
 
+private actor PlaybackFailureRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    let error: GuestApplicationError
+
+    init(fixtures: GuestFixtures, error: GuestApplicationError) {
+        self.fixtures = fixtures
+        self.error = error
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [fixtures.page]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        throw error
+    }
+}
+
 private actor PartSwitchRepositoryStub: GuestContentRepository {
     let fixtures: GuestFixtures
     private var failingCIDOnce: Int64?
@@ -914,6 +1014,65 @@ private actor PartSwitchRepositoryStub: GuestContentRepository {
 
     func playbackCIDs() -> [Int64] {
         observedPlaybackCIDs
+    }
+}
+
+private actor LateAuthenticationFailureRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    private let blockedRequestEvent = TestEventCounter()
+    private var blockedRequest: CheckedContinuation<VideoPlayback, any Error>?
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [
+            fixtures.page,
+            VideoPage(
+                cid: 900_002,
+                index: 2,
+                title: "P2",
+                durationSeconds: 180
+            ),
+        ]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        guard cid == 900_002 else { return fixtures.playback }
+        await blockedRequestEvent.signal()
+        return try await withCheckedThrowingContinuation { continuation in
+            blockedRequest = continuation
+        }
+    }
+
+    func waitForBlockedRequest() async throws {
+        try await blockedRequestEvent.wait(until: 1)
+    }
+
+    func failBlockedRequest() {
+        blockedRequest?.resume(
+            throwing: GuestApplicationError.authenticationInvalid
+        )
+        blockedRequest = nil
     }
 }
 

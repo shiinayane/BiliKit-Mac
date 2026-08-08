@@ -90,6 +90,12 @@ struct AppRootView: View {
                 historyModel.reset()
             }
         }
+        .onChange(of: videoModel.authenticationRevalidationGeneration) {
+            previousGeneration,
+            generation in
+            guard generation > previousGeneration else { return }
+            authenticationModel.revalidate()
+        }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {

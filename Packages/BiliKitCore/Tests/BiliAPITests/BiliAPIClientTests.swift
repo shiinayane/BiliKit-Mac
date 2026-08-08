@@ -337,21 +337,237 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func playbackNeverRequestsCredentialAuthorization() async throws {
+    func playbackUsesCredentialOnlyForPlayURLRequest() async throws {
         let authorizer = RecordingRequestAuthorizer()
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("playurl")]
+        )
         let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [try fixtureResponse("playurl")]
-            ),
+            transport: transport,
             requestAuthorizer: authorizer
         )
 
-        _ = try await client.playback(
+        let playback = try await client.playback(
             for: "BV1FixtureA1",
             cid: 900_001
         )
 
-        #expect(await authorizer.capturedPaths().isEmpty)
+        #expect(await authorizer.capturedPaths() == ["/x/player/playurl"])
+        #expect(Set(playback.mediaHeaders.keys) == ["Referer", "User-Agent"])
+        #expect(playback.mediaHeaders["Cookie"] == nil)
+        let request = try #require(await transport.capturedRequests().first)
+        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
+    }
+
+    @Test
+    func playbackUsesAnonymousRequestOnlyForExplicitlyMissingCredential()
+        async throws
+    {
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("playurl")]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: ThrowingRequestAuthorizer(
+                kind: .missingCredential
+            )
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.mediaHeaders["Cookie"] == nil)
+        let request = try #require(await transport.capturedRequests().first)
+        #expect(request.headers["Cookie"] == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async {
+        let authorizer = SuspendingMissingCredentialAuthorizer()
+        let transport = RecordingTransport(responses: [])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await authorizer.waitUntilAuthorizationStarts()
+
+        playbackTask.cancel()
+        await authorizer.resumeWithMissingCredential()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(await transport.capturedRequests().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func missingCredentialResolutionCannotCrossSessionInvalidationBoundary() async {
+        let authorizer = SuspendingMissingCredentialAuthorizer()
+        let transport = RecordingTransport(responses: [])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await authorizer.waitUntilAuthorizationStarts()
+
+        await client.invalidateAuthenticatedSession()
+        await authorizer.resumeWithMissingCredential()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(await transport.capturedRequests().isEmpty)
+    }
+
+    @Test(arguments: [
+        HTTPRequestAuthorizationFailureKind.invalidCredential,
+        .unavailable,
+        .denied,
+    ])
+    func playbackFailsClosedForNonMissingAuthorizationFailure(
+        kind: HTTPRequestAuthorizationFailureKind
+    ) async {
+        let transport = RecordingTransport(responses: [])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: ThrowingRequestAuthorizer(kind: kind)
+        )
+
+        if kind == .invalidCredential {
+            await #expect(throws: BiliAPIError.authenticationInvalid) {
+                try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+            }
+        } else {
+            await #expect(throws: BiliAPIError.authorizationUnavailable) {
+                try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+            }
+        }
+        #expect(await transport.capturedRequests().isEmpty)
+    }
+
+    @Test(arguments: [403, 412])
+    func authenticatedPlaybackDoesNotRetryRemoteRestrictionAnonymously(
+        statusCode: Int
+    ) async {
+        let transport = RecordingTransport(
+            responses: [HTTPResponse(statusCode: statusCode, body: Data())]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test
+    func authenticatedPlaybackMapsRemoteSessionInvalidationWithoutRetry()
+        async
+    {
+        let response = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(#"{"code":-101,"message":"fixture"}"#.utf8)
+        )
+        let transport = RecordingTransport(responses: [response])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.authenticationInvalid) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test
+    func authenticatedPlaybackDoesNotRetryBusinessRejectionAnonymously() async {
+        let response = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: Data(#"{"code":-404,"message":"fixture"}"#.utf8)
+        )
+        let transport = RecordingTransport(responses: [response])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.apiRejected(code: -404, message: "fixture")) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func authenticatedRequestCannotCrossSessionInvalidationBoundary() async throws {
+        let authorizer = SuspendingRequestAuthorizer()
+        let response = try fixtureResponse("playurl")
+        let firstTransport = RecordingInvalidatingAPITransport(response: response)
+        let replacementTransport = RecordingInvalidatingAPITransport(response: response)
+        let transportFactory = SequentialTransportFactory(
+            transports: [firstTransport, replacementTransport]
+        )
+        let client = BiliAPIClient(
+            requestAuthorizer: authorizer,
+            transportFactory: { transportFactory.makeTransport() }
+        )
+
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await authorizer.waitUntilAuthorizationStarts()
+
+        await client.invalidateAuthenticatedSession()
+        await authorizer.resumeAuthorization()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(firstTransport.capturedRequests().isEmpty)
+        #expect(replacementTransport.capturedRequests().isEmpty)
+        #expect(firstTransport.wasInvalidated)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func authenticatedResponseCannotWriteBackAfterSessionInvalidation() async throws {
+        let response = try fixtureResponse("playurl")
+        let firstTransport = SuspendingResponseTransport(response: response)
+        let replacementTransport = RecordingInvalidatingAPITransport(response: response)
+        let transportFactory = SequentialTransportFactory(
+            transports: [firstTransport, replacementTransport]
+        )
+        let client = BiliAPIClient(
+            requestAuthorizer: RecordingRequestAuthorizer(),
+            transportFactory: { transportFactory.makeTransport() }
+        )
+
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await firstTransport.waitUntilRequestStarts()
+
+        await client.invalidateAuthenticatedSession()
+        await firstTransport.resumeResponse()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(await firstTransport.capturedRequests().count == 1)
+        #expect(replacementTransport.capturedRequests().isEmpty)
+        #expect(firstTransport.wasInvalidated)
     }
 
     @Test
@@ -466,16 +682,22 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func guestEndpointsNeverRequestCredentialAuthorization() async throws {
+    func anonymousGuestAndRelatedEndpointsNeverRequestCredentialAuthorization()
+        async throws
+    {
         let authorizer = RecordingRequestAuthorizer()
         let client = BiliAPIClient(
             transport: RecordingTransport(
-                responses: [try fixtureResponse("popular")]
+                responses: [
+                    try fixtureResponse("popular"),
+                    try fixtureResponse("related"),
+                ]
             ),
             requestAuthorizer: authorizer
         )
 
         _ = try await client.popular(page: 1, pageSize: 20)
+        _ = try await client.relatedVideos(to: "BV1FixtureA1")
 
         #expect(await authorizer.capturedPaths().isEmpty)
     }
@@ -632,6 +854,216 @@ private actor RecordingRequestAuthorizer: HTTPRequestAuthorizing {
 
     func capturedPaths() -> [String] {
         paths
+    }
+}
+
+private actor SuspendingRequestAuthorizer: HTTPRequestAuthorizing {
+    private var authorizationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+
+    func authorize(_ request: HTTPRequest) async -> HTTPRequest {
+        authorizationStarted = true
+        for waiter in startWaiters {
+            waiter.resume()
+        }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            authorizationContinuation = continuation
+        }
+        var headers = request.headers
+        headers["Cookie"] = "FIXTURE_AUTHORIZED"
+        return HTTPRequest(
+            url: request.url,
+            method: request.method,
+            headers: headers,
+            body: request.body
+        )
+    }
+
+    func waitUntilAuthorizationStarts() async {
+        guard !authorizationStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeAuthorization() {
+        authorizationContinuation?.resume()
+        authorizationContinuation = nil
+    }
+}
+
+private actor SuspendingMissingCredentialAuthorizer: HTTPRequestAuthorizing {
+    private var authorizationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+
+    func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
+        authorizationStarted = true
+        for waiter in startWaiters {
+            waiter.resume()
+        }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            authorizationContinuation = continuation
+        }
+        throw FixtureAuthorizationFailure(kind: .missingCredential)
+    }
+
+    func waitUntilAuthorizationStarts() async {
+        guard !authorizationStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeWithMissingCredential() {
+        authorizationContinuation?.resume()
+        authorizationContinuation = nil
+    }
+}
+
+private final class RecordingInvalidatingAPITransport: HTTPTransport,
+    HTTPTransportInvalidating, @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let response: HTTPResponse
+    private var requests: [HTTPRequest] = []
+    private var invalidated = false
+
+    init(response: HTTPResponse) {
+        self.response = response
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        lock.withLock {
+            requests.append(request)
+        }
+        return response
+    }
+
+    func invalidateAndCancel() {
+        lock.withLock {
+            invalidated = true
+        }
+    }
+
+    func capturedRequests() -> [HTTPRequest] {
+        lock.withLock { requests }
+    }
+
+    var wasInvalidated: Bool {
+        lock.withLock { invalidated }
+    }
+}
+
+private final class SequentialTransportFactory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var transports: [any HTTPTransport]
+
+    init(transports: [any HTTPTransport]) {
+        self.transports = transports
+    }
+
+    func makeTransport() -> any HTTPTransport {
+        lock.withLock {
+            precondition(!transports.isEmpty)
+            return transports.removeFirst()
+        }
+    }
+}
+
+private final class SuspendingResponseTransport: HTTPTransport,
+    HTTPTransportInvalidating, @unchecked Sendable
+{
+    private let flow: SuspendingResponseTransportFlow
+    private let lock = NSLock()
+    private var invalidated = false
+
+    init(response: HTTPResponse) {
+        flow = SuspendingResponseTransportFlow(response: response)
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        await flow.send(request)
+    }
+
+    func invalidateAndCancel() {
+        lock.withLock {
+            invalidated = true
+        }
+    }
+
+    func waitUntilRequestStarts() async {
+        await flow.waitUntilRequestStarts()
+    }
+
+    func resumeResponse() async {
+        await flow.resumeResponse()
+    }
+
+    func capturedRequests() async -> [HTTPRequest] {
+        await flow.capturedRequests()
+    }
+
+    var wasInvalidated: Bool {
+        lock.withLock { invalidated }
+    }
+}
+
+private actor SuspendingResponseTransportFlow {
+    private let response: HTTPResponse
+    private var requests: [HTTPRequest] = []
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var responseContinuation: CheckedContinuation<Void, Never>?
+
+    init(response: HTTPResponse) {
+        self.response = response
+    }
+
+    func send(_ request: HTTPRequest) async -> HTTPResponse {
+        requests.append(request)
+        for waiter in startWaiters {
+            waiter.resume()
+        }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            responseContinuation = continuation
+        }
+        return response
+    }
+
+    func waitUntilRequestStarts() async {
+        guard requests.isEmpty else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeResponse() {
+        responseContinuation?.resume()
+        responseContinuation = nil
+    }
+
+    func capturedRequests() -> [HTTPRequest] {
+        requests
+    }
+}
+
+private struct ThrowingRequestAuthorizer: HTTPRequestAuthorizing {
+    let kind: HTTPRequestAuthorizationFailureKind
+
+    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
+        throw FixtureAuthorizationFailure(kind: kind)
+    }
+}
+
+private struct FixtureAuthorizationFailure: HTTPRequestAuthorizationFailure {
+    let authorizationFailureKind: HTTPRequestAuthorizationFailureKind
+
+    init(kind: HTTPRequestAuthorizationFailureKind) {
+        authorizationFailureKind = kind
     }
 }
 

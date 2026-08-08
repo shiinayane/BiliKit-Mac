@@ -93,6 +93,40 @@ struct AuthenticationViewModelTests {
 
     @Test
     @MainActor
+    func revalidationCannotReplaceInFlightLogoutOwner() async throws {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedIn(nil),
+            logoutState: .signedOut,
+            suspendsFirstLogout: true
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+        model.logout()
+        try await service.waitForFirstLogoutStart()
+        _ = try #require(model.taskSnapshotForTesting())
+
+        model.revalidate()
+        model.logout()
+
+        #expect(model.state == .signingOut)
+        #expect(await service.observedCalls() == ["restore", "logout"])
+
+        await service.releaseFirstLogout()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedOut)
+        #expect(model.sessionState == .signedOut)
+        #expect(await service.observedCalls() == ["restore", "logout"])
+    }
+
+    @Test
+    @MainActor
     func initialRestoreConfirmsSignedOutOnlyOnce() async {
         let service = AuthenticationServiceStub(restoreState: .signedOut)
         let model = AuthenticationViewModel(
@@ -340,6 +374,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private let logoutState: AuthenticationState
     private let suspendedFirstImageCompletion: StaleQRCodeCompletion?
     private let suspendsFirstRestore: Bool
+    private let suspendsFirstLogout: Bool
     private var imageCount = 0
     private var restoreCount = 0
     private var calls: [String] = []
@@ -347,8 +382,11 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private var firstRestoreReleased = false
     private let firstImageEvents = TestEventCounter()
     private let firstRestoreEvents = TestEventCounter()
+    private let firstLogoutEvents = TestEventCounter()
     private var imageReleaseWaiters: [CheckedContinuation<Void, Never>] = []
     private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var logoutReleased = false
+    private var logoutReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         requestStates: [AuthenticationState] = [],
@@ -358,7 +396,8 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         cancelState: AuthenticationState = .signedOut,
         logoutState: AuthenticationState = .signedOut,
         suspendedFirstImageCompletion: StaleQRCodeCompletion? = nil,
-        suspendsFirstRestore: Bool = false
+        suspendsFirstRestore: Bool = false,
+        suspendsFirstLogout: Bool = false
     ) {
         self.requestStates = requestStates
         self.pollStates = pollStates
@@ -368,6 +407,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         self.logoutState = logoutState
         self.suspendedFirstImageCompletion = suspendedFirstImageCompletion
         self.suspendsFirstRestore = suspendsFirstRestore
+        self.suspendsFirstLogout = suspendsFirstLogout
     }
 
     func restore() async -> AuthenticationState {
@@ -430,8 +470,18 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         return cancelState
     }
 
-    func logout() -> AuthenticationState {
+    func logout() async -> AuthenticationState {
         calls.append("logout")
+        if suspendsFirstLogout {
+            await firstLogoutEvents.signal()
+            await withCheckedContinuation { continuation in
+                if logoutReleased {
+                    continuation.resume()
+                } else {
+                    logoutReleaseWaiters.append(continuation)
+                }
+            }
+        }
         return logoutState
     }
 
@@ -465,6 +515,20 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     func releaseFirstRestore() {
         firstRestoreReleased = true
         resume(&restoreReleaseWaiters)
+    }
+
+    func waitForFirstLogoutStart() async throws {
+        do {
+            try await firstLogoutEvents.wait(until: 1)
+        } catch {
+            releaseFirstLogout()
+            throw error
+        }
+    }
+
+    func releaseFirstLogout() {
+        logoutReleased = true
+        resume(&logoutReleaseWaiters)
     }
 
     private static func makeFixtureImage() -> CGImage? {

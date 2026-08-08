@@ -67,3 +67,8 @@ enum NavigationAuthenticationResult: Sendable, Equatable {
     case signedOut
     case signedIn(AccountIdentity?)
 }
+
+enum StoredAccountSessionRestoreResult: Sendable, Equatable {
+    case signedOut(hadCredential: Bool)
+    case signedIn(AccountIdentity?)
+}

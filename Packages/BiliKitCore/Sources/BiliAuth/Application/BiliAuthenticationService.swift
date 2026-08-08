@@ -44,8 +44,10 @@ public actor BiliAuthenticationService: AuthenticationServicing {
 
     /// 从 Keychain 恢复后再次向登录态 endpoint 验证；临时网络失败不会删除凭据。
     public func restore() async -> AuthenticationState {
+        guard state != .signingOut else { return state }
         generation &+= 1
         let operationGeneration = generation
+        let hadAuthenticatedSession = requiresLogout
         let activeAuthorizer = authorizer
         qrCode = nil
         state = .restoring
@@ -54,7 +56,13 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             let restored = try await activeAuthorizer.restoreAccountSession()
             guard generation == operationGeneration else { return state }
             switch restored {
-            case .signedOut:
+            case .signedOut(let hadCredential):
+                if hadAuthenticatedSession || hadCredential {
+                    for invalidator in additionalSessionInvalidators {
+                        await invalidator.invalidateAuthenticatedSession()
+                        guard generation == operationGeneration else { return state }
+                    }
+                }
                 requiresLogout = false
                 state = .signedOut
             case .signedIn(let identity):
@@ -174,7 +182,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         return state
     }
 
-    /// 先取消临时工作并删除本地凭据，再失效所有认证 session，最后发布退出结果。
+    /// 先取消 QR generation，再删除凭据、失效认证 API 并重建其他 session，最后发布结果。
     ///
     /// 删除 Keychain 失败时仍重建网络 session，但保持失败状态，不能声称本机已安全退出。
     public func logout() async -> AuthenticationState {
@@ -194,11 +202,11 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             credentialDeleted = false
         }
 
-        await activeSession.invalidateSession()
-        activeAuthorizer.invalidateSession()
         for invalidator in additionalSessionInvalidators {
             await invalidator.invalidateAuthenticatedSession()
         }
+        await activeSession.invalidateSession()
+        activeAuthorizer.invalidateSession()
         loginSession = loginSessionFactory()
         authorizer = authorizerFactory()
 

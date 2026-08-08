@@ -530,6 +530,85 @@ struct VideoDetailLifecycleTests {
         window.contentView = NSView()
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func invalidPlaybackCredentialRevalidatesAndClosesPlayback() async throws {
+        let fixture = VideoDetailLifecycleFixture()
+        let repository = VideoDetailLifecycleRepository(
+            fixture: fixture,
+            playbackError: .authenticationInvalid
+        )
+        let playback = RecordingLifecyclePlayback()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: playback
+        )
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: RecordingPresentation()
+        )
+        let authenticationService = LifecycleAuthenticationService(
+            restoreState: .signedIn(nil)
+        )
+        let authenticationModel = AuthenticationViewModel(
+            service: authenticationService,
+            qrCodeProvider: LifecycleQRCodeProvider()
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { videoModel.loadVideo($0) },
+            stopPlayback: {
+                videoModel.reset()
+                danmakuModel.reset()
+            }
+        )
+        let hostingView = NSHostingView(
+            rootView: AppRootView(
+                navigationCoordinator: coordinator,
+                browseModel: GuestBrowseViewModel(
+                    useCase: GuestFeedUseCase(repository: repository)
+                ),
+                videoModel: videoModel,
+                danmakuModel: danmakuModel,
+                authenticationModel: authenticationModel,
+                historyModel: WatchHistoryViewModel(
+                    useCase: WatchHistoryUseCase(
+                        repository: EmptyLifecycleHistoryRepository()
+                    )
+                ),
+                playerContent: AnyView(EmptyView())
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.layoutIfNeeded()
+        #expect(
+            await waitUntilAsync {
+                await authenticationService.restoreCallCount() == 1
+                    && authenticationModel.sessionState == .signedIn(nil)
+            }
+        )
+
+        await authenticationService.setRestoreState(.signedOut)
+        coordinator.openPlayback(fixture.bvid)
+        await videoModel.waitForCurrentTask()
+
+        #expect(
+            await waitUntilAsync {
+                await authenticationService.restoreCallCount() == 2
+                    && authenticationModel.sessionState == .signedOut
+                    && coordinator.currentPlaybackBVID == nil
+                    && videoModel.state == .idle
+            }
+        )
+        #expect(playback.loadedIdentities.isEmpty)
+        #expect(playback.stopCallCount == 1)
+        window.contentView = NSView()
+    }
+
     @MainActor
     private func playerViews(in root: NSView) -> [AVPlayerView] {
         var matches: [AVPlayerView] = []
@@ -671,9 +750,14 @@ private struct VideoDetailLifecycleFixture: Sendable {
 
 private actor VideoDetailLifecycleRepository: GuestContentRepository {
     let fixture: VideoDetailLifecycleFixture
+    let playbackError: GuestApplicationError?
 
-    init(fixture: VideoDetailLifecycleFixture) {
+    init(
+        fixture: VideoDetailLifecycleFixture,
+        playbackError: GuestApplicationError? = nil
+    ) {
         self.fixture = fixture
+        self.playbackError = playbackError
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
@@ -702,7 +786,8 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
         for bvid: String,
         cid: Int64
     ) async throws -> VideoPlayback {
-        fixture.playback
+        if let playbackError { throw playbackError }
+        return fixture.playback
     }
 }
 
@@ -1038,6 +1123,10 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
 
     func setRestoreState(_ state: AuthenticationState) {
         restoreState = state
+    }
+
+    func restoreCallCount() -> Int {
+        restoreCount
     }
 
     func restore() async -> AuthenticationState {

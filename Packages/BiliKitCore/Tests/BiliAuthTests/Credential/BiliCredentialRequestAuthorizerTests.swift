@@ -44,6 +44,17 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let authorizedPlayer = try await authorizer.authorize(playerRequest)
         #expect(authorizedPlayer.headers["Cookie"] == credential.cookieHeader)
+
+        let playbackRequest = HTTPRequest(
+            url: try #require(
+                URL(
+                    string:
+                        "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1"
+                )
+            )
+        )
+        let authorizedPlayback = try await authorizer.authorize(playbackRequest)
+        #expect(authorizedPlayback.headers["Cookie"] == credential.cookieHeader)
     }
 
     @Test
@@ -57,11 +68,43 @@ struct BiliCredentialRequestAuthorizerTests {
             ("http://127.0.0.1:8080/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/popular", .get),
             (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=4048&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=0",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&extra=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com:444/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=0&qn=120&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=0&fnval=976&fnver=0&fourk=1",
                 .get
             ),
             (
                 "https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player%2Fplayurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/%70layurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
                 .get
             ),
             ("https://api.bilibili.com/x/web-interface/nav?extra=1", .get),
@@ -153,6 +196,22 @@ struct BiliCredentialRequestAuthorizerTests {
         await #expect(throws: BiliRequestAuthorizationError.missingCredential) {
             try await authorizer.authorize(request)
         }
+        #expect(
+            BiliRequestAuthorizationError.missingCredential
+                .authorizationFailureKind == .missingCredential
+        )
+        #expect(
+            BiliRequestAuthorizationError.expiredCredential
+                .authorizationFailureKind == .invalidCredential
+        )
+        #expect(
+            BiliRequestAuthorizationError.invalidCredential
+                .authorizationFailureKind == .invalidCredential
+        )
+        #expect(
+            BiliRequestAuthorizationError.credentialStoreUnavailable
+                .authorizationFailureKind == .unavailable
+        )
     }
 
     @Test
@@ -222,7 +281,10 @@ struct BiliCredentialRequestAuthorizerTests {
             store: MemoryWebCredentialStore(),
             transport: missingTransport
         )
-        #expect(try await missing.restoreAccountSession() == .signedOut)
+        #expect(
+            try await missing.restoreAccountSession()
+                == .signedOut(hadCredential: false)
+        )
         #expect(await missingTransport.capturedRequest == nil)
 
         let invalidStore = MemoryWebCredentialStore(
@@ -234,7 +296,10 @@ struct BiliCredentialRequestAuthorizerTests {
                 response: navigationResponse(isLogin: false)
             )
         )
-        #expect(try await invalid.restoreAccountSession() == .signedOut)
+        #expect(
+            try await invalid.restoreAccountSession()
+                == .signedOut(hadCredential: true)
+        )
         #expect(invalidStore.deleteCount == 1)
 
         let failedPurge = BiliCredentialRequestAuthorizer(
