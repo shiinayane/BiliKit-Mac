@@ -62,6 +62,7 @@ import XCTest
             XCTContext.runActivity(named: summary) { _ in }
         }
 
+        @MainActor
         private static func outcome(
             _ operation: () async throws -> DanmakuPoolProbeSummary
         ) async -> String {
