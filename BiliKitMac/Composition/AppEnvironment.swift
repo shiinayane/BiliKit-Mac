@@ -100,11 +100,19 @@ struct AppEnvironment {
             presentation: danmakuSession,
             initialSpeedLevel: preferences.speedLevel,
             initialOpacity: preferences.opacity,
+            initialDisplayArea: preferences.displayArea,
+            initialDensity: preferences.density,
             saveSpeedLevel: { [danmakuPreferencesStore] speedLevel in
                 danmakuPreferencesStore.saveSpeedLevel(speedLevel)
             },
             saveOpacity: { [danmakuPreferencesStore] opacity in
                 danmakuPreferencesStore.saveOpacity(opacity)
+            },
+            saveDisplayArea: { [danmakuPreferencesStore] displayArea in
+                danmakuPreferencesStore.saveDisplayArea(displayArea)
+            },
+            saveDensity: { [danmakuPreferencesStore] density in
+                danmakuPreferencesStore.saveDensity(density)
             }
         )
     }
@@ -194,7 +202,7 @@ struct AppEnvironment {
         surfaceWidth: 0,
         surfaceHeight: 0,
         laneHeight: 36,
-        minimumHorizontalGap: 12,
+        minimumHorizontalGap: 24,
         maximumActiveCount:
             DanmakuLaneConfiguration.hardMaximumActiveCount,
         displayAreaFraction: 1

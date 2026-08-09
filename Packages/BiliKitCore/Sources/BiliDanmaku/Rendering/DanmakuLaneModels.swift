@@ -10,6 +10,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
     public let minimumHorizontalGap: Double
     public let maximumActiveCount: Int
     public let displayAreaFraction: Double
+    public let maximumOverlapDepth: Int
 
     public init(
         surfaceWidth: Double,
@@ -17,7 +18,8 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
         laneHeight: Double,
         minimumHorizontalGap: Double,
         maximumActiveCount: Int,
-        displayAreaFraction: Double
+        displayAreaFraction: Double,
+        maximumOverlapDepth: Int = 1
     ) {
         self.surfaceWidth = surfaceWidth
         self.surfaceHeight = surfaceHeight
@@ -25,6 +27,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
         self.minimumHorizontalGap = minimumHorizontalGap
         self.maximumActiveCount = maximumActiveCount
         self.displayAreaFraction = displayAreaFraction
+        self.maximumOverlapDepth = maximumOverlapDepth
     }
 
     var isValid: Bool {
@@ -41,7 +44,9 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             laneHeight > 0,
             minimumHorizontalGap >= 0,
             maximumActiveCount > 0,
-            maximumActiveCount <= Self.hardMaximumActiveCount
+            maximumActiveCount <= Self.hardMaximumActiveCount,
+            maximumOverlapDepth > 0,
+            maximumOverlapDepth <= Self.hardMaximumActiveCount
         else {
             return false
         }
@@ -85,6 +90,25 @@ public struct DanmakuLanePlacement: Sendable, Equatable {
     public let surfaceWidthAtAdmission: Double
     public let admittedAtSeconds: Double
     public let expiresAtSeconds: Double
+    public let overlapDepth: Int
+
+    public init(
+        request: DanmakuLaneRequest,
+        laneIndex: Int,
+        originY: Double,
+        surfaceWidthAtAdmission: Double,
+        admittedAtSeconds: Double,
+        expiresAtSeconds: Double,
+        overlapDepth: Int = 0
+    ) {
+        self.request = request
+        self.laneIndex = laneIndex
+        self.originY = originY
+        self.surfaceWidthAtAdmission = surfaceWidthAtAdmission
+        self.admittedAtSeconds = admittedAtSeconds
+        self.expiresAtSeconds = expiresAtSeconds
+        self.overlapDepth = overlapDepth
+    }
 }
 
 public enum DanmakuLaneDropReason: Error, Sendable, Equatable {

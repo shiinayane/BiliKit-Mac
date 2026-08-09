@@ -329,6 +329,8 @@
         func setEnabled(_ enabled: Bool) {}
         func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {}
         func setOpacity(_ opacity: DanmakuOpacity) {}
+        func setDisplayArea(_ displayArea: DanmakuDisplayArea) {}
+        func setDensity(_ density: DanmakuDensity) {}
 
         func setModeVisibility(
             scrolling: Bool,

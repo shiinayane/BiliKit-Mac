@@ -73,11 +73,15 @@ struct PlaybackPreferencesControllerTests {
             store.saveSpeedLevel(.five)
             let opacity = try #require(DanmakuOpacity(0.55))
             store.saveOpacity(opacity)
+            store.saveDisplayArea(.threeQuarters)
+            store.saveDensity(.overlapping)
             #expect(
                 store.load()
                     == DanmakuPreferences(
                         speedLevel: .five,
-                        opacity: opacity
+                        opacity: opacity,
+                        displayArea: .threeQuarters,
+                        density: .overlapping
                     )
             )
 
@@ -95,6 +99,20 @@ struct PlaybackPreferencesControllerTests {
             }
             defaults.set(true, forKey: "danmaku.opacity")
             #expect(store.load().opacity == .fullyOpaque)
+
+            for invalidDisplayArea in [0, 50.5, 101] {
+                defaults.set(invalidDisplayArea, forKey: "danmaku.displayArea")
+                #expect(store.load().displayArea == .full)
+            }
+            defaults.set(true, forKey: "danmaku.displayArea")
+            #expect(store.load().displayArea == .full)
+
+            for invalidDensity in [-1, 1.5, 3] {
+                defaults.set(invalidDensity, forKey: "danmaku.density")
+                #expect(store.load().density == .normal)
+            }
+            defaults.set(true, forKey: "danmaku.density")
+            #expect(store.load().density == .normal)
         }
     }
 

@@ -13,7 +13,13 @@ public final class DanmakuControlsViewModel {
     public private(set) var showsBottom = true
     public private(set) var speedLevel: DanmakuSpeedLevel
     public private(set) var opacity: DanmakuOpacity
+    public private(set) var displayArea: DanmakuDisplayArea
+    public private(set) var density: DanmakuDensity
     public private(set) var authenticationRevalidationGeneration = 0
+
+    public var canAdjustDensity: Bool {
+        displayArea == .full
+    }
 
     @ObservationIgnored
     private let presentation: any DanmakuPresentationControlling
@@ -21,21 +27,35 @@ public final class DanmakuControlsViewModel {
     private let saveSpeedLevel: @MainActor (DanmakuSpeedLevel) -> Void
     @ObservationIgnored
     private let saveOpacity: @MainActor (DanmakuOpacity) -> Void
+    @ObservationIgnored
+    private let saveDisplayArea: @MainActor (DanmakuDisplayArea) -> Void
+    @ObservationIgnored
+    private let saveDensity: @MainActor (DanmakuDensity) -> Void
 
     public init(
         presentation: any DanmakuPresentationControlling,
         initialSpeedLevel: DanmakuSpeedLevel = .three,
         initialOpacity: DanmakuOpacity = .fullyOpaque,
+        initialDisplayArea: DanmakuDisplayArea = .full,
+        initialDensity: DanmakuDensity = .normal,
         saveSpeedLevel: @escaping @MainActor (DanmakuSpeedLevel) -> Void = { _ in },
-        saveOpacity: @escaping @MainActor (DanmakuOpacity) -> Void = { _ in }
+        saveOpacity: @escaping @MainActor (DanmakuOpacity) -> Void = { _ in },
+        saveDisplayArea: @escaping @MainActor (DanmakuDisplayArea) -> Void = { _ in },
+        saveDensity: @escaping @MainActor (DanmakuDensity) -> Void = { _ in }
     ) {
         self.presentation = presentation
         self.speedLevel = initialSpeedLevel
         self.opacity = initialOpacity
+        self.displayArea = initialDisplayArea
+        self.density = initialDensity
         self.saveSpeedLevel = saveSpeedLevel
         self.saveOpacity = saveOpacity
+        self.saveDisplayArea = saveDisplayArea
+        self.saveDensity = saveDensity
         presentation.setSpeedLevel(initialSpeedLevel)
         presentation.setOpacity(initialOpacity)
+        presentation.setDisplayArea(initialDisplayArea)
+        presentation.setDensity(initialDensity)
         presentation.setAuthenticationInvalidationHandler { [weak self] in
             self?.authenticationRevalidationGeneration &+= 1
         }
@@ -87,6 +107,20 @@ public final class DanmakuControlsViewModel {
         self.opacity = opacity
         presentation.setOpacity(opacity)
         saveOpacity(opacity)
+    }
+
+    public func setDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        guard self.displayArea != displayArea else { return }
+        self.displayArea = displayArea
+        presentation.setDisplayArea(displayArea)
+        saveDisplayArea(displayArea)
+    }
+
+    public func setDensity(_ density: DanmakuDensity) {
+        guard canAdjustDensity, self.density != density else { return }
+        self.density = density
+        presentation.setDensity(density)
+        saveDensity(density)
     }
 
     private func applyModeVisibility() {

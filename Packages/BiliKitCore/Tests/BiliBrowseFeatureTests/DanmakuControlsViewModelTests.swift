@@ -10,13 +10,19 @@ struct DanmakuControlsViewModelTests {
         let presentation = RecordingDanmakuPresentation()
         var savedSpeedLevels: [DanmakuSpeedLevel] = []
         var savedOpacities: [DanmakuOpacity] = []
+        var savedDisplayAreas: [DanmakuDisplayArea] = []
+        var savedDensities: [DanmakuDensity] = []
         let initialOpacity = try #require(DanmakuOpacity(0.65))
         let model = DanmakuControlsViewModel(
             presentation: presentation,
             initialSpeedLevel: .two,
             initialOpacity: initialOpacity,
+            initialDisplayArea: .half,
+            initialDensity: .overlapping,
             saveSpeedLevel: { savedSpeedLevels.append($0) },
-            saveOpacity: { savedOpacities.append($0) }
+            saveOpacity: { savedOpacities.append($0) },
+            saveDisplayArea: { savedDisplayAreas.append($0) },
+            saveDensity: { savedDensities.append($0) }
         )
         let identity = PlaybackItemIdentity(
             bvid: "BV1ControlsFixture",
@@ -32,6 +38,11 @@ struct DanmakuControlsViewModelTests {
         model.setOpacity(0.4)
         model.setOpacity(0.1)
         model.setOpacity(.nan)
+        model.setDensity(.increased)
+        model.setDisplayArea(.full)
+        model.setDensity(.increased)
+        model.setDisplayArea(.half)
+        model.setDensity(.normal)
         presentation.reportAuthenticationInvalidation()
         model.reset()
 
@@ -39,8 +50,12 @@ struct DanmakuControlsViewModelTests {
         #expect(presentation.enabledValues == [false])
         #expect(presentation.speedLevels == [.two, .five])
         #expect(presentation.opacities == [initialOpacity, DanmakuOpacity(0.4)])
+        #expect(presentation.displayAreas == [.half, .full, .half])
+        #expect(presentation.densities == [.overlapping, .increased])
         #expect(savedSpeedLevels == [.five])
         #expect(savedOpacities == [DanmakuOpacity(0.4)])
+        #expect(savedDisplayAreas == [.full, .half])
+        #expect(savedDensities == [.increased])
         #expect(
             presentation.modeValues == [
                 ModeValues(scrolling: false, top: true, bottom: true),
@@ -55,6 +70,9 @@ struct DanmakuControlsViewModelTests {
         #expect(!model.showsBottom)
         #expect(model.speedLevel == .five)
         #expect(model.opacity == DanmakuOpacity(0.4))
+        #expect(model.displayArea == .half)
+        #expect(model.density == .increased)
+        #expect(!model.canAdjustDensity)
         #expect(model.authenticationRevalidationGeneration == 1)
     }
 }
@@ -74,6 +92,8 @@ private final class RecordingDanmakuPresentation:
     private(set) var modeValues: [ModeValues] = []
     private(set) var speedLevels: [DanmakuSpeedLevel] = []
     private(set) var opacities: [DanmakuOpacity] = []
+    private(set) var displayAreas: [DanmakuDisplayArea] = []
+    private(set) var densities: [DanmakuDensity] = []
     private(set) var stopCount = 0
     private var authenticationInvalidationHandler: (@MainActor () -> Void)?
 
@@ -101,6 +121,14 @@ private final class RecordingDanmakuPresentation:
 
     func setOpacity(_ opacity: DanmakuOpacity) {
         opacities.append(opacity)
+    }
+
+    func setDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        displayAreas.append(displayArea)
+    }
+
+    func setDensity(_ density: DanmakuDensity) {
+        densities.append(density)
     }
 
     func setModeVisibility(

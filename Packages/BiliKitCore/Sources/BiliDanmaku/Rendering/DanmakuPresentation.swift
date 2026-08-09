@@ -23,6 +23,8 @@ public protocol DanmakuPresentationSink: AnyObject {
     func apply(_ update: DanmakuPresentationUpdate)
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func setOpacity(_ opacity: DanmakuOpacity)
+    func setDisplayArea(_ displayArea: DanmakuDisplayArea)
+    func setDensity(_ density: DanmakuDensity)
     func clearPresentation()
     func stopPresentation()
 }

@@ -137,6 +137,12 @@ struct DanmakuSessionTests {
         #expect(sink.opacities == [opacity])
         #expect(sink.clearCount == 2)
 
+        session.setDisplayArea(.quarter)
+        session.setDensity(.overlapping)
+        #expect(sink.displayAreas == [.quarter])
+        #expect(sink.densities == [.overlapping])
+        #expect(sink.clearCount == 2)
+
         session.stop()
         #expect(sink.stopCount == 1)
     }
@@ -313,6 +319,8 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
     private(set) var updates: [DanmakuPresentationUpdate] = []
     private(set) var speedLevels: [DanmakuSpeedLevel] = []
     private(set) var opacities: [DanmakuOpacity] = []
+    private(set) var displayAreas: [DanmakuDisplayArea] = []
+    private(set) var densities: [DanmakuDensity] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
     private var updateWaiters:
@@ -338,6 +346,14 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
 
     func setOpacity(_ opacity: DanmakuOpacity) {
         opacities.append(opacity)
+    }
+
+    func setDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        displayAreas.append(displayArea)
+    }
+
+    func setDensity(_ density: DanmakuDensity) {
+        densities.append(density)
     }
 
     func clearPresentation() {
