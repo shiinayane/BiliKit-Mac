@@ -7,8 +7,8 @@ import QuartzCore
 @MainActor
 /// 有硬上限的 Core Animation 弹幕 backend，负责 layer identity、动画时钟与最终回收。
 ///
-/// `renderEpoch + objectIdentity` 使旧动画 completion 无法删除同 ID 的新 layer；清屏、
-/// resize 和 stop 都会推进 epoch 并同步移除活动对象。
+/// `renderEpoch + objectIdentity` 使旧动画 completion 无法删除同 ID 的新 layer；显式清屏
+/// 和 stop 会推进 epoch，resize 只更新 geometry 并保留活动对象。
 public final class CoreAnimationDanmakuRenderer:
     DanmakuRenderingBackend
 {
@@ -19,6 +19,7 @@ public final class CoreAnimationDanmakuRenderer:
 
     private struct Entry {
         let layer: CATextLayer
+        let placement: DanmakuLanePlacement
         let objectIdentity: UInt64
         let relay: AnimationCompletionRelay
     }
@@ -112,6 +113,7 @@ public final class CoreAnimationDanmakuRenderer:
         animation.delegate = relay
         entries[event.id] = Entry(
             layer: textLayer,
+            placement: placement,
             objectIdentity: objectIdentity,
             relay: relay
         )
@@ -151,8 +153,7 @@ public final class CoreAnimationDanmakuRenderer:
     }
 
     public func updateSurfaceSize(width: Double, height: Double) {
-        advanceEpoch()
-        removeAllEntries()
+        let oldSurfaceSize = surfaceSize
         surfaceSize = CGSize(
             width: max(width.isFinite ? width : 0, 0),
             height: max(height.isFinite ? height : 0, 0)
@@ -160,6 +161,12 @@ public final class CoreAnimationDanmakuRenderer:
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         rootLayer.frame = CGRect(origin: .zero, size: surfaceSize)
+        for entry in entries.values {
+            updateFixedGeometry(
+                for: entry,
+                heightDelta: surfaceSize.height - oldSurfaceSize.height
+            )
+        }
         CATransaction.commit()
     }
 
@@ -250,6 +257,21 @@ public final class CoreAnimationDanmakuRenderer:
         }
         animation.duration = placement.request.durationSeconds
         return animation
+    }
+
+    private func updateFixedGeometry(
+        for entry: Entry,
+        heightDelta: CGFloat
+    ) {
+        switch entry.placement.request.event.mode {
+        case .scrolling:
+            return
+        case .top:
+            entry.layer.position.x = surfaceSize.width / 2
+        case .bottom:
+            entry.layer.position.x = surfaceSize.width / 2
+            entry.layer.position.y += heightDelta
+        }
     }
 
     private func advanceEpoch() {

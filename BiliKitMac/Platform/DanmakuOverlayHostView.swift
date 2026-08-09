@@ -32,9 +32,7 @@ final class DanmakuOverlayView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil {
-            detachSurface()
-        } else {
+        if window != nil {
             attachSurfaceIfNeeded()
         }
     }
@@ -48,8 +46,9 @@ final class DanmakuOverlayView: NSView {
         nil
     }
 
-    /// 仅由当前 surface owner 发布布局尺寸；尺寸变化会清空无法安全迁移的活动弹幕。
+    /// 仅由当前 surface owner 发布布局尺寸；已有弹幕保留运动，新弹幕使用最新尺寸。
     func updateSurfaceIfNeeded() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
         guard bounds.size != previousSize else { return }
         previousSize = bounds.size
         let width = max(Double(bounds.width), 0)

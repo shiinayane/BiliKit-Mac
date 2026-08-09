@@ -26,12 +26,11 @@ public struct DanmakuLaneAllocator: Sendable {
 
     public var activeCount: Int { active.count }
 
+    /// 更新后续准入使用的 surface；已活动 placement 保留入场时的 geometry 与过期时间。
     public mutating func updateConfiguration(
         _ configuration: DanmakuLaneConfiguration
-    ) -> [DanmakuLanePlacement] {
-        let drained = clear()
+    ) {
         self.configuration = configuration
-        return drained
     }
 
     public mutating func clear() -> [DanmakuLanePlacement] {
@@ -119,8 +118,14 @@ public struct DanmakuLaneAllocator: Sendable {
         }
         let displayHeight =
             configuration.surfaceHeight * configuration.displayAreaFraction
+        let uncappedLaneCount = floor(
+            displayHeight / configuration.laneHeight
+        )
         let laneCount = Int(
-            floor(displayHeight / configuration.laneHeight)
+            min(
+                uncappedLaneCount,
+                Double(DanmakuLaneConfiguration.hardMaximumActiveCount)
+            )
         )
         guard laneCount > 0 else {
             return .failure(.noLane)
@@ -138,6 +143,7 @@ public struct DanmakuLaneAllocator: Sendable {
                     for: request.event.mode,
                     laneIndex: laneIndex
                 ),
+                surfaceWidthAtAdmission: configuration.surfaceWidth,
                 admittedAtSeconds: playbackTime,
                 expiresAtSeconds: playbackTime + request.durationSeconds
             )
@@ -201,14 +207,21 @@ public struct DanmakuLaneAllocator: Sendable {
         let elapsed = playbackTime - previous.admittedAtSeconds
         guard elapsed >= 0 else { return false }
         let surfaceWidth = configuration.surfaceWidth
+        let previousSurfaceWidth = previous.surfaceWidthAtAdmission
+        guard previousSurfaceWidth.isFinite,
+            previousSurfaceWidth > 0
+        else {
+            return false
+        }
         let previousSpeed =
-            (surfaceWidth + previousRequest.width)
+            (previousSurfaceWidth + previousRequest.width)
             / previousRequest.durationSeconds
         let newSpeed =
             (surfaceWidth + request.width)
             / request.durationSeconds
         let previousRightEdge =
-            surfaceWidth - previousSpeed * elapsed + previousRequest.width
+            previousSurfaceWidth - previousSpeed * elapsed
+            + previousRequest.width
         let availableGap = surfaceWidth - previousRightEdge
         guard availableGap >= configuration.minimumHorizontalGap else {
             return false

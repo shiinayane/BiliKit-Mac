@@ -82,6 +82,7 @@ public struct DanmakuLanePlacement: Sendable, Equatable {
     public let request: DanmakuLaneRequest
     public let laneIndex: Int
     public let originY: Double
+    public let surfaceWidthAtAdmission: Double
     public let admittedAtSeconds: Double
     public let expiresAtSeconds: Double
 }
