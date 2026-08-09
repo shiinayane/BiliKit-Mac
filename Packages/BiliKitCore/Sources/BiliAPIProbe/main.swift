@@ -1,4 +1,6 @@
 import BiliAPI
+import BiliApplication
+import BiliModels
 import BiliNetworking
 import Foundation
 
@@ -113,10 +115,16 @@ private actor SearchProbeTransport: HTTPTransport {
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        transport = URLSessionTransport(
-            configuration: configuration,
-            redirectPolicy: .reject
+        self.init(
+            transport: URLSessionTransport(
+                configuration: configuration,
+                redirectPolicy: .reject
+            )
         )
+    }
+
+    init(transport: URLSessionTransport) {
+        self.transport = transport
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -130,9 +138,8 @@ private actor SearchProbeTransport: HTTPTransport {
 
 private struct M4ContractProbe {
     private static let danmakuViewLimit = 256 * 1_024
-    private static let danmakuSegmentLimit = 2 * 1_024 * 1_024
 
-    private let transport: URLSessionTransport
+    private let transport: SearchProbeTransport
 
     init() {
         let configuration = URLSessionConfiguration.ephemeral
@@ -142,9 +149,11 @@ private struct M4ContractProbe {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
-        transport = URLSessionTransport(
-            configuration: configuration,
-            redirectPolicy: .reject
+        transport = SearchProbeTransport(
+            transport: URLSessionTransport(
+                configuration: configuration,
+                redirectPolicy: .reject
+            )
         )
     }
 
@@ -165,20 +174,15 @@ private struct M4ContractProbe {
             maximumSize: Self.danmakuViewLimit
         )
 
-        let segment = try await request(
-            path: "/x/v2/dm/web/seg.so",
-            queryItems: [
-                URLQueryItem(name: "type", value: "1"),
-                URLQueryItem(name: "oid", value: String(cid)),
-                URLQueryItem(name: "segment_index", value: "1"),
-            ],
-            accept: "application/octet-stream",
-            referer: referer
+        let segment = try await BiliDanmakuRepository(
+            client: BiliAPIClient(transport: transport)
+        ).segment(
+            index: 1,
+            for: PlaybackItemIdentity(bvid: bvid, cid: cid)
         )
-        try observeBinary(
-            segment,
-            name: "danmaku-segment",
-            maximumSize: Self.danmakuSegmentLimit
+        print(
+            "contract=danmaku-segment-wbi production-decoder=ready "
+                + "events=\(segment.events.count)"
         )
     }
 

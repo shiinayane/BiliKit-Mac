@@ -73,7 +73,12 @@ let package = Package(
         .target(name: "BiliUI"),
         .executableTarget(
             name: "BiliAPIProbe",
-            dependencies: ["BiliAPI", "BiliNetworking"]
+            dependencies: [
+                "BiliAPI",
+                "BiliApplication",
+                "BiliModels",
+                "BiliNetworking",
+            ]
         ),
         .executableTarget(
             name: "BiliAuthProbe",

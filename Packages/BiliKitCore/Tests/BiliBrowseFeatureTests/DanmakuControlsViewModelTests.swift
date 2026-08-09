@@ -32,6 +32,7 @@ struct DanmakuControlsViewModelTests {
         model.setOpacity(0.4)
         model.setOpacity(0.1)
         model.setOpacity(.nan)
+        presentation.reportAuthenticationInvalidation()
         model.reset()
 
         #expect(presentation.startedIdentities == [identity])
@@ -54,6 +55,7 @@ struct DanmakuControlsViewModelTests {
         #expect(!model.showsBottom)
         #expect(model.speedLevel == .five)
         #expect(model.opacity == DanmakuOpacity(0.4))
+        #expect(model.authenticationRevalidationGeneration == 1)
     }
 }
 
@@ -73,6 +75,17 @@ private final class RecordingDanmakuPresentation:
     private(set) var speedLevels: [DanmakuSpeedLevel] = []
     private(set) var opacities: [DanmakuOpacity] = []
     private(set) var stopCount = 0
+    private var authenticationInvalidationHandler: (@MainActor () -> Void)?
+
+    func setAuthenticationInvalidationHandler(
+        _ handler: @escaping @MainActor () -> Void
+    ) {
+        authenticationInvalidationHandler = handler
+    }
+
+    func reportAuthenticationInvalidation() {
+        authenticationInvalidationHandler?()
+    }
 
     func start(for identity: PlaybackItemIdentity) {
         startedIdentities.append(identity)

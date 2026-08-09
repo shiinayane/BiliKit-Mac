@@ -45,6 +45,17 @@ struct BiliCredentialRequestAuthorizerTests {
         let authorizedPlayer = try await authorizer.authorize(playerRequest)
         #expect(authorizedPlayer.headers["Cookie"] == credential.cookieHeader)
 
+        let danmakuRequest = HTTPRequest(
+            url: try #require(
+                URL(
+                    string:
+                        "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef"
+                )
+            )
+        )
+        let authorizedDanmaku = try await authorizer.authorize(danmakuRequest)
+        #expect(authorizedDanmaku.headers["Cookie"] == credential.cookieHeader)
+
         let playbackRequest = HTTPRequest(
             url: try #require(
                 URL(
@@ -182,6 +193,38 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://api.bilibili.com/x/web-interface/nav", .post),
             ("https://user@api.bilibili.com/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/nav#fragment", .get),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=2&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=0&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=0&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=10001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=0&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdeF",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef&extra=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&oid=900002&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                .get
+            ),
         ]
 
         for (urlString, method) in cases {

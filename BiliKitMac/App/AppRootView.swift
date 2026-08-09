@@ -96,6 +96,12 @@ struct AppRootView: View {
             guard generation > previousGeneration else { return }
             authenticationModel.revalidate()
         }
+        .onChange(of: danmakuModel.authenticationRevalidationGeneration) {
+            previousGeneration,
+            generation in
+            guard generation > previousGeneration else { return }
+            authenticationModel.revalidate()
+        }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {

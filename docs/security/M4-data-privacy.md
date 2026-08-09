@@ -41,6 +41,7 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 
 - 字幕目录和弹幕接口只能使用精确 HTTPS host/path/method/query allowlist；需要登录时由 `BiliAuth` 的授权器添加 Cookie，Feature 不接触凭据。
 - 当前字幕目录只允许 `GET https://api.bilibili.com/x/player/wbi/v2`。query 必须且只能包含合法 BVID、正 CID、正整数 `wts` 和 32 位小写十六进制 `w_rid`；其他 host/path/method/query、重复参数和额外参数全部拒绝。WBI key 仍通过无认证 `/x/web-interface/nav` 获取，只有签名后的字幕目录请求可由授权器附加 Cookie。
+- 当前弹幕分段统一使用 `GET https://api.bilibili.com/x/v2/dm/wbi/web/seg.so`。query 必须且只能包含固定 `type=1`、正 CID、`1...10000` 的 segment index、正整数 `wts` 和 32 位小写十六进制 `w_rid`。WBI key 仍匿名取得；本地存在有效凭据时仅该精确请求可附加 Cookie，明确没有凭据时仍请求同一 WBI endpoint，凭据损坏、不可用或拒绝时不得匿名降级。
 - 字幕正文 URL 必须单独验证 scheme、userinfo、端口、允许的主机和每次重定向；不得复用媒体 CDN 或游客图片的宽泛策略。M4.0 现场证据当前只确认 `aisubtitle.hdslb.com`，新增主机必须先失败关闭并取得同等级脱敏证据。
 - 目录、正文、弹幕元数据和分段分别设置 Content-Type 与大小上限。JSON、protobuf、HTML 错误页和空响应不能互相降级解析。
 - 取消、超时和换集必须终止网络与解码 Task；未知接口状态默认失败关闭。

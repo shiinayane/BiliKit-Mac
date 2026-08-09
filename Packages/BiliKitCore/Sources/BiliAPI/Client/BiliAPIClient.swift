@@ -5,10 +5,10 @@ import Foundation
 
 /// Bilibili endpoint/DTO adapter；把远端协议限制在 `BiliAPI`，并返回稳定模型。
 ///
-/// 匿名请求永不经过 authorizer。只有显式认证 endpoint 与精确 legacy playurl 才临时授权；
-/// playurl 也只有在本地明确无凭据时保持匿名。响应在解码前还要满足状态、大小与
-/// Content-Type 边界。actor 隔离可变 transport/WBI cache；跨 `await` 可重入，用户意图的
-/// 取消与写回代次仍由上层 owner 管理。
+/// 游客专用请求永不经过 authorizer。只有显式认证 endpoint、精确 playurl 与 WBI 弹幕分段
+/// 才临时授权；后两者也只有在本地明确无凭据时保持匿名，并继续使用同一个 endpoint。
+/// 响应在解码前还要满足状态、大小与 Content-Type 边界。actor 隔离可变
+/// transport/WBI cache；跨 `await` 可重入，用户意图的取消与写回代次仍由上层 owner 管理。
 public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private enum AuthorizationProvenance: Sendable {
         case anonymous
@@ -398,49 +398,25 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         else {
             throw BiliAPIError.invalidRequest
         }
-        let url = try endpoint(
-            path: "/x/v2/dm/web/seg.so",
-            queryItems: [
-                URLQueryItem(name: "type", value: "1"),
-                URLQueryItem(name: "oid", value: String(identity.cid)),
-                URLQueryItem(name: "segment_index", value: String(index)),
-            ]
-        )
-        let request = HTTPRequest(
-            url: url,
-            headers: [
-                "Accept": "application/octet-stream",
-                "Referer": Self.videoReferer(identity.bvid),
-                "User-Agent": userAgent,
-            ]
-        )
-        let response: HTTPResponse
         do {
-            response = try await httpClient.send(request)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HTTPClientError {
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw BiliAPIError.httpStatus(status)
-            case .nonHTTPResponse:
-                throw BiliAPIError.transportFailure
-            }
-        } catch {
-            throw BiliAPIError.transportFailure
+            return try await signedDanmakuSegmentData(
+                index: index,
+                for: identity,
+                forceKeyRefresh: false
+            )
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
+            return try await signedDanmakuSegmentData(
+                index: index,
+                for: identity,
+                forceKeyRefresh: true
+            )
+        } catch BiliAPIError.httpStatus(403) {
+            return try await signedDanmakuSegmentData(
+                index: index,
+                for: identity,
+                forceKeyRefresh: true
+            )
         }
-        guard !response.body.isEmpty,
-            response.body.count <= Self.maximumDanmakuSegmentSize
-        else {
-            if response.body.isEmpty {
-                throw BiliAPIError.invalidDanmakuData
-            }
-            throw BiliAPIError.responseTooLarge(response.body.count)
-        }
-        guard Self.looksLikeProtobuf(response) else {
-            throw BiliAPIError.nonProtobufResponse
-        }
-        return response.body
     }
 
     public func watchHistory(
@@ -628,6 +604,24 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 "User-Agent": userAgent,
             ]
         )
+        let response = try await response(
+            baseRequest: baseRequest,
+            requiresAuthentication: requiresAuthentication,
+            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            maximumResponseSize: maximumResponseSize
+        )
+        guard Self.looksLikeJSON(response.response) else {
+            throw BiliAPIError.nonJSONResponse
+        }
+        return response
+    }
+
+    private func response(
+        baseRequest: HTTPRequest,
+        requiresAuthentication: Bool,
+        permitsMissingCredentialFallback: Bool = false,
+        maximumResponseSize: Int
+    ) async throws -> AuthorizedHTTPResponse {
         let requestClient = httpClient
         let requestSessionEpoch =
             requiresAuthentication ? authenticatedSessionEpoch : nil
@@ -648,7 +642,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 }
                 switch error.authorizationFailureKind {
                 case .missingCredential where permitsMissingCredentialFallback:
-                    try Task.checkCancellation()
                     request = baseRequest
                     authorizationProvenance = .anonymous
                 case .invalidCredential:
@@ -668,6 +661,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             request = baseRequest
             authorizationProvenance = .anonymous
         }
+        try Task.checkCancellation()
         if let requestSessionEpoch,
             requestSessionEpoch != authenticatedSessionEpoch
         {
@@ -707,9 +701,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
         guard response.body.count <= maximumResponseSize else {
             throw BiliAPIError.responseTooLarge(response.body.count)
-        }
-        guard Self.looksLikeJSON(response) else {
-            throw BiliAPIError.nonJSONResponse
         }
         return AuthorizedHTTPResponse(
             response: response,
@@ -756,6 +747,63 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             maximumResponseSize: Self.maximumSubtitleCatalogSize
         )
         return try payload.resources()
+    }
+
+    private func signedDanmakuSegmentData(
+        index: Int,
+        for identity: PlaybackItemIdentity,
+        forceKeyRefresh: Bool
+    ) async throws -> Data {
+        let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        let query = try wbiSigner.sign(
+            parameters: [
+                "type": "1",
+                "oid": String(identity.cid),
+                "segment_index": String(index),
+            ],
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let url = try endpoint(
+            path: "/x/v2/dm/wbi/web/seg.so",
+            percentEncodedQuery: query
+        )
+        let response = try await response(
+            baseRequest: HTTPRequest(
+                url: url,
+                headers: [
+                    "Accept": "application/octet-stream",
+                    "Referer": Self.videoReferer(identity.bvid),
+                    "User-Agent": userAgent,
+                ]
+            ),
+            requiresAuthentication: requestAuthorizer != nil,
+            permitsMissingCredentialFallback: true,
+            maximumResponseSize: Self.maximumDanmakuSegmentSize
+        ).response
+        guard !response.body.isEmpty else {
+            throw BiliAPIError.invalidDanmakuData
+        }
+        guard Self.looksLikeProtobuf(response) else {
+            if Self.isKnownNonProtobufBody(response.body),
+                let status = try? decoder.decode(
+                    APIStatusEnvelope.self,
+                    from: response.body
+                )
+            {
+                if status.code == -101 {
+                    throw BiliAPIError.authenticationInvalid
+                }
+                if status.code != 0 {
+                    throw BiliAPIError.apiRejected(
+                        code: status.code,
+                        message: status.message ?? ""
+                    )
+                }
+            }
+            throw BiliAPIError.nonProtobufResponse
+        }
+        return response.body
     }
 
     private func wbiKey(forceRefresh: Bool) async throws -> WBIKeyMaterial {
@@ -909,6 +957,21 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             || normalized.hasPrefix("<!doctype")
     }
 }
+
+#if DEBUG
+    extension BiliAPIClient {
+        func danmakuPoolProbe(
+            index: Int,
+            for identity: PlaybackItemIdentity
+        ) async throws -> DanmakuPoolProbeSummary {
+            let data = try await danmakuSegmentData(
+                index: index,
+                for: identity
+            )
+            return try DanmakuPoolProbeSummary.make(from: data)
+        }
+    }
+#endif
 
 private struct CachedWBIKey: Sendable {
     let key: WBIKeyMaterial

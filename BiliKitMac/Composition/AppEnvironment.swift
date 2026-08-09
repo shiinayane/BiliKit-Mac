@@ -140,8 +140,9 @@ struct AppEnvironment {
 
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
-    /// 只有显式声明为已认证的 API 请求才经过 authorizer；登出还会替换 API 的
-    /// ephemeral transport，使旧认证会话中的在途请求失效。
+    /// 只有精确白名单内的认证 API、playurl 与 WBI 弹幕分段才经过 authorizer；后两者在
+    /// 明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的 ephemeral transport，
+    /// 使旧认证会话中的在途请求失效。
     static func live() -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {

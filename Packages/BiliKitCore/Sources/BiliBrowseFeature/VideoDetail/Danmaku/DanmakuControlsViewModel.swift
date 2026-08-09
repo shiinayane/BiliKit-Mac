@@ -13,6 +13,7 @@ public final class DanmakuControlsViewModel {
     public private(set) var showsBottom = true
     public private(set) var speedLevel: DanmakuSpeedLevel
     public private(set) var opacity: DanmakuOpacity
+    public private(set) var authenticationRevalidationGeneration = 0
 
     @ObservationIgnored
     private let presentation: any DanmakuPresentationControlling
@@ -35,6 +36,9 @@ public final class DanmakuControlsViewModel {
         self.saveOpacity = saveOpacity
         presentation.setSpeedLevel(initialSpeedLevel)
         presentation.setOpacity(initialOpacity)
+        presentation.setAuthenticationInvalidationHandler { [weak self] in
+            self?.authenticationRevalidationGeneration &+= 1
+        }
     }
 
     public func selectVideo(_ identity: PlaybackItemIdentity) {
