@@ -6,8 +6,16 @@ import Foundation
 public enum AVPlayerEngineError: Error, Sendable, Equatable {
     case missingVideoRepresentation
     case missingAudioRepresentation
+    case missingAudioTrackRepresentation(String)
+    case duplicateAudioTrackID(String)
+    case invalidDefaultAudioTrackCount(Int)
+    case invalidAudioTrackRepresentation(trackID: String, representationID: Int)
     case preferredVideoRepresentationNotFound(Int)
-    case preferredAudioRepresentationNotFound(Int)
+    case preferredAudioTrackNotFound(String)
+    case preferredAudioRepresentationNotFound(
+        trackID: String,
+        representationID: Int
+    )
     case itemFailed(errorType: String)
     case invalidPlaybackRate
     case seekFailed
@@ -169,7 +177,7 @@ public final class AVPlayerEngine:
         emit(.stateChanged(.loading))
 
         let videos = try selectedVideos(for: request)
-        let audio = try selectedAudio(for: request)
+        let audioTracks = try selectedAudioTracks(for: request)
         await pendingSubtitleReset?.value
         try Task.checkCancellation()
         guard loadGeneration == generation else {
@@ -184,7 +192,7 @@ public final class AVPlayerEngine:
         let task = Task {
             try await bridge.prepare(
                 videos: videos,
-                audio: audio,
+                audioTracks: audioTracks,
                 headers: request.mediaHeaders,
                 subtitleSource: subtitleSource
             )
@@ -349,25 +357,67 @@ public final class AVPlayerEngine:
         return request.manifest.videoRepresentations
     }
 
-    private func selectedAudio(
+    func selectedAudioTracks(
         for request: PlaybackRequest
-    ) throws -> MediaRepresentation {
-        if let preferredID = request.preferredAudioRepresentationID {
-            guard
-                let representation = request.manifest.audioRepresentations.first(
-                    where: { $0.id == preferredID }
-                )
-            else {
-                throw AVPlayerEngineError.preferredAudioRepresentationNotFound(
-                    preferredID
-                )
-            }
-            return representation
-        }
-        guard let representation = request.manifest.audioRepresentations.first else {
+    ) throws -> [SelectedPlaybackAudioTrack] {
+        guard !request.manifest.audioTracks.isEmpty else {
             throw AVPlayerEngineError.missingAudioRepresentation
         }
-        return representation
+        var trackIDs = Set<String>()
+        for track in request.manifest.audioTracks {
+            guard trackIDs.insert(track.id).inserted else {
+                throw AVPlayerEngineError.duplicateAudioTrackID(track.id)
+            }
+        }
+        for trackID in request.preferredAudioRepresentationIDs.keys
+        where !trackIDs.contains(trackID) {
+            throw AVPlayerEngineError.preferredAudioTrackNotFound(trackID)
+        }
+        let defaultTracks = request.manifest.audioTracks.filter(\.isDefault)
+        guard defaultTracks.count == 1 else {
+            throw AVPlayerEngineError.invalidDefaultAudioTrackCount(
+                defaultTracks.count
+            )
+        }
+
+        return try request.manifest.audioTracks.map { track in
+            for representation in track.representations
+            where representation.kind != .audio {
+                throw AVPlayerEngineError.invalidAudioTrackRepresentation(
+                    trackID: track.id,
+                    representationID: representation.id
+                )
+            }
+            let representation: MediaRepresentation
+            if let preferredID =
+                request.preferredAudioRepresentationIDs[track.id]
+            {
+                guard
+                    let preferred = track.representations.first(
+                        where: { $0.id == preferredID }
+                    )
+                else {
+                    throw
+                        AVPlayerEngineError
+                        .preferredAudioRepresentationNotFound(
+                            trackID: track.id,
+                            representationID: preferredID
+                        )
+                }
+                representation = preferred
+            } else {
+                guard let first = track.representations.first else {
+                    throw AVPlayerEngineError.missingAudioTrackRepresentation(
+                        track.id
+                    )
+                }
+                representation = first
+            }
+            return SelectedPlaybackAudioTrack(
+                track: track,
+                representation: representation
+            )
+        }
     }
 
     private func emit(_ event: PlayerEvent) {

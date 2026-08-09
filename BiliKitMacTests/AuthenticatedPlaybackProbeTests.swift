@@ -98,7 +98,7 @@ final class AuthenticatedPlaybackProbeTests: XCTestCase {
             throw ProbeFailure.credentialReachedMediaHeaders
         }
         let videos = playback.manifest.videoRepresentations
-        let audio = playback.manifest.audioRepresentations
+        let audio = playback.manifest.audioTracks.flatMap(\.representations)
         let heights = Array(
             Set(videos.compactMap { $0.videoAttributes?.height })
         ).sorted()

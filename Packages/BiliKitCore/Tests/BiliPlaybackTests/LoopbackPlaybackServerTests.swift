@@ -509,9 +509,13 @@ struct LoopbackPlaybackServerTests {
                     playlistURI: videoPlaylistURL
                 )
             ],
-            audio: audioFixture.representation,
-            audioIndex: audioFixture.index,
-            audioPlaylistURI: audioPlaylistURL
+            audioRenditions: [
+                makeHLSAudioRendition(
+                    representation: audioFixture.representation,
+                    index: audioFixture.index,
+                    playlistURI: audioPlaylistURL
+                )
+            ]
         )
         _ = try server.register(
             .inMemory(
@@ -1587,9 +1591,13 @@ struct LoopbackPlaybackServerTests {
                     playlistURI: videoPlaylistURL
                 )
             ],
-            audio: audioFixture.representation,
-            audioIndex: audioFixture.index,
-            audioPlaylistURI: audioPlaylistURL
+            audioRenditions: [
+                makeHLSAudioRendition(
+                    representation: audioFixture.representation,
+                    index: audioFixture.index,
+                    playlistURI: audioPlaylistURL
+                )
+            ]
         )
 
         _ = try server.register(
@@ -1677,6 +1685,201 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
+    func bridgeRejectsUnsupportedAudioTrackCountsBeforeStartingServer()
+        async throws
+    {
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: try fixtureData(named: "video-avc")
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: try fixtureData(named: "audio-aac")
+        ).representation
+        let registry = LoopbackServerRegistry()
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(),
+            serverFactory: { rangeClient in
+                registry.create(rangeClient: rangeClient)
+            }
+        )
+        let original = makeSelectedAudioTrack(representation: audio)
+        let alternate = makeSelectedAudioTrack(
+            trackID: "alternate",
+            representation: audio
+        )
+
+        await #expect(
+            throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
+        ) {
+            try await bridge.prepare(video: video, audioTracks: [])
+        }
+        await #expect(
+            throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(2)
+        ) {
+            try await bridge.prepare(
+                video: video,
+                audioTracks: [original, alternate]
+            )
+        }
+        let mismatched = SelectedPlaybackAudioTrack(
+            track: original.track,
+            representation: video
+        )
+        await #expect(
+            throws: DASHToHLSBridgeError.invalidAudioTrackSelection(
+                trackID: "original",
+                representationID: video.id
+            )
+        ) {
+            try await bridge.prepare(
+                video: video,
+                audioTracks: [mismatched]
+            )
+        }
+        #expect(registry.servers.isEmpty)
+    }
+
+    @Test
+    func bridgeOmitsOptionalAudioFormatWhenInitializationCannotBeParsed()
+        async throws
+    {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(
+            URL(string: "https://format-fallback.example/video")
+        )
+        let audioURL = try #require(
+            URL(string: "https://format-fallback.example/audio")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let validAudio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: audioURL
+        ).representation
+        let audio = MediaRepresentation(
+            id: validAudio.id,
+            kind: validAudio.kind,
+            codecs: validAudio.codecs,
+            mimeType: validAudio.mimeType,
+            bandwidth: validAudio.bandwidth,
+            primaryURL: validAudio.primaryURL,
+            segmentBase: SegmentBase(
+                initialization: try MediaByteRange(
+                    start: 0,
+                    endInclusive: 7
+                ),
+                index: validAudio.segmentBase.index
+            )
+        )
+        let transport = FixtureRangeTransport(
+            media: [videoURL: videoData, audioURL: audioData],
+            failingURLs: []
+        )
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport)
+        )
+
+        let prepared = try await bridge.prepare(
+            video: video,
+            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+        )
+        defer { prepared.stop() }
+        let masterData = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+
+        #expect(master.contains("#EXT-X-VERSION:7\n"))
+        #expect(master.contains("CHARACTERISTICS=\"public.original-content\""))
+        #expect(!master.contains("CHANNELS="))
+        #expect(!master.contains("BIT-DEPTH="))
+        #expect(!master.contains("SAMPLE-RATE="))
+    }
+
+    @Test
+    func bridgeDoesNotBorrowAudioFormatFromDifferentCDN() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        var primaryAudioData = audioData
+        let movieBox = try #require(
+            firstTopLevelBox(named: "moov", in: primaryAudioData)
+        )
+        primaryAudioData.replaceSubrange(
+            (movieBox.offset + 4)..<(movieBox.offset + 8),
+            with: Data("free".utf8)
+        )
+
+        let videoURL = try #require(
+            URL(string: "https://format-source.example/video")
+        )
+        let primaryAudioURL = try #require(
+            URL(string: "https://format-source.example/audio-primary")
+        )
+        let backupAudioURL = try #require(
+            URL(string: "https://format-source.example/audio-backup")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: primaryAudioURL,
+            backupURLs: [backupAudioURL]
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [
+                videoURL: videoData,
+                primaryAudioURL: primaryAudioData,
+                backupAudioURL: audioData,
+            ],
+            failingURLs: []
+        )
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport)
+        )
+
+        let prepared = try await bridge.prepare(
+            video: video,
+            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+        )
+        defer { prepared.stop() }
+        let masterData = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+        let requests = await transport.requests
+
+        #expect(!master.contains("CHANNELS="))
+        #expect(!master.contains("BIT-DEPTH="))
+        #expect(!master.contains("SAMPLE-RATE="))
+        #expect(requests.filter { $0.url == primaryAudioURL }.count == 2)
+        #expect(requests.allSatisfy { $0.url != backupAudioURL })
+    }
+
+    @Test
     func bridgeKeepsSuccessfulCDNsForAVPlayerMediaRanges() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
@@ -1713,7 +1916,10 @@ struct LoopbackPlaybackServerTests {
             rangeClient: HTTPRangeClient(transport: transport)
         )
 
-        let prepared = try await bridge.prepare(video: video, audio: audio)
+        let prepared = try await bridge.prepare(
+            video: video,
+            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+        )
         defer { prepared.stop() }
         let item = AVPlayerItem(url: prepared.url)
         let player = AVPlayer(playerItem: item)
@@ -1755,6 +1961,9 @@ struct LoopbackPlaybackServerTests {
         let audioURL = try #require(
             URL(string: "https://adaptive.example/audio")
         )
+        let alternateAudioURL = try #require(
+            URL(string: "https://adaptive.example/audio-alternate")
+        )
         let lowVideo = try makeFixtureTrack(
             id: 64,
             kind: .video,
@@ -1789,6 +1998,14 @@ struct LoopbackPlaybackServerTests {
             data: audioData,
             primaryURL: audioURL
         ).representation
+        let alternateAudio = try makeFixtureTrack(
+            id: 30_216,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 16_000,
+            data: audioData,
+            primaryURL: alternateAudioURL
+        ).representation
         let transport = FixtureRangeTransport(
             media: [
                 lowURL: lowVideoData,
@@ -1812,7 +2029,7 @@ struct LoopbackPlaybackServerTests {
             PlaybackRequest(
                 manifest: PlaybackManifest(
                     videoRepresentations: [highVideo, lowVideo],
-                    audioRepresentations: [audio]
+                    originalAudioRepresentations: [audio, alternateAudio]
                 )
             ),
             identity: identity
@@ -1821,12 +2038,51 @@ struct LoopbackPlaybackServerTests {
         let itemIdentity = ObjectIdentifier(item)
         let asset = try #require(item.asset as? AVURLAsset)
         let variants = try await asset.load(.variants)
+        let audibleGroup = try #require(
+            try await asset.loadMediaSelectionGroup(for: .audible)
+        )
+        let masterData = try await URLSession.shared.data(from: asset.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+        let localizedNamesURL = asset.url.deletingLastPathComponent()
+            .appending(path: "metadata/localized-rendition-names.json")
+        let localizedNamesData = try await URLSession.shared.data(
+            from: localizedNamesURL
+        ).0
+        let localizedNames = try #require(
+            try JSONSerialization.jsonObject(with: localizedNamesData)
+                as? [String: [String: String]]
+        )
 
         #expect(variants.count == 2)
+        #expect(audibleGroup.options.count == 1)
+        #expect(
+            audibleGroup.options[0].hasMediaCharacteristic(
+                .isOriginalContent
+            )
+        )
         #expect(item.preferredPeakBitRate == 0)
         #expect(item.preferredMaximumResolution == .zero)
         #expect(item.preferredForwardBufferDuration == 0)
         #expect(!item.startsOnFirstEligibleVariant)
+        #expect(master.contains("#EXT-X-VERSION:7\n"))
+        #expect(
+            master.contains(
+                #"NAME="原声",LANGUAGE="und",CHARACTERISTICS="public.original-content",CHANNELS="2",BIT-DEPTH=16,SAMPLE-RATE=48000,DEFAULT=YES,AUTOSELECT=YES"#
+            )
+        )
+        #expect(master.contains("CLOSED-CAPTIONS=NONE"))
+        #expect(
+            master.contains(
+                #"DATA-ID="_hls.localized-rendition-names""#
+            )
+        )
+        #expect(
+            localizedNames["原声"] == [
+                "en": "Original",
+                "ja": "オリジナル",
+                "zh": "原声",
+            ]
+        )
         #expect(
             Set(
                 variants.compactMap {
@@ -1842,6 +2098,11 @@ struct LoopbackPlaybackServerTests {
         )
         #expect(
             await transport.requests.contains { $0.url == highURL }
+        )
+        #expect(
+            await transport.requests.allSatisfy {
+                $0.url != alternateAudioURL
+            }
         )
 
         engine.play()
@@ -1940,7 +2201,7 @@ struct LoopbackPlaybackServerTests {
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [video],
-                audioRepresentations: [audio]
+                originalAudioRepresentations: [audio]
             )
         )
         let firstA = PlaybackItemIdentity(bvid: "BV1NativeA", cid: 101)
@@ -1951,19 +2212,31 @@ struct LoopbackPlaybackServerTests {
         let group = try #require(
             try await item.asset.loadMediaSelectionGroup(for: .legible)
         )
+        let machineGenerated = AVMediaCharacteristic(
+            rawValue: "public.machine-generated"
+        )
+        let automaticSubtitles = group.options.filter {
+            $0.hasMediaCharacteristic(machineGenerated)
+        }
+        let authoredSubtitle = try #require(
+            group.options.first {
+                !$0.hasMediaCharacteristic(machineGenerated)
+            }
+        )
+        #expect(group.options.allSatisfy { !$0.displayName.isEmpty })
+        #expect(Set(group.options.map(\.displayName)).count == 3)
+        #expect(automaticSubtitles.count == 2)
         #expect(
-            group.options.map(\.displayName) == [
-                "中文",
-                "中文（AI）",
-                "English（AI）",
-            ]
+            group.options.allSatisfy {
+                !$0.hasMediaCharacteristic(.isOriginalContent)
+            }
         )
         #expect(
             item.currentMediaSelection.selectedMediaOption(in: group) == nil
         )
         #expect(await subtitleRepository.cueRequestCount == 0)
 
-        item.select(group.options[0], in: group)
+        item.select(authoredSubtitle, in: group)
         engine.play()
         try await waitUntilAsync {
             await subtitleRepository.cueRequestCount == 1
@@ -2055,7 +2328,7 @@ struct LoopbackPlaybackServerTests {
             PlaybackRequest(
                 manifest: PlaybackManifest(
                     videoRepresentations: [video],
-                    audioRepresentations: [audio]
+                    originalAudioRepresentations: [audio]
                 )
             ),
             identity: PlaybackItemIdentity(
@@ -2120,7 +2393,7 @@ struct LoopbackPlaybackServerTests {
             PlaybackRequest(
                 manifest: PlaybackManifest(
                     videoRepresentations: [video],
-                    audioRepresentations: [audio]
+                    originalAudioRepresentations: [audio]
                 )
             ),
             identity: PlaybackItemIdentity(
@@ -2184,7 +2457,7 @@ struct LoopbackPlaybackServerTests {
         let prepareTask = Task {
             try await bridge.prepare(
                 videos: [video],
-                audio: audio,
+                audioTracks: [makeSelectedAudioTrack(representation: audio)],
                 headers: [:],
                 subtitleSource: source
             )
@@ -2242,7 +2515,7 @@ struct LoopbackPlaybackServerTests {
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [video],
-                audioRepresentations: [audio]
+                originalAudioRepresentations: [audio]
             )
         )
 
@@ -2410,7 +2683,7 @@ struct LoopbackPlaybackServerTests {
             PlaybackRequest(
                 manifest: PlaybackManifest(
                     videoRepresentations: [video],
-                    audioRepresentations: [audio]
+                    originalAudioRepresentations: [audio]
                 )
             ),
             identity: identity
@@ -2521,7 +2794,7 @@ struct LoopbackPlaybackServerTests {
             PlaybackRequest(
                 manifest: PlaybackManifest(
                     videoRepresentations: [video],
-                    audioRepresentations: [audio]
+                    originalAudioRepresentations: [audio]
                 )
             ),
             identity: identity
@@ -2621,13 +2894,13 @@ struct LoopbackPlaybackServerTests {
         let oldRequest = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [oldVideo],
-                audioRepresentations: [oldAudio]
+                originalAudioRepresentations: [oldAudio]
             )
         )
         let newRequest = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [newVideo],
-                audioRepresentations: [newAudio]
+                originalAudioRepresentations: [newAudio]
             )
         )
 
@@ -2705,7 +2978,7 @@ struct LoopbackPlaybackServerTests {
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [video],
-                audioRepresentations: [audio]
+                originalAudioRepresentations: [audio]
             )
         )
 
@@ -3014,6 +3287,38 @@ struct LoopbackPlaybackServerTests {
             boxStartOffset: UInt64(sidx.offset)
         )
         return (representation, index)
+    }
+
+    private func makeSelectedAudioTrack(
+        trackID: String = "original",
+        representation: MediaRepresentation
+    ) -> SelectedPlaybackAudioTrack {
+        let track = PlaybackAudioTrack(
+            id: trackID,
+            displayName: "原声",
+            role: .original,
+            isDefault: true,
+            isAutoselect: true,
+            representations: [representation]
+        )
+        return SelectedPlaybackAudioTrack(
+            track: track,
+            representation: representation
+        )
+    }
+
+    private func makeHLSAudioRendition(
+        representation: MediaRepresentation,
+        index: SegmentIndex,
+        playlistURI: URL
+    ) -> HLSAudioRendition {
+        HLSAudioRendition(
+            selectedTrack: makeSelectedAudioTrack(
+                representation: representation
+            ),
+            index: index,
+            playlistURI: playlistURI
+        )
     }
 
     private func firstTopLevelBox(

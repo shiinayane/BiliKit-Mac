@@ -129,7 +129,7 @@ struct UITestLocalAVPlayerPlaybackTests {
     private static let emptyPlayback = VideoPlayback(
         manifest: PlaybackManifest(
             videoRepresentations: [],
-            audioRepresentations: []
+            originalAudioRepresentations: []
         ),
         mediaHeaders: [:]
     )

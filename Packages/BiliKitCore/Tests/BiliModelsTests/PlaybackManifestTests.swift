@@ -40,6 +40,57 @@ struct PlaybackManifestTests {
     }
 
     @Test
+    func groupsOriginalAudioRepresentationsIntoOneSemanticTrack() throws {
+        let segmentBase = SegmentBase(
+            initialization: try MediaByteRange(start: 0, endInclusive: 99),
+            index: try MediaByteRange(start: 100, endInclusive: 199)
+        )
+        let low = MediaRepresentation(
+            id: 30_216,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            mimeType: "audio/mp4",
+            bandwidth: 64_000,
+            primaryURL: try #require(URL(string: "https://example.invalid/low")),
+            segmentBase: segmentBase
+        )
+        let high = MediaRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            mimeType: "audio/mp4",
+            bandwidth: 192_000,
+            primaryURL: try #require(URL(string: "https://example.invalid/high")),
+            segmentBase: segmentBase
+        )
+
+        let manifest = PlaybackManifest(
+            videoRepresentations: [],
+            originalAudioRepresentations: [low, high]
+        )
+
+        let track = try #require(manifest.audioTracks.first)
+        #expect(manifest.audioTracks.count == 1)
+        #expect(track.id == "original")
+        #expect(track.displayName == "原声")
+        #expect(track.languageTag == nil)
+        #expect(track.role == .original)
+        #expect(track.isDefault)
+        #expect(track.isAutoselect)
+        #expect(track.representations == [low, high])
+    }
+
+    @Test
+    func emptyOriginalRepresentationsProduceNoSyntheticTrack() {
+        let manifest = PlaybackManifest(
+            videoRepresentations: [],
+            originalAudioRepresentations: []
+        )
+
+        #expect(manifest.audioTracks.isEmpty)
+    }
+
+    @Test
     func videoAttributesRejectInvalidPresentationValues() {
         #expect(throws: VideoRepresentationAttributesError.self) {
             try VideoRepresentationAttributes(

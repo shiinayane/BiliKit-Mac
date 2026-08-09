@@ -1080,7 +1080,7 @@ private struct GuestFixtures: Sendable {
         VideoPlayback(
             manifest: PlaybackManifest(
                 videoRepresentations: [],
-                audioRepresentations: []
+                originalAudioRepresentations: []
             ),
             mediaHeaders: [
                 "Referer": "https://www.bilibili.com/video/\(bvid)/",

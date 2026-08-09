@@ -66,7 +66,10 @@ struct BiliPlaybackProbe {
             throw ProbeError.noAVCVideo
         }
         guard
-            let audio = playback.manifest.audioRepresentations.min(
+            let audioTrack = playback.manifest.audioTracks.first(
+                where: \.isDefault
+            ),
+            let audio = audioTrack.representations.min(
                 by: { ($0.bandwidth ?? .max) < ($1.bandwidth ?? .max) }
             )
         else {
@@ -83,10 +86,10 @@ struct BiliPlaybackProbe {
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
                 videoRepresentations: [video],
-                audioRepresentations: [audio]
+                originalAudioRepresentations: [audio]
             ),
             preferredVideoRepresentationID: video.id,
-            preferredAudioRepresentationID: audio.id,
+            preferredAudioRepresentationIDs: [audioTrack.id: audio.id],
             mediaHeaders: playback.mediaHeaders
         )
         let engine = AVPlayerEngine()

@@ -110,15 +110,69 @@ public struct MediaRepresentation: Sendable, Equatable {
     }
 }
 
+/// 用户可选择的一条语义音轨；`representations` 是同一声音内容的媒体候选，而不是独立音轨。
+public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
+    public enum Role: Sendable, Equatable {
+        case original
+    }
+
+    public let id: String
+    public let displayName: String
+    public let languageTag: String?
+    public let role: Role
+    public let isDefault: Bool
+    public let isAutoselect: Bool
+    public let representations: [MediaRepresentation]
+
+    public init(
+        id: String,
+        displayName: String,
+        languageTag: String? = nil,
+        role: Role,
+        isDefault: Bool,
+        isAutoselect: Bool,
+        representations: [MediaRepresentation]
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.languageTag = languageTag
+        self.role = role
+        self.isDefault = isDefault
+        self.isAutoselect = isAutoselect
+        self.representations = representations
+    }
+}
+
 public struct PlaybackManifest: Sendable, Equatable {
     public let videoRepresentations: [MediaRepresentation]
-    public let audioRepresentations: [MediaRepresentation]
+    public let audioTracks: [PlaybackAudioTrack]
 
     public init(
         videoRepresentations: [MediaRepresentation],
-        audioRepresentations: [MediaRepresentation]
+        audioTracks: [PlaybackAudioTrack]
     ) {
         self.videoRepresentations = videoRepresentations
-        self.audioRepresentations = audioRepresentations
+        self.audioTracks = audioTracks
+    }
+
+    /// 把现有 DASH AAC 码率梯度迁移为唯一原声音轨；空输入继续表达缺少可播放音频。
+    public init(
+        videoRepresentations: [MediaRepresentation],
+        originalAudioRepresentations: [MediaRepresentation]
+    ) {
+        self.videoRepresentations = videoRepresentations
+        audioTracks =
+            originalAudioRepresentations.isEmpty
+            ? []
+            : [
+                PlaybackAudioTrack(
+                    id: "original",
+                    displayName: "原声",
+                    role: .original,
+                    isDefault: true,
+                    isAutoselect: true,
+                    representations: originalAudioRepresentations
+                )
+            ]
     }
 }

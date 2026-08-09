@@ -4,6 +4,11 @@ import Foundation
 public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case noMediaSegments
     case noVideoVariants
+    case unsupportedAudioRenditionCount(Int)
+    case invalidAudioTrackSelection(trackID: String, representationID: Int)
+    case duplicateSubtitleRenditionName(String)
+    case invalidRenditionSelection
+    case invalidAudioFormatMetadata
     case invalidTimescale
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
     case missingVideoAttributes(representationID: Int)
@@ -110,10 +115,54 @@ public struct HLSVideoVariant: Sendable, Equatable {
 
 public struct HLSSubtitleRendition: Sendable, Equatable {
     public let name: String
+    public let languageTag: String
+    public let characteristics: [String]
+    public let isDefault: Bool
+    public let isAutoselect: Bool
+    public let isForced: Bool
     public let playlistURI: URL
 
-    public init(name: String, playlistURI: URL) {
+    public init(
+        name: String,
+        languageTag: String,
+        characteristics: [String] = [],
+        isDefault: Bool = false,
+        isAutoselect: Bool = false,
+        isForced: Bool = false,
+        playlistURI: URL
+    ) {
         self.name = name
+        self.languageTag = languageTag
+        self.characteristics = characteristics
+        self.isDefault = isDefault
+        self.isAutoselect = isAutoselect
+        self.isForced = isForced
+        self.playlistURI = playlistURI
+    }
+}
+
+/// 一条语义音轨在本次 master playlist 中选定的媒体 rendition。
+public struct HLSAudioRendition: Sendable, Equatable {
+    public let selectedTrack: SelectedPlaybackAudioTrack
+    public let channelCount: Int?
+    public let bitDepth: Int?
+    public let sampleRate: Int?
+    public let index: SegmentIndex
+    public let playlistURI: URL
+
+    public init(
+        selectedTrack: SelectedPlaybackAudioTrack,
+        channelCount: Int? = nil,
+        bitDepth: Int? = nil,
+        sampleRate: Int? = nil,
+        index: SegmentIndex,
+        playlistURI: URL
+    ) {
+        self.selectedTrack = selectedTrack
+        self.channelCount = channelCount
+        self.bitDepth = bitDepth
+        self.sampleRate = sampleRate
+        self.index = index
         self.playlistURI = playlistURI
     }
 }
@@ -150,22 +199,43 @@ public struct HLSSubtitlePlaylistBuilder: Sendable {
     }
 }
 
-/// 把一个或多个视频 variant 与单一音频 representation 组合成 AVPlayer 的 ABR master playlist。
+/// 把一个或多个视频 variant 与语义音轨 rendition 集合组合成 AVPlayer 的 ABR master playlist。
 ///
+/// 当前生产阶段只接受一条 rendition；集合形状先固定跨层契约，多音轨输出留给后续阶段。
 /// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
 public struct HLSMasterPlaylistBuilder: Sendable {
     public init() {}
 
     public func build(
         videoVariants: [HLSVideoVariant],
-        audio: MediaRepresentation,
-        audioIndex: SegmentIndex,
-        audioPlaylistURI: URL,
-        subtitleRenditions: [HLSSubtitleRendition] = []
+        audioRenditions: [HLSAudioRendition],
+        subtitleRenditions: [HLSSubtitleRendition] = [],
+        localizedRenditionNamesURI: URL? = nil
     ) throws -> String {
         guard !videoVariants.isEmpty else {
             throw HLSPlaylistBuilderError.noVideoVariants
         }
+        guard audioRenditions.count == 1,
+            let audioRendition = audioRenditions.first
+        else {
+            throw HLSPlaylistBuilderError.unsupportedAudioRenditionCount(
+                audioRenditions.count
+            )
+        }
+        let selectedAudio = audioRendition.selectedTrack
+        guard
+            selectedAudio.track.isDefault,
+            selectedAudio.track.isAutoselect,
+            selectedAudio.track.representations.contains(
+                selectedAudio.representation
+            )
+        else {
+            throw HLSPlaylistBuilderError.invalidAudioTrackSelection(
+                trackID: selectedAudio.track.id,
+                representationID: selectedAudio.representation.id
+            )
+        }
+        let audio = selectedAudio.representation
         guard audio.kind == .audio else {
             throw HLSPlaylistBuilderError.invalidMediaKind(
                 expected: .audio,
@@ -173,24 +243,69 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             )
         }
 
-        let audioURI = try safeURI(audioPlaylistURI)
+        try validateAudioFormat(audioRendition)
+        let audioURI = try safeURI(audioRendition.playlistURI)
         let audioCodecs = try safeAttribute(audio.codecs)
         let audioGroupID = "audio-\(audio.id)"
-        let audioBitRates = try bitRates(for: audioIndex)
-
+        let audioBitRates = try bitRates(for: audioRendition.index)
+        let audioName = try safeAttribute(selectedAudio.track.displayName)
+        let audioLanguage = try safeLanguageTag(
+            selectedAudio.track.languageTag ?? "und"
+        )
+        let audioCharacteristics = try characteristics(
+            for: selectedAudio.track.role
+        )
         var lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:7",
-            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"Audio \(audio.id)\",DEFAULT=YES,AUTOSELECT=YES,URI=\"\(audioURI)\"",
         ]
+        let allIndices = videoVariants.map(\.index) + audioRenditions.map(\.index)
+        if allIndices.allSatisfy(isIndependent) {
+            lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
+        }
+        if let localizedRenditionNamesURI {
+            lines.append(
+                "#EXT-X-SESSION-DATA:DATA-ID=\"_hls.localized-rendition-names\",URI=\"\(try safeURI(localizedRenditionNamesURI))\""
+            )
+        }
+        var audioLine =
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"\(audioName)\",LANGUAGE=\"\(audioLanguage)\",CHARACTERISTICS=\"\(audioCharacteristics)\""
+        if let channelCount = audioRendition.channelCount {
+            audioLine += ",CHANNELS=\"\(channelCount)\""
+        }
+        if let bitDepth = audioRendition.bitDepth {
+            audioLine += ",BIT-DEPTH=\(bitDepth)"
+        }
+        if let sampleRate = audioRendition.sampleRate {
+            audioLine += ",SAMPLE-RATE=\(sampleRate)"
+        }
+        audioLine +=
+            ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(audioURI)\""
+        lines.append(audioLine)
 
         let subtitleGroupID = "subtitles"
+        var subtitleNames = Set<String>()
         for rendition in subtitleRenditions {
+            guard subtitleNames.insert(rendition.name).inserted else {
+                throw HLSPlaylistBuilderError.duplicateSubtitleRenditionName(
+                    rendition.name
+                )
+            }
+            guard !rendition.isDefault || rendition.isAutoselect else {
+                throw HLSPlaylistBuilderError.invalidRenditionSelection
+            }
             let name = try safeAttribute(rendition.name)
+            let language = try safeLanguageTag(rendition.languageTag)
             let uri = try safeURI(rendition.playlistURI)
-            lines.append(
-                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"\(subtitleGroupID)\",NAME=\"\(name)\",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI=\"\(uri)\""
-            )
+            var subtitleLine =
+                "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"\(subtitleGroupID)\",NAME=\"\(name)\",LANGUAGE=\"\(language)\""
+            if !rendition.characteristics.isEmpty {
+                subtitleLine +=
+                    ",CHARACTERISTICS=\"\(try safeCharacteristics(rendition.characteristics))\""
+            }
+            subtitleLine +=
+                ",DEFAULT=\(yesNo(rendition.isDefault)),AUTOSELECT=\(yesNo(rendition.isAutoselect)),FORCED=\(yesNo(rendition.isForced)),URI=\"\(uri)\""
+            lines.append(subtitleLine)
         }
 
         for variant in videoVariants {
@@ -233,6 +348,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             if !subtitleRenditions.isEmpty {
                 streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
             }
+            streamAttributes += ",CLOSED-CAPTIONS=NONE"
             lines.append(streamAttributes)
             lines.append(videoURI)
         }
@@ -292,6 +408,48 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         )
     }
 
+    private func validateAudioFormat(
+        _ rendition: HLSAudioRendition
+    ) throws {
+        if let channelCount = rendition.channelCount,
+            !(1...128).contains(channelCount)
+        {
+            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
+        }
+        if let bitDepth = rendition.bitDepth,
+            !(1...64).contains(bitDepth)
+        {
+            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
+        }
+        if let sampleRate = rendition.sampleRate,
+            !(1...768_000).contains(sampleRate)
+        {
+            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
+        }
+    }
+
+    private func characteristics(
+        for role: PlaybackAudioTrack.Role
+    ) throws -> String {
+        switch role {
+        case .original:
+            try safeCharacteristics(["public.original-content"])
+        }
+    }
+
+    private func isIndependent(_ index: SegmentIndex) -> Bool {
+        !index.references.isEmpty
+            && index.references.allSatisfy {
+                $0.startsWithSAP
+                    && $0.sapType == 1
+                    && $0.sapDeltaTime == 0
+            }
+    }
+
+    private func yesNo(_ value: Bool) -> String {
+        value ? "YES" : "NO"
+    }
+
     private func integerBitRate(_ value: Double) throws -> Int {
         guard value.isFinite,
             value > 0,
@@ -320,6 +478,42 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             throw HLSPlaylistBuilderError.unsafeAttributeValue
         }
         return value
+    }
+
+    private func safeCharacteristics(_ values: [String]) throws -> String {
+        guard !values.isEmpty,
+            values.allSatisfy({ !$0.contains(",") })
+        else {
+            throw HLSPlaylistBuilderError.unsafeAttributeValue
+        }
+        return try safeAttribute(values.joined(separator: ","))
+    }
+
+    private func safeLanguageTag(_ value: String) throws -> String {
+        let safeValue = try safeAttribute(value)
+        let subtags = safeValue.split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard let primary = subtags.first,
+            (2...3).contains(primary.utf8.count),
+            primary.utf8.allSatisfy(isASCIILetter),
+            subtags.dropFirst().allSatisfy({ subtag in
+                (1...8).contains(subtag.utf8.count)
+                    && subtag.utf8.allSatisfy(isASCIIAlphaNumeric)
+            })
+        else {
+            throw HLSPlaylistBuilderError.unsafeAttributeValue
+        }
+        return safeValue
+    }
+
+    private func isASCIILetter(_ byte: UInt8) -> Bool {
+        (65...90).contains(byte) || (97...122).contains(byte)
+    }
+
+    private func isASCIIAlphaNumeric(_ byte: UInt8) -> Bool {
+        isASCIILetter(byte) || (48...57).contains(byte)
     }
 
     private func safeURI(_ url: URL) throws -> String {
