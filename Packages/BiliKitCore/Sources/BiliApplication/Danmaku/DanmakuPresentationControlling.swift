@@ -6,6 +6,24 @@ public enum DanmakuSpeedLevel: Int, CaseIterable, Sendable, Equatable {
     case five
 }
 
+public enum DanmakuDisplayArea: Int, CaseIterable, Sendable, Equatable {
+    case ten = 10
+    case quarter = 25
+    case half = 50
+    case threeQuarters = 75
+    case full = 100
+
+    public var fraction: Double {
+        Double(rawValue) / 100
+    }
+}
+
+public enum DanmakuDensity: Int, CaseIterable, Sendable, Equatable {
+    case normal
+    case increased
+    case overlapping
+}
+
 public struct DanmakuOpacity: Sendable, Equatable {
     public static let allowedRange = 0.2...1.0
     public static let fullyOpaque = DanmakuOpacity(validatedValue: 1)
@@ -39,6 +57,8 @@ public protocol DanmakuPresentationControlling: AnyObject {
     )
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func setOpacity(_ opacity: DanmakuOpacity)
+    func setDisplayArea(_ displayArea: DanmakuDisplayArea)
+    func setDensity(_ density: DanmakuDensity)
     func stop()
 }
 

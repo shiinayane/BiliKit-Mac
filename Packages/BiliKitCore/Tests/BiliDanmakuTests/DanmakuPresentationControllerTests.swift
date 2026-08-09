@@ -11,6 +11,167 @@ import Testing
 @Suite
 struct DanmakuPresentationControllerTests {
     @Test
+    func densityPoliciesMatchProductionSpacingAndOverlapDepths() {
+        let policies = DanmakuDensity.allCases.map(
+            DanmakuDensityAdmissionPolicy.init
+        )
+
+        #expect(policies.map(\.minimumHorizontalGap) == [24, 12, 0])
+        #expect(policies.map(\.maximumOverlapDepth) == [1, 1, 3])
+    }
+
+    @Test
+    func displayAreaAndDensityChangesPreserveActiveAndAffectNewAdmissions() {
+        let backend = RecordingRenderingBackend()
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 20)
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1DensityFixture", cid: 1)
+
+        controller.setDensity(.overlapping)
+        controller.setDisplayArea(.half)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: (0..<11).map {
+                    event(id: "half-\($0)", mode: .top)
+                }
+            )
+        )
+
+        #expect(controller.statistics.active == 5)
+        #expect(controller.statistics.droppedNoLane == 6)
+        #expect(backend.renderedPlacements.map(\.overlapDepth) == [0, 0, 0, 0, 0])
+
+        let clearCount = backend.clearCount
+        controller.setDisplayArea(.full)
+        #expect(backend.clearCount == clearCount)
+        #expect(controller.statistics.active == 5)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 2,
+                generation: 1,
+                events: (0..<6).map {
+                    event(id: "full-\($0)", mode: .top)
+                }
+            )
+        )
+
+        #expect(controller.statistics.active == 11)
+        #expect(Array(backend.renderedPlacements.suffix(6)).map(\.laneIndex) == [5, 6, 7, 8, 9, 0])
+        #expect(
+            Array(backend.renderedPlacements.suffix(6)).map(\.overlapDepth)
+                == [0, 0, 0, 0, 0, 1]
+        )
+    }
+
+    @Test
+    func disablingOverlapWaitsForEveryOldScrollingDepthToBecomeSafe() {
+        let backend = RecordingRenderingBackend()
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(
+                maximumActiveCount: 20,
+                surfaceHeight: 30
+            )
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1DensityTransition", cid: 1)
+
+        controller.setDensity(.overlapping)
+        controller.setSpeedLevel(.five)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "fast", mode: .scrolling)]
+            )
+        )
+        controller.setSpeedLevel(.one)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "slow-overlap", mode: .scrolling)]
+            )
+        )
+
+        #expect(backend.renderedPlacements.map(\.overlapDepth) == [0, 1])
+
+        controller.setSpeedLevel(.five)
+        controller.setDensity(.normal)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 3,
+                generation: 1,
+                events: [event(id: "blocked", mode: .scrolling)]
+            )
+        )
+
+        #expect(backend.renderedEventIDs == ["fast", "slow-overlap"])
+        #expect(controller.statistics.droppedNoLane == 1)
+    }
+
+    @Test
+    func reducingDisplayAreaChecksOldScrollingOverlapDepths() {
+        let backend = RecordingRenderingBackend()
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(
+                maximumActiveCount: 20,
+                surfaceHeight: 60
+            )
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1AreaTransition", cid: 1)
+
+        controller.setDensity(.overlapping)
+        controller.setSpeedLevel(.five)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [
+                    event(id: "fast-0", mode: .scrolling),
+                    event(id: "fast-1", mode: .scrolling),
+                ]
+            )
+        )
+        controller.setSpeedLevel(.one)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "slow-overlap", mode: .scrolling)]
+            )
+        )
+
+        #expect(backend.renderedPlacements.map(\.laneIndex) == [0, 1, 0])
+        #expect(backend.renderedPlacements.map(\.overlapDepth) == [0, 0, 1])
+
+        controller.setSpeedLevel(.five)
+        controller.setDisplayArea(.half)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 3,
+                generation: 1,
+                events: [event(id: "blocked", mode: .scrolling)]
+            )
+        )
+
+        #expect(backend.renderedEventIDs == ["fast-0", "fast-1", "slow-overlap"])
+        #expect(controller.statistics.droppedNoLane == 1)
+    }
+
+    @Test
     func lengthWeightedMotionMatchesFivePointSpeedsAcrossRealViewports() {
         let policy = DanmakuMotionPolicy()
         let levelPointSpeeds = zip(
@@ -119,7 +280,10 @@ struct DanmakuPresentationControllerTests {
         let backend = RecordingRenderingBackend()
         let controller = DanmakuPresentationController(
             backend: backend,
-            configuration: configuration(maximumActiveCount: 4)
+            configuration: configuration(
+                maximumActiveCount: 4,
+                surfaceHeight: 30
+            )
         )
         let identity = PlaybackItemIdentity(bvid: "BV1SpeedFixture", cid: 1)
 
@@ -367,13 +531,15 @@ struct DanmakuPresentationControllerTests {
 
         #expect(
             !controller.updateSurface(
-                zeroConfiguration(),
+                width: 0,
+                height: 0,
                 ownerID: replacementOwner
             )
         )
         #expect(
             controller.updateSurface(
-                zeroConfiguration(),
+                width: 0,
+                height: 0,
                 ownerID: firstOwner
             )
         )
@@ -385,7 +551,8 @@ struct DanmakuPresentationControllerTests {
         #expect(controller.statistics.active == 1)
         #expect(
             controller.updateSurface(
-                configuration(maximumActiveCount: 1),
+                width: 800,
+                height: 300,
                 ownerID: firstOwner
             )
         )
@@ -879,25 +1046,15 @@ struct DanmakuPresentationControllerTests {
     }
 
     private func configuration(
-        maximumActiveCount: Int
+        maximumActiveCount: Int,
+        surfaceHeight: Double = 300
     ) -> DanmakuLaneConfiguration {
         DanmakuLaneConfiguration(
             surfaceWidth: 800,
-            surfaceHeight: 300,
+            surfaceHeight: surfaceHeight,
             laneHeight: 30,
             minimumHorizontalGap: 12,
             maximumActiveCount: maximumActiveCount,
-            displayAreaFraction: 1
-        )
-    }
-
-    private func zeroConfiguration() -> DanmakuLaneConfiguration {
-        DanmakuLaneConfiguration(
-            surfaceWidth: 0,
-            surfaceHeight: 0,
-            laneHeight: 36,
-            minimumHorizontalGap: 12,
-            maximumActiveCount: 1,
             displayAreaFraction: 1
         )
     }

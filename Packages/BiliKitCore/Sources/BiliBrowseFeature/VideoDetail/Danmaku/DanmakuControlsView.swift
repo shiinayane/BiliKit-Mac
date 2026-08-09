@@ -55,6 +55,10 @@ private struct DanmakuSettingsPopover: View {
 
             Divider()
 
+            densitySettings
+
+            Divider()
+
             speedSettings
 
             Divider()
@@ -62,9 +66,89 @@ private struct DanmakuSettingsPopover: View {
             opacitySettings
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 360)
         .font(.body)
         .accessibilityIdentifier("danmaku.settings.popover")
+    }
+
+    private var densitySettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("显示区域")
+                        .font(.subheadline.weight(.semibold))
+
+                    Spacer()
+
+                    Text(model.displayArea.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                }
+
+                Slider(
+                    value: Binding(
+                        get: {
+                            Double(
+                                DanmakuDisplayArea.allCases.firstIndex(
+                                    of: model.displayArea
+                                ) ?? 0
+                            )
+                        },
+                        set: { value in
+                            let index = Int(value.rounded())
+                            guard DanmakuDisplayArea.allCases.indices.contains(index) else {
+                                return
+                            }
+                            model.setDisplayArea(
+                                DanmakuDisplayArea.allCases[index]
+                            )
+                        }
+                    ),
+                    in: 0...Double(DanmakuDisplayArea.allCases.count - 1),
+                    step: 1
+                ) {
+                    Text("显示区域")
+                }
+                .labelsHidden()
+                .accessibilityValue(Text(model.displayArea.displayName))
+                .accessibilityIdentifier("danmaku.display-area")
+
+                SliderScaleLabels(
+                    labels: DanmakuDisplayArea.allCases.map(\.displayName),
+                    selectedIndex: DanmakuDisplayArea.allCases.firstIndex(
+                        of: model.displayArea
+                    )
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("同屏密度")
+                    .font(.subheadline.weight(.semibold))
+
+                Picker(
+                    "同屏密度",
+                    selection: Binding(
+                        get: { model.density },
+                        set: { model.setDensity($0) }
+                    )
+                ) {
+                    ForEach(DanmakuDensity.allCases, id: \.rawValue) { density in
+                        Text(density.displayName).tag(density)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(!model.canAdjustDensity)
+                .accessibilityValue(Text(model.density.displayName))
+                .accessibilityIdentifier("danmaku.density")
+
+                if !model.canAdjustDensity {
+                    Text("同屏密度仅在显示区域为 100% 时生效")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var modeSettings: some View {
@@ -149,21 +233,12 @@ private struct DanmakuSettingsPopover: View {
             .disabled(!model.showsScrolling)
             .accessibilityIdentifier("danmaku.speed")
 
-            HStack(spacing: 0) {
-                ForEach(DanmakuSpeedLevel.allCases, id: \.rawValue) { level in
-                    Text(level.displayName)
-                        .font(.caption2)
-                        .fontWeight(
-                            level == model.speedLevel ? .semibold : .regular
-                        )
-                        .foregroundStyle(
-                            level == model.speedLevel
-                                ? Color.primary
-                                : Color.secondary
-                        )
-                        .frame(maxWidth: .infinity)
-                }
-            }
+            SliderScaleLabels(
+                labels: DanmakuSpeedLevel.allCases.map(\.displayName),
+                selectedIndex: DanmakuSpeedLevel.allCases.firstIndex(
+                    of: model.speedLevel
+                )
+            )
         }
     }
 
@@ -202,21 +277,16 @@ private struct DanmakuSettingsPopover: View {
             )
             .accessibilityIdentifier("danmaku.opacity")
 
-            HStack {
-                Text(
-                    DanmakuOpacity.allowedRange.lowerBound,
-                    format: .percent.precision(.fractionLength(0))
-                )
-
-                Spacer()
-
-                Text(
-                    DanmakuOpacity.allowedRange.upperBound,
-                    format: .percent.precision(.fractionLength(0))
-                )
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+            SliderScaleLabels(
+                labels: [
+                    DanmakuOpacity.allowedRange.lowerBound.formatted(
+                        .percent.precision(.fractionLength(0))
+                    ),
+                    DanmakuOpacity.allowedRange.upperBound.formatted(
+                        .percent.precision(.fractionLength(0))
+                    ),
+                ]
+            )
         }
     }
 
@@ -249,6 +319,53 @@ private struct DanmakuSettingsPopover: View {
     }
 }
 
+private struct SliderScaleLabels: View {
+    private let trackInset: CGFloat = 8
+
+    let labels: [String]
+    var selectedIndex: Int?
+
+    init(labels: [String], selectedIndex: Int? = nil) {
+        self.labels = labels
+        self.selectedIndex = selectedIndex
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let trackWidth = max(geometry.size.width - trackInset * 2, 0)
+
+            ZStack(alignment: .topLeading) {
+                ForEach(labels.indices, id: \.self) { index in
+                    Text(labels[index])
+                        .font(.caption2)
+                        .fontWeight(
+                            index == selectedIndex ? .semibold : .regular
+                        )
+                        .foregroundStyle(
+                            index == selectedIndex
+                                ? Color.primary
+                                : Color.secondary
+                        )
+                        .fixedSize()
+                        .position(
+                            x: trackInset + trackWidth * progress(at: index),
+                            y: geometry.size.height / 2
+                        )
+                }
+            }
+        }
+        .frame(height: 13)
+        .accessibilityHidden(true)
+    }
+
+    private func progress(at index: Int) -> CGFloat {
+        guard labels.count > 1 else {
+            return 0.5
+        }
+        return CGFloat(index) / CGFloat(labels.count - 1)
+    }
+}
+
 extension DanmakuSpeedLevel {
     fileprivate var displayName: String {
         switch self {
@@ -262,6 +379,25 @@ extension DanmakuSpeedLevel {
             "较快"
         case .five:
             "极快"
+        }
+    }
+}
+
+extension DanmakuDisplayArea {
+    fileprivate var displayName: String {
+        "\(rawValue)%"
+    }
+}
+
+extension DanmakuDensity {
+    fileprivate var displayName: String {
+        switch self {
+        case .normal:
+            "正常"
+        case .increased:
+            "较多"
+        case .overlapping:
+            "重叠"
         }
     }
 }

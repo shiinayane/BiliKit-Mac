@@ -2,6 +2,25 @@ import BiliApplication
 import BiliModels
 import Foundation
 
+struct DanmakuDensityAdmissionPolicy: Sendable, Equatable {
+    let minimumHorizontalGap: Double
+    let maximumOverlapDepth: Int
+
+    init(_ density: DanmakuDensity) {
+        switch density {
+        case .normal:
+            minimumHorizontalGap = 24
+            maximumOverlapDepth = 1
+        case .increased:
+            minimumHorizontalGap = 12
+            maximumOverlapDepth = 1
+        case .overlapping:
+            minimumHorizontalGap = 0
+            maximumOverlapDepth = 3
+        }
+    }
+}
+
 public struct DanmakuRendererStatistics: Sendable, Equatable {
     public private(set) var admitted = 0
     public private(set) var droppedNoLane = 0
@@ -43,6 +62,8 @@ public final class DanmakuPresentationController:
     private var allocator: DanmakuLaneAllocator
     private var configuration: DanmakuLaneConfiguration
     private var speedLevel = DanmakuSpeedLevel.three
+    private var displayArea = DanmakuDisplayArea.full
+    private var density = DanmakuDensity.normal
     private var identity: PlaybackItemIdentity?
     private var discontinuityGeneration: UInt64?
     private var surfaceOwnerID: UUID?
@@ -161,6 +182,16 @@ public final class DanmakuPresentationController:
         backend.setOpacity(opacity)
     }
 
+    public func setDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        self.displayArea = displayArea
+        updateAdmissionPolicy()
+    }
+
+    public func setDensity(_ density: DanmakuDensity) {
+        self.density = density
+        updateAdmissionPolicy()
+    }
+
     public func stopPresentation() {
         _ = allocator.clear()
         backend.stop()
@@ -169,14 +200,23 @@ public final class DanmakuPresentationController:
         statistics.updateActive(0)
     }
 
-    func updateConfiguration(
-        _ configuration: DanmakuLaneConfiguration
+    private func updateSurfaceSize(
+        width: Double,
+        height: Double
     ) {
-        self.configuration = configuration
+        configuration = DanmakuLaneConfiguration(
+            surfaceWidth: width,
+            surfaceHeight: height,
+            laneHeight: configuration.laneHeight,
+            minimumHorizontalGap: configuration.minimumHorizontalGap,
+            maximumActiveCount: configuration.maximumActiveCount,
+            displayAreaFraction: configuration.displayAreaFraction,
+            maximumOverlapDepth: configuration.maximumOverlapDepth
+        )
         allocator.updateConfiguration(configuration)
         backend.updateSurfaceSize(
-            width: configuration.surfaceWidth,
-            height: configuration.surfaceHeight
+            width: width,
+            height: height
         )
     }
 
@@ -198,11 +238,12 @@ public final class DanmakuPresentationController:
 
     @discardableResult
     public func updateSurface(
-        _ configuration: DanmakuLaneConfiguration,
+        width: Double,
+        height: Double,
         ownerID: UUID
     ) -> Bool {
         guard surfaceOwnerID == ownerID else { return false }
-        updateConfiguration(configuration)
+        updateSurfaceSize(width: width, height: height)
         return true
     }
 
@@ -215,5 +256,21 @@ public final class DanmakuPresentationController:
         _ = allocator.clear()
         backend.clearAll()
         statistics.updateActive(0)
+    }
+
+    private func updateAdmissionPolicy() {
+        let effectiveDensity: DanmakuDensity =
+            displayArea == .full ? density : .normal
+        let policy = DanmakuDensityAdmissionPolicy(effectiveDensity)
+        configuration = DanmakuLaneConfiguration(
+            surfaceWidth: configuration.surfaceWidth,
+            surfaceHeight: configuration.surfaceHeight,
+            laneHeight: configuration.laneHeight,
+            minimumHorizontalGap: policy.minimumHorizontalGap,
+            maximumActiveCount: configuration.maximumActiveCount,
+            displayAreaFraction: displayArea.fraction,
+            maximumOverlapDepth: policy.maximumOverlapDepth
+        )
+        allocator.updateConfiguration(configuration)
     }
 }

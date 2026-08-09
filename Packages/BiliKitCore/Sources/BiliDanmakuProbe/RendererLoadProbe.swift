@@ -34,7 +34,11 @@ enum RendererLoadProbe {
         )
 
         controller.attachSurface(ownerID: ownerID)
-        controller.updateSurface(laneConfiguration, ownerID: ownerID)
+        controller.updateSurface(
+            width: laneConfiguration.surfaceWidth,
+            height: laneConfiguration.surfaceHeight,
+            ownerID: ownerID
+        )
         window.makeKeyAndOrderFront(nil as Any?)
         NSApplication.shared.activate(ignoringOtherApps: true)
 

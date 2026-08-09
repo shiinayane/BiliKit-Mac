@@ -127,6 +127,14 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         presentationSink?.setOpacity(opacity)
     }
 
+    public func setDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        presentationSink?.setDisplayArea(displayArea)
+    }
+
+    public func setDensity(_ density: DanmakuDensity) {
+        presentationSink?.setDensity(density)
+    }
+
     /// 幂等结束整个会话，而不只是隐藏弹幕图层。
     public func stop() {
         presentationSink?.stopPresentation()

@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliDanmaku
 import BiliModels
 import Foundation
@@ -47,6 +48,121 @@ struct DanmakuLaneAllocatorTests {
         )
         #expect(admission.admitted.map(\.originY) == [0, 0, 0])
         #expect(admission.dropCounts.noLane == 2)
+    }
+
+    @Test
+    func scrollingReusesFirstSafeLaneBeforeOpeningAnotherVerticalLane() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        _ = allocator.admit([request(id: "first")], at: 0)
+
+        let second = allocator.admit([request(id: "second")], at: 4)
+        let third = allocator.admit([request(id: "third")], at: 4)
+
+        #expect(second.admitted.map(\.laneIndex) == [0])
+        #expect(third.admitted.map(\.laneIndex) == [1])
+        #expect(second.admitted.map(\.overlapDepth) == [0])
+        #expect(third.admitted.map(\.overlapDepth) == [0])
+    }
+
+    @Test
+    func overlappingScrollingUsesSafeVerticalLaneBeforeAnotherDepth() {
+        var allocator = DanmakuLaneAllocator(
+            configuration: configuration(
+                surfaceHeight: 40,
+                maximumOverlapDepth: 3
+            )
+        )
+        let initial = allocator.admit(
+            [
+                request(id: "lane-0"),
+                request(id: "lane-1"),
+                request(id: "slow-overlap", duration: 20),
+            ],
+            at: 0
+        )
+
+        #expect(initial.admitted.map(\.laneIndex) == [0, 1, 0])
+        #expect(initial.admitted.map(\.overlapDepth) == [0, 0, 1])
+
+        let next = allocator.admit([request(id: "next")], at: 4)
+
+        #expect(next.dropCounts.total == 0)
+        #expect(next.admitted.map(\.laneIndex) == [1])
+        #expect(next.admitted.map(\.overlapDepth) == [0])
+    }
+
+    @Test
+    func reducingOverlapDepthStillChecksEveryActiveScrollingTail() {
+        var allocator = DanmakuLaneAllocator(
+            configuration: configuration(
+                surfaceHeight: 20,
+                maximumOverlapDepth: 3
+            )
+        )
+        let overlapping = allocator.admit(
+            [
+                request(id: "fast", duration: 8),
+                request(id: "slow", duration: 20),
+            ],
+            at: 0
+        )
+
+        #expect(overlapping.admitted.map(\.overlapDepth) == [0, 1])
+
+        allocator.updateConfiguration(
+            configuration(surfaceHeight: 20, maximumOverlapDepth: 1)
+        )
+        let blockedByOldDepth = allocator.admit(
+            [request(id: "blocked", duration: 8)],
+            at: 4
+        )
+
+        #expect(blockedByOldDepth.admitted.isEmpty)
+        #expect(blockedByOldDepth.dropCounts.noLane == 1)
+
+        let recovered = allocator.admit(
+            [request(id: "recovered", duration: 8)],
+            at: 20
+        )
+
+        #expect(
+            recovered.expired.map(\.request.event.id).sorted()
+                == ["fast", "slow"]
+        )
+        #expect(recovered.admitted.map(\.request.event.id) == ["recovered"])
+        #expect(recovered.admitted.map(\.overlapDepth) == [0])
+    }
+
+    @Test
+    func overlappingFixedDanmakuFillsEveryLaneBeforeNextDepth() {
+        var allocator = DanmakuLaneAllocator(
+            configuration: configuration(maximumOverlapDepth: 3)
+        )
+        let admission = allocator.admit(
+            (0..<7).map {
+                request(id: "top-\($0)", mode: .top)
+            },
+            at: 0
+        )
+
+        #expect(admission.dropCounts.total == 0)
+        #expect(admission.admitted.map(\.laneIndex) == [0, 1, 2, 0, 1, 2, 0])
+        #expect(admission.admitted.map(\.overlapDepth) == [0, 0, 0, 1, 1, 1, 2])
+    }
+
+    @Test
+    func nonOverlappingDensityRejectsAfterAllFixedLanesAreOccupied() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        let admission = allocator.admit(
+            (0..<4).map {
+                request(id: "top-\($0)", mode: .top)
+            },
+            at: 0
+        )
+
+        #expect(admission.admitted.map(\.laneIndex) == [0, 1, 2])
+        #expect(admission.admitted.map(\.overlapDepth) == [0, 0, 0])
+        #expect(admission.dropCounts.noLane == 1)
     }
 
     @Test
@@ -366,11 +482,33 @@ struct DanmakuLaneAllocatorTests {
         }
     }
 
+    @Test
+    func fiveDisplayAreaLevelsLimitAvailableLaneCount() {
+        for area in DanmakuDisplayArea.allCases {
+            var allocator = DanmakuLaneAllocator(
+                configuration: configuration(
+                    surfaceHeight: 400,
+                    displayAreaFraction: area.fraction
+                )
+            )
+            let admission = allocator.admit(
+                (0..<20).map {
+                    request(id: "\(area.rawValue)-\($0)", mode: .top)
+                },
+                at: 0
+            )
+
+            #expect(admission.admitted.count == area.rawValue / 5)
+            #expect(admission.dropCounts.noLane == 20 - area.rawValue / 5)
+        }
+    }
+
     private func configuration(
         surfaceWidth: Double = 1_000,
         surfaceHeight: Double = 60,
         maximumActiveCount: Int = 640,
-        displayAreaFraction: Double = 1
+        displayAreaFraction: Double = 1,
+        maximumOverlapDepth: Int = 1
     ) -> DanmakuLaneConfiguration {
         DanmakuLaneConfiguration(
             surfaceWidth: surfaceWidth,
@@ -378,7 +516,8 @@ struct DanmakuLaneAllocatorTests {
             laneHeight: 20,
             minimumHorizontalGap: 20,
             maximumActiveCount: maximumActiveCount,
-            displayAreaFraction: displayAreaFraction
+            displayAreaFraction: displayAreaFraction,
+            maximumOverlapDepth: maximumOverlapDepth
         )
     }
 

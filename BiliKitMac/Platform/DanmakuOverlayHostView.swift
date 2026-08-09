@@ -54,15 +54,8 @@ final class DanmakuOverlayView: NSView {
         let width = max(Double(bounds.width), 0)
         let height = max(Double(bounds.height), 0)
         controller.updateSurface(
-            DanmakuLaneConfiguration(
-                surfaceWidth: width,
-                surfaceHeight: height,
-                laneHeight: 36,
-                minimumHorizontalGap: 12,
-                maximumActiveCount:
-                    DanmakuLaneConfiguration.hardMaximumActiveCount,
-                displayAreaFraction: 1
-            ),
+            width: width,
+            height: height,
             ownerID: ownerID
         )
     }

@@ -87,17 +87,23 @@ final class UserDefaultsPlaybackPreferencesStore:
 struct DanmakuPreferences: Equatable, Sendable {
     static let defaults = DanmakuPreferences(
         speedLevel: .three,
-        opacity: .fullyOpaque
+        opacity: .fullyOpaque,
+        displayArea: .full,
+        density: .normal
     )
 
     let speedLevel: DanmakuSpeedLevel
     let opacity: DanmakuOpacity
+    let displayArea: DanmakuDisplayArea
+    let density: DanmakuDensity
 }
 
 protocol DanmakuPreferencesStoring: AnyObject, Sendable {
     func load() -> DanmakuPreferences
     func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func saveOpacity(_ opacity: DanmakuOpacity)
+    func saveDisplayArea(_ displayArea: DanmakuDisplayArea)
+    func saveDensity(_ density: DanmakuDensity)
 }
 
 /// 只保存设备级弹幕显示意图，不保存视频 identity、正文或播放位置。
@@ -107,6 +113,8 @@ final class UserDefaultsDanmakuPreferencesStore:
     private enum Key {
         static let speedLevel = "danmaku.speedLevel"
         static let opacity = "danmaku.opacity"
+        static let displayArea = "danmaku.displayArea"
+        static let density = "danmaku.density"
     }
 
     private let defaults: UserDefaults
@@ -118,7 +126,9 @@ final class UserDefaultsDanmakuPreferencesStore:
     func load() -> DanmakuPreferences {
         DanmakuPreferences(
             speedLevel: loadSpeedLevel(),
-            opacity: loadOpacity()
+            opacity: loadOpacity(),
+            displayArea: loadDisplayArea(),
+            density: loadDensity()
         )
     }
 
@@ -128,6 +138,14 @@ final class UserDefaultsDanmakuPreferencesStore:
 
     func saveOpacity(_ opacity: DanmakuOpacity) {
         defaults.set(opacity.value, forKey: Key.opacity)
+    }
+
+    func saveDisplayArea(_ displayArea: DanmakuDisplayArea) {
+        defaults.set(displayArea.rawValue, forKey: Key.displayArea)
+    }
+
+    func saveDensity(_ density: DanmakuDensity) {
+        defaults.set(density.rawValue, forKey: Key.density)
     }
 
     private func loadSpeedLevel() -> DanmakuSpeedLevel {
@@ -153,6 +171,34 @@ final class UserDefaultsDanmakuPreferencesStore:
             return DanmakuPreferences.defaults.opacity
         }
         return opacity
+    }
+
+    private func loadDisplayArea() -> DanmakuDisplayArea {
+        guard let rawValue = integer(forKey: Key.displayArea),
+            let displayArea = DanmakuDisplayArea(rawValue: rawValue)
+        else {
+            return DanmakuPreferences.defaults.displayArea
+        }
+        return displayArea
+    }
+
+    private func loadDensity() -> DanmakuDensity {
+        guard let rawValue = integer(forKey: Key.density),
+            let density = DanmakuDensity(rawValue: rawValue)
+        else {
+            return DanmakuPreferences.defaults.density
+        }
+        return density
+    }
+
+    private func integer(forKey key: String) -> Int? {
+        guard let number = defaults.object(forKey: key) as? NSNumber,
+            CFGetTypeID(number) != CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        let value = number.intValue
+        return number.doubleValue == Double(value) ? value : nil
     }
 }
 

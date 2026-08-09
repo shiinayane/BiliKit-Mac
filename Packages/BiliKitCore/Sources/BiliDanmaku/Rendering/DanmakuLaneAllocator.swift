@@ -14,10 +14,16 @@ public struct DanmakuLaneAllocator: Sendable {
         let index: Int
     }
 
+    private struct LaneSlotKey: Hashable, Sendable {
+        let lane: LaneKey
+        let overlapDepth: Int
+    }
+
     private var configuration: DanmakuLaneConfiguration
     private var active: [String: ActivePlacement] = [:]
-    private var fixedLaneOccupants: [LaneKey: ActivePlacement] = [:]
-    private var scrollingLaneTails: [Int: ActivePlacement] = [:]
+    private var fixedLaneOccupants: [LaneSlotKey: ActivePlacement] = [:]
+    private var scrollingLaneTails: [LaneSlotKey: ActivePlacement] = [:]
+    private var activeLaneCounts: [LaneKey: Int] = [:]
     public private(set) var peakActiveCount = 0
 
     public init(configuration: DanmakuLaneConfiguration) {
@@ -38,6 +44,7 @@ public struct DanmakuLaneAllocator: Sendable {
         active.removeAll(keepingCapacity: false)
         fixedLaneOccupants.removeAll(keepingCapacity: false)
         scrollingLaneTails.removeAll(keepingCapacity: false)
+        activeLaneCounts.removeAll(keepingCapacity: false)
         return drained
     }
 
@@ -49,21 +56,31 @@ public struct DanmakuLaneAllocator: Sendable {
             return nil
         }
         let placement = removed.placement
+        let laneKey = LaneKey(
+            mode: placement.request.event.mode,
+            index: placement.laneIndex
+        )
+        let slotKey = LaneSlotKey(
+            lane: laneKey,
+            overlapDepth: placement.overlapDepth
+        )
         switch placement.request.event.mode {
         case .scrolling:
-            if scrollingLaneTails[placement.laneIndex]?
+            if scrollingLaneTails[slotKey]?
                 .placement.request.event.id == eventID
             {
-                scrollingLaneTails[placement.laneIndex] = nil
+                scrollingLaneTails[slotKey] = nil
             }
         case .top, .bottom:
-            let key = LaneKey(
-                mode: placement.request.event.mode,
-                index: placement.laneIndex
-            )
-            if fixedLaneOccupants[key]?.placement.request.event.id == eventID {
-                fixedLaneOccupants[key] = nil
+            if fixedLaneOccupants[slotKey]?.placement.request.event.id == eventID {
+                fixedLaneOccupants[slotKey] = nil
             }
+        }
+        let remainingCount = (activeLaneCounts[laneKey] ?? 1) - 1
+        if remainingCount > 0 {
+            activeLaneCounts[laneKey] = remainingCount
+        } else {
+            activeLaneCounts[laneKey] = nil
         }
         return placement
     }
@@ -130,37 +147,81 @@ public struct DanmakuLaneAllocator: Sendable {
         guard laneCount > 0 else {
             return .failure(.noLane)
         }
-        for laneIndex in 0..<laneCount
-        where laneIsAvailable(
-            laneIndex,
-            for: request,
-            at: playbackTime
-        ) {
-            let placement = DanmakuLanePlacement(
-                request: request,
-                laneIndex: laneIndex,
-                originY: originY(
-                    for: request.event.mode,
-                    laneIndex: laneIndex
-                ),
-                surfaceWidthAtAdmission: configuration.surfaceWidth,
-                admittedAtSeconds: playbackTime,
-                expiresAtSeconds: playbackTime + request.durationSeconds
+        if let safeLane = (0..<laneCount).first(where: {
+            laneIsSafeWithoutOverlap(
+                $0,
+                for: request,
+                at: playbackTime
             )
-            let activePlacement = ActivePlacement(placement: placement)
-            active[request.event.id] = activePlacement
-            switch request.event.mode {
-            case .scrolling:
-                scrollingLaneTails[laneIndex] = activePlacement
-            case .top, .bottom:
-                fixedLaneOccupants[
-                    LaneKey(mode: request.event.mode, index: laneIndex)
-                ] = activePlacement
+        }) {
+            return .success(
+                place(
+                    request,
+                    laneIndex: safeLane,
+                    overlapDepth: 0,
+                    at: playbackTime
+                )
+            )
+        }
+        guard configuration.maximumOverlapDepth > 1 else {
+            return .failure(.noLane)
+        }
+        for overlapDepth in 0..<configuration.maximumOverlapDepth {
+            if let availableLane = (0..<laneCount).first(where: {
+                laneIsAvailable(
+                    $0,
+                    overlapDepth: overlapDepth,
+                    for: request,
+                    at: playbackTime
+                )
+            }) {
+                return .success(
+                    place(
+                        request,
+                        laneIndex: availableLane,
+                        overlapDepth: overlapDepth,
+                        at: playbackTime
+                    )
+                )
             }
-            peakActiveCount = max(peakActiveCount, active.count)
-            return .success(placement)
         }
         return .failure(.noLane)
+    }
+
+    private mutating func place(
+        _ request: DanmakuLaneRequest,
+        laneIndex: Int,
+        overlapDepth: Int,
+        at playbackTime: Double
+    ) -> DanmakuLanePlacement {
+        let placement = DanmakuLanePlacement(
+            request: request,
+            laneIndex: laneIndex,
+            originY: originY(
+                for: request.event.mode,
+                laneIndex: laneIndex
+            ),
+            surfaceWidthAtAdmission: configuration.surfaceWidth,
+            admittedAtSeconds: playbackTime,
+            expiresAtSeconds: playbackTime + request.durationSeconds,
+            overlapDepth: overlapDepth
+        )
+        let activePlacement = ActivePlacement(placement: placement)
+        let laneKey = LaneKey(mode: request.event.mode, index: laneIndex)
+        let slotKey = LaneSlotKey(
+            lane: laneKey,
+            overlapDepth: overlapDepth
+        )
+        active[request.event.id] = activePlacement
+        activeLaneCounts[laneKey, default: 0] += 1
+        switch request.event.mode {
+        case .scrolling:
+            scrollingLaneTails[slotKey] = activePlacement
+        case .top, .bottom:
+            fixedLaneOccupants[slotKey] = activePlacement
+        }
+        peakActiveCount = max(peakActiveCount, active.count)
+        return placement
     }
 
     private func originY(
@@ -178,16 +239,19 @@ public struct DanmakuLaneAllocator: Sendable {
 
     private func laneIsAvailable(
         _ laneIndex: Int,
+        overlapDepth: Int,
         for request: DanmakuLaneRequest,
         at playbackTime: Double
     ) -> Bool {
+        let slotKey = LaneSlotKey(
+            lane: LaneKey(mode: request.event.mode, index: laneIndex),
+            overlapDepth: overlapDepth
+        )
         switch request.event.mode {
         case .top, .bottom:
-            return fixedLaneOccupants[
-                LaneKey(mode: request.event.mode, index: laneIndex)
-            ] == nil
+            return fixedLaneOccupants[slotKey] == nil
         case .scrolling:
-            guard let previous = scrollingLaneTails[laneIndex] else {
+            guard let previous = scrollingLaneTails[slotKey] else {
                 return true
             }
             return scrollingRequest(
@@ -195,6 +259,30 @@ public struct DanmakuLaneAllocator: Sendable {
                 canFollow: previous.placement,
                 at: playbackTime
             )
+        }
+    }
+
+    private func laneIsSafeWithoutOverlap(
+        _ laneIndex: Int,
+        for request: DanmakuLaneRequest,
+        at playbackTime: Double
+    ) -> Bool {
+        let laneKey = LaneKey(
+            mode: request.event.mode,
+            index: laneIndex
+        )
+        switch request.event.mode {
+        case .top, .bottom:
+            return activeLaneCounts[laneKey] == nil
+        case .scrolling:
+            return scrollingLaneTails.allSatisfy { slotKey, previous in
+                guard slotKey.lane == laneKey else { return true }
+                return scrollingRequest(
+                    request,
+                    canFollow: previous.placement,
+                    at: playbackTime
+                )
+            }
         }
     }
 
