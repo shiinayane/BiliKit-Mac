@@ -68,6 +68,4 @@ jobs:
           echo "Selected quality gate: ${mode}"
 
       - name: Run selected quality gate (includes strict Swift format lint)
-        env:
-          BILIKIT_GATE_FRESH: 1
-        run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"
+        run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}" closure
