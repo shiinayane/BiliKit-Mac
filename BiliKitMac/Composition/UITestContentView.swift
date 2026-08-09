@@ -267,7 +267,7 @@
             VideoPlayback(
                 manifest: PlaybackManifest(
                     videoRepresentations: [],
-                    audioRepresentations: []
+                    originalAudioRepresentations: []
                 ),
                 mediaHeaders: [:]
             )

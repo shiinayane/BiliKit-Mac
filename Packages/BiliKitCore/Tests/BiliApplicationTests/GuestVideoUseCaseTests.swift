@@ -155,7 +155,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
                         segmentBase: segmentBase
                     )
                 ],
-                audioRepresentations: [
+                originalAudioRepresentations: [
                     MediaRepresentation(
                         id: 30216,
                         kind: .audio,

@@ -3,19 +3,35 @@ import BiliModels
 public struct PlaybackRequest: Sendable, Equatable {
     public let manifest: PlaybackManifest
     public let preferredVideoRepresentationID: Int?
-    public let preferredAudioRepresentationID: Int?
+    public let preferredAudioRepresentationIDs: [String: Int]
     public let mediaHeaders: [String: String]
 
     public init(
         manifest: PlaybackManifest,
         preferredVideoRepresentationID: Int? = nil,
-        preferredAudioRepresentationID: Int? = nil,
+        preferredAudioRepresentationIDs: [String: Int] = [:],
         mediaHeaders: [String: String] = [:]
     ) {
         self.manifest = manifest
         self.preferredVideoRepresentationID = preferredVideoRepresentationID
-        self.preferredAudioRepresentationID = preferredAudioRepresentationID
+        self.preferredAudioRepresentationIDs = preferredAudioRepresentationIDs
         self.mediaHeaders = mediaHeaders
+    }
+}
+
+/// 一条语义音轨及其在本次加载中选定的媒体 representation。
+///
+/// `track` 保留用户可选择的语义 identity；`representation` 只能是该轨内部的一个码率候选。
+public struct SelectedPlaybackAudioTrack: Sendable, Equatable {
+    public let track: PlaybackAudioTrack
+    public let representation: MediaRepresentation
+
+    public init(
+        track: PlaybackAudioTrack,
+        representation: MediaRepresentation
+    ) {
+        self.track = track
+        self.representation = representation
     }
 }
 

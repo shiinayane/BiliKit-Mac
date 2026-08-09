@@ -795,7 +795,7 @@ private struct VideoDetailLifecycleFixture: Sendable {
         VideoPlayback(
             manifest: PlaybackManifest(
                 videoRepresentations: [],
-                audioRepresentations: []
+                originalAudioRepresentations: []
             ),
             mediaHeaders: [:]
         )

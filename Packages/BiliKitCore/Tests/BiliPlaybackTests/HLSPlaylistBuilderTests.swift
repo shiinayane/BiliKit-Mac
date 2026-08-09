@@ -96,20 +96,169 @@ struct HLSPlaylistBuilderTests {
                     )
                 )
             ],
-            audio: audio,
-            audioIndex: audioIndex,
-            audioPlaylistURI: try #require(
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: audio,
+                    channelCount: 2,
+                    bitDepth: 16,
+                    sampleRate: 48_000,
+                    index: audioIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/30280.m3u8")
+                    )
+                )
+            ],
+            localizedRenditionNamesURI: URL(
+                string:
+                    "bilikit-playlist://metadata/localized-rendition-names.json"
+            )
+        )
+
+        #expect(playlist.contains("#EXT-X-VERSION:7\n"))
+        #expect(playlist.contains("#EXT-X-INDEPENDENT-SEGMENTS\n"))
+        #expect(
+            playlist.contains(
+                #"#EXT-X-SESSION-DATA:DATA-ID="_hls.localized-rendition-names",URI="bilikit-playlist://metadata/localized-rendition-names.json""#
+            )
+        )
+        #expect(
+            playlist.contains(
+                #"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-30280",NAME="原声",LANGUAGE="und",CHARACTERISTICS="public.original-content",CHANNELS="2",BIT-DEPTH=16,SAMPLE-RATE=48000,DEFAULT=YES,AUTOSELECT=YES,URI="bilikit-playlist://audio/30280.m3u8""#
+            )
+        )
+        #expect(
+            playlist.contains(
+                #"#EXT-X-STREAM-INF:BANDWIDTH=20000,AVERAGE-BANDWIDTH=16000,RESOLUTION=1920x1080,FRAME-RATE=59.940,CODECS="avc1.640032,mp4a.40.2",AUDIO="audio-30280",CLOSED-CAPTIONS=NONE"#
+            )
+        )
+        #expect(playlist.contains("bilikit-playlist://video/80.m3u8"))
+    }
+
+    @Test
+    func rejectsUnsupportedAudioRenditionCounts() throws {
+        let video = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let audio = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let index = try makeIndex(byteCounts: [1_000], durations: [1])
+        let variant = HLSVideoVariant(
+            representation: video,
+            index: index,
+            playlistURI: try #require(
+                URL(string: "bilikit-playlist://video/80.m3u8")
+            )
+        )
+        let rendition = try makeAudioRendition(
+            representation: audio,
+            index: index,
+            playlistURI: #require(
                 URL(string: "bilikit-playlist://audio/30280.m3u8")
             )
         )
 
-        #expect(playlist.contains("GROUP-ID=\"audio-30280\""))
-        #expect(playlist.contains("BANDWIDTH=20000"))
-        #expect(playlist.contains("AVERAGE-BANDWIDTH=16000"))
-        #expect(playlist.contains("RESOLUTION=1920x1080"))
-        #expect(playlist.contains("FRAME-RATE=59.940"))
-        #expect(playlist.contains("CODECS=\"avc1.640032,mp4a.40.2\""))
-        #expect(playlist.contains("bilikit-playlist://video/80.m3u8"))
+        #expect(
+            throws: HLSPlaylistBuilderError.unsupportedAudioRenditionCount(0)
+        ) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [variant],
+                audioRenditions: []
+            )
+        }
+        #expect(
+            throws: HLSPlaylistBuilderError.unsupportedAudioRenditionCount(2)
+        ) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [variant],
+                audioRenditions: [rendition, rendition]
+            )
+        }
+    }
+
+    @Test
+    func degradesOptionalAudioFormatAndIndependentSegmentsConservatively()
+        throws
+    {
+        let video = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let audio = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let videoIndex = try makeIndex(byteCounts: [1_000], durations: [1])
+        let audioIndex = SegmentIndex(
+            referenceID: 1,
+            timescale: 1,
+            earliestPresentationTime: 0,
+            firstOffset: 0,
+            references: [
+                SegmentReference(
+                    byteRange: try MediaByteRange(
+                        start: 0,
+                        endInclusive: 499
+                    ),
+                    duration: 1,
+                    startsWithSAP: false,
+                    sapType: 0,
+                    sapDeltaTime: 0
+                )
+            ]
+        )
+
+        let playlist = try HLSMasterPlaylistBuilder().build(
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://video/80.m3u8")
+                    )
+                )
+            ],
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: audio,
+                    index: audioIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/30280.m3u8")
+                    )
+                )
+            ]
+        )
+
+        #expect(playlist.contains("#EXT-X-VERSION:7\n"))
+        #expect(!playlist.contains("#EXT-X-INDEPENDENT-SEGMENTS"))
+        #expect(!playlist.contains("CHANNELS="))
+        #expect(!playlist.contains("BIT-DEPTH="))
+        #expect(!playlist.contains("SAMPLE-RATE="))
+        #expect(
+            playlist.contains(
+                #"NAME="原声",LANGUAGE="und",CHARACTERISTICS="public.original-content",DEFAULT=YES,AUTOSELECT=YES"#
+            )
+        )
     }
 
     @Test
@@ -132,10 +281,16 @@ struct HLSPlaylistBuilderTests {
             bandwidth: nil
         )
         let index = try makeIndex(byteCounts: [1_000], durations: [1])
-        let labels = ["中文", "中文（AI）", "English"]
-        let subtitleRenditions = try labels.enumerated().map { offset, label in
+        let metadata = [
+            ("中文", "zh", []),
+            ("中文（AI）", "zh", ["public.machine-generated"]),
+            ("English（AI）", "en", ["public.machine-generated"]),
+        ]
+        let subtitleRenditions = try metadata.enumerated().map { offset, item in
             HLSSubtitleRendition(
-                name: label,
+                name: item.0,
+                languageTag: item.1,
+                characteristics: item.2,
                 playlistURI: try #require(
                     URL(string: "bilikit-playlist://subtitle/\(offset).m3u8")
                 )
@@ -152,20 +307,35 @@ struct HLSPlaylistBuilderTests {
                     )
                 )
             ],
-            audio: audio,
-            audioIndex: index,
-            audioPlaylistURI: try #require(
-                URL(string: "bilikit-playlist://audio/30280.m3u8")
-            ),
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: audio,
+                    index: index,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/30280.m3u8")
+                    )
+                )
+            ],
             subtitleRenditions: subtitleRenditions
         )
 
-        for label in labels {
-            #expect(playlist.contains("NAME=\"\(label)\""))
-        }
-        #expect(playlist.contains("DEFAULT=NO,AUTOSELECT=NO,FORCED=NO"))
+        #expect(
+            playlist.contains(
+                #"#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="中文",LANGUAGE="zh",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="bilikit-playlist://subtitle/0.m3u8""#
+            )
+        )
+        #expect(
+            playlist.contains(
+                #"#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="中文（AI）",LANGUAGE="zh",CHARACTERISTICS="public.machine-generated",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="bilikit-playlist://subtitle/1.m3u8""#
+            )
+        )
+        #expect(
+            playlist.contains(
+                #"#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated",DEFAULT=NO,AUTOSELECT=NO,FORCED=NO,URI="bilikit-playlist://subtitle/2.m3u8""#
+            )
+        )
         #expect(playlist.contains("SUBTITLES=\"subtitles\""))
-        #expect(!playlist.contains("LANGUAGE="))
+        #expect(playlist.contains("CLOSED-CAPTIONS=NONE"))
     }
 
     @Test(arguments: ["\"", "\\", "\n", "\u{0000}"])
@@ -200,14 +370,19 @@ struct HLSPlaylistBuilderTests {
                         )
                     )
                 ],
-                audio: audio,
-                audioIndex: index,
-                audioPlaylistURI: #require(
-                    URL(string: "bilikit-playlist://audio/30280.m3u8")
-                ),
+                audioRenditions: [
+                    try makeAudioRendition(
+                        representation: audio,
+                        index: index,
+                        playlistURI: #require(
+                            URL(string: "bilikit-playlist://audio/30280.m3u8")
+                        )
+                    )
+                ],
                 subtitleRenditions: [
                     HLSSubtitleRendition(
                         name: "中文\(unsafe)",
+                        languageTag: "zh",
                         playlistURI: #require(
                             URL(string: "bilikit-playlist://subtitle/0.m3u8")
                         )
@@ -266,11 +441,15 @@ struct HLSPlaylistBuilderTests {
                         )
                     )
                 ],
-                audio: audio,
-                audioIndex: index,
-                audioPlaylistURI: #require(
-                    URL(string: "bilikit-playlist://audio/30280.m3u8")
-                )
+                audioRenditions: [
+                    try makeAudioRendition(
+                        representation: audio,
+                        index: index,
+                        playlistURI: #require(
+                            URL(string: "bilikit-playlist://audio/30280.m3u8")
+                        )
+                    )
+                ]
             )
         }
     }
@@ -362,6 +541,35 @@ struct HLSPlaylistBuilderTests {
                 initialization: try MediaByteRange(start: 0, endInclusive: 99),
                 index: try MediaByteRange(start: 100, endInclusive: 155)
             )
+        )
+    }
+
+    private func makeAudioRendition(
+        representation: MediaRepresentation,
+        channelCount: Int? = nil,
+        bitDepth: Int? = nil,
+        sampleRate: Int? = nil,
+        index: SegmentIndex,
+        playlistURI: URL
+    ) throws -> HLSAudioRendition {
+        let track = PlaybackAudioTrack(
+            id: "original",
+            displayName: "原声",
+            role: .original,
+            isDefault: true,
+            isAutoselect: true,
+            representations: [representation]
+        )
+        return HLSAudioRendition(
+            selectedTrack: SelectedPlaybackAudioTrack(
+                track: track,
+                representation: representation
+            ),
+            channelCount: channelCount,
+            bitDepth: bitDepth,
+            sampleRate: sampleRate,
+            index: index,
+            playlistURI: playlistURI
         )
     }
 

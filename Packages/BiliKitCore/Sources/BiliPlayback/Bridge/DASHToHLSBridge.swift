@@ -4,6 +4,9 @@ import Foundation
 
 public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
     case missingVideoRepresentation
+    case unsupportedAudioTrackCount(Int)
+    case unsupportedAudioTrackRole(String)
+    case invalidAudioTrackSelection(trackID: String, representationID: Int)
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
     case duplicateVideoRepresentationID(Int)
     case missingCompleteMediaLength(representationID: Int)
@@ -41,6 +44,7 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
 public struct DASHToHLSBridge: Sendable {
     private let rangeClient: HTTPRangeClient
     private let indexLoader: RepresentationIndexLoader
+    private let audioFormatLoader: AudioFormatMetadataLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
     private let subtitlePlaylistBuilder: HLSSubtitlePlaylistBuilder
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
@@ -70,6 +74,7 @@ public struct DASHToHLSBridge: Sendable {
         )
         self.rangeClient = rangeClient
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
+        audioFormatLoader = AudioFormatMetadataLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
         subtitlePlaylistBuilder = HLSSubtitlePlaylistBuilder()
         masterPlaylistBuilder = HLSMasterPlaylistBuilder()
@@ -80,12 +85,12 @@ public struct DASHToHLSBridge: Sendable {
 
     public func prepare(
         video: MediaRepresentation,
-        audio: MediaRepresentation,
+        audioTracks: [SelectedPlaybackAudioTrack],
         headers: [String: String] = [:]
     ) async throws -> PreparedPlaybackAsset {
         try await prepare(
             videos: [video],
-            audio: audio,
+            audioTracks: audioTracks,
             headers: headers,
             subtitleSource: nil
         )
@@ -94,12 +99,12 @@ public struct DASHToHLSBridge: Sendable {
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
     public func prepare(
         videos: [MediaRepresentation],
-        audio: MediaRepresentation,
+        audioTracks: [SelectedPlaybackAudioTrack],
         headers: [String: String] = [:]
     ) async throws -> PreparedPlaybackAsset {
         try await prepare(
             videos: videos,
-            audio: audio,
+            audioTracks: audioTracks,
             headers: headers,
             subtitleSource: nil
         )
@@ -107,7 +112,7 @@ public struct DASHToHLSBridge: Sendable {
 
     func prepare(
         videos: [MediaRepresentation],
-        audio: MediaRepresentation,
+        audioTracks: [SelectedPlaybackAudioTrack],
         headers: [String: String],
         subtitleSource: NativeSubtitleSource?
     ) async throws -> PreparedPlaybackAsset {
@@ -128,6 +133,28 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
         }
+        guard audioTracks.count == 1, let selectedAudio = audioTracks.first else {
+            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
+                audioTracks.count
+            )
+        }
+        guard selectedAudio.track.role == .original else {
+            throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
+                selectedAudio.track.id
+            )
+        }
+        guard selectedAudio.track.isDefault,
+            selectedAudio.track.isAutoselect,
+            selectedAudio.track.representations.contains(
+                selectedAudio.representation
+            )
+        else {
+            throw DASHToHLSBridgeError.invalidAudioTrackSelection(
+                trackID: selectedAudio.track.id,
+                representationID: selectedAudio.representation.id
+            )
+        }
+        let audio = selectedAudio.representation
         guard audio.kind == .audio else {
             throw DASHToHLSBridgeError.invalidMediaKind(
                 expected: .audio,
@@ -144,11 +171,18 @@ public struct DASHToHLSBridge: Sendable {
             for: audio,
             headers: headers
         )
-        let videoIndices = try await loadVideoIndices(
+        async let loadedVideoIndices = loadVideoIndices(
             videos,
             headers: headers
         )
         let audioIndex = try await loadedAudio
+        async let loadedAudioFormat = optionalAudioFormat(
+            for: audio,
+            sourceURL: audioIndex.sourceURL,
+            headers: headers
+        )
+        let videoIndices = try await loadedVideoIndices
+        let audioFormat = try await loadedAudioFormat
         guard let audioLength = audioIndex.completeMediaLength else {
             throw DASHToHLSBridgeError.missingCompleteMediaLength(
                 representationID: audio.id
@@ -160,6 +194,9 @@ public struct DASHToHLSBridge: Sendable {
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")
+            let localizedRenditionNamesURL = try server.url(
+                for: "metadata/localized-rendition-names.json"
+            )
             let audioPlaylistURL = try server.url(for: "audio/\(audio.id).m3u8")
             let audioMediaPath = "media/audio/\(audio.id).mp4"
             let audioMediaURL = try server.url(for: audioMediaPath)
@@ -186,6 +223,14 @@ public struct DASHToHLSBridge: Sendable {
                 LoopbackRouteRegistration(
                     relativePath: "audio/\(audio.id).m3u8",
                     resource: playlistResource(audioPlaylist)
+                )
+            )
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: "metadata/localized-rendition-names.json",
+                    resource: try localizedRenditionNamesResource(
+                        for: selectedAudio.track
+                    )
                 )
             )
 
@@ -247,18 +292,34 @@ public struct DASHToHLSBridge: Sendable {
                 )
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audio: audio,
-                    audioIndex: audioIndex.index,
-                    audioPlaylistURI: audioPlaylistURL,
-                    subtitleRenditions: subtitleRenditions
+                    audioRenditions: [
+                        HLSAudioRendition(
+                            selectedTrack: selectedAudio,
+                            channelCount: audioFormat?.channelCount,
+                            bitDepth: audioFormat?.bitDepth,
+                            sampleRate: audioFormat?.sampleRate,
+                            index: audioIndex.index,
+                            playlistURI: audioPlaylistURL
+                        )
+                    ],
+                    subtitleRenditions: subtitleRenditions,
+                    localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
             } catch {
                 registrations.removeSubrange(mediaRegistrationCount...)
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audio: audio,
-                    audioIndex: audioIndex.index,
-                    audioPlaylistURI: audioPlaylistURL
+                    audioRenditions: [
+                        HLSAudioRendition(
+                            selectedTrack: selectedAudio,
+                            channelCount: audioFormat?.channelCount,
+                            bitDepth: audioFormat?.bitDepth,
+                            sampleRate: audioFormat?.sampleRate,
+                            index: audioIndex.index,
+                            playlistURI: audioPlaylistURL
+                        )
+                    ],
+                    localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
             }
             registrations.append(
@@ -277,6 +338,46 @@ public struct DASHToHLSBridge: Sendable {
             server.stop()
             throw error
         }
+    }
+
+    private func optionalAudioFormat(
+        for audio: MediaRepresentation,
+        sourceURL: URL,
+        headers: [String: String]
+    ) async throws -> AudioFormatMetadata? {
+        do {
+            return try await audioFormatLoader.load(
+                for: audio,
+                sourceURL: sourceURL,
+                headers: headers
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+    }
+
+    private func localizedRenditionNamesResource(
+        for track: PlaybackAudioTrack
+    ) throws -> LoopbackPlaybackResource {
+        let translations: [String: String]
+        switch track.role {
+        case .original:
+            translations = [
+                "en": "Original",
+                "ja": "オリジナル",
+                "zh": "原声",
+            ]
+        }
+        let body = try JSONSerialization.data(
+            withJSONObject: [track.displayName: translations],
+            options: [.sortedKeys]
+        )
+        return .inMemory(
+            data: body,
+            contentType: "application/json; charset=utf-8"
+        )
     }
 
     private func freezeCatalog(
@@ -383,6 +484,8 @@ public struct DASHToHLSBridge: Sendable {
             )
             return HLSSubtitleRendition(
                 name: entry.label,
+                languageTag: entry.languageTag,
+                characteristics: entry.characteristics,
                 playlistURI: playlistURL
             )
         }

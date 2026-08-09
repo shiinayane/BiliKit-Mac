@@ -61,6 +61,19 @@
           }
         },
         {
+          "id": 30280,
+          "codecid": 0,
+          "codecs": "mp4a.40.2",
+          "mimeType": "audio/mp4",
+          "bandwidth": 192000,
+          "baseUrl": "https://media.example.invalid/audio-aac-high.m4s",
+          "backupUrl": [],
+          "SegmentBase": {
+            "initialization": "0-799",
+            "indexRange": "800-1599"
+          }
+        },
+        {
           "id": 30250,
           "codecid": 0,
           "codecs": "ec-3",

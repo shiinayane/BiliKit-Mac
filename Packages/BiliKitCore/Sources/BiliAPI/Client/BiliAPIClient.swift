@@ -217,7 +217,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return VideoPlayback(
             manifest: PlaybackManifest(
                 videoRepresentations: video,
-                audioRepresentations: audio
+                originalAudioRepresentations: audio
             ),
             mediaHeaders: [
                 "Referer": referer,
