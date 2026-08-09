@@ -63,29 +63,45 @@ struct PlaybackPreferencesControllerTests {
 
     @Test
     @MainActor
-    func danmakuSpeedLevelPersistsAndInvalidValuesFallBackToLevelThree() {
-        withIsolatedDefaults { defaults in
-            let store = UserDefaultsDanmakuSpeedPreferencesStore(
+    func danmakuDisplayPreferencesPersistAndInvalidValuesFallBack() throws {
+        try withIsolatedDefaults { defaults in
+            let store = UserDefaultsDanmakuPreferencesStore(
                 defaults: defaults
             )
-            #expect(store.loadSpeedLevel() == .three)
+            #expect(store.load() == .defaults)
 
             store.saveSpeedLevel(.five)
-            #expect(store.loadSpeedLevel() == .five)
+            let opacity = try #require(DanmakuOpacity(0.55))
+            store.saveOpacity(opacity)
+            #expect(
+                store.load()
+                    == DanmakuPreferences(
+                        speedLevel: .five,
+                        opacity: opacity
+                    )
+            )
 
             defaults.set(2.5, forKey: "danmaku.speedLevel")
-            #expect(store.loadSpeedLevel() == .three)
+            #expect(store.load().speedLevel == .three)
+            #expect(store.load().opacity == opacity)
             defaults.set(true, forKey: "danmaku.speedLevel")
-            #expect(store.loadSpeedLevel() == .three)
+            #expect(store.load().speedLevel == .three)
             defaults.set(6, forKey: "danmaku.speedLevel")
-            #expect(store.loadSpeedLevel() == .three)
+            #expect(store.load().speedLevel == .three)
+
+            for invalidOpacity in [Double.nan, 0.1, 1.1] {
+                defaults.set(invalidOpacity, forKey: "danmaku.opacity")
+                #expect(store.load().opacity == .fullyOpaque)
+            }
+            defaults.set(true, forKey: "danmaku.opacity")
+            #expect(store.load().opacity == .fullyOpaque)
         }
     }
 
     @MainActor
     private func withIsolatedDefaults(
-        _ body: (UserDefaults) -> Void
-    ) {
+        _ body: (UserDefaults) throws -> Void
+    ) rethrows {
         let suiteName = "PlaybackPreferencesControllerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             Issue.record("无法创建隔离的 UserDefaults suite")
@@ -93,7 +109,7 @@ struct PlaybackPreferencesControllerTests {
         }
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        body(defaults)
+        try body(defaults)
     }
 
     private func load(from defaults: UserDefaults) -> PlaybackPreferences {

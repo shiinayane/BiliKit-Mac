@@ -1,4 +1,5 @@
 import AppKit
+import BiliApplication
 import BiliModels
 import CoreText
 import Foundation
@@ -16,6 +17,7 @@ public final class CoreAnimationDanmakuRenderer:
     private static let maximumTextWidthPixels: CGFloat = 8_192
     private static let maximumTextHeightPixels: CGFloat = 512
     private static let maximumTextUTF16Length = 512
+    private static let lightInkRelativeLuminanceThreshold = 0.179
 
     private struct Entry {
         let layer: CATextLayer
@@ -32,9 +34,16 @@ public final class CoreAnimationDanmakuRenderer:
 
     private let contentsScale: CGFloat
     private let font = NSFont.systemFont(ofSize: 24, weight: .semibold)
-    private let heavyInkShadow: NSShadow = {
+    private let darkInkShadow: NSShadow = {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black
+        shadow.shadowOffset = .zero
+        shadow.shadowBlurRadius = 1.5
+        return shadow
+    }()
+    private let lightInkShadow: NSShadow = {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.white
         shadow.shadowOffset = .zero
         shadow.shadowBlurRadius = 1.5
         return shadow
@@ -152,6 +161,13 @@ public final class CoreAnimationDanmakuRenderer:
         rootLayer.speed = Float(newRate)
     }
 
+    public func setOpacity(_ opacity: DanmakuOpacity) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        rootLayer.opacity = Float(opacity.value)
+        CATransaction.commit()
+    }
+
     public func updateSurfaceSize(width: Double, height: Double) {
         let oldSurfaceSize = surfaceSize
         surfaceSize = CGSize(
@@ -202,16 +218,57 @@ public final class CoreAnimationDanmakuRenderer:
     private func attributedString(
         for event: DanmakuEvent
     ) -> NSAttributedString {
-        NSAttributedString(
+        let components = rgbComponents(for: event.colorRGB)
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(
+                srgbRed: components.red,
+                green: components.green,
+                blue: components.blue,
+                alpha: 1
+            ),
+            NSAttributedString.Key(kCTLanguageAttributeName as String):
+                Self.simplifiedChineseLanguage,
+        ]
+        attributes[.shadow] = adaptiveShadow(for: components)
+        return NSAttributedString(
             string: event.text,
-            attributes: [
-                .font: font,
-                .foregroundColor: NSColor.white,
-                .shadow: heavyInkShadow,
-                NSAttributedString.Key(kCTLanguageAttributeName as String):
-                    Self.simplifiedChineseLanguage,
-            ]
+            attributes: attributes
         )
+    }
+
+    private func rgbComponents(
+        for colorRGB: UInt32
+    ) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        let baseRGB = colorRGB & 0x00FF_FFFF
+        return (
+            red: CGFloat((baseRGB >> 16) & 0xFF) / 255,
+            green: CGFloat((baseRGB >> 8) & 0xFF) / 255,
+            blue: CGFloat(baseRGB & 0xFF) / 255
+        )
+    }
+
+    private func adaptiveShadow(
+        for components: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    ) -> NSShadow {
+        Double(relativeLuminance(for: components))
+            < Self.lightInkRelativeLuminanceThreshold
+            ? lightInkShadow
+            : darkInkShadow
+    }
+
+    private func relativeLuminance(
+        for components: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    ) -> CGFloat {
+        0.2126 * linearized(components.red)
+            + 0.7152 * linearized(components.green)
+            + 0.0722 * linearized(components.blue)
+    }
+
+    private func linearized(_ component: CGFloat) -> CGFloat {
+        component <= 0.04045
+            ? component / 12.92
+            : pow((component + 0.055) / 1.055, 2.4)
     }
 
     private func makeTextLayer(

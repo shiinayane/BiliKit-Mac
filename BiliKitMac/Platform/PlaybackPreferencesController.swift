@@ -84,39 +84,75 @@ final class UserDefaultsPlaybackPreferencesStore:
     }
 }
 
-protocol DanmakuSpeedPreferencesStoring: AnyObject, Sendable {
-    func loadSpeedLevel() -> DanmakuSpeedLevel
-    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
+struct DanmakuPreferences: Equatable, Sendable {
+    static let defaults = DanmakuPreferences(
+        speedLevel: .three,
+        opacity: .fullyOpaque
+    )
+
+    let speedLevel: DanmakuSpeedLevel
+    let opacity: DanmakuOpacity
 }
 
-/// 只保存设备级弹幕速度意图，不保存视频 identity、正文或播放位置。
-final class UserDefaultsDanmakuSpeedPreferencesStore:
-    DanmakuSpeedPreferencesStoring, @unchecked Sendable
+protocol DanmakuPreferencesStoring: AnyObject, Sendable {
+    func load() -> DanmakuPreferences
+    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
+    func saveOpacity(_ opacity: DanmakuOpacity)
+}
+
+/// 只保存设备级弹幕显示意图，不保存视频 identity、正文或播放位置。
+final class UserDefaultsDanmakuPreferencesStore:
+    DanmakuPreferencesStoring, @unchecked Sendable
 {
-    private static let key = "danmaku.speedLevel"
+    private enum Key {
+        static let speedLevel = "danmaku.speedLevel"
+        static let opacity = "danmaku.opacity"
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    func loadSpeedLevel() -> DanmakuSpeedLevel {
-        guard let number = defaults.object(forKey: Self.key) as? NSNumber,
+    func load() -> DanmakuPreferences {
+        DanmakuPreferences(
+            speedLevel: loadSpeedLevel(),
+            opacity: loadOpacity()
+        )
+    }
+
+    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        defaults.set(speedLevel.rawValue, forKey: Key.speedLevel)
+    }
+
+    func saveOpacity(_ opacity: DanmakuOpacity) {
+        defaults.set(opacity.value, forKey: Key.opacity)
+    }
+
+    private func loadSpeedLevel() -> DanmakuSpeedLevel {
+        guard let number = defaults.object(forKey: Key.speedLevel) as? NSNumber,
             CFGetTypeID(number) != CFBooleanGetTypeID()
         else {
-            return .three
+            return DanmakuPreferences.defaults.speedLevel
         }
         let rawValue = number.intValue
         guard number.doubleValue == Double(rawValue),
             let speedLevel = DanmakuSpeedLevel(rawValue: rawValue)
         else {
-            return .three
+            return DanmakuPreferences.defaults.speedLevel
         }
         return speedLevel
     }
 
-    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
-        defaults.set(speedLevel.rawValue, forKey: Self.key)
+    private func loadOpacity() -> DanmakuOpacity {
+        guard let number = defaults.object(forKey: Key.opacity) as? NSNumber,
+            CFGetTypeID(number) != CFBooleanGetTypeID(),
+            let opacity = DanmakuOpacity(number.doubleValue)
+        else {
+            return DanmakuPreferences.defaults.opacity
+        }
+        return opacity
     }
 }
 

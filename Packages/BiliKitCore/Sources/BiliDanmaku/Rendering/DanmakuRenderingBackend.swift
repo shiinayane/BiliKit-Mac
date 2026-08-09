@@ -150,6 +150,7 @@ public protocol DanmakuRenderingBackend: AnyObject {
     func remove(eventID: String)
     func clearAll()
     func setPlaybackRate(_ rate: Double)
+    func setOpacity(_ opacity: DanmakuOpacity)
     func updateSurfaceSize(width: Double, height: Double)
     func stop()
 }

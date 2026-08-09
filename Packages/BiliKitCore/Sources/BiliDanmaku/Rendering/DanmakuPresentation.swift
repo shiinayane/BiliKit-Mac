@@ -22,6 +22,7 @@ public struct DanmakuPresentationUpdate: Sendable, Equatable {
 public protocol DanmakuPresentationSink: AnyObject {
     func apply(_ update: DanmakuPresentationUpdate)
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
+    func setOpacity(_ opacity: DanmakuOpacity)
     func clearPresentation()
     func stopPresentation()
 }

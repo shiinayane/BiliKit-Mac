@@ -110,7 +110,7 @@ struct DanmakuSessionTests {
     }
 
     @Test
-    func controlsClearOrStopPresentationSynchronously() {
+    func controlsClearOrStopPresentationSynchronously() throws {
         let repository = ImmediateDanmakuRepository()
         let timeline = SessionTimeline()
         let sink = SessionPresentationSink()
@@ -130,6 +130,11 @@ struct DanmakuSessionTests {
 
         session.setSpeedLevel(.five)
         #expect(sink.speedLevels == [.five])
+        #expect(sink.clearCount == 2)
+
+        let opacity = try #require(DanmakuOpacity(0.55))
+        session.setOpacity(opacity)
+        #expect(sink.opacities == [opacity])
         #expect(sink.clearCount == 2)
 
         session.stop()
@@ -271,6 +276,7 @@ struct DanmakuSessionTests {
 private final class SessionPresentationSink: DanmakuPresentationSink {
     private(set) var updates: [DanmakuPresentationUpdate] = []
     private(set) var speedLevels: [DanmakuSpeedLevel] = []
+    private(set) var opacities: [DanmakuOpacity] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
     private var updateWaiters:
@@ -292,6 +298,10 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
 
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
         speedLevels.append(speedLevel)
+    }
+
+    func setOpacity(_ opacity: DanmakuOpacity) {
+        opacities.append(opacity)
     }
 
     func clearPresentation() {
