@@ -27,6 +27,7 @@ struct AppEnvironment {
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
     private let danmakuRenderer: CoreAnimationDanmakuRenderer
+    private let danmakuSpeedPreferencesStore: any DanmakuSpeedPreferencesStoring
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
@@ -38,6 +39,8 @@ struct AppEnvironment {
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
+        danmakuSpeedPreferencesStore: any DanmakuSpeedPreferencesStoring =
+            UserDefaultsDanmakuSpeedPreferencesStore(),
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
@@ -51,6 +54,7 @@ struct AppEnvironment {
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
+        self.danmakuSpeedPreferencesStore = danmakuSpeedPreferencesStore
         let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(
             backend: renderer,
@@ -91,7 +95,14 @@ struct AppEnvironment {
     }
 
     func makeDanmakuViewModel() -> DanmakuControlsViewModel {
-        DanmakuControlsViewModel(presentation: danmakuSession)
+        let initialSpeedLevel = danmakuSpeedPreferencesStore.loadSpeedLevel()
+        return DanmakuControlsViewModel(
+            presentation: danmakuSession,
+            initialSpeedLevel: initialSpeedLevel,
+            saveSpeedLevel: { [danmakuSpeedPreferencesStore] speedLevel in
+                danmakuSpeedPreferencesStore.saveSpeedLevel(speedLevel)
+            }
+        )
     }
 
     func makePlayerView() -> AnyView {

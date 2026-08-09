@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import BiliApplication
 import Foundation
 import Testing
 
@@ -57,6 +58,27 @@ struct PlaybackPreferencesControllerTests {
             defaults.set(Double.nan, forKey: "player.volume")
             defaults.set(Double.infinity, forKey: "player.preferredRate")
             #expect(load(from: defaults) == .defaults)
+        }
+    }
+
+    @Test
+    @MainActor
+    func danmakuSpeedLevelPersistsAndInvalidValuesFallBackToLevelThree() {
+        withIsolatedDefaults { defaults in
+            let store = UserDefaultsDanmakuSpeedPreferencesStore(
+                defaults: defaults
+            )
+            #expect(store.loadSpeedLevel() == .three)
+
+            store.saveSpeedLevel(.five)
+            #expect(store.loadSpeedLevel() == .five)
+
+            defaults.set(2.5, forKey: "danmaku.speedLevel")
+            #expect(store.loadSpeedLevel() == .three)
+            defaults.set(true, forKey: "danmaku.speedLevel")
+            #expect(store.loadSpeedLevel() == .three)
+            defaults.set(6, forKey: "danmaku.speedLevel")
+            #expect(store.loadSpeedLevel() == .three)
         }
     }
 

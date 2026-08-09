@@ -1,3 +1,4 @@
+import BiliApplication
 import SwiftUI
 
 struct DanmakuControlsView: View {
@@ -40,6 +41,22 @@ struct DanmakuControlsView: View {
             }
             .disabled(!model.isEnabled)
             .accessibilityIdentifier("danmaku.modes")
+
+            Picker(
+                "滚动速度",
+                selection: Binding(
+                    get: { model.speedLevel },
+                    set: { model.setSpeedLevel($0) }
+                )
+            ) {
+                ForEach(DanmakuSpeedLevel.allCases, id: \.rawValue) { level in
+                    Text("Lv\(level.rawValue)").tag(level)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 120)
+            .disabled(!model.isEnabled || !model.showsScrolling)
+            .accessibilityIdentifier("danmaku.speed")
 
             Spacer()
         }

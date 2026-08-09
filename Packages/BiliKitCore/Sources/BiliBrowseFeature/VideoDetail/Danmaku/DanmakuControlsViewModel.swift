@@ -11,12 +11,22 @@ public final class DanmakuControlsViewModel {
     public private(set) var showsScrolling = true
     public private(set) var showsTop = true
     public private(set) var showsBottom = true
+    public private(set) var speedLevel: DanmakuSpeedLevel
 
     @ObservationIgnored
     private let presentation: any DanmakuPresentationControlling
+    @ObservationIgnored
+    private let saveSpeedLevel: @MainActor (DanmakuSpeedLevel) -> Void
 
-    public init(presentation: any DanmakuPresentationControlling) {
+    public init(
+        presentation: any DanmakuPresentationControlling,
+        initialSpeedLevel: DanmakuSpeedLevel = .three,
+        saveSpeedLevel: @escaping @MainActor (DanmakuSpeedLevel) -> Void = { _ in }
+    ) {
         self.presentation = presentation
+        self.speedLevel = initialSpeedLevel
+        self.saveSpeedLevel = saveSpeedLevel
+        presentation.setSpeedLevel(initialSpeedLevel)
     }
 
     public func selectVideo(_ identity: PlaybackItemIdentity) {
@@ -49,6 +59,13 @@ public final class DanmakuControlsViewModel {
         guard showsBottom != shows else { return }
         showsBottom = shows
         applyModeVisibility()
+    }
+
+    public func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        guard self.speedLevel != speedLevel else { return }
+        self.speedLevel = speedLevel
+        presentation.setSpeedLevel(speedLevel)
+        saveSpeedLevel(speedLevel)
     }
 
     private func applyModeVisibility() {

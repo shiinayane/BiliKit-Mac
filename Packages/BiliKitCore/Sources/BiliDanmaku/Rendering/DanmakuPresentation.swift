@@ -21,6 +21,7 @@ public struct DanmakuPresentationUpdate: Sendable, Equatable {
 /// backend 动画时钟并丢弃 identity/discontinuity 状态。
 public protocol DanmakuPresentationSink: AnyObject {
     func apply(_ update: DanmakuPresentationUpdate)
+    func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func clearPresentation()
     func stopPresentation()
 }

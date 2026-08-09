@@ -1207,6 +1207,7 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
     }
 
     func setEnabled(_ enabled: Bool) {}
+    func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {}
 
     func setModeVisibility(
         scrolling: Bool,

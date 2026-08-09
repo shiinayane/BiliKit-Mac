@@ -39,8 +39,10 @@ public final class DanmakuPresentationController:
     public private(set) var statistics = DanmakuRendererStatistics()
 
     private let backend: any DanmakuRenderingBackend
-    private let durations: DanmakuRendererDurations
+    private let motionPolicy: DanmakuMotionPolicy
     private var allocator: DanmakuLaneAllocator
+    private var configuration: DanmakuLaneConfiguration
+    private var speedLevel = DanmakuSpeedLevel.three
     private var identity: PlaybackItemIdentity?
     private var discontinuityGeneration: UInt64?
     private var surfaceOwnerID: UUID?
@@ -48,15 +50,28 @@ public final class DanmakuPresentationController:
     public init(
         backend: any DanmakuRenderingBackend,
         configuration: DanmakuLaneConfiguration,
-        durations: DanmakuRendererDurations = DanmakuRendererDurations()
+        motionPolicy: DanmakuMotionPolicy = DanmakuMotionPolicy()
     ) {
         self.backend = backend
         self.allocator = DanmakuLaneAllocator(configuration: configuration)
-        self.durations = durations
+        self.configuration = configuration
+        self.motionPolicy = motionPolicy
         backend.delegate = self
         backend.updateSurfaceSize(
             width: configuration.surfaceWidth,
             height: configuration.surfaceHeight
+        )
+    }
+
+    public convenience init(
+        backend: any DanmakuRenderingBackend,
+        configuration: DanmakuLaneConfiguration,
+        durations: DanmakuRendererDurations
+    ) {
+        self.init(
+            backend: backend,
+            configuration: configuration,
+            motionPolicy: DanmakuMotionPolicy(fixedDurations: durations)
         )
     }
 
@@ -109,7 +124,12 @@ public final class DanmakuPresentationController:
                 event: event,
                 width: metrics.width,
                 height: metrics.height,
-                durationSeconds: durations.duration(for: event.mode)
+                durationSeconds: motionPolicy.duration(
+                    for: event.mode,
+                    textWidth: metrics.width,
+                    surfaceWidth: configuration.surfaceWidth,
+                    speedLevel: speedLevel
+                )
             )
         }
         statistics.recordCapacityDrops(
@@ -133,6 +153,10 @@ public final class DanmakuPresentationController:
         clearBackendAndAllocator()
     }
 
+    public func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        self.speedLevel = speedLevel
+    }
+
     public func stopPresentation() {
         _ = allocator.clear()
         backend.stop()
@@ -144,6 +168,7 @@ public final class DanmakuPresentationController:
     func updateConfiguration(
         _ configuration: DanmakuLaneConfiguration
     ) {
+        self.configuration = configuration
         _ = allocator.updateConfiguration(configuration)
         backend.updateSurfaceSize(
             width: configuration.surfaceWidth,

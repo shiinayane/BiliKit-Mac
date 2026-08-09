@@ -11,6 +11,150 @@ import Testing
 @Suite
 struct DanmakuPresentationControllerTests {
     @Test
+    func lengthWeightedMotionMatchesFivePointSpeedsAcrossRealViewports() {
+        let policy = DanmakuMotionPolicy()
+        let levelPointSpeeds = zip(
+            DanmakuSpeedLevel.allCases,
+            [90.0, 110.0, 130.0, 155.0, 185.0]
+        )
+        let scenarios = [
+            (surfaceWidth: 400.0, textWidth: 100.0),
+            (surfaceWidth: 1_100.0, textWidth: 429.0),
+            (surfaceWidth: 3_440.0, textWidth: 1_479.0),
+        ]
+
+        for scenario in scenarios {
+            let lengthFactor =
+                1
+                + min(
+                    0.25 * scenario.textWidth / 960,
+                    0.45
+                )
+            var actualSpeeds: [Double] = []
+            for (level, pointSpeed) in levelPointSpeeds {
+                let duration = policy.duration(
+                    for: .scrolling,
+                    textWidth: scenario.textWidth,
+                    surfaceWidth: scenario.surfaceWidth,
+                    speedLevel: level
+                )
+                let actualSpeed =
+                    (scenario.surfaceWidth + scenario.textWidth) / duration
+                actualSpeeds.append(actualSpeed)
+                #expect(abs(actualSpeed - pointSpeed * lengthFactor) < 0.001)
+            }
+            #expect(
+                zip(actualSpeeds, actualSpeeds.dropFirst()).allSatisfy {
+                    $0 < $1
+                }
+            )
+        }
+    }
+
+    @Test
+    func lengthBonusIsContinuousAtItsCap() {
+        let policy = DanmakuMotionPolicy()
+        let surfaceWidth = 1_100.0
+        let capWidth = 1_728.0
+        let epsilon = 0.001
+
+        func speed(textWidth: Double) -> Double {
+            let duration = policy.duration(
+                for: .scrolling,
+                textWidth: textWidth,
+                surfaceWidth: surfaceWidth,
+                speedLevel: .three
+            )
+            return (surfaceWidth + textWidth) / duration
+        }
+
+        #expect(abs(speed(textWidth: capWidth) - 188.5) < 0.001)
+        #expect(
+            abs(
+                speed(textWidth: capWidth - epsilon)
+                    - speed(textWidth: capWidth)
+            ) < 0.001
+        )
+        #expect(
+            abs(
+                speed(textWidth: capWidth + epsilon)
+                    - speed(textWidth: capWidth)
+            ) < 0.001
+        )
+        #expect(abs(speed(textWidth: 4_000) - 188.5) < 0.001)
+    }
+
+    @Test
+    func durationSafetyBoundsOnlyClampExtremeInputs() {
+        let policy = DanmakuMotionPolicy()
+
+        #expect(
+            policy.duration(
+                for: .scrolling,
+                textWidth: 1,
+                surfaceWidth: 1,
+                speedLevel: .five
+            ) == 1.5
+        )
+        #expect(
+            policy.duration(
+                for: .scrolling,
+                textWidth: 4_000,
+                surfaceWidth: 10_000,
+                speedLevel: .one
+            ) == 60
+        )
+        #expect(
+            policy.duration(
+                for: .top,
+                textWidth: 123,
+                surfaceWidth: 1_100,
+                speedLevel: .five
+            ) == 4
+        )
+    }
+
+    @Test
+    func speedLevelChangeKeepsExistingPlacementAndSupportsMixedLaneSpeeds() throws {
+        let backend = RecordingRenderingBackend()
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 4)
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1SpeedFixture", cid: 1)
+
+        controller.setSpeedLevel(.five)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "level-five", mode: .scrolling)]
+            )
+        )
+        let clearCount = backend.clearCount
+        controller.setSpeedLevel(.one)
+        #expect(backend.clearCount == clearCount)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 2,
+                generation: 1,
+                events: [event(id: "level-one", mode: .scrolling)]
+            )
+        )
+
+        let first = try #require(backend.renderedPlacements.first)
+        let second = try #require(backend.renderedPlacements.last)
+        #expect(backend.renderedPlacements.count == 2)
+        #expect(first.request.event.id == "level-five")
+        #expect(second.request.event.id == "level-one")
+        #expect(first.laneIndex == second.laneIndex)
+        #expect(first.expiresAtSeconds > second.admittedAtSeconds)
+        #expect(first.request.durationSeconds < second.request.durationSeconds)
+    }
+
+    @Test
     func controllerRemovesExpiredBeforeRenderingNewAdmission() {
         let backend = RecordingRenderingBackend()
         let controller = DanmakuPresentationController(
@@ -619,6 +763,7 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
     weak var delegate: (any DanmakuRenderingBackendDelegate)?
     var operations: [Operation] = []
     private(set) var renderedEventIDs: [String] = []
+    private(set) var renderedPlacements: [DanmakuLanePlacement] = []
     private(set) var rates: [Double] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
@@ -634,6 +779,7 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
         let eventID = placement.request.event.id
         operations.append(.render(eventID))
         renderedEventIDs.append(eventID)
+        renderedPlacements.append(placement)
     }
 
     func remove(eventID: String) {

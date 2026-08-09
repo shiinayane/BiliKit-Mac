@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import BiliApplication
 import CoreFoundation
 import Foundation
 
@@ -80,6 +81,42 @@ final class UserDefaultsPlaybackPreferencesStore:
             CFGetTypeID(number) == CFBooleanGetTypeID()
         else { return nil }
         return number.boolValue
+    }
+}
+
+protocol DanmakuSpeedPreferencesStoring: AnyObject, Sendable {
+    func loadSpeedLevel() -> DanmakuSpeedLevel
+    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
+}
+
+/// 只保存设备级弹幕速度意图，不保存视频 identity、正文或播放位置。
+final class UserDefaultsDanmakuSpeedPreferencesStore:
+    DanmakuSpeedPreferencesStoring, @unchecked Sendable
+{
+    private static let key = "danmaku.speedLevel"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func loadSpeedLevel() -> DanmakuSpeedLevel {
+        guard let number = defaults.object(forKey: Self.key) as? NSNumber,
+            CFGetTypeID(number) != CFBooleanGetTypeID()
+        else {
+            return .three
+        }
+        let rawValue = number.intValue
+        guard number.doubleValue == Double(rawValue),
+            let speedLevel = DanmakuSpeedLevel(rawValue: rawValue)
+        else {
+            return .three
+        }
+        return speedLevel
+    }
+
+    func saveSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        defaults.set(speedLevel.rawValue, forKey: Self.key)
     }
 }
 
