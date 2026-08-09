@@ -4,6 +4,9 @@ import Foundation
 public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case noMediaSegments
     case noVideoVariants
+    case nonIndependentIFrameSegments
+    case duplicateIFrameVariant(Int)
+    case unknownIFrameVariant(Int)
     case unsupportedAudioRenditionCount(Int)
     case duplicateAudioTrackID(String)
     case duplicateAudioRenditionName(String)
@@ -116,6 +119,89 @@ public struct HLSVideoVariant: Sendable, Equatable {
     }
 }
 
+/// 复用普通 fMP4 fragment 的完整字节范围提供一个 I-frame rendition。
+public struct HLSIFrameVariant: Sendable, Equatable {
+    public let representation: MediaRepresentation
+    public let index: SegmentIndex
+    public let playlistURI: URL
+
+    public init(
+        representation: MediaRepresentation,
+        index: SegmentIndex,
+        playlistURI: URL
+    ) {
+        self.representation = representation
+        self.index = index
+        self.playlistURI = playlistURI
+    }
+}
+
+/// 为每个从 type-1 SAP 开始的完整 fMP4 fragment 构造 VOD I-frame playlist。
+///
+/// RFC 8216 允许保留 I-frame sample 后的 `mdat` 数据，因此这里不预读或重写远端 fragment。
+public struct HLSIFramePlaylistBuilder: Sendable {
+    public init() {}
+
+    public func build(
+        representation: MediaRepresentation,
+        index: SegmentIndex,
+        mediaURI: URL
+    ) throws -> String {
+        guard representation.kind == .video else {
+            throw HLSPlaylistBuilderError.invalidMediaKind(
+                expected: .video,
+                actual: representation.kind
+            )
+        }
+        guard !index.references.isEmpty else {
+            throw HLSPlaylistBuilderError.noMediaSegments
+        }
+        guard index.timescale > 0 else {
+            throw HLSPlaylistBuilderError.invalidTimescale
+        }
+        guard
+            index.references.allSatisfy({ reference in
+                reference.startsWithSAP
+                    && reference.sapType == 1
+                    && reference.sapDeltaTime == 0
+            })
+        else {
+            throw HLSPlaylistBuilderError.nonIndependentIFrameSegments
+        }
+
+        let uri = try safePlaylistURI(mediaURI)
+        let maximumDuration =
+            index.references
+            .map { Double($0.duration) / Double(index.timescale) }
+            .max() ?? 0
+        guard maximumDuration.isFinite, maximumDuration > 0 else {
+            throw HLSPlaylistBuilderError.invalidSegmentDuration
+        }
+        let targetDuration = max(1, Int(ceil(maximumDuration)))
+        let initialization = representation.segmentBase.initialization
+        var lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:7",
+            "#EXT-X-TARGETDURATION:\(targetDuration)",
+            "#EXT-X-MEDIA-SEQUENCE:0",
+            "#EXT-X-PLAYLIST-TYPE:VOD",
+            "#EXT-X-I-FRAMES-ONLY",
+            "#EXT-X-MAP:URI=\"\(uri)\",BYTERANGE=\"\(byteRangeValue(initialization))\"",
+        ]
+        for reference in index.references {
+            let duration = Double(reference.duration) / Double(index.timescale)
+            guard duration.isFinite, duration > 0 else {
+                throw HLSPlaylistBuilderError.invalidSegmentDuration
+            }
+            lines.append("#EXTINF:\(formattedPlaylistDuration(duration)),")
+            lines.append("#EXT-X-BYTERANGE:\(byteRangeValue(reference.byteRange))")
+            lines.append(uri)
+        }
+        lines.append("#EXT-X-ENDLIST")
+        return lines.joined(separator: "\n") + "\n"
+    }
+}
+
 public struct HLSSubtitleRendition: Sendable, Equatable {
     public let name: String
     public let languageTag: String
@@ -212,6 +298,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         videoVariants: [HLSVideoVariant],
         audioRenditions: [HLSAudioRendition],
         subtitleRenditions: [HLSSubtitleRendition] = [],
+        iFrameVariants: [HLSIFrameVariant] = [],
         localizedRenditionNamesURI: URL? = nil
     ) throws -> String {
         guard !videoVariants.isEmpty else {
@@ -391,6 +478,47 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             lines.append(videoURI)
         }
 
+        var iFrameRepresentationIDs = Set<Int>()
+        for variant in iFrameVariants {
+            let video = variant.representation
+            guard
+                videoVariants.contains(where: {
+                    $0.representation == video
+                })
+            else {
+                throw HLSPlaylistBuilderError.unknownIFrameVariant(video.id)
+            }
+            guard iFrameRepresentationIDs.insert(video.id).inserted else {
+                throw HLSPlaylistBuilderError.duplicateIFrameVariant(video.id)
+            }
+            guard video.kind == .video else {
+                throw HLSPlaylistBuilderError.invalidMediaKind(
+                    expected: .video,
+                    actual: video.kind
+                )
+            }
+            guard let attributes = video.videoAttributes else {
+                throw HLSPlaylistBuilderError.missingVideoAttributes(
+                    representationID: video.id
+                )
+            }
+            guard
+                variant.index.references.allSatisfy({ reference in
+                    reference.startsWithSAP
+                        && reference.sapType == 1
+                        && reference.sapDeltaTime == 0
+                })
+            else {
+                throw HLSPlaylistBuilderError.nonIndependentIFrameSegments
+            }
+            let bitRates = try bitRates(for: variant.index)
+            let uri = try safeURI(variant.playlistURI)
+            let codecs = try safeAttribute(video.codecs)
+            lines.append(
+                "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=\(bitRates.peak),AVERAGE-BANDWIDTH=\(bitRates.average),RESOLUTION=\(attributes.width)x\(attributes.height),CODECS=\"\(codecs)\",URI=\"\(uri)\""
+            )
+        }
+
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -423,7 +551,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         let maximumDuration = segments.map(\.duration).max() ?? 0
         let targetDuration = ceil(maximumDuration)
         let minimumPeakWindow = 0.5 * targetDuration
-        let maximumPeakWindow = 1.5 * targetDuration + 0.5
+        let maximumPeakWindow = 1.5 * targetDuration
         var peak = 0.0
 
         for start in segments.indices {
@@ -571,4 +699,17 @@ private func safePlaylistURI(_ url: URL) throws -> String {
         throw HLSPlaylistBuilderError.unsafeURI
     }
     return value
+}
+
+private func byteRangeValue(_ range: MediaByteRange) -> String {
+    let length = UInt64(range.endInclusive - range.start) + 1
+    return "\(length)@\(range.start)"
+}
+
+private func formattedPlaylistDuration(_ duration: Double) -> String {
+    String(
+        format: "%.6f",
+        locale: Locale(identifier: "en_US_POSIX"),
+        duration
+    )
 }

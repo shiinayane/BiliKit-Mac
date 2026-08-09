@@ -47,6 +47,8 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 登录态 playurl 的 Cookie 必须在 API 响应前终止；映射后的 playback manifest 与媒体
   headers 不保留 Cookie。DASH SIDX/媒体 Range、图片、相关推荐与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- I-frame trick play 只复用同一无认证 loopback 媒体 route，并按需代理完整 fMP4 fragment
+  Range；不新增远端来源、预读、持久化或独立网络 owner，也不能继承 playurl Cookie。
 - playurl 的可选 `cur_language` 只能从同一响应内存中的受限语言目录选择，并且仍由
   `BiliAuth` 对精确 host/path/method/query 独立复核。语言目录、语言标题、所选媒体 URL
   和原始响应不持久化；多音轨只进入当前 `PlaybackManifest`、loopback routes 与同一个

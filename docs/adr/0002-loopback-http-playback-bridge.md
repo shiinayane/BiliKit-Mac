@@ -30,6 +30,9 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 6. 上游响应必须通过状态码、`Content-Range` 和 body 长度校验；取消不会触发备用线路。
 7. 播放项目替换或释放时停止 server，并取消连接与上游 Task。
 8. server 不输出 cookie、token、上游响应 body 或完整鉴权 URL 到诊断信息。
+9. 只有全部 SIDX reference 都从 type-1 SAP 开始且 `SAP_delta_time` 为 0 时，master
+   才发布 I-frame rendition。I-frame playlist 继续引用同一媒体 route 的完整 fMP4
+   fragment byte range；不预读、缓存或重写远端 fragment。
 
 不使用非公开的 AVFoundation header 注入选项。若未来 Apple 提供正式、可验证的替代 API，再通过新 ADR 调整。
 
@@ -41,11 +44,15 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 - App 可以安全地添加 B 站 CDN 所需 header，而不把凭据写入 playlist URL。
 - CDN fallback、Range 校验与取消仍由自有 Swift 代码控制并可使用 fixture 测试。
 - loopback 层也能提供清晰的请求生命周期和最小诊断边界。
+- I-frame rendition 复用既有媒体 route，因此 master 加载不会产生额外媒体请求；只有
+  AVPlayer 进入 trick play 后才按需请求对应 fragment Range。
 
 ### 负面影响
 
 - 需要维护一个最小 HTTP/1.1 server，并严格限制监听地址、路由、方法和 header 大小。
 - AVPlayer 请求经过一次本地转发，增加少量复制和调度开销。
+- I-frame playlist 传输完整 fragment，而不是只抽取单个 I-frame sample；实现保持无预读和
+  可审计 Range 边界，但 trick play 网络流量高于重写单 sample 的方案。
 - App 睡眠、播放项目替换和异常退出时的 server 生命周期需要专项测试。
 - 不能把 `readyToPlay` 的本地 fixture 结果外推为真实 B 站 CDN 已经通过 M1 Gate。
 
@@ -59,6 +66,8 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 - 首选 CDN 返回 403 后，SIDX 使用备用线路；后续 AVPlayer media Range 继续优先使用成功线路。
 - 合法 `206/Content-Range` 但不可解析的错误页 body 会被拒绝并切换备用线路。
 - 快速替换播放项目会取消旧媒体 Range，新项目仍可进入 `readyToPlay`。
+- 自制 type-1 SAP fixture 的 master 会发布 I-frame rendition；加载完成前没有 I-frame
+  playlist 请求，4 倍速播放后才出现 playlist 与上游 fragment Range，且请求不含认证头。
 
 真实 B 站 AVC/AAC 样本已在 Apple Silicon/macOS 26 开发机与 GitHub Actions macOS 15.7.7 arm64 runner 上通过连续播放、双向 seek、时间轴采样和连续替换审计。受控测试还确认播放项目替换后旧 server 的 route、连接和上游 Task 全部归零。记录见 [`../validation/M1-real-playback-2026-07-21.md`](../validation/M1-real-playback-2026-07-21.md)。
 
