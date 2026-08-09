@@ -445,6 +445,64 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func authenticatedPlayURLMapsVerifiedAIAudioAsSemanticTrack() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: [
+                        "support": true,
+                        "items": [
+                            [
+                                "lang": "en",
+                                "title": "English（AI）",
+                                "production_type": 2,
+                            ]
+                        ],
+                    ]
+                ),
+                try semanticAudioResponse(
+                    audioPath: "ai-en-audio.m4s",
+                    currentLanguage: "en"
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.count == 2)
+        let original = playback.manifest.audioTracks[0]
+        let ai = playback.manifest.audioTracks[1]
+        #expect(original.role == .original)
+        #expect(original.isDefault)
+        #expect(ai.id == "machine-generated:en")
+        #expect(ai.displayName == "English（AI）")
+        #expect(ai.languageTag == "en")
+        #expect(ai.role == .machineGenerated)
+        #expect(!ai.isDefault)
+        #expect(ai.isAutoselect)
+        #expect(ai.representations.map(\.id) == [30_280])
+        let requests = await transport.capturedRequests()
+        #expect(requests.count == 2)
+        #expect(
+            URLComponents(
+                url: requests[1].url,
+                resolvingAgainstBaseURL: false
+            )?.queryItems?.contains(
+                URLQueryItem(name: "cur_language", value: "en")
+            ) == true
+        )
+        #expect(playback.mediaHeaders["Cookie"] == nil)
+    }
+
+    @Test
     func playbackUsesCredentialOnlyForPlayURLRequest() async throws {
         let authorizer = RecordingRequestAuthorizer()
         let transport = RecordingTransport(
@@ -489,6 +547,75 @@ struct BiliAPIClientTests {
         #expect(playback.mediaHeaders["Cookie"] == nil)
         let request = try #require(await transport.capturedRequests().first)
         #expect(request.headers["Cookie"] == nil)
+    }
+
+    @Test
+    func anonymousFallbackDoesNotRequestAdvertisedAIAudio() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: [
+                        "support": true,
+                        "items": [
+                            [
+                                "lang": "en",
+                                "title": "English（AI）",
+                                "production_type": 2,
+                            ]
+                        ],
+                    ]
+                )
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: ThrowingRequestAuthorizer(
+                kind: .missingCredential
+            )
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.count == 1)
+        #expect(playback.manifest.audioTracks[0].role == .original)
+        #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test
+    func unsafeAIAudioTitleIsOmittedBeforeSecondRequest() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: [
+                        "support": true,
+                        "items": [
+                            [
+                                "lang": "en",
+                                "title": "English \"AI\"",
+                                "production_type": 2,
+                            ]
+                        ],
+                    ]
+                )
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.count == 1)
+        #expect(await transport.capturedRequests().count == 1)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -928,6 +1055,65 @@ struct BiliAPIClientTests {
             statusCode: 200,
             headers: ["Content-Type": "application/json"],
             body: Data(source.utf8)
+        )
+    }
+
+    private func semanticAudioResponse(
+        audioPath: String,
+        languageCatalog: [String: Any]? = nil,
+        currentLanguage: String? = nil
+    ) throws -> HTTPResponse {
+        var data: [String: Any] = [
+            "dash": [
+                "video": [
+                    [
+                        "id": 32,
+                        "codecid": 7,
+                        "codecs": "avc1.64001f",
+                        "mime_type": "video/mp4",
+                        "bandwidth": 500_000,
+                        "width": 1_280,
+                        "height": 720,
+                        "frame_rate": "30",
+                        "base_url": "https://media.example.invalid/video.m4s",
+                        "backup_url": [],
+                        "segment_base": [
+                            "initialization": "0-99",
+                            "index_range": "100-199",
+                        ],
+                    ]
+                ],
+                "audio": [
+                    [
+                        "id": 30_280,
+                        "codecid": 0,
+                        "codecs": "mp4a.40.2",
+                        "mime_type": "audio/mp4",
+                        "bandwidth": 192_000,
+                        "base_url":
+                            "https://media.example.invalid/\(audioPath)",
+                        "backup_url": [],
+                        "segment_base": [
+                            "initialization": "0-99",
+                            "index_range": "100-199",
+                        ],
+                    ]
+                ],
+            ]
+        ]
+        if let languageCatalog {
+            data["language"] = languageCatalog
+        }
+        if let currentLanguage {
+            data["cur_language"] = currentLanguage
+        }
+        return HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: try JSONSerialization.data(
+                withJSONObject: ["code": 0, "data": data],
+                options: [.sortedKeys]
+            )
         )
     }
 }

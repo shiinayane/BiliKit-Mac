@@ -206,15 +206,20 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     private static func isAllowedPlaybackQuery(
         _ queryItems: [URLQueryItem]?
     ) -> Bool {
-        guard let queryItems, queryItems.count == 6 else { return false }
+        guard let queryItems, (6...7).contains(queryItems.count) else {
+            return false
+        }
         var values: [String: String] = [:]
         for item in queryItems {
             guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
                 return false
             }
         }
-        guard values.count == 6,
-            Set(values.keys) == ["bvid", "cid", "qn", "fnval", "fnver", "fourk"],
+        let requiredKeys: Set<String> = [
+            "bvid", "cid", "qn", "fnval", "fnver", "fourk",
+        ]
+        let keys = Set(values.keys)
+        guard keys == requiredKeys || keys == requiredKeys.union(["cur_language"]),
             let bvid = values["bvid"],
             bvid.count == 12,
             bvid.hasPrefix("BV"),
@@ -231,7 +236,34 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         else {
             return false
         }
+        if let language = values["cur_language"],
+            !isAllowedAudioLanguage(language)
+        {
+            return false
+        }
         return true
+    }
+
+    private static func isAllowedAudioLanguage(_ value: String) -> Bool {
+        guard (2...35).contains(value.count) else { return false }
+        let subtags = value.split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard let primary = subtags.first,
+            (2...3).contains(primary.count),
+            primary.allSatisfy({
+                $0.isASCII && $0.isLetter && $0.isLowercase
+            })
+        else {
+            return false
+        }
+        return subtags.dropFirst().allSatisfy { subtag in
+            (1...8).contains(subtag.count)
+                && subtag.allSatisfy {
+                    $0.isASCII && ($0.isLetter || $0.isNumber)
+                }
+        }
     }
 
     private static func isAllowedPlayerWBIQuery(

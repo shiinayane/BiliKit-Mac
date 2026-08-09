@@ -21,7 +21,8 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 切换视频/分 P、关闭详情或替换播放项目时，以 identity/generation 取消旧请求并清空呈现状态；
 - 登出时取消已授权请求并清除所有由登录态取得的内存字幕/弹幕数据；
 - UserDefaults 只允许保存字号、透明度、密度、屏蔽开关、播放器音量、静音和首选倍速等非内容偏好，不保存 BVID、CID、播放位置、正文、字幕选择或远端 URL；
-- 日志、崩溃诊断和探针只输出阶段、状态、Content-Type、字节数、字段名和计数。
+- 日志、崩溃诊断和探针只输出阶段、状态、Content-Type、字节数、字段名、计数和非内容
+  的枚举分类。AI 音轨语言目录、语义轨和系统选择结果只存在于当前播放会话内存。
 
 ## 3. 首个持久化切片的准入规则
 
@@ -46,6 +47,10 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 登录态 playurl 的 Cookie 必须在 API 响应前终止；映射后的 playback manifest 与媒体
   headers 不保留 Cookie。DASH SIDX/媒体 Range、图片、相关推荐与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- playurl 的可选 `cur_language` 只能从同一响应内存中的受限语言目录选择，并且仍由
+  `BiliAuth` 对精确 host/path/method/query 独立复核。语言目录、语言标题、所选媒体 URL
+  和原始响应不持久化；多音轨只进入当前 `PlaybackManifest`、loopback routes 与同一个
+  `AVPlayerItem`。系统 media selection 是当前唯一选择 UI，自定义音轨 UI 尚未加入。
 - 播放侧栏 UP 主签名只允许匿名 `GET https://api.bilibili.com/x/web-interface/card`；query
   只能包含正 `mid` 与固定 `photo=false`。响应 `data.card.mid` 必须与请求值一致，redirect、
   HTTP／业务失败、解码失败与空白签名均只隐藏签名行。该请求不使用 Cookie、Authorization、
@@ -55,6 +60,9 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 
 - fixture 只能使用 `example.invalid`、虚构标识和自写文本；不保存现场响应 body。
 - 现场探针不得打印 BVID、CID、标题、字幕/弹幕正文、完整 URL、用户标识或凭据。
+- AI 音轨探针还不得打印语言标题、媒体 host 或响应正文；只允许记录目录与 AAC 数量、
+  production type 集合、所选语言是否被回显、来源集合是否变化、SIDX 是否可读及媒体请求
+  是否无 Cookie。
 - UP 主签名探针不得打印 MID、签名正文或完整 URL；只记录 HTTP／业务分类、MID 是否匹配、
   签名是否存在与长度区间。
 - 验证记录可保存日期、系统、接口路径、认证需求、Content-Type、大小级别、字段名、计数和安全分类。

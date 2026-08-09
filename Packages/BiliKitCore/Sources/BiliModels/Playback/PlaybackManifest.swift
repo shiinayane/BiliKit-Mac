@@ -114,6 +114,7 @@ public struct MediaRepresentation: Sendable, Equatable {
 public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     public enum Role: Sendable, Equatable {
         case original
+        case machineGenerated
     }
 
     public let id: String
