@@ -157,6 +157,10 @@ public final class DanmakuPresentationController:
         self.speedLevel = speedLevel
     }
 
+    public func setOpacity(_ opacity: DanmakuOpacity) {
+        backend.setOpacity(opacity)
+    }
+
     public func stopPresentation() {
         _ = allocator.clear()
         backend.stop()

@@ -12,21 +12,29 @@ public final class DanmakuControlsViewModel {
     public private(set) var showsTop = true
     public private(set) var showsBottom = true
     public private(set) var speedLevel: DanmakuSpeedLevel
+    public private(set) var opacity: DanmakuOpacity
 
     @ObservationIgnored
     private let presentation: any DanmakuPresentationControlling
     @ObservationIgnored
     private let saveSpeedLevel: @MainActor (DanmakuSpeedLevel) -> Void
+    @ObservationIgnored
+    private let saveOpacity: @MainActor (DanmakuOpacity) -> Void
 
     public init(
         presentation: any DanmakuPresentationControlling,
         initialSpeedLevel: DanmakuSpeedLevel = .three,
-        saveSpeedLevel: @escaping @MainActor (DanmakuSpeedLevel) -> Void = { _ in }
+        initialOpacity: DanmakuOpacity = .fullyOpaque,
+        saveSpeedLevel: @escaping @MainActor (DanmakuSpeedLevel) -> Void = { _ in },
+        saveOpacity: @escaping @MainActor (DanmakuOpacity) -> Void = { _ in }
     ) {
         self.presentation = presentation
         self.speedLevel = initialSpeedLevel
+        self.opacity = initialOpacity
         self.saveSpeedLevel = saveSpeedLevel
+        self.saveOpacity = saveOpacity
         presentation.setSpeedLevel(initialSpeedLevel)
+        presentation.setOpacity(initialOpacity)
     }
 
     public func selectVideo(_ identity: PlaybackItemIdentity) {
@@ -66,6 +74,15 @@ public final class DanmakuControlsViewModel {
         self.speedLevel = speedLevel
         presentation.setSpeedLevel(speedLevel)
         saveSpeedLevel(speedLevel)
+    }
+
+    public func setOpacity(_ value: Double) {
+        guard let opacity = DanmakuOpacity(value), self.opacity != opacity else {
+            return
+        }
+        self.opacity = opacity
+        presentation.setOpacity(opacity)
+        saveOpacity(opacity)
     }
 
     private func applyModeVisibility() {

@@ -261,6 +261,9 @@ struct DanmakuPresentationControllerTests {
         )
         let identity = PlaybackItemIdentity(bvid: "BV1LifecycleFixture", cid: 3)
 
+        let opacity = DanmakuOpacity(0.45) ?? .fullyOpaque
+        controller.setOpacity(opacity)
+
         controller.apply(
             update(
                 identity: identity,
@@ -292,6 +295,7 @@ struct DanmakuPresentationControllerTests {
         controller.stopPresentation()
 
         #expect(backend.rates == [0, 2, 1])
+        #expect(backend.opacities == [opacity])
         #expect(backend.clearCount == 2)
         #expect(backend.stopCount == 2)
         #expect(controller.statistics.active == 0)
@@ -511,6 +515,134 @@ struct DanmakuPresentationControllerTests {
         #expect(shadow.shadowBlurRadius == 1.5)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
+    }
+
+    @Test
+    func coreAnimationUsesEventRGBAndAppliesOpacityWithoutReplacingLayers() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 200)
+        let colorful = event(
+            id: "colorful",
+            mode: .scrolling,
+            colorRGB: 0xAB_D0_E0_F0
+        )
+        let dark = event(id: "dark", mode: .top, colorRGB: 0x000000)
+
+        for (fixture, originY) in [(colorful, 20.0), (dark, 60.0)] {
+            let metrics = renderer.measure(fixture)
+            renderer.render(
+                placement(
+                    event: fixture,
+                    metrics: metrics,
+                    originY: originY
+                )
+            )
+        }
+
+        let colorfulLayer = try #require(
+            renderer.textLayer(forEventID: colorful.id)
+        )
+        let colorfulIdentity = try #require(
+            renderer.objectIdentity(forEventID: colorful.id)
+        )
+        let colorfulText = try #require(
+            colorfulLayer.string as? NSAttributedString
+        )
+        let foreground = try #require(
+            colorfulText.attribute(
+                .foregroundColor,
+                at: 0,
+                effectiveRange: nil
+            ) as? NSColor
+        )
+        let sRGB = try #require(foreground.usingColorSpace(.sRGB))
+        let colorfulShadow = try #require(
+            colorfulText.attribute(.shadow, at: 0, effectiveRange: nil)
+                as? NSShadow
+        )
+        let colorfulShadowColor = try #require(
+            colorfulShadow.shadowColor?.usingColorSpace(.sRGB)
+        )
+
+        #expect(abs(sRGB.redComponent - 0xD0 / 255) < 0.001)
+        #expect(abs(sRGB.greenComponent - 0xE0 / 255) < 0.001)
+        #expect(abs(sRGB.blueComponent - 0xF0 / 255) < 0.001)
+        #expect(colorfulShadowColor.redComponent == 0)
+
+        let darkLayer = try #require(renderer.textLayer(forEventID: dark.id))
+        let darkText = try #require(darkLayer.string as? NSAttributedString)
+        let darkShadow = try #require(
+            darkText.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
+        )
+        let darkShadowColor = try #require(
+            darkShadow.shadowColor?.usingColorSpace(.sRGB)
+        )
+        #expect(darkShadowColor.redComponent == 1)
+
+        let opacity = try #require(DanmakuOpacity(0.45))
+        renderer.setOpacity(opacity)
+
+        #expect(abs(Double(renderer.rootLayer.opacity) - opacity.value) < 0.001)
+        #expect(renderer.activeLayerCount == 2)
+        #expect(
+            renderer.objectIdentity(forEventID: colorful.id)
+                == colorfulIdentity
+        )
+        #expect(renderer.textLayer(forEventID: colorful.id) === colorfulLayer)
+    }
+
+    @Test
+    func adaptiveHeavyInkUsesFixedRelativeLuminanceThreshold() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 200)
+        let belowThreshold = event(
+            id: "ink-below-threshold",
+            mode: .scrolling,
+            colorRGB: 0x757575
+        )
+        let aboveThreshold = event(
+            id: "ink-above-threshold",
+            mode: .top,
+            colorRGB: 0x767676
+        )
+
+        for (fixture, originY) in [
+            (belowThreshold, 20.0),
+            (aboveThreshold, 60.0),
+        ] {
+            renderer.render(
+                placement(
+                    event: fixture,
+                    metrics: renderer.measure(fixture),
+                    originY: originY
+                )
+            )
+        }
+
+        func attributes(for eventID: String) throws -> NSAttributedString {
+            let layer = try #require(renderer.textLayer(forEventID: eventID))
+            return try #require(layer.string as? NSAttributedString)
+        }
+
+        func shadowRedComponent(for eventID: String) throws -> CGFloat {
+            let text = try attributes(for: eventID)
+            let shadow = try #require(
+                text.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
+            )
+            let color = try #require(
+                shadow.shadowColor?.usingColorSpace(.sRGB)
+            )
+            #expect(
+                text.attribute(.strokeColor, at: 0, effectiveRange: nil) == nil
+            )
+            #expect(
+                text.attribute(.strokeWidth, at: 0, effectiveRange: nil) == nil
+            )
+            return color.redComponent
+        }
+
+        #expect(try shadowRedComponent(for: belowThreshold.id) == 1)
+        #expect(try shadowRedComponent(for: aboveThreshold.id) == 0)
     }
 
     @Test
@@ -800,7 +932,8 @@ struct DanmakuPresentationControllerTests {
 
     private func event(
         id: String,
-        mode: DanmakuPresentationMode
+        mode: DanmakuPresentationMode,
+        colorRGB: UInt32 = 0xFFFFFF
     ) -> DanmakuEvent {
         DanmakuEvent(
             id: id,
@@ -808,7 +941,7 @@ struct DanmakuPresentationControllerTests {
             mode: mode,
             text: "中文 日本語 한국어 Latin 😀 #",
             fontSize: 24,
-            colorRGB: 0xFFFFFF,
+            colorRGB: colorRGB,
             weight: 1
         )
     }
@@ -847,6 +980,7 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
     private(set) var renderedEventIDs: [String] = []
     private(set) var renderedPlacements: [DanmakuLanePlacement] = []
     private(set) var rates: [Double] = []
+    private(set) var opacities: [DanmakuOpacity] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
     private(set) var measureCount = 0
@@ -875,6 +1009,10 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
     func setPlaybackRate(_ rate: Double) {
         operations.append(.rate(rate))
         rates.append(rate)
+    }
+
+    func setOpacity(_ opacity: DanmakuOpacity) {
+        opacities.append(opacity)
     }
 
     func updateSurfaceSize(width: Double, height: Double) {

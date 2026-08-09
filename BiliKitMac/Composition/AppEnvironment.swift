@@ -27,7 +27,7 @@ struct AppEnvironment {
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
     private let danmakuRenderer: CoreAnimationDanmakuRenderer
-    private let danmakuSpeedPreferencesStore: any DanmakuSpeedPreferencesStoring
+    private let danmakuPreferencesStore: any DanmakuPreferencesStoring
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
 
@@ -39,8 +39,8 @@ struct AppEnvironment {
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
-        danmakuSpeedPreferencesStore: any DanmakuSpeedPreferencesStoring =
-            UserDefaultsDanmakuSpeedPreferencesStore(),
+        danmakuPreferencesStore: any DanmakuPreferencesStoring =
+            UserDefaultsDanmakuPreferencesStore(),
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     ) {
@@ -54,7 +54,7 @@ struct AppEnvironment {
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
-        self.danmakuSpeedPreferencesStore = danmakuSpeedPreferencesStore
+        self.danmakuPreferencesStore = danmakuPreferencesStore
         let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(
             backend: renderer,
@@ -95,12 +95,16 @@ struct AppEnvironment {
     }
 
     func makeDanmakuViewModel() -> DanmakuControlsViewModel {
-        let initialSpeedLevel = danmakuSpeedPreferencesStore.loadSpeedLevel()
+        let preferences = danmakuPreferencesStore.load()
         return DanmakuControlsViewModel(
             presentation: danmakuSession,
-            initialSpeedLevel: initialSpeedLevel,
-            saveSpeedLevel: { [danmakuSpeedPreferencesStore] speedLevel in
-                danmakuSpeedPreferencesStore.saveSpeedLevel(speedLevel)
+            initialSpeedLevel: preferences.speedLevel,
+            initialOpacity: preferences.opacity,
+            saveSpeedLevel: { [danmakuPreferencesStore] speedLevel in
+                danmakuPreferencesStore.saveSpeedLevel(speedLevel)
+            },
+            saveOpacity: { [danmakuPreferencesStore] opacity in
+                danmakuPreferencesStore.saveOpacity(opacity)
             }
         )
     }
