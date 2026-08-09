@@ -1813,6 +1813,121 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
+    func bridgePublishesOriginalAndMachineGeneratedAudioRoutes() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let audioData = try fixtureData(named: "audio-aac")
+        let videoURL = try #require(
+            URL(string: "https://multi-audio.example/video")
+        )
+        let originalURL = try #require(
+            URL(string: "https://multi-audio.example/original")
+        )
+        let aiURL = try #require(
+            URL(string: "https://multi-audio.example/ai-en")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let original = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: originalURL
+        ).representation
+        let ai = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: audioData,
+            primaryURL: aiURL
+        ).representation
+        let transport = FixtureRangeTransport(
+            media: [
+                videoURL: videoData,
+                originalURL: audioData,
+                aiURL: audioData,
+            ],
+            failingURLs: []
+        )
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport)
+        )
+
+        let prepared = try await bridge.prepare(
+            video: video,
+            audioTracks: [
+                makeSelectedAudioTrack(representation: original),
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    displayName: "English（AI）",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    representation: ai
+                ),
+            ]
+        )
+        defer { prepared.stop() }
+        let masterData = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+
+        #expect(master.contains(#"GROUP-ID="audio",NAME="原声""#))
+        #expect(
+            master.contains(
+                #"NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated""#
+            )
+        )
+        #expect(master.contains("/audio/0/30280.m3u8"))
+        #expect(master.contains("/audio/1/30280.m3u8"))
+        #expect(!master.contains("public.translation"))
+
+        prepared.stop()
+        let fallbackTransport = FixtureRangeTransport(
+            media: [
+                videoURL: videoData,
+                originalURL: audioData,
+                aiURL: audioData,
+            ],
+            failingURLs: [],
+            unknownLengthURLs: [aiURL]
+        )
+        let fallbackBridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: fallbackTransport)
+        )
+        let fallbackPrepared = try await fallbackBridge.prepare(
+            video: video,
+            audioTracks: [
+                makeSelectedAudioTrack(representation: original),
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    displayName: "English（AI）",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    representation: ai
+                ),
+            ]
+        )
+        defer { fallbackPrepared.stop() }
+        let fallbackData = try await URLSession.shared.data(
+            from: fallbackPrepared.url
+        ).0
+        let fallbackMaster = try #require(
+            String(data: fallbackData, encoding: .utf8)
+        )
+        #expect(fallbackMaster.contains(#"GROUP-ID="audio-30280",NAME="原声""#))
+        #expect(!fallbackMaster.contains("English（AI）"))
+    }
+
+    @Test
     func bridgeDoesNotBorrowAudioFormatFromDifferentCDN() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
@@ -3291,14 +3406,20 @@ struct LoopbackPlaybackServerTests {
 
     private func makeSelectedAudioTrack(
         trackID: String = "original",
+        displayName: String = "原声",
+        languageTag: String? = nil,
+        role: PlaybackAudioTrack.Role = .original,
+        isDefault: Bool = true,
+        isAutoselect: Bool = true,
         representation: MediaRepresentation
     ) -> SelectedPlaybackAudioTrack {
         let track = PlaybackAudioTrack(
             id: trackID,
-            displayName: "原声",
-            role: .original,
-            isDefault: true,
-            isAutoselect: true,
+            displayName: displayName,
+            languageTag: languageTag,
+            role: role,
+            isDefault: isDefault,
+            isAutoselect: isAutoselect,
             representations: [representation]
         )
         return SelectedPlaybackAudioTrack(
@@ -3702,11 +3823,17 @@ private enum LoopbackFixtureError: Error {
 private actor FixtureRangeTransport: HTTPTransport {
     private let media: [URL: Data]
     private let failingURLs: Set<URL>
+    private let unknownLengthURLs: Set<URL>
     private(set) var requests: [HTTPRequest] = []
 
-    init(media: [URL: Data], failingURLs: Set<URL>) {
+    init(
+        media: [URL: Data],
+        failingURLs: Set<URL>,
+        unknownLengthURLs: Set<URL> = []
+    ) {
         self.media = media
         self.failingURLs = failingURLs
+        self.unknownLengthURLs = unknownLengthURLs
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -3726,10 +3853,13 @@ private actor FixtureRangeTransport: HTTPTransport {
         let body = data.subdata(
             in: Int(range.start)..<(Int(range.endInclusive) + 1)
         )
+        let completeLength =
+            unknownLengthURLs.contains(request.url)
+            ? "*" : String(data.count)
         return HTTPResponse(
             statusCode: 206,
             headers: [
-                "Content-Range": "bytes \(range.start)-\(range.endInclusive)/\(data.count)"
+                "Content-Range": "bytes \(range.start)-\(range.endInclusive)/\(completeLength)"
             ],
             body: body
         )

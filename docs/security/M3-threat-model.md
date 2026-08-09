@@ -92,8 +92,12 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 
 ### 4.3 登录态播放信息
 
-- 登录态自动画质只允许精确 `GET https://api.bilibili.com:443/x/player/playurl`，query 必须且
-  只能包含合法 `bvid`、正 `cid`、正 `qn`、`fnval=976`、`fnver=0`、`fourk=1`。
+- 登录态播放信息只允许精确 `GET https://api.bilibili.com:443/x/player/playurl`。基础 query
+  必须且只能包含合法 `bvid`、正 `cid`、正 `qn`、`fnval=976`、`fnver=0`、`fourk=1`；
+  登录态 AI 音轨验证另允许唯一一个 `cur_language`，其值必须是 2–35 字符、由受限
+  BCP 47 形态的 ASCII 字母数字 subtag 组成。空值、重复键、路径字符和任何其他参数均
+  失败关闭。生产播放只有在已授权基础响应给出完整、受限且经真实验证的 AI 目录时，才按
+  目录项发送该可选参数；明确无凭据时不发起 AI 请求。
 - `qn` 与 `fourk` 只表达请求上限；产品能力只由响应中生产 decoder 可消费的 AVC/AAC
   representations 决定，不承诺固定档位或 4K。
 - 只有 Keychain 明确不存在凭据时才使用既有匿名请求。凭据过期或损坏会清理并触发账户
@@ -102,6 +106,10 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - Cookie 在 playurl 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、相关推荐、
   字幕正文与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
   当前 item 上热换授权结果。
+- AI 音轨现场探针只在内存读取语言目录并执行一次目录内语言请求；不保存语言标题、内容
+  identity、媒体 URL 或响应正文。只有服务端回显所选语言、AAC 的规范化资源路径集合与
+  原声不同且该媒体的无 Cookie SIDX Range 可读取时，才算取得 AI 媒体的验证证据。目录
+  存在本身不算生产能力。
 
 ## 5. 状态机与提交规则
 

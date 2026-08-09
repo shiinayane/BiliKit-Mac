@@ -5,6 +5,9 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case noMediaSegments
     case noVideoVariants
     case unsupportedAudioRenditionCount(Int)
+    case duplicateAudioTrackID(String)
+    case duplicateAudioRenditionName(String)
+    case invalidDefaultAudioRenditionCount(Int)
     case invalidAudioTrackSelection(trackID: String, representationID: Int)
     case duplicateSubtitleRenditionName(String)
     case invalidRenditionSelection
@@ -201,7 +204,6 @@ public struct HLSSubtitlePlaylistBuilder: Sendable {
 
 /// 把一个或多个视频 variant 与语义音轨 rendition 集合组合成 AVPlayer 的 ABR master playlist。
 ///
-/// 当前生产阶段只接受一条 rendition；集合形状先固定跨层契约，多音轨输出留给后续阶段。
 /// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
 public struct HLSMasterPlaylistBuilder: Sendable {
     public init() {}
@@ -215,46 +217,29 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         guard !videoVariants.isEmpty else {
             throw HLSPlaylistBuilderError.noVideoVariants
         }
-        guard audioRenditions.count == 1,
-            let audioRendition = audioRenditions.first
-        else {
+        guard !audioRenditions.isEmpty else {
             throw HLSPlaylistBuilderError.unsupportedAudioRenditionCount(
                 audioRenditions.count
             )
         }
-        let selectedAudio = audioRendition.selectedTrack
-        guard
-            selectedAudio.track.isDefault,
-            selectedAudio.track.isAutoselect,
-            selectedAudio.track.representations.contains(
-                selectedAudio.representation
-            )
-        else {
-            throw HLSPlaylistBuilderError.invalidAudioTrackSelection(
-                trackID: selectedAudio.track.id,
-                representationID: selectedAudio.representation.id
+        let defaultCount = audioRenditions.filter {
+            $0.selectedTrack.track.isDefault
+        }.count
+        guard defaultCount == 1 else {
+            throw HLSPlaylistBuilderError.invalidDefaultAudioRenditionCount(
+                defaultCount
             )
         }
-        let audio = selectedAudio.representation
-        guard audio.kind == .audio else {
-            throw HLSPlaylistBuilderError.invalidMediaKind(
-                expected: .audio,
-                actual: audio.kind
-            )
-        }
-
-        try validateAudioFormat(audioRendition)
-        let audioURI = try safeURI(audioRendition.playlistURI)
-        let audioCodecs = try safeAttribute(audio.codecs)
-        let audioGroupID = "audio-\(audio.id)"
-        let audioBitRates = try bitRates(for: audioRendition.index)
-        let audioName = try safeAttribute(selectedAudio.track.displayName)
-        let audioLanguage = try safeLanguageTag(
-            selectedAudio.track.languageTag ?? "und"
-        )
-        let audioCharacteristics = try characteristics(
-            for: selectedAudio.track.role
-        )
+        let audioGroupID =
+            audioRenditions.count == 1
+            ? "audio-\(audioRenditions[0].selectedTrack.representation.id)"
+            : "audio"
+        var audioTrackIDs = Set<String>()
+        var audioNames = Set<String>()
+        var audioCodecs: [String] = []
+        var audioCodecSet = Set<String>()
+        var audioPeakBitRate = 0
+        var audioAverageBitRate = 0
         var lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:7",
@@ -268,20 +253,70 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 "#EXT-X-SESSION-DATA:DATA-ID=\"_hls.localized-rendition-names\",URI=\"\(try safeURI(localizedRenditionNamesURI))\""
             )
         }
-        var audioLine =
-            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"\(audioName)\",LANGUAGE=\"\(audioLanguage)\",CHARACTERISTICS=\"\(audioCharacteristics)\""
-        if let channelCount = audioRendition.channelCount {
-            audioLine += ",CHANNELS=\"\(channelCount)\""
+        for rendition in audioRenditions {
+            let selectedAudio = rendition.selectedTrack
+            guard audioTrackIDs.insert(selectedAudio.track.id).inserted else {
+                throw HLSPlaylistBuilderError.duplicateAudioTrackID(
+                    selectedAudio.track.id
+                )
+            }
+            guard audioNames.insert(selectedAudio.track.displayName).inserted else {
+                throw HLSPlaylistBuilderError.duplicateAudioRenditionName(
+                    selectedAudio.track.displayName
+                )
+            }
+            guard
+                !selectedAudio.track.isDefault
+                    || selectedAudio.track.isAutoselect,
+                selectedAudio.track.representations.contains(
+                    selectedAudio.representation
+                )
+            else {
+                throw HLSPlaylistBuilderError.invalidAudioTrackSelection(
+                    trackID: selectedAudio.track.id,
+                    representationID: selectedAudio.representation.id
+                )
+            }
+            let audio = selectedAudio.representation
+            guard audio.kind == .audio else {
+                throw HLSPlaylistBuilderError.invalidMediaKind(
+                    expected: .audio,
+                    actual: audio.kind
+                )
+            }
+            try validateAudioFormat(rendition)
+            let codec = try safeAttribute(audio.codecs)
+            if audioCodecSet.insert(codec).inserted {
+                audioCodecs.append(codec)
+            }
+            let audioBitRates = try bitRates(for: rendition.index)
+            audioPeakBitRate = max(audioPeakBitRate, audioBitRates.peak)
+            audioAverageBitRate = max(
+                audioAverageBitRate,
+                audioBitRates.average
+            )
+            let audioName = try safeAttribute(selectedAudio.track.displayName)
+            let audioLanguage = try safeLanguageTag(
+                selectedAudio.track.languageTag ?? "und"
+            )
+            let audioCharacteristics = try characteristics(
+                for: selectedAudio.track.role
+            )
+            var audioLine =
+                "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"\(audioName)\",LANGUAGE=\"\(audioLanguage)\",CHARACTERISTICS=\"\(audioCharacteristics)\""
+            if let channelCount = rendition.channelCount {
+                audioLine += ",CHANNELS=\"\(channelCount)\""
+            }
+            if let bitDepth = rendition.bitDepth {
+                audioLine += ",BIT-DEPTH=\(bitDepth)"
+            }
+            if let sampleRate = rendition.sampleRate {
+                audioLine += ",SAMPLE-RATE=\(sampleRate)"
+            }
+            audioLine +=
+                ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(try safeURI(rendition.playlistURI))\""
+            lines.append(audioLine)
         }
-        if let bitDepth = audioRendition.bitDepth {
-            audioLine += ",BIT-DEPTH=\(bitDepth)"
-        }
-        if let sampleRate = audioRendition.sampleRate {
-            audioLine += ",SAMPLE-RATE=\(sampleRate)"
-        }
-        audioLine +=
-            ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(audioURI)\""
-        lines.append(audioLine)
 
         let subtitleGroupID = "subtitles"
         var subtitleNames = Set<String>()
@@ -330,11 +365,11 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             let videoBitRates = try bitRates(for: variant.index)
             let bandwidth = try adding(
                 videoBitRates.peak,
-                audioBitRates.peak
+                audioPeakBitRate
             )
             let averageBandwidth = try adding(
                 videoBitRates.average,
-                audioBitRates.average
+                audioAverageBitRate
             )
             let videoURI = try safeURI(variant.playlistURI)
             let videoCodecs = try safeAttribute(video.codecs)
@@ -343,8 +378,11 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 locale: Locale(identifier: "en_US_POSIX"),
                 attributes.frameRate
             )
+            let codecs = try safeAttribute(
+                ([videoCodecs] + audioCodecs).joined(separator: ",")
+            )
             var streamAttributes =
-                "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height),FRAME-RATE=\(frameRate),CODECS=\"\(videoCodecs),\(audioCodecs)\",AUDIO=\"\(audioGroupID)\""
+                "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height),FRAME-RATE=\(frameRate),CODECS=\"\(codecs)\",AUDIO=\"\(audioGroupID)\""
             if !subtitleRenditions.isEmpty {
                 streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
             }
@@ -434,6 +472,8 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         switch role {
         case .original:
             try safeCharacteristics(["public.original-content"])
+        case .machineGenerated:
+            try safeCharacteristics(["public.machine-generated"])
         }
     }
 

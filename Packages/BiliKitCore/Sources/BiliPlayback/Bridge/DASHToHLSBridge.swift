@@ -133,33 +133,54 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
         }
-        guard audioTracks.count == 1, let selectedAudio = audioTracks.first else {
+        guard !audioTracks.isEmpty else {
             throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
                 audioTracks.count
             )
         }
-        guard selectedAudio.track.role == .original else {
-            throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
-                selectedAudio.track.id
-            )
-        }
-        guard selectedAudio.track.isDefault,
-            selectedAudio.track.isAutoselect,
-            selectedAudio.track.representations.contains(
-                selectedAudio.representation
-            )
+        let defaultAudioTracks = audioTracks.filter(\.track.isDefault)
+        guard defaultAudioTracks.count == 1,
+            defaultAudioTracks[0].track.role == .original,
+            defaultAudioTracks[0].track.isAutoselect
         else {
-            throw DASHToHLSBridgeError.invalidAudioTrackSelection(
-                trackID: selectedAudio.track.id,
-                representationID: selectedAudio.representation.id
+            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
+                defaultAudioTracks.count
             )
         }
-        let audio = selectedAudio.representation
-        guard audio.kind == .audio else {
-            throw DASHToHLSBridgeError.invalidMediaKind(
-                expected: .audio,
-                actual: audio.kind
-            )
+        var audioTrackIDs = Set<String>()
+        for selectedAudio in audioTracks {
+            guard audioTrackIDs.insert(selectedAudio.track.id).inserted,
+                selectedAudio.track.representations.contains(
+                    selectedAudio.representation
+                )
+            else {
+                throw DASHToHLSBridgeError.invalidAudioTrackSelection(
+                    trackID: selectedAudio.track.id,
+                    representationID: selectedAudio.representation.id
+                )
+            }
+            switch selectedAudio.track.role {
+            case .original:
+                guard selectedAudio.track.isDefault else {
+                    throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
+                        selectedAudio.track.id
+                    )
+                }
+            case .machineGenerated:
+                guard !selectedAudio.track.isDefault,
+                    selectedAudio.track.languageTag != nil
+                else {
+                    throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
+                        selectedAudio.track.id
+                    )
+                }
+            }
+            guard selectedAudio.representation.kind == .audio else {
+                throw DASHToHLSBridgeError.invalidMediaKind(
+                    expected: .audio,
+                    actual: selectedAudio.representation.kind
+                )
+            }
         }
 
         let catalogTask = subtitleSource.map { source in
@@ -167,27 +188,16 @@ public struct DASHToHLSBridge: Sendable {
         }
         defer { catalogTask?.cancel() }
 
-        async let loadedAudio = indexLoader.load(
-            for: audio,
+        async let loadedAudioRenditions = loadAudioRenditions(
+            audioTracks,
             headers: headers
         )
         async let loadedVideoIndices = loadVideoIndices(
             videos,
             headers: headers
         )
-        let audioIndex = try await loadedAudio
-        async let loadedAudioFormat = optionalAudioFormat(
-            for: audio,
-            sourceURL: audioIndex.sourceURL,
-            headers: headers
-        )
+        let audioRenditions = try await loadedAudioRenditions
         let videoIndices = try await loadedVideoIndices
-        let audioFormat = try await loadedAudioFormat
-        guard let audioLength = audioIndex.completeMediaLength else {
-            throw DASHToHLSBridgeError.missingCompleteMediaLength(
-                representationID: audio.id
-            )
-        }
         let subtitleCatalog = try await freezeCatalog(catalogTask)
 
         let server = serverFactory(rangeClient)
@@ -197,39 +207,60 @@ public struct DASHToHLSBridge: Sendable {
             let localizedRenditionNamesURL = try server.url(
                 for: "metadata/localized-rendition-names.json"
             )
-            let audioPlaylistURL = try server.url(for: "audio/\(audio.id).m3u8")
-            let audioMediaPath = "media/audio/\(audio.id).mp4"
-            let audioMediaURL = try server.url(for: audioMediaPath)
-            var registrations = [
-                LoopbackRouteRegistration(
-                    relativePath: audioMediaPath,
-                    resource: .remote(
-                        try LoopbackRemoteResource(
-                            sourceURL: audioIndex.sourceURL,
-                            contentLength: audioLength,
-                            contentType: audio.mimeType,
-                            headers: headers
+            var registrations: [LoopbackRouteRegistration] = []
+            var hlsAudioRenditions: [HLSAudioRendition] = []
+            hlsAudioRenditions.reserveCapacity(audioRenditions.count)
+            for (offset, loadedAudio) in audioRenditions.enumerated() {
+                let audio = loadedAudio.selectedTrack.representation
+                guard let audioLength = loadedAudio.index.completeMediaLength else {
+                    throw DASHToHLSBridgeError.missingCompleteMediaLength(
+                        representationID: audio.id
+                    )
+                }
+                let audioPlaylistPath = "audio/\(offset)/\(audio.id).m3u8"
+                let audioPlaylistURL = try server.url(for: audioPlaylistPath)
+                let audioMediaPath = "media/audio/\(offset)/\(audio.id).mp4"
+                let audioMediaURL = try server.url(for: audioMediaPath)
+                registrations.append(
+                    LoopbackRouteRegistration(
+                        relativePath: audioMediaPath,
+                        resource: .remote(
+                            try LoopbackRemoteResource(
+                                sourceURL: loadedAudio.index.sourceURL,
+                                contentLength: audioLength,
+                                contentType: audio.mimeType,
+                                headers: headers
+                            )
                         )
                     )
                 )
-            ]
-
-            let audioPlaylist = try mediaPlaylistBuilder.build(
-                representation: audio,
-                index: audioIndex.index,
-                mediaURI: audioMediaURL
-            )
-            registrations.append(
-                LoopbackRouteRegistration(
-                    relativePath: "audio/\(audio.id).m3u8",
-                    resource: playlistResource(audioPlaylist)
+                let audioPlaylist = try mediaPlaylistBuilder.build(
+                    representation: audio,
+                    index: loadedAudio.index.index,
+                    mediaURI: audioMediaURL
                 )
-            )
+                registrations.append(
+                    LoopbackRouteRegistration(
+                        relativePath: audioPlaylistPath,
+                        resource: playlistResource(audioPlaylist)
+                    )
+                )
+                hlsAudioRenditions.append(
+                    HLSAudioRendition(
+                        selectedTrack: loadedAudio.selectedTrack,
+                        channelCount: loadedAudio.format?.channelCount,
+                        bitDepth: loadedAudio.format?.bitDepth,
+                        sampleRate: loadedAudio.format?.sampleRate,
+                        index: loadedAudio.index.index,
+                        playlistURI: audioPlaylistURL
+                    )
+                )
+            }
             registrations.append(
                 LoopbackRouteRegistration(
                     relativePath: "metadata/localized-rendition-names.json",
                     resource: try localizedRenditionNamesResource(
-                        for: selectedAudio.track
+                        for: audioTracks.map(\.track)
                     )
                 )
             )
@@ -292,16 +323,7 @@ public struct DASHToHLSBridge: Sendable {
                 )
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: [
-                        HLSAudioRendition(
-                            selectedTrack: selectedAudio,
-                            channelCount: audioFormat?.channelCount,
-                            bitDepth: audioFormat?.bitDepth,
-                            sampleRate: audioFormat?.sampleRate,
-                            index: audioIndex.index,
-                            playlistURI: audioPlaylistURL
-                        )
-                    ],
+                    audioRenditions: hlsAudioRenditions,
                     subtitleRenditions: subtitleRenditions,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
@@ -309,16 +331,7 @@ public struct DASHToHLSBridge: Sendable {
                 registrations.removeSubrange(mediaRegistrationCount...)
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: [
-                        HLSAudioRendition(
-                            selectedTrack: selectedAudio,
-                            channelCount: audioFormat?.channelCount,
-                            bitDepth: audioFormat?.bitDepth,
-                            sampleRate: audioFormat?.sampleRate,
-                            index: audioIndex.index,
-                            playlistURI: audioPlaylistURL
-                        )
-                    ],
+                    audioRenditions: hlsAudioRenditions,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
             }
@@ -358,20 +371,82 @@ public struct DASHToHLSBridge: Sendable {
         }
     }
 
+    private func loadAudioRenditions(
+        _ audioTracks: [SelectedPlaybackAudioTrack],
+        headers: [String: String]
+    ) async throws -> [LoadedAudioRendition] {
+        try await withThrowingTaskGroup(
+            of: (Int, LoadedAudioRendition?).self
+        ) { group in
+            for (offset, selectedTrack) in audioTracks.enumerated() {
+                group.addTask {
+                    do {
+                        let audio = selectedTrack.representation
+                        let index = try await indexLoader.load(
+                            for: audio,
+                            headers: headers
+                        )
+                        guard index.completeMediaLength != nil else {
+                            if selectedTrack.track.role == .machineGenerated {
+                                return (offset, nil)
+                            }
+                            throw
+                                DASHToHLSBridgeError
+                                .missingCompleteMediaLength(
+                                    representationID: audio.id
+                                )
+                        }
+                        let format = try await optionalAudioFormat(
+                            for: audio,
+                            sourceURL: index.sourceURL,
+                            headers: headers
+                        )
+                        return (
+                            offset,
+                            LoadedAudioRendition(
+                                selectedTrack: selectedTrack,
+                                index: index,
+                                format: format
+                            )
+                        )
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch  where selectedTrack.track.role == .machineGenerated {
+                        return (offset, nil)
+                    } catch {
+                        throw error
+                    }
+                }
+            }
+            var loaded: [(Int, LoadedAudioRendition?)] = []
+            loaded.reserveCapacity(audioTracks.count)
+            for try await result in group {
+                loaded.append(result)
+            }
+            return loaded.sorted { $0.0 < $1.0 }.compactMap(\.1)
+        }
+    }
+
     private func localizedRenditionNamesResource(
-        for track: PlaybackAudioTrack
+        for tracks: [PlaybackAudioTrack]
     ) throws -> LoopbackPlaybackResource {
-        let translations: [String: String]
-        switch track.role {
-        case .original:
-            translations = [
-                "en": "Original",
-                "ja": "オリジナル",
-                "zh": "原声",
-            ]
+        var localizedNames: [String: [String: String]] = [:]
+        for track in tracks {
+            let translations: [String: String]
+            switch track.role {
+            case .original:
+                translations = [
+                    "en": "Original",
+                    "ja": "オリジナル",
+                    "zh": "原声",
+                ]
+            case .machineGenerated:
+                continue
+            }
+            localizedNames[track.displayName] = translations
         }
         let body = try JSONSerialization.data(
-            withJSONObject: [track.displayName: translations],
+            withJSONObject: localizedNames,
             options: [.sortedKeys]
         )
         return .inMemory(
@@ -543,6 +618,12 @@ public struct DASHToHLSBridge: Sendable {
             contentType: "application/vnd.apple.mpegurl"
         )
     }
+}
+
+private struct LoadedAudioRendition: Sendable {
+    let selectedTrack: SelectedPlaybackAudioTrack
+    let index: LoadedSegmentIndex
+    let format: AudioFormatMetadata?
 }
 
 private final class CatalogResultRelay<Value: Sendable>: @unchecked Sendable {

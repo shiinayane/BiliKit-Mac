@@ -135,7 +135,7 @@ struct HLSPlaylistBuilderTests {
     }
 
     @Test
-    func rejectsUnsupportedAudioRenditionCounts() throws {
+    func rejectsEmptyAndDuplicateAudioRenditions() throws {
         let video = try makeRepresentation(
             id: 80,
             kind: .video,
@@ -178,13 +178,93 @@ struct HLSPlaylistBuilderTests {
             )
         }
         #expect(
-            throws: HLSPlaylistBuilderError.unsupportedAudioRenditionCount(2)
+            throws: HLSPlaylistBuilderError.invalidDefaultAudioRenditionCount(2)
         ) {
             try HLSMasterPlaylistBuilder().build(
                 videoVariants: [variant],
                 audioRenditions: [rendition, rendition]
             )
         }
+    }
+
+    @Test
+    func buildsSystemSelectableMachineGeneratedAudioRendition() throws {
+        let video = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let original = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let ai = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let videoIndex = try makeIndex(byteCounts: [2_000], durations: [1])
+        let originalIndex = try makeIndex(
+            byteCounts: [500],
+            durations: [1]
+        )
+        let aiIndex = try makeIndex(byteCounts: [750], durations: [1])
+
+        let playlist = try HLSMasterPlaylistBuilder().build(
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: try #require(
+                        URL(string: "bilikit-playlist://video/80.m3u8")
+                    )
+                )
+            ],
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: original,
+                    index: originalIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/0/30280.m3u8")
+                    )
+                ),
+                try makeAudioRendition(
+                    representation: ai,
+                    trackID: "machine-generated:en",
+                    displayName: "English（AI）",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    index: aiIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/1/30280.m3u8")
+                    )
+                ),
+            ]
+        )
+
+        #expect(
+            playlist.contains(
+                #"GROUP-ID="audio",NAME="原声",LANGUAGE="und",CHARACTERISTICS="public.original-content",DEFAULT=YES,AUTOSELECT=YES"#
+            )
+        )
+        #expect(
+            playlist.contains(
+                #"GROUP-ID="audio",NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated",DEFAULT=NO,AUTOSELECT=YES"#
+            )
+        )
+        #expect(!playlist.contains("public.translation"))
+        #expect(playlist.contains(#"AUDIO="audio""#))
+        #expect(playlist.contains("BANDWIDTH=22000"))
     }
 
     @Test
@@ -546,6 +626,12 @@ struct HLSPlaylistBuilderTests {
 
     private func makeAudioRendition(
         representation: MediaRepresentation,
+        trackID: String = "original",
+        displayName: String = "原声",
+        languageTag: String? = nil,
+        role: PlaybackAudioTrack.Role = .original,
+        isDefault: Bool = true,
+        isAutoselect: Bool = true,
         channelCount: Int? = nil,
         bitDepth: Int? = nil,
         sampleRate: Int? = nil,
@@ -553,11 +639,12 @@ struct HLSPlaylistBuilderTests {
         playlistURI: URL
     ) throws -> HLSAudioRendition {
         let track = PlaybackAudioTrack(
-            id: "original",
-            displayName: "原声",
-            role: .original,
-            isDefault: true,
-            isAutoselect: true,
+            id: trackID,
+            displayName: displayName,
+            languageTag: languageTag,
+            role: role,
+            isDefault: isDefault,
+            isAutoselect: isAutoselect,
             representations: [representation]
         )
         return HLSAudioRendition(

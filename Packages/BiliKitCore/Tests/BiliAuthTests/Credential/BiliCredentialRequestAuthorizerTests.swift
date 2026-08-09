@@ -55,6 +55,22 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let authorizedPlayback = try await authorizer.authorize(playbackRequest)
         #expect(authorizedPlayback.headers["Cookie"] == credential.cookieHeader)
+
+        let translatedPlaybackRequest = HTTPRequest(
+            url: try #require(
+                URL(
+                    string:
+                        "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=zh-Hans"
+                )
+            )
+        )
+        let authorizedTranslatedPlayback = try await authorizer.authorize(
+            translatedPlaybackRequest
+        )
+        #expect(
+            authorizedTranslatedPlayback.headers["Cookie"]
+                == credential.cookieHeader
+        )
     }
 
     @Test
@@ -93,6 +109,22 @@ struct BiliCredentialRequestAuthorizerTests {
             ),
             (
                 "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=0&fnval=976&fnver=0&fourk=1",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=EN",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=en%2Fevil",
+                .get
+            ),
+            (
+                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=en&cur_language=ja",
                 .get
             ),
             (

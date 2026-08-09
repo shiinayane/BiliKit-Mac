@@ -214,15 +214,130 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
         guard !audio.isEmpty else { throw BiliAPIError.noAACAudio }
 
+        var audioTracks = [
+            PlaybackAudioTrack(
+                id: "original",
+                displayName: "原声",
+                role: .original,
+                isDefault: true,
+                isAutoselect: true,
+                representations: audio
+            )
+        ]
+        if requestAuthorizer != nil {
+            audioTracks += try await machineGeneratedAudioTracks(
+                catalog: payload.languageCatalog,
+                originalAudio: audio,
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                referer: referer
+            )
+        }
+
         return VideoPlayback(
             manifest: PlaybackManifest(
                 videoRepresentations: video,
-                originalAudioRepresentations: audio
+                audioTracks: audioTracks
             ),
             mediaHeaders: [
                 "Referer": referer,
                 "User-Agent": userAgent,
             ]
+        )
+    }
+
+    private func machineGeneratedAudioTracks(
+        catalog: AudioLanguageCatalogPayload?,
+        originalAudio: [MediaRepresentation],
+        bvid: String,
+        cid: Int64,
+        quality: Int,
+        referer: String
+    ) async throws -> [PlaybackAudioTrack] {
+        let items = catalog?.validatedMachineGeneratedItems() ?? []
+        guard !items.isEmpty else { return [] }
+        var usedPaths = Self.mediaResourcePaths(originalAudio)
+        var displayNames: Set<String> = ["原声"]
+        var tracks: [PlaybackAudioTrack] = []
+        tracks.reserveCapacity(items.count)
+        for item in items {
+            try Task.checkCancellation()
+            guard let languageTag = item.validatedLanguageTag,
+                let displayName = item.validatedDisplayName
+            else {
+                continue
+            }
+            let payload: PlayURLPayload
+            do {
+                payload = try await get(
+                    path: "/x/player/playurl",
+                    queryItems: [
+                        URLQueryItem(name: "bvid", value: bvid),
+                        URLQueryItem(name: "cid", value: String(cid)),
+                        URLQueryItem(name: "qn", value: String(quality)),
+                        URLQueryItem(name: "fnval", value: "976"),
+                        URLQueryItem(name: "fnver", value: "0"),
+                        URLQueryItem(name: "fourk", value: "1"),
+                        URLQueryItem(name: "cur_language", value: languageTag),
+                    ],
+                    referer: referer,
+                    requiresAuthentication: true,
+                    mapsAuthenticationInvalidation: true
+                )
+            } catch BiliAPIError.authorizationRequired {
+                return []
+            } catch BiliAPIError.authenticationInvalid {
+                throw BiliAPIError.authenticationInvalid
+            } catch BiliAPIError.authorizationUnavailable {
+                throw BiliAPIError.authorizationUnavailable
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                continue
+            }
+            guard payload.currentLanguage == languageTag else { continue }
+            let representations: [MediaRepresentation]
+            do {
+                representations = try payload.dash.audio
+                    .filter(\.isAACAudio)
+                    .map { try $0.model(kind: .audio) }
+            } catch {
+                continue
+            }
+            let paths = Self.mediaResourcePaths(representations)
+            guard !representations.isEmpty, !paths.isEmpty,
+                paths.isDisjoint(with: usedPaths),
+                displayNames.insert(displayName).inserted
+            else {
+                continue
+            }
+            usedPaths.formUnion(paths)
+            tracks.append(
+                PlaybackAudioTrack(
+                    id: "machine-generated:\(languageTag)",
+                    displayName: displayName,
+                    languageTag: languageTag,
+                    role: .machineGenerated,
+                    isDefault: false,
+                    isAutoselect: true,
+                    representations: representations
+                )
+            )
+        }
+        return tracks
+    }
+
+    private static func mediaResourcePaths(
+        _ representations: [MediaRepresentation]
+    ) -> Set<String> {
+        Set(
+            representations.flatMap(\.urlCandidates).compactMap { url in
+                URLComponents(
+                    url: url,
+                    resolvingAgainstBaseURL: false
+                )?.percentEncodedPath
+            }.filter { !$0.isEmpty }
         )
     }
 

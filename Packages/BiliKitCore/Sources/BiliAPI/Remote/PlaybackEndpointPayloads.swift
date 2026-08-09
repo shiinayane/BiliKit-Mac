@@ -4,6 +4,102 @@ import Foundation
 
 struct PlayURLPayload: Decodable, Sendable {
     let dash: DASHPayload
+    let currentLanguage: String?
+    let currentProductionType: Int?
+    let languageCatalog: AudioLanguageCatalogPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case dash
+        case currentLanguage = "cur_language"
+        case currentProductionType = "cur_production_type"
+        case languageCatalog = "language"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dash = try container.decode(DASHPayload.self, forKey: .dash)
+        currentLanguage = try? container.decode(
+            String.self,
+            forKey: .currentLanguage
+        )
+        currentProductionType = try? container.decode(
+            Int.self,
+            forKey: .currentProductionType
+        )
+        languageCatalog = try? container.decode(
+            AudioLanguageCatalogPayload.self,
+            forKey: .languageCatalog
+        )
+    }
+}
+
+struct AudioLanguageCatalogPayload: Decodable, Sendable {
+    let support: Bool
+    let items: [AudioLanguageItemPayload]
+
+    func validatedMachineGeneratedItems() -> [AudioLanguageItemPayload] {
+        guard support, (1...8).contains(items.count) else { return [] }
+        var languages = Set<String>()
+        for item in items {
+            guard item.productionType == 2,
+                let languageTag = item.validatedLanguageTag,
+                item.validatedDisplayName != nil,
+                languages.insert(languageTag).inserted
+            else {
+                return []
+            }
+        }
+        return items
+    }
+}
+
+struct AudioLanguageItemPayload: Decodable, Sendable {
+    let languageCode: String
+    let title: String
+    let productionType: Int
+
+    var validatedLanguageTag: String? {
+        let value = languageCode.replacingOccurrences(of: "_", with: "-")
+        let subtags = value.split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard value.count <= 35, let primary = subtags.first,
+            (2...3).contains(primary.count),
+            primary.allSatisfy({
+                $0.isASCII && $0.isLetter && $0.isLowercase
+            }),
+            subtags.dropFirst().allSatisfy({ subtag in
+                (1...8).contains(subtag.count)
+                    && subtag.allSatisfy {
+                        $0.isASCII && ($0.isLetter || $0.isNumber)
+                    }
+            })
+        else {
+            return nil
+        }
+        return subtags.joined(separator: "-")
+    }
+
+    var validatedDisplayName: String? {
+        let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.utf8.count <= 128,
+            !value.contains("\""),
+            !value.contains("\\"),
+            !value.unicodeScalars.contains(where: {
+                CharacterSet.controlCharacters.contains($0)
+            })
+        else {
+            return nil
+        }
+        return value
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case languageCode = "lang"
+        case title
+        case productionType = "production_type"
+    }
 }
 
 struct DASHPayload: Decodable, Sendable {
