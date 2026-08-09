@@ -1,3 +1,11 @@
+public enum DanmakuSpeedLevel: Int, CaseIterable, Sendable, Equatable {
+    case one = 1
+    case two
+    case three
+    case four
+    case five
+}
+
 @MainActor
 /// 让 Feature 驱动弹幕会话开始、可见性与完整停止，而不暴露 scheduler 或 renderer。
 public protocol DanmakuPresentationControlling: AnyObject {
@@ -8,5 +16,6 @@ public protocol DanmakuPresentationControlling: AnyObject {
         top: Bool,
         bottom: Bool
     )
+    func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func stop()
 }

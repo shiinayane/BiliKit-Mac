@@ -128,6 +128,10 @@ struct DanmakuSessionTests {
         )
         #expect(sink.clearCount == 2)
 
+        session.setSpeedLevel(.five)
+        #expect(sink.speedLevels == [.five])
+        #expect(sink.clearCount == 2)
+
         session.stop()
         #expect(sink.stopCount == 1)
     }
@@ -266,6 +270,7 @@ struct DanmakuSessionTests {
 @MainActor
 private final class SessionPresentationSink: DanmakuPresentationSink {
     private(set) var updates: [DanmakuPresentationUpdate] = []
+    private(set) var speedLevels: [DanmakuSpeedLevel] = []
     private(set) var clearCount = 0
     private(set) var stopCount = 0
     private var updateWaiters:
@@ -283,6 +288,10 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
         for (id, waiter) in ready where updateWaiters.removeValue(forKey: id) != nil {
             waiter.continuation.resume()
         }
+    }
+
+    func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        speedLevels.append(speedLevel)
     }
 
     func clearPresentation() {

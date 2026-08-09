@@ -8,7 +8,12 @@ struct DanmakuControlsViewModelTests {
     @Test
     func selectionControlsAndResetReachApplicationPort() {
         let presentation = RecordingDanmakuPresentation()
-        let model = DanmakuControlsViewModel(presentation: presentation)
+        var savedSpeedLevels: [DanmakuSpeedLevel] = []
+        let model = DanmakuControlsViewModel(
+            presentation: presentation,
+            initialSpeedLevel: .two,
+            saveSpeedLevel: { savedSpeedLevels.append($0) }
+        )
         let identity = PlaybackItemIdentity(
             bvid: "BV1ControlsFixture",
             cid: 1
@@ -19,10 +24,13 @@ struct DanmakuControlsViewModelTests {
         model.setShowsScrolling(false)
         model.setShowsTop(false)
         model.setShowsBottom(false)
+        model.setSpeedLevel(.five)
         model.reset()
 
         #expect(presentation.startedIdentities == [identity])
         #expect(presentation.enabledValues == [false])
+        #expect(presentation.speedLevels == [.two, .five])
+        #expect(savedSpeedLevels == [.five])
         #expect(
             presentation.modeValues == [
                 ModeValues(scrolling: false, top: true, bottom: true),
@@ -35,6 +43,7 @@ struct DanmakuControlsViewModelTests {
         #expect(!model.showsScrolling)
         #expect(!model.showsTop)
         #expect(!model.showsBottom)
+        #expect(model.speedLevel == .five)
     }
 }
 
@@ -51,6 +60,7 @@ private final class RecordingDanmakuPresentation:
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var enabledValues: [Bool] = []
     private(set) var modeValues: [ModeValues] = []
+    private(set) var speedLevels: [DanmakuSpeedLevel] = []
     private(set) var stopCount = 0
 
     func start(for identity: PlaybackItemIdentity) {
@@ -59,6 +69,10 @@ private final class RecordingDanmakuPresentation:
 
     func setEnabled(_ enabled: Bool) {
         enabledValues.append(enabled)
+    }
+
+    func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        speedLevels.append(speedLevel)
     }
 
     func setModeVisibility(

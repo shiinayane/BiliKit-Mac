@@ -327,6 +327,7 @@
     private final class UITestDanmakuPresentation: DanmakuPresentationControlling {
         func start(for identity: PlaybackItemIdentity) {}
         func setEnabled(_ enabled: Bool) {}
+        func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {}
 
         func setModeVisibility(
             scrolling: Bool,

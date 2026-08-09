@@ -111,6 +111,10 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         )
     }
 
+    public func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
+        presentationSink?.setSpeedLevel(speedLevel)
+    }
+
     /// 幂等结束整个会话，而不只是隐藏弹幕图层。
     public func stop() {
         presentationSink?.stopPresentation()
