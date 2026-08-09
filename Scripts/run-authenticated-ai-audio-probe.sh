@@ -116,7 +116,7 @@ if rg -q '(https?://|BV[A-Za-z0-9]{10})' "$test_log"; then
 fi
 
 summary=$(rg -m 1 -o \
-    'authenticated-ai-audio catalog-count=[0-9]+ production-types=\[[0-9, -]+\] selected-current-match=true original-aac=[0-9]+ ai-aac=[0-9]+ production-ai-tracks=[0-9]+ system-audible-options=[0-9]+ system-selection-ready=true sources-differ=true media-index-ready=true media-cookie=false' \
+    'authenticated-ai-audio catalog-count=[0-9]+ production-types=\[[0-9, -]+\] selected-current-match=true playurl-base-requests=1 playurl-ai-requests=[1-8] playurl-ai-request-bound=true original-aac=[0-9]+ ai-aac=[0-9]+ production-ai-tracks=[0-9]+ system-audible-options=[0-9]+ system-selection-ready=true system-friendly-names=true sources-differ=true media-index-ready=true media-cookie=false iframe-variants=[0-9]+ iframe-playlist-on-demand=true iframe-playlist-full-fragments=true iframe-media-credentials=false replacement-aba=true loopback-clean=true' \
     "$test_log" || true)
 if [[ $probe_status -ne 0 || -z "$summary" ]]; then
     stage_summary=$(rg -o \

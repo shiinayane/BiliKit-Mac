@@ -63,10 +63,15 @@ representation 执行一次严格 SIDX Range 读取。探针不自动重试。
 - 探针只有在目录受限、服务端回显匹配、AAC 规范化资源路径集合变化、SIDX 可解析且媒体
   无 Cookie 时
   才输出成功摘要；任一条件失败即失败关闭。
-- 若远端协议漂移，生产播放仍不会发送 `cur_language`，因此保持既有单条原声音轨行为；可
-  独立撤回第七项 allowlist 与探针，不影响阶段 1–3 的语义模型和 HLS master metadata。
+- 本记录形成时生产播放尚未发送 `cur_language`；后续 Stage 5 已改为只有本次基础响应实际
+  授权、目录完整且每条精确响应回显同一语言与 `production_type=2` 时才生产 AI 轨。目录／
+  媒体语义漂移只省略相应可选轨，认证、风控、HTTP／业务拒绝、非 JSON 与 transport 故障
+  仍失败关闭；可独立撤回第七项 allowlist，不影响阶段 1–3 的语义模型和 master metadata。
 
-## 5. 仍待后续阶段关闭
+## 5. 本阶段结束时仍待后续关闭的事项
+
+以下是 Stage 4 当时的开放项；production type 映射、系统菜单边界、多内容生命周期中的可自动
+部分已由后续 Stage 5–7 实施或验证，仍以对应后续记录为准。
 
 - 平台 production type 与 `public.machine-generated`／`public.translation` 的精确映射；只有
   音频源语言和目标语言证据充分时才能标记 translation。

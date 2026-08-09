@@ -821,7 +821,19 @@ struct HLSPlaylistBuilderTests {
             )
         )
         #expect(
+            bridge.hasMatchingAudioTimeline(
+                equivalent,
+                canonical: canonical
+            )
+        )
+        #expect(
             !bridge.hasMatchingSubtitleTimeline(
+                shifted,
+                canonical: canonical
+            )
+        )
+        #expect(
+            !bridge.hasMatchingAudioTimeline(
                 shifted,
                 canonical: canonical
             )
