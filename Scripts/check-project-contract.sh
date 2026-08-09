@@ -24,6 +24,7 @@ package_file="Packages/BiliKitCore/Package.swift"
 package_resolution_file="Packages/BiliKitCore/Package.resolved"
 xcode_resolution_file="BiliKitMac.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 quality_gate_file="Scripts/run-quality-gates.sh"
+quality_gate_artifact_test="Scripts/test-quality-gate-artifacts.sh"
 swift_format_config=".swift-format"
 swift_format_check="Scripts/check-swift-format.sh"
 ci_file=".github/workflows/ci.yml"
@@ -39,9 +40,9 @@ assert_occurrences 1 \
     "$ci_file" \
     "CI 必须明确通过统一 Gate 执行 strict Swift 格式检查"
 assert_occurrences 1 \
-    'run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"' \
+    'run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}" closure' \
     "$ci_file" \
-    "CI 必须运行所选择的统一 Gate"
+    "CI 必须以 closure policy 运行所选择的统一 Gate"
 assert_occurrences 1 \
     'sh Scripts/select-quality-gate.sh)' \
     "$ci_file" \
@@ -61,9 +62,22 @@ assert_occurrences 1 \
     "$quality_gate_file" \
     "统一质量 Gate 必须向 GitHub Actions 输出阶段摘要"
 assert_occurrences 1 \
-    'BILIKIT_GATE_FRESH: 1' \
-    "$ci_file" \
-    "CI 必须使用可确定清理的 fresh Gate"
+    'cache_schema="bilikit-quality-gates-v2"' \
+    "$quality_gate_file" \
+    "质量 Gate 必须显式版本化缓存 identity"
+assert_occurrences 1 \
+    'developer_dir_input="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"' \
+    "$quality_gate_file" \
+    "质量 Gate 必须默认使用任务局部完整 Xcode"
+assert_occurrences 1 \
+    'iteration|fresh|closure' \
+    "$quality_gate_file" \
+    "质量 Gate 必须区分 iteration、fresh 与 closure"
+[ -f "$quality_gate_artifact_test" ] || fail "缺少质量 Gate 产物行为契约测试"
+sh -n "$quality_gate_file" || fail "质量 Gate 脚本语法无效"
+sh -n "$quality_gate_artifact_test" || fail "质量 Gate 产物契约测试脚本语法无效"
+sh "$quality_gate_artifact_test" \
+    || fail "质量 Gate 产物、清理与故障分类行为契约失败"
 assert_occurrences 1 \
     'export SWIFTPM_MODULECACHE_OVERRIDE="$swift_module_cache_path"' \
     "$quality_gate_file" \

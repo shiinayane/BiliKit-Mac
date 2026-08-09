@@ -74,5 +74,9 @@ sh Scripts/run-quality-gates.sh package  # Package 代码；包含 static
 sh Scripts/run-quality-gates.sh app      # App/Xcode/composition；包含 package
 ```
 
+production PR 的最终自动验收在最高适用 mode 后使用 `closure`（例如
+`sh Scripts/run-quality-gates.sh app closure`），由 Gate 在任务局部完整 Xcode 与全新隔离
+环境中运行；不得修改全局 `xcode-select`，也不得以 iteration 结果冒充 closure。
+
 涉及签名、Keychain、真实 UI、播放或性能时，再运行能够观察该行为的真实检查；build、mock、
 截图和一次 trace 不能互相替代。只有实际证据支持时才更新路线图完成状态。
