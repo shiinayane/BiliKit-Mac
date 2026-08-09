@@ -588,6 +588,132 @@ struct LoopbackPlaybackServerTests {
 
     @Test
     @MainActor
+    func bridgeUsesFullFragmentsForOnDemandIFrameTrickPlay() async throws {
+        let videoData = try markingTypeOneSAP(
+            in: fixtureBase64Data(
+                named: "video-avc-128x72-4s-global-sidx.mp4"
+            )
+        )
+        let audioData = try fixtureBase64Data(
+            named: "audio-aac-4s-global-sidx.mp4"
+        )
+        let videoURL = try #require(
+            URL(string: "https://iframe-full-fragment.example/video.mp4")
+        )
+        let audioURL = try #require(
+            URL(string: "https://iframe-full-fragment.example/audio.mp4")
+        )
+        let videoFixture = try makeFixtureTrack(
+            id: 64,
+            kind: .video,
+            codecs: "avc1.4d400a",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 128,
+                height: 72,
+                frameRate: 24
+            )
+        )
+        let audioFixture = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 32_000,
+            data: audioData,
+            primaryURL: audioURL
+        )
+        let transport = FixtureRangeTransport(
+            media: [
+                videoURL: videoData,
+                audioURL: audioData,
+            ],
+            failingURLs: []
+        )
+        let registry = LoopbackServerRegistry()
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport),
+            serverFactory: { rangeClient in
+                registry.create(rangeClient: rangeClient)
+            }
+        )
+        let prepared = try await bridge.prepare(
+            video: videoFixture.representation,
+            audioTracks: [
+                makeSelectedAudioTrack(
+                    representation: audioFixture.representation
+                )
+            ]
+        )
+        defer { prepared.stop() }
+        let server = try #require(registry.servers.last)
+        let masterData = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+
+        #expect(master.contains("#EXT-X-I-FRAME-STREAM-INF:"))
+        #expect(master.contains("/video/64-iframe.m3u8"))
+
+        let item = AVPlayerItem(url: prepared.url)
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = true
+        try await waitUntilReadyToPlay(item)
+
+        #expect(item.canPlayFastForward)
+        #expect(item.canPlayFastReverse)
+        #expect(
+            try server.requestCount(
+                method: "GET",
+                at: "video/64-iframe.m3u8"
+            ) == 0
+        )
+        let requestsBeforeFastForward = await transport.requests.count
+
+        player.playImmediately(atRate: 4)
+        try await waitUntilRequest(
+            method: "GET",
+            at: "video/64-iframe.m3u8",
+            on: server
+        )
+        try await waitUntilRequestCount(
+            exceeds: requestsBeforeFastForward,
+            on: transport
+        )
+        player.pause()
+
+        let fastForwardRequests = await transport.requests.dropFirst(
+            requestsBeforeFastForward
+        )
+        let fullFragmentRanges = Set(
+            videoFixture.index.references.map(
+                \.byteRange.httpRangeHeaderValue
+            )
+        )
+        #expect(
+            fastForwardRequests.contains { request in
+                request.url == videoURL
+                    && request.headers.contains { name, value in
+                        name.caseInsensitiveCompare("Range") == .orderedSame
+                            && fullFragmentRanges.contains(value)
+                    }
+            }
+        )
+        #expect(
+            fastForwardRequests.allSatisfy { request in
+                request.headers.keys.allSatisfy {
+                    $0.caseInsensitiveCompare("Cookie") != .orderedSame
+                        && $0.caseInsensitiveCompare("Authorization")
+                            != .orderedSame
+                }
+            }
+        )
+
+        #expect(item.status == .readyToPlay)
+        _ = player
+    }
+
+    @Test
+    @MainActor
     func unifiedMasterExposesAdaptiveVariantsAndNativeSubtitles() async throws {
         let lowVideoData = try fixtureData(named: "video-avc")
         let highVideoData = try fixtureBase64Data(
@@ -3464,6 +3590,38 @@ struct LoopbackPlaybackServerTests {
         return nil
     }
 
+    private func markingTypeOneSAP(in data: Data) throws -> Data {
+        var result = data
+        let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
+        let version = result[sidx.offset + 8]
+        let entriesOffset: Int
+        switch version {
+        case 0:
+            entriesOffset = sidx.offset + 32
+        case 1:
+            entriesOffset = sidx.offset + 40
+        default:
+            throw LoopbackFixtureError.invalidFixture
+        }
+        let referenceCountOffset = entriesOffset - 2
+        let referenceCount =
+            Int(result[referenceCountOffset]) << 8
+            | Int(result[referenceCountOffset + 1])
+        guard referenceCount > 0,
+            entriesOffset + referenceCount * 12 <= sidx.offset + sidx.size
+        else {
+            throw LoopbackFixtureError.invalidFixture
+        }
+        for referenceIndex in 0..<referenceCount {
+            let sapOffset = entriesOffset + referenceIndex * 12 + 8
+            guard result[sapOffset] & 0x80 != 0 else {
+                throw LoopbackFixtureError.invalidFixture
+            }
+            result[sapOffset] = (result[sapOffset] & 0x8f) | 0x10
+        }
+        return result
+    }
+
     private func readUInt32(in data: Data, at offset: Int) -> UInt32 {
         data[offset..<(offset + 4)].reduce(UInt32(0)) { value, byte in
             (value << 8) | UInt32(byte)
@@ -3538,6 +3696,19 @@ struct LoopbackPlaybackServerTests {
                 method: method,
                 at: relativePath
             ) > 0 {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw LoopbackFixtureError.timedOut
+    }
+
+    private func waitUntilRequestCount(
+        exceeds count: Int,
+        on transport: FixtureRangeTransport
+    ) async throws {
+        for _ in 0..<100 {
+            if await transport.requests.count > count {
                 return
             }
             try await Task.sleep(for: .milliseconds(50))
@@ -3818,6 +3989,7 @@ private enum LoopbackFixtureError: Error {
     case missingPort
     case invalidIndependentResponse
     case invalidTimestampMap
+    case invalidFixture
 }
 
 private actor FixtureRangeTransport: HTTPTransport {

@@ -46,6 +46,7 @@ public struct DASHToHLSBridge: Sendable {
     private let indexLoader: RepresentationIndexLoader
     private let audioFormatLoader: AudioFormatMetadataLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
+    private let iFramePlaylistBuilder: HLSIFramePlaylistBuilder
     private let subtitlePlaylistBuilder: HLSSubtitlePlaylistBuilder
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
     private let webVTTEncoder: WebVTTEncoder
@@ -76,6 +77,7 @@ public struct DASHToHLSBridge: Sendable {
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
         audioFormatLoader = AudioFormatMetadataLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
+        iFramePlaylistBuilder = HLSIFramePlaylistBuilder()
         subtitlePlaylistBuilder = HLSSubtitlePlaylistBuilder()
         masterPlaylistBuilder = HLSMasterPlaylistBuilder()
         webVTTEncoder = WebVTTEncoder()
@@ -267,6 +269,8 @@ public struct DASHToHLSBridge: Sendable {
 
             var variants: [HLSVideoVariant] = []
             variants.reserveCapacity(videos.count)
+            var iFrameVariants: [HLSIFrameVariant] = []
+            iFrameVariants.reserveCapacity(videos.count)
             for (video, videoIndex) in zip(videos, videoIndices) {
                 guard let videoLength = videoIndex.completeMediaLength else {
                     throw DASHToHLSBridgeError.missingCompleteMediaLength(
@@ -309,6 +313,30 @@ public struct DASHToHLSBridge: Sendable {
                         playlistURI: videoPlaylistURL
                     )
                 )
+                if isEligibleForIFramePlaylist(videoIndex.index) {
+                    let iFramePlaylistPath = "video/\(video.id)-iframe.m3u8"
+                    let iFramePlaylistURL = try server.url(
+                        for: iFramePlaylistPath
+                    )
+                    let iFramePlaylist = try iFramePlaylistBuilder.build(
+                        representation: video,
+                        index: videoIndex.index,
+                        mediaURI: videoMediaURL
+                    )
+                    registrations.append(
+                        LoopbackRouteRegistration(
+                            relativePath: iFramePlaylistPath,
+                            resource: playlistResource(iFramePlaylist)
+                        )
+                    )
+                    iFrameVariants.append(
+                        HLSIFrameVariant(
+                            representation: video,
+                            index: videoIndex.index,
+                            playlistURI: iFramePlaylistURL
+                        )
+                    )
+                }
             }
 
             let mediaRegistrationCount = registrations.count
@@ -325,6 +353,7 @@ public struct DASHToHLSBridge: Sendable {
                     videoVariants: variants,
                     audioRenditions: hlsAudioRenditions,
                     subtitleRenditions: subtitleRenditions,
+                    iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
             } catch {
@@ -332,6 +361,7 @@ public struct DASHToHLSBridge: Sendable {
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
                     audioRenditions: hlsAudioRenditions,
+                    iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
             }
@@ -369,6 +399,15 @@ public struct DASHToHLSBridge: Sendable {
         } catch {
             return nil
         }
+    }
+
+    private func isEligibleForIFramePlaylist(_ index: SegmentIndex) -> Bool {
+        !index.references.isEmpty
+            && index.references.allSatisfy { reference in
+                reference.startsWithSAP
+                    && reference.sapType == 1
+                    && reference.sapDeltaTime == 0
+            }
     }
 
     private func loadAudioRenditions(

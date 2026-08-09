@@ -59,6 +59,85 @@ struct HLSPlaylistBuilderTests {
     }
 
     @Test
+    func buildsFullFragmentIFramePlaylistWithoutRewritingMedia() throws {
+        let representation = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let index = try makeIndex(
+            byteCounts: [1_000, 2_000],
+            durations: [1, 1]
+        )
+        let mediaURI = try #require(
+            URL(string: "bilikit-media://representation/80")
+        )
+
+        let playlist = try HLSIFramePlaylistBuilder().build(
+            representation: representation,
+            index: index,
+            mediaURI: mediaURI
+        )
+
+        #expect(playlist.contains("#EXT-X-I-FRAMES-ONLY\n"))
+        #expect(
+            playlist.contains(
+                #"#EXT-X-MAP:URI="bilikit-media://representation/80",BYTERANGE="100@0""#
+            )
+        )
+        #expect(playlist.contains("#EXT-X-BYTERANGE:1000@0"))
+        #expect(playlist.contains("#EXT-X-BYTERANGE:2000@1000"))
+        #expect(playlist.components(separatedBy: mediaURI.absoluteString).count == 4)
+    }
+
+    @Test
+    func rejectsIFramePlaylistWithoutTypeOneBoundarySAP() throws {
+        let representation = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let index = SegmentIndex(
+            referenceID: 1,
+            timescale: 1,
+            earliestPresentationTime: 0,
+            firstOffset: 0,
+            references: [
+                SegmentReference(
+                    byteRange: try MediaByteRange(
+                        start: 100,
+                        endInclusive: 199
+                    ),
+                    duration: 1,
+                    startsWithSAP: true,
+                    sapType: 2,
+                    sapDeltaTime: 0
+                )
+            ]
+        )
+
+        #expect(throws: HLSPlaylistBuilderError.nonIndependentIFrameSegments) {
+            try HLSIFramePlaylistBuilder().build(
+                representation: representation,
+                index: index,
+                mediaURI: #require(URL(string: "https://example.invalid/video.mp4"))
+            )
+        }
+    }
+
+    @Test
     func buildsMasterPlaylistForSeparateVideoAndAudioTracks() throws {
         let video = try makeRepresentation(
             id: 80,
@@ -108,6 +187,15 @@ struct HLSPlaylistBuilderTests {
                     )
                 )
             ],
+            iFrameVariants: [
+                HLSIFrameVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: try #require(
+                        URL(string: "bilikit-playlist://video/80-iframe.m3u8")
+                    )
+                )
+            ],
             localizedRenditionNamesURI: URL(
                 string:
                     "bilikit-playlist://metadata/localized-rendition-names.json"
@@ -132,6 +220,150 @@ struct HLSPlaylistBuilderTests {
             )
         )
         #expect(playlist.contains("bilikit-playlist://video/80.m3u8"))
+        #expect(
+            playlist.contains(
+                #"#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=16000,AVERAGE-BANDWIDTH=12000,RESOLUTION=1920x1080,CODECS="avc1.640032",URI="bilikit-playlist://video/80-iframe.m3u8""#
+            )
+        )
+    }
+
+    @Test
+    func usesOnlyConformingPeakWindowsForRegularAndIFrameVariants() throws {
+        let video = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let audio = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let videoIndex = try makeIndex(
+            byteCounts: [1_000, 1_125, 1_000],
+            durations: [4, 9, 4],
+            timescale: 10
+        )
+        let audioIndex = try makeIndex(
+            byteCounts: [100],
+            durations: [1]
+        )
+
+        let playlist = try HLSMasterPlaylistBuilder().build(
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://video/80.m3u8")
+                    )
+                )
+            ],
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: audio,
+                    index: audioIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/30280.m3u8")
+                    )
+                )
+            ],
+            iFrameVariants: [
+                HLSIFrameVariant(
+                    representation: video,
+                    index: videoIndex,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://video/80-iframe.m3u8")
+                    )
+                )
+            ]
+        )
+
+        #expect(
+            playlist.contains(
+                "#EXT-X-STREAM-INF:BANDWIDTH=13877,AVERAGE-BANDWIDTH=15506,"
+            )
+        )
+        #expect(
+            playlist.contains(
+                "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=13077,AVERAGE-BANDWIDTH=14706,"
+            )
+        )
+    }
+
+    @Test
+    func rejectsIFrameVariantThatOnlySharesTheRegularVariantID() throws {
+        let video = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let mismatchedVideo = try makeRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "hvc1.1.6.L120.B0",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: 30
+            )
+        )
+        let audio = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let index = try makeIndex(byteCounts: [1_000], durations: [1])
+
+        #expect(throws: HLSPlaylistBuilderError.unknownIFrameVariant(80)) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [
+                    HLSVideoVariant(
+                        representation: video,
+                        index: index,
+                        playlistURI: #require(
+                            URL(string: "bilikit-playlist://video/80.m3u8")
+                        )
+                    )
+                ],
+                audioRenditions: [
+                    try makeAudioRendition(
+                        representation: audio,
+                        index: index,
+                        playlistURI: #require(
+                            URL(string: "bilikit-playlist://audio/30280.m3u8")
+                        )
+                    )
+                ],
+                iFrameVariants: [
+                    HLSIFrameVariant(
+                        representation: mismatchedVideo,
+                        index: index,
+                        playlistURI: #require(
+                            URL(
+                                string:
+                                    "bilikit-playlist://video/80-iframe.m3u8"
+                            )
+                        )
+                    )
+                ]
+            )
+        }
     }
 
     @Test
@@ -662,7 +894,8 @@ struct HLSPlaylistBuilderTests {
 
     private func makeIndex(
         byteCounts: [Int64],
-        durations: [UInt32]
+        durations: [UInt32],
+        timescale: UInt32 = 1
     ) throws -> SegmentIndex {
         #expect(byteCounts.count == durations.count)
         var offset: Int64 = 0
@@ -683,7 +916,7 @@ struct HLSPlaylistBuilderTests {
         }
         return SegmentIndex(
             referenceID: 1,
-            timescale: 1,
+            timescale: timescale,
             earliestPresentationTime: 0,
             firstOffset: 0,
             references: references
