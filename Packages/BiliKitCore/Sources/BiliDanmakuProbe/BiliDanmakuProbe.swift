@@ -108,6 +108,7 @@ struct BiliDanmakuProbe {
     private static func safeName(_ error: DanmakuApplicationError) -> String {
         switch error {
         case .invalidRequest: "invalid-request"
+        case .authenticationInvalid: "authentication-invalid"
         case .requestRestricted: "request-restricted"
         case .transportFailure: "transport-failure"
         case .invalidResponse: "invalid-response"

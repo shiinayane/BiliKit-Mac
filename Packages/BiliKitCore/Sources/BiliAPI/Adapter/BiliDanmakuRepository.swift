@@ -44,8 +44,10 @@ public struct BiliDanmakuRepository: DanmakuSegmentRepository, Sendable {
             .invalidResponse
         case .httpStatus, .apiRejected:
             .unavailable
-        case .authorizationRequired, .authenticationInvalid,
-            .authorizationUnavailable, .nonJSONResponse, .invalidWBIKey,
+        case .authenticationInvalid:
+            .authenticationInvalid
+        case .authorizationRequired, .authorizationUnavailable,
+            .nonJSONResponse, .invalidWBIKey,
             .signingFailed, .invalidMediaData, .invalidSubtitleData,
             .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio:
             .invalidResponse

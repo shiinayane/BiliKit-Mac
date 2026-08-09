@@ -20,6 +20,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
     private let useCase: DanmakuSegmentUseCase
     private let timeline: any PlaybackTimelineProviding
     private weak var presentationSink: (any DanmakuPresentationSink)?
+    private var authenticationInvalidationHandler: @MainActor () -> Void = {}
     private var scheduler = DanmakuScheduler()
     private var presentationEnabled = true
     private var presentationFilter = DanmakuFilter()
@@ -28,6 +29,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
     private var timelineTask: Task<Void, Never>?
     private var loadTasks: [Int: Task<Void, Never>] = [:]
     private var failedSegmentIndices: Set<Int> = []
+    private var authenticationInvalidationReported = false
     private var continuations: [UUID: AsyncStream<DanmakuBatch>.Continuation] = [:]
 
     public init(
@@ -81,6 +83,12 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         }
     }
 
+    public func setAuthenticationInvalidationHandler(
+        _ handler: @escaping @MainActor () -> Void
+    ) {
+        authenticationInvalidationHandler = handler
+    }
+
     public func setEnabled(_ enabled: Bool) {
         guard presentationEnabled != enabled else { return }
         presentationEnabled = enabled
@@ -130,6 +138,7 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         }
         loadTasks.removeAll(keepingCapacity: false)
         failedSegmentIndices.removeAll(keepingCapacity: false)
+        authenticationInvalidationReported = false
         identity = nil
         scheduler.reset()
         state = .idle
@@ -201,6 +210,12 @@ public final class DanmakuSession: DanmakuPresentationControlling {
                 self.loadTasks[index] = nil
                 self.failedSegmentIndices.insert(index)
                 self.state = .failed(identity, error)
+                if error == .authenticationInvalid,
+                    !self.authenticationInvalidationReported
+                {
+                    self.authenticationInvalidationReported = true
+                    self.authenticationInvalidationHandler()
+                }
             } catch {
                 guard let self,
                     self.generation == requestGeneration,

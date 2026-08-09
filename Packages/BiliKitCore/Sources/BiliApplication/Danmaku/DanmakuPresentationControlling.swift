@@ -27,6 +27,9 @@ public struct DanmakuOpacity: Sendable, Equatable {
 @MainActor
 /// 让 Feature 驱动弹幕会话开始、可见性与完整停止，而不暴露 scheduler 或 renderer。
 public protocol DanmakuPresentationControlling: AnyObject {
+    func setAuthenticationInvalidationHandler(
+        _ handler: @escaping @MainActor () -> Void
+    )
     func start(for identity: PlaybackItemIdentity)
     func setEnabled(_ enabled: Bool)
     func setModeVisibility(
@@ -37,4 +40,10 @@ public protocol DanmakuPresentationControlling: AnyObject {
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel)
     func setOpacity(_ opacity: DanmakuOpacity)
     func stop()
+}
+
+extension DanmakuPresentationControlling {
+    public func setAuthenticationInvalidationHandler(
+        _ handler: @escaping @MainActor () -> Void
+    ) {}
 }

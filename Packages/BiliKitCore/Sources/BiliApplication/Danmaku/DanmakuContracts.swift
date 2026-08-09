@@ -2,6 +2,7 @@ import BiliModels
 
 public enum DanmakuApplicationError: Error, Sendable, Equatable {
     case invalidRequest
+    case authenticationInvalid
     case requestRestricted
     case transportFailure
     case invalidResponse

@@ -81,3 +81,32 @@ enum DanmakuPayloadDecoder {
         Double(min(max(value, 12), 64))
     }
 }
+
+#if DEBUG
+    struct DanmakuPoolProbeSummary: Sendable, Equatable {
+        let bytes: Int
+        let rawEventCount: Int
+        let basicEventCount: Int
+        let rawModeCounts: [Int32: Int]
+
+        static func make(from data: Data) throws -> Self {
+            let payload: Bilikit_Danmaku_SegmentReply
+            do {
+                payload = try Bilikit_Danmaku_SegmentReply(serializedBytes: data)
+            } catch {
+                throw BiliAPIError.invalidDanmakuData
+            }
+            let events = try DanmakuPayloadDecoder.events(from: data)
+            let modeCounts = Dictionary(
+                grouping: payload.elements,
+                by: \Bilikit_Danmaku_Element.mode
+            ).mapValues(\.count)
+            return Self(
+                bytes: data.count,
+                rawEventCount: payload.elements.count,
+                basicEventCount: events.count,
+                rawModeCounts: modeCounts
+            )
+        }
+    }
+#endif

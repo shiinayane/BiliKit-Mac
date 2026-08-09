@@ -198,9 +198,42 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             return isAllowedPlaybackQuery(components.queryItems)
         case "/x/player/wbi/v2":
             return isAllowedPlayerWBIQuery(components.queryItems)
+        case "/x/v2/dm/wbi/web/seg.so":
+            return isAllowedDanmakuWBIQuery(components.queryItems)
         default:
             return false
         }
+    }
+
+    private static func isAllowedDanmakuWBIQuery(
+        _ queryItems: [URLQueryItem]?
+    ) -> Bool {
+        guard let queryItems, queryItems.count == 5 else { return false }
+        var values: [String: String] = [:]
+        for item in queryItems {
+            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
+                return false
+            }
+        }
+        guard values.count == 5,
+            Set(values.keys) == ["type", "oid", "segment_index", "w_rid", "wts"],
+            values["type"] == "1",
+            let oid = values["oid"].flatMap(Int64.init),
+            oid > 0,
+            let segmentIndex = values["segment_index"].flatMap(Int.init),
+            (1...10_000).contains(segmentIndex),
+            let timestamp = values["wts"].flatMap(Int64.init),
+            timestamp > 0,
+            let signature = values["w_rid"],
+            signature.count == 32,
+            signature.allSatisfy({
+                $0.isASCII
+                    && ($0.isNumber || ("a"..."f").contains($0))
+            })
+        else {
+            return false
+        }
+        return true
     }
 
     private static func isAllowedPlaybackQuery(

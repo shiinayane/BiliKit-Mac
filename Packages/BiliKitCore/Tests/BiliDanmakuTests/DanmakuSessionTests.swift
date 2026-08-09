@@ -188,6 +188,42 @@ struct DanmakuSessionTests {
     }
 
     @Test
+    func authenticationInvalidationIsReportedOncePerSession() async throws {
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1AuthDanmakuFixture",
+            cid: 40
+        )
+        let repository = AlwaysFailingDanmakuRepository(
+            error: .authenticationInvalid
+        )
+        let timeline = SessionTimeline()
+        let session = DanmakuSession(
+            useCase: DanmakuSegmentUseCase(repository: repository),
+            timeline: timeline
+        )
+        var invalidationCount = 0
+        session.setAuthenticationInvalidationHandler {
+            invalidationCount += 1
+        }
+
+        session.start(for: identity)
+        timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
+        try await repository.waitForRequestCount(2, identity: identity)
+        await session.waitForLoads()
+
+        #expect(invalidationCount == 1)
+        #expect(session.state == .failed(identity, .authenticationInvalid))
+
+        session.stop()
+        session.start(for: identity)
+        timeline.publish(snapshot(identity: identity, position: 0, generation: 2))
+        try await repository.waitForRequestCount(4, identity: identity)
+        await session.waitForLoads()
+
+        #expect(invalidationCount == 2)
+    }
+
+    @Test
     func failedSegmentMemoryIsClearedForReplacementAndStop() async throws {
         let first = PlaybackItemIdentity(
             bvid: "BV1FirstFailureFixture",
@@ -407,8 +443,13 @@ private struct ImmediateDanmakuRepository: DanmakuSegmentRepository {
 }
 
 private actor AlwaysFailingDanmakuRepository: DanmakuSegmentRepository {
+    private let error: DanmakuApplicationError
     private var counts: [PlaybackItemIdentity: Int] = [:]
     private var events: [PlaybackItemIdentity: TestEventCounter] = [:]
+
+    init(error: DanmakuApplicationError = .unavailable) {
+        self.error = error
+    }
 
     func segment(
         index _: Int,
@@ -416,7 +457,7 @@ private actor AlwaysFailingDanmakuRepository: DanmakuSegmentRepository {
     ) async throws -> DanmakuSegment {
         counts[identity, default: 0] += 1
         await event(for: identity).signal()
-        throw DanmakuApplicationError.unavailable
+        throw error
     }
 
     func requestCount(for identity: PlaybackItemIdentity) -> Int {
