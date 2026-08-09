@@ -340,7 +340,7 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
-    func surfaceLifecycleDrainsAllocatorAndStatistics() {
+    func surfaceResizePreservesActiveUntilOwnerReplacement() {
         let backend = RecordingRenderingBackend()
         let controller = DanmakuPresentationController(
             backend: backend,
@@ -361,35 +361,39 @@ struct DanmakuPresentationControllerTests {
         #expect(controller.statistics.active == 1)
         let clearCount = backend.clearCount
 
-        #expect(controller.attachSurface(ownerID: replacementOwner))
-
-        #expect(backend.clearCount == clearCount + 1)
-        #expect(controller.statistics.active == 0)
-        #expect(!controller.detachSurface(ownerID: firstOwner))
-        #expect(backend.clearCount == clearCount + 1)
-
         #expect(
             !controller.updateSurface(
                 zeroConfiguration(),
-                ownerID: firstOwner
+                ownerID: replacementOwner
             )
         )
         #expect(
             controller.updateSurface(
                 zeroConfiguration(),
-                ownerID: replacementOwner
+                ownerID: firstOwner
             )
         )
         #expect(
             backend.surfaceSizes.last
                 == DanmakuTextMetrics(width: 0, height: 0)
         )
+        #expect(backend.clearCount == clearCount)
+        #expect(controller.statistics.active == 1)
         #expect(
             controller.updateSurface(
                 configuration(maximumActiveCount: 1),
-                ownerID: replacementOwner
+                ownerID: firstOwner
             )
         )
+        #expect(backend.clearCount == clearCount)
+        #expect(controller.statistics.active == 1)
+
+        #expect(controller.attachSurface(ownerID: replacementOwner))
+        #expect(backend.clearCount == clearCount + 1)
+        #expect(controller.statistics.active == 0)
+        #expect(!controller.detachSurface(ownerID: firstOwner))
+        #expect(backend.clearCount == clearCount + 1)
+
         controller.apply(
             update(
                 identity: identity,
@@ -400,6 +404,83 @@ struct DanmakuPresentationControllerTests {
         )
         #expect(backend.renderedEventIDs.last == "after-attach")
         #expect(controller.statistics.active == 1)
+    }
+
+    @Test
+    func rendererResizeKeepsScrollingAnimationAndRelayoutsFixedModes() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 300)
+        let scrolling = event(id: "resize-scroll", mode: .scrolling)
+        let top = event(id: "resize-top", mode: .top)
+        let bottom = event(id: "resize-bottom", mode: .bottom)
+
+        for (fixture, originY) in [
+            (scrolling, 60.0),
+            (top, 0.0),
+            (bottom, 240.0),
+        ] {
+            let metrics = renderer.measure(fixture)
+            renderer.render(
+                placement(
+                    event: fixture,
+                    metrics: metrics,
+                    originY: originY
+                )
+            )
+        }
+
+        let scrollingLayer = try #require(
+            renderer.textLayer(forEventID: scrolling.id)
+        )
+        let topLayer = try #require(renderer.textLayer(forEventID: top.id))
+        let bottomLayer = try #require(
+            renderer.textLayer(forEventID: bottom.id)
+        )
+        let scrollingPosition = scrollingLayer.position
+        let topY = topLayer.position.y
+        let bottomY = bottomLayer.position.y
+        let epoch = renderer.renderEpoch
+        let scrollingAnimation = try #require(
+            scrollingLayer.animation(forKey: "danmaku") as? CABasicAnimation
+        )
+        let scrollingFrom = try #require(
+            scrollingAnimation.fromValue as? NSNumber
+        )
+        let scrollingTo = try #require(
+            scrollingAnimation.toValue as? NSNumber
+        )
+        let scrollingDuration = scrollingAnimation.duration
+        let rootTiming = (
+            beginTime: renderer.rootLayer.beginTime,
+            timeOffset: renderer.rootLayer.timeOffset,
+            speed: renderer.rootLayer.speed
+        )
+
+        renderer.updateSurfaceSize(width: 1_200, height: 500)
+
+        #expect(renderer.renderEpoch == epoch)
+        #expect(renderer.activeLayerCount == 3)
+        #expect(scrollingLayer.position == scrollingPosition)
+        let resizedAnimation = try #require(
+            scrollingLayer.animation(forKey: "danmaku") as? CABasicAnimation
+        )
+        #expect((resizedAnimation.fromValue as? NSNumber) == scrollingFrom)
+        #expect((resizedAnimation.toValue as? NSNumber) == scrollingTo)
+        #expect(resizedAnimation.duration == scrollingDuration)
+        #expect(renderer.rootLayer.beginTime == rootTiming.beginTime)
+        #expect(renderer.rootLayer.timeOffset == rootTiming.timeOffset)
+        #expect(renderer.rootLayer.speed == rootTiming.speed)
+        #expect(topLayer.position == CGPoint(x: 600, y: topY))
+        #expect(bottomLayer.position == CGPoint(x: 600, y: bottomY + 200))
+
+        renderer.updateSurfaceSize(width: 0, height: 0)
+        renderer.updateSurfaceSize(width: 1_200, height: 500)
+
+        #expect(renderer.renderEpoch == epoch)
+        #expect(renderer.activeLayerCount == 3)
+        #expect(scrollingLayer.position == scrollingPosition)
+        #expect(topLayer.position == CGPoint(x: 600, y: topY))
+        #expect(bottomLayer.position == CGPoint(x: 600, y: bottomY + 200))
     }
 
     @Test
@@ -746,6 +827,7 @@ struct DanmakuPresentationControllerTests {
             ),
             laneIndex: 0,
             originY: originY,
+            surfaceWidthAtAdmission: 800,
             admittedAtSeconds: 1,
             expiresAtSeconds: 5
         )

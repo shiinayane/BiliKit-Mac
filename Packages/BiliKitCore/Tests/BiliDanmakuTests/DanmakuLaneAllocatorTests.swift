@@ -185,6 +185,31 @@ struct DanmakuLaneAllocatorTests {
     }
 
     @Test
+    func extremeFiniteHeightCapsLaneCountBeforeIntegerConversion() {
+        let maximumActiveCount =
+            DanmakuLaneConfiguration.hardMaximumActiveCount
+        var allocator = DanmakuLaneAllocator(
+            configuration: DanmakuLaneConfiguration(
+                surfaceWidth: 1_000,
+                surfaceHeight: .greatestFiniteMagnitude,
+                laneHeight: 1,
+                minimumHorizontalGap: 12,
+                maximumActiveCount: maximumActiveCount,
+                displayAreaFraction: 1
+            )
+        )
+        let requests = (0...maximumActiveCount).map {
+            request(id: "extreme-\($0)", mode: .top, height: 1)
+        }
+
+        let admission = allocator.admit(requests, at: 0)
+
+        #expect(admission.admitted.count == maximumActiveCount)
+        #expect(admission.dropCounts.capacity == 1)
+        #expect(allocator.activeCount == maximumActiveCount)
+    }
+
+    @Test
     func invalidGeometryHardLimitAndResizeStayBounded() {
         var allocator = DanmakuLaneAllocator(configuration: configuration())
         _ = allocator.admit([request(id: "active")], at: 0)
@@ -194,18 +219,18 @@ struct DanmakuLaneAllocatorTests {
         )
         #expect(tooTall.dropCounts.invalidRequest == 1)
 
-        let drained = allocator.updateConfiguration(
+        allocator.updateConfiguration(
             configuration(surfaceWidth: 0)
         )
-        #expect(drained.map(\.request.event.id) == ["active"])
-        #expect(allocator.activeCount == 0)
+        #expect(allocator.activeCount == 1)
         let unavailable = allocator.admit(
             [request(id: "unavailable")],
             at: 1
         )
         #expect(unavailable.dropCounts.invalidRequest == 1)
+        #expect(allocator.activeCount == 1)
 
-        _ = allocator.updateConfiguration(
+        allocator.updateConfiguration(
             configuration(
                 maximumActiveCount:
                     DanmakuLaneConfiguration.hardMaximumActiveCount + 1
@@ -216,9 +241,9 @@ struct DanmakuLaneAllocatorTests {
             at: 2
         )
         #expect(overHardLimit.dropCounts.invalidRequest == 1)
-        #expect(allocator.activeCount == 0)
+        #expect(allocator.activeCount == 1)
 
-        _ = allocator.updateConfiguration(
+        allocator.updateConfiguration(
             configuration(displayAreaFraction: 1.01)
         )
         let invalidCoverage = allocator.admit(
@@ -226,7 +251,49 @@ struct DanmakuLaneAllocatorTests {
             at: 3
         )
         #expect(invalidCoverage.dropCounts.invalidRequest == 1)
-        #expect(allocator.activeCount == 0)
+        #expect(allocator.activeCount == 1)
+
+        allocator.updateConfiguration(configuration())
+        let recovered = allocator.admit(
+            [request(id: "recovered")],
+            at: 8
+        )
+        #expect(recovered.expired.map(\.request.event.id) == ["active"])
+        #expect(recovered.admitted.map(\.request.event.id) == ["recovered"])
+    }
+
+    @Test
+    func resizePreservesActiveAndUsesEachAdmissionWidthForCollision() throws {
+        var allocator = DanmakuLaneAllocator(
+            configuration: configuration(
+                surfaceWidth: 800,
+                surfaceHeight: 20
+            )
+        )
+        let first = allocator.admit(
+            [request(id: "old-surface", duration: 10)],
+            at: 0
+        )
+        #expect(first.admitted.count == 1)
+        #expect(first.admitted.first?.surfaceWidthAtAdmission == 800)
+
+        allocator.updateConfiguration(
+            configuration(
+                surfaceWidth: 1_200,
+                surfaceHeight: 20
+            )
+        )
+        #expect(allocator.activeCount == 1)
+
+        let following = allocator.admit(
+            [request(id: "new-surface", duration: 20)],
+            at: 0.2
+        )
+        let placement = try #require(following.admitted.first)
+        #expect(following.dropCounts.total == 0)
+        #expect(placement.surfaceWidthAtAdmission == 1_200)
+        #expect(placement.laneIndex == first.admitted.first?.laneIndex)
+        #expect(allocator.activeCount == 2)
     }
 
     @Test

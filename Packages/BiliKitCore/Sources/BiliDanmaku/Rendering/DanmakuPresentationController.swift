@@ -169,12 +169,11 @@ public final class DanmakuPresentationController:
         _ configuration: DanmakuLaneConfiguration
     ) {
         self.configuration = configuration
-        _ = allocator.updateConfiguration(configuration)
+        allocator.updateConfiguration(configuration)
         backend.updateSurfaceSize(
             width: configuration.surfaceWidth,
             height: configuration.surfaceHeight
         )
-        statistics.updateActive(0)
     }
 
     @discardableResult
