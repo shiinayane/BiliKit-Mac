@@ -190,7 +190,7 @@ public struct DASHToHLSBridge: Sendable {
         }
         defer { catalogTask?.cancel() }
 
-        async let loadedAudioRenditions = loadAudioRenditions(
+        async let audioRenditionsTask = loadAudioRenditions(
             audioTracks,
             headers: headers
         )
@@ -198,9 +198,23 @@ public struct DASHToHLSBridge: Sendable {
             videos,
             headers: headers
         )
-        let audioRenditions = try await loadedAudioRenditions
+        let loadedAudioRenditions = try await audioRenditionsTask
         let videoIndices = try await loadedVideoIndices
         let subtitleCatalog = try await freezeCatalog(catalogTask)
+        guard
+            let canonicalAudio = loadedAudioRenditions.first(where: {
+                $0.selectedTrack.track.isDefault
+            })
+        else {
+            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
+        }
+        let audioRenditions = loadedAudioRenditions.filter { rendition in
+            rendition.selectedTrack.track.isDefault
+                || hasMatchingAudioTimeline(
+                    rendition.index.index,
+                    canonical: canonicalAudio.index.index
+                )
+        }
 
         let server = serverFactory(rangeClient)
         do {
@@ -258,15 +272,6 @@ public struct DASHToHLSBridge: Sendable {
                     )
                 )
             }
-            registrations.append(
-                LoopbackRouteRegistration(
-                    relativePath: "metadata/localized-rendition-names.json",
-                    resource: try localizedRenditionNamesResource(
-                        for: audioTracks.map(\.track)
-                    )
-                )
-            )
-
             var variants: [HLSVideoVariant] = []
             variants.reserveCapacity(videos.count)
             var iFrameVariants: [HLSIFrameVariant] = []
@@ -341,6 +346,7 @@ public struct DASHToHLSBridge: Sendable {
 
             let mediaRegistrationCount = registrations.count
             let masterPlaylist: String
+            let localizedSubtitleCatalog: [NativeSubtitleCatalogEntry]
             do {
                 let subtitleRenditions = try makeSubtitleRoutes(
                     catalog: subtitleCatalog,
@@ -356,6 +362,7 @@ public struct DASHToHLSBridge: Sendable {
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
+                localizedSubtitleCatalog = subtitleCatalog
             } catch {
                 registrations.removeSubrange(mediaRegistrationCount...)
                 masterPlaylist = try masterPlaylistBuilder.build(
@@ -364,7 +371,16 @@ public struct DASHToHLSBridge: Sendable {
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL
                 )
+                localizedSubtitleCatalog = []
             }
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: "metadata/localized-rendition-names.json",
+                    resource: try localizedRenditionNamesResource(
+                        subtitleCatalog: localizedSubtitleCatalog
+                    )
+                )
+            )
             registrations.append(
                 LoopbackRouteRegistration(
                     relativePath: "master.m3u8",
@@ -467,22 +483,34 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     private func localizedRenditionNamesResource(
-        for tracks: [PlaybackAudioTrack]
+        subtitleCatalog: [NativeSubtitleCatalogEntry]
     ) throws -> LoopbackPlaybackResource {
         var localizedNames: [String: [String: String]] = [:]
-        for track in tracks {
-            let translations: [String: String]
-            switch track.role {
-            case .original:
-                translations = [
-                    "en": "Original",
-                    "ja": "オリジナル",
-                    "zh": "原声",
-                ]
-            case .machineGenerated:
-                continue
+        let subtitleLanguageGroups = Dictionary(
+            grouping: subtitleCatalog,
+            by: { primaryLanguageSubtag($0.languageTag) }
+        )
+        for (language, languageEntries) in subtitleLanguageGroups
+        where language != "und" && languageEntries.count > 1 {
+            let labelGroups = Dictionary(
+                grouping: languageEntries,
+                by: { baseSubtitleLabel($0.label) }
+            )
+            for entries in labelGroups.values where entries.count > 1 {
+                let characteristicSignatures = Set(
+                    entries.map {
+                        $0.characteristics.sorted().joined(separator: ",")
+                    }
+                )
+                guard characteristicSignatures.count == entries.count else {
+                    continue
+                }
+                let translations = localizedLanguageNames(for: language)
+                guard !translations.isEmpty else { continue }
+                for entry in entries where localizedNames[entry.label] == nil {
+                    localizedNames[entry.label] = translations
+                }
             }
-            localizedNames[track.displayName] = translations
         }
         let body = try JSONSerialization.data(
             withJSONObject: localizedNames,
@@ -492,6 +520,32 @@ public struct DASHToHLSBridge: Sendable {
             data: body,
             contentType: "application/json; charset=utf-8"
         )
+    }
+
+    private func primaryLanguageSubtag(_ languageTag: String) -> String {
+        languageTag.split(separator: "-", maxSplits: 1).first.map {
+            String($0).lowercased()
+        } ?? "und"
+    }
+
+    private func baseSubtitleLabel(_ label: String) -> String {
+        let suffix = "（AI）"
+        guard label.hasSuffix(suffix) else { return label }
+        return String(label.dropLast(suffix.count))
+    }
+
+    private func localizedLanguageNames(
+        for language: String
+    ) -> [String: String] {
+        var names: [String: String] = [:]
+        for interfaceLanguage in ["en", "ja", "zh"] {
+            if let name = Locale(identifier: interfaceLanguage)
+                .localizedString(forLanguageCode: language)
+            {
+                names[interfaceLanguage] = name
+            }
+        }
+        return names
     }
 
     private func freezeCatalog(
@@ -606,6 +660,20 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     func hasMatchingSubtitleTimeline(
+        _ candidate: SegmentIndex,
+        canonical: SegmentIndex
+    ) -> Bool {
+        hasMatchingTimelineOrigin(candidate, canonical: canonical)
+    }
+
+    func hasMatchingAudioTimeline(
+        _ candidate: SegmentIndex,
+        canonical: SegmentIndex
+    ) -> Bool {
+        hasMatchingTimelineOrigin(candidate, canonical: canonical)
+    }
+
+    private func hasMatchingTimelineOrigin(
         _ candidate: SegmentIndex,
         canonical: SegmentIndex
     ) -> Bool {

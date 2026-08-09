@@ -54,7 +54,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         )
         view.player = player
         view.startObservingPlayerItemChanges()
-        view.controlsStyle = .floating
+        view.controlsStyle = .default
         view.showsFullScreenToggleButton = true
         view.allowsPictureInPicturePlayback = true
         return view

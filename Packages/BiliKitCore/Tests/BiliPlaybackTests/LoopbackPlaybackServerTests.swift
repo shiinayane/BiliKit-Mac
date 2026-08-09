@@ -2054,6 +2054,83 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
+    func bridgeOmitsMachineGeneratedAudioWithShiftedTimeline() async throws {
+        let videoData = try fixtureData(named: "video-avc")
+        let originalData = try fixtureData(named: "audio-aac")
+        let shiftedAIData = try settingSIDXEarliestPresentationTime(
+            90,
+            in: originalData
+        )
+        let videoURL = try #require(
+            URL(string: "https://multi-audio-timeline.example/video")
+        )
+        let originalURL = try #require(
+            URL(string: "https://multi-audio-timeline.example/original")
+        )
+        let aiURL = try #require(
+            URL(string: "https://multi-audio-timeline.example/ai-en")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: videoData,
+            primaryURL: videoURL
+        ).representation
+        let original = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: originalData,
+            primaryURL: originalURL
+        ).representation
+        let ai = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: shiftedAIData,
+            primaryURL: aiURL
+        ).representation
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(
+                transport: FixtureRangeTransport(
+                    media: [
+                        videoURL: videoData,
+                        originalURL: originalData,
+                        aiURL: shiftedAIData,
+                    ],
+                    failingURLs: []
+                )
+            )
+        )
+
+        let prepared = try await bridge.prepare(
+            video: video,
+            audioTracks: [
+                makeSelectedAudioTrack(representation: original),
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    displayName: "English（AI）",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    representation: ai
+                ),
+            ]
+        )
+        defer { prepared.stop() }
+        let masterData = try await URLSession.shared.data(from: prepared.url).0
+        let master = try #require(String(data: masterData, encoding: .utf8))
+
+        #expect(master.contains(#"GROUP-ID="audio-30280",NAME="原声""#))
+        #expect(!master.contains("English（AI）"))
+        #expect(!master.contains("/audio/1/30280.m3u8"))
+    }
+
+    @Test
     func bridgeDoesNotBorrowAudioFormatFromDifferentCDN() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
@@ -2266,6 +2343,39 @@ struct LoopbackPlaybackServerTests {
             cid: 900_002
         )
 
+        let duplicateTrack = PlaybackAudioTrack(
+            id: "duplicate",
+            displayName: "原声",
+            role: .original,
+            isDefault: true,
+            isAutoselect: true,
+            representations: [audio]
+        )
+        let duplicateAITrack = PlaybackAudioTrack(
+            id: "duplicate",
+            displayName: "English（AI）",
+            languageTag: "en",
+            role: .machineGenerated,
+            isDefault: false,
+            isAutoselect: true,
+            representations: [alternateAudio]
+        )
+        await #expect(
+            throws: AVPlayerEngineError.duplicateAudioTrackID("duplicate")
+        ) {
+            try await engine.load(
+                PlaybackRequest(
+                    manifest: PlaybackManifest(
+                        videoRepresentations: [highVideo, lowVideo],
+                        audioTracks: [duplicateTrack, duplicateAITrack]
+                    )
+                ),
+                identity: identity
+            )
+        }
+        #expect(engine.player.currentItem == nil)
+        #expect(engine.currentTimelineSnapshot == .idle)
+
         try await engine.load(
             PlaybackRequest(
                 manifest: PlaybackManifest(
@@ -2305,6 +2415,7 @@ struct LoopbackPlaybackServerTests {
         #expect(item.preferredMaximumResolution == .zero)
         #expect(item.preferredForwardBufferDuration == 0)
         #expect(!item.startsOnFirstEligibleVariant)
+        #expect(engine.currentTimelineSnapshot.state == .ready)
         #expect(master.contains("#EXT-X-VERSION:7\n"))
         #expect(
             master.contains(
@@ -2317,13 +2428,7 @@ struct LoopbackPlaybackServerTests {
                 #"DATA-ID="_hls.localized-rendition-names""#
             )
         )
-        #expect(
-            localizedNames["原声"] == [
-                "en": "Original",
-                "ja": "オリジナル",
-                "zh": "原声",
-            ]
-        )
+        #expect(localizedNames.isEmpty)
         #expect(
             Set(
                 variants.compactMap {
@@ -2453,6 +2558,16 @@ struct LoopbackPlaybackServerTests {
         let group = try #require(
             try await item.asset.loadMediaSelectionGroup(for: .legible)
         )
+        let asset = try #require(item.asset as? AVURLAsset)
+        let localizedNamesURL = asset.url.deletingLastPathComponent()
+            .appending(path: "metadata/localized-rendition-names.json")
+        let localizedNamesData = try await URLSession.shared.data(
+            from: localizedNamesURL
+        ).0
+        let localizedNames = try #require(
+            try JSONSerialization.jsonObject(with: localizedNamesData)
+                as? [String: [String: String]]
+        )
         let machineGenerated = AVMediaCharacteristic(
             rawValue: "public.machine-generated"
         )
@@ -2467,6 +2582,9 @@ struct LoopbackPlaybackServerTests {
         #expect(group.options.allSatisfy { !$0.displayName.isEmpty })
         #expect(Set(group.options.map(\.displayName)).count == 3)
         #expect(automaticSubtitles.count == 2)
+        #expect(localizedNames["中文"]?["zh"] == "中文")
+        #expect(localizedNames["中文（AI）"]?["zh"] == "中文")
+        #expect(localizedNames["English（AI）"] == nil)
         #expect(
             group.options.allSatisfy {
                 !$0.hasMediaCharacteristic(.isOriginalContent)
@@ -2647,7 +2765,17 @@ struct LoopbackPlaybackServerTests {
         let asset = try #require(item.asset as? AVURLAsset)
         let masterBody = try await URLSession.shared.data(from: asset.url).0
         let master = try #require(String(data: masterBody, encoding: .utf8))
+        let localizedNamesURL = asset.url.deletingLastPathComponent()
+            .appending(path: "metadata/localized-rendition-names.json")
+        let localizedNamesData = try await URLSession.shared.data(
+            from: localizedNamesURL
+        ).0
+        let localizedNames = try #require(
+            try JSONSerialization.jsonObject(with: localizedNamesData)
+                as? [String: [String: String]]
+        )
         #expect(!master.contains("TYPE=SUBTITLES"))
+        #expect(localizedNames.isEmpty)
         #expect(item.status == .readyToPlay)
         engine.stop()
     }
@@ -3622,6 +3750,35 @@ struct LoopbackPlaybackServerTests {
         return result
     }
 
+    private func settingSIDXEarliestPresentationTime(
+        _ value: UInt64,
+        in data: Data
+    ) throws -> Data {
+        var result = data
+        let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
+        let valueOffset = sidx.offset + 20
+        switch result[sidx.offset + 8] {
+        case 0:
+            guard value <= UInt32.max else {
+                throw LoopbackFixtureError.invalidFixture
+            }
+            var encoded = UInt32(value).bigEndian
+            result.replaceSubrange(
+                valueOffset..<(valueOffset + 4),
+                with: withUnsafeBytes(of: &encoded) { Data($0) }
+            )
+        case 1:
+            var encoded = value.bigEndian
+            result.replaceSubrange(
+                valueOffset..<(valueOffset + 8),
+                with: withUnsafeBytes(of: &encoded) { Data($0) }
+            )
+        default:
+            throw LoopbackFixtureError.invalidFixture
+        }
+        return result
+    }
+
     private func readUInt32(in data: Data, at offset: Int) -> UInt32 {
         data[offset..<(offset + 4)].reduce(UInt32(0)) { value, byte in
             (value << 8) | UInt32(byte)
@@ -4504,7 +4661,19 @@ private struct UnsafeLabelNativeSubtitleRepository: SubtitleRepository {
                 languageCode: "unknown",
                 displayName: "unsafe\\label",
                 kind: .unknown
-            )
+            ),
+            SubtitleTrack(
+                id: "authored-duplicate-label",
+                languageCode: "zh",
+                displayName: "中文（AI）",
+                kind: .standard
+            ),
+            SubtitleTrack(
+                id: "automatic-duplicate-label",
+                languageCode: "ai-zh",
+                displayName: "中文",
+                kind: .automatic
+            ),
         ]
     }
 

@@ -62,9 +62,11 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 
 - fixture 只能使用 `example.invalid`、虚构标识和自写文本；不保存现场响应 body。
 - 现场探针不得打印 BVID、CID、标题、字幕/弹幕正文、完整 URL、用户标识或凭据。
-- AI 音轨探针还不得打印语言标题、媒体 host 或响应正文；只允许记录目录与 AAC 数量、
-  production type 集合、所选语言是否被回显、来源集合是否变化、SIDX 是否可读及媒体请求
-  是否无 Cookie。
+- AI 音轨探针还不得打印语言标题、媒体 host、具体系统菜单文案或响应正文；只允许记录目录、
+  AAC、生产语义轨、系统选项、I-frame variant 与实际 playurl 请求的有界计数，以及
+  production type 集合、语言／production type 是否回显匹配、请求是否未重复、来源集合是否
+  变化、SIDX／I-frame playlist 是否可读、系统名称是否为友好语义、media selection／
+  A → B → A 是否完成、loopback 是否清理，以及媒体请求是否无 Cookie／Authorization。
 - UP 主签名探针不得打印 MID、签名正文或完整 URL；只记录 HTTP／业务分类、MID 是否匹配、
   签名是否存在与长度区间。
 - 验证记录可保存日期、系统、接口路径、认证需求、Content-Type、大小级别、字段名、计数和安全分类。

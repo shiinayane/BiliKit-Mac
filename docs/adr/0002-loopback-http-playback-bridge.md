@@ -33,6 +33,9 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 9. 只有全部 SIDX reference 都从 type-1 SAP 开始且 `SAP_delta_time` 为 0 时，master
    才发布 I-frame rendition。I-frame playlist 继续引用同一媒体 route 的完整 fMP4
    fragment byte range；不预读、缓存或重写远端 fragment。
+10. 同一 HLS AUDIO rendition group 以默认原声的 SIDX 起始时间为 canonical；按各自 timescale
+    归一化后起点不一致的可选 AI 音轨在注册 route 与生成 master 前丢弃，不能把仅有菜单项
+    当作同内容、可无缝切换的证明。
 
 不使用非公开的 AVFoundation header 注入选项。若未来 Apple 提供正式、可验证的替代 API，再通过新 ADR 调整。
 

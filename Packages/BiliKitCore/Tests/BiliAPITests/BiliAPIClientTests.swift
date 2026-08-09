@@ -463,7 +463,8 @@ struct BiliAPIClientTests {
                 ),
                 try semanticAudioResponse(
                     audioPath: "ai-en-audio.m4s",
-                    currentLanguage: "en"
+                    currentLanguage: "en",
+                    currentProductionType: 2
                 ),
             ]
         )
@@ -500,6 +501,37 @@ struct BiliAPIClientTests {
             ) == true
         )
         #expect(playback.mediaHeaders["Cookie"] == nil)
+    }
+
+    @Test(arguments: [Int?.none, Int?.some(1)])
+    func authenticatedPlayURLOmitsAIAudioWithoutMatchingResponseProductionType(
+        currentProductionType: Int?
+    ) async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                ),
+                try semanticAudioResponse(
+                    audioPath: "ai-en-audio.m4s",
+                    currentLanguage: "en",
+                    currentProductionType: currentProductionType
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.map(\.role) == [.original])
+        #expect(await transport.capturedRequests().count == 2)
     }
 
     @Test
@@ -583,6 +615,130 @@ struct BiliAPIClientTests {
         #expect(playback.manifest.audioTracks.count == 1)
         #expect(playback.manifest.audioTracks[0].role == .original)
         #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test
+    func anonymousFallbackProvenanceCannotAuthorizeAdvertisedAIAudio()
+        async throws
+    {
+        let authorizer = MissingThenAuthorizedRequestAuthorizer()
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                )
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.map(\.role) == [.original])
+        #expect(await authorizer.authorizationCount() == 1)
+        #expect(await transport.capturedRequests().count == 1)
+    }
+
+    @Test(arguments: [403, 412])
+    func aiAudioRemoteRestrictionFailsClosed(statusCode: Int) async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                ),
+                HTTPResponse(statusCode: statusCode, body: Data()),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 2)
+    }
+
+    @Test
+    func aiAudioBusinessRejectionFailsClosed() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                ),
+                jsonResponse(#"{"code":-404,"message":"fixture"}"#),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(
+            throws: BiliAPIError.apiRejected(
+                code: -404,
+                message: "fixture"
+            )
+        ) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 2)
+    }
+
+    @Test
+    func aiAudioNonJSONResponseFailsClosed() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                ),
+                HTTPResponse(
+                    statusCode: 200,
+                    headers: ["Content-Type": "text/html"],
+                    body: Data("fixture".utf8)
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.nonJSONResponse) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 2)
+    }
+
+    @Test
+    func aiAudioTransportFailureFailsClosed() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: machineGeneratedEnglishCatalog
+                )
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        await #expect(throws: BiliAPIError.transportFailure) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(await transport.capturedRequests().count == 2)
     }
 
     @Test
@@ -801,6 +957,44 @@ struct BiliAPIClientTests {
             try await playbackTask.value
         }
         #expect(await firstTransport.capturedRequests().count == 1)
+        #expect(replacementTransport.capturedRequests().isEmpty)
+        #expect(firstTransport.wasInvalidated)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func authenticatedPlaybackEpochCannotChangeBetweenBaseAndAIAudio()
+        async throws
+    {
+        let response = try semanticAudioResponse(
+            audioPath: "original-audio.m4s",
+            languageCatalog: machineGeneratedEnglishCatalog
+        )
+        let authorizer = SuspendingSecondRequestAuthorizer()
+        let firstTransport = RecordingInvalidatingAPITransport(
+            response: response
+        )
+        let replacementTransport = RecordingInvalidatingAPITransport(
+            response: response
+        )
+        let transportFactory = SequentialTransportFactory(
+            transports: [firstTransport, replacementTransport]
+        )
+        let client = BiliAPIClient(
+            requestAuthorizer: authorizer,
+            transportFactory: { transportFactory.makeTransport() }
+        )
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await authorizer.waitUntilSecondAuthorizationStarts()
+
+        await client.invalidateAuthenticatedSession()
+        await authorizer.resumeSecondAuthorization()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(firstTransport.capturedRequests().count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1050,6 +1244,19 @@ struct BiliAPIClientTests {
         )
     }
 
+    private var machineGeneratedEnglishCatalog: [String: Any] {
+        [
+            "support": true,
+            "items": [
+                [
+                    "lang": "en",
+                    "title": "English（AI）",
+                    "production_type": 2,
+                ]
+            ],
+        ]
+    }
+
     private func jsonResponse(_ source: String) -> HTTPResponse {
         HTTPResponse(
             statusCode: 200,
@@ -1061,7 +1268,8 @@ struct BiliAPIClientTests {
     private func semanticAudioResponse(
         audioPath: String,
         languageCatalog: [String: Any]? = nil,
-        currentLanguage: String? = nil
+        currentLanguage: String? = nil,
+        currentProductionType: Int? = nil
     ) throws -> HTTPResponse {
         var data: [String: Any] = [
             "dash": [
@@ -1106,6 +1314,9 @@ struct BiliAPIClientTests {
         }
         if let currentLanguage {
             data["cur_language"] = currentLanguage
+        }
+        if let currentProductionType {
+            data["cur_production_type"] = currentProductionType
         }
         return HTTPResponse(
             statusCode: 200,
@@ -1159,6 +1370,29 @@ private actor RecordingRequestAuthorizer: HTTPRequestAuthorizing {
     }
 }
 
+private actor MissingThenAuthorizedRequestAuthorizer: HTTPRequestAuthorizing {
+    private var count = 0
+
+    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
+        count += 1
+        if count == 1 {
+            throw FixtureAuthorizationFailure(kind: .missingCredential)
+        }
+        var headers = request.headers
+        headers["Cookie"] = "FIXTURE_AUTHORIZED"
+        return HTTPRequest(
+            url: request.url,
+            method: request.method,
+            headers: headers,
+            body: request.body
+        )
+    }
+
+    func authorizationCount() -> Int {
+        count
+    }
+}
+
 private actor SuspendingRequestAuthorizer: HTTPRequestAuthorizing {
     private var authorizationStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
@@ -1191,6 +1425,47 @@ private actor SuspendingRequestAuthorizer: HTTPRequestAuthorizing {
     }
 
     func resumeAuthorization() {
+        authorizationContinuation?.resume()
+        authorizationContinuation = nil
+    }
+}
+
+private actor SuspendingSecondRequestAuthorizer: HTTPRequestAuthorizing {
+    private var authorizationCount = 0
+    private var secondAuthorizationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+
+    func authorize(_ request: HTTPRequest) async -> HTTPRequest {
+        authorizationCount += 1
+        if authorizationCount == 2 {
+            secondAuthorizationStarted = true
+            for waiter in startWaiters {
+                waiter.resume()
+            }
+            startWaiters.removeAll()
+            await withCheckedContinuation { continuation in
+                authorizationContinuation = continuation
+            }
+        }
+        var headers = request.headers
+        headers["Cookie"] = "FIXTURE_AUTHORIZED"
+        return HTTPRequest(
+            url: request.url,
+            method: request.method,
+            headers: headers,
+            body: request.body
+        )
+    }
+
+    func waitUntilSecondAuthorizationStarts() async {
+        guard !secondAuthorizationStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func resumeSecondAuthorization() {
         authorizationContinuation?.resume()
         authorizationContinuation = nil
     }

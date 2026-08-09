@@ -10,6 +10,21 @@ import Foundation
 /// Content-Type 边界。actor 隔离可变 transport/WBI cache；跨 `await` 可重入，用户意图的
 /// 取消与写回代次仍由上层 owner 管理。
 public actor BiliAPIClient: AuthenticatedSessionInvalidating {
+    private enum AuthorizationProvenance: Sendable {
+        case anonymous
+        case authenticated
+    }
+
+    private struct AuthorizedResponse<Payload: Sendable>: Sendable {
+        let payload: Payload
+        let authorizationProvenance: AuthorizationProvenance
+    }
+
+    private struct AuthorizedHTTPResponse: Sendable {
+        let response: HTTPResponse
+        let authorizationProvenance: AuthorizationProvenance
+    }
+
     public static let productionBaseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
             preconditionFailure("Static API base URL must be valid")
@@ -178,6 +193,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
             throw BiliAPIError.invalidRequest
         }
+        let playbackSessionEpoch = authenticatedSessionEpoch
         let referer = Self.videoReferer(bvid)
         let queryItems = [
             URLQueryItem(name: "bvid", value: bvid),
@@ -187,9 +203,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             URLQueryItem(name: "fnver", value: "0"),
             URLQueryItem(name: "fourk", value: "1"),
         ]
-        let payload: PlayURLPayload
+        let resolved: AuthorizedResponse<PlayURLPayload>
         if requestAuthorizer != nil {
-            payload = try await get(
+            resolved = try await getWithAuthorizationProvenance(
                 path: "/x/player/playurl",
                 queryItems: queryItems,
                 referer: referer,
@@ -198,12 +214,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 mapsAuthenticationInvalidation: true
             )
         } else {
-            payload = try await get(
+            resolved = try await getWithAuthorizationProvenance(
                 path: "/x/player/playurl",
                 queryItems: queryItems,
                 referer: referer
             )
         }
+        let payload = resolved.payload
 
         let video = try payload.dash.video
             .filter(\.isAVCVideo)
@@ -224,15 +241,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 representations: audio
             )
         ]
-        if requestAuthorizer != nil {
+        if resolved.authorizationProvenance == .authenticated {
+            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
             audioTracks += try await machineGeneratedAudioTracks(
                 catalog: payload.languageCatalog,
                 originalAudio: audio,
                 bvid: bvid,
                 cid: cid,
                 quality: quality,
-                referer: referer
+                referer: referer,
+                sessionEpoch: playbackSessionEpoch
             )
+            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
         }
 
         return VideoPlayback(
@@ -253,7 +273,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         bvid: String,
         cid: Int64,
         quality: Int,
-        referer: String
+        referer: String,
+        sessionEpoch: UInt64
     ) async throws -> [PlaybackAudioTrack] {
         let items = catalog?.validatedMachineGeneratedItems() ?? []
         guard !items.isEmpty else { return [] }
@@ -263,40 +284,33 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         tracks.reserveCapacity(items.count)
         for item in items {
             try Task.checkCancellation()
+            try requireAuthenticatedSessionEpoch(sessionEpoch)
             guard let languageTag = item.validatedLanguageTag,
                 let displayName = item.validatedDisplayName
             else {
                 continue
             }
-            let payload: PlayURLPayload
-            do {
-                payload = try await get(
-                    path: "/x/player/playurl",
-                    queryItems: [
-                        URLQueryItem(name: "bvid", value: bvid),
-                        URLQueryItem(name: "cid", value: String(cid)),
-                        URLQueryItem(name: "qn", value: String(quality)),
-                        URLQueryItem(name: "fnval", value: "976"),
-                        URLQueryItem(name: "fnver", value: "0"),
-                        URLQueryItem(name: "fourk", value: "1"),
-                        URLQueryItem(name: "cur_language", value: languageTag),
-                    ],
-                    referer: referer,
-                    requiresAuthentication: true,
-                    mapsAuthenticationInvalidation: true
-                )
-            } catch BiliAPIError.authorizationRequired {
-                return []
-            } catch BiliAPIError.authenticationInvalid {
-                throw BiliAPIError.authenticationInvalid
-            } catch BiliAPIError.authorizationUnavailable {
-                throw BiliAPIError.authorizationUnavailable
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
+            let payload: PlayURLPayload = try await get(
+                path: "/x/player/playurl",
+                queryItems: [
+                    URLQueryItem(name: "bvid", value: bvid),
+                    URLQueryItem(name: "cid", value: String(cid)),
+                    URLQueryItem(name: "qn", value: String(quality)),
+                    URLQueryItem(name: "fnval", value: "976"),
+                    URLQueryItem(name: "fnver", value: "0"),
+                    URLQueryItem(name: "fourk", value: "1"),
+                    URLQueryItem(name: "cur_language", value: languageTag),
+                ],
+                referer: referer,
+                requiresAuthentication: true,
+                mapsAuthenticationInvalidation: true
+            )
+            try requireAuthenticatedSessionEpoch(sessionEpoch)
+            guard payload.currentLanguage == languageTag,
+                payload.currentProductionType == item.productionType
+            else {
                 continue
             }
-            guard payload.currentLanguage == languageTag else { continue }
             let representations: [MediaRepresentation]
             do {
                 representations = try payload.dash.audio
@@ -326,6 +340,12 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             )
         }
         return tracks
+    }
+
+    private func requireAuthenticatedSessionEpoch(_ expected: UInt64) throws {
+        guard authenticatedSessionEpoch == expected else {
+            throw CancellationError()
+        }
     }
 
     private static func mediaResourcePaths(
@@ -473,8 +493,30 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         mapsAuthenticationInvalidation: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
+        try await getWithAuthorizationProvenance(
+            path: path,
+            queryItems: queryItems,
+            referer: referer,
+            requiresAuthentication: requiresAuthentication,
+            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
+            maximumResponseSize: maximumResponseSize
+        ).payload
+    }
+
+    private func getWithAuthorizationProvenance<
+        Payload: Decodable & Sendable
+    >(
+        path: String,
+        queryItems: [URLQueryItem],
+        referer: String,
+        requiresAuthentication: Bool = false,
+        permitsMissingCredentialFallback: Bool = false,
+        mapsAuthenticationInvalidation: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+    ) async throws -> AuthorizedResponse<Payload> {
         let url = try endpoint(path: path, queryItems: queryItems)
-        return try await get(
+        return try await getWithAuthorizationProvenance(
             url: url,
             referer: referer,
             requiresAuthentication: requiresAuthentication,
@@ -511,13 +553,34 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         mapsAuthenticationInvalidation: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
-        let response = try await response(
+        try await getWithAuthorizationProvenance(
+            url: url,
+            referer: referer,
+            requiresAuthentication: requiresAuthentication,
+            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
+            maximumResponseSize: maximumResponseSize
+        ).payload
+    }
+
+    private func getWithAuthorizationProvenance<
+        Payload: Decodable & Sendable
+    >(
+        url: URL,
+        referer: String,
+        requiresAuthentication: Bool = false,
+        permitsMissingCredentialFallback: Bool = false,
+        mapsAuthenticationInvalidation: Bool = false,
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+    ) async throws -> AuthorizedResponse<Payload> {
+        let authorizedResponse = try await response(
             url: url,
             referer: referer,
             requiresAuthentication: requiresAuthentication,
             permitsMissingCredentialFallback: permitsMissingCredentialFallback,
             maximumResponseSize: maximumResponseSize
         )
+        let response = authorizedResponse.response
 
         let status: APIStatusEnvelope
         do {
@@ -543,7 +606,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard let payload = envelope.data else {
             throw BiliAPIError.missingData
         }
-        return payload
+        return AuthorizedResponse(
+            payload: payload,
+            authorizationProvenance:
+                authorizedResponse.authorizationProvenance
+        )
     }
 
     private func response(
@@ -552,7 +619,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         requiresAuthentication: Bool = false,
         permitsMissingCredentialFallback: Bool = false,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> HTTPResponse {
+    ) async throws -> AuthorizedHTTPResponse {
         let baseRequest = HTTPRequest(
             url: url,
             headers: [
@@ -565,12 +632,14 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let requestSessionEpoch =
             requiresAuthentication ? authenticatedSessionEpoch : nil
         let request: HTTPRequest
+        let authorizationProvenance: AuthorizationProvenance
         if requiresAuthentication {
             guard let requestAuthorizer else {
                 throw BiliAPIError.authorizationRequired
             }
             do {
                 request = try await requestAuthorizer.authorize(baseRequest)
+                authorizationProvenance = .authenticated
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as any HTTPRequestAuthorizationFailure {
@@ -581,6 +650,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 case .missingCredential where permitsMissingCredentialFallback:
                     try Task.checkCancellation()
                     request = baseRequest
+                    authorizationProvenance = .anonymous
                 case .invalidCredential:
                     throw BiliAPIError.authenticationInvalid
                 case .missingCredential:
@@ -596,6 +666,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             }
         } else {
             request = baseRequest
+            authorizationProvenance = .anonymous
         }
         if let requestSessionEpoch,
             requestSessionEpoch != authenticatedSessionEpoch
@@ -640,7 +711,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard Self.looksLikeJSON(response) else {
             throw BiliAPIError.nonJSONResponse
         }
-        return response
+        return AuthorizedHTTPResponse(
+            response: response,
+            authorizationProvenance: authorizationProvenance
+        )
     }
 
     private func signedSearch(
@@ -696,7 +770,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let response = try await response(
             url: url,
             referer: "https://www.bilibili.com/"
-        )
+        ).response
         let envelope: APIEnvelope<NavigationPayload>
         do {
             envelope = try decoder.decode(

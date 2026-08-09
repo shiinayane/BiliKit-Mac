@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 更新时间：2026-08-07。本文只描述当前 `main` 的产品基线、产品大方向和唯一已选择的
+> 更新时间：2026-08-09。本文只描述本分支合并后 `main` 的产品基线、产品大方向和唯一已选择的
 > 后续阶段。
 > 完成状态以当前代码、自动测试和必要的真实行为证据共同判断；旧计划、分支、worktree、
 > checkpoint、测试数量和 CI run ID 不构成现行契约。
@@ -31,12 +31,13 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
   adapter target。
 - 当前产品入口包含热门、搜索、观看历史、认证和同窗口视频页。
 - 播放链路包含 DASH 到本机 loopback HLS bridge、单一 AVPlayer host、统一播放时间线、
-  字幕与弹幕。
+  语义音轨、系统原生字幕与弹幕；HLS master 会保守发布已解析的音视频格式、语言、角色、
+  closed-captions、independent-segments 与按需 I-frame metadata。
 
 模块与依赖的持久约束见 ADR 0001–0009。当前 target、product 和 entitlement 必须以
 `Packages/BiliKitCore/Package.swift` 与 Xcode 工程为准。
 
-## 3. 已完成能力
+## 3. 工程能力状态
 
 ### M0–M2：工程、真实播放与游客闭环
 
@@ -115,6 +116,29 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
 - [`audits/M5.0.1/`](./audits/M5.0.1/)
 - [`validation/authenticated-playback-quality-2026-08-08.md`](./validation/authenticated-playback-quality-2026-08-08.md)
+
+### 已实现、最终真实复验待完成：语义音轨与 HLS metadata
+
+- `PlaybackAudioTrack` 把原声／machine-generated 语义与轨内码率 representations 分离；
+  已授权基础 playurl 响应可在精确 Cookie 边界内取得受限 AI 目录与媒体，Cookie 在映射前
+  终止。响应语言、production type、授权来源、认证 epoch 与 HLS 时间轴不可信的可选轨
+  不会进入 master。
+- HLS master 已接入 `LANGUAGE`、`CHARACTERISTICS`、`CHANNELS`、`BIT-DEPTH`、
+  `SAMPLE-RATE`、`DEFAULT/AUTOSELECT`、`CLOSED-CAPTIONS=NONE`、条件化
+  `EXT-X-INDEPENDENT-SEGMENTS` 与字幕 localized rendition names；原声语言未知时保守使用
+  `und`，不猜测 translation。
+- I-frame playlist 只对严格 type-1 SAP 的完整 fMP4 fragments 发布，并复用同一无认证媒体
+  route 按需 Range；没有预取、转码、下载或独立网络 owner。
+- 最终实现已通过 App gate 与定点契约测试；由于审查修正后的登录态 AI 请求与可听切轨尚未
+  重新执行真实复验，本 checkpoint 不把生产真实验收标为完成。只有在用户另行批准真实登录态
+  验证并更新脱敏证据后，才能关闭该边界。
+
+证据：
+
+- [`validation/authenticated-ai-audio-2026-08-09.md`](./validation/authenticated-ai-audio-2026-08-09.md)
+- [`validation/authenticated-ai-audio-stage5-2026-08-09.md`](./validation/authenticated-ai-audio-stage5-2026-08-09.md)
+- [`validation/semantic-audio-hls-stage7-2026-08-09.md`](./validation/semantic-audio-hls-stage7-2026-08-09.md)
+- [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
 
 ## 4. 唯一当前阶段：播放工作台上下文侧栏与真实分 P
 

@@ -162,6 +162,10 @@ public final class AVPlayerEngine:
         intent: PlaybackLoadIntent,
         generation: UUID
     ) async throws {
+        let videos = try selectedVideos(for: request)
+        let audioTracks = try selectedAudioTracks(for: request)
+        try Task.checkCancellation()
+
         loadGeneration = generation
         loadIntent = intent
         loadTask?.cancel()
@@ -176,8 +180,6 @@ public final class AVPlayerEngine:
         timeline.begin(identity: identity)
         emit(.stateChanged(.loading))
 
-        let videos = try selectedVideos(for: request)
-        let audioTracks = try selectedAudioTracks(for: request)
         await pendingSubtitleReset?.value
         try Task.checkCancellation()
         guard loadGeneration == generation else {
