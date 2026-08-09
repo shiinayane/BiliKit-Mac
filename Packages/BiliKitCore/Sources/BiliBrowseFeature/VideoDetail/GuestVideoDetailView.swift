@@ -85,10 +85,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     @ViewBuilder
     private var metadataItems: some View {
         Label(
-            context.detail.owner.name,
-            systemImage: "person.crop.circle"
-        )
-        Label(
             VideoMetadataFormatting.compactCount(
                 context.detail.statistics.viewCount
             ),
