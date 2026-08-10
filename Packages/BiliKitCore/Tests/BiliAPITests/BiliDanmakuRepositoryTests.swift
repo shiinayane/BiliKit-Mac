@@ -429,6 +429,28 @@ struct BiliDanmakuRepositoryTests {
     }
 
     @Test
+    func decoderUsesOnlySupportedReceivedFontSizes() throws {
+        let sizes: [Int32] = [0, 12, 18, 25, 36, 45, 64]
+        var payload = Bilikit_Danmaku_SegmentReply()
+        payload.elements = sizes.enumerated().map { index, fontSize in
+            var element = Bilikit_Danmaku_Element()
+            element.id = Int64(index + 1)
+            element.progressMilliseconds = 1_000
+            element.mode = 1
+            element.fontSize = fontSize
+            element.colorRgb = 0xFF_FF_FF
+            element.content = "font size fixture"
+            return element
+        }
+
+        let events = try DanmakuPayloadDecoder.events(
+            from: payload.serializedData()
+        )
+
+        #expect(events.map(\.fontSize) == [25, 25, 18, 25, 36, 25, 25])
+    }
+
+    @Test
     func cancellationIsNotCollapsedIntoTransportFailure() async {
         let client = BiliAPIClient(transport: DanmakuCancellationTransport())
         let repository = BiliDanmakuRepository(client: client)

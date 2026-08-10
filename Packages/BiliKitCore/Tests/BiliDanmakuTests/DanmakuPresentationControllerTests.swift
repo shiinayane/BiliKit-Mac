@@ -655,6 +655,33 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
+    func receivedLegacyLargeBottomStaysAnchoredAcrossResize() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 300)
+        let fixture = event(
+            id: "large-bottom-resize",
+            mode: .bottom,
+            fontSize: 36
+        )
+        let metrics = renderer.measure(fixture)
+        renderer.render(
+            placement(
+                event: fixture,
+                metrics: metrics,
+                originY: 300 - metrics.height
+            )
+        )
+        let layer = try #require(
+            renderer.textLayer(forEventID: fixture.id)
+        )
+
+        #expect(layer.frame.maxY == 300)
+        renderer.updateSurfaceSize(width: 1_200, height: 500)
+        #expect(layer.frame.maxY == 500)
+        #expect(layer.position.x == 600)
+    }
+
+    @Test
     func coreAnimationStyleUsesHeavyInkWithoutCompositorShadow() throws {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         renderer.updateSurfaceSize(width: 800, height: 200)
@@ -682,6 +709,169 @@ struct DanmakuPresentationControllerTests {
         #expect(shadow.shadowBlurRadius == 1.5)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
+    }
+
+    @Test
+    func coreAnimationUsesReceivedFontSizeForMeasurementAndLayer() throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 240)
+        let fixtures = [18.0, 25.0, 36.0].map { fontSize in
+            DanmakuEvent(
+                id: "font-\(fontSize)",
+                timeSeconds: 1,
+                mode: .top,
+                text: "同一条字号测试弹幕",
+                fontSize: fontSize,
+                colorRGB: 0xFFFFFF,
+                weight: 1
+            )
+        }
+        let metrics = fixtures.map(renderer.measure)
+
+        #expect(metrics[0].width < metrics[1].width)
+        #expect(metrics[1].width < metrics[2].width)
+        #expect(metrics[0].height < metrics[1].height)
+        #expect(metrics[1].height < metrics[2].height)
+
+        for (index, fixture) in fixtures.enumerated() {
+            renderer.render(
+                placement(
+                    event: fixture,
+                    metrics: metrics[index],
+                    originY: Double(index) * 64
+                )
+            )
+            let layer = try #require(
+                renderer.textLayer(forEventID: fixture.id)
+            )
+            let attributed = try #require(
+                layer.string as? NSAttributedString
+            )
+            let font = try #require(
+                attributed.attribute(.font, at: 0, effectiveRange: nil)
+                    as? NSFont
+            )
+            #expect(Double(font.pointSize) == fixture.fontSize)
+            #expect(Double(layer.bounds.width) == metrics[index].width)
+            #expect(Double(layer.bounds.height) == metrics[index].height)
+        }
+    }
+
+    @Test
+    func presentationControllerAdmitsReceivedSizesWithoutVerticalOverlap()
+        throws
+    {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: DanmakuLaneConfiguration(
+                surfaceWidth: 800,
+                surfaceHeight: 240,
+                laneHeight: 36,
+                minimumHorizontalGap: 12,
+                maximumActiveCount: 20,
+                displayAreaFraction: 1
+            )
+        )
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1FontSizeFixture",
+            cid: 1
+        )
+
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [
+                    ("controller-font-18.0", 18.0),
+                    ("controller-font-25.0", 25.0),
+                    ("controller-font-36.0", 36.0),
+                    ("controller-after-large", 18.0),
+                ].map { id, fontSize in
+                    event(
+                        id: id,
+                        mode: .top,
+                        fontSize: fontSize
+                    )
+                }
+            )
+        )
+
+        #expect(controller.statistics.admitted == 4)
+        #expect(controller.statistics.active == 4)
+        #expect(controller.statistics.droppedNoLane == 0)
+        #expect(renderer.activeLayerCount == 4)
+
+        let smallLayer = try #require(
+            renderer.textLayer(forEventID: "controller-font-18.0")
+        )
+        let standardLayer = try #require(
+            renderer.textLayer(forEventID: "controller-font-25.0")
+        )
+        let legacyLargeLayer = try #require(
+            renderer.textLayer(forEventID: "controller-font-36.0")
+        )
+        let afterLargeLayer = try #require(
+            renderer.textLayer(forEventID: "controller-after-large")
+        )
+        #expect(legacyLargeLayer.bounds.height > 36)
+        #expect(smallLayer.frame.maxY <= standardLayer.frame.minY)
+        #expect(standardLayer.frame.maxY <= legacyLargeLayer.frame.minY)
+        #expect(legacyLargeLayer.frame.maxY <= afterLargeLayer.frame.minY)
+    }
+
+    @Test(arguments: [Double.nan, .infinity, -.infinity])
+    func nonfiniteReceivedFontSizeFailsClosed(fontSize: Double) {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 200)
+        let fixture = DanmakuEvent(
+            id: "invalid-font-size",
+            timeSeconds: 1,
+            mode: .scrolling,
+            text: "不会进入图层的测试弹幕",
+            fontSize: fontSize,
+            colorRGB: 0xFFFFFF,
+            weight: 1
+        )
+        let metrics = renderer.measure(fixture)
+
+        #expect(metrics == DanmakuTextMetrics(width: 0, height: 0))
+        renderer.render(
+            placement(event: fixture, metrics: metrics, originY: 0)
+        )
+        #expect(renderer.activeLayerCount == 0)
+    }
+
+    @Test(arguments: [12.0, 24.0, 45.0, 64.0])
+    func unknownFiniteFontSizeFallsBackToStandard(
+        fontSize: Double
+    )
+        throws
+    {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 200)
+        let fixture = event(
+            id: "font-fallback-\(fontSize)",
+            mode: .top,
+            fontSize: fontSize
+        )
+        let metrics = renderer.measure(fixture)
+
+        #expect(metrics.width > 0)
+        #expect(metrics.height > 0)
+        renderer.render(
+            placement(event: fixture, metrics: metrics, originY: 0)
+        )
+        let layer = try #require(
+            renderer.textLayer(forEventID: fixture.id)
+        )
+        let attributed = try #require(layer.string as? NSAttributedString)
+        let font = try #require(
+            attributed.attribute(.font, at: 0, effectiveRange: nil)
+                as? NSFont
+        )
+        #expect(Double(font.pointSize) == 25)
     }
 
     @Test
@@ -1090,14 +1280,15 @@ struct DanmakuPresentationControllerTests {
     private func event(
         id: String,
         mode: DanmakuPresentationMode,
-        colorRGB: UInt32 = 0xFFFFFF
+        colorRGB: UInt32 = 0xFFFFFF,
+        fontSize: Double = 24
     ) -> DanmakuEvent {
         DanmakuEvent(
             id: id,
             timeSeconds: 1,
             mode: mode,
             text: "中文 日本語 한국어 Latin 😀 #",
-            fontSize: 24,
+            fontSize: fontSize,
             colorRGB: colorRGB,
             weight: 1
         )
