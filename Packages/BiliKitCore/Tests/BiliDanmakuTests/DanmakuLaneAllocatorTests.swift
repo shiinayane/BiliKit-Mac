@@ -326,14 +326,36 @@ struct DanmakuLaneAllocatorTests {
     }
 
     @Test
+    func extremeFiniteRequestHeightDoesNotOverflowLaneSpanConversion() {
+        var allocator = DanmakuLaneAllocator(
+            configuration: DanmakuLaneConfiguration(
+                surfaceWidth: 1_000,
+                surfaceHeight: .greatestFiniteMagnitude,
+                laneHeight: .leastNonzeroMagnitude,
+                minimumHorizontalGap: 12,
+                maximumActiveCount: 1,
+                displayAreaFraction: 1
+            )
+        )
+
+        let admission = allocator.admit(
+            [request(id: "extreme-span", height: .greatestFiniteMagnitude)],
+            at: 0
+        )
+
+        #expect(admission.admitted.isEmpty)
+        #expect(admission.dropCounts.noLane == 1)
+    }
+
+    @Test
     func invalidGeometryHardLimitAndResizeStayBounded() {
         var allocator = DanmakuLaneAllocator(configuration: configuration())
         _ = allocator.admit([request(id: "active")], at: 0)
         let tooTall = allocator.admit(
-            [request(id: "tall", height: 21)],
+            [request(id: "tall", height: 61)],
             at: 0
         )
-        #expect(tooTall.dropCounts.invalidRequest == 1)
+        #expect(tooTall.dropCounts.noLane == 1)
 
         allocator.updateConfiguration(
             configuration(surfaceWidth: 0)
@@ -376,6 +398,98 @@ struct DanmakuLaneAllocatorTests {
         )
         #expect(recovered.expired.map(\.request.event.id) == ["active"])
         #expect(recovered.admitted.map(\.request.event.id) == ["recovered"])
+    }
+
+    @Test
+    func tallRequestsOccupyAdjacentLanesWithoutReducingSmallTextDensity() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        let admission = allocator.admit(
+            [
+                request(id: "large", mode: .top, height: 39),
+                request(id: "small", mode: .top, height: 18),
+                request(id: "blocked", mode: .top, height: 18),
+            ],
+            at: 0
+        )
+
+        #expect(admission.admitted.map(\.request.event.id) == ["large", "small"])
+        #expect(admission.admitted.map(\.laneIndex) == [0, 2])
+        #expect(admission.admitted.map(\.originY) == [0, 40])
+        #expect(admission.dropCounts.noLane == 1)
+    }
+
+    @Test
+    func tallScrollingRequestChecksEveryAdjacentLaneForCollision() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        let admission = allocator.admit(
+            [
+                request(id: "large", height: 39),
+                request(id: "small", height: 18),
+                request(id: "blocked-large", height: 39),
+            ],
+            at: 0
+        )
+
+        #expect(admission.admitted.map(\.request.event.id) == ["large", "small"])
+        #expect(admission.admitted.map(\.laneIndex) == [0, 2])
+        #expect(admission.dropCounts.noLane == 1)
+    }
+
+    @Test
+    func removingTallFixedRequestReleasesEveryOccupiedLane() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        _ = allocator.admit(
+            [
+                request(id: "large", mode: .top, height: 39),
+                request(id: "small", mode: .top, height: 18),
+            ],
+            at: 0
+        )
+
+        #expect(allocator.remove(eventID: "large") != nil)
+        let reused = allocator.admit(
+            [request(id: "large-next", mode: .top, height: 39)],
+            at: 0.1
+        )
+
+        #expect(reused.admitted.map(\.request.event.id) == ["large-next"])
+        #expect(reused.admitted.first?.laneIndex == 0)
+        #expect(reused.dropCounts.total == 0)
+    }
+
+    @Test
+    func expiringTallScrollingRequestReleasesEveryOccupiedLane() {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        _ = allocator.admit(
+            [
+                request(id: "large", height: 39, duration: 1),
+                request(id: "small", height: 18, duration: 10),
+            ],
+            at: 0
+        )
+        let reused = allocator.admit(
+            [request(id: "large-next", height: 39)],
+            at: 1
+        )
+
+        #expect(reused.expired.map(\.request.event.id) == ["large"])
+        #expect(reused.admitted.map(\.request.event.id) == ["large-next"])
+        #expect(reused.admitted.first?.laneIndex == 0)
+        #expect(reused.dropCounts.total == 0)
+    }
+
+    @Test
+    func tallBottomRequestUsesItsMeasuredHeightFromSurfaceEdge() throws {
+        var allocator = DanmakuLaneAllocator(configuration: configuration())
+        let admission = allocator.admit(
+            [request(id: "large-bottom", mode: .bottom, height: 39)],
+            at: 0
+        )
+
+        let placement = try #require(admission.admitted.first)
+        #expect(placement.laneIndex == 0)
+        #expect(placement.originY == 21)
+        #expect(placement.originY + placement.request.height == 60)
     }
 
     @Test

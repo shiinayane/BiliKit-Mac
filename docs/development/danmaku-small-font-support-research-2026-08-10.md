@@ -1,14 +1,15 @@
 # 弹幕小字号支持调研（2026-08-10）
 
-> 范围：只读代码与公开 Web 资源调研；没有登录、读取凭据、发送弹幕或保存远端响应。
+> 范围：只读代码与公开 Web 资源调研，以及后续收到字号的本地呈现切片；没有登录、读取
+> 凭据、发送弹幕或保存远端响应。
 > 本文不是实现授权，不更新 `ROADMAP.md` 完成状态。
 
 ## 结论
 
 “小字号”必须拆成两个能力：
 
-1. **按收到的字号渲染**：当前数据链路已经保留字号，但生产 renderer 没有使用它。这个能力
-   可以在不增加写操作的独立显示正确性切片中安全支持。
+1. **按收到的字号渲染**：数据链路保留的合法字号现在同时用于 CoreText 测量与生产
+   `CATextLayer`。较高文本占用连续 lane，避免大字号与相邻弹幕重叠；这仍是纯只读能力。
 2. **选择小字号并发送**：当前仓库没有弹幕草稿、发送 Use Case、写 Repository、POST
    endpoint 或发送 UI；现行路线图也没有授权该写操作。现在不应实现，应延期到独立写操作
    milestone，先完成产品范围、协议、认证和风控 Gate。
@@ -22,19 +23,20 @@
 ### 接收与模型
 
 - clean-room `danmaku.proto` 将 element field 4 定义为 `int32 font_size`。
-- `DanmakuPayloadDecoder` 把值限制到 `12...64` 后写入
-  `DanmakuEvent.fontSize: Double`；当前 fixture 固定并断言标准值 25。
+- `DanmakuPayloadDecoder` 只把收到的 18、25、36 写入
+  `DanmakuEvent.fontSize: Double`；缺省 0 和其他整数安全回退到标准值 25。
 - decoder 只接受滚动、顶部和底部基础类型；高级、互动、代码和反向类型在 adapter 边界
   丢弃。字号本身不是 mode。
 
 ### 渲染
 
-- `CoreAnimationDanmakuRenderer` 测量和生成 attributed string 时都使用固定
-  `NSFont.systemFont(ofSize: 24, weight: .semibold)`。
-- 因此 `DanmakuEvent.fontSize` 当前是“已解码但未呈现”的字段：收到 18、25 或 36 都按
-  24pt 渲染。BiliKitMac **尚不能诚实声称会显示收到的小字弹幕**。
-- lane allocator 使用 renderer 的测量结果；未来使用事件字号时，必须让测量、lane 高度、
-  碰撞判断和最终 `CATextLayer` 共用同一个规范化字体，不能只缩放最终 layer。
+- `CoreAnimationDanmakuRenderer` 的 CoreText 测量和 attributed string 现在使用同一个事件
+  字号；API 将缺省 0 和未知整数映射为标准 25，保留 18／25／36。绕过 API 构造出的未知
+  有限值也回退到 25，NaN／无穷值失败关闭。
+- lane allocator 使用 renderer 的实测高度。高于一个 lane 基元的 36pt 文本会占用
+  多个连续 lane；没有通过全局放大 lane 间距来降低小字号密度。
+- 自动测试固定 18 < 25 < 36 的宽高顺序、最终 attributed font、controller 实际准入、
+  未知整数回退、非有限值拒绝，以及高文本 top／bottom 连续 lane 几何。
 
 ### UI 与写操作
 
@@ -89,17 +91,35 @@
 站内文章是用户内容，不是官方 API 文档，只用于解释官方压缩脚本中缺失的语义标签。发送
 实现前仍必须重新观察当前官方客户端的实际请求，并用全假值 contract 固定允许集合。
 
+### OSS 交叉观察
+
+只读检查公开 OSS 的当前或固定快照得到更窄的接收策略证据：
+
+- [PiliPlus 发送 UI](https://github.com/bggRGjQaUbCoE/PiliPlus/blob/36dec609315cd34f8895cf15607f1cc582a66f01/lib/pages/video/send_danmaku/view.dart#L185-L198)
+  只提供 `18`“小”和 `25`“标准”；其本地全局显示字号是另一套用户偏好，不应混入事件字号。
+- [wiliwili 模型](https://github.com/xfangfang/wiliwili/blob/88e5876bea9502d06f46a8656e3530684d3aaf7d/wiliwili/include/view/danmaku_core.hpp#L97-L103)
+  和[解析](https://github.com/xfangfang/wiliwili/blob/88e5876bea9502d06f46a8656e3530684d3aaf7d/wiliwili/source/view/danmaku_core.cpp#L79-L85)
+  仍将收到的 `18/25/36` 解释为相对标准 25 的事件比例，支持把 36 作为只读历史兼容值。
+- [DanmakuFlameMaster 示例解析](https://github.com/bilibili/DanmakuFlameMaster/blob/e2846461a09e33720a049f628f09c653f55531f0/Sample/src/main/java/com/sample/BiliDanmukuParser.java#L119-L133)
+  与[全局缩放](https://github.com/bilibili/DanmakuFlameMaster/blob/e2846461a09e33720a049f628f09c653f55531f0/DanmakuFlameMaster/src/main/java/master/flame/danmaku/danmaku/model/android/AndroidDisplayer.java#L151-L166)
+  也把事件字号和观看者全局缩放分层。
+
+这些实现不能证明 B 站当前服务端的正式枚举，但足以否定“`12...64` 内任意整数都是当前产品
+字号”的假设。故接收端采用离散兼容集合 18／25／36；当前证据不足以把 12、16、45、64
+等其他数值纳入受支持集合，它们按未知值处理。36 只作为内部接收兼容，不进入未来普通发送
+UI。
+
 ## 可安全实施的拆分
 
 ### A. 只呈现收到的小字号
 
-建议作为独立只读切片，且在当前唯一产品阶段完成或重新裁决后再排期：
+已按独立只读切片实现：
 
-1. 在 `BiliModels` 将任意 `Double` 收敛成有界的 presentation size，或在 `BiliAPI`
-   映射为明确的受支持字号值；不要让 renderer 再做一套不一致的 clamp。
+1. `BiliAPI` 保留离散接收值 18／25／36，缺省 0 和其他整数回退到标准 25；renderer 在模型
+   绕过 API 时执行同一有限值回退，非有限值失败关闭。
 2. `CoreAnimationDanmakuRenderer` 的 CoreText 测量和 attributed string 使用同一事件字号。
-3. 重新验证 lane 高度、滚动碰撞、顶部/底部锚定、显示区域、resize、对象上限与长文本上限。
-4. 远端异常字号继续失败关闭或按已批准规则规范化；不能让超大字号绕过 512px 高度、
+3. lane allocator 以实测高度占用连续 lane，保持滚动碰撞及顶部／底部锚定。
+4. 超大字号不能绕过 512px 高度、
    8192px 宽度和 active layer 上限。
 
 这不需要新增账号权限、endpoint 或 Cookie，但会改变真实视觉密度，不能只用 build 证明。
@@ -126,7 +146,7 @@
 
 ### 只读呈现
 
-- decoder：18/25/36、边界 12/64、越界、缺省 0、超大文本组合；明确 clamp 或拒绝策略。
+- decoder：保留 18／25／36；缺省 0 及 12／16／45／64 等未知整数回退 25。
 - renderer：同一 event 的测量字体等于渲染字体；18 小于 25、36 大于 25；三种 mode 的 lane
   和锚点不重叠越界；resize/seek/替换/stop 后无残留 layer。
 - UI/性能：合成 fixture 对比 18/25/36 的可见大小；高密度 30 分钟对象与 layer 上限；大
@@ -144,8 +164,8 @@
 
 ## 建议
 
-- **现在不做发送。** 它是新的认证写操作和产品范围，不是“小字号 UI”附带的一行参数。
-- **拆分两个 milestone。** 先把收到的字号正确呈现，作为只读播放正确性；发送能力只有在
+- **现在仍不做发送。** 它是新的认证写操作和产品范围，不是“小字号 UI”附带的一行参数。
+- **继续拆分发送 milestone。** 收到字号的只读呈现已经独立落地；发送能力只有在
   被选为唯一下一阶段、更新产品愿景/路线图并建立写操作威胁模型后再实施。
 - 若只想让用户整体缩放所有弹幕，那是本地显示偏好，与“按发送者选择的小字号呈现”及
   “发送小字号”是第三个不同需求，应单独命名，避免复用 `fontSize` 造成语义混淆。

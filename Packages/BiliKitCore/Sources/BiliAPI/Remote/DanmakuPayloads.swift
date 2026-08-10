@@ -78,7 +78,12 @@ enum DanmakuPayloadDecoder {
     }
 
     private static func normalizedFontSize(_ value: Int32) -> Double {
-        Double(min(max(value, 12), 64))
+        switch value {
+        case 18, 25, 36:
+            Double(value)
+        default:
+            25
+        }
     }
 }
 

@@ -17,6 +17,7 @@ public final class CoreAnimationDanmakuRenderer:
     private static let maximumTextWidthPixels: CGFloat = 8_192
     private static let maximumTextHeightPixels: CGFloat = 512
     private static let maximumTextUTF16Length = 512
+    private static let supportedFontSizes: Set<Double> = [18, 25, 36]
     private static let lightInkRelativeLuminanceThreshold = 0.179
 
     private struct Entry {
@@ -33,7 +34,6 @@ public final class CoreAnimationDanmakuRenderer:
     public var activeLayerCount: Int { entries.count }
 
     private let contentsScale: CGFloat
-    private let font = NSFont.systemFont(ofSize: 24, weight: .semibold)
     private let darkInkShadow: NSShadow = {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black
@@ -66,7 +66,9 @@ public final class CoreAnimationDanmakuRenderer:
         else {
             return DanmakuTextMetrics(width: 0, height: 0)
         }
-        let attributed = attributedString(for: event)
+        guard let attributed = attributedString(for: event) else {
+            return DanmakuTextMetrics(width: 0, height: 0)
+        }
         let framesetter = CTFramesetterCreateWithAttributedString(attributed)
         let measured = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
@@ -108,7 +110,9 @@ public final class CoreAnimationDanmakuRenderer:
 
         nextObjectIdentity &+= 1
         let objectIdentity = nextObjectIdentity
-        let textLayer = makeTextLayer(for: placement)
+        guard let textLayer = makeTextLayer(for: placement) else {
+            return
+        }
         let relay = AnimationCompletionRelay(
             renderer: self,
             eventID: event.id,
@@ -217,7 +221,8 @@ public final class CoreAnimationDanmakuRenderer:
 
     private func attributedString(
         for event: DanmakuEvent
-    ) -> NSAttributedString {
+    ) -> NSAttributedString? {
+        guard let font = font(for: event) else { return nil }
         let components = rgbComponents(for: event.colorRGB)
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -234,6 +239,19 @@ public final class CoreAnimationDanmakuRenderer:
         return NSAttributedString(
             string: event.text,
             attributes: attributes
+        )
+    }
+
+    private func font(for event: DanmakuEvent) -> NSFont? {
+        guard event.fontSize.isFinite else {
+            return nil
+        }
+        let normalizedFontSize =
+            Self.supportedFontSizes.contains(event.fontSize)
+            ? event.fontSize : 25
+        return NSFont.systemFont(
+            ofSize: CGFloat(normalizedFontSize),
+            weight: .semibold
         )
     }
 
@@ -273,9 +291,16 @@ public final class CoreAnimationDanmakuRenderer:
 
     private func makeTextLayer(
         for placement: DanmakuLanePlacement
-    ) -> CATextLayer {
+    ) -> CATextLayer? {
         let layer = CATextLayer()
-        layer.string = attributedString(for: placement.request.event)
+        guard
+            let attributed = attributedString(
+                for: placement.request.event
+            )
+        else {
+            return nil
+        }
+        layer.string = attributed
         layer.alignmentMode = .left
         layer.isWrapped = false
         layer.contentsScale = contentsScale
