@@ -78,8 +78,6 @@ public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepositor
             throw CancellationError()
         } catch let error as BiliAPIError {
             throw error.applicationError
-        } catch let error as GuestApplicationError {
-            throw error
         } catch {
             throw GuestApplicationError.unavailable
         }

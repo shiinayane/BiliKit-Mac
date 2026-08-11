@@ -18,13 +18,7 @@ struct AppRootView: View {
     @State private var windowOwner: AppWindowOwner
     @State private var isAuthenticationPresented = false
     @State private var submittedSearchQuery: String?
-    private let playbackSidebarContent:
-        (
-            (String, @escaping (String) -> Void) -> AnyView
-        )?
-
     init(environment: AppEnvironment = .live()) {
-        playbackSidebarContent = nil
         _windowOwner = State(
             initialValue: AppWindowOwner(environment: environment)
         )
@@ -37,12 +31,8 @@ struct AppRootView: View {
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
-        playerContent: AnyView,
-        playbackSidebarContent: (
-            (String, @escaping (String) -> Void) -> AnyView
-        )? = nil
+        playerContent: AnyView
     ) {
-        self.playbackSidebarContent = playbackSidebarContent
         _windowOwner = State(
             initialValue: AppWindowOwner(
                 navigationCoordinator: navigationCoordinator,
@@ -67,8 +57,7 @@ struct AppRootView: View {
             playerContent: playerContent,
             isAuthenticationPresented: $isAuthenticationPresented,
             submittedSearchQuery: submittedSearchQuery,
-            onSubmitSearch: performSearch,
-            playbackSidebarContent: playbackSidebarContent
+            onSubmitSearch: performSearch
         )
         .task(id: browseActivation) {
             await applyBrowseActivation(for: browseActivation)
