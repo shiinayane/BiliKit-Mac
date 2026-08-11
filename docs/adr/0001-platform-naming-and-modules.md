@@ -25,7 +25,8 @@
 - 用户可见 App、构建产品、可执行文件和 Swift app module：`BiliKit`。
 - 当前开发 bundle identifier：`com.shiinayane.BiliKitMac.dev`。它属于签名环境配置，不是
   用户可见品牌或 Swift 模块名；取得正式开发者账号后允许显式更换。
-- 单元测试与 UI 测试 target 保留 `BiliKitMacTests`、`BiliKitMacUITests`。
+- App 单元与集成测试 target 保留 `BiliKitMacTests`；UI 自动化只有出现无法在更低层验证的
+  关键系统边界时才建立。
 
 内部名称保留 `Mac` 是为了与原 BiliKit userscript 仓库区分；这不属于用户可见品牌不一致。
 

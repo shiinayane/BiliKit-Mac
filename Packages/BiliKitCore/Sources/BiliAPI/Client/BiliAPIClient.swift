@@ -958,21 +958,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     }
 }
 
-#if DEBUG
-    extension BiliAPIClient {
-        func danmakuPoolProbe(
-            index: Int,
-            for identity: PlaybackItemIdentity
-        ) async throws -> DanmakuPoolProbeSummary {
-            let data = try await danmakuSegmentData(
-                index: index,
-                for: identity
-            )
-            return try DanmakuPoolProbeSummary.make(from: data)
-        }
-    }
-#endif
-
 private struct CachedWBIKey: Sendable {
     let key: WBIKeyMaterial
     let day: Int64

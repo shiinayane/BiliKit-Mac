@@ -62,7 +62,6 @@ struct VideoUploaderHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("sidebar.playback-uploader")
     }
 
     @ViewBuilder
@@ -83,9 +82,6 @@ struct VideoUploaderHeader: View {
                 signatureText(signature, lineLimit: 1)
                     .fixedSize(horizontal: true, vertical: false)
                     .textSelection(.enabled)
-                    .accessibilityIdentifier(
-                        "sidebar.playback-uploader.signature"
-                    )
 
                 Button {
                     withAnimation(
@@ -112,9 +108,6 @@ struct VideoUploaderHeader: View {
                 )
                 .accessibilityHint(
                     isSignatureExpanded ? "点击收起" : "点击展开完整签名"
-                )
-                .accessibilityIdentifier(
-                    "sidebar.playback-uploader.signature"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -218,17 +211,6 @@ struct VideoUploaderHeaderContent: Equatable, Sendable {
                 Self.normalized(value).map {
                     .text($0)
                 } ?? .hidden
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch signature {
-        case .loading:
-            return "UP 主，\(name)，签名正在加载"
-        case .text(let signature):
-            return "UP 主，\(name)，签名，\(signature)"
-        case .hidden:
-            return "UP 主，\(name)"
         }
     }
 

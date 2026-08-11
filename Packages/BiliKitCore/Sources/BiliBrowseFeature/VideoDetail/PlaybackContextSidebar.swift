@@ -45,7 +45,6 @@ public struct PlaybackContextSidebar: View {
             value: visualPhase
         )
         .navigationTitle("观看辅助")
-        .accessibilityIdentifier("sidebar.playback-context")
     }
 
     private func sidebarContent(_ context: GuestVideoContext) -> some View {
@@ -74,8 +73,6 @@ public struct PlaybackContextSidebar: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("sidebar.playback-content")
     }
 
     private func summarySection(_ summary: String) -> some View {
@@ -88,10 +85,8 @@ public struct PlaybackContextSidebar: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
-                .accessibilityIdentifier("sidebar.playback-summary.text")
         }
         .font(.headline)
-        .accessibilityIdentifier("sidebar.playback-summary")
     }
 
     private func partsSection(_ context: GuestVideoContext) -> some View {
@@ -113,10 +108,8 @@ public struct PlaybackContextSidebar: View {
                 .scrollContentBackground(.hidden)
                 .frame(height: partsListHeight(pageCount: context.pages.count))
                 .padding(.top, 8)
-                .accessibilityIdentifier("sidebar.playback-parts.list")
             } label: {
                 Text("分 P（\(context.pages.count)）")
-                    .accessibilityIdentifier("sidebar.playback-parts")
             }
             .font(.headline)
             .onChange(of: arePartsExpanded) { _, isExpanded in
@@ -218,7 +211,6 @@ public struct PlaybackContextSidebar: View {
                     : (isLoading ? "" : "切换到此分 P"))
         )
         .help(isFailed ? "加载失败，点按重试" : "")
-        .accessibilityIdentifier("sidebar.playback-part.\(page.index)")
     }
 
     private func partsListHeight(pageCount: Int) -> CGFloat {
@@ -251,7 +243,6 @@ public struct PlaybackContextSidebar: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("sidebar.playback-comments-unavailable")
     }
 
     private var blocksPresentedContext: Bool {
@@ -294,7 +285,6 @@ public struct PlaybackContextSidebar: View {
             PlaybackContextSidebarSkeleton(
                 loadingLabel: "正在加载视频上下文"
             )
-            .accessibilityIdentifier("sidebar.playback-loading")
         case .failed(_, let failure), .failedPage(_, _, let failure):
             failureView(failure)
         case .idle:
@@ -315,7 +305,6 @@ public struct PlaybackContextSidebar: View {
             PlaybackContextSidebarSkeleton(
                 loadingLabel: "正在加载所选视频上下文"
             )
-            .accessibilityIdentifier("sidebar.playback-replacement-loading")
         case .failed(_, let failure):
             failureView(failure)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -333,9 +322,7 @@ public struct PlaybackContextSidebar: View {
         } actions: {
             Button("重试", action: retryAction)
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("sidebar.playback-failure-retry")
         }
-        .accessibilityIdentifier("sidebar.playback-failure")
     }
 
     private func retryAction() {

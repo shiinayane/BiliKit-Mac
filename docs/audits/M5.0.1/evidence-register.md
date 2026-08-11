@@ -1,5 +1,8 @@
 # 外部事实证据登记表
 
+> 这是审计发生时的历史证据索引；已删除的 fixture/XCUI 证据不构成当前测试或
+> accessibility 契约。
+
 状态：十条审计线的可复用外部事实已登记；由主 Agent 单写。
 
 ## 字段
@@ -78,7 +81,7 @@
 | AX-F003 | 同一 synthetic HLS `AVPlayerItem` 在 legible rendition 为 `DEFAULT=NO`、未选择且已开始播放时没有 GET WebVTT 正文；选择该 option 后才发起正文 GET | Apple AVFoundation 运行行为＋确定性本地测试 | `LoopbackPlaybackServerTests.unifiedMasterExposesAdaptiveVariantsAndNativeSubtitles`；Xcode 26.6/macOS 26；2026-07-29 package gate | 2026-07-29 | 只证明 AVFoundation 的请求时机；production B 站字幕正文是 JSON，仍需安全、可取消且 identity 隔离的请求时 WebVTT 生成 route，并解决响应长度契约 | 可重复本地行为／按需方向已证 |
 | PERF-F001 | RSS/Leaks/internal counters 各自不能证明所有仍可达闲置对象已释放 | Apple Instruments documentation | Gathering/Reducing memory use | 2026-07-27 | 需 Allocations、Memory Graph、端口/Task 信号组合 | 已确认 |
 | PERF-F002 | 当前 App 10 次播放往返后 RSS 从播放约 261 MiB 回落至约 240 MiB，3 次关窗新建后约 209 MiB；30.925 秒 Allocations 中已识别弹幕/Task/listener 等容器为 0 persistent | 当前真实 App＋Instruments | `lifecycle-allocations-signed.trace` 脱敏统计；`ps`；`lsof` | 2026-07-27 | 单机短测且无 Memory Graph；raw trace 仅存 `/private/tmp`，不能宣称零 retain cycle | 单次 trace＋重复交互 |
-| PERF-F003 | 当前树 80 events/s × 1081.004 秒合成生产链路请求 4 段；86480 条事件计数守恒，peak 140，stop 后 active/layer/root attachment/subscriber 归零，RSS 峰值约 120.8 MiB、即时回落约 82.3 MiB | 当前确定性性能行为 | `Scripts/run-m44-renderer-probe.sh 80 1081`；Apple Silicon/macOS 26.5.2 | 合成 repository/timeline，不含真实 AVPlayer/CDN；Debug 构建；单机一次 | 当前树长测 PASS |
+| PERF-F003 | 历史单机长测曾观察到合成弹幕链路 stop 后资源归零 | 历史性能观察 | 2026-07-27 审计记录 | 一次性 runner 已删除；不再作为当前树自动化契约 | 历史证据 |
 | PERF-F004 | 当前签名 Debug App 热门／搜索多页往返的 10 秒保留窗口无 250 ms 以上 potential hang；RSS 约 69→138 MiB，空闲 30 秒与关窗 5 秒未回落 | 当前真实 App＋Instruments | 20 秒 windowed Time Profiler；`ps`；macOS 26.5.2 | 单机单次；未区分图片、视图和系统 cache；未覆盖 resize、历史、macOS 15 或 Release | 有界短样本／归因未决 |
 | ARCH-F001 | SubtitleUseCase 对空 bvid、非正 cid 与空 trackID 的 6 个组合均在 repository 调用前失败 | 当前确定性 Application 行为 | `SubtitleUseCaseTests`；Xcode 26.6 | 2026-07-28 | 证明当前 guard 有行为，不证明类型永远不能重构 | 6/6 通过，保留 |
 | ARCH-F002 | PlayerEngine 仍无 protocol-typed 调用者，但 concrete events 已被 MP-006 定点测试消费并定义 ready 后失败出口 | 当前调用图＋确定性 AVPlayer 测试 | `rg`；`engineDeduplicatesFailureNotificationAfterReady` | 2026-07-29 | production UI 尚未消费失败事件；真实 native failure 时机仅作 opt-in 观察 | protocol 可删／event 不再属于死代码 |
@@ -98,7 +101,6 @@
 | MP-F035 | 精确授权 WBI playurl 的实验实现可以把 Cookie 限定在单一 host/path/method/query，且不传播到媒体 header；但“安全地限定发送位置”不能证明“应该发送” | 当前实验调用图＋安全边界 | 实验 diff；`BiliCredentialRequestAuthorizer` 既有精确 allowlist 设计 | 2026-07-29 | 实验代码与 allowlist 已从 production 回退；本项只保留设计教训，不再是当前行为声明 | 当前 Stage 删除／后续 Stage 重新取证 |
 | MP-F036 | 当前签名 Debug 实验 App 在已登录状态下，对一个公开热门视频的精确授权 WBI playurl 返回 HTTP 412；有界匿名降级可恢复播放，但仍会先主动触发已知风控请求 | 当前真实 App／服务行为 | 签名 macOS App 可见脱敏错误分类与同路径前后对照 | 2026-07-29 | 单账号、单公开视频、单时点；未保存账号、内容标识、URL、Cookie、响应或截图；未定位 412 是 Cookie 集合、请求画像还是服务策略 | 支持整条实验路径回退，不支持以降级掩盖风险 |
 | UI-F012 | 每个 NavigationStack path 的系统 pop 经过显式 coordinator setter；从热门夹具进入播放后点击系统 Back，导航回 feed 且 playback stop 探针由 playing 变为 stopped；非当前 Tab 的非空 path 被拒绝，不会留下 destination 而漏掉 startPlayback | 当前签名 macOS XCUI＋确定性 App 行为 | `testNativeBackStopsPlayback`；`AppNavigationCoordinatorTests.inactiveTabCannotPublishPlaybackDestination`；2026-07-29 app gate | 2026-07-29 | fixture playback 不输出真实声音，证明 stop owner 被调用但不替代真实 AVPlayer／扬声器复核 | App build-for-testing、App unit tests与定点 XCUI 路径通过 |
-| AX-F004 | 卡片自绘 focus accent stroke 是返回后蓝框来源；移除自绘 stroke 后系统仍会恢复 Button 焦点，因此三个视频卡片入口进一步显式 `.focusable(false)`，hover/press 保留 | 用户真实行为＋当前源码／签名 macOS App 往返＋XCUI 返回后 Return 负向断言 | `PopularFeedView`、`VideoSearchView`、`WatchHistoryView`；`testNativeBackStopsPlayback`；2026-07-29 签名 Debug App | 2026-07-29 | 登录状态下鼠标打开公开视频、系统 Back 返回成功，焦点回到窗口而非原卡片；返回后 Return 不会重新打开视频。关闭键盘焦点会同时移除 Tab＋Return/Space 激活；VoiceOver 尚未验证 | 当前产品裁决为暂不提供卡片键盘导航 |
 | AX-F005 | production 字幕目录就绪后保持 nil selection 且不请求正文；明确选择轨道后才请求正文；轨道正文失败后的重试保留原 selection 并发起第二次正文请求，reset、切视频及 A→B→A identity 隔离保持原语义 | 当前确定性字幕生命周期行为 | `SubtitleViewModelTests.catalogDefaultsToOffAndSelectedTrackFollowsTimeline`；`SubtitleViewModelTests.retryAfterTrackFailureRetriesTheSelectedTrack`；2026-07-29 app gate | 2026-07-29 | 当前仍是自制 overlay；不证明原生 legible 转换、样式或 VoiceOver 行为 | 默认关闭、按需请求、轨道失败重试与既有生命周期回归通过 |
 | PRIV-F008 | `BiliPlaybackProbe` 不再使用默认 `URLSession.shared`；API、Range 与 loopback 准备请求使用显式 ephemeral session，关闭 Cookie storage/cache 并拒绝 redirect | 当前调用图＋Package 构建 | `BiliPlaybackProbe`；`BiliAPIProbe`／`BiliDanmakuProbe` 对照；2026-07-29 package gate | 2026-07-29 | 证明 Probe 构造边界，不证明远端服务不会返回风控或协议错误 | 诊断 Probe 与 production 同样保持匿名失败关闭 |
 

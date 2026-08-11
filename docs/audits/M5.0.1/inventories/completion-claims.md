@@ -16,8 +16,7 @@ Instruments 或 CI。旧测试数量和 run ID 只描述当时执行，不自动
 
 ## 已确认的状态漂移
 
-- `ROADMAP.md` 与 `M5.0-native-navigation-state-retention-2026-07-26.md` 仍写
-  macOS 15／26 CI 待完成；
+- 当时 `ROADMAP.md` 曾写 macOS 15／26 CI 待完成；
 - PR #18 的最终检查显示 macOS 15 `Build and test` 通过（3m24s）、macOS 26 通过
   （2m03s），真实播放 job 按条件 skipped；
 - 因此“CI 待完成”已过时，但 CI 仍不替代文档列出的搜索 Tab 往返、Escape、resize、

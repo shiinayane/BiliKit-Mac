@@ -25,7 +25,6 @@ M1 播放可行性、M2 游客浏览播放闭环、M2.5 架构整理、M3 登录
 BiliKitMac/                 App 入口、Composition Root、平台宿主与资源
 Packages/BiliKitCore/       包含核心模块的本地 Swift Package
 BiliKitMacTests/            App composition 集成测试
-BiliKitMacUITests/          UI smoke 测试骨架
 docs/                       路线图、ADR、验证记录与研究资料
 references/                 完全忽略的本地参考项目，不进入 Xcode 工程
 ```
@@ -87,80 +86,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 没有 Team ID 的未签名或临时签名宿主会明确跳过此用例，不能把该结果当作真实 Data Protection Keychain 证据。
 
-## 显式运行游客 API 探针
-
-`BiliAPIProbe` 会获取匿名 WBI key，对搜索参数签名并解码一页视频结果。它会发起真实网络请求，因此不会自动进入 CI 或 App target：
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliAPIProbe \
-  --search macOS \
-  --page 1
-```
-
-探针只输出请求路径、HTTP 状态、响应大小、映射后条数和首条结果摘要，不输出签名查询、响应 body 或凭据。当前边界和运行证据见 [M2 游客 API 验证记录](docs/validation/M2-guest-api-2026-07-21.md)。
-
-## 显式运行 Web QR 契约探针
-
-`BiliAuthProbe` 会在内存窗口显示二维码，并每 2 秒轮询一次，最多运行 180 秒。它用于受控协议回归与必要的现场观察，不会自动进入 CI 或 App target：
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliAuthProbe
-```
-
-只验证生成 endpoint、主机白名单和内存 QR 渲染，不显示二维码或进入轮询：
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliAuthProbe \
-  --generate-only
-```
-
-不显示二维码，只轮询到服务端过期状态（最长 240 秒）：
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliAuthProbe \
-  --observe-expiry
-```
-
-终端只输出安全状态、字段/查询/Cookie 名称、Cookie 属性和二维码主机，不输出 `qrcode_key`、二维码 URL、响应 body、Cookie 或 token 值。当前实现接受已经现场确认的 `86101` 未扫码、`86090` 已扫码待确认、`0` 待凭据校验与 `86038` 过期状态；其他状态会失败关闭。探针仍调用只校验、不持久化的入口；正式 App 则通过认证 Application port 连接真实 Keychain store，完整凭据不会进入 Feature。运行前请先阅读 [M3 威胁模型](docs/security/M3-threat-model.md)。
-
-## 显式运行真实播放探针
-
-`BiliPlaybackProbe` 会解析指定 BVID 的首个分 P，请求游客 AVC/AAC DASH manifest，并检查 `readyToPlay`、初始播放和双向 seek。它会发起真实网络请求，因此不会自动进入 CI 或 App target：
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliPlaybackProbe \
-  --bvid BV1h4KU66ENd \
-  --play-seconds 1 \
-  --forward-seek 30 \
-  --backward-seek 5 \
-  --seek-cycles 1 \
-  --replacement-cycles 0
-```
-
-游客接口和媒体 URL 都会动态变化。已记录的 BVID 可能失效，或者不再允许请求指定画质，因此一次探针失败本身不能证明播放实现发生回归。探针不会输出带签名的媒体 URL 或响应 body。当前结果见[真实播放验证记录](docs/validation/M1-real-playback-2026-07-21.md)。
-
-M1 收尾矩阵使用 30 秒连续播放、6 轮双向 seek 和 12 次播放项目替换，同时检查视频时间戳相对 AVPlayer timebase 的最大偏差，以及进程最终 RSS 增长。该矩阵已在 GitHub Actions 的 macOS 15 runner 上通过；它只通过手动触发入口运行，不属于 push/PR 必过检查。
-
-## 弹幕数据与调度验证记录
-
-M4.3 曾通过一次性本机探针验证生产 `BiliAPI` protobuf decoder 和 `BiliDanmaku`
-调度器。该探针现已退役，不再作为可执行入口；当时的脱敏证据和适用边界保留在
-[M4 弹幕数据与调度验证记录](docs/validation/M4-danmaku-data-scheduler-2026-07-22.md)。
+历史真实网络、登录、播放和弹幕观察保留在 `docs/validation/`；这些记录不是当前可执行
+runner，也不能替代当前 App 的受控人工验证。
 
 ## 安全与实现边界
 

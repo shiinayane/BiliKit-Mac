@@ -8,7 +8,6 @@
 | --- | --- | --- | --- |
 | `AVPlayerContainerView` | `BiliKitMac/Platform/PlayerHostView.swift:67` | 把 `AVPlayerView` 与弹幕 overlay 安装到同一原生 surface | production |
 | `DanmakuPlayerView` | `BiliKitMac/Platform/PlayerHostView.swift:112` | 使用 `AVPlayerView.contentOverlayView` 承载弹幕 | production |
-| `UITestWindowConfigurator` | `BiliKitMac/Composition/UITestContentView.swift` | fixture 窗口尺寸配置 | DEBUG fixture |
 
 `PlayerHostLifecycleProbe` 只在注入时记录 host 创建／dismantle，不是系统资源释放证明，必须
 与 player、overlay、observer 和 loopback owner 分开审计。

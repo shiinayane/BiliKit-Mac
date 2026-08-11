@@ -109,7 +109,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             .accessibilityHidden(blocksRetainedContext)
         } else {
             VideoDetailSkeleton(loadingLabel: initialLoadingLabel)
-                .accessibilityIdentifier("playback.loading")
         }
     }
 
@@ -175,7 +174,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 systemImage: "play.rectangle",
                 description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
             )
-            .accessibilityIdentifier("detail.empty")
         case .loading:
             EmptyView()
         case .loadingPage:
@@ -186,7 +184,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 message: failure.message,
                 retry: retryAction
             )
-            .accessibilityIdentifier("playback.failure")
         case .preparingPlayback, .ready:
             EmptyView()
         }
@@ -195,7 +192,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     @ViewBuilder
     private var replacementLoadingOverlay: some View {
         VideoDetailSkeleton(loadingLabel: "正在加载所选视频")
-            .accessibilityIdentifier("playback.replacement.loading")
     }
 
     @ViewBuilder
@@ -210,7 +206,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.background)
-                .accessibilityIdentifier("playback.replacement.failure")
                 .transition(.opacity)
             case .idle, .loading, .loadingPage, .preparingPlayback, .ready:
                 EmptyView()

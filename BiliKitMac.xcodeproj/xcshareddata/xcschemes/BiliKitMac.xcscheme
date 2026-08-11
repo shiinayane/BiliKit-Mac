@@ -35,20 +35,6 @@
                ReferencedContainer = "container:BiliKitMac.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8DFA9017300F375600DF3E1D"
-               BuildableName = "BiliKitMacUITests.xctest"
-               BlueprintName = "BiliKitMacUITests"
-               ReferencedContainer = "container:BiliKitMac.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -66,16 +52,6 @@
                BlueprintIdentifier = "8DFA900D300F375600DF3E1D"
                BuildableName = "BiliKitMacTests.xctest"
                BlueprintName = "BiliKitMacTests"
-               ReferencedContainer = "container:BiliKitMac.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8DFA9017300F375600DF3E1D"
-               BuildableName = "BiliKitMacUITests.xctest"
-               BlueprintName = "BiliKitMacUITests"
                ReferencedContainer = "container:BiliKitMac.xcodeproj">
             </BuildableReference>
          </TestableReference>

@@ -82,7 +82,6 @@ struct RelatedVideoShelf: View {
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("related-videos.shelf")
     }
 
     private var contentVisualPhase: LoadingVisualPhase {
@@ -180,7 +179,6 @@ struct RelatedVideoShelf: View {
             }
             .frame(height: shelfHeight)
             .accessibilityLabel("横向相关推荐")
-            .accessibilityIdentifier("related-videos.scroll")
         }
     }
 
@@ -199,7 +197,6 @@ struct RelatedVideoShelf: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibilityLabel)
         .accessibilityHint("播放并替换当前视频")
-        .accessibilityIdentifier("related-videos.card.\(item.bvid)")
     }
 
     private var loadingShelf: some View {
@@ -241,7 +238,6 @@ struct RelatedVideoShelf: View {
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, minHeight: 180)
-        .accessibilityIdentifier("related-videos.failure")
     }
 
     private var unavailableShelf: some View {

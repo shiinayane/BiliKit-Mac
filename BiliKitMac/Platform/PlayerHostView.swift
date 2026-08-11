@@ -135,7 +135,6 @@ private struct PlayerMomentaryRateBadge: View {
         .modifier(PlayerMomentaryRateBadgeBackground())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(rate.accessibilityLabel)
-        .accessibilityIdentifier("player.momentary-rate")
     }
 }
 
@@ -615,10 +614,6 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     func resetInputSessionForPointerExit() {
         surfaceCapture.resetInputSessionForPointerExit()
-    }
-
-    var hasMomentaryRateBadge: Bool {
-        momentaryRateBadge != nil
     }
 
     func showMomentaryRateBadge(_ rate: PlayerMomentaryRate) {

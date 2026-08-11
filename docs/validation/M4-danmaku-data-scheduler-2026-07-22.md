@@ -84,13 +84,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 > 退役说明（2026-08-04）：以下一次性 runner 已从仓库移除，命令只记录当时的验证方式，
 > 不能作为当前可执行入口。
 
-执行：
-
-```sh
-zsh Scripts/run-m4-danmaku-probe.sh
-```
-
-脚本交互读取 BVID，CID 留空时由生产 API 选择首分 P，并固定请求首段。2026-07-22 的受控运行结果为：生产 decoder 解码 224 条基础弹幕，调度器发射 224 条，缓存 1 段，最终输出 `RESULT: PASS`。
+已删除的一次性脚本当时交互读取 BVID，CID 留空时由生产 API 选择首分 P，并固定请求首段。
+2026-07-22 的受控运行结果为：生产 decoder 解码 224 条基础弹幕，调度器发射 224 条，缓存
+1 段，最终输出 `RESULT: PASS`。
 
 根目录 `test.log` 已核对：只包含构建过程、`danmaku-production segment=ready`、解码/调度/缓存计数和最终状态，未记录 BVID、CID、正文、事件/用户标识、完整 URL、Cookie 或响应 body。该证据关闭 M4.3，并允许进入 M4.4 renderer。
 

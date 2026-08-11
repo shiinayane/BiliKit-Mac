@@ -18,10 +18,6 @@ let package = Package(
         .library(name: "BiliBrowseFeature", targets: ["BiliBrowseFeature"]),
         .library(name: "BiliAuthFeature", targets: ["BiliAuthFeature"]),
         .library(name: "BiliLibraryFeature", targets: ["BiliLibraryFeature"]),
-        .executable(name: "BiliAPIProbe", targets: ["BiliAPIProbe"]),
-        .executable(name: "BiliAuthProbe", targets: ["BiliAuthProbe"]),
-        .executable(name: "BiliPlaybackProbe", targets: ["BiliPlaybackProbe"]),
-        .executable(name: "BiliDanmakuProbe", targets: ["BiliDanmakuProbe"]),
     ],
     dependencies: [
         .package(
@@ -71,39 +67,6 @@ let package = Package(
             dependencies: ["BiliApplication", "BiliModels", "BiliUI"]
         ),
         .target(name: "BiliUI"),
-        .executableTarget(
-            name: "BiliAPIProbe",
-            dependencies: [
-                "BiliAPI",
-                "BiliApplication",
-                "BiliModels",
-                "BiliNetworking",
-            ]
-        ),
-        .executableTarget(
-            name: "BiliAuthProbe",
-            dependencies: ["BiliAuth"]
-        ),
-        .executableTarget(
-            name: "BiliPlaybackProbe",
-            dependencies: [
-                "BiliAPI",
-                "BiliApplication",
-                "BiliModels",
-                "BiliNetworking",
-                "BiliPlayback",
-            ]
-        ),
-        .executableTarget(
-            name: "BiliDanmakuProbe",
-            dependencies: [
-                "BiliAPI",
-                "BiliApplication",
-                "BiliDanmaku",
-                "BiliModels",
-                "BiliNetworking",
-            ]
-        ),
         .testTarget(
             name: "BiliModelsTests",
             dependencies: ["BiliModels"]

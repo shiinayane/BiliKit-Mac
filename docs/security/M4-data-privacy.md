@@ -81,4 +81,4 @@ M4.2 已将字幕负向 fixture 接入生产 decoder。字幕目录最初使用 
 
 现场目录可能包含 `subtitle_url` 为空字符串的不可用占位轨。生产 decoder 只忽略这种明确无正文来源的条目；非空但无法解析、来源不可信或字段异常的条目仍使整个目录失败关闭。探针必须实际出现生产 decoder 的 ready 标志，不能把“全部轨道均为空占位”造成的 skip 当作 Gate 通过。
 
-M4.3 的 protobuf wire 类型只存在于 `BiliAPI` 解码边界；映射后的 `DanmakuEvent` 不保留发送者 hash、创建时间、action 或原始 wire。分段正文、事件 ID 和过滤关键词只存在于当前进程内存，`BiliDanmakuProbe` 只输出解码/调度/缓存计数。会话最多并发 2 个分段请求并保留 3 段；切换 identity、stop 和 discontinuity 会取消或隔离旧任务与游标。真实匿名首段已通过生产 decoder 与调度器，日志未保存内容标识、正文、完整 URL、用户标识或凭据，因此 M4.3 Gate 已关闭。
+M4.3 的 protobuf wire 类型只存在于 `BiliAPI` 解码边界；映射后的 `DanmakuEvent` 不保留发送者 hash、创建时间、action 或原始 wire。分段正文、事件 ID 和过滤关键词只存在于当前进程内存。会话最多并发 2 个分段请求并保留 3 段；切换 identity、stop 和 discontinuity 会取消或隔离旧任务与游标。历史一次性 probe 已删除；当前确定性测试只固定 decoder、调度、identity 与清理契约。

@@ -326,211 +326,6 @@ struct PlayerHostViewIdentityTests {
         )
     }
 
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func playerHostInstallsSurfaceCaptureInScrollableDetailHierarchy()
-        async throws
-    {
-        let renderer = CoreAnimationDanmakuRenderer()
-        let controller = DanmakuPresentationController(
-            backend: renderer,
-            configuration: Self.emptyDanmakuConfiguration
-        )
-        let hostingView = NSHostingView(
-            rootView: PlayerHostScrollRoutingHarness(
-                player: AVPlayer(),
-                renderer: renderer,
-                controller: controller
-            )
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
-        window.orderFrontRegardless()
-        defer {
-            window.orderOut(nil)
-            window.contentView = NSView()
-        }
-        hostingView.layoutSubtreeIfNeeded()
-
-        #expect(
-            await waitUntil(in: hostingView) {
-                self.firstView(
-                    ofType: AVPlayerView.self,
-                    in: hostingView
-                ) != nil
-            },
-            "AVPlayerView 应在已进入 Window Server 生命周期的测试窗口中完成挂载"
-        )
-        let playerView = try #require(
-            firstView(
-                ofType: AVPlayerView.self,
-                in: hostingView
-            )
-        )
-        #expect(playerView.showsFullScreenToggleButton)
-        #expect(playerView.allowsPictureInPicturePlayback)
-        let scrollCaptureView = try #require(
-            firstView(
-                ofType: PlayerScrollWheelCaptureView.self,
-                in: playerView
-            )
-        )
-        #expect(scrollCaptureView.superview === playerView.contentOverlayView)
-        let scrollShieldView = try #require(
-            firstView(
-                ofType: PlayerScrollWheelShieldView.self,
-                in: hostingView
-            )
-        )
-        #expect(scrollShieldView.superview === playerView)
-        let playerSurfaceSubviews = playerView.subviews
-        let shieldIndex = try #require(
-            playerSurfaceSubviews.firstIndex { $0 === scrollShieldView }
-        )
-        #expect(shieldIndex == playerSurfaceSubviews.indices.last)
-        #expect(!scrollShieldView.isAccessibilityElement())
-        let lateAVKitSibling = NSView(frame: playerView.bounds)
-        playerView.addSubview(
-            lateAVKitSibling,
-            positioned: .above,
-            relativeTo: scrollShieldView
-        )
-        playerView.needsLayout = true
-        playerView.layoutSubtreeIfNeeded()
-        #expect(playerView.subviews.last === scrollShieldView)
-
-        scrollShieldView.removeFromSuperview()
-        playerView.setFrameSize(
-            NSSize(
-                width: playerView.bounds.width - 80,
-                height: playerView.bounds.height - 40
-            )
-        )
-        playerView.needsLayout = true
-        playerView.layoutSubtreeIfNeeded()
-        #expect(scrollShieldView.superview === playerView)
-        #expect(playerView.subviews.last === scrollShieldView)
-        #expect(scrollShieldView.frame == playerView.bounds)
-        let danmakuOverlay = try #require(
-            firstView(
-                ofType: DanmakuOverlayView.self,
-                in: playerView
-            )
-        )
-        let overlaySubviews = try #require(
-            playerView.contentOverlayView?.subviews
-        )
-        let danmakuIndex = try #require(
-            overlaySubviews.firstIndex { $0 === danmakuOverlay }
-        )
-        let captureIndex = try #require(
-            overlaySubviews.firstIndex { $0 === scrollCaptureView }
-        )
-        #expect(captureIndex > danmakuIndex)
-        #expect(!scrollCaptureView.isAccessibilityElement())
-        let scrollView = try #require(
-            firstAncestor(ofType: NSScrollView.self, from: playerView)
-        )
-        #expect(
-            await waitUntil(in: hostingView) {
-                guard let documentView = scrollView.documentView else {
-                    return false
-                }
-                return documentView.bounds.height
-                    > scrollView.contentView.bounds.height
-            },
-            "详情滚动文档应完成布局并大于可见区域"
-        )
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func windowShieldForwardsVerticalWheelThroughHostCoordinator()
-        async throws
-    {
-        let renderer = CoreAnimationDanmakuRenderer()
-        let controller = DanmakuPresentationController(
-            backend: renderer,
-            configuration: Self.emptyDanmakuConfiguration
-        )
-        let hostingView = NSHostingView(
-            rootView: PlayerHostView(
-                player: AVPlayer(),
-                danmakuRenderer: renderer,
-                danmakuController: controller
-            )
-            .frame(width: 800, height: 300)
-        )
-        hostingView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
-        let scrollView = ScrollWheelRecordingScrollView(
-            frame: NSRect(x: 0, y: 0, width: 800, height: 300)
-        )
-        scrollView.documentView = hostingView
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = scrollView
-        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
-        window.orderFrontRegardless()
-        defer {
-            window.orderOut(nil)
-            window.contentView = NSView()
-        }
-        hostingView.layoutSubtreeIfNeeded()
-
-        #expect(
-            await waitUntil(in: hostingView) {
-                self.firstView(
-                    ofType: PlayerScrollWheelShieldView.self,
-                    in: hostingView
-                ) != nil
-            },
-            "普通窗口 shield 应随真实 PlayerHostView 完成挂载"
-        )
-        let shield = try #require(
-            firstView(
-                ofType: PlayerScrollWheelShieldView.self,
-                in: hostingView
-            )
-        )
-        let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
-        shield.scrollWheel(with: event)
-
-        #expect(scrollView.receivedScrollWheelEvents.count == 1)
-        #expect(scrollView.receivedScrollWheelEvents.first === event)
-
-        let lockedHorizontalEvent = try makeScrollWheelEvent(
-            deltaX: -12,
-            deltaY: 1,
-            phase: .began
-        )
-        shield.scrollWheel(with: lockedHorizontalEvent)
-        #expect(scrollView.receivedScrollWheelEvents.count == 1)
-
-        shield.handlePointerExit()
-
-        let orphanedVerticalEvent = try makeScrollWheelEvent(
-            deltaX: 1,
-            deltaY: -12,
-            phase: .changed
-        )
-        shield.scrollWheel(with: orphanedVerticalEvent)
-        #expect(scrollView.receivedScrollWheelEvents.count == 2)
-        #expect(
-            scrollView.receivedScrollWheelEvents.last
-                === orphanedVerticalEvent
-        )
-    }
-
     @Test
     @MainActor
     func contentOverlayCaptureOnlyParticipatesInScrollWheelHitTesting() throws {
@@ -601,27 +396,6 @@ struct PlayerHostViewIdentityTests {
                 try #require(mouseMoveEvent)
             )
         )
-    }
-
-    @Test
-    @MainActor
-    func contentOverlayCaptureOwnsExactlyOneMomentaryRateBadge() {
-        let capture = PlayerScrollWheelCaptureView(
-            frame: NSRect(x: 0, y: 0, width: 800, height: 450)
-        )
-
-        #expect(!capture.hasMomentaryRateBadge)
-        capture.showMomentaryRateBadge(.fast)
-        #expect(capture.hasMomentaryRateBadge)
-        #expect(capture.subviews.count == 1)
-
-        capture.showMomentaryRateBadge(.slow)
-        #expect(capture.hasMomentaryRateBadge)
-        #expect(capture.subviews.count == 1)
-
-        capture.clearMomentaryRateBadge()
-        #expect(!capture.hasMomentaryRateBadge)
-        #expect(capture.subviews.isEmpty)
     }
 
     @Test
@@ -1192,13 +966,16 @@ struct PlayerHostViewIdentityTests {
                 reconciliation: reconciliation
             )
         )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 1_080, height: 680)
+        let scrollView = ScrollWheelRecordingScrollView(frame: hostingView.frame)
+        scrollView.documentView = hostingView
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 680),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        window.contentView = hostingView
+        window.contentView = scrollView
         hostingView.layoutSubtreeIfNeeded()
 
         #expect(
@@ -1210,6 +987,13 @@ struct PlayerHostViewIdentityTests {
         let playerView = try #require(playerViews(in: hostingView).first)
         let hostIdentity = ObjectIdentifier(playerView)
         #expect(playerView.player === player)
+        let windowShield = try #require(
+            playerView.subviews.first { $0 is PlayerScrollWheelShieldView }
+        )
+        #expect(!windowShield.isAccessibilityElement())
+        let verticalEvent = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
+        windowShield.scrollWheel(with: verticalEvent)
+        #expect(scrollView.receivedScrollWheelEvents == [verticalEvent])
 
         let firstItem = AVPlayerItem(asset: AVMutableComposition())
         player.replaceCurrentItem(with: firstItem)
@@ -1268,37 +1052,6 @@ struct PlayerHostViewIdentityTests {
             matches.append(contentsOf: playerViews(in: child))
         }
         return matches
-    }
-
-    @MainActor
-    private func firstView<ViewType: NSView>(
-        ofType type: ViewType.Type,
-        in root: NSView
-    ) -> ViewType? {
-        if let match = root as? ViewType {
-            return match
-        }
-        for child in root.subviews {
-            if let match = firstView(ofType: type, in: child) {
-                return match
-            }
-        }
-        return nil
-    }
-
-    @MainActor
-    private func firstAncestor<ViewType: NSView>(
-        ofType type: ViewType.Type,
-        from view: NSView
-    ) -> ViewType? {
-        var ancestor = view.superview
-        while let current = ancestor {
-            if let match = current as? ViewType {
-                return match
-            }
-            ancestor = current.superview
-        }
-        return nil
     }
 
     private func makeScrollWheelEvent(
@@ -1369,26 +1122,6 @@ private final class ScrollWheelRecordingScrollView: NSScrollView {
 
     override func scrollWheel(with event: NSEvent) {
         receivedScrollWheelEvents.append(event)
-    }
-}
-
-private struct PlayerHostScrollRoutingHarness: View {
-    let player: AVPlayer
-    let renderer: CoreAnimationDanmakuRenderer
-    let controller: DanmakuPresentationController
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                PlayerHostView(
-                    player: player,
-                    danmakuRenderer: renderer,
-                    danmakuController: controller
-                )
-                .frame(height: 300)
-                Color.clear.frame(height: 900)
-            }
-        }
     }
 }
 

@@ -19,10 +19,6 @@ struct VideoUploaderHeaderTests {
         #expect(content.name == "示例 UP 主")
         #expect(content.avatarURL == avatarURL)
         #expect(content.signature == .text("用影像记录生活 也记录技术"))
-        #expect(
-            content.accessibilityLabel
-                == "UP 主，示例 UP 主，签名，用影像记录生活 也记录技术"
-        )
     }
 
     @Test
@@ -37,7 +33,6 @@ struct VideoUploaderHeaderTests {
 
         #expect(content.name == "未知 UP 主")
         #expect(content.signature == .hidden)
-        #expect(content.accessibilityLabel == "UP 主，未知 UP 主")
     }
 
     @Test
@@ -54,6 +49,5 @@ struct VideoUploaderHeaderTests {
         #expect(content.name == "示例 UP 主")
         #expect(content.avatarURL != nil)
         #expect(content.signature == .loading)
-        #expect(content.accessibilityLabel == "UP 主，示例 UP 主，签名正在加载")
     }
 }

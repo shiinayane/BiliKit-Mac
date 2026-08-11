@@ -73,10 +73,8 @@ public struct VideoSearchView: View {
         case .idle, .loading:
             let query = request.searchQuery ?? ""
             SearchResultsSkeleton(query: query)
-                .accessibilityIdentifier("search.loading")
         case .loaded(.search(let query, let page)) where page.videos.isEmpty:
             ContentUnavailableView.search(text: query)
-                .accessibilityIdentifier("search.empty")
         case .loaded(.search(let query, let page)):
             VStack(spacing: 0) {
                 HStack {
@@ -97,14 +95,12 @@ public struct VideoSearchView: View {
                     onSelect: onSelect
                 )
             }
-            .accessibilityIdentifier("search.results")
         case .failed(request: .search(_, _), let error):
             BrowseFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
                 retry: { model.retry(request) }
             )
-            .accessibilityIdentifier("search.failure")
         default:
             searchPrompt
         }
@@ -116,7 +112,6 @@ public struct VideoSearchView: View {
             systemImage: "magnifyingglass",
             description: Text("输入关键词后按下 Return 或点击搜索。")
         )
-        .accessibilityIdentifier("search.prompt")
     }
 }
 
@@ -194,16 +189,13 @@ private struct SearchResultsGrid: View {
                             GuestVideoCard(video: video)
                         }
                         .buttonStyle(VideoCardButtonStyle())
-                        .focusable(false)
                         .accessibilityHint("播放视频")
-                        .accessibilityIdentifier("search.item.\(video.bvid)")
                     }
                 }
                 .padding(VideoCardGridLayout.contentPadding)
                 .scrollTargetLayout()
             }
             .scrollPosition($scrollPosition)
-            .accessibilityIdentifier("search.grid")
             .refreshable {
                 model.search(query, page: page.pageNumber)
                 await model.waitForCurrentTask()
@@ -237,7 +229,6 @@ private struct SearchResultsGrid: View {
                 .font(.caption)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
-                .accessibilityIdentifier("search.refresh-failure")
                 .transition(.opacity)
         }
     }

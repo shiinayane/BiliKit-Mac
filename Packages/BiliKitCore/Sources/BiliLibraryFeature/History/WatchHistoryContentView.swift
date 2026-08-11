@@ -25,7 +25,6 @@ struct WatchHistoryContentView: View {
         switch model.state {
         case .idle, .loading:
             VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
-                .accessibilityIdentifier("history.loading")
         case .loaded(let items, let continuation, let loadMoreError):
             if items.isEmpty {
                 emptyHistory(
@@ -85,10 +84,8 @@ struct WatchHistoryContentView: View {
                     model.loadMore()
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("history.load-more")
             }
         }
-        .accessibilityIdentifier("history.empty")
     }
 
     private func historyList(
@@ -113,9 +110,7 @@ struct WatchHistoryContentView: View {
                             WatchHistoryCard(item: item)
                         }
                         .buttonStyle(VideoCardButtonStyle())
-                        .focusable(false)
                         .accessibilityHint("播放视频")
-                        .accessibilityIdentifier("history.item.\(item.bvid)")
                     }
                 }
                 .padding(VideoCardGridLayout.contentPadding)
@@ -146,7 +141,6 @@ struct WatchHistoryContentView: View {
                             ),
                             value: isLoadingMore
                         )
-                        .accessibilityIdentifier("history.load-more")
                         Spacer()
                     }
                     .padding(.vertical, 8)
@@ -154,7 +148,6 @@ struct WatchHistoryContentView: View {
                 }
             }
             .scrollPosition($scrollPosition)
-            .accessibilityIdentifier("history.list")
         }
     }
 
@@ -169,10 +162,8 @@ struct WatchHistoryContentView: View {
                     model.reload()
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("history.retry")
             }
         }
-        .accessibilityIdentifier("history.failure")
     }
 
     private func title(for error: WatchHistoryError) -> String {
