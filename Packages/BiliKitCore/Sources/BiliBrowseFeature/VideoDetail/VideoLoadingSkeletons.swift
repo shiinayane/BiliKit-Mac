@@ -29,34 +29,10 @@ struct VideoDetailSkeleton: View {
                 .frame(maxWidth: 520)
                 .frame(height: 30)
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) {
-                    metadataItems
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    metadataItems
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var metadataItems: some View {
-        metadataItem(width: 120)
-        metadataItem(width: 84)
-        metadataItem(width: 84)
-        metadataItem(width: 104)
-    }
-
-    private func metadataItem(width: CGFloat) -> some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(.quinary)
-                .frame(width: 14, height: 14)
-            RoundedRectangle(cornerRadius: 3)
-                .fill(.quinary)
-                .frame(width: width, height: 14)
+            VideoDetailMetadataView(
+                content: .placeholder,
+                isPlaceholder: true
+            )
         }
     }
 
