@@ -18,10 +18,6 @@ struct AppShellView: View {
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
-    let playbackSidebarContent:
-        (
-            (String, @escaping (String) -> Void) -> AnyView
-        )?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var popularScrollPosition = ScrollPosition(
         idType: String.self
@@ -102,17 +98,10 @@ struct AppShellView: View {
 
     @ViewBuilder
     private func playbackSidebar(for bvid: String) -> some View {
-        if let playbackSidebarContent {
-            playbackSidebarContent(
-                bvid,
-                navigationCoordinator.openPlayback
-            )
-        } else {
-            PlaybackContextSidebar(
-                model: videoModel,
-                onRetry: navigationCoordinator.retryPlayback
-            )
-        }
+        PlaybackContextSidebar(
+            model: videoModel,
+            onRetry: navigationCoordinator.retryPlayback
+        )
     }
 
     private var sidebarMinimumWidth: CGFloat {
