@@ -25,9 +25,16 @@ export DEVELOPER_DIR="$developer_dir"
 
 artifact_root=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-quality-gate.XXXXXX")
 cleanup() {
-    rm -rf -- "$artifact_root"
+    status=$?
+    if ! rm -rf -- "$artifact_root" 2>/dev/null; then
+        echo "[Gate] warning: 未能完整清理临时产物：$artifact_root" >&2
+    fi
+    exit "$status"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "[Gate] static"
 sh Scripts/check-architecture.sh
