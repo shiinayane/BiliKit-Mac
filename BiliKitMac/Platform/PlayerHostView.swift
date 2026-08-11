@@ -57,10 +57,12 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         view.controlsStyle = .default
         view.showsFullScreenToggleButton = true
         view.allowsPictureInPicturePlayback = true
+        view.installWindowScrollWheelShield()
         return view
     }
 
     func updateNSView(_ view: DanmakuPlayerView, context: Context) {
+        view.installWindowScrollWheelShield()
         view.requestMomentaryPlaybackRate = beginMomentaryPlaybackRate
         view.finishMomentaryPlaybackRate = endMomentaryPlaybackRate
         if view.player !== player {
@@ -174,7 +176,9 @@ private final class PlayerMomentaryRateBadgeHostingView:
 private final class DanmakuPlayerView: AVPlayerView {
     let danmakuOverlay: DanmakuOverlayView
     private let scrollWheelCaptureView = PlayerScrollWheelCaptureView()
+    private let windowScrollWheelShieldView = PlayerScrollWheelShieldView()
     private var installedDanmakuOverlay = false
+    private var installedWindowScrollWheelShield = false
     private var momentaryRateSessionID: UUID?
     private var momentaryRateItemIdentity: ObjectIdentifier?
     private weak var observedPlayer: AVPlayer?
@@ -221,11 +225,60 @@ private final class DanmakuPlayerView: AVPlayerView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         installDanmakuOverlayIfNeeded()
+        installWindowScrollWheelShield()
         startObservingFocusLoss()
+    }
+
+    override func layout() {
+        super.layout()
+        installWindowScrollWheelShield()
     }
 
     func cancelMomentaryPlaybackRate() {
         scrollWheelCaptureView.cancelInputSession()
+        if momentaryRateSessionID != nil {
+            endMomentaryPlaybackRate()
+        }
+    }
+
+    func handleWindowSurfaceScrollWheel(_ event: NSEvent) {
+        scrollWheelCaptureView.handleScrollWheel(
+            event,
+            playerFallbackPolicy: .consume
+        )
+    }
+
+    func installWindowScrollWheelShield() {
+        if !installedWindowScrollWheelShield {
+            installedWindowScrollWheelShield = true
+            windowScrollWheelShieldView.frame = bounds
+            windowScrollWheelShieldView.autoresizingMask = [.width, .height]
+            windowScrollWheelShieldView.onScrollWheel = { [weak self] event in
+                self?.handleWindowSurfaceScrollWheel(event)
+            }
+            windowScrollWheelShieldView.onPointerExited = { [weak self] in
+                self?.resetScrollInputSessionForPointerExit()
+            }
+        }
+        if windowScrollWheelShieldView.frame != bounds {
+            windowScrollWheelShieldView.frame = bounds
+        }
+        guard
+            windowScrollWheelShieldView.superview !== self
+                || subviews.last !== windowScrollWheelShieldView
+        else {
+            return
+        }
+        windowScrollWheelShieldView.removeFromSuperview()
+        addSubview(
+            windowScrollWheelShieldView,
+            positioned: .above,
+            relativeTo: nil
+        )
+    }
+
+    private func resetScrollInputSessionForPointerExit() {
+        scrollWheelCaptureView.resetInputSessionForPointerExit()
         if momentaryRateSessionID != nil {
             endMomentaryPlaybackRate()
         }
@@ -409,6 +462,74 @@ private final class DanmakuPlayerView: AVPlayerView {
     }
 }
 
+/// 普通窗口中位于 AVPlayerView 原生子视图上方的 scroll-only direct child。
+///
+/// 该视图没有自己的 router 或播放状态；它只把 precise scroll-wheel 转交给
+/// `contentOverlayView` capture 持有的唯一 surface coordinator。其他输入穿透给 AVKit。
+@MainActor
+final class PlayerScrollWheelShieldView: NSView {
+    var onScrollWheel: (NSEvent) -> Void = { _ in }
+    var onPointerExited: () -> Void = {}
+    private var pointerTrackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(false)
+    }
+
+    static func capturesEvent(
+        ofType type: NSEvent.EventType?,
+        isPrecise: Bool
+    ) -> Bool {
+        type == .scrollWheel && isPrecise
+    }
+
+    static func capturesEvent(_ event: NSEvent) -> Bool {
+        guard event.type == .scrollWheel else { return false }
+        return event.hasPreciseScrollingDeltas
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let event = NSApp.currentEvent else { return nil }
+        return Self.capturesEvent(event) ? self : nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onScrollWheel(event)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let pointerTrackingArea {
+            removeTrackingArea(pointerTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .mouseEnteredAndExited,
+                .activeInKeyWindow,
+                .inVisibleRect,
+            ],
+            owner: self
+        )
+        addTrackingArea(trackingArea)
+        pointerTrackingArea = trackingArea
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        handlePointerExit()
+    }
+
+    func handlePointerExit() {
+        onPointerExited()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
+
 /// 安装在 AVKit 公开 content overlay 中、位于原生控制条下方的透明滚轮命中层。
 ///
 /// 只对 scroll-wheel 事件参与 hit testing；点击、拖动、magnify、键盘与辅助功能继续穿透。
@@ -453,7 +574,17 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        surfaceCapture.handleScrollWheel(event)
+        handleScrollWheel(event, playerFallbackPolicy: .dispatchToPlayer)
+    }
+
+    func handleScrollWheel(
+        _ event: NSEvent,
+        playerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy
+    ) {
+        surfaceCapture.handleScrollWheel(
+            event,
+            playerFallbackPolicy: playerFallbackPolicy
+        )
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -480,6 +611,10 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     func cancelInputSession() {
         surfaceCapture.cancelInputSession()
+    }
+
+    func resetInputSessionForPointerExit() {
+        surfaceCapture.resetInputSessionForPointerExit()
     }
 
     var hasMomentaryRateBadge: Bool {
@@ -532,6 +667,9 @@ final class PlayerScrollWheelSurfaceCapture {
     private var scrollWheelRouter = PlayerScrollWheelRouter()
     private var horizontalRateGesture = PlayerHorizontalRateGestureState()
     private var pendingScrollWheelEvents: [NSEvent] = []
+    private var pendingPlayerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy?
+    private var activePlayerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy?
+    private var previousEventPhase: NSEvent.Phase = []
     var isMomentaryRateAvailable: () -> Bool = { false }
     var onMomentaryRateBegan: (PlayerMomentaryRate) -> Void = { _ in }
     var onMomentaryRateEnded: () -> Void = {}
@@ -549,35 +687,56 @@ final class PlayerScrollWheelSurfaceCapture {
     }
 
     /// 纵向滚动交给详情页；播放中的精确横向手势用于临时倍速。
-    func handleScrollWheel(_ event: NSEvent) {
+    func handleScrollWheel(
+        _ event: NSEvent,
+        playerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy =
+            .dispatchToPlayer
+    ) {
+        defer { previousEventPhase = event.phase }
         cancelAbandonedMomentaryRate(before: event)
         flushAbandonedPendingEvents(before: event)
+        let sequenceFallbackPolicy = fallbackPolicy(
+            for: event,
+            requested: playerFallbackPolicy
+        )
         let route = scrollWheelRouter.route(
             deltaX: event.scrollingDeltaX,
             deltaY: event.scrollingDeltaY,
             phase: event.phase,
             momentumPhase: event.momentumPhase,
             isPrecise: event.hasPreciseScrollingDeltas,
-            allowsMomentaryRate: isMomentaryRateAvailable()
+            allowsMomentaryRate: isMomentaryRateAvailable(),
+            adoptsOrphanedVerticalGesture:
+                sequenceFallbackPolicy == .consume
         )
         if route == .pending {
+            if pendingPlayerFallbackPolicy == nil {
+                pendingPlayerFallbackPolicy = sequenceFallbackPolicy
+            }
             pendingScrollWheelEvents.append(event)
             return
         }
 
         let events = pendingScrollWheelEvents + [event]
         pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+        let resolvedFallbackPolicy =
+            pendingPlayerFallbackPolicy ?? sequenceFallbackPolicy
+        pendingPlayerFallbackPolicy = nil
         switch route {
         case .outerScroll:
             guard let scrollView = detailScrollViewAncestor else {
-                dispatchToAVKit(events)
+                handlePlayerFallback(
+                    events,
+                    policy: resolvedFallbackPolicy
+                )
+                finishFallbackPolicyIfNeeded(after: event)
                 return
             }
             for event in events {
                 scrollView.scrollWheel(with: event)
             }
         case .player:
-            dispatchToAVKit(events)
+            handlePlayerFallback(events, policy: resolvedFallbackPolicy)
         case .momentaryRate:
             for event in events {
                 applyHorizontalRateAction(
@@ -593,16 +752,32 @@ final class PlayerScrollWheelSurfaceCapture {
                 )
             }
         case .discard:
-            return
+            break
         case .pending:
             assertionFailure("Pending scroll events must return before dispatch")
         }
+        finishFallbackPolicyIfNeeded(after: event)
     }
 
     func cancelInputSession() {
+        resetInputSession(quarantinesRemainder: true)
+    }
+
+    func resetInputSessionForPointerExit() {
+        resetInputSession(quarantinesRemainder: false)
+    }
+
+    private func resetInputSession(quarantinesRemainder: Bool) {
         let action = horizontalRateGesture.cancel()
         pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-        scrollWheelRouter.cancelInputSession()
+        pendingPlayerFallbackPolicy = nil
+        activePlayerFallbackPolicy = nil
+        if quarantinesRemainder {
+            scrollWheelRouter.cancelInputSession()
+        } else {
+            scrollWheelRouter.resetPreservingCancellationQuarantine()
+        }
+        previousEventPhase = []
         applyHorizontalRateAction(action)
     }
 
@@ -650,32 +825,78 @@ final class PlayerScrollWheelSurfaceCapture {
         }
     }
 
-    private func flushAbandonedPendingEvents(before event: NSEvent) {
+    private func handlePlayerFallback<Events: Sequence>(
+        _ events: Events,
+        policy: PlayerScrollWheelPlayerFallbackPolicy
+    ) where Events.Element == NSEvent {
+        guard policy == .dispatchToPlayer else { return }
+        dispatchToAVKit(events)
+    }
+
+    private func flushAbandonedPendingEvents(
+        before event: NSEvent
+    ) {
         guard !pendingScrollWheelEvents.isEmpty else { return }
-        let previousPhase = pendingScrollWheelEvents.last?.phase ?? []
-        let startsNewGesture =
-            event.phase.contains(.mayBegin)
-            || (event.phase.contains(.began)
-                && !previousPhase.contains(.mayBegin))
-        let leavesDirectGesture = event.phase.isEmpty
-        guard startsNewGesture || leavesDirectGesture else { return }
-        dispatchToAVKit(pendingScrollWheelEvents)
+        let leavesDirectGesture =
+            event.phase.isEmpty && event.momentumPhase.isEmpty
+        guard startsNewDirectGesture(event) || leavesDirectGesture else {
+            return
+        }
+        handlePlayerFallback(
+            pendingScrollWheelEvents,
+            policy: pendingPlayerFallbackPolicy ?? .dispatchToPlayer
+        )
         pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+        pendingPlayerFallbackPolicy = nil
+        activePlayerFallbackPolicy = nil
         applyHorizontalRateAction(horizontalRateGesture.cancel())
         scrollWheelRouter.reset()
+        previousEventPhase = []
+    }
+
+    private func fallbackPolicy(
+        for event: NSEvent,
+        requested: PlayerScrollWheelPlayerFallbackPolicy
+    ) -> PlayerScrollWheelPlayerFallbackPolicy {
+        let startsUnphasedInput =
+            event.phase.isEmpty && event.momentumPhase.isEmpty
+        if startsNewDirectGesture(event) || startsUnphasedInput {
+            activePlayerFallbackPolicy = requested
+        } else if activePlayerFallbackPolicy == nil {
+            activePlayerFallbackPolicy = requested
+        }
+        return activePlayerFallbackPolicy ?? requested
+    }
+
+    private func finishFallbackPolicyIfNeeded(after event: NSEvent) {
+        if event.phase.contains(.cancelled)
+            || event.momentumPhase.contains(.ended)
+            || event.momentumPhase.contains(.cancelled)
+            || (event.phase.isEmpty && event.momentumPhase.isEmpty)
+        {
+            activePlayerFallbackPolicy = nil
+        }
     }
 
     private func cancelAbandonedMomentaryRate(before event: NSEvent) {
-        let previousPhase = pendingScrollWheelEvents.last?.phase ?? []
-        let startsNewGesture =
-            event.phase.contains(.mayBegin)
-            || (event.phase.contains(.began)
-                && !previousPhase.contains(.mayBegin))
         let startsUnphasedInput =
             event.phase.isEmpty && event.momentumPhase.isEmpty
-        guard startsNewGesture || startsUnphasedInput else { return }
+        guard startsNewDirectGesture(event) || startsUnphasedInput else {
+            return
+        }
         applyHorizontalRateAction(horizontalRateGesture.cancel())
     }
+
+    private func startsNewDirectGesture(_ event: NSEvent) -> Bool {
+        event.phase.contains(.mayBegin)
+            || (event.phase.contains(.began)
+                && !previousEventPhase.contains(.mayBegin))
+    }
+}
+
+enum PlayerScrollWheelPlayerFallbackPolicy: Equatable {
+    case dispatchToPlayer
+    case consume
 }
 
 struct PlayerHorizontalRateGestureState {
@@ -757,7 +978,8 @@ struct PlayerScrollWheelRouter {
         phase: NSEvent.Phase,
         momentumPhase: NSEvent.Phase,
         isPrecise: Bool = true,
-        allowsMomentaryRate: Bool = false
+        allowsMomentaryRate: Bool = false,
+        adoptsOrphanedVerticalGesture: Bool = false
     ) -> Route {
         if discardsCancelledGestureRemainder {
             let startsNewDirectGesture =
@@ -791,7 +1013,16 @@ struct PlayerScrollWheelRouter {
             reset()
             directGestureHasBegun = true
         } else if !directGestureHasBegun {
-            return .player
+            guard adoptsOrphanedVerticalGesture,
+                isPrecise,
+                phase.contains(.changed),
+                isClearlyVertical(deltaX: deltaX, deltaY: deltaY)
+            else {
+                return .player
+            }
+            reset()
+            directGestureHasBegun = true
+            gestureRoute = .outerScroll
         }
 
         if !isPrecise {
@@ -864,6 +1095,14 @@ struct PlayerScrollWheelRouter {
         discardsCancelledGestureRemainder = true
     }
 
+    mutating func resetPreservingCancellationQuarantine() {
+        let preservesCancellationQuarantine =
+            discardsCancelledGestureRemainder
+        reset()
+        discardsCancelledGestureRemainder =
+            preservesCancellationQuarantine
+    }
+
     private func accumulatedRoute(
         allowsMomentaryRate: Bool
     ) -> Route? {
@@ -894,5 +1133,16 @@ struct PlayerScrollWheelRouter {
         let verticalMagnitude = abs(deltaY)
         guard horizontalMagnitude != verticalMagnitude else { return nil }
         return verticalMagnitude > horizontalMagnitude ? .outerScroll : .player
+    }
+
+    private func isClearlyVertical(
+        deltaX: CGFloat,
+        deltaY: CGFloat
+    ) -> Bool {
+        let horizontalMagnitude = abs(deltaX)
+        let verticalMagnitude = abs(deltaY)
+        return verticalMagnitude >= Self.minimumAxisTravel
+            && verticalMagnitude - horizontalMagnitude
+                >= Self.minimumAxisLead
     }
 }

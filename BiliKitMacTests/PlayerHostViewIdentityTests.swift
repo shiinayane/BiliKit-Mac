@@ -151,6 +151,179 @@ struct PlayerHostViewIdentityTests {
 
         #expect(scrollView.receivedScrollWheelEvents.count == 1)
         #expect(scrollView.receivedScrollWheelEvents.first === event)
+
+        var shieldPlayerEvents: [NSEvent] = []
+        let shieldCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { shieldPlayerEvents.append($0) }
+        )
+        let horizontalEvent = try makeScrollWheelEvent(
+            deltaX: -80,
+            deltaY: 0
+        )
+        shieldCapture.handleScrollWheel(
+            horizontalEvent,
+            playerFallbackPolicy: .consume
+        )
+        #expect(shieldPlayerEvents.isEmpty)
+
+        var overlayPlayerEvents: [NSEvent] = []
+        let overlayCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { overlayPlayerEvents.append($0) }
+        )
+        overlayCapture.handleScrollWheel(horizontalEvent)
+        #expect(overlayPlayerEvents.count == 1)
+        #expect(overlayPlayerEvents.first === horizontalEvent)
+
+        var alternatingPlayerEvents: [NSEvent] = []
+        let alternatingCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { alternatingPlayerEvents.append($0) }
+        )
+        let pendingShieldEvent = try makeScrollWheelEvent(
+            deltaX: 1,
+            deltaY: 1,
+            phase: .began
+        )
+        let resolvingOverlayEvent = try makeScrollWheelEvent(
+            deltaX: -80,
+            deltaY: 0,
+            phase: .changed
+        )
+        alternatingCapture.handleScrollWheel(
+            pendingShieldEvent,
+            playerFallbackPolicy: .consume
+        )
+        alternatingCapture.handleScrollWheel(
+            resolvingOverlayEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        #expect(alternatingPlayerEvents.isEmpty)
+
+        var crossingPlayerEvents: [NSEvent] = []
+        let crossingCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { crossingPlayerEvents.append($0) }
+        )
+        let mayBeginShieldEvent = try makeScrollWheelEvent(
+            deltaX: -80,
+            deltaY: 0,
+            phase: .mayBegin
+        )
+        let beganOverlayEvent = try makeScrollWheelEvent(
+            deltaX: 1,
+            deltaY: 1,
+            phase: .began
+        )
+        let followingOverlayEvent = try makeScrollWheelEvent(
+            deltaX: -20,
+            deltaY: 0,
+            phase: .changed
+        )
+        crossingCapture.handleScrollWheel(
+            mayBeginShieldEvent,
+            playerFallbackPolicy: .consume
+        )
+        crossingCapture.handleScrollWheel(
+            beganOverlayEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        crossingCapture.handleScrollWheel(
+            resolvingOverlayEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        crossingCapture.handleScrollWheel(
+            followingOverlayEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        #expect(crossingPlayerEvents.isEmpty)
+
+        var reversePlayerEvents: [NSEvent] = []
+        let reverseCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { reversePlayerEvents.append($0) }
+        )
+        reverseCapture.handleScrollWheel(
+            pendingShieldEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        reverseCapture.handleScrollWheel(
+            resolvingOverlayEvent,
+            playerFallbackPolicy: .consume
+        )
+        #expect(reversePlayerEvents.count == 2)
+        #expect(reversePlayerEvents[0] === pendingShieldEvent)
+        #expect(reversePlayerEvents[1] === resolvingOverlayEvent)
+
+        var momentumPlayerEvents: [NSEvent] = []
+        let momentumCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: NSView(frame: .zero),
+            dispatchToPlayer: { momentumPlayerEvents.append($0) }
+        )
+        let overlayMomentumEvent = try makeScrollWheelEvent(
+            deltaX: -80,
+            deltaY: 0,
+            momentumPhase: .began
+        )
+        momentumCapture.handleScrollWheel(
+            pendingShieldEvent,
+            playerFallbackPolicy: .consume
+        )
+        momentumCapture.handleScrollWheel(
+            overlayMomentumEvent,
+            playerFallbackPolicy: .dispatchToPlayer
+        )
+        #expect(momentumPlayerEvents.isEmpty)
+
+        let pointerExitCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: scrollCaptureView
+        )
+        pointerExitCapture.handleScrollWheel(
+            pendingShieldEvent,
+            playerFallbackPolicy: .consume
+        )
+        pointerExitCapture.resetInputSessionForPointerExit()
+        let orphanedVerticalEvent = try makeScrollWheelEvent(
+            deltaX: 1,
+            deltaY: -12,
+            phase: .changed
+        )
+        pointerExitCapture.handleScrollWheel(
+            orphanedVerticalEvent,
+            playerFallbackPolicy: .consume
+        )
+        #expect(scrollView.receivedScrollWheelEvents.count == 2)
+        #expect(
+            scrollView.receivedScrollWheelEvents.last
+                === orphanedVerticalEvent
+        )
+
+        let quarantineCapture = PlayerScrollWheelSurfaceCapture(
+            anchorView: scrollCaptureView
+        )
+        quarantineCapture.cancelInputSession()
+        quarantineCapture.resetInputSessionForPointerExit()
+        quarantineCapture.handleScrollWheel(
+            orphanedVerticalEvent,
+            playerFallbackPolicy: .consume
+        )
+        #expect(scrollView.receivedScrollWheelEvents.count == 2)
+
+        let newVerticalGestureEvent = try makeScrollWheelEvent(
+            deltaX: 1,
+            deltaY: -12,
+            phase: .began
+        )
+        quarantineCapture.handleScrollWheel(
+            newVerticalGestureEvent,
+            playerFallbackPolicy: .consume
+        )
+        #expect(scrollView.receivedScrollWheelEvents.count == 3)
+        #expect(
+            scrollView.receivedScrollWheelEvents.last
+                === newVerticalGestureEvent
+        )
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -209,6 +382,41 @@ struct PlayerHostViewIdentityTests {
             )
         )
         #expect(scrollCaptureView.superview === playerView.contentOverlayView)
+        let scrollShieldView = try #require(
+            firstView(
+                ofType: PlayerScrollWheelShieldView.self,
+                in: hostingView
+            )
+        )
+        #expect(scrollShieldView.superview === playerView)
+        let playerSurfaceSubviews = playerView.subviews
+        let shieldIndex = try #require(
+            playerSurfaceSubviews.firstIndex { $0 === scrollShieldView }
+        )
+        #expect(shieldIndex == playerSurfaceSubviews.indices.last)
+        #expect(!scrollShieldView.isAccessibilityElement())
+        let lateAVKitSibling = NSView(frame: playerView.bounds)
+        playerView.addSubview(
+            lateAVKitSibling,
+            positioned: .above,
+            relativeTo: scrollShieldView
+        )
+        playerView.needsLayout = true
+        playerView.layoutSubtreeIfNeeded()
+        #expect(playerView.subviews.last === scrollShieldView)
+
+        scrollShieldView.removeFromSuperview()
+        playerView.setFrameSize(
+            NSSize(
+                width: playerView.bounds.width - 80,
+                height: playerView.bounds.height - 40
+            )
+        )
+        playerView.needsLayout = true
+        playerView.layoutSubtreeIfNeeded()
+        #expect(scrollShieldView.superview === playerView)
+        #expect(playerView.subviews.last === scrollShieldView)
+        #expect(scrollShieldView.frame == playerView.bounds)
         let danmakuOverlay = try #require(
             firstView(
                 ofType: DanmakuOverlayView.self,
@@ -241,9 +449,91 @@ struct PlayerHostViewIdentityTests {
         )
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func windowShieldForwardsVerticalWheelThroughHostCoordinator()
+        async throws
+    {
+        let renderer = CoreAnimationDanmakuRenderer()
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: Self.emptyDanmakuConfiguration
+        )
+        let hostingView = NSHostingView(
+            rootView: PlayerHostView(
+                player: AVPlayer(),
+                danmakuRenderer: renderer,
+                danmakuController: controller
+            )
+            .frame(width: 800, height: 300)
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let scrollView = ScrollWheelRecordingScrollView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 300)
+        )
+        scrollView.documentView = hostingView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = scrollView
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        defer {
+            window.orderOut(nil)
+            window.contentView = NSView()
+        }
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(
+            await waitUntil(in: hostingView) {
+                self.firstView(
+                    ofType: PlayerScrollWheelShieldView.self,
+                    in: hostingView
+                ) != nil
+            },
+            "普通窗口 shield 应随真实 PlayerHostView 完成挂载"
+        )
+        let shield = try #require(
+            firstView(
+                ofType: PlayerScrollWheelShieldView.self,
+                in: hostingView
+            )
+        )
+        let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
+        shield.scrollWheel(with: event)
+
+        #expect(scrollView.receivedScrollWheelEvents.count == 1)
+        #expect(scrollView.receivedScrollWheelEvents.first === event)
+
+        let lockedHorizontalEvent = try makeScrollWheelEvent(
+            deltaX: -12,
+            deltaY: 1,
+            phase: .began
+        )
+        shield.scrollWheel(with: lockedHorizontalEvent)
+        #expect(scrollView.receivedScrollWheelEvents.count == 1)
+
+        shield.handlePointerExit()
+
+        let orphanedVerticalEvent = try makeScrollWheelEvent(
+            deltaX: 1,
+            deltaY: -12,
+            phase: .changed
+        )
+        shield.scrollWheel(with: orphanedVerticalEvent)
+        #expect(scrollView.receivedScrollWheelEvents.count == 2)
+        #expect(
+            scrollView.receivedScrollWheelEvents.last
+                === orphanedVerticalEvent
+        )
+    }
+
     @Test
     @MainActor
-    func contentOverlayCaptureOnlyParticipatesInScrollWheelHitTesting() {
+    func contentOverlayCaptureOnlyParticipatesInScrollWheelHitTesting() throws {
         #expect(
             PlayerScrollWheelCaptureView.capturesEvent(
                 ofType: .scrollWheel
@@ -260,6 +550,57 @@ struct PlayerHostViewIdentityTests {
             )
         )
         #expect(!PlayerScrollWheelCaptureView.capturesEvent(ofType: nil))
+        #expect(
+            PlayerScrollWheelShieldView.capturesEvent(
+                ofType: .scrollWheel,
+                isPrecise: true
+            )
+        )
+        #expect(
+            !PlayerScrollWheelShieldView.capturesEvent(
+                ofType: .scrollWheel,
+                isPrecise: false
+            )
+        )
+        let shield = PlayerScrollWheelShieldView(frame: .zero)
+        var pointerExitCount = 0
+        shield.onPointerExited = { pointerExitCount += 1 }
+        shield.handlePointerExit()
+        #expect(pointerExitCount == 1)
+        #expect(
+            !PlayerScrollWheelShieldView.capturesEvent(
+                ofType: .leftMouseDown,
+                isPrecise: true
+            )
+        )
+        #expect(
+            !PlayerScrollWheelShieldView.capturesEvent(
+                ofType: .magnify,
+                isPrecise: true
+            )
+        )
+        #expect(
+            !PlayerScrollWheelShieldView.capturesEvent(
+                ofType: nil,
+                isPrecise: true
+            )
+        )
+        let mouseMoveEvent = NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 0,
+            pressure: 0
+        )
+        #expect(
+            !PlayerScrollWheelShieldView.capturesEvent(
+                try #require(mouseMoveEvent)
+            )
+        )
     }
 
     @Test
@@ -293,6 +634,56 @@ struct PlayerHostViewIdentityTests {
                 deltaY: -12,
                 phase: .began,
                 momentumPhase: []
+            ) == .outerScroll
+        )
+
+        var boundaryRouter = PlayerScrollWheelRouter()
+        #expect(
+            boundaryRouter.route(
+                deltaX: 1,
+                deltaY: -12,
+                phase: .changed,
+                momentumPhase: [],
+                adoptsOrphanedVerticalGesture: true
+            ) == .outerScroll
+        )
+        #expect(
+            boundaryRouter.route(
+                deltaX: -20,
+                deltaY: -1,
+                phase: .changed,
+                momentumPhase: [],
+                adoptsOrphanedVerticalGesture: true
+            ) == .outerScroll
+        )
+        var orphanedHorizontalRouter = PlayerScrollWheelRouter()
+        #expect(
+            orphanedHorizontalRouter.route(
+                deltaX: -12,
+                deltaY: 1,
+                phase: .changed,
+                momentumPhase: [],
+                allowsMomentaryRate: true,
+                adoptsOrphanedVerticalGesture: true
+            ) == .player
+        )
+        var orphanedNoiseRouter = PlayerScrollWheelRouter()
+        #expect(
+            orphanedNoiseRouter.route(
+                deltaX: 0.1,
+                deltaY: 0.2,
+                phase: .changed,
+                momentumPhase: [],
+                adoptsOrphanedVerticalGesture: true
+            ) == .player
+        )
+        #expect(
+            orphanedNoiseRouter.route(
+                deltaX: 1,
+                deltaY: -12,
+                phase: .changed,
+                momentumPhase: [],
+                adoptsOrphanedVerticalGesture: true
             ) == .outerScroll
         )
         #expect(
@@ -912,7 +1303,9 @@ struct PlayerHostViewIdentityTests {
 
     private func makeScrollWheelEvent(
         deltaX: Int32,
-        deltaY: Int32
+        deltaY: Int32,
+        phase: NSEvent.Phase = [],
+        momentumPhase: NSEvent.Phase = []
     ) throws -> NSEvent {
         let event = try #require(
             CGEvent(
@@ -924,7 +1317,25 @@ struct PlayerHostViewIdentityTests {
                 wheel3: 0
             )
         )
+        event.setIntegerValueField(
+            .scrollWheelEventScrollPhase,
+            value: cgScrollPhaseValue(phase)
+        )
+        event.setIntegerValueField(
+            .scrollWheelEventMomentumPhase,
+            value: cgScrollPhaseValue(momentumPhase)
+        )
         return try #require(NSEvent(cgEvent: event))
+    }
+
+    private func cgScrollPhaseValue(_ phase: NSEvent.Phase) -> Int64 {
+        var value: Int64 = 0
+        if phase.contains(.began) { value |= 1 }
+        if phase.contains(.changed) { value |= 2 }
+        if phase.contains(.ended) { value |= 4 }
+        if phase.contains(.cancelled) { value |= 8 }
+        if phase.contains(.mayBegin) { value |= 128 }
+        return value
     }
 
     @MainActor
