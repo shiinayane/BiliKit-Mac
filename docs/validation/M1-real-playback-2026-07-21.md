@@ -41,21 +41,8 @@ deployment target 只证明编译目标，不替代对应系统上的运行验�
 
 ## macOS 15 收尾矩阵
 
-手动触发工作流使用以下参数：
-
-```sh
-xcrun swift run \
-  --package-path Packages/BiliKitCore \
-  BiliPlaybackProbe \
-  --bvid BV1h4KU66ENd \
-  --cid 40123826438 \
-  --play-seconds 30 \
-  --forward-seek 30 \
-  --backward-seek 5 \
-  --seek-cycles 6 \
-  --replacement-cycles 12 \
-  --max-memory-growth-mib 64
-```
+当时使用一次性 Package executable 做 30 秒播放、前后 seek 与替换循环观察。该入口及
+具体样本参数已删除，本节只保留历史结果，不能作为当前可执行工作流。
 
 云端记录结果：
 

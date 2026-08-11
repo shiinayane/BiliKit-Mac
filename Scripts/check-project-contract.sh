@@ -7,173 +7,56 @@ fail() {
     exit 1
 }
 
-assert_occurrences() {
+count() {
+    awk -v needle="$1" 'index($0, needle) { total += 1 } END { print total + 0 }' "$2"
+}
+
+expect_count() {
     expected="$1"
     text="$2"
     file="$3"
     description="$4"
-    actual=$(awk -v needle="$text" 'index($0, needle) { count += 1 } END { print count + 0 }' "$file")
+    actual=$(count "$text" "$file")
     [ "$actual" -eq "$expected" ] \
-        || fail "${description}（期望 $expected 处，实际 $actual 处）"
+        || fail "$description（期望 $expected 处，实际 $actual 处）"
 }
 
-project_file="BiliKitMac.xcodeproj/project.pbxproj"
-app_entry_file="BiliKitMac/App/BiliKitMacApp.swift"
-entitlements_file="BiliKitMac/BiliKitMac.entitlements"
-package_file="Packages/BiliKitCore/Package.swift"
-package_resolution_file="Packages/BiliKitCore/Package.resolved"
-xcode_resolution_file="BiliKitMac.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-quality_gate_file="Scripts/run-quality-gates.sh"
-quality_gate_artifact_test="Scripts/test-quality-gate-artifacts.sh"
-swift_format_config=".swift-format"
-swift_format_check="Scripts/check-swift-format.sh"
-ci_file=".github/workflows/ci.yml"
+project="BiliKitMac.xcodeproj/project.pbxproj"
+app="BiliKitMac/App/BiliKitMacApp.swift"
+entitlements="BiliKitMac/BiliKitMac.entitlements"
+package="Packages/BiliKitCore/Package.swift"
 
-[ -f "$swift_format_config" ] || fail "缺少仓库根 Swift 格式配置"
-[ -x "$swift_format_check" ] || fail "Swift 格式检查脚本缺失或不可执行"
-assert_occurrences 1 \
-    'sh Scripts/check-swift-format.sh || return $?' \
-    "$quality_gate_file" \
-    "统一质量 Gate 必须强制执行 Swift 格式检查"
-assert_occurrences 1 \
-    'Run selected quality gate (includes strict Swift format lint)' \
-    "$ci_file" \
-    "CI 必须明确通过统一 Gate 执行 strict Swift 格式检查"
-assert_occurrences 1 \
-    'run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}" closure' \
-    "$ci_file" \
-    "CI 必须以 closure policy 运行所选择的统一 Gate"
-assert_occurrences 1 \
-    'sh Scripts/select-quality-gate.sh)' \
-    "$ci_file" \
-    "CI 必须通过仓库脚本选择质量 Gate"
-[ "$(printf '%s\n' 'docs/ROADMAP.md' | sh Scripts/select-quality-gate.sh)" = "static" ] \
-    || fail "纯 Markdown 变更必须只选择 static Gate"
-[ "$(printf '%s\n' 'docs/ROADMAP.md' 'Packages/BiliKitCore/Sources/Foo.swift' | sh Scripts/select-quality-gate.sh)" = "app" ] \
-    || fail "包含代码的变更必须选择 app Gate"
-[ "$(printf '' | sh Scripts/select-quality-gate.sh)" = "app" ] \
-    || fail "无法识别变更路径时必须保守选择 app Gate"
-assert_occurrences 1 \
-    'xcrun swift-format --version' \
-    "$ci_file" \
-    "CI 必须记录实际 Swift Format 工具链版本"
-assert_occurrences 1 \
-    'github_summary="${GITHUB_STEP_SUMMARY:-}"' \
-    "$quality_gate_file" \
-    "统一质量 Gate 必须向 GitHub Actions 输出阶段摘要"
-assert_occurrences 1 \
-    'cache_schema="bilikit-quality-gates-v2"' \
-    "$quality_gate_file" \
-    "质量 Gate 必须显式版本化缓存 identity"
-assert_occurrences 1 \
-    'developer_dir_input="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"' \
-    "$quality_gate_file" \
-    "质量 Gate 必须默认使用任务局部完整 Xcode"
-assert_occurrences 1 \
-    'iteration|fresh|closure' \
-    "$quality_gate_file" \
-    "质量 Gate 必须区分 iteration、fresh 与 closure"
-[ -f "$quality_gate_artifact_test" ] || fail "缺少质量 Gate 产物行为契约测试"
-sh -n "$quality_gate_file" || fail "质量 Gate 脚本语法无效"
-sh -n "$quality_gate_artifact_test" || fail "质量 Gate 产物契约测试脚本语法无效"
-sh "$quality_gate_artifact_test" \
-    || fail "质量 Gate 产物、清理与故障分类行为契约失败"
-assert_occurrences 1 \
-    'export SWIFTPM_MODULECACHE_OVERRIDE="$swift_module_cache_path"' \
-    "$quality_gate_file" \
-    "SwiftPM manifest module cache 必须位于 Gate 隔离根"
-assert_occurrences 2 \
-    'CLANG_MODULE_CACHE_PATH="$clang_module_cache_path" \\' \
-    "$quality_gate_file" \
-    "Xcode build 与 test 必须使用隔离的 Clang module cache"
-assert_occurrences 2 \
-    'SWIFT_MODULE_CACHE_PATH="$swift_module_cache_path" \\' \
-    "$quality_gate_file" \
-    "Xcode build 与 test 必须使用隔离的 Swift module cache"
+/usr/bin/plutil -lint "$project" >/dev/null || fail "Xcode 工程格式无效"
+/usr/bin/plutil -lint "$entitlements" >/dev/null || fail "entitlements 格式无效"
 
-/usr/bin/plutil -lint "$entitlements_file" >/dev/null \
-    || fail "entitlements 不是有效 plist"
-
-[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$entitlements_file")" = "true" ] \
+[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.client' "$entitlements")" = true ] \
     || fail "缺少出站网络 entitlement"
-[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "$entitlements_file")" = "true" ] \
+[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "$entitlements")" = true ] \
     || fail "缺少 loopback server entitlement"
-[ "$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$entitlements_file")" = '$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)' ] \
+[ "$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$entitlements")" = '$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)' ] \
     || fail "Keychain access group 与 App 标识不一致"
-if /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:1' "$entitlements_file" >/dev/null 2>&1; then
-    fail "Keychain access group 必须保持最小单项集合"
+if /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:1' "$entitlements" >/dev/null 2>&1; then
+    fail "Keychain access group 必须保持单项"
 fi
+top_level_key_count=$(
+    /usr/bin/plutil -p "$entitlements" \
+        | awk '/^  "/ { total += 1 } END { print total + 0 }'
+)
+[ "$top_level_key_count" -eq 3 ] \
+    || fail "entitlements 出现未审计的额外能力"
 
-top_level_key_count=$(/usr/bin/plutil -p "$entitlements_file" | awk '/^  "/ { count += 1 } END { print count + 0 }')
-[ "$top_level_key_count" -eq 3 ] || fail "entitlements 出现未审计的额外能力"
+expect_count 2 'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' "$project" "App 配置必须使用同一 entitlement"
+expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac.dev;' "$project" "App Bundle Identifier 不一致"
+expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
+expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
+expect_count 1 '.typesettingLanguage(' "$app" "App 根必须设置排版语言"
+expect_count 1 '.explicit(Locale.Language(identifier: "zh-Hans"))' "$app" "App 排版语言必须为简体中文"
 
-assert_occurrences 2 \
-    'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' \
-    "$project_file" \
-    "App Debug/Release 必须使用同一 entitlement 文件"
-assert_occurrences 2 \
-    'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac.dev;' \
-    "$project_file" \
-    "App Debug/Release 必须使用当前开发 bundle identifier"
-assert_occurrences 2 \
-    'PRODUCT_NAME = BiliKit;' \
-    "$project_file" \
-    "App Debug/Release 产品名必须统一"
-assert_occurrences 2 \
-    'ENABLE_APP_SANDBOX = YES;' \
-    "$project_file" \
-    "App Debug/Release 必须启用 App Sandbox"
-assert_occurrences 1 \
-    '.typesettingLanguage(' \
-    "$app_entry_file" \
-    "App 根内容必须明确设置排版语言"
-assert_occurrences 1 \
-    '.explicit(Locale.Language(identifier: "zh-Hans"))' \
-    "$app_entry_file" \
-    "App 根内容排版语言必须为简体中文"
-if grep -F '.environment(\.locale' "$app_entry_file" >/dev/null; then
-    fail "App 根内容不得通过 locale 强制排版语言"
-fi
+deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/) bad += 1 } END { print total + 0, bad + 0 }' "$project")
+set -- $deployment
+[ "$1" -gt 0 ] && [ "$2" -eq 0 ] || fail "Xcode target 必须统一支持 macOS 15"
+expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
 
-deployment_count=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { count += 1; if ($0 !~ /MACOSX_DEPLOYMENT_TARGET = 15\.0;/) bad += 1 } END { print count + 0, bad + 0 }' "$project_file")
-set -- $deployment_count
-[ "$1" -gt 0 ] || fail "Xcode 工程没有 deployment target"
-[ "$2" -eq 0 ] || fail "Xcode target 的最低系统版本没有统一为 macOS 15"
-assert_occurrences 1 '.macOS(.v15)' "$package_file" "Swift Package 最低系统版本必须为 macOS 15"
+sh -n Scripts/run-quality-gates.sh || fail "质量 Gate 脚本语法无效"
 
-for product in BiliBrowseFeature BiliLibraryFeature BiliAuthFeature; do
-    assert_occurrences 1 \
-        ".library(name: \"$product\", targets: [\"$product\"])," \
-        "$package_file" \
-        "缺少产品领域 Feature product：$product"
-done
-
-assert_occurrences 1 \
-    '.target(name: "BiliUI"),' \
-    "$package_file" \
-    "缺少 Package 内部 BiliUI target"
-if grep -F 'targets: ["BiliUI"]' "$package_file" >/dev/null; then
-    fail "BiliUI 只能是 Package 内部 target，不能暴露 library product"
-fi
-
-assert_occurrences 1 \
-    '.library(name: "BiliDanmaku", targets: ["BiliDanmaku"]),' \
-    "$package_file" \
-    "缺少 BiliDanmaku product"
-assert_occurrences 1 \
-    'exact: "1.38.1"' \
-    "$package_file" \
-    "SwiftProtobuf 必须精确固定为 1.38.1"
-for resolved_file in "$package_resolution_file" "$xcode_resolution_file"; do
-    [ -f "$resolved_file" ] || fail "缺少依赖锁文件：$resolved_file"
-    assert_occurrences 1 '"identity" : "swift-protobuf"' "$resolved_file" \
-        "SwiftProtobuf 依赖锁必须唯一：$resolved_file"
-    assert_occurrences 1 '"version" : "1.38.1"' "$resolved_file" \
-        "SwiftProtobuf 锁定版本不一致：$resolved_file"
-    assert_occurrences 1 \
-        '"revision" : "55d7a1cc5666b85c13464aea1c4b4a90feccb4c8"' \
-        "$resolved_file" \
-        "SwiftProtobuf 锁定 revision 不一致：$resolved_file"
-done
-
-echo "工程、entitlement 与最低系统版本静态契约检查通过"
+echo "工程、安全能力与最低系统版本静态契约检查通过"

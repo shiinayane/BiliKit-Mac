@@ -33,8 +33,7 @@
 - 第一轮 Agent B：`findings/02-media-playback.md`。
 - 第一轮 Agent C：`findings/03-concurrency-lifecycle.md` 与
   `findings/04-privacy-redirect-logging.md`。
-- 第二轮 Agent D：`findings/05-native-ui-product-ia.md` 与
-  `findings/07-accessibility-input.md`。
+- 第二轮 Agent D：`findings/05-native-ui-product-ia.md`。
 - 第二轮 Agent E：`findings/06-state-cache.md` 与
   `findings/09-architecture-necessity.md`。
 - 主 Agent：`findings/08-performance-resources.md`、共享 evidence/decision register 与

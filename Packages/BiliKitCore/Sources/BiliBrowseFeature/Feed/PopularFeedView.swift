@@ -40,14 +40,12 @@ public struct PopularFeedView: View {
         switch presentation.state {
         case .idle, .loading:
             VideoCardGridSkeleton(loadingLabel: "正在加载热门视频")
-                .accessibilityIdentifier("feed.loading")
         case .loaded(.popular(let page)) where page.videos.isEmpty:
             ContentUnavailableView(
                 "暂无热门视频",
                 systemImage: "rectangle.stack",
                 description: Text("稍后重试或检查网络连接。")
             )
-            .accessibilityIdentifier("feed.empty")
         case .loaded(.popular(let page)):
             PopularGrid(
                 model: model,
@@ -61,10 +59,8 @@ public struct PopularFeedView: View {
                 message: error.guestMessage,
                 retry: { model.retry(request) }
             )
-            .accessibilityIdentifier("feed.failure")
         default:
             VideoCardGridSkeleton(loadingLabel: "正在切换到热门视频")
-                .accessibilityIdentifier("feed.transitioning")
         }
     }
 
@@ -126,16 +122,13 @@ private struct PopularGrid: View {
                             GuestVideoCard(video: video)
                         }
                         .buttonStyle(VideoCardButtonStyle())
-                        .focusable(false)
                         .accessibilityHint("播放视频")
-                        .accessibilityIdentifier("feed.item.\(video.bvid)")
                     }
                 }
                 .padding(VideoCardGridLayout.contentPadding)
                 .scrollTargetLayout()
             }
             .scrollPosition($scrollPosition)
-            .accessibilityIdentifier("feed.grid")
             .refreshable {
                 model.refreshPopular(
                     page: page.pageNumber,
@@ -172,7 +165,6 @@ private struct PopularGrid: View {
                 .font(.caption)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
-                .accessibilityIdentifier("feed.refresh-failure")
                 .transition(.opacity)
         }
     }

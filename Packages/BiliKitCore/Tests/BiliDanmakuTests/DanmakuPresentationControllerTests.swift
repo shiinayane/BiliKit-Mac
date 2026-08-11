@@ -395,7 +395,7 @@ struct DanmakuPresentationControllerTests {
             configuration: configuration(maximumActiveCount: 1)
         )
         let identity = PlaybackItemIdentity(bvid: "BV1BurstFixture", cid: 20)
-        let events = (0..<1_000).map {
+        let events = (0...DanmakuLaneConfiguration.hardMaximumActiveCount).map {
             event(id: "event-\($0)", mode: .scrolling)
         }
 
@@ -412,7 +412,10 @@ struct DanmakuPresentationControllerTests {
             backend.measureCount
                 == DanmakuLaneConfiguration.hardMaximumActiveCount
         )
-        #expect(controller.statistics.droppedCapacity >= 360)
+        #expect(
+            controller.statistics.droppedCapacity
+                == DanmakuLaneConfiguration.hardMaximumActiveCount
+        )
         #expect(backend.renderedEventIDs.count == 1)
     }
 

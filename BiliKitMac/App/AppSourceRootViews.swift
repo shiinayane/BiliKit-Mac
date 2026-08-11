@@ -96,13 +96,10 @@ struct HistoryTabRoot: View {
                 Button("登录", action: onPresentAuthentication)
                     .buttonStyle(.borderedProminent)
                     .accessibilityHint("打开扫码登录")
-                    .accessibilityIdentifier("history.login")
             }
-            .accessibilityIdentifier("history.signed-out")
         case .resolving:
             ProgressView("正在检查登录状态…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("history.restoring")
         case .unavailable:
             ContentUnavailableView {
                 Label(
@@ -114,9 +111,7 @@ struct HistoryTabRoot: View {
             } actions: {
                 Button("查看账号状态", action: onPresentAuthentication)
                     .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("history.authentication-status")
             }
-            .accessibilityIdentifier("history.authentication-unavailable")
         }
     }
 }
@@ -131,6 +126,5 @@ struct HistoryRefreshButton: View {
             Label("刷新", systemImage: "arrow.clockwise")
         }
         .disabled(model.isBusy)
-        .accessibilityIdentifier("history.reload")
     }
 }

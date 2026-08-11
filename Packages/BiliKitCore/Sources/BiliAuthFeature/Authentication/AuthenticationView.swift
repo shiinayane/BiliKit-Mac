@@ -40,7 +40,6 @@ public struct AuthenticationView: View {
                     model.startLogin()
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("auth.start")
             }
         case .restoring:
             progress("正在检查本机登录状态…")
@@ -67,7 +66,6 @@ public struct AuthenticationView: View {
                 Button("退出登录", role: .destructive) {
                     model.logout()
                 }
-                .accessibilityIdentifier("auth.logout")
             }
         case .signingOut:
             progress("正在清除本机登录状态…")
@@ -110,7 +108,6 @@ public struct AuthenticationView: View {
                 .scaledToFit()
                 .frame(width: 240, height: 240)
                 .accessibilityHint("使用手机客户端扫描")
-                .accessibilityIdentifier("auth.qr-code")
             } else {
                 ProgressView()
                     .frame(width: 240, height: 240)
@@ -123,7 +120,6 @@ public struct AuthenticationView: View {
             Button("取消", role: .cancel) {
                 model.cancelLogin()
             }
-            .accessibilityIdentifier("auth.cancel")
         }
     }
 
@@ -142,7 +138,6 @@ public struct AuthenticationView: View {
                     Button("清除本机登录状态", role: .destructive) {
                         model.clearLocalCredentials()
                     }
-                    .accessibilityIdentifier("auth.clear-local-credentials")
                 }
                 if model.canCancelFailure {
                     Button("取消", role: .cancel) {
@@ -153,7 +148,6 @@ public struct AuthenticationView: View {
                     model.retry()
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("auth.retry")
             }
         }
     }

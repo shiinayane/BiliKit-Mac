@@ -22,7 +22,7 @@ PR #18 已合并。WBI 字幕目录迁移属于当前基线，不存在待处理
 - Apple Swift 6.3.3；
 - project：`BiliKitMac.xcodeproj`；
 - scheme：`BiliKitMac`；
-- App／Tests／UITests deployment target：macOS 15.0；
+- App／Tests deployment target：macOS 15.0；
 - Swift language version：6.0；
 - 产品名：`BiliKit`；
 - bundle identifier：`com.shiinayane.BiliKitMac`。
@@ -34,7 +34,7 @@ Line Tools，以及沙箱内不能读取 Xcode process list；任务显式使用
 沙箱内首次 `xcodebuild -list` 因 ModuleCache／DerivedData 权限失败；在获准的正常 Xcode
 缓存环境中，同一命令成功解析以下 targets 和 scheme：
 
-- targets：`BiliKitMac`、`BiliKitMacTests`、`BiliKitMacUITests`；
+- 当时 targets 包含 App、App tests 和一个后来删除的 UI-test target；
 - scheme：`BiliKitMac` 以及本地 Package 的 library／probe schemes。
 
 这组结果只证明工程和 scheme 可解析，不证明 build、签名、运行或行为正确。

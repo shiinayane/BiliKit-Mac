@@ -22,7 +22,7 @@ echo "[Static] strict Swift format lintï¼ˆswift-format ${swift_format_version}ï¼
     --configuration .swift-format \
     Packages/BiliKitCore/Package.swift
 
-find BiliKitMac BiliKitMacTests BiliKitMacUITests \
+find BiliKitMac BiliKitMacTests \
     Packages/BiliKitCore/Sources Packages/BiliKitCore/Tests \
     -type f \
     -name '*.swift' \

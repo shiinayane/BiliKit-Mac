@@ -1,5 +1,8 @@
 # 05 Apple 原生 UI 与产品信息架构
 
+> 本文件保留 2026-07 的历史审计取证；其中 fixture、identifier 与 XCUI 路径已删除，不能
+> 作为当前测试或 accessibility 契约。
+
 状态：第二轮取证与独立交叉复核完成；未修改生产代码。
 
 审计基线：`origin/main`

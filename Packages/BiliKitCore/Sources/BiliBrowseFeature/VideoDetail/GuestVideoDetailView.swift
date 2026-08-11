@@ -15,7 +15,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
 
     var body: some View {
         mainContent
-            .accessibilityIdentifier("playback.destination")
             .navigationTitle(context.detail.title)
     }
 
@@ -87,7 +86,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     private var player: some View {
         ZStack {
             playerContent()
-                .accessibilityIdentifier("player.host")
 
             if isPreparingPlayback {
                 ZStack {
@@ -111,7 +109,6 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
         )
         .frame(maxWidth: .infinity)
         .background(.black)
-        .accessibilityIdentifier("playback.player.container")
     }
 }
 

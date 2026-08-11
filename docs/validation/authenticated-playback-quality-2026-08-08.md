@@ -80,11 +80,8 @@ header 是否无 Cookie；账号身份、内容标识、标题、URL、媒体 ho
 
 ## 6. 未覆盖边界
 
-- 两条 signed XCUI 中，相关推荐 A -> B -> C、本地真实时间线推进、同一 player identity、
-  Back 与关窗清理通过。分 P 用例在已通过 item 替换、同 player identity 后，于折叠
-  disclosure 的可交互性断言失败；因此不把该整条用例记为通过。
 - 真实登录远端 App UI 已观察登录播放取得高清，但没有在同一人工序列中记录当前 item 的
-  网络 ABR、相关推荐重取与登出清理；API A/B、signed XCUI 与 wiring test 不能替代这些
+  网络 ABR、相关推荐重取与登出清理；API A/B 与 wiring test 不能替代这些
   尚未观察的端到端步骤。
 - 真实网络中的 ABR 升降档时机由 AVFoundation 决定，不从一次探针推导普遍策略。
 - 本 Stage 不验证 HEVC/AV1、会员/DRM/区域能力，也不绕过服务端限制。

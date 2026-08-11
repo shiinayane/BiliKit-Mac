@@ -34,8 +34,7 @@ M4.0 Gate 已通过，允许进入 M4.1 统一播放时间轴。
 
 ## 已固定的本地材料
 
-- `BiliAPIProbe --m4-contract --bvid <BVID> --cid <CID>`：当前只保留匿名弹幕二进制 contract；旧的匿名字幕目录观察已随 `/x/player/v2` 退役删除。
-- `M4AuthenticatedContractProbeTests`：仅在显式提供环境变量时运行于签名 App 测试宿主；当前通过生产 composition 的 WBI 字幕目录链路使用现有登录凭据，只输出轨道数和 decoder 状态。普通 CI 与无参数 App 测试会跳过，不自动访问网络或 Keychain。
+- 历史一次性 API/签名 App probe 已删除，不再是当前可执行入口或自动化契约。
 - `BiliAPITests/Fixtures/subtitle-catalog.json` 与 `subtitle-body.json`：手写目录和 cue。
 - `danmaku-segment-minimal.hex` 与 `danmaku-segment-truncated.hex`：自制最小 wire 输入和截断输入。
 - `m4-error.json` 与 `m4-error.html`：错误响应失败关闭输入。
@@ -81,10 +80,10 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 > 退役说明（2026-08-04）：以下一次性 runner 已从仓库移除，命令只记录当时的验证方式，
 > 不能作为当前可执行入口。
 
-先在签名 BiliKit App 中确认当前为已登录状态，并选择一条确实带字幕的公开视频。运行仓库提供的脚本：
+当时先在签名 BiliKit App 中确认登录状态并选择带字幕的公开视频，再运行一次性脚本：
 
 ```sh
 zsh Scripts/run-m4-authenticated-contract-probe.sh
 ```
 
-脚本通过交互读取 BVID，避免将观看标识写进 shell 历史；CID 留空时通过游客分 P 目录取得首分 P。它先生成签名测试宿主，再只向临时 `.xctestrun` 注入参数，测试结束立即删除这些字段。探针不会打印 BVID/CID、Cookie、字幕 URL 或正文；若样本没有字幕会安全跳过，若正文主机不在当前精确 allowlist 中会失败关闭。完整脱敏日志写入仓库根目录的 `test.log`，该文件由 Git 忽略。
+该段只记录历史方法；脚本和测试宿主现已删除，不能按此命令复跑或视为当前 Gate。

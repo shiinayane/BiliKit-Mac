@@ -89,12 +89,11 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 
 - App 使用侧栏与主内容两栏外壳，热门、搜索与观看历史共享窄 `BiliUI` 视频卡片边界。
 - 视频进入同窗口独立播放页；播放页在紧凑与宽布局间保持单一 player host。
-- 键盘返回、搜索提交、焦点、辅助标签、深色与大字体的核心路径已有自动和真实 UI 观察。
+- 搜索提交使用系统行为；键盘、辅助标签、深色与大字体仍以当前真实 UI 观察为准。
 
 证据：
 
 - [`validation/M4.5-slice-b-2026-07-24.md`](./validation/M4.5-slice-b-2026-07-24.md)
-- [`validation/M4.5-slice-c-2026-07-25.md`](./validation/M4.5-slice-c-2026-07-25.md)
 - [`validation/M4.5-high-refresh-card-scroll-2026-07-24.md`](./validation/M4.5-high-refresh-card-scroll-2026-07-24.md)
 
 ### M5.0–M5.0.2：原生日用导航、外部事实审计与登录态自动画质
@@ -113,7 +112,6 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 证据：
 
 - [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)
-- [`validation/M5.0-native-navigation-state-retention-2026-07-26.md`](./validation/M5.0-native-navigation-state-retention-2026-07-26.md)
 - [`audits/M5.0.1/`](./audits/M5.0.1/)
 - [`validation/authenticated-playback-quality-2026-08-08.md`](./validation/authenticated-playback-quality-2026-08-08.md)
 
@@ -179,22 +177,18 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
   sidebar 使用同一展示 context；旧内容在替换状态下不会保持可交互或进入辅助阅读路径。
 - 分 P 状态测试证明 CID replacement、目标失败／重试、P1 → P2 → P1 ABA、reset 与迟到结果
   隔离；播放器 ready 后的异步 item failure 也必须按 identity 与不可复用 load intent 进入
-  诚实失败状态并清理 item、bridge、字幕与弹幕。签名 XCUI 证明生产分 P Button 在同一
-  player identity 下替换本地真实
-  `AVPlayerItem`，长目录可在有界 `List` 内滚动，Back 后清理 item、observer 与临时媒体资源。
+  诚实失败状态并清理 item、bridge、字幕与弹幕。
 - 结构测试证明单分 P 隐藏、多分 P 与空／非空简介呈现准确；真实分 P Button 的 selected、
   loading、failure 与 retry 语义与当前请求／呈现 identity 一致，并在 AX label 中稳定表达
   状态而非只依赖可关闭的 hint。
-- App 生命周期测试证明 sidebar 显隐、简介／分 P disclosure、目标窗口 resize 和媒体替换
-  前后只有一个真实 `AVPlayerView`，Back／关窗后完成拆除与资源清理。
-- 最高适用 `app` Gate 通过；在真实 macOS 窗口中复核 1320×820 → 1080×680、系统 Back、
-  sidebar toggle、长文本、大字体和真实本地播放时间线。
-- VoiceOver 与 Full Keyboard Access 真实检查分别确认阅读／焦点顺序；AX identifier、截图或
-  build 不能替代真人辅助功能结论。
+- App 生命周期测试证明媒体替换前后保持一个真实 `AVPlayerView`，Back／关窗后完成拆除与
+  资源清理。窗口 resize、系统 Back、sidebar、长文本与大字体仍需按当前产品真实观察。
+- VoiceOver 与 Full Keyboard Access 必须分别真人检查阅读／焦点顺序；AX tree、截图或 build
+  不能替代真人辅助功能结论。
 
 阶段验证记录：
 [`M5.0-playback-context-sidebar-2026-08-07.md`](./validation/M5.0-playback-context-sidebar-2026-08-07.md)。
-自动化与独立审查已经通过；在用户确认真人辅助功能检查前，本阶段仍保持进行中。
+在用户确认真人辅助功能检查前，本阶段仍保持进行中。
 
 已经确认但尚未排期的事项统一登记在
 [`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)。候选登记不表示顺序、

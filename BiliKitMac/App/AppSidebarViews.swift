@@ -13,23 +13,18 @@ struct AppNavigationSidebar: View {
             navigationList
             accountBar
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("sidebar.navigation")
     }
 
     private var navigationList: some View {
         List(selection: selectionBinding) {
             Label("搜索", systemImage: "magnifyingglass")
                 .tag(AppTab.search)
-                .accessibilityIdentifier("sidebar.search")
 
             Label("热门", systemImage: "flame")
                 .tag(AppTab.popular)
-                .accessibilityIdentifier("sidebar.popular")
 
             Label("观看历史", systemImage: "clock.arrow.circlepath")
                 .tag(AppTab.history)
-                .accessibilityIdentifier("sidebar.history")
         }
         .listStyle(.sidebar)
     }
@@ -66,7 +61,6 @@ struct AppNavigationSidebar: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .accessibilityHint(accountAccessibilityHint)
-        .accessibilityIdentifier("sidebar.account")
     }
 
     private var accountTitle: String {

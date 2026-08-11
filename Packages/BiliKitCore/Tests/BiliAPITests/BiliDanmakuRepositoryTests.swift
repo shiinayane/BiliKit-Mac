@@ -239,31 +239,6 @@ struct BiliDanmakuRepositoryTests {
         )
     }
 
-    #if DEBUG
-        @Test
-        func debugPoolProbeSummarizesTheProductionResponse() async throws {
-            let client = BiliAPIClient(
-                transport: DanmakuRecordingTransport(
-                    responses: [
-                        try jsonFixtureResponse("nav"),
-                        try binaryFixtureResponse("danmaku-segment-minimal"),
-                    ]
-                ),
-                timestampProvider: { 1_700_000_000 }
-            )
-
-            let summary = try await client.danmakuPoolProbe(
-                index: 1,
-                for: identity
-            )
-
-            #expect(summary.rawEventCount == 1)
-            #expect(summary.basicEventCount == 1)
-            #expect(summary.rawModeCounts == [1: 1])
-            #expect(summary.bytes > 0)
-        }
-    #endif
-
     @Test
     func truncatedFixtureFailsClosed() async throws {
         let repository = try repository(

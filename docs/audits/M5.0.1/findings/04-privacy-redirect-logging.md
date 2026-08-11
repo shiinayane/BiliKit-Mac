@@ -86,8 +86,8 @@
   显式决定；不能证明所有现场 CDN/认证 host 的 redirect 策略都正确。
 - **判断**：`AppEnvironment.live()` 与上述专用 transport 的默认值 **保留**；
   host/endpoint 是否需个别受控 redirect **尚不能判断**。这不是全仓保证：
-  `BiliAPIClient` 公共默认、`BiliPlaybackProbe` 与 `SearchProbeTransport` 仍可使用
-  `.shared`/默认 follow、Cookie 与 cache 行为。
+  `BiliAPIClient` 公共默认仍可能使用 `.shared`/默认 follow、Cookie 与 cache 行为；历史
+  probe transport 已删除，不再属于当前调用面。
 - **风险**：改回 `.shared` 或允许自动 redirect 可能把凭据、Cookie 或签名 query 暴露给
   非预期 host；一刀切拒绝又可能锁死服务端已改变的合法协议事实。
 - **下一步最小验证**：API/认证/媒体线给出当前允许的逐跳 host 事实；用本地两 host server
@@ -103,31 +103,12 @@
 - **当前实现（文件 / 符号 / 调用链）**：
   - `.github/workflows/ci.yml` 已删除 GitHub-hosted 真实播放 job 及 BVID/CID
     `workflow_dispatch` inputs；远端 CI 只保留无签名确定性 gate。
-  - `BiliPlaybackProbe`、`BiliDanmakuProbe` 与 `BiliAPIProbe` 的内容 identity 只从
-    `--input-file` 指向的 mode 600、普通文件、最大 4 KiB plist 读取；BVID/CID/搜索词
-    不再进入命令行或 stdout。播放输出只保留 representation 与 CDN 候选数量，
-    搜索输出只保留页码、数量与总数。
-  - `BiliAPIProbe` 的匿名搜索 transport 已改为 ephemeral、无 Cookie、无 cache、
-    reject redirect；播放探针沿用生产 `BiliAPIClient` 的安全 transport 构造。
-  - `Scripts/run-m1-real-playback-probe.sh` 及 M4/M4.6/M5.0.1 真实 probe runner 均在
-    mode 700 的 `mktemp` 目录内生成 mode 600 plist、DerivedData、xcresult 与原始日志，
-    通过 trap 删除整个目录；只把输入文件路径注入 `.xctestrun`，完成信息不回显内容
-    identity、URL、正文或凭据。
-  - `BiliKitMacTests/LocalProbeInput.swift` 统一签名 XCTest probe 的输入文件权限、
-    类型与大小检查；未显式配置时测试跳过。
-  - 以下是已关闭的旧路径，而非当前行为：旧播放/API probe 曾打印内容 identity/CDN host，
-    workflow 曾接受 BVID/CID，M4 runner 曾写仓库根 `test.log` 并留下完整临时产物。
+  - 一次性真实网络、签名 UI、播放器和 renderer probe 及其 runner 已从当前树删除；
+    不再为历史验证路径保留可执行 target、launch flag、输入解析器或测试专用日志。
+  - 以下是历史问题而非当前行为：旧 probe 曾打印内容 identity/CDN host，workflow
+    曾接受 BVID/CID，旧 runner 曾写仓库根 `test.log` 并留下完整临时产物。
   - `docs/validation/M1-real-playback-2026-07-21.md:46-57` 提交了现场 BVID/CID；
     `docs/validation/M2-guest-api-2026-07-21.md:28-35` 提交了搜索结果 BVID。
-  - `Scripts/run-m4-authenticated-contract-probe.sh:7-9,60-66` 使用固定
-    `/tmp/BiliKitMac-m4-probe`、仓库 `test.log`，把 BVID/CID 写入 `.xctestrun`；
-    cleanup 只移除环境键，没有删除 result bundle、DerivedData、xctestrun 或 log。
-  - `Scripts/run-m4-danmaku-probe.sh:9-38` 也把 BVID 置于子进程参数并写 `test.log`。
-    仓库 `.gitignore:1-23` 不忽略 `*.log`；当前机器仅因用户全局
-    `/Users/shiinayane/.gitignore_global:14` 而忽略，不能形成仓库保证。
-  - 较新的 `Scripts/run-m46-authenticated-subtitle-lifecycle-probe.sh:72-93` 使用
-    mode 700 的
-    `mktemp` 目录并在 trap 中删除整个目录，可作为替换模式。
 - **声称承担的职责**：probe 应验证现场行为但不保存个人内容、秘密、完整 URL 或可关联的
   内容身份。
 - **外部事实来源**：

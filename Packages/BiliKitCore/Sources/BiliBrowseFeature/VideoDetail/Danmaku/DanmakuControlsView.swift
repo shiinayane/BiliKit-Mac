@@ -16,7 +16,6 @@ struct DanmakuControlsView: View {
             )
             .toggleStyle(.switch)
             .fixedSize()
-            .accessibilityIdentifier("danmaku.enabled")
 
             Button {
                 showsSettings.toggle()
@@ -26,7 +25,6 @@ struct DanmakuControlsView: View {
             }
             .buttonStyle(.bordered)
             .help("弹幕设置")
-            .accessibilityIdentifier("danmaku.settings")
             .popover(isPresented: $showsSettings, arrowEdge: .bottom) {
                 DanmakuSettingsPopover(model: model)
             }
@@ -68,7 +66,6 @@ private struct DanmakuSettingsPopover: View {
         .padding(16)
         .frame(width: 360)
         .font(.body)
-        .accessibilityIdentifier("danmaku.settings.popover")
     }
 
     private var densitySettings: some View {
@@ -111,7 +108,6 @@ private struct DanmakuSettingsPopover: View {
                 }
                 .labelsHidden()
                 .accessibilityValue(Text(model.displayArea.displayName))
-                .accessibilityIdentifier("danmaku.display-area")
 
                 SliderScaleLabels(
                     labels: DanmakuDisplayArea.allCases.map(\.displayName),
@@ -140,7 +136,6 @@ private struct DanmakuSettingsPopover: View {
                 .labelsHidden()
                 .disabled(!model.canAdjustDensity)
                 .accessibilityValue(Text(model.density.displayName))
-                .accessibilityIdentifier("danmaku.density")
 
                 if !model.canAdjustDensity {
                     Text("同屏密度仅在显示区域为 100% 时生效")
@@ -163,7 +158,6 @@ private struct DanmakuSettingsPopover: View {
                     isLastVisibleMode: model.showsScrolling
                         && !model.showsTop
                         && !model.showsBottom,
-                    identifier: "danmaku.mode.scrolling",
                     mode: .scrolling
                 )
                 modeToggle(
@@ -172,7 +166,6 @@ private struct DanmakuSettingsPopover: View {
                     isLastVisibleMode: model.showsTop
                         && !model.showsScrolling
                         && !model.showsBottom,
-                    identifier: "danmaku.mode.top",
                     mode: .top
                 )
                 modeToggle(
@@ -181,7 +174,6 @@ private struct DanmakuSettingsPopover: View {
                     isLastVisibleMode: model.showsBottom
                         && !model.showsScrolling
                         && !model.showsTop,
-                    identifier: "danmaku.mode.bottom",
                     mode: .bottom
                 )
             }
@@ -231,7 +223,6 @@ private struct DanmakuSettingsPopover: View {
             .labelsHidden()
             .accessibilityValue(Text(model.speedLevel.displayName))
             .disabled(!model.showsScrolling)
-            .accessibilityIdentifier("danmaku.speed")
 
             SliderScaleLabels(
                 labels: DanmakuSpeedLevel.allCases.map(\.displayName),
@@ -275,7 +266,6 @@ private struct DanmakuSettingsPopover: View {
                     format: .percent.precision(.fractionLength(0))
                 )
             )
-            .accessibilityIdentifier("danmaku.opacity")
 
             SliderScaleLabels(
                 labels: [
@@ -294,7 +284,6 @@ private struct DanmakuSettingsPopover: View {
         _ title: String,
         isOn: Bool,
         isLastVisibleMode: Bool,
-        identifier: String,
         mode: Mode
     ) -> some View {
         Toggle(
@@ -315,7 +304,6 @@ private struct DanmakuSettingsPopover: View {
         )
         .toggleStyle(.checkbox)
         .disabled(isLastVisibleMode)
-        .accessibilityIdentifier(identifier)
     }
 }
 

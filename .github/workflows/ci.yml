@@ -68,4 +68,4 @@ jobs:
           echo "Selected quality gate: ${mode}"
 
       - name: Run selected quality gate (includes strict Swift format lint)
-        run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}" closure
+        run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"

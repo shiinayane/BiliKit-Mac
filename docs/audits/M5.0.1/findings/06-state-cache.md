@@ -117,9 +117,8 @@
     因此完全覆盖最低系统。
 - **OSS 对照及 commit/date**：不适用。原生 API availability 与当前真实行为比第三方
   scroll workaround 更高优先级。
-- **真实行为证据**：
-  `docs/validation/M5.0-native-navigation-state-retention-2026-07-26.md:50-73`
-  记录空 `ScrollPosition` 曾从 `0.592` 变成 `0.312`；补上 `idType` 与 target layout 后
+- **真实行为证据**：历史审计记录空 `ScrollPosition` 曾从 `0.592` 变成 `0.312`；补上
+  `idType` 与 target layout 后
   两次热门往返分别为 `0.195066 → 0.194867`、`0.389877 → 0.389447`。这只是两个热门样本，
   不是搜索、历史、resize 的稳定契约。
 - **本地测试实际证明的范围**：现有 Package/App unit tests 不测真实 scroll geometry；

@@ -221,35 +221,12 @@
 - **与其他 finding 的依赖或冲突**：与 ARCH-001 的 ports 共同构成依赖方向；工程/分发线
   负责 public products 是否需要全部暴露。
 
-## ARCH-007：四个 Probe target 是不同证据入口，不是发布架构层
+## ARCH-007：历史 Probe target 已退役
 
 - **finding_id**：ARCH-007
-- **审计线与涉及能力**：executable target、真实验证入口、重复构造。
-- **当前实现（文件、符号、调用链）**：
-  `Package.swift:21-24,74-98` 定义 `BiliAPIProbe`、`BiliAuthProbe`、
-  `BiliPlaybackProbe`、`BiliDanmakuProbe`：
-  - API probe：匿名 WBI/search 与 M4 protocol contract；
-  - Auth probe：QR 窗口、轮询/expiry；
-  - Playback probe：真实 manifest、ready/play/seek；
-  - Danmaku probe：decoder/scheduler 与 renderer load。
-  README、CI（仅 playback 的显式 job）和
-  `Scripts/run-m4-danmaku-probe.sh`/`run-m44-renderer-probe.sh` 都有实际入口。
-- **它声称提供的职责**：在不把真实网络/账号/renderer 观察塞入 unit test 或 App UI 的
-  情况下，提供可显式运行、可脱敏的垂直验证入口。
-- **外部事实来源**：不适用；是否有真实调用脚本与权限差异是仓库事实。
-- **OSS 对照及 commit/date**：不适用。
-- **真实行为证据**：既有 validation 文档记录四类 probe 的独立使用；但第一轮 PRIV-003
-  已指出输出包含 BVID/CID/标题等隐私问题，不能因 target 必要而保留不安全输出。
-- **本地测试实际证明的范围**：build 只证明 probe 可编译；未设置参数/账号时的 skip
-  不能证明真实协议。CI playback job若没有样本也可能 skip。
-- **判断：保留**四个 executable target 的职责边界；**尚不能判断**未来是否应共享一套
-  脱敏 output/transport factory。不要合并成一个获取更多权限的万能 probe。
-- **风险：影响、触发条件、可恢复性**：重复 configuration 可能与 production drift；
-  输出可能泄露内容 identity；错误的“probe 成功”声明会高估证据。target 本身不进入 App。
-- **下一步最小验证**：按 PRIV-003 修正方案逐个列出它调用 production composition 还是
-  复制 construction；只合并无差异的构造 helper，不合并权限/现场入口。
-- **与其他 finding 的依赖或冲突**：依赖 PRIV-003 与 ENG/distribution 的 CI/发布范围；
-  不授权本审计阶段改 probe。
+- **当前判断**：这些一次性 executable target、测试入口和 runner 已删除。它们复制生产
+  composition、扩大权限与隐私面，并把现场观察误包装成常驻回归契约；未来若有具体问题，
+  应在明确边界内临时验证，不恢复万能 probe 或测试专用生产入口。
 
 ## ARCH-008：Repository/HTTP/Composition wrappers 多数有转换职责
 
