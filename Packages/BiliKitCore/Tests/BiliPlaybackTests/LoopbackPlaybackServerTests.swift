@@ -2587,7 +2587,7 @@ struct LoopbackPlaybackServerTests {
         #expect(automaticSubtitles.count == 2)
         #expect(localizedNames["中文"]?["zh"] == "中文")
         #expect(localizedNames["中文（AI）"]?["zh"] == "中文")
-        #expect(localizedNames["English（AI）"] == nil)
+        #expect(localizedNames["English（AI）"]?["en"] == "English")
         #expect(
             group.options.allSatisfy {
                 !$0.hasMediaCharacteristic(.isOriginalContent)
