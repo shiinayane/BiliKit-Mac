@@ -5,13 +5,23 @@ import SwiftUI
 
 struct PopularTabRoot: View {
     let model: GuestBrowseViewModel
-    @Binding var scrollPosition: ScrollPosition
+    @Binding var scrollOffsetY: CGFloat
     let onSelect: (String) -> Void
 
     var body: some View {
         PopularFeedView(
             model: model,
-            scrollPosition: $scrollPosition,
+            scrollOffsetY: $scrollOffsetY,
+            makeLoadedContent: { videos, scrollOffsetY, onSelect in
+                AnyView(
+                    PopularNativeGridView(
+                        videos: videos,
+                        scrollOffsetY: scrollOffsetY,
+                        onSelect: onSelect
+                    )
+                    .ignoresSafeArea(.container, edges: .top)
+                )
+            },
             onSelect: onSelect
         )
         .navigationTitle("热门")

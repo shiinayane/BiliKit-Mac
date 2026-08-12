@@ -7,19 +7,32 @@ public struct PopularFeedView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestBrowseViewModel
     private let request: GuestFeedRequest
-    @Binding private var scrollPosition: ScrollPosition
+    @Binding private var scrollOffsetY: CGFloat
+    private let makeLoadedContent:
+        (
+            [PopularVideo],
+            Binding<CGFloat>,
+            @escaping (String) -> Void
+        ) -> AnyView
     private let onSelect: (String) -> Void
 
     public init(
         model: GuestBrowseViewModel,
         page: Int = 1,
         pageSize: Int = 50,
-        scrollPosition: Binding<ScrollPosition>,
+        scrollOffsetY: Binding<CGFloat>,
+        makeLoadedContent:
+            @escaping (
+                [PopularVideo],
+                Binding<CGFloat>,
+                @escaping (String) -> Void
+            ) -> AnyView,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
         request = .popular(page: page, pageSize: pageSize)
-        _scrollPosition = scrollPosition
+        _scrollOffsetY = scrollOffsetY
+        self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
     }
 
@@ -50,7 +63,8 @@ public struct PopularFeedView: View {
             PopularGrid(
                 model: model,
                 page: page,
-                scrollPosition: $scrollPosition,
+                scrollOffsetY: $scrollOffsetY,
+                makeLoadedContent: makeLoadedContent,
                 onSelect: onSelect
             )
         case .failed(request: .popular(_, _), let error):
@@ -84,14 +98,26 @@ private struct PopularGrid: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: GuestBrowseViewModel
     let page: PopularPage
-    @Binding var scrollPosition: ScrollPosition
+    @Binding var scrollOffsetY: CGFloat
+    let makeLoadedContent:
+        (
+            [PopularVideo],
+            Binding<CGFloat>,
+            @escaping (String) -> Void
+        ) -> AnyView
     let onSelect: (String) -> Void
     let request: GuestFeedRequest
 
     init(
         model: GuestBrowseViewModel,
         page: PopularPage,
-        scrollPosition: Binding<ScrollPosition>,
+        scrollOffsetY: Binding<CGFloat>,
+        makeLoadedContent:
+            @escaping (
+                [PopularVideo],
+                Binding<CGFloat>,
+                @escaping (String) -> Void
+            ) -> AnyView,
         onSelect: @escaping (String) -> Void
     ) {
         let request = GuestFeedRequest.popular(
@@ -100,42 +126,14 @@ private struct PopularGrid: View {
         )
         self.model = model
         self.page = page
-        _scrollPosition = scrollPosition
+        _scrollOffsetY = scrollOffsetY
+        self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
         self.request = request
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                LazyVGrid(
-                    columns: VideoCardGridLayout.columns(
-                        for: geometry.size.width
-                    ),
-                    alignment: .leading,
-                    spacing: VideoCardGridLayout.verticalSpacing
-                ) {
-                    ForEach(page.videos) { video in
-                        Button {
-                            onSelect(video.bvid)
-                        } label: {
-                            GuestVideoCard(video: video)
-                        }
-                        .buttonStyle(VideoCardButtonStyle())
-                        .accessibilityHint("播放视频")
-                    }
-                }
-                .padding(VideoCardGridLayout.contentPadding)
-                .scrollTargetLayout()
-            }
-            .scrollPosition($scrollPosition)
-            .refreshable {
-                model.refreshPopular(
-                    page: page.pageNumber,
-                    pageSize: page.pageSize
-                )
-                await model.waitForCurrentTask()
-            }
+        makeLoadedContent(page.videos, $scrollOffsetY, onSelect)
             .overlay(alignment: .top) {
                 ZStack {
                     refreshStatus
@@ -147,7 +145,6 @@ private struct PopularGrid: View {
                     value: refreshVisualPhase
                 )
             }
-        }
     }
 
     @ViewBuilder
