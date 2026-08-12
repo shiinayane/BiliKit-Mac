@@ -43,13 +43,18 @@ Bili*Feature -> BiliApplication -> BiliModels
   判断完成，固定时长只作超时。
 - 默认使用独立 Codex managed worktree；保留已有改动。未经要求不 commit、push、创建 PR、
   改写历史或修改其他 worktree。
-- 只运行覆盖改动的最高一层：
+- 迭代期间只做最小定向验证；交付前只运行一次覆盖改动的最高适用 Gate：
 
 ```sh
 sh Scripts/run-quality-gates.sh static
 sh Scripts/run-quality-gates.sh package
 sh Scripts/run-quality-gates.sh app
 ```
+
+- 手写 `xcodebuild`、XCUI 和 App 启动统一使用本任务唯一的临时产物根目录，任务结束时清理。
+  其他 worktree 或旧共享 DerivedData 不算 fresh closure；若只用于临时运行时诊断，需注明证据边界。
+- 仅在明确的性能裁决中运行 Instruments/`xctrace`；事前限定问题、时长、次数和产物目录。
+  摘要完成后默认删除 raw trace，并退出 Instruments、确认没有开放 trace、清理临时产物。
 
 ## 提交文本
 
