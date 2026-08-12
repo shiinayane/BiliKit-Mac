@@ -19,9 +19,7 @@ struct AppShellView: View {
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var popularScrollPosition = ScrollPosition(
-        idType: String.self
-    )
+    @State private var popularScrollOffsetY: CGFloat = 0
     @State private var searchScrollPosition = ScrollPosition(
         idType: String.self
     )
@@ -134,7 +132,7 @@ struct AppShellView: View {
         case .popular:
             PopularTabRoot(
                 model: browseModel,
-                scrollPosition: $popularScrollPosition,
+                scrollOffsetY: $popularScrollOffsetY,
                 onSelect: navigationCoordinator.openPlayback
             )
         case .history:
