@@ -46,7 +46,8 @@ top_level_key_count=$(
     || fail "entitlements 出现未审计的额外能力"
 
 expect_count 2 'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' "$project" "App 配置必须使用同一 entitlement"
-expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMac.dev;' "$project" "App Bundle Identifier 不一致"
+expect_count 6 'DEVELOPMENT_TEAM = 2B3LZ256AG;' "$project" "Project 与 target 必须使用正式开发团队"
+expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;' "$project" "App Bundle Identifier 不一致"
 expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
 expect_count 1 '.typesettingLanguage(' "$app" "App 根必须设置排版语言"

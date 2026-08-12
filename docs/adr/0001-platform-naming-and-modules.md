@@ -23,8 +23,8 @@
 
 - 仓库、Xcode project 和内部 app target：`BiliKitMac`。
 - 用户可见 App、构建产品、可执行文件和 Swift app module：`BiliKit`。
-- 当前开发 bundle identifier：`com.shiinayane.BiliKitMac.dev`。它属于签名环境配置，不是
-  用户可见品牌或 Swift 模块名；取得正式开发者账号后允许显式更换。
+- 当前正式签名 bundle identifier：`com.shiinayane.BiliKit`。它属于签名环境配置，不是
+  用户可见品牌或 Swift 模块名；历史开发值为 `com.shiinayane.BiliKitMac.dev`。
 - App 单元与集成测试 target 保留 `BiliKitMacTests`；UI 自动化只有出现无法在更低层验证的
   关键系统边界时才建立。
 
@@ -33,7 +33,7 @@
 App Debug／Release 必须使用同一个非空、格式合法的 Bundle Identifier。Keychain access
 group 固定写成 `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`，由签名身份的 App
 Identifier Prefix 与产品标识共同展开；工程契约检查的是两套配置一致和 entitlement 派生
-关系。静态契约明确记录当前 `.dev` 值，但不把它视为永久发布标识；将来更换开发者账号时，
+关系。静态契约明确记录当前正式值；将来更换开发者账号时，
 工程配置、契约记录与签名验证必须在同一个可 review 的变更中更新。
 
 更换 Bundle Identifier、Team 或 App Identifier Prefix 会形成新的 Keychain access group，
