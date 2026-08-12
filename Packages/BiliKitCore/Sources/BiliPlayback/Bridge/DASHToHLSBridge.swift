@@ -491,6 +491,21 @@ public struct DASHToHLSBridge: Sendable {
             by: { primaryLanguageSubtag($0.languageTag) }
         )
         for (language, languageEntries) in subtitleLanguageGroups
+        where language != "und" {
+            let translations = localizedLanguageNames(for: language)
+            guard !translations.isEmpty else { continue }
+            for entry in languageEntries
+            where entry.characteristics.contains("public.machine-generated")
+                && localizedNames[entry.label] == nil
+            {
+                // AVFoundation localizes the machine-generated characteristic
+                // separately. Give it the language's base name so a source
+                // label such as "中文（AI）" does not become
+                // "中文（AI）（生成）" when it is the only rendition.
+                localizedNames[entry.label] = translations
+            }
+        }
+        for (language, languageEntries) in subtitleLanguageGroups
         where language != "und" && languageEntries.count > 1 {
             let labelGroups = Dictionary(
                 grouping: languageEntries,

@@ -65,24 +65,40 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var detailSurface: some View {
-        ScrollView {
-            detailSurfaceContent
-                .overlay(alignment: .topLeading) {
-                    if currentContext != nil, isLoadingReplacement {
-                        replacementLoadingOverlay
-                            .frame(
-                                maxWidth: .infinity,
-                                maxHeight: .infinity,
-                                alignment: .topLeading
-                            )
-                            .background(.background)
-                            .transition(.opacity)
+        ScrollViewReader { proxy in
+            ScrollView {
+                detailSurfaceContent
+                    .id(PlaybackDetailScrollAnchor.top)
+                    .overlay(alignment: .topLeading) {
+                        if currentContext != nil, isLoadingReplacement {
+                            replacementLoadingOverlay
+                                .frame(
+                                    maxWidth: .infinity,
+                                    maxHeight: .infinity,
+                                    alignment: .topLeading
+                                )
+                                .background(.background)
+                                .transition(.opacity)
+                        }
                     }
-                }
+            }
+            .onChange(of: presentedBVID) { previousBVID, bvid in
+                guard
+                    PlaybackDetailScrollResetPolicy.shouldReset(
+                        from: previousBVID,
+                        to: bvid
+                    )
+                else { return }
+                proxy.scrollTo(PlaybackDetailScrollAnchor.top, anchor: .top)
+            }
+            .overlay {
+                replacementFailureOverlay
+            }
         }
-        .overlay {
-            replacementFailureOverlay
-        }
+    }
+
+    private var presentedBVID: String? {
+        currentContext?.detail.bvid
     }
 
     private var isLoadingReplacement: Bool {
@@ -231,5 +247,16 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         } else {
             onRetry()
         }
+    }
+}
+
+enum PlaybackDetailScrollAnchor: Hashable {
+    case top
+}
+
+enum PlaybackDetailScrollResetPolicy {
+    static func shouldReset(from previousBVID: String?, to bvid: String?) -> Bool {
+        guard let previousBVID, let bvid else { return false }
+        return previousBVID != bvid
     }
 }
