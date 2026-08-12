@@ -12,12 +12,10 @@
 
 ## 验证
 
-<!-- 列出实际运行的命令、测试和真实观察；没有运行的项目不要勾选或推断。 -->
+<!-- 只勾选并填写实际运行的唯一最高适用 Gate；没有运行的项目不要勾选或推断。 -->
 
-- [ ] `sh Scripts/run-quality-gates.sh static`
-- [ ] `sh Scripts/run-quality-gates.sh package`
-- [ ] `sh Scripts/run-quality-gates.sh app`
-- [ ] 与本次变化直接相关的真实 UI、签名、网络或性能检查
+- [ ] 唯一最高适用 Gate（`static` / `package` / `app`；实际命令：）
+- [ ] 必要的真实 UI、签名、网络或性能检查（实际检查：）
 
 ## 未覆盖边界
 
