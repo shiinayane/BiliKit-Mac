@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import CoreText
 import QuartzCore
 
 extension NSUserInterfaceItemIdentifier {
@@ -619,10 +620,16 @@ private final class NativeVideoCoverOverlayView: NSView {
     private static let maximumSymbolRasterCount = 32
     private static var symbolRasters: [SymbolRasterKey: CGImage] = [:]
 
-    private let gradient = NSGradient(
-        starting: .clear,
-        ending: NSColor.black.withAlphaComponent(0.78)
-    )
+    private let gradientLayer = CAGradientLayer()
+    private let metricIconLayers = [CALayer(), CALayer()]
+    private let metricTextLayers = [
+        NativeVideoCoverOverlayView.makeTextLayer(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+        NativeVideoCoverOverlayView.makeTextLayer(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+    ]
     private let metricCells = [
         NativeVideoCoverOverlayView.makeLabelCell(
             font: .systemFont(ofSize: 12, weight: .medium)
@@ -632,11 +639,14 @@ private final class NativeVideoCoverOverlayView: NSView {
         ),
     ]
     private var metricIconNames: [String?] = [nil, nil]
-    private var metricIcons: [CGImage?] = [nil, nil]
     private var metricSizes: [NSSize] = [.zero, .zero]
     private var metricCount = 0
     private let trailingCell = NativeVideoCoverOverlayView.makeLabelCell(
         font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    )
+    private let trailingTextLayer = NativeVideoCoverOverlayView.makeTextLayer(
+        font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+        alignmentMode: .right
     )
     private var trailingSize = NSSize.zero
 
@@ -645,6 +655,28 @@ private final class NativeVideoCoverOverlayView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.masksToBounds = true
+        gradientLayer.colors = [
+            NSColor.clear.cgColor,
+            NSColor.black.withAlphaComponent(0.78).cgColor,
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        gradientLayer.actions = Self.disabledLayerActions
+        layer?.addSublayer(gradientLayer)
+        for index in metricIconLayers.indices {
+            let iconLayer = metricIconLayers[index]
+            iconLayer.contentsGravity = .resizeAspect
+            iconLayer.actions = Self.disabledLayerActions
+            iconLayer.isHidden = true
+            layer?.addSublayer(iconLayer)
+
+            metricTextLayers[index].isHidden = true
+            layer?.addSublayer(metricTextLayers[index])
+        }
+        trailingTextLayer.isHidden = true
+        layer?.addSublayer(trailingTextLayer)
+        updateContentsScale()
         setAccessibilityElement(false)
     }
 
@@ -658,19 +690,26 @@ private final class NativeVideoCoverOverlayView: NSView {
             guard index < metricCount else {
                 metricCells[index].stringValue = ""
                 metricIconNames[index] = nil
-                metricIcons[index] = nil
                 metricSizes[index] = .zero
+                metricIconLayers[index].contents = nil
+                metricIconLayers[index].isHidden = true
+                metricTextLayers[index].string = nil
+                metricTextLayers[index].isHidden = true
                 continue
             }
             let metric = metrics[index]
             metricCells[index].stringValue = metric.text
+            metricTextLayers[index].string = metric.text
+            metricTextLayers[index].isHidden = false
             metricIconNames[index] = metric.systemImage
             metricSizes[index] = integralSize(metricCells[index].cellSize)
         }
         trailingCell.stringValue = trailingText ?? ""
+        trailingTextLayer.string = trailingText ?? ""
+        trailingTextLayer.isHidden = trailingText?.isEmpty ?? true
         trailingSize = integralSize(trailingCell.cellSize)
         refreshMetricIcons()
-        needsDisplay = true
+        needsLayout = true
     }
 
     func reset() {
@@ -678,21 +717,28 @@ private final class NativeVideoCoverOverlayView: NSView {
         for index in metricCells.indices {
             metricCells[index].stringValue = ""
             metricIconNames[index] = nil
-            metricIcons[index] = nil
             metricSizes[index] = .zero
+            metricIconLayers[index].contents = nil
+            metricIconLayers[index].isHidden = true
+            metricTextLayers[index].string = nil
+            metricTextLayers[index].isHidden = true
         }
         trailingCell.stringValue = ""
+        trailingTextLayer.string = nil
+        trailingTextLayer.isHidden = true
         trailingSize = .zero
-        needsDisplay = true
+        needsLayout = true
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateContentsScale()
         refreshMetricIcons()
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        updateContentsScale()
         refreshMetricIcons()
     }
 
@@ -701,13 +747,9 @@ private final class NativeVideoCoverOverlayView: NSView {
         refreshMetricIcons()
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        gradient?.draw(
-            from: NSPoint(x: bounds.midX, y: bounds.minY),
-            to: NSPoint(x: bounds.midX, y: bounds.maxY),
-            options: []
-        )
+    override func layout() {
+        super.layout()
+        gradientLayer.frame = bounds
         let metricY = bounds.height - Self.metricBottomOffset
         var nextX = Self.leadingInset
         for index in 0..<metricCount {
@@ -717,9 +759,7 @@ private final class NativeVideoCoverOverlayView: NSView {
                 width: Self.iconSize,
                 height: Self.iconSize
             )
-            if let icon = metricIcons[index] {
-                drawFlipped(icon, in: iconFrame)
-            }
+            metricIconLayers[index].frame = iconFrame
             let cellSize = metricSizes[index]
             let cellFrame = NSRect(
                 x: iconFrame.maxX + Self.iconTextSpacing,
@@ -727,19 +767,17 @@ private final class NativeVideoCoverOverlayView: NSView {
                 width: cellSize.width,
                 height: cellSize.height
             )
-            metricCells[index].draw(withFrame: cellFrame, in: self)
+            metricTextLayers[index].frame = cellFrame
             nextX = cellFrame.maxX + Self.metricSpacing
         }
-        guard !trailingCell.stringValue.isEmpty else { return }
-        trailingCell.draw(
-            withFrame: NSRect(
+        if !trailingCell.stringValue.isEmpty {
+            trailingTextLayer.frame = NSRect(
                 x: bounds.width - trailingSize.width - Self.trailingInset,
                 y: metricY,
                 width: trailingSize.width,
                 height: trailingSize.height
-            ),
-            in: self
-        )
+            )
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -753,26 +791,28 @@ private final class NativeVideoCoverOverlayView: NSView {
         let appearance = effectiveAppearance
         for index in 0..<metricCount {
             guard let name = metricIconNames[index] else {
-                metricIcons[index] = nil
+                metricIconLayers[index].contents = nil
+                metricIconLayers[index].isHidden = true
                 continue
             }
-            metricIcons[index] = Self.symbolRaster(
+            let icon = Self.symbolRaster(
                 named: name,
                 scale: scale,
                 appearance: appearance
             )
+            metricIconLayers[index].contents = icon
+            metricIconLayers[index].contentsScale = scale
+            metricIconLayers[index].isHidden = icon == nil
         }
-        needsDisplay = true
+        needsLayout = true
     }
 
-    private func drawFlipped(_ image: CGImage, in frame: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        context.translateBy(x: frame.minX, y: frame.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.interpolationQuality = .high
-        context.draw(image, in: NSRect(origin: .zero, size: frame.size))
-        context.restoreGState()
+    private func updateContentsScale() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        for textLayer in metricTextLayers {
+            textLayer.contentsScale = scale
+        }
+        trailingTextLayer.contentsScale = scale
     }
 
     private static func makeLabelCell(font: NSFont) -> NSTextFieldCell {
@@ -788,6 +828,33 @@ private final class NativeVideoCoverOverlayView: NSView {
         cell.usesSingleLineMode = true
         return cell
     }
+
+    private static func makeTextLayer(
+        font: NSFont,
+        alignmentMode: CATextLayerAlignmentMode = .left
+    ) -> CATextLayer {
+        let textLayer = CATextLayer()
+        textLayer.font = CTFontCreateWithFontDescriptor(
+            font.fontDescriptor as CTFontDescriptor,
+            font.pointSize,
+            nil
+        )
+        textLayer.fontSize = font.pointSize
+        textLayer.foregroundColor = NSColor.white.cgColor
+        textLayer.alignmentMode = alignmentMode
+        textLayer.truncationMode = .end
+        textLayer.isWrapped = false
+        textLayer.actions = disabledLayerActions
+        return textLayer
+    }
+
+    private static let disabledLayerActions: [String: CAAction] = [
+        "bounds": NSNull(),
+        "contents": NSNull(),
+        "hidden": NSNull(),
+        "position": NSNull(),
+        "string": NSNull(),
+    ]
 
     private static func symbolRaster(
         named name: String,
