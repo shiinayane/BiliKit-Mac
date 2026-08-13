@@ -8,6 +8,7 @@ struct HistoryNativeGridView: View {
     let canLoadMore: Bool
     let tailIdentity: String?
     let isLoading: Bool
+    @Binding var scrollReset: NativeVideoGridScrollResetState
     let onNearEnd: () -> Void
     let onSelect: (String) -> Void
 
@@ -21,6 +22,7 @@ struct HistoryNativeGridView: View {
                 tailIdentity: tailIdentity,
                 isLoading: isLoading
             ),
+            scrollReset: $scrollReset,
             imagePipeline: imageOwner.pipeline,
             onNearEnd: onNearEnd,
             onSelect: onSelect

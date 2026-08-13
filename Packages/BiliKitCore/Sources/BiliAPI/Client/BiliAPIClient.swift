@@ -86,7 +86,12 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             referer: "https://www.bilibili.com/"
         )
         let videos = try payload.list.map { try $0.model() }
-        return PopularPage(videos: videos, pageNumber: page, pageSize: pageSize)
+        return PopularPage(
+            videos: videos,
+            pageNumber: page,
+            pageSize: pageSize,
+            hasMore: !payload.noMore
+        )
     }
 
     public func searchVideos(

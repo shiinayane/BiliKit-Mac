@@ -96,7 +96,8 @@ extension BiliAPIError {
         case .transportFailure:
             .transportFailure
         case .httpStatus(403), .httpStatus(412), .nonJSONResponse,
-            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
+            .apiRejected(code: -352, _), .apiRejected(code: -403, _),
+            .apiRejected(code: -412, _):
             .requestRestricted
         case .apiRejected(let code, _):
             .serviceRejected(code: code)

@@ -4,6 +4,12 @@ import Foundation
 
 struct PopularPayload: Decodable, Sendable {
     let list: [PopularVideoPayload]
+    let noMore: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case list
+        case noMore = "no_more"
+    }
 }
 
 struct PopularVideoPayload: Decodable, Sendable {

@@ -16,6 +16,13 @@ struct GuestFeedPresentation: Sendable, Equatable {
     let refreshError: GuestApplicationError?
 }
 
+struct PopularPaginationPresentation: Sendable, Equatable {
+    let canLoadMore: Bool
+    let tailIdentity: String?
+    let isLoadingMore: Bool
+    let loadMoreError: GuestApplicationError?
+}
+
 struct SearchPaginationPresentation: Sendable, Equatable {
     let canLoadMore: Bool
     let tailIdentity: String?
@@ -31,6 +38,8 @@ struct SearchPaginationPresentation: Sendable, Equatable {
 /// 普通 deactivate 会保留当前两份工作集，`reset` 则清空两者；不同请求会替换对应工作集。
 public final class GuestBrowseViewModel {
     public private(set) var state: GuestFeedState = .idle
+    public private(set) var popularSuccessfulRefreshGeneration: UInt64 = 0
+    public private(set) var searchSuccessfulRefreshGeneration: UInt64 = 0
     private(set) var activeRequestIdentity: GuestFeedRequest?
     private(set) var isRefreshing = false
     private(set) var refreshError: GuestApplicationError?
@@ -77,6 +86,48 @@ public final class GuestBrowseViewModel {
 
     func refreshPopular(page: Int = 1, pageSize: Int = 20) {
         refresh(.popular(page: page, pageSize: pageSize))
+    }
+
+    public func loadMorePopular() {
+        guard
+            case .popular(let basePage, let pageSize) = activeRequestIdentity,
+            case .loaded(.popular(let page)) = state,
+            page.pageNumber >= basePage,
+            page.pageSize == pageSize,
+            page.hasMore,
+            !page.videos.isEmpty,
+            !isRefreshing,
+            !popularWorkset.isLoadingMore,
+            loadTask == nil
+        else {
+            return
+        }
+
+        let baseRequest = GuestFeedRequest.popular(
+            page: basePage,
+            pageSize: pageSize
+        )
+        let nextRequest = GuestFeedRequest.popular(
+            page: page.pageNumber + 1,
+            pageSize: pageSize
+        )
+        generation += 1
+        let currentGeneration = generation
+        popularWorkset.isLoadingMore = true
+        popularWorkset.loadMoreError = nil
+        storeActiveWorkset()
+        loadTask = Task { [weak self] in
+            await self?.performPopularAppend(
+                nextRequest,
+                baseRequest: baseRequest,
+                generation: currentGeneration
+            )
+        }
+    }
+
+    public func retryPopularLoadMore() {
+        guard popularWorkset.loadMoreError != nil else { return }
+        loadMorePopular()
     }
 
     public func search(_ query: String) {
@@ -177,6 +228,38 @@ public final class GuestBrowseViewModel {
         )
     }
 
+    func popularPagination(
+        for request: GuestFeedRequest
+    ) -> PopularPaginationPresentation {
+        guard
+            case .popular(let basePage, let pageSize) = request,
+            popularWorkset.request == request,
+            case .loaded(.popular(let page)) = popularWorkset.state,
+            page.pageNumber >= basePage,
+            page.pageSize == pageSize
+        else {
+            return PopularPaginationPresentation(
+                canLoadMore: false,
+                tailIdentity: nil,
+                isLoadingMore: false,
+                loadMoreError: nil
+            )
+        }
+        let canLoadMore =
+            popularWorkset.loadMoreError == nil
+            && page.hasMore
+            && !page.videos.isEmpty
+        let tailIdentity = page.videos.last.map {
+            "popular|\(basePage)|\(pageSize)|\(page.pageNumber)|\($0.bvid)"
+        }
+        return PopularPaginationPresentation(
+            canLoadMore: canLoadMore,
+            tailIdentity: canLoadMore ? tailIdentity : nil,
+            isLoadingMore: popularWorkset.isLoadingMore,
+            loadMoreError: popularWorkset.loadMoreError
+        )
+    }
+
     func searchPagination(
         for query: String
     ) -> SearchPaginationPresentation {
@@ -194,7 +277,9 @@ public final class GuestBrowseViewModel {
                 loadMoreError: nil
             )
         }
-        let canLoadMore = page.pageNumber < page.totalPages
+        let canLoadMore =
+            searchWorkset.loadMoreError == nil
+            && page.pageNumber < page.totalPages
         let tailIdentity = page.videos.last.map {
             "\(normalizedQuery)|\(page.pageNumber)|\($0.bvid)"
         }
@@ -244,7 +329,11 @@ public final class GuestBrowseViewModel {
         let currentGeneration = generation
         loadTask?.cancel()
         refreshError = nil
-        if case .search = request {
+        switch request {
+        case .popular:
+            popularWorkset.isLoadingMore = false
+            popularWorkset.loadMoreError = nil
+        case .search:
             searchWorkset.isLoadingMore = false
             searchWorkset.loadMoreError = nil
         }
@@ -284,9 +373,18 @@ public final class GuestBrowseViewModel {
             guard contentMatches(content, request: request) else {
                 throw GuestApplicationError.invalidResponse
             }
+            let recordsSuccessfulRefresh = isRefreshing
             state = .loaded(normalizedContent(content))
             isRefreshing = false
             refreshError = nil
+            if recordsSuccessfulRefresh {
+                switch request {
+                case .popular:
+                    popularSuccessfulRefreshGeneration &+= 1
+                case .search:
+                    searchSuccessfulRefreshGeneration &+= 1
+                }
+            }
         } catch is CancellationError {
             guard generation == currentGeneration, activeRequestIdentity == request else {
                 return
@@ -376,6 +474,70 @@ public final class GuestBrowseViewModel {
         }
     }
 
+    private func performPopularAppend(
+        _ request: GuestFeedRequest,
+        baseRequest: GuestFeedRequest,
+        generation currentGeneration: Int
+    ) async {
+        do {
+            let content = try await useCase.execute(request)
+            try Task.checkCancellation()
+            guard
+                generation == currentGeneration,
+                activeRequestIdentity == baseRequest,
+                case .popular(let requestedPage, let requestedPageSize) = request,
+                case .popular(let responsePage) = content,
+                requestedPage == responsePage.pageNumber,
+                requestedPageSize == responsePage.pageSize,
+                case .loaded(.popular(let loadedPage)) = state,
+                loadedPage.pageSize == requestedPageSize,
+                loadedPage.pageNumber + 1 == responsePage.pageNumber
+            else {
+                throw GuestApplicationError.invalidResponse
+            }
+
+            var seen = Set(loadedPage.videos.map(\.bvid))
+            let appended = responsePage.videos.filter {
+                seen.insert($0.bvid).inserted
+            }
+            let madeProgress = !appended.isEmpty
+            state = .loaded(
+                .popular(
+                    PopularPage(
+                        videos: loadedPage.videos + appended,
+                        pageNumber: responsePage.pageNumber,
+                        pageSize: responsePage.pageSize,
+                        hasMore: responsePage.hasMore && madeProgress
+                    )
+                )
+            )
+            popularWorkset.isLoadingMore = false
+            popularWorkset.loadMoreError = nil
+        } catch is CancellationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            popularWorkset.isLoadingMore = false
+        } catch let error as GuestApplicationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            popularWorkset.isLoadingMore = false
+            popularWorkset.loadMoreError = error
+        } catch {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            popularWorkset.isLoadingMore = false
+            popularWorkset.loadMoreError = .unavailable
+        }
+
+        if generation == currentGeneration, activeRequestIdentity == baseRequest {
+            loadTask = nil
+            storeActiveWorkset()
+        }
+    }
+
     private func handleFailure(
         _ error: GuestApplicationError,
         request: GuestFeedRequest
@@ -413,21 +575,32 @@ public final class GuestBrowseViewModel {
     private func normalizedContent(
         _ content: GuestFeedContent
     ) -> GuestFeedContent {
-        guard case .search(let query, let page) = content else {
-            return content
-        }
-        var seen: Set<String> = []
-        let videos = page.videos.filter { seen.insert($0.bvid).inserted }
-        return .search(
-            query: query,
-            page: SearchPage(
-                videos: videos,
-                pageNumber: page.pageNumber,
-                pageSize: page.pageSize,
-                totalResults: page.totalResults,
-                totalPages: page.totalPages
+        switch content {
+        case .popular(let page):
+            var seen: Set<String> = []
+            let videos = page.videos.filter { seen.insert($0.bvid).inserted }
+            return .popular(
+                PopularPage(
+                    videos: videos,
+                    pageNumber: page.pageNumber,
+                    pageSize: page.pageSize,
+                    hasMore: page.hasMore && !videos.isEmpty
+                )
             )
-        )
+        case .search(let query, let page):
+            var seen: Set<String> = []
+            let videos = page.videos.filter { seen.insert($0.bvid).inserted }
+            return .search(
+                query: query,
+                page: SearchPage(
+                    videos: videos,
+                    pageNumber: page.pageNumber,
+                    pageSize: page.pageSize,
+                    totalResults: page.totalResults,
+                    totalPages: page.totalPages
+                )
+            )
+        }
     }
 
     private func normalizeInterruptedLoad() {
@@ -436,7 +609,14 @@ public final class GuestBrowseViewModel {
         if case .loading = state {
             state = .idle
         }
-        searchWorkset.isLoadingMore = false
+        switch activeRequestIdentity {
+        case .popular:
+            popularWorkset.isLoadingMore = false
+        case .search:
+            searchWorkset.isLoadingMore = false
+        case nil:
+            break
+        }
     }
 
     private func apply(_ workset: FeedWorkset) {
@@ -447,17 +627,23 @@ public final class GuestBrowseViewModel {
 
     private func storeActiveWorkset() {
         guard let activeRequestIdentity else { return }
-        let searchIsLoadingMore = searchWorkset.isLoadingMore
-        let searchLoadMoreError = searchWorkset.loadMoreError
+        let isLoadingMore: Bool
+        let loadMoreError: GuestApplicationError?
+        switch activeRequestIdentity {
+        case .popular:
+            isLoadingMore = popularWorkset.isLoadingMore
+            loadMoreError = popularWorkset.loadMoreError
+        case .search:
+            isLoadingMore = searchWorkset.isLoadingMore
+            loadMoreError = searchWorkset.loadMoreError
+        }
         updateWorkset(for: activeRequestIdentity) {
             $0.request = activeRequestIdentity
             $0.state = state
             $0.isRefreshing = isRefreshing
             $0.refreshError = refreshError
-            if case .search = activeRequestIdentity {
-                $0.isLoadingMore = searchIsLoadingMore
-                $0.loadMoreError = searchLoadMoreError
-            }
+            $0.isLoadingMore = isLoadingMore
+            $0.loadMoreError = loadMoreError
         }
     }
 

@@ -115,7 +115,7 @@ struct PopularNativeGridTests {
     }
 
     @Test
-    func nearEndGateRequiresEdgeAndRearmsOnlyForNewTail() {
+    func nearEndGateRequiresThresholdExitBeforeRearmingNewTail() {
         var gate = NativeVideoGridNearEndGate()
         let first = NativeVideoGridTailState(
             canLoadMore: true,
@@ -136,6 +136,22 @@ struct PopularNativeGridTests {
                 isLoading: true
             )
         )
+        let changedTailWhileInside = gate.update(
+            isInsideThreshold: true,
+            state: NativeVideoGridTailState(
+                canLoadMore: true,
+                tailIdentity: "tail-2",
+                isLoading: false
+            )
+        )
+        let leftNewTailThreshold = gate.update(
+            isInsideThreshold: false,
+            state: NativeVideoGridTailState(
+                canLoadMore: true,
+                tailIdentity: "tail-2",
+                isLoading: false
+            )
+        )
         let rearmed = gate.update(
             isInsideThreshold: true,
             state: NativeVideoGridTailState(
@@ -152,8 +168,65 @@ struct PopularNativeGridTests {
         #expect(!leftThreshold)
         #expect(!sameTailReentry)
         #expect(!loading)
+        #expect(!changedTailWhileInside)
+        #expect(!leftNewTailThreshold)
         #expect(rearmed)
         #expect(!ended)
+    }
+
+    @Test
+    func liveScrollBackpressureAllowsOnlyOneAutomaticPagePerGesture() {
+        var backpressure = NativeVideoGridLiveScrollBackpressure()
+
+        #expect(backpressure.permitsAutomaticLoad)
+        backpressure.recordTrigger(isLiveScrolling: true)
+        #expect(!backpressure.permitsAutomaticLoad)
+
+        backpressure.beginLiveScroll()
+        #expect(backpressure.permitsAutomaticLoad)
+        backpressure.recordTrigger(isLiveScrolling: false)
+        #expect(backpressure.permitsAutomaticLoad)
+    }
+
+    @Test
+    func scrollResetGateConsumesEachRequestIdentityOnlyOnce() {
+        var gate = NativeVideoGridScrollResetGate(initialRequestID: 7)
+
+        let sameInitialRequest = gate.consume(7)
+        let nextRequest = gate.consume(8)
+        let repeatedNextRequest = gate.consume(8)
+        let laterRequest = gate.consume(9)
+
+        #expect(!sameInitialRequest)
+        #expect(nextRequest)
+        #expect(!repeatedNextRequest)
+        #expect(laterRequest)
+    }
+
+    @Test
+    func scrollResetStateKeepsUnacknowledgedRequestAcrossGridRecreation() {
+        var state = NativeVideoGridScrollResetState()
+
+        state.request()
+        #expect(state.requestID == 1)
+        #expect(state.acknowledgedRequestID == 0)
+
+        var recreatedGate = NativeVideoGridScrollResetGate(
+            initialRequestID: state.acknowledgedRequestID
+        )
+        let recreatedGridConsumesPendingRequest = recreatedGate.consume(
+            state.requestID
+        )
+        #expect(recreatedGridConsumesPendingRequest)
+        state.acknowledgedRequestID = state.requestID
+
+        var laterGate = NativeVideoGridScrollResetGate(
+            initialRequestID: state.acknowledgedRequestID
+        )
+        let laterGridReplaysAcknowledgedRequest = laterGate.consume(
+            state.requestID
+        )
+        #expect(!laterGridReplaysAcknowledgedRequest)
     }
 
     @Test
@@ -176,8 +249,39 @@ struct PopularNativeGridTests {
             NativeVideoGridAnchorRetention.targetOffsetY(
                 itemOriginY: 10,
                 offsetFromViewportTop: 40,
+                minimumOffsetY: -52,
                 maximumOffsetY: 2_000
+            ) == -30
+        )
+    }
+
+    @Test
+    func logicalScrollOffsetIncludesAutomaticToolbarInset() {
+        #expect(
+            NativeVideoScrollCoordinateSpace.logicalOffsetY(
+                physicalOffsetY: -52,
+                topInset: 52
             ) == 0
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.logicalOffsetY(
+                physicalOffsetY: 0,
+                topInset: 52
+            ) == 52
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.physicalOffsetY(
+                logicalOffsetY: 0,
+                topInset: 52
+            ) == -52
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
+                documentHeight: 2_686,
+                viewportHeight: 1_050,
+                topInset: 52,
+                bottomInset: 0
+            ) == 1_688
         )
     }
 
@@ -200,6 +304,17 @@ struct PopularNativeGridTests {
         retention.record(1_300)
         retention.markPersisted(1_300)
         #expect(retention.takePendingPersistence() == nil)
+    }
+
+    @Test
+    func scrollBindingBridgeDistinguishesEchoFromExternalTopRequest() {
+        var bridge = NativeVideoScrollBindingBridge(initialOffsetY: 1_200)
+
+        #expect(bridge.takeExternalRequest(1_200) == nil)
+        bridge.markSynchronized(1_500)
+        #expect(bridge.takeExternalRequest(1_500) == nil)
+        #expect(bridge.takeExternalRequest(0) == 0)
+        #expect(bridge.takeExternalRequest(0) == nil)
     }
 
     @Test

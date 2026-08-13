@@ -32,6 +32,25 @@ struct BiliGuestRepositoryTests {
     }
 
     @Test
+    func mapsRiskControlBusinessResponseAtAdapterBoundary() async {
+        let repository = BiliGuestRepository(
+            client: BiliAPIClient(
+                transport: FixedResponseTransport(
+                    response: HTTPResponse(
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"],
+                        body: Data(#"{"code":-352,"message":"blocked"}"#.utf8)
+                    )
+                )
+            )
+        )
+
+        await #expect(throws: GuestApplicationError.requestRestricted) {
+            try await repository.popular(page: 1, pageSize: 20)
+        }
+    }
+
+    @Test
     func mapsMalformedPayloadAtAdapterBoundary() async {
         let repository = BiliGuestRepository(
             client: BiliAPIClient(

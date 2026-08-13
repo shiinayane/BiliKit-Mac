@@ -15,6 +15,7 @@ struct BiliAPIClientTests {
 
         #expect(page.pageNumber == 2)
         #expect(page.pageSize == 10)
+        #expect(page.hasMore)
         #expect(page.videos.count == 2)
         #expect(page.videos[0].bvid == "BV1FixtureA1")
         #expect(page.videos[0].owner.name == "测试作者甲")

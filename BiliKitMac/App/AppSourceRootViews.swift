@@ -6,27 +6,36 @@ import SwiftUI
 struct PopularTabRoot: View {
     let model: GuestBrowseViewModel
     @Binding var scrollOffsetY: CGFloat
+    @Binding var scrollReset: NativeVideoGridScrollResetState
     let onSelect: (String) -> Void
 
     var body: some View {
         PopularFeedView(
             model: model,
             scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: { videos, scrollOffsetY, onSelect in
-                AnyView(
-                    PopularNativeGridView(
-                        videos: videos,
-                        scrollOffsetY: scrollOffsetY,
-                        onSelect: onSelect
-                    )
-                    .ignoresSafeArea(.container, edges: .top)
+            makeLoadedContent: {
+                videos,
+                scrollOffsetY,
+                canLoadMore,
+                tailIdentity,
+                isLoading,
+                onNearEnd,
+                onSelect in
+                PopularNativeGridView(
+                    videos: videos,
+                    scrollOffsetY: scrollOffsetY,
+                    canLoadMore: canLoadMore,
+                    tailIdentity: tailIdentity,
+                    isLoading: isLoading,
+                    scrollReset: $scrollReset,
+                    onNearEnd: onNearEnd,
+                    onSelect: onSelect
                 )
+                .ignoresSafeArea(.container, edges: .top)
             },
             onSelect: onSelect
         )
         .navigationTitle("热门")
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 }
 
@@ -35,6 +44,7 @@ struct SearchTabRoot: View {
     @Binding var searchDraft: String
     let submittedSearchQuery: String?
     @Binding var scrollOffsetY: CGFloat
+    @Binding var scrollReset: NativeVideoGridScrollResetState
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
 
@@ -57,6 +67,7 @@ struct SearchTabRoot: View {
                     canLoadMore: canLoadMore,
                     tailIdentity: tailIdentity,
                     isLoading: isLoading,
+                    scrollReset: $scrollReset,
                     onNearEnd: onNearEnd,
                     onSelect: onSelect
                 )
@@ -90,6 +101,7 @@ struct HistoryTabRoot: View {
     let model: WatchHistoryViewModel
     let accountState: AccountPresentationState
     @Binding var scrollOffsetY: CGFloat
+    @Binding var scrollReset: NativeVideoGridScrollResetState
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
     let onAuthenticationRequired: () -> Void
@@ -97,8 +109,6 @@ struct HistoryTabRoot: View {
     var body: some View {
         content
             .navigationTitle("观看历史")
-            .toolbar(removing: .title)
-            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .toolbar {
                 if case .signedIn = accountState {
                     ToolbarItem(placement: .primaryAction) {
@@ -127,6 +137,7 @@ struct HistoryTabRoot: View {
                         canLoadMore: canLoadMore,
                         tailIdentity: tailIdentity,
                         isLoading: isLoading,
+                        scrollReset: $scrollReset,
                         onNearEnd: onNearEnd,
                         onSelect: onSelect
                     )

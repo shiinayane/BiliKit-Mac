@@ -22,6 +22,9 @@ struct AppShellView: View {
     @State private var popularScrollOffsetY: CGFloat = 0
     @State private var searchScrollOffsetY: CGFloat = 0
     @State private var historyScrollOffsetY: CGFloat = 0
+    @State private var popularScrollReset = NativeVideoGridScrollResetState()
+    @State private var searchScrollReset = NativeVideoGridScrollResetState()
+    @State private var historyScrollReset = NativeVideoGridScrollResetState()
 
     var body: some View {
         @Bindable var navigationCoordinator = navigationCoordinator
@@ -71,6 +74,28 @@ struct AppShellView: View {
         .onChange(of: submittedSearchQuery) { previousQuery, query in
             guard previousQuery != query else { return }
             searchScrollOffsetY = 0
+            searchScrollReset.request()
+        }
+        .onChange(of: browseModel.popularSuccessfulRefreshGeneration) {
+            previousGeneration,
+            generation in
+            guard previousGeneration != generation else { return }
+            popularScrollOffsetY = 0
+            popularScrollReset.request()
+        }
+        .onChange(of: browseModel.searchSuccessfulRefreshGeneration) {
+            previousGeneration,
+            generation in
+            guard previousGeneration != generation else { return }
+            searchScrollOffsetY = 0
+            searchScrollReset.request()
+        }
+        .onChange(of: historyModel.successfulReloadGeneration) {
+            previousGeneration,
+            generation in
+            guard previousGeneration != generation else { return }
+            historyScrollOffsetY = 0
+            historyScrollReset.request()
         }
         .onChange(of: historyAccountScope) { previousScope, scope in
             guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
@@ -78,6 +103,7 @@ struct AppShellView: View {
                 return
             }
             historyScrollOffsetY = 0
+            historyScrollReset.request()
         }
     }
 
@@ -123,6 +149,7 @@ struct AppShellView: View {
                 ),
                 submittedSearchQuery: submittedSearchQuery,
                 scrollOffsetY: $searchScrollOffsetY,
+                scrollReset: $searchScrollReset,
                 onSelect: navigationCoordinator.openPlayback,
                 onSubmit: onSubmitSearch
             )
@@ -130,6 +157,7 @@ struct AppShellView: View {
             PopularTabRoot(
                 model: browseModel,
                 scrollOffsetY: $popularScrollOffsetY,
+                scrollReset: $popularScrollReset,
                 onSelect: navigationCoordinator.openPlayback
             )
         case .history:
@@ -137,6 +165,7 @@ struct AppShellView: View {
                 model: historyModel,
                 accountState: authenticationModel.accountPresentationState,
                 scrollOffsetY: $historyScrollOffsetY,
+                scrollReset: $historyScrollReset,
                 onSelect: navigationCoordinator.openPlayback,
                 onPresentAuthentication: {
                     isAuthenticationPresented = true
