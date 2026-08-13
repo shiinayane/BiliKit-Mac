@@ -20,9 +20,7 @@ struct AppShellView: View {
     let onSubmitSearch: () -> Void
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var popularScrollOffsetY: CGFloat = 0
-    @State private var searchScrollPosition = ScrollPosition(
-        idType: String.self
-    )
+    @State private var searchScrollOffsetY: CGFloat = 0
     @State private var historyScrollOffsetY: CGFloat = 0
 
     var body: some View {
@@ -72,7 +70,7 @@ struct AppShellView: View {
         }
         .onChange(of: submittedSearchQuery) { previousQuery, query in
             guard previousQuery != query else { return }
-            searchScrollPosition = ScrollPosition(idType: String.self)
+            searchScrollOffsetY = 0
         }
         .onChange(of: historyAccountScope) { previousScope, scope in
             guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
@@ -124,7 +122,7 @@ struct AppShellView: View {
                     set: { navigationCoordinator.searchDraft = $0 }
                 ),
                 submittedSearchQuery: submittedSearchQuery,
-                scrollPosition: $searchScrollPosition,
+                scrollOffsetY: $searchScrollOffsetY,
                 onSelect: navigationCoordinator.openPlayback,
                 onSubmit: onSubmitSearch
             )

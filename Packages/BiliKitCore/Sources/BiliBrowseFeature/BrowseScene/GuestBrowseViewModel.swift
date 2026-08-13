@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliModels
 import Foundation
 import Observation
 
@@ -13,6 +14,13 @@ struct GuestFeedPresentation: Sendable, Equatable {
     let state: GuestFeedState
     let isRefreshing: Bool
     let refreshError: GuestApplicationError?
+}
+
+struct SearchPaginationPresentation: Sendable, Equatable {
+    let canLoadMore: Bool
+    let tailIdentity: String?
+    let isLoadingMore: Bool
+    let loadMoreError: GuestApplicationError?
 }
 
 @MainActor
@@ -49,10 +57,10 @@ public final class GuestBrowseViewModel {
         activateWorkset(request, workset: workset)
     }
 
-    public func activateSearch(_ query: String, page: Int = 1) {
+    public func activateSearch(_ query: String) {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = GuestFeedRequest.search(query: normalizedQuery, page: page)
-        guard isValidSearch(normalizedQuery, page: page) else {
+        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
+        guard isValidSearch(normalizedQuery) else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -71,10 +79,10 @@ public final class GuestBrowseViewModel {
         refresh(.popular(page: page, pageSize: pageSize))
     }
 
-    public func search(_ query: String, page: Int = 1) {
+    public func search(_ query: String) {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = GuestFeedRequest.search(query: normalizedQuery, page: page)
-        guard isValidSearch(normalizedQuery, page: page) else {
+        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
+        guard isValidSearch(normalizedQuery) else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -82,6 +90,43 @@ public final class GuestBrowseViewModel {
             searchWorkset = FeedWorkset(request: request)
         }
         refresh(request)
+    }
+
+    public func loadMoreSearch() {
+        guard
+            case .search(let query, 1) = activeRequestIdentity,
+            case .loaded(.search(let loadedQuery, let page)) = state,
+            loadedQuery == query,
+            page.pageNumber < page.totalPages,
+            !isRefreshing,
+            !searchWorkset.isLoadingMore,
+            loadTask == nil
+        else {
+            return
+        }
+
+        let baseRequest = GuestFeedRequest.search(query: query, page: 1)
+        let nextRequest = GuestFeedRequest.search(
+            query: query,
+            page: page.pageNumber + 1
+        )
+        generation += 1
+        let currentGeneration = generation
+        searchWorkset.isLoadingMore = true
+        searchWorkset.loadMoreError = nil
+        storeActiveWorkset()
+        loadTask = Task { [weak self] in
+            await self?.performSearchAppend(
+                nextRequest,
+                baseRequest: baseRequest,
+                generation: currentGeneration
+            )
+        }
+    }
+
+    public func retrySearchLoadMore() {
+        guard searchWorkset.loadMoreError != nil else { return }
+        loadMoreSearch()
     }
 
     func retry(_ request: GuestFeedRequest) {
@@ -132,6 +177,35 @@ public final class GuestBrowseViewModel {
         )
     }
 
+    func searchPagination(
+        for query: String
+    ) -> SearchPaginationPresentation {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
+        guard
+            searchWorkset.request == request,
+            case .loaded(.search(let loadedQuery, let page)) = searchWorkset.state,
+            loadedQuery == normalizedQuery
+        else {
+            return SearchPaginationPresentation(
+                canLoadMore: false,
+                tailIdentity: nil,
+                isLoadingMore: false,
+                loadMoreError: nil
+            )
+        }
+        let canLoadMore = page.pageNumber < page.totalPages
+        let tailIdentity = page.videos.last.map {
+            "\(normalizedQuery)|\(page.pageNumber)|\($0.bvid)"
+        }
+        return SearchPaginationPresentation(
+            canLoadMore: canLoadMore,
+            tailIdentity: canLoadMore ? tailIdentity : nil,
+            isLoadingMore: searchWorkset.isLoadingMore,
+            loadMoreError: searchWorkset.loadMoreError
+        )
+    }
+
     public func waitForCurrentTask() async {
         await loadTask?.value
     }
@@ -170,6 +244,10 @@ public final class GuestBrowseViewModel {
         let currentGeneration = generation
         loadTask?.cancel()
         refreshError = nil
+        if case .search = request {
+            searchWorkset.isLoadingMore = false
+            searchWorkset.loadMoreError = nil
+        }
 
         if case .loaded = state {
             isRefreshing = true
@@ -203,7 +281,10 @@ public final class GuestBrowseViewModel {
             guard generation == currentGeneration, activeRequestIdentity == request else {
                 return
             }
-            state = .loaded(content)
+            guard contentMatches(content, request: request) else {
+                throw GuestApplicationError.invalidResponse
+            }
+            state = .loaded(normalizedContent(content))
             isRefreshing = false
             refreshError = nil
         } catch is CancellationError {
@@ -229,6 +310,72 @@ public final class GuestBrowseViewModel {
         }
     }
 
+    private func performSearchAppend(
+        _ request: GuestFeedRequest,
+        baseRequest: GuestFeedRequest,
+        generation currentGeneration: Int
+    ) async {
+        do {
+            let content = try await useCase.execute(request)
+            try Task.checkCancellation()
+            guard
+                generation == currentGeneration,
+                activeRequestIdentity == baseRequest,
+                case .search(let requestedQuery, let requestedPage) = request,
+                case .search(let responseQuery, let responsePage) = content,
+                requestedQuery == responseQuery,
+                requestedPage == responsePage.pageNumber,
+                responsePage.pageNumber <= responsePage.totalPages,
+                case .loaded(.search(let loadedQuery, let loadedPage)) = state,
+                loadedQuery == requestedQuery,
+                loadedPage.pageNumber + 1 == responsePage.pageNumber
+            else {
+                throw GuestApplicationError.invalidResponse
+            }
+
+            var seen = Set(loadedPage.videos.map(\.bvid))
+            let appended = responsePage.videos.filter {
+                seen.insert($0.bvid).inserted
+            }
+            state = .loaded(
+                .search(
+                    query: requestedQuery,
+                    page: SearchPage(
+                        videos: loadedPage.videos + appended,
+                        pageNumber: responsePage.pageNumber,
+                        pageSize: responsePage.pageSize,
+                        totalResults: responsePage.totalResults,
+                        totalPages: responsePage.totalPages
+                    )
+                )
+            )
+            searchWorkset.isLoadingMore = false
+            searchWorkset.loadMoreError = nil
+        } catch is CancellationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            searchWorkset.isLoadingMore = false
+        } catch let error as GuestApplicationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            searchWorkset.isLoadingMore = false
+            searchWorkset.loadMoreError = error
+        } catch {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            searchWorkset.isLoadingMore = false
+            searchWorkset.loadMoreError = .unavailable
+        }
+
+        if generation == currentGeneration, activeRequestIdentity == baseRequest {
+            loadTask = nil
+            storeActiveWorkset()
+        }
+    }
+
     private func handleFailure(
         _ error: GuestApplicationError,
         request: GuestFeedRequest
@@ -241,12 +388,55 @@ public final class GuestBrowseViewModel {
         }
     }
 
+    private func contentMatches(
+        _ content: GuestFeedContent,
+        request: GuestFeedRequest
+    ) -> Bool {
+        switch (request, content) {
+        case (.popular(let requestedPage, let requestedSize), .popular(let page)):
+            page.pageNumber == requestedPage && page.pageSize == requestedSize
+        case (
+            .search(let requestedQuery, let requestedPage),
+            .search(let responseQuery, let page)
+        ):
+            responseQuery == requestedQuery
+                && page.pageNumber == requestedPage
+                && page.pageSize > 0
+                && page.totalResults >= 0
+                && (page.totalPages >= page.pageNumber
+                    || (page.totalPages == 0 && page.videos.isEmpty))
+        default:
+            false
+        }
+    }
+
+    private func normalizedContent(
+        _ content: GuestFeedContent
+    ) -> GuestFeedContent {
+        guard case .search(let query, let page) = content else {
+            return content
+        }
+        var seen: Set<String> = []
+        let videos = page.videos.filter { seen.insert($0.bvid).inserted }
+        return .search(
+            query: query,
+            page: SearchPage(
+                videos: videos,
+                pageNumber: page.pageNumber,
+                pageSize: page.pageSize,
+                totalResults: page.totalResults,
+                totalPages: page.totalPages
+            )
+        )
+    }
+
     private func normalizeInterruptedLoad() {
         isRefreshing = false
         refreshError = nil
         if case .loading = state {
             state = .idle
         }
+        searchWorkset.isLoadingMore = false
     }
 
     private func apply(_ workset: FeedWorkset) {
@@ -257,11 +447,17 @@ public final class GuestBrowseViewModel {
 
     private func storeActiveWorkset() {
         guard let activeRequestIdentity else { return }
+        let searchIsLoadingMore = searchWorkset.isLoadingMore
+        let searchLoadMoreError = searchWorkset.loadMoreError
         updateWorkset(for: activeRequestIdentity) {
             $0.request = activeRequestIdentity
             $0.state = state
             $0.isRefreshing = isRefreshing
             $0.refreshError = refreshError
+            if case .search = activeRequestIdentity {
+                $0.isLoadingMore = searchIsLoadingMore
+                $0.loadMoreError = searchLoadMoreError
+            }
         }
     }
 
@@ -288,8 +484,8 @@ public final class GuestBrowseViewModel {
         }
     }
 
-    private func isValidSearch(_ query: String, page: Int) -> Bool {
-        !query.isEmpty && query.count <= 100 && page > 0
+    private func isValidSearch(_ query: String) -> Bool {
+        !query.isEmpty && query.count <= 100
     }
 }
 
@@ -298,4 +494,6 @@ private struct FeedWorkset {
     var state: GuestFeedState = .idle
     var isRefreshing = false
     var refreshError: GuestApplicationError?
+    var isLoadingMore = false
+    var loadMoreError: GuestApplicationError?
 }

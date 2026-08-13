@@ -93,17 +93,17 @@ struct GuestBrowseAndVideoViewModelTests {
             )
         )
 
-        model.search("macOS", page: 2)
+        model.search("macOS")
         await model.waitForCurrentTask()
         #expect(
             model.state
                 == .failed(
-                    request: .search(query: "macOS", page: 2),
+                    request: .search(query: "macOS", page: 1),
                     error: .requestRestricted
                 )
         )
 
-        model.retry(.search(query: "macOS", page: 2))
+        model.retry(.search(query: "macOS", page: 1))
         await model.waitForCurrentTask()
         #expect(
             model.state
@@ -112,7 +112,7 @@ struct GuestBrowseAndVideoViewModelTests {
                         query: "macOS",
                         page: SearchPage(
                             videos: [fixture.searchVideo],
-                            pageNumber: 2,
+                            pageNumber: 1,
                             pageSize: 20,
                             totalResults: 1,
                             totalPages: 1
@@ -120,6 +120,105 @@ struct GuestBrowseAndVideoViewModelTests {
                     )
                 )
         )
+    }
+
+    @Test
+    @MainActor
+    func searchNearEndAppendsDeduplicatesAndBackpressuresSameTail() async {
+        let first = GuestFixtures(bvid: "BV1SearchA01", title: "第一页")
+        let second = GuestFixtures(bvid: "BV1SearchB02", title: "第二页")
+        let repository = SearchPaginationRepositoryStub(
+            first: first,
+            second: second
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.search("macOS")
+        await model.waitForCurrentTask()
+        let firstTail = model.searchPagination(for: "macOS")
+        #expect(firstTail.canLoadMore)
+        #expect(firstTail.tailIdentity?.contains("|1|") == true)
+
+        model.loadMoreSearch()
+        model.loadMoreSearch()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.search(_, let page)) = model.state else {
+            Issue.record("搜索结果应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(page.pageNumber == 2)
+        #expect(await repository.searchCallCount == 2)
+        #expect(!model.searchPagination(for: "macOS").canLoadMore)
+    }
+
+    @Test
+    @MainActor
+    func failedSearchAppendKeepsCardsAndRetriesOnlyNextPage() async {
+        let first = GuestFixtures(bvid: "BV1SearchC03", title: "保留卡片")
+        let second = GuestFixtures(bvid: "BV1SearchD04", title: "重试追加")
+        let repository = SearchPaginationRepositoryStub(
+            first: first,
+            second: second,
+            failFirstSecondPage: true
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.search("Swift")
+        await model.waitForCurrentTask()
+        let loadedState = model.state
+
+        model.loadMoreSearch()
+        await model.waitForCurrentTask()
+        #expect(model.state == loadedState)
+        #expect(
+            model.searchPagination(for: "Swift").loadMoreError
+                == .transportFailure
+        )
+
+        model.retrySearchLoadMore()
+        await model.waitForCurrentTask()
+        guard case .loaded(.search(_, let page)) = model.state else {
+            Issue.record("重试后搜索结果应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(await repository.searchCallCount == 3)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func newQueryCancelsAndRejectsLateSearchAppend() async throws {
+        let old = GuestFixtures(bvid: "BV1SearchE05", title: "旧查询")
+        let fresh = GuestFixtures(bvid: "BV1SearchF06", title: "新查询")
+        let repository = BlockingSearchAppendRepositoryStub(old: old, fresh: fresh)
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.search("旧查询")
+        await model.waitForCurrentTask()
+        model.loadMoreSearch()
+        try await repository.waitForOldAppendStart()
+        let oldAppendTask = try #require(model.taskSnapshotForTesting())
+
+        model.search("新查询")
+        await model.waitForCurrentTask()
+        await repository.releaseOldAppend()
+        await oldAppendTask.value
+
+        guard case .loaded(.search(let query, let page)) = model.state else {
+            Issue.record("新查询应保持 loaded")
+            return
+        }
+        #expect(query == "新查询")
+        #expect(page.videos.map(\.bvid) == [fresh.bvid])
+        #expect(page.pageNumber == 1)
     }
 
     @Test
@@ -1016,6 +1115,126 @@ private actor WorksetRepositoryStub: GuestContentRepository {
 
     func failNextPopularRequest() {
         shouldFailNextPopular = true
+    }
+}
+
+private actor SearchPaginationRepositoryStub: GuestContentRepository {
+    let first: GuestFixtures
+    let second: GuestFixtures
+    let failFirstSecondPage: Bool
+    private(set) var searchCallCount = 0
+    private var secondPageAttempts = 0
+
+    init(
+        first: GuestFixtures,
+        second: GuestFixtures,
+        failFirstSecondPage: Bool = false
+    ) {
+        self.first = first
+        self.second = second
+        self.failFirstSecondPage = failFirstSecondPage
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        searchCallCount += 1
+        switch page {
+        case 1:
+            return SearchPage(
+                videos: [first.searchVideo, first.searchVideo],
+                pageNumber: 1,
+                pageSize: 20,
+                totalResults: 2,
+                totalPages: 2
+            )
+        case 2:
+            secondPageAttempts += 1
+            if failFirstSecondPage, secondPageAttempts == 1 {
+                throw GuestApplicationError.transportFailure
+            }
+            return SearchPage(
+                videos: [first.searchVideo, second.searchVideo],
+                pageNumber: 2,
+                pageSize: 20,
+                totalResults: 2,
+                totalPages: 2
+            )
+        default:
+            throw GuestApplicationError.invalidRequest
+        }
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { first.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [first.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        first.playback
+    }
+}
+
+private actor BlockingSearchAppendRepositoryStub: GuestContentRepository {
+    let old: GuestFixtures
+    let fresh: GuestFixtures
+    private let oldAppendEvents = TestEventCounter()
+    private var oldAppendReleased = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(old: GuestFixtures, fresh: GuestFixtures) {
+        self.old = old
+        self.fresh = fresh
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        if keyword == "旧查询", page == 2 {
+            await oldAppendEvents.signal()
+            await withCheckedContinuation { continuation in
+                if oldAppendReleased {
+                    continuation.resume()
+                } else {
+                    releaseWaiters.append(continuation)
+                }
+            }
+            return SearchPage(
+                videos: [old.searchVideo],
+                pageNumber: 2,
+                pageSize: 20,
+                totalResults: 2,
+                totalPages: 2
+            )
+        }
+        let fixture = keyword == "旧查询" ? old : fresh
+        return SearchPage(
+            videos: [fixture.searchVideo],
+            pageNumber: 1,
+            pageSize: 20,
+            totalResults: keyword == "旧查询" ? 2 : 1,
+            totalPages: keyword == "旧查询" ? 2 : 1
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { fresh.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [fresh.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fresh.playback
+    }
+
+    func waitForOldAppendStart() async throws {
+        try await oldAppendEvents.wait(until: 1)
+    }
+
+    func releaseOldAppend() {
+        oldAppendReleased = true
+        let pending = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 

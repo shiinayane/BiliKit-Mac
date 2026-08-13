@@ -1,4 +1,5 @@
 import AppKit
+import BiliBrowseFeature
 import BiliLibraryFeature
 import BiliModels
 import CoreGraphics
@@ -463,6 +464,39 @@ struct PopularNativeGridTests {
         #expect(content.coverTrailingText == "2:05")
         #expect(content.showsAvatar)
         #expect(content.accessibilityLabel.contains("时长 2:05"))
+    }
+
+    @Test @MainActor
+    func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
+        let video = SearchVideo(
+            bvid: "BV-search-stable",
+            title: "搜索原生卡片",
+            coverURL: URL(string: "https://i0.hdslb.com/search.jpg"),
+            owner: VideoOwner(
+                id: 2,
+                name: "搜索作者",
+                avatarURL: URL(string: "https://i1.hdslb.com/avatar.jpg")
+            ),
+            statistics: VideoStatistics(
+                viewCount: 23_456,
+                danmakuCount: 89,
+                likeCount: 10
+            ),
+            durationSeconds: 185,
+            publishedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let featurePresentation = SearchVideoCardPresentation(video: video)
+        let content = SearchNativeGridView.makePresentation(featurePresentation)
+
+        #expect(content.id == "BV-search-stable")
+        #expect(content.title == "搜索原生卡片")
+        #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
+        #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
+        #expect(content.coverMetrics.map(\.text) == ["2.3万", "89"])
+        #expect(content.coverTrailingText == "3:05")
+        #expect(content.footerLeadingText.contains("搜索作者"))
+        #expect(content.accessibilityLabel.contains("时长 3:05"))
     }
 
     @Test @MainActor
