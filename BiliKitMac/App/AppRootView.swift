@@ -10,19 +10,6 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
-@MainActor
-@Observable
-final class AccountSessionCoordinator {
-    private(set) var generation: UInt64 = 0
-    private(set) var scope = AccountSessionScope.unresolved
-
-    func publish(_ scope: AccountSessionScope) {
-        guard scope != .unresolved, scope != self.scope else { return }
-        self.scope = scope
-        generation &+= 1
-    }
-}
-
 enum HistoryRouteOwnership {
     static func deactivatesHistory(from previous: AppTab, to current: AppTab) -> Bool {
         previous == .history && current != .history
@@ -39,10 +26,13 @@ struct AppRootView: View {
     @State private var isAuthenticationPresented = false
     @State private var submittedSearchQuery: String?
     init(
-        environment: AppEnvironment = .live(),
+        environment: AppEnvironment? = nil,
         accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
+        let environment =
+            environment
+            ?? .live(accountSessionCoordinator: accountSessionCoordinator)
         _windowOwner = State(
             initialValue: AppWindowOwner(environment: environment)
         )
@@ -88,6 +78,9 @@ struct AppRootView: View {
         .task(id: browseActivation) {
             await applyBrowseActivation(for: browseActivation)
         }
+        .onAppear {
+            windowOwner.open()
+        }
         .task {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
@@ -98,6 +91,9 @@ struct AppRootView: View {
                 return
             }
             accountSessionCoordinator.publish(scope)
+            browseModel.synchronizeAuthenticationSession(
+                generation: accountSessionCoordinator.generation
+            )
             navigationCoordinator.closePlaybackForAuthenticationChange()
             historyModel.reset()
             if case .signedIn = scope,
@@ -106,13 +102,8 @@ struct AppRootView: View {
                 historyModel.loadIfNeeded()
             }
         }
-        .onChange(of: accountSessionCoordinator.generation) { _, _ in
-            guard accountSessionCoordinator.scope != historyAccountScope else {
-                return
-            }
-            navigationCoordinator.closePlaybackForAuthenticationChange()
-            historyModel.reset()
-            authenticationModel.revalidate()
+        .task(id: accountSessionCoordinator.generation) {
+            await synchronizeProcessAccountSession()
         }
         .onChange(of: authenticationModel.resolutionPhase) { previousPhase, phase in
             guard previousPhase == .restoring,
@@ -156,6 +147,7 @@ struct AppRootView: View {
             browseModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.reset()
+            windowOwner.close()
         }
     }
 
@@ -229,6 +221,24 @@ struct AppRootView: View {
             browseModel.activateSearch(query)
             await browseModel.waitForCurrentTask()
         }
+    }
+
+    /// 先让本窗口认证 owner 完成凭据复核和 transport 失效，再重启账户化 Search。
+    private func synchronizeProcessAccountSession() async {
+        let processGeneration = accountSessionCoordinator.generation
+        guard accountSessionCoordinator.scope != historyAccountScope else {
+            return
+        }
+        navigationCoordinator.closePlaybackForAuthenticationChange()
+        historyModel.reset()
+        authenticationModel.revalidateAfterExternalSessionChange()
+        await authenticationModel.waitForCurrentTask()
+        guard accountSessionCoordinator.generation == processGeneration else {
+            return
+        }
+        browseModel.synchronizeAuthenticationSession(
+            generation: processGeneration
+        )
     }
 }
 

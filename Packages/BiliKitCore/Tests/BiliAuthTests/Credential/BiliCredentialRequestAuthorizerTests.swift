@@ -6,14 +6,17 @@ import Testing
 
 struct BiliCredentialRequestAuthorizerTests {
     @Test
-    func addsCredentialOnlyToExactAllowedEndpoint() async throws {
+    func addsCredentialToExactAPIReadCapability() async throws {
         let credential = try makeFixtureCredential()
         let authorizer = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: credential)
         )
         let request = HTTPRequest(
             url: try #require(
-                URL(string: "https://api.bilibili.com/x/web-interface/nav")
+                URL(
+                    string:
+                        "https://api.bilibili.com:443/x/web-interface/wbi/search/type?keyword=macOS&page=1"
+                )
             ),
             headers: ["Accept": "application/json"]
         )
@@ -22,70 +25,10 @@ struct BiliCredentialRequestAuthorizerTests {
 
         #expect(authorized.headers["Accept"] == "application/json")
         #expect(authorized.headers["Cookie"] == credential.cookieHeader)
-
-        let historyRequest = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com/x/web-interface/history/cursor?max=0&view_at=0&business=&ps=20"
-                )
-            )
-        )
-        let authorizedHistory = try await authorizer.authorize(historyRequest)
-        #expect(authorizedHistory.headers["Cookie"] == credential.cookieHeader)
-
-        let playerRequest = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef"
-                )
-            )
-        )
-        let authorizedPlayer = try await authorizer.authorize(playerRequest)
-        #expect(authorizedPlayer.headers["Cookie"] == credential.cookieHeader)
-
-        let danmakuRequest = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef"
-                )
-            )
-        )
-        let authorizedDanmaku = try await authorizer.authorize(danmakuRequest)
-        #expect(authorizedDanmaku.headers["Cookie"] == credential.cookieHeader)
-
-        let playbackRequest = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1"
-                )
-            )
-        )
-        let authorizedPlayback = try await authorizer.authorize(playbackRequest)
-        #expect(authorizedPlayback.headers["Cookie"] == credential.cookieHeader)
-
-        let translatedPlaybackRequest = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=zh-Hans"
-                )
-            )
-        )
-        let authorizedTranslatedPlayback = try await authorizer.authorize(
-            translatedPlaybackRequest
-        )
-        #expect(
-            authorizedTranslatedPlayback.headers["Cookie"]
-                == credential.cookieHeader
-        )
     }
 
     @Test
-    func rejectsHostsPathsMethodsUserInfoFragmentsAndPlainHTTP() async throws {
+    func rejectsNonAPIReadCapabilities() async throws {
         let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
         let authorizer = BiliCredentialRequestAuthorizer(store: store)
         let cases: [(String, HTTPMethod)] = [
@@ -93,138 +36,13 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://api.bilibili.com.evil.invalid/x/web-interface/nav", .get),
             ("https://i0.hdslb.com/x/web-interface/nav", .get),
             ("http://127.0.0.1:8080/x/web-interface/nav", .get),
-            ("https://api.bilibili.com/x/web-interface/popular", .get),
             (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=4048&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=0",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&extra=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com:444/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=0&qn=120&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=0&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=EN",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=en%2Fevil",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&cur_language=en&cur_language=ja",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/playurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player%2Fplayurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/%70layurl?bvid=BV1Fixture01&cid=900001&qn=120&fnval=976&fnver=0&fourk=1",
-                .get
-            ),
-            ("https://api.bilibili.com/x/web-interface/nav?extra=1", .get),
-            ("https://api.bilibili.com/x/web-interface/history/cursor?ps=20", .get),
-            (
-                "https://api.bilibili.com/x/web-interface/history/cursor?max=0&view_at=0&business=&ps=20&extra=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/web-interface/history/cursor?max=-1&view_at=0&business=&ps=20",
-                .get
-            ),
-            ("https://api.bilibili.com/x/player/v2?bvid=BV1Fixture01&cid=900001", .get),
-            ("https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01", .get),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=0&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=0&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=invalid",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdeF",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef&extra=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=invalid&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/player/wbi/v2?bvid=BV1Fixture01&bvid=BV1Fixture02&cid=900001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
+                "https://api.bilibili.com:444/x/web-interface/wbi/search/type",
                 .get
             ),
             ("https://api.bilibili.com/x/web-interface/nav", .post),
             ("https://user@api.bilibili.com/x/web-interface/nav", .get),
             ("https://api.bilibili.com/x/web-interface/nav#fragment", .get),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=2&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=0&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=0&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=10001&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=0&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdeF",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef&extra=1",
-                .get
-            ),
-            (
-                "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=900001&oid=900002&segment_index=1&wts=1700000000&w_rid=0123456789abcdef0123456789abcdef",
-                .get
-            ),
         ]
 
         for (urlString, method) in cases {

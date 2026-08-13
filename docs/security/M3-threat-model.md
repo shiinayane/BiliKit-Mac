@@ -25,7 +25,7 @@ Bilibili 隐私政策将 Cookie 用于识别注册用户、登录简化、历史
 ### 1.2 安全目标
 
 1. 未经用户在 Bilibili 客户端确认，App 不能进入已登录状态。
-2. 认证材料只能发往经过代码白名单确认的 HTTPS 主机和明确声明需要登录的 endpoint。
+2. 认证材料只能发往精确 HTTPS API 主机，并且请求必须由 `BiliAPI` 私有 builder 明确选择账户读取能力。
 3. 一次旧二维码、已取消轮询或旧任务的结果不能覆盖更新的登录意图。
 4. 只有在登录结果结构有效、凭据通过登录态 endpoint 校验后，才允许原子写入 Keychain。
 5. 登出必须在离线情况下也能清除本地会话；服务端登出不能成为本地清理的前置条件。
@@ -41,14 +41,14 @@ passport.bilibili.com ── 未公开 Web QR 协议 ── BiliAuth 内存状�
         │                                      │
         │ 登录结果                             ├── Keychain（唯一持久秘密存储）
         ▼                                      │
-api.bilibili.com ◀── endpoint 级授权器 ───────┘
+api.bilibili.com ◀── 账户读取能力授权器 ─────┘
         │
         └── 非秘密身份/结果 ── BiliApplication ── BiliAuthFeature
 ```
 
 - 二维码请求只允许连接 `https://passport.bilibili.com`。
 - 生成结果中待显示的二维码 URL 当前观察为 `https://account.bilibili.com/...`；实现采用精确 scheme/host 校验，变化时失败关闭并重新审计。
-- Cookie 只允许注入 `https://api.bilibili.com` 上经过显式标记的登录 endpoint。不能使用 `*.bilibili.com` 通配，也不能发往图片、视频 CDN、loopback playback bridge 或重定向后的其他主机。
+- Cookie 只允许注入精确 `https://api.bilibili.com:443` 上由 `BiliAPI` 私有 builder 标记为账户读取的 GET。不能使用 `*.bilibili.com` 通配，也不能发往图片、视频 CDN、loopback playback bridge 或重定向后的其他主机。
 - QR 返回 URL 只封装为不可直接读取的 `WebQRCode` 并在内存生成图像；App 不在 WebView/浏览器中自动导航，也不跟随其中的目标。
 
 ## 3. 威胁与控制
@@ -58,12 +58,12 @@ api.bilibili.com ◀── endpoint 级授权器 ───────┘
 | 日志、错误描述或测试失败打印 QR key/Cookie | 会话被复制或长期留存 | 扩充 `HTTPLogRedactor`；认证错误只含阶段与分类；秘密使用不可 `CustomStringConvertible` 的内部类型；加入负向秘密扫描测试 |
 | 二维码 URL 被复制到剪贴板或落盘缓存 | 待登录会话泄露 | 只在内存生成二维码图像；不提供复制操作；不使用磁盘 URL cache；页面销毁即清空图像与 key |
 | 恶意或漂移响应把 Cookie 送往其他主机 | 账号会话外泄 | HTTPS + 精确 host 白名单；禁用跨主机自动重定向；授权器再次独立检查请求主机 |
-| 用后缀匹配 `*.bilibili.com` | 相似或受影响子域得到 Cookie | 使用 endpoint 级精确集合，不使用字符串后缀、包含匹配或调用方自报可信 |
+| 用后缀匹配 `*.bilibili.com` | 相似或受影响子域得到 Cookie | 授权器精确匹配 scheme、host、port 和 GET；不使用字符串后缀、包含匹配或 Feature 调用方自报可信 |
 | 未完成确认就持久化部分结果 | 重启后出现伪登录或损坏会话 | 状态机只有 `finalizing` 可验证；登录态校验成功后一次写入完整版本化 envelope |
 | 旧轮询结果覆盖新二维码 | 用户确认 A，App 保存 B 或反之 | ViewModel 拥有 Task；actor 内使用不可复用 generation ID；取消后结果不可提交 |
 | 未知状态码被当作成功 | 保存无效或攻击者构造的数据 | 只接受 fixture 固定且经过现场验证的状态；所有未知值映射为安全失败，不猜测语义 |
 | Cookie 自动存入共享 `HTTPCookieStorage` | 跨请求、跨模块或磁盘持久化边界失控 | 认证使用 `.ephemeral` session；不使用 `.shared`；关闭自动 Cookie 处理并按需构造授权头 |
-| Cookie 被附加到媒体/图片请求 | CDN 或第三方获得账号材料 | 播放和图片链路永不持有授权器；`BiliAPI` 只有明确的 authenticated endpoint 才请求授权 |
+| Cookie 被附加到媒体/图片请求 | CDN 或第三方获得账号材料 | 播放和图片链路永不持有授权器；`BiliAPI` 只有私有标记的 account-read 请求才请求授权 |
 | Keychain item 随设备迁移或同步 | 会话超出原设备边界 | Data Protection Keychain、`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`、不设置 synchronizable |
 | App 崩溃或被调试时读取内存 | 活跃会话被本机进程取得 | 缩短明文生命周期、actor 隔离、退出/登出清空；文档明确 Keychain 无法抵御已控制用户会话或进程调试 |
 | 登出只更新 UI | Keychain 或内存仍可发起登录请求 | 先取消轮询/请求，再清内存、删除 Keychain item、失效 ephemeral session，最后发布 signed-out 状态；每步幂等 |
@@ -88,7 +88,7 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - QR 与登录态校验使用独立的 `URLSessionConfiguration.ephemeral`，同时把 `httpShouldSetCookies` 设为 `false`、`httpCookieStorage` 设为 `nil`、URL cache 设为 `nil`。
 - Apple 文档说明 ephemeral configuration 不把 cache、Cookie 或 credential 持久化到磁盘；session 失效后其内存数据被清除：<https://developer.apple.com/documentation/foundation/urlsessionconfiguration/ephemeral>。
 - 不复用当前 `URLSession.shared` 的默认 transport 处理认证。后续如需共享 HTTP 抽象，应注入专用 session/transport，而不是扩大共享全局状态。
-- 授权器从 Keychain provider 获取不可公开的快照，只为精确允许的请求临时生成 `Cookie` header；调用结束后不缓存完整 header。
+- 授权器从 Keychain provider 获取不可公开的快照，只为精确 API origin 上的 GET 临时生成 `Cookie` header；调用结束后不缓存完整 header。endpoint path/query schema 由 `BiliAPI` 私有 request builder 独占，避免在认证层复制业务规则。
 
 ### 4.3 登录态播放信息
 
@@ -152,13 +152,19 @@ signedIn
 
 以下本地 Gate 已满足：
 
-- 观看历史、字幕目录与精确 legacy playurl 已接入 endpoint 级授权；负向测试证明普通游客
-  endpoint、相关推荐、非白名单 endpoint 与跨主机重定向不会得到 Cookie。playurl 输出的
+- 观看历史、字幕目录与精确 legacy playurl 已接入账户读取能力；负向测试证明普通游客
+  endpoint、相关推荐与跨主机重定向不会得到 Cookie。playurl 输出的
   `mediaHeaders` 不含 Cookie，CDN 与 loopback 继续由既有隔离 transport 消费该白名单 header。
-- authorizer 精确匹配未编码 path；认证 API session 使用 epoch 隔离授权、send 与响应写回。
+- authorizer 精确匹配 API origin 与 GET 能力；认证 API session 使用 epoch 隔离授权、send 与响应写回。
   登出、已确认的 signed-in → signed-out，以及初次恢复确认本地凭据失效都会推进 epoch。旧
   Cookie 请求不能跨入 replacement transport，忽略取消的旧响应也不能写回；登出先取消 QR
   generation，迟到 validation 不能重新持久化凭据，清理期间也不允许 restore 重入。
+- 每个存活窗口在真正出现后把 API transport 注册到 App 级账户 session coordinator，注册表
+  不参与 SwiftUI observation，也不能在 View 构造或 `body` 求值期间变更。任一窗口触发上述
+  失效时先全局 fan-out；其他窗口使用认证 port 的外部会话变化复核意图，该具体 restore 不
+  重复传播同一失效。用户主动登出、登出失败后的重试和本窗口凭据失效仍每次全局失效。
+  其他窗口完成凭据复核后才按新的进程级 generation 重启 Search，已关闭窗口必须注销且不能
+  继续接收失效调用。
 - 真实扫码、App 重启恢复、观看历史读取、详情/播放器跳转与界面登出已通过；第二次重启保持未登录，未登录历史入口回退账号 sheet。
 - 历史 sheet 关闭与登出会取消任务并清空个性化列表；验证记录不包含账号身份、历史标题、BVID 或秘密值。
 

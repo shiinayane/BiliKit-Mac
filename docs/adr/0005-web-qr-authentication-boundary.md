@@ -44,7 +44,7 @@ BiliAPI ──→ BiliNetworking.HTTPRequestAuthorizing（可选注入）
 ### Networking 与 API adapter
 
 - `BiliNetworking` 增加不含 Bilibili 业务语义的窄 `HTTPRequestAuthorizing` 协议；`BiliAuth` 实现它，`BiliAPI` 只接受可选注入，不依赖具体 `BiliAuth`。
-- 每个 `BiliAPI` endpoint 明确声明匿名或需要登录。只有后者能请求授权；授权器仍独立验证 HTTPS、精确主机和 endpoint 范围。
+- 每个 `BiliAPI` 请求在私有 builder 中明确选择匿名或账户读取。只有账户读取能请求授权；授权器仍独立验证 HTTPS、精确 API 主机、端口、GET method、userinfo、fragment 与调用方预置 Cookie。具体 path/query schema 继续由拥有 endpoint DTO 的 `BiliAPI` builder 限制，不复制到 `BiliAuth`。
 - 不使用 `*.bilibili.com` 通配；Cookie 不发送给图片/视频 CDN、loopback server、二维码嵌入 URL 或重定向后的其他主机。
 - 认证 transport 使用专用 ephemeral session，禁止自动 Cookie 存储和跨主机自动重定向。游客请求继续保持无认证可用。
 
@@ -101,10 +101,10 @@ M3 第 4 步的代码与自动化边界已经落地：
 
 - 五项 Cookie 进入 schema v1 envelope；名称集合、domain、path、Secure、值字符与大小在解码后重新校验，公开描述和 Mirror 不展示值。
 - generic-password store 使用固定 service/account，每次 SecItem 操作都带 Data Protection Keychain 与非同步条件；新增使用 `WhenUnlockedThisDeviceOnly`，重复主键走单 item update。
-- `BiliNetworking` 只定义无业务语义的 `HTTPRequestAuthorizing`；BiliAuth 当前只允许经过审计的 nav endpoint，并在读取时清理损坏或过期凭据。
+- `BiliNetworking` 只定义无业务语义的 `HTTPRequestAuthorizing`；M3 首批实现当时只允许经过审计的 nav endpoint，并在读取时清理损坏或过期凭据。
 - Web QR 保留“只校验”和“校验后提交”两个显式入口。提交入口在同一 actor generation 内完成 nav 校验和同步 store 写入，旧 generation、`isLogin=false` 或存储失败都不能返回持久登录成功。
 - 恢复入口重新请求 nav；远端明确失效时清理，本地缺失/损坏/过期时回退未登录，临时网络失败不误删。
-- 认证 transport 拒绝 HTTP 重定向；授权器还会独立拒绝 HTTP、相似主机、CDN、loopback、错误 path/method、userinfo、fragment 和调用方预置 Cookie。
+- 认证 transport 拒绝 HTTP 重定向；授权器还会独立拒绝 HTTP、相似主机、CDN、loopback、非 GET、userinfo、fragment 和调用方预置 Cookie。
 
 第 4 步实现期间，未签名 SwiftPM 测试进程直接执行 Data Protection Keychain SecItem 往返时返回 unavailable；该安全错误同时覆盖系统的 missing-entitlement 与 not-available 状态，因此本记录不进一步猜测具体 OSStatus。自动测试通过注入的窄 SecItem 后端验证完整查询和状态映射；随后签名 App smoke 已使用隔离的测试 service/account 完成真实 Security.framework add/update/read/delete 与无残留确认，证据见 [`../validation/M3-keychain-authorization-2026-07-21.md`](../validation/M3-keychain-authorization-2026-07-21.md)。
 
@@ -122,3 +122,14 @@ M3 第 5 步已经按本决策接入真实 App：
 [`../validation/M3-keychain-authorization-2026-07-21.md`](../validation/M3-keychain-authorization-2026-07-21.md)。
 观看历史 endpoint 已按同一授权边界接入；真实扫码、重启恢复、个性化读取与界面登出证据见
 [`../validation/M3-watch-history-2026-07-21.md`](../validation/M3-watch-history-2026-07-21.md)。
+
+## 账户读取能力修订
+
+2026-08-14 起，认证 API transport 从逐 endpoint 复制 path/query 规则收敛为账户级只读能力：
+
+- App 网络默认匿名；只有 `BiliAPIClient` 私有 `RequestAccess.accountRead` 能触发授权。
+- `BiliAuth` 只为精确 `https://api.bilibili.com:443` 的 GET 添加短生命周期 Cookie header，并继续拒绝 userinfo、fragment、预置 Cookie 和 redirect。
+- WBI nav、Popular、Related、图片、媒体 CDN、字幕正文与 loopback 保持物理匿名。
+- Search 是首个“登录增强但可匿名”消费者：只有本地明确没有凭据时匿名；损坏、过期、Keychain 不可用和服务端风控失败均不匿名重试。
+- App 级账户 session coordinator 在窗口真正出现后注册其 API transport，不能在 SwiftUI View 构造或 `body` 求值期间修改共享状态。任一窗口触发登出、换号或凭据失效时，先全局推进全部窗口的认证 epoch；其他窗口通过认证 port 的“外部会话变化复核”意图重新验证 Keychain，但该具体 restore 操作不重复传播同一失效。用户主动登出、登出失败后的重试和本窗口凭据失效仍每次执行全局失效。各窗口复核完成后按进程 generation 重启依赖账户身份的 Search；窗口关闭时注销其 transport。
+- 这项修订不开放写能力。未来写操作仍须另行批准，并增加精确 endpoint、method、CSRF 与 body/query schema。

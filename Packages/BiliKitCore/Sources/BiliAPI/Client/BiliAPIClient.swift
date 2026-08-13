@@ -5,11 +5,41 @@ import Foundation
 
 /// Bilibili endpoint/DTO adapter；把远端协议限制在 `BiliAPI`，并返回稳定模型。
 ///
-/// 游客专用请求永不经过 authorizer。只有显式认证 endpoint、精确 playurl 与 WBI 弹幕分段
-/// 才临时授权；后两者也只有在本地明确无凭据时保持匿名，并继续使用同一个 endpoint。
+/// 请求默认匿名，只有私有 `RequestAccess.accountRead` 才经过 authorizer。允许游客增强的读取
+/// 也只有在本地明确无凭据时保持匿名，并继续使用同一个 endpoint。
 /// 响应在解码前还要满足状态、大小与 Content-Type 边界。actor 隔离可变
 /// transport/WBI cache；跨 `await` 可重入，用户意图的取消与写回代次仍由上层 owner 管理。
 public actor BiliAPIClient: AuthenticatedSessionInvalidating {
+    private enum MissingCredentialBehavior: Sendable, Equatable {
+        case fail
+        case useAnonymousRequest
+    }
+
+    private enum RequestAccess: Sendable {
+        case anonymous
+        case accountRead(
+            missingCredential: MissingCredentialBehavior,
+            mapsAuthenticationInvalidation: Bool
+        )
+
+        var requiresAuthentication: Bool {
+            if case .accountRead = self { return true }
+            return false
+        }
+
+        var permitsMissingCredentialFallback: Bool {
+            guard case .accountRead(let behavior, _) = self else { return false }
+            return behavior == .useAnonymousRequest
+        }
+
+        var mapsAuthenticationInvalidation: Bool {
+            guard case .accountRead(_, let mapsInvalidation) = self else {
+                return false
+            }
+            return mapsInvalidation
+        }
+    }
+
     private enum AuthorizationProvenance: Sendable {
         case anonymous
         case authenticated
@@ -98,6 +128,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         keyword: String,
         page: Int = 1
     ) async throws -> SearchPage {
+        let searchSessionEpoch = authenticatedSessionEpoch
         let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedKeyword.isEmpty,
             normalizedKeyword.count <= 100,
@@ -111,11 +142,23 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             "search_type": "video",
         ]
         do {
-            return try await signedSearch(parameters: parameters, forceKeyRefresh: false)
+            return try await signedSearch(
+                parameters: parameters,
+                sessionEpoch: searchSessionEpoch,
+                forceKeyRefresh: false
+            )
         } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
+            return try await signedSearch(
+                parameters: parameters,
+                sessionEpoch: searchSessionEpoch,
+                forceKeyRefresh: true
+            )
         } catch BiliAPIError.httpStatus(403) {
-            return try await signedSearch(parameters: parameters, forceKeyRefresh: true)
+            return try await signedSearch(
+                parameters: parameters,
+                sessionEpoch: searchSessionEpoch,
+                forceKeyRefresh: true
+            )
         }
     }
 
@@ -214,9 +257,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 path: "/x/player/playurl",
                 queryItems: queryItems,
                 referer: referer,
-                requiresAuthentication: true,
-                permitsMissingCredentialFallback: true,
-                mapsAuthenticationInvalidation: true
+                access: .accountRead(
+                    missingCredential: .useAnonymousRequest,
+                    mapsAuthenticationInvalidation: true
+                )
             )
         } else {
             resolved = try await getWithAuthorizationProvenance(
@@ -307,8 +351,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     URLQueryItem(name: "cur_language", value: languageTag),
                 ],
                 referer: referer,
-                requiresAuthentication: true,
-                mapsAuthenticationInvalidation: true
+                access: .accountRead(
+                    missingCredential: .fail,
+                    mapsAuthenticationInvalidation: true
+                )
             )
             try requireAuthenticatedSessionEpoch(sessionEpoch)
             guard payload.currentLanguage == languageTag,
@@ -446,7 +492,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "ps", value: String(pageSize)),
             ],
             referer: "https://www.bilibili.com/account/history",
-            requiresAuthentication: true
+            access: .accountRead(
+                missingCredential: .fail,
+                mapsAuthenticationInvalidation: false
+            )
         )
         return try payload.model(pageSize: pageSize)
     }
@@ -469,18 +518,14 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         path: String,
         queryItems: [URLQueryItem],
         referer: String,
-        requiresAuthentication: Bool = false,
-        permitsMissingCredentialFallback: Bool = false,
-        mapsAuthenticationInvalidation: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         try await getWithAuthorizationProvenance(
             path: path,
             queryItems: queryItems,
             referer: referer,
-            requiresAuthentication: requiresAuthentication,
-            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
-            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
+            access: access,
             maximumResponseSize: maximumResponseSize
         ).payload
     }
@@ -491,18 +536,14 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         path: String,
         queryItems: [URLQueryItem],
         referer: String,
-        requiresAuthentication: Bool = false,
-        permitsMissingCredentialFallback: Bool = false,
-        mapsAuthenticationInvalidation: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> AuthorizedResponse<Payload> {
         let url = try endpoint(path: path, queryItems: queryItems)
         return try await getWithAuthorizationProvenance(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication,
-            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
-            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
+            access: access,
             maximumResponseSize: maximumResponseSize
         )
     }
@@ -511,7 +552,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         path: String,
         percentEncodedQuery: String,
         referer: String,
-        requiresAuthentication: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         let url = try endpoint(
@@ -521,7 +562,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try await get(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication,
+            access: access,
             maximumResponseSize: maximumResponseSize
         )
     }
@@ -529,17 +570,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private func get<Payload: Decodable & Sendable>(
         url: URL,
         referer: String,
-        requiresAuthentication: Bool = false,
-        permitsMissingCredentialFallback: Bool = false,
-        mapsAuthenticationInvalidation: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
         try await getWithAuthorizationProvenance(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication,
-            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
-            mapsAuthenticationInvalidation: mapsAuthenticationInvalidation,
+            access: access,
             maximumResponseSize: maximumResponseSize
         ).payload
     }
@@ -549,16 +586,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     >(
         url: URL,
         referer: String,
-        requiresAuthentication: Bool = false,
-        permitsMissingCredentialFallback: Bool = false,
-        mapsAuthenticationInvalidation: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> AuthorizedResponse<Payload> {
         let authorizedResponse = try await response(
             url: url,
             referer: referer,
-            requiresAuthentication: requiresAuthentication,
-            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            access: access,
             maximumResponseSize: maximumResponseSize
         )
         let response = authorizedResponse.response
@@ -569,7 +603,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         } catch {
             throw BiliAPIError.decodingFailed
         }
-        if mapsAuthenticationInvalidation, status.code == -101 {
+        if access.mapsAuthenticationInvalidation, status.code == -101 {
             throw BiliAPIError.authenticationInvalid
         }
         guard status.code == 0 else {
@@ -597,8 +631,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private func response(
         url: URL,
         referer: String,
-        requiresAuthentication: Bool = false,
-        permitsMissingCredentialFallback: Bool = false,
+        access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> AuthorizedHTTPResponse {
         let baseRequest = HTTPRequest(
@@ -611,8 +644,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
         let response = try await response(
             baseRequest: baseRequest,
-            requiresAuthentication: requiresAuthentication,
-            permitsMissingCredentialFallback: permitsMissingCredentialFallback,
+            access: access,
             maximumResponseSize: maximumResponseSize
         )
         guard Self.looksLikeJSON(response.response) else {
@@ -623,19 +655,15 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
     private func response(
         baseRequest: HTTPRequest,
-        requiresAuthentication: Bool,
-        permitsMissingCredentialFallback: Bool = false,
+        access: RequestAccess,
         maximumResponseSize: Int
     ) async throws -> AuthorizedHTTPResponse {
         let requestClient = httpClient
         let requestSessionEpoch =
-            requiresAuthentication ? authenticatedSessionEpoch : nil
+            access.requiresAuthentication ? authenticatedSessionEpoch : nil
         let request: HTTPRequest
         let authorizationProvenance: AuthorizationProvenance
-        if requiresAuthentication {
-            guard let requestAuthorizer else {
-                throw BiliAPIError.authorizationRequired
-            }
+        if access.requiresAuthentication, let requestAuthorizer {
             do {
                 request = try await requestAuthorizer.authorize(baseRequest)
                 authorizationProvenance = .authenticated
@@ -646,7 +674,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     throw CancellationError()
                 }
                 switch error.authorizationFailureKind {
-                case .missingCredential where permitsMissingCredentialFallback:
+                case .missingCredential where access.permitsMissingCredentialFallback:
                     request = baseRequest
                     authorizationProvenance = .anonymous
                 case .invalidCredential:
@@ -662,6 +690,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 }
                 throw BiliAPIError.authorizationUnavailable
             }
+        } else if access.permitsMissingCredentialFallback {
+            request = baseRequest
+            authorizationProvenance = .anonymous
+        } else if access.requiresAuthentication {
+            throw BiliAPIError.authorizationRequired
         } else {
             request = baseRequest
             authorizationProvenance = .anonymous
@@ -715,9 +748,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
     private func signedSearch(
         parameters: [String: String],
+        sessionEpoch: UInt64,
         forceKeyRefresh: Bool
     ) async throws -> SearchPage {
         let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        try requireAuthenticatedSessionEpoch(sessionEpoch)
         let query = try wbiSigner.sign(
             parameters: parameters,
             keys: keys,
@@ -726,8 +761,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let payload: SearchPayload = try await get(
             path: "/x/web-interface/wbi/search/type",
             percentEncodedQuery: query,
-            referer: "https://www.bilibili.com/"
+            referer: "https://www.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
+        try requireAuthenticatedSessionEpoch(sessionEpoch)
         return try payload.model()
     }
 
@@ -748,7 +788,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             path: "/x/player/wbi/v2",
             percentEncodedQuery: query,
             referer: Self.videoReferer(identity.bvid),
-            requiresAuthentication: true,
+            access: .accountRead(
+                missingCredential: .fail,
+                mapsAuthenticationInvalidation: false
+            ),
             maximumResponseSize: Self.maximumSubtitleCatalogSize
         )
         return try payload.resources()
@@ -773,6 +816,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             path: "/x/v2/dm/wbi/web/seg.so",
             percentEncodedQuery: query
         )
+        let access: RequestAccess =
+            requestAuthorizer == nil
+            ? .anonymous
+            : .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: false
+            )
         let response = try await response(
             baseRequest: HTTPRequest(
                 url: url,
@@ -782,8 +832,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     "User-Agent": userAgent,
                 ]
             ),
-            requiresAuthentication: requestAuthorizer != nil,
-            permitsMissingCredentialFallback: true,
+            access: access,
             maximumResponseSize: Self.maximumDanmakuSegmentSize
         ).response
         guard !response.body.isEmpty else {

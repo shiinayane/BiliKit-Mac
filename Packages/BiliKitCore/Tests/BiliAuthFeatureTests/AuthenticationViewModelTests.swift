@@ -361,6 +361,25 @@ struct AuthenticationViewModelTests {
         #expect(model.sessionState == .signedIn(nil))
         #expect(await service.observedCalls() == ["restore", "restore"])
     }
+
+    @Test
+    @MainActor
+    func externalSessionChangeUsesItsDedicatedRestoreOperation() async {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedOut
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.revalidateAfterExternalSessionChange()
+        await model.waitForCurrentTask()
+
+        #expect(model.sessionState == .signedOut)
+        #expect(await service.observedCalls() == ["externalRestore"])
+    }
 }
 
 private actor AuthenticationServiceStub: AuthenticationServicing,
@@ -423,6 +442,11 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
                 }
             }
         }
+        return restoreState
+    }
+
+    func restoreAfterExternalSessionChange() async -> AuthenticationState {
+        calls.append("externalRestore")
         return restoreState
     }
 

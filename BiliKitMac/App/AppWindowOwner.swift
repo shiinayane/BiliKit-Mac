@@ -17,6 +17,10 @@ final class AppWindowOwner {
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
     private let playbackPreferencesController: PlaybackPreferencesController?
+    private let openEnvironment: (@MainActor @Sendable () -> Void)?
+    private let closeEnvironment: (@MainActor @Sendable () -> Void)?
+    private var isOpen = false
+    private var isClosed = false
 
     convenience init(environment: AppEnvironment) {
         let browseModel = environment.makeBrowseViewModel()
@@ -39,7 +43,9 @@ final class AppWindowOwner {
             authenticationModel: environment.makeAuthenticationViewModel(),
             historyModel: environment.makeWatchHistoryViewModel(),
             playerContent: environment.makePlayerView(),
-            playbackPreferencesController: environment.playbackPreferencesController
+            playbackPreferencesController: environment.playbackPreferencesController,
+            openEnvironment: environment.open,
+            closeEnvironment: environment.close
         )
     }
 
@@ -51,7 +57,9 @@ final class AppWindowOwner {
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView,
-        playbackPreferencesController: PlaybackPreferencesController? = nil
+        playbackPreferencesController: PlaybackPreferencesController? = nil,
+        openEnvironment: (@MainActor @Sendable () -> Void)? = nil,
+        closeEnvironment: (@MainActor @Sendable () -> Void)? = nil
     ) {
         self.navigationCoordinator = navigationCoordinator
         self.browseModel = browseModel
@@ -61,5 +69,21 @@ final class AppWindowOwner {
         self.historyModel = historyModel
         self.playerContent = playerContent
         self.playbackPreferencesController = playbackPreferencesController
+        self.openEnvironment = openEnvironment
+        self.closeEnvironment = closeEnvironment
+    }
+
+    func open() {
+        guard !isOpen, !isClosed else { return }
+        isOpen = true
+        openEnvironment?()
+    }
+
+    func close() {
+        guard !isClosed else { return }
+        isClosed = true
+        if isOpen {
+            closeEnvironment?()
+        }
     }
 }

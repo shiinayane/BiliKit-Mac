@@ -197,6 +197,45 @@ struct BiliAuthenticationServiceTests {
         #expect(try store.load() == nil)
     }
 
+    @Test
+    func externalSessionChangeRestoreDoesNotRepeatGlobalInvalidation() async throws {
+        let events = LogoutEventRecorder()
+        let store = MemoryWebCredentialStore(
+            credential: try makeFixtureCredential()
+        )
+        let service = BiliAuthenticationService(
+            loginSession: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                transport: RecordingAuthTransport(
+                    responses: [navigationResponse(isLogin: false)]
+                )
+            ),
+            loginSessionFactory: {
+                WebQRLoginSession(
+                    transport: RecordingAuthTransport(),
+                    credentialStore: store
+                )
+            },
+            authorizerFactory: {
+                BiliCredentialRequestAuthorizer(
+                    store: store,
+                    transport: RecordingAuthTransport()
+                )
+            },
+            additionalSessionInvalidators: [
+                RecordingAuthenticatedSessionInvalidator(events: events)
+            ]
+        )
+
+        #expect(await service.restoreAfterExternalSessionChange() == .signedOut)
+        #expect(events.values().isEmpty)
+        #expect(try store.load() == nil)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func logoutCancelsLateCredentialFinalizationBeforeDeletingStore() async throws {
         let store = MemoryWebCredentialStore()
