@@ -192,9 +192,9 @@ struct AppEnvironment {
 
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
-    /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；Search、playurl 与 WBI 弹幕分段在
-    /// 明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的 ephemeral transport，
-    /// 使旧认证会话中的在途请求失效。
+    /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；公开 Browse、Search、playurl 与
+    /// WBI 弹幕分段在明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的
+    /// ephemeral transport，使旧认证会话中的在途请求失效。
     static func live(
         accountSessionCoordinator: AccountSessionCoordinator? = nil
     ) -> AppEnvironment {

@@ -129,7 +129,7 @@ M3 第 5 步已经按本决策接入真实 App：
 
 - App 网络默认匿名；只有 `BiliAPIClient` 私有 `RequestAccess.accountRead` 能触发授权。
 - `BiliAuth` 只为精确 `https://api.bilibili.com:443` 的 GET 添加短生命周期 Cookie header，并继续拒绝 userinfo、fragment、预置 Cookie 和 redirect。
-- WBI nav、Popular、Related、图片、媒体 CDN、字幕正文与 loopback 保持物理匿名。
-- Search 是首个“登录增强但可匿名”消费者：只有本地明确没有凭据时匿名；损坏、过期、Keychain 不可用和服务端风控失败均不匿名重试。
-- App 级账户 session coordinator 在窗口真正出现后注册其 API transport，不能在 SwiftUI View 构造或 `body` 求值期间修改共享状态。任一窗口触发登出、换号或凭据失效时，先全局推进全部窗口的认证 epoch；其他窗口通过认证 port 的“外部会话变化复核”意图重新验证 Keychain，但该具体 restore 操作不重复传播同一失效。用户主动登出、登出失败后的重试和本窗口凭据失效仍每次执行全局失效。各窗口复核完成后按进程 generation 重启依赖账户身份的 Search；窗口关闭时注销其 transport。
+- WBI nav、图片、媒体 CDN、字幕正文与 loopback 保持物理匿名。
+- Popular、Search、视频详情、Related、UP 主签名、分 P 列表、基础 playurl 与弹幕分段均为“登录增强但可匿名”的账户读取：只有本地明确没有凭据时匿名；损坏、过期、Keychain 不可用和服务端风控失败均不匿名重试。
+- App 级账户 session coordinator 在窗口真正出现后注册其 API transport，不能在 SwiftUI View 构造或 `body` 求值期间修改共享状态。任一窗口触发登出、换号或凭据失效时，先全局推进全部窗口的认证 epoch；其他窗口通过认证 port 的“外部会话变化复核”意图重新验证 Keychain，但该具体 restore 操作不重复传播同一失效。用户主动登出、登出失败后的重试和本窗口凭据失效仍每次执行全局失效。各窗口复核完成后按进程 generation 重启依赖账户身份的 Popular 或 Search；窗口关闭时注销其 transport。
 - 这项修订不开放写能力。未来写操作仍须另行批准，并增加精确 endpoint、method、CSRF 与 body/query schema。

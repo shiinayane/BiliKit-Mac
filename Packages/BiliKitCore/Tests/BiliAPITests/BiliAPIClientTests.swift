@@ -67,7 +67,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func relatedVideosUseAnonymousRequestAndDecodeShelfFields() async throws {
+    func relatedVideosUseAccountReadAndDecodeShelfFields() async throws {
         let transport = RecordingTransport(
             responses: [try fixtureResponse("related")]
         )
@@ -90,8 +90,11 @@ struct BiliAPIClientTests {
             URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
                 .queryItems == [URLQueryItem(name: "bvid", value: "BV1FixtureA1")]
         )
-        #expect(request.headers["Cookie"] == nil)
-        #expect(await authorizer.capturedPaths().isEmpty)
+        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
+        #expect(
+            await authorizer.capturedPaths()
+                == ["/x/web-interface/archive/related"]
+        )
     }
 
     @Test
@@ -130,7 +133,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func uploaderSignatureUsesExactAnonymousCardEndpoint() async throws {
+    func uploaderSignatureUsesExactAccountReadCardEndpoint() async throws {
         let transport = RecordingTransport(
             responses: [try fixtureResponse("uploader-card")]
         )
@@ -156,9 +159,9 @@ struct BiliAPIClientTests {
                     URLQueryItem(name: "photo", value: "false"),
                 ]
         )
-        #expect(request.headers["Cookie"] == nil)
+        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
         #expect(request.headers["Authorization"] == nil)
-        #expect(await authorizer.capturedPaths().isEmpty)
+        #expect(await authorizer.capturedPaths() == ["/x/web-interface/card"])
     }
 
     @Test
@@ -1278,7 +1281,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func anonymousGuestAndRelatedEndpointsNeverRequestCredentialAuthorization()
+    func popularVideoDetailAndPageListUseAccountRead()
         async throws
     {
         let authorizer = RecordingRequestAuthorizer()
@@ -1286,16 +1289,25 @@ struct BiliAPIClientTests {
             transport: RecordingTransport(
                 responses: [
                     try fixtureResponse("popular"),
-                    try fixtureResponse("related"),
+                    try fixtureResponse("view"),
+                    try fixtureResponse("pagelist"),
                 ]
             ),
             requestAuthorizer: authorizer
         )
 
         _ = try await client.popular(page: 1, pageSize: 20)
-        _ = try await client.relatedVideos(to: "BV1FixtureA1")
+        _ = try await client.videoDetail(for: "BV1FixtureA1")
+        _ = try await client.pages(for: "BV1FixtureA1")
 
-        #expect(await authorizer.capturedPaths().isEmpty)
+        #expect(
+            await authorizer.capturedPaths()
+                == [
+                    "/x/web-interface/popular",
+                    "/x/web-interface/view",
+                    "/x/player/pagelist",
+                ]
+        )
     }
 
     @Test

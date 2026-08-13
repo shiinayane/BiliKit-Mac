@@ -223,7 +223,7 @@ struct AppRootView: View {
         }
     }
 
-    /// 先让本窗口认证 owner 完成凭据复核和 transport 失效，再重启账户化 Search。
+    /// 先让本窗口认证 owner 完成凭据复核和 transport 失效，再重启账户化 Browse 请求。
     private func synchronizeProcessAccountSession() async {
         let processGeneration = accountSessionCoordinator.generation
         guard accountSessionCoordinator.scope != historyAccountScope else {
