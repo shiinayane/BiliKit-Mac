@@ -85,6 +85,24 @@ struct WatchHistoryUseCaseTests {
             try await useCase.load(after: repeatedToken)
         }
     }
+
+    @Test
+    func rejectsNonAdvancingCursorEvenWhenPageContainsItems() async {
+        let repeatedToken = token(1)
+        let repository = WatchHistoryRepositoryStub(
+            pages: [
+                WatchHistoryPage(
+                    items: [item("BV1HistoryA1")],
+                    continuation: repeatedToken
+                )
+            ]
+        )
+        let useCase = WatchHistoryUseCase(repository: repository)
+
+        await #expect(throws: WatchHistoryError.invalidResponse) {
+            try await useCase.load(after: repeatedToken)
+        }
+    }
 }
 
 private func token(_ value: Int64) -> WatchHistoryContinuation {

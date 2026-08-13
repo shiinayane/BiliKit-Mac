@@ -34,6 +34,7 @@ struct WatchHistoryViewModelTests {
         model.loadIfNeeded()
         #expect(model.isBusy)
         await model.waitForCurrentTask()
+        let firstTailIdentity = model.paginationTailIdentity
         #expect(!model.isBusy)
         model.loadMore()
         #expect(model.isBusy)
@@ -47,6 +48,8 @@ struct WatchHistoryViewModelTests {
         #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
         #expect(nextContinuation == nil)
         #expect(error == nil)
+        #expect(firstTailIdentity != nil)
+        #expect(model.paginationTailIdentity == nil)
         #expect(await repository.observedContinuations() == [nil, continuation])
     }
 
@@ -65,6 +68,231 @@ struct WatchHistoryViewModelTests {
 
         #expect(model.state == .failed(.authenticationRequired))
         #expect(model.requiresAuthentication)
+    }
+
+    @Test
+    @MainActor
+    func authenticationRevalidationFailureLeavesRetryableHistoryState() {
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: HistoryRepositoryStub(results: [])
+            )
+        )
+
+        model.reportAuthenticationRevalidationFailure()
+
+        #expect(model.state == .failed(.transportFailure))
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    @MainActor
+    func loadMoreFailureKeepsExistingItemsAndTailAvailableForRetry() async {
+        let continuation = token(100)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: continuation
+                    )
+                ),
+                .failure(.transportFailure),
+            ]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        let tailIdentity = model.paginationTailIdentity
+        model.loadMore()
+
+        #expect(
+            model.state
+                == .loadingMore(
+                    items: [item("BV1HistoryA1")],
+                    continuation: continuation
+                )
+        )
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.state
+                == .loaded(
+                    items: [item("BV1HistoryA1")],
+                    continuation: continuation,
+                    loadMoreError: .transportFailure
+                )
+        )
+        #expect(model.paginationTailIdentity == tailIdentity)
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    @MainActor
+    func emptyPaginationPageRequiresExplicitContinueAndThenRearms() async {
+        let first = token(100)
+        let second = token(200)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: first
+                    )
+                ),
+                .success(WatchHistoryPage(items: [], continuation: second)),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryB2")],
+                        continuation: nil
+                    )
+                ),
+            ]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: repository,
+                maximumEmptyPagesToSkip: 0
+            )
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.state
+                == .loaded(
+                    items: [item("BV1HistoryA1")],
+                    continuation: second,
+                    loadMoreError: nil
+                )
+        )
+        #expect(model.requiresManualLoadMore)
+        #expect(model.paginationTailIdentity == nil)
+
+        model.loadMore()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(let items, let continuation, _) = model.state else {
+            Issue.record("历史状态不是 loaded")
+            return
+        }
+        #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
+        #expect(continuation == nil)
+        #expect(!model.requiresManualLoadMore)
+    }
+
+    @Test
+    @MainActor
+    func manualPaginationFailureKeepsExplicitRetryAndCanRecover() async {
+        let first = token(100)
+        let manual = token(200)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: first
+                    )
+                ),
+                .success(WatchHistoryPage(items: [], continuation: manual)),
+                .failure(.transportFailure),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryB2")],
+                        continuation: nil
+                    )
+                ),
+            ]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: repository,
+                maximumEmptyPagesToSkip: 0
+            )
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        await model.waitForCurrentTask()
+        #expect(model.requiresManualLoadMore)
+
+        model.loadMore()
+        await model.waitForCurrentTask()
+        #expect(model.requiresManualLoadMore)
+        #expect(
+            model.state
+                == .loaded(
+                    items: [item("BV1HistoryA1")],
+                    continuation: manual,
+                    loadMoreError: .transportFailure
+                )
+        )
+
+        model.loadMore()
+        await model.waitForCurrentTask()
+        guard case .loaded(let items, let continuation, let error) = model.state else {
+            Issue.record("历史状态不是 loaded")
+            return
+        }
+        #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
+        #expect(continuation == nil)
+        #expect(error == nil)
+    }
+
+    @Test
+    @MainActor
+    func repeatedOpaqueContinuationCycleStopsAutomaticPagination() async {
+        let first = token(100)
+        let second = token(200)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: first
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryB2")],
+                        continuation: second
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryC3")],
+                        continuation: first
+                    )
+                ),
+            ]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(let items, let continuation, let error) = model.state else {
+            Issue.record("历史状态不是 loaded")
+            return
+        }
+        #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2", "BV1HistoryC3"])
+        #expect(continuation == nil)
+        #expect(error == .invalidResponse)
+        #expect(model.paginationTailIdentity == nil)
+        #expect(!model.requiresManualLoadMore)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -150,6 +378,66 @@ struct WatchHistoryViewModelTests {
 
     @Test
     @MainActor
+    func resetRejectsLatePaginationContinuationMutation() async throws {
+        let oldContinuation = token(100)
+        let intermediateContinuation = token(200)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1OldA")],
+                        continuation: oldContinuation
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1OldB")],
+                        continuation: intermediateContinuation
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1NewA")],
+                        continuation: intermediateContinuation
+                    )
+                ),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1NewB")],
+                        continuation: oldContinuation
+                    )
+                ),
+            ],
+            suspendedCalls: [2]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: repository)
+        )
+
+        model.reload()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        try await repository.waitUntilCallCount(2)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
+        model.reset()
+        model.reload()
+        await model.waitForCurrentTask()
+        await repository.releaseCall(2)
+        await supersededTask.value
+        model.loadMore()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(let items, let continuation, let error) = model.state else {
+            Issue.record("历史状态不是 loaded")
+            return
+        }
+        #expect(items.map(\.bvid) == ["BV1NewA", "BV1NewB"])
+        #expect(continuation == oldContinuation)
+        #expect(error == nil)
+    }
+
+    @Test
+    @MainActor
     func deactivatingRouteDuringInitialLoadReturnsToIdle() async throws {
         let repository = HistoryRepositoryStub(
             results: [
@@ -215,6 +503,61 @@ struct WatchHistoryViewModelTests {
                 == .loaded(
                     items: [item("BV1HistoryA1")],
                     continuation: continuation,
+                    loadMoreError: nil
+                )
+        )
+    }
+
+    @Test
+    @MainActor
+    func deactivatingManualPaginationRestoresExplicitContinueRequirement() async throws {
+        let first = token(100)
+        let manual = token(200)
+        let repository = HistoryRepositoryStub(
+            results: [
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryA1")],
+                        continuation: first
+                    )
+                ),
+                .success(WatchHistoryPage(items: [], continuation: manual)),
+                .success(
+                    WatchHistoryPage(
+                        items: [item("BV1HistoryB2")],
+                        continuation: nil
+                    )
+                ),
+            ],
+            suspendedCalls: [3]
+        )
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(
+                repository: repository,
+                maximumEmptyPagesToSkip: 0
+            )
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+        model.loadMore()
+        await model.waitForCurrentTask()
+        #expect(model.requiresManualLoadMore)
+
+        model.loadMore()
+        try await repository.waitUntilCallCount(3)
+        let supersededTask = try #require(model.taskSnapshotForTesting())
+        model.deactivateRoute()
+        await repository.releaseCall(3)
+        await supersededTask.value
+
+        #expect(model.requiresManualLoadMore)
+        #expect(model.paginationTailIdentity == nil)
+        #expect(
+            model.state
+                == .loaded(
+                    items: [item("BV1HistoryA1")],
+                    continuation: manual,
                     loadMoreError: nil
                 )
         )

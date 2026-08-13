@@ -10,6 +10,25 @@ public enum AccountSessionPhase: Sendable, Equatable {
     case signedIn
 }
 
+/// 窗口 owner 可用于隔离个性化内存的最小非秘密会话 identity。
+public enum AccountSessionScope: Sendable, Equatable {
+    case unresolved
+    case signedOut
+    case signedIn(accountID: Int64?)
+
+    public static func isResolvedChange(from previous: Self, to current: Self) -> Bool {
+        previous != .unresolved && current != .unresolved && previous != current
+    }
+}
+
+/// App composition 可观察的认证恢复阶段；不向 App shell 暴露 Application 层状态或失败细节。
+public enum AuthenticationResolutionPhase: Sendable, Equatable {
+    case other
+    case restoring
+    case signedIn
+    case failed
+}
+
 /// 供产品界面使用的诚实账户呈现状态；不可用与确定登出保持区分。
 public enum AccountPresentationState: Sendable, Equatable {
     case resolving
@@ -47,6 +66,30 @@ public final class AuthenticationViewModel {
             .signedOut
         case .signedIn:
             .signedIn
+        }
+    }
+
+    public var sessionScope: AccountSessionScope {
+        switch sessionState {
+        case .unresolved:
+            .unresolved
+        case .signedOut:
+            .signedOut
+        case .signedIn(let identity):
+            .signedIn(accountID: identity?.id)
+        }
+    }
+
+    public var resolutionPhase: AuthenticationResolutionPhase {
+        switch state {
+        case .restoring:
+            .restoring
+        case .signedIn:
+            .signedIn
+        case .failed:
+            .failed
+        default:
+            .other
         }
     }
 

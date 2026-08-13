@@ -10,15 +10,39 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
+@MainActor
+@Observable
+final class AccountSessionCoordinator {
+    private(set) var generation: UInt64 = 0
+    private(set) var scope = AccountSessionScope.unresolved
+
+    func publish(_ scope: AccountSessionScope) {
+        guard scope != .unresolved, scope != self.scope else { return }
+        self.scope = scope
+        generation &+= 1
+    }
+}
+
+enum HistoryRouteOwnership {
+    static func deactivatesHistory(from previous: AppTab, to current: AppTab) -> Bool {
+        previous == .history && current != .history
+    }
+}
+
 /// 窗口级生命周期入口，连接导航激活、认证变化与最终资源清理。
 ///
 /// 页面 View 只表达局部意图；关窗时需要在这里清除 Browse/History 工作集、认证临时任务，
 /// 并借导航路径清空统一停止播放、原生字幕和弹幕资源。
 struct AppRootView: View {
     @State private var windowOwner: AppWindowOwner
+    private let accountSessionCoordinator: AccountSessionCoordinator
     @State private var isAuthenticationPresented = false
     @State private var submittedSearchQuery: String?
-    init(environment: AppEnvironment = .live()) {
+    init(
+        environment: AppEnvironment = .live(),
+        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
+    ) {
+        self.accountSessionCoordinator = accountSessionCoordinator
         _windowOwner = State(
             initialValue: AppWindowOwner(environment: environment)
         )
@@ -31,8 +55,10 @@ struct AppRootView: View {
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
-        playerContent: AnyView
+        playerContent: AnyView,
+        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
     ) {
+        self.accountSessionCoordinator = accountSessionCoordinator
         _windowOwner = State(
             initialValue: AppWindowOwner(
                 navigationCoordinator: navigationCoordinator,
@@ -66,17 +92,44 @@ struct AppRootView: View {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
         }
-        .onChange(of: authenticationModel.sessionPhase) {
-            previousPhase,
-            phase in
-            guard previousPhase != .unresolved, phase != .unresolved,
-                previousPhase != phase
+        .onChange(of: historyAccountScope) { previousScope, scope in
+            guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
             else {
                 return
             }
+            accountSessionCoordinator.publish(scope)
             navigationCoordinator.closePlaybackForAuthenticationChange()
-            if phase == .signedOut {
-                historyModel.reset()
+            historyModel.reset()
+            if case .signedIn = scope,
+                navigationCoordinator.selectedTab == .history
+            {
+                historyModel.loadIfNeeded()
+            }
+        }
+        .onChange(of: accountSessionCoordinator.generation) { _, _ in
+            guard accountSessionCoordinator.scope != historyAccountScope else {
+                return
+            }
+            navigationCoordinator.closePlaybackForAuthenticationChange()
+            historyModel.reset()
+            authenticationModel.revalidate()
+        }
+        .onChange(of: authenticationModel.resolutionPhase) { previousPhase, phase in
+            guard previousPhase == .restoring,
+                navigationCoordinator.selectedTab == .history
+            else { return }
+            switch phase {
+            case .signedIn:
+                historyModel.loadIfNeeded()
+            case .failed:
+                historyModel.reportAuthenticationRevalidationFailure()
+            default:
+                break
+            }
+        }
+        .onChange(of: navigationCoordinator.selectedTab) { previousTab, tab in
+            if HistoryRouteOwnership.deactivatesHistory(from: previousTab, to: tab) {
+                historyModel.deactivateRoute()
             }
         }
         .onChange(of: videoModel.authenticationRevalidationGeneration) {
@@ -128,6 +181,10 @@ struct AppRootView: View {
 
     private var historyModel: WatchHistoryViewModel {
         windowOwner.historyModel
+    }
+
+    private var historyAccountScope: AccountSessionScope {
+        authenticationModel.sessionScope
     }
 
     private var playerContent: AnyView {

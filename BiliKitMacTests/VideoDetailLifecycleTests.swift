@@ -220,9 +220,18 @@ struct VideoDetailLifecycleTests {
         let stopCountBeforeIdentity = playback.stopCallCount
         authenticationModel.revalidate()
         await authenticationModel.waitForCurrentTask()
-        #expect(authenticationModel.sessionState == .signedIn(identity))
+        #expect(
+            await waitUntil {
+                authenticationModel.sessionState == .signedIn(identity)
+                    && videoModel.state == .idle
+                    && coordinator.currentPlaybackBVID == nil
+            }
+        )
+        #expect(playback.stopCallCount == stopCountBeforeIdentity + 1)
+
+        coordinator.openPlayback(fixture.bvid)
+        await videoModel.waitForCurrentTask()
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
-        #expect(playback.stopCallCount == stopCountBeforeIdentity)
 
         let stopCountBeforeLogout = playback.stopCallCount
         authenticationModel.logout()
@@ -241,6 +250,7 @@ struct VideoDetailLifecycleTests {
         #expect(
             await waitUntil {
                 playback.loadedIdentities == [
+                    fixture.identity,
                     fixture.identity,
                     fixture.identity,
                 ]

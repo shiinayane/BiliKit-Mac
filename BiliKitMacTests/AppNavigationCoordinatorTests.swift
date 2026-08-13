@@ -1,9 +1,67 @@
+import BiliApplication
+import BiliAuthFeature
+import BiliModels
 import Foundation
 import Testing
 
 @testable import BiliKit
 
 struct AppNavigationCoordinatorTests {
+    @Test
+    @MainActor
+    func accountSessionCoordinatorPublishesOnlyResolvedProcessChanges() {
+        let coordinator = AccountSessionCoordinator()
+
+        coordinator.publish(.unresolved)
+        #expect(coordinator.generation == 0)
+        #expect(coordinator.scope == .unresolved)
+
+        coordinator.publish(.signedIn(accountID: 1))
+        #expect(coordinator.generation == 1)
+        #expect(coordinator.scope == .signedIn(accountID: 1))
+
+        coordinator.publish(.signedIn(accountID: 1))
+        #expect(coordinator.generation == 1)
+
+        coordinator.publish(.signedOut)
+        #expect(coordinator.generation == 2)
+        #expect(coordinator.scope == .signedOut)
+    }
+
+    @Test
+    func historyOwnershipTracksAccountIDWithoutFollowingProfileChanges() {
+        let first = AccountIdentity(id: 1, displayName: "账号一", avatarURL: nil)
+        let renamedFirst = AccountIdentity(id: 1, displayName: "新昵称", avatarURL: nil)
+        let second = AccountIdentity(id: 2, displayName: "账号二", avatarURL: nil)
+
+        let unresolved = AccountSessionScope.unresolved
+        let signedOut = AccountSessionScope.signedOut
+        let unknown = AccountSessionScope.signedIn(accountID: nil)
+        let firstScope = AccountSessionScope.signedIn(accountID: first.id)
+        let renamedScope = AccountSessionScope.signedIn(accountID: renamedFirst.id)
+        let secondScope = AccountSessionScope.signedIn(accountID: second.id)
+
+        #expect(!AccountSessionScope.isResolvedChange(from: unresolved, to: unknown))
+        #expect(AccountSessionScope.isResolvedChange(from: signedOut, to: unknown))
+        #expect(AccountSessionScope.isResolvedChange(from: unknown, to: firstScope))
+        #expect(!AccountSessionScope.isResolvedChange(from: firstScope, to: renamedScope))
+        #expect(AccountSessionScope.isResolvedChange(from: firstScope, to: secondScope))
+        #expect(AccountSessionScope.isResolvedChange(from: secondScope, to: signedOut))
+    }
+
+    @Test
+    func onlyLeavingHistorySourceDeactivatesItsRequests() {
+        #expect(
+            !HistoryRouteOwnership.deactivatesHistory(from: .history, to: .history)
+        )
+        #expect(
+            HistoryRouteOwnership.deactivatesHistory(from: .history, to: .popular)
+        )
+        #expect(
+            !HistoryRouteOwnership.deactivatesHistory(from: .popular, to: .history)
+        )
+    }
+
     @Test
     @MainActor
     func nativeBackReturnsEachSourceInOnePop() {

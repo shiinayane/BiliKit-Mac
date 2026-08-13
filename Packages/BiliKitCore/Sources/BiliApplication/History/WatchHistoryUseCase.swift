@@ -31,13 +31,15 @@ public struct WatchHistoryUseCase: Sendable {
                 after: requestContinuation,
                 pageSize: pageSize
             )
+            if let nextContinuation = page.continuation,
+                nextContinuation == requestContinuation
+            {
+                throw WatchHistoryError.invalidResponse
+            }
             guard page.items.isEmpty,
                 let nextContinuation = page.continuation
             else {
                 return page
-            }
-            guard nextContinuation != requestContinuation else {
-                throw WatchHistoryError.invalidResponse
             }
             guard skippedEmptyPages < maximumEmptyPagesToSkip else {
                 return page
