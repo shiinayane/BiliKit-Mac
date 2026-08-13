@@ -34,7 +34,7 @@ struct SearchTabRoot: View {
     let model: GuestBrowseViewModel
     @Binding var searchDraft: String
     let submittedSearchQuery: String?
-    @Binding var scrollPosition: ScrollPosition
+    @Binding var scrollOffsetY: CGFloat
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
 
@@ -42,7 +42,26 @@ struct SearchTabRoot: View {
         VideoSearchView(
             model: model,
             submittedSearchQuery: submittedSearchQuery,
-            scrollPosition: $scrollPosition,
+            scrollOffsetY: $scrollOffsetY,
+            makeLoadedContent: {
+                presentations,
+                scrollOffsetY,
+                canLoadMore,
+                tailIdentity,
+                isLoading,
+                onNearEnd,
+                onSelect in
+                SearchNativeGridView(
+                    presentations: presentations,
+                    scrollOffsetY: scrollOffsetY,
+                    canLoadMore: canLoadMore,
+                    tailIdentity: tailIdentity,
+                    isLoading: isLoading,
+                    onNearEnd: onNearEnd,
+                    onSelect: onSelect
+                )
+                .ignoresSafeArea(.container, edges: .top)
+            },
             onSelect: onSelect
         )
         .navigationTitle("搜索")

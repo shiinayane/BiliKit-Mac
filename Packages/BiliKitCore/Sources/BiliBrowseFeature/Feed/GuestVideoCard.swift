@@ -1,61 +1,6 @@
 import BiliModels
 import BiliUI
 import Foundation
-import SwiftUI
-
-struct GuestVideoCard: View {
-    private let title: String
-    private let coverURL: URL?
-    private let ownerName: String
-    private let ownerAvatarURL: URL?
-    private let viewCount: Int64
-    private let danmakuCount: Int64
-    private let durationSeconds: Int?
-    private let publishedAt: Date
-
-    init(video: SearchVideo) {
-        title = video.title
-        coverURL = optimizedBiliImageURL(
-            video.coverURL,
-            width: 640,
-            height: 360
-        )
-        ownerName = video.owner.name
-        ownerAvatarURL = optimizedBiliImageURL(
-            video.owner.avatarURL,
-            width: 96,
-            height: 96
-        )
-        viewCount = video.statistics.viewCount
-        danmakuCount = video.statistics.danmakuCount
-        durationSeconds = video.durationSeconds
-        publishedAt = video.publishedAt
-    }
-
-    var body: some View {
-        VideoCard(
-            coverURL: coverURL,
-            avatarURL: ownerAvatarURL,
-            showsAvatar: true,
-            title: title,
-            coverMetrics: [
-                VideoCardMetric(
-                    VideoMetadataFormatting.compactCount(viewCount),
-                    systemImage: "play.fill"
-                ),
-                VideoCardMetric(
-                    VideoMetadataFormatting.compactCount(danmakuCount),
-                    systemImage: "text.bubble.fill"
-                ),
-            ],
-            coverTrailingText: durationSeconds.map {
-                VideoDurationFormatting.string(seconds: $0)
-            },
-            footerLeadingText: "\(ownerName) · "
-                + VideoMetadataFormatting.publishedDate(publishedAt)
-        )
-    }
-}
 
 public struct PopularVideoCardPresentation: Sendable, Equatable {
     public let bvid: String
@@ -94,6 +39,58 @@ public struct PopularVideoCardPresentation: Sendable, Equatable {
         footerText =
             "\(video.owner.name) · "
             + VideoMetadataFormatting.publishedDate(video.publishedAt)
+    }
+}
+
+public struct SearchVideoCardPresentation: Sendable, Equatable {
+    public let bvid: String
+    public let title: String
+    public let coverURL: URL?
+    public let avatarURL: URL?
+    public let ownerName: String
+    public let viewCountText: String
+    public let danmakuCountText: String
+    public let durationText: String?
+    public let footerText: String
+    public let accessibilityLabel: String
+
+    public init(video: SearchVideo) {
+        bvid = video.bvid
+        title = video.title
+        coverURL = optimizedBiliImageURL(
+            video.coverURL,
+            width: 640,
+            height: 360
+        )
+        avatarURL = optimizedBiliImageURL(
+            video.owner.avatarURL,
+            width: 96,
+            height: 96
+        )
+        ownerName = video.owner.name
+        viewCountText = VideoMetadataFormatting.compactCount(
+            video.statistics.viewCount
+        )
+        danmakuCountText = VideoMetadataFormatting.compactCount(
+            video.statistics.danmakuCount
+        )
+        durationText = video.durationSeconds.map {
+            VideoDurationFormatting.string(seconds: $0)
+        }
+        let publishedDateText = VideoMetadataFormatting.publishedDate(
+            video.publishedAt
+        )
+        footerText = "\(video.owner.name) · \(publishedDateText)"
+        accessibilityLabel = [
+            video.title,
+            video.owner.name,
+            "播放 \(viewCountText)",
+            "弹幕 \(danmakuCountText)",
+            durationText.map { "时长 \($0)" },
+            "发布 \(publishedDateText)",
+        ]
+        .compactMap { $0 }
+        .joined(separator: "，")
     }
 }
 
