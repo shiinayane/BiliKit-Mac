@@ -23,9 +23,7 @@ struct AppShellView: View {
     @State private var searchScrollPosition = ScrollPosition(
         idType: String.self
     )
-    @State private var historyScrollPosition = ScrollPosition(
-        idType: String.self
-    )
+    @State private var historyScrollOffsetY: CGFloat = 0
 
     var body: some View {
         @Bindable var navigationCoordinator = navigationCoordinator
@@ -76,15 +74,12 @@ struct AppShellView: View {
             guard previousQuery != query else { return }
             searchScrollPosition = ScrollPosition(idType: String.self)
         }
-        .onChange(of: authenticationModel.sessionPhase) {
-            previousPhase,
-            phase in
-            guard previousPhase != .unresolved, phase != .unresolved,
-                previousPhase != phase
+        .onChange(of: historyAccountScope) { previousScope, scope in
+            guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
             else {
                 return
             }
-            historyScrollPosition = ScrollPosition(idType: String.self)
+            historyScrollOffsetY = 0
         }
     }
 
@@ -92,6 +87,10 @@ struct AppShellView: View {
         navigationCoordinator.currentPlaybackBVID == nil
             ? "navigation"
             : "playback"
+    }
+
+    private var historyAccountScope: AccountSessionScope {
+        authenticationModel.sessionScope
     }
 
     @ViewBuilder
@@ -139,7 +138,7 @@ struct AppShellView: View {
             HistoryTabRoot(
                 model: historyModel,
                 accountState: authenticationModel.accountPresentationState,
-                scrollPosition: $historyScrollPosition,
+                scrollOffsetY: $historyScrollOffsetY,
                 onSelect: navigationCoordinator.openPlayback,
                 onPresentAuthentication: {
                     isAuthenticationPresented = true

@@ -70,7 +70,7 @@ struct SearchTabRoot: View {
 struct HistoryTabRoot: View {
     let model: WatchHistoryViewModel
     let accountState: AccountPresentationState
-    @Binding var scrollPosition: ScrollPosition
+    @Binding var scrollOffsetY: CGFloat
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
     let onAuthenticationRequired: () -> Void
@@ -78,6 +78,8 @@ struct HistoryTabRoot: View {
     var body: some View {
         content
             .navigationTitle("观看历史")
+            .toolbar(removing: .title)
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .toolbar {
                 if case .signedIn = accountState {
                     ToolbarItem(placement: .primaryAction) {
@@ -93,7 +95,24 @@ struct HistoryTabRoot: View {
         case .signedIn:
             WatchHistoryView(
                 model: model,
-                scrollPosition: $scrollPosition,
+                makeLoadedContent: {
+                    presentations,
+                    canLoadMore,
+                    tailIdentity,
+                    isLoading,
+                    onNearEnd,
+                    onSelect in
+                    HistoryNativeGridView(
+                        presentations: presentations,
+                        scrollOffsetY: $scrollOffsetY,
+                        canLoadMore: canLoadMore,
+                        tailIdentity: tailIdentity,
+                        isLoading: isLoading,
+                        onNearEnd: onNearEnd,
+                        onSelect: onSelect
+                    )
+                    .ignoresSafeArea(.container, edges: .top)
+                },
                 onSelect: onSelect,
                 onAuthenticationRequired: onAuthenticationRequired
             )

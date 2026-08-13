@@ -3,10 +3,46 @@ import BiliModels
 import BiliUI
 import SwiftUI
 
-struct WatchHistoryContentView: View {
+struct WatchHistoryLoadedSurface: Equatable {
+    let items: [WatchHistoryItem]
+    let canLoadMore: Bool
+    let isLoadingMore: Bool
+    let requiresManualLoadMore: Bool
+    let loadMoreError: WatchHistoryError?
+
+    init?(state: WatchHistoryState, requiresManualLoadMore: Bool) {
+        switch state {
+        case .loaded(let items, let continuation, let loadMoreError)
+        where !items.isEmpty:
+            self.items = items
+            canLoadMore = continuation != nil
+            isLoadingMore = false
+            self.requiresManualLoadMore = requiresManualLoadMore
+            self.loadMoreError = loadMoreError
+        case .loadingMore(let items, _):
+            self.items = items
+            canLoadMore = true
+            isLoadingMore = true
+            self.requiresManualLoadMore = false
+            loadMoreError = nil
+        case .idle, .loading, .loaded, .failed:
+            return nil
+        }
+    }
+}
+
+struct WatchHistoryContentView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: WatchHistoryViewModel
-    @Binding var scrollPosition: ScrollPosition
+    let makeLoadedContent:
+        (
+            [WatchHistoryCardPresentation],
+            Bool,
+            String?,
+            Bool,
+            @escaping () -> Void,
+            @escaping (String) -> Void
+        ) -> LoadedContent
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -22,32 +58,31 @@ struct WatchHistoryContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.state {
-        case .idle, .loading:
-            VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
-        case .loaded(let items, let continuation, let loadMoreError):
-            if items.isEmpty {
+        if let surface = WatchHistoryLoadedSurface(
+            state: model.state,
+            requiresManualLoadMore: model.requiresManualLoadMore
+        ) {
+            historyList(
+                items: surface.items,
+                canLoadMore: surface.canLoadMore,
+                isLoadingMore: surface.isLoadingMore,
+                requiresManualLoadMore: surface.requiresManualLoadMore,
+                loadMoreError: surface.loadMoreError
+            )
+        } else {
+            switch model.state {
+            case .idle, .loading:
+                VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
+            case .loaded(_, let continuation, let loadMoreError):
                 emptyHistory(
                     canLoadMore: continuation != nil,
                     loadMoreError: loadMoreError
                 )
-            } else {
-                historyList(
-                    items: items,
-                    canLoadMore: continuation != nil,
-                    isLoadingMore: false,
-                    loadMoreError: loadMoreError
-                )
+            case .failed(let error):
+                failure(error)
+            case .loadingMore:
+                EmptyView()
             }
-        case .loadingMore(let items, _):
-            historyList(
-                items: items,
-                canLoadMore: true,
-                isLoadingMore: true,
-                loadMoreError: nil
-            )
-        case .failed(let error):
-            failure(error)
         }
     }
 
@@ -92,62 +127,48 @@ struct WatchHistoryContentView: View {
         items: [WatchHistoryItem],
         canLoadMore: Bool,
         isLoadingMore: Bool,
+        requiresManualLoadMore: Bool,
         loadMoreError: WatchHistoryError?
     ) -> some View {
-        GeometryReader { geometry in
-            ScrollView {
-                LazyVGrid(
-                    columns: VideoCardGridLayout.columns(
-                        for: geometry.size.width
-                    ),
-                    alignment: .leading,
-                    spacing: VideoCardGridLayout.verticalSpacing
-                ) {
-                    ForEach(items) { item in
-                        Button {
-                            onSelect(item.bvid)
-                        } label: {
-                            WatchHistoryCard(item: item)
-                        }
-                        .buttonStyle(VideoCardButtonStyle())
-                        .accessibilityHint("播放视频")
-                    }
-                }
-                .padding(VideoCardGridLayout.contentPadding)
-                .scrollTargetLayout()
+        ZStack(alignment: .bottom) {
+            makeLoadedContent(
+                items.map(WatchHistoryCardPresentation.init),
+                canLoadMore && !requiresManualLoadMore,
+                model.paginationTailIdentity,
+                isLoadingMore,
+                model.loadMore,
+                onSelect
+            )
 
-                if let loadMoreError {
+            if isLoadingMore {
+                ProgressView("正在加载更早的记录…")
+                    .controlSize(.small)
+                    .padding(8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            } else if let loadMoreError {
+                HStack(spacing: 12) {
                     Text(message(for: loadMoreError))
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, VideoCardGridLayout.contentPadding)
-                }
-
-                if canLoadMore {
-                    HStack {
-                        Spacer()
-                        Button {
-                            model.loadMore()
-                        } label: {
-                            Text(isLoadingMore ? "正在加载…" : "加载更多")
-                                .contentTransition(.opacity)
-                                .frame(minWidth: 80)
-                        }
-                        .disabled(isLoadingMore)
-                        .animation(
-                            LoadingStateTransition.animation(
-                                reduceMotion: reduceMotion
-                            ),
-                            value: isLoadingMore
-                        )
-                        Spacer()
+                    if canLoadMore {
+                        Button("重试", action: model.loadMore)
+                            .buttonStyle(.borderedProminent)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, VideoCardGridLayout.contentPadding)
                 }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
+                .transition(.opacity)
+            } else if requiresManualLoadMore {
+                Button("加载更早的记录", action: model.loadMore)
+                    .buttonStyle(.borderedProminent)
+                    .padding(10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 8)
             }
-            .scrollPosition($scrollPosition)
         }
     }
 

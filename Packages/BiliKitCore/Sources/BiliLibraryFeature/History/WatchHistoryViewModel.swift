@@ -25,6 +25,10 @@ public enum WatchHistoryState: Sendable, Equatable {
 /// `reset` 会清除个性化内容；普通路由停用只取消在途请求，并在分页中断时保留已显示条目。
 public final class WatchHistoryViewModel {
     public private(set) var state: WatchHistoryState = .idle
+    /// 仅供 renderer 对 near-end 事件去重；不包含或编码远端 continuation。
+    public private(set) var paginationTailIdentity: String?
+    /// 空页或全重复页保留 continuation 时，必须由用户显式继续，避免 near-end 连续扫描。
+    public private(set) var requiresManualLoadMore = false
 
     public var requiresAuthentication: Bool {
         switch state {
@@ -48,6 +52,9 @@ public final class WatchHistoryViewModel {
     @ObservationIgnored private let useCase: WatchHistoryUseCase
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var tailIdentityGeneration: UInt64 = 0
+    @ObservationIgnored private var loadingMoreWasManual = false
+    @ObservationIgnored private var consumedContinuations: [WatchHistoryContinuation] = []
 
     public init(useCase: WatchHistoryUseCase) {
         self.useCase = useCase
@@ -59,16 +66,20 @@ public final class WatchHistoryViewModel {
     }
 
     public func reload() {
+        clearTailIdentity()
+        requiresManualLoadMore = false
+        loadingMoreWasManual = false
+        consumedContinuations.removeAll(keepingCapacity: false)
         begin(state: .loading) { [weak self] operationGeneration in
             guard let self else { return }
             do {
                 let page = try await useCase.load()
-                apply(
-                    .loaded(
-                        items: page.items,
-                        continuation: page.continuation,
-                        loadMoreError: nil
-                    ),
+                applyLoaded(
+                    items: page.items,
+                    continuation: page.continuation,
+                    loadMoreError: nil,
+                    rearmAutomaticTail: !page.items.isEmpty,
+                    requiresManualLoadMore: page.items.isEmpty && page.continuation != nil,
                     generation: operationGeneration
                 )
             } catch is CancellationError {
@@ -83,6 +94,8 @@ public final class WatchHistoryViewModel {
 
     public func loadMore() {
         guard case .loaded(let items, .some(let continuation), _) = state else { return }
+        loadingMoreWasManual = requiresManualLoadMore
+        requiresManualLoadMore = false
         begin(
             state: .loadingMore(items: items, continuation: continuation),
             clearExistingTask: false
@@ -90,38 +103,45 @@ public final class WatchHistoryViewModel {
             guard let self else { return }
             do {
                 let page = try await useCase.load(after: continuation)
+                guard generation == operationGeneration, !Task.isCancelled else {
+                    return
+                }
                 var seen = Set(items.map(\.bvid))
-                let merged =
-                    items
-                    + page.items.filter {
-                        seen.insert($0.bvid).inserted
-                    }
-                apply(
-                    .loaded(
-                        items: merged,
-                        continuation: page.continuation,
-                        loadMoreError: nil
-                    ),
+                let appended = page.items.filter {
+                    seen.insert($0.bvid).inserted
+                }
+                consumedContinuations.append(continuation)
+                let continuationLoops =
+                    page.continuation.map {
+                        consumedContinuations.contains($0)
+                    } ?? false
+                applyLoaded(
+                    items: items + appended,
+                    continuation: continuationLoops ? nil : page.continuation,
+                    loadMoreError: continuationLoops ? .invalidResponse : nil,
+                    rearmAutomaticTail: !continuationLoops && !appended.isEmpty,
+                    requiresManualLoadMore: !continuationLoops && appended.isEmpty
+                        && page.continuation != nil,
                     generation: operationGeneration
                 )
             } catch is CancellationError {
                 return
             } catch let error as WatchHistoryError {
-                apply(
-                    .loaded(
-                        items: items,
-                        continuation: continuation,
-                        loadMoreError: error
-                    ),
+                applyLoaded(
+                    items: items,
+                    continuation: continuation,
+                    loadMoreError: error,
+                    rearmAutomaticTail: false,
+                    requiresManualLoadMore: loadingMoreWasManual,
                     generation: operationGeneration
                 )
             } catch {
-                apply(
-                    .loaded(
-                        items: items,
-                        continuation: continuation,
-                        loadMoreError: .transportFailure
-                    ),
+                applyLoaded(
+                    items: items,
+                    continuation: continuation,
+                    loadMoreError: .transportFailure,
+                    rearmAutomaticTail: false,
+                    requiresManualLoadMore: loadingMoreWasManual,
                     generation: operationGeneration
                 )
             }
@@ -133,6 +153,10 @@ public final class WatchHistoryViewModel {
         generation += 1
         task?.cancel()
         task = nil
+        clearTailIdentity()
+        requiresManualLoadMore = false
+        loadingMoreWasManual = false
+        consumedContinuations.removeAll(keepingCapacity: false)
         state = .idle
     }
 
@@ -145,6 +169,8 @@ public final class WatchHistoryViewModel {
         case .loading:
             state = .idle
         case .loadingMore(let items, let continuation):
+            requiresManualLoadMore = loadingMoreWasManual
+            loadingMoreWasManual = false
             state = .loaded(
                 items: items,
                 continuation: continuation,
@@ -157,6 +183,12 @@ public final class WatchHistoryViewModel {
 
     public func waitForCurrentTask() async {
         await task?.value
+    }
+
+    /// 认证重新确认失败时保持已清理的隐私边界，并给 History 提供可重试的终态。
+    public func reportAuthenticationRevalidationFailure() {
+        guard state == .idle else { return }
+        state = .failed(.transportFailure)
     }
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
@@ -187,5 +219,33 @@ public final class WatchHistoryViewModel {
     ) {
         guard generation == operationGeneration, !Task.isCancelled else { return }
         state = nextState
+    }
+
+    private func applyLoaded(
+        items: [WatchHistoryItem],
+        continuation: WatchHistoryContinuation?,
+        loadMoreError: WatchHistoryError?,
+        rearmAutomaticTail: Bool,
+        requiresManualLoadMore: Bool,
+        generation operationGeneration: Int
+    ) {
+        guard generation == operationGeneration, !Task.isCancelled else { return }
+        self.requiresManualLoadMore = requiresManualLoadMore
+        loadingMoreWasManual = false
+        if continuation == nil || requiresManualLoadMore {
+            paginationTailIdentity = nil
+        } else if rearmAutomaticTail {
+            tailIdentityGeneration &+= 1
+            paginationTailIdentity = "history-tail-\(tailIdentityGeneration)"
+        }
+        state = .loaded(
+            items: items,
+            continuation: continuation,
+            loadMoreError: loadMoreError
+        )
+    }
+
+    private func clearTailIdentity() {
+        paginationTailIdentity = nil
     }
 }

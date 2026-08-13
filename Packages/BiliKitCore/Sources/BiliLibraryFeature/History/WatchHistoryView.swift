@@ -2,22 +2,38 @@ import SwiftUI
 
 /// 将历史页面可见性连接到 ViewModel 的加载与路由停用语义。
 ///
-/// `.task` 触发并等待模型当前请求；离开页面时 `deactivateRoute` 负责取消在途工作，
-/// 同时保留已经加载的条目供返回恢复。登出清理仍由窗口级 `reset` 边界负责。
-public struct WatchHistoryView: View {
+/// `.task` 触发并等待模型当前请求。真正的来源 Tab 停用由 App composition 通知模型；
+/// 播放详情只是覆盖本页面，不应误取消分页。登出清理仍由窗口级 `reset` 边界负责。
+public struct WatchHistoryView<LoadedContent: View>: View {
     private let model: WatchHistoryViewModel
-    @Binding private var scrollPosition: ScrollPosition
+    private let makeLoadedContent:
+        (
+            [WatchHistoryCardPresentation],
+            Bool,
+            String?,
+            Bool,
+            @escaping () -> Void,
+            @escaping (String) -> Void
+        ) -> LoadedContent
     private let onSelect: (String) -> Void
     private let onAuthenticationRequired: () -> Void
 
     public init(
         model: WatchHistoryViewModel,
-        scrollPosition: Binding<ScrollPosition>,
+        @ViewBuilder makeLoadedContent:
+            @escaping (
+                [WatchHistoryCardPresentation],
+                Bool,
+                String?,
+                Bool,
+                @escaping () -> Void,
+                @escaping (String) -> Void
+            ) -> LoadedContent,
         onSelect: @escaping (String) -> Void,
         onAuthenticationRequired: @escaping () -> Void
     ) {
         self.model = model
-        _scrollPosition = scrollPosition
+        self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
         self.onAuthenticationRequired = onAuthenticationRequired
     }
@@ -25,7 +41,7 @@ public struct WatchHistoryView: View {
     public var body: some View {
         WatchHistoryContentView(
             model: model,
-            scrollPosition: $scrollPosition,
+            makeLoadedContent: makeLoadedContent,
             onSelect: onSelect
         )
         .task {
@@ -36,9 +52,6 @@ public struct WatchHistoryView: View {
             if required {
                 onAuthenticationRequired()
             }
-        }
-        .onDisappear {
-            model.deactivateRoute()
         }
     }
 }
