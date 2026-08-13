@@ -354,6 +354,38 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(page.pageNumber == 1)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func authenticationEpochRestartsSearchAndRejectsLateOldResult() async throws {
+        let old = GuestFixtures(bvid: "BV1SearchG07", title: "旧账户结果")
+        let fresh = GuestFixtures(bvid: "BV1SearchH08", title: "新账户结果")
+        let repository = AuthenticationEpochSearchRepositoryStub()
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.search("macOS")
+        try await repository.waitForRequestCount(1)
+        let oldTask = try #require(model.taskSnapshotForTesting())
+
+        model.synchronizeAuthenticationSession(generation: 1)
+        try await repository.waitForRequestCount(2)
+        await repository.releaseRequest(1, fixture: fresh)
+        await model.waitForCurrentTask()
+
+        model.synchronizeAuthenticationSession(generation: 1)
+        await repository.releaseRequest(0, fixture: old)
+        await oldTask.value
+
+        guard case .loaded(.search(let query, let page)) = model.state else {
+            Issue.record("账户切换后的搜索结果应保持 loaded")
+            return
+        }
+        #expect(query == "macOS")
+        #expect(page.videos.map(\.bvid) == [fresh.bvid])
+        #expect(await repository.requestCount == 2)
+    }
+
     @Test
     @MainActor
     func tabRoundTripReusesPopularAndSearchWorksetsWithoutNewRequests() async {
@@ -1551,6 +1583,57 @@ private actor SearchPaginationRepositoryStub: GuestContentRepository {
     func pages(for bvid: String) async throws -> [VideoPage] { [first.page] }
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
         first.playback
+    }
+}
+
+private actor AuthenticationEpochSearchRepositoryStub: GuestContentRepository {
+    private let requestEvents = TestEventCounter()
+    private var continuations: [CheckedContinuation<SearchPage, Never>?] = []
+
+    var requestCount: Int {
+        continuations.count
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        let index = continuations.count
+        continuations.append(nil)
+        await requestEvents.signal()
+        return await withCheckedContinuation { continuation in
+            continuations[index] = continuation
+        }
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        GuestFixtures().detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [GuestFixtures().page]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        GuestFixtures().playback
+    }
+
+    func waitForRequestCount(_ count: Int) async throws {
+        try await requestEvents.wait(until: count)
+    }
+
+    func releaseRequest(_ index: Int, fixture: GuestFixtures) {
+        continuations[index]?.resume(
+            returning: SearchPage(
+                videos: [fixture.searchVideo],
+                pageNumber: 1,
+                pageSize: 20,
+                totalResults: 1,
+                totalPages: 1
+            )
+        )
+        continuations[index] = nil
     }
 }
 

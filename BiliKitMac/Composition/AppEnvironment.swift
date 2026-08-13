@@ -13,6 +13,44 @@ import Foundation
 import SwiftUI
 
 @MainActor
+@Observable
+final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
+    private(set) var generation: UInt64 = 0
+    private(set) var scope = AccountSessionScope.unresolved
+    @ObservationIgnored
+    private var sessionInvalidators: [UUID: any AuthenticatedSessionInvalidating] = [:]
+
+    func publish(_ scope: AccountSessionScope) {
+        guard scope != .unresolved, scope != self.scope else { return }
+        self.scope = scope
+        generation &+= 1
+    }
+
+    func registerSessionInvalidator(
+        _ invalidator: any AuthenticatedSessionInvalidating
+    ) -> UUID {
+        let registrationID = UUID()
+        sessionInvalidators[registrationID] = invalidator
+        return registrationID
+    }
+
+    func unregisterSessionInvalidator(_ registrationID: UUID) {
+        sessionInvalidators[registrationID] = nil
+    }
+
+    func invalidateAuthenticatedSession() async {
+        let invalidators = Array(sessionInvalidators.values)
+        await withTaskGroup(of: Void.self) { group in
+            for invalidator in invalidators {
+                group.addTask {
+                    await invalidator.invalidateAuthenticatedSession()
+                }
+            }
+        }
+    }
+}
+
+@MainActor
 /// App 的 Composition Root：创建具体 adapter，并把它们收窄为 Feature 所需的 port。
 ///
 /// 这里刻意同时看见 API、认证、播放和弹幕实现。一个环境只创建一个 `AVPlayerEngine`，
@@ -30,6 +68,8 @@ struct AppEnvironment {
     private let danmakuPreferencesStore: any DanmakuPreferencesStoring
     private let authenticationService: any AuthenticationServicing
     private let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
+    let open: @MainActor @Sendable () -> Void
+    let close: @MainActor @Sendable () -> Void
 
     init(
         guestContentRepository: any GuestContentRepository,
@@ -42,7 +82,9 @@ struct AppEnvironment {
         danmakuPreferencesStore: any DanmakuPreferencesStoring =
             UserDefaultsDanmakuPreferencesStore(),
         authenticationService: any AuthenticationServicing,
-        authenticationQRCodeProvider: any AuthenticationQRCodeProviding
+        authenticationQRCodeProvider: any AuthenticationQRCodeProviding,
+        open: @escaping @MainActor @Sendable () -> Void = {},
+        close: @escaping @MainActor @Sendable () -> Void = {}
     ) {
         precondition(
             playerEngine.nativeSubtitlesEnabled,
@@ -69,6 +111,8 @@ struct AppEnvironment {
         )
         self.authenticationService = authenticationService
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
+        self.open = open
+        self.close = close
     }
 
     var nativeSubtitlesEnabled: Bool {
@@ -148,10 +192,12 @@ struct AppEnvironment {
 
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
-    /// 只有精确白名单内的认证 API、playurl 与 WBI 弹幕分段才经过 authorizer；后两者在
+    /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；Search、playurl 与 WBI 弹幕分段在
     /// 明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的 ephemeral transport，
     /// 使旧认证会话中的在途请求失效。
-    static func live() -> AppEnvironment {
+    static func live(
+        accountSessionCoordinator: AccountSessionCoordinator? = nil
+    ) -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {
             let configuration = URLSessionConfiguration.ephemeral
@@ -170,8 +216,20 @@ struct AppEnvironment {
             requestAuthorizer: requestAuthorizer,
             transportFactory: transportFactory
         )
+        let sessionRegistration = accountSessionCoordinator.map {
+            AppEnvironmentSessionRegistration(
+                coordinator: $0,
+                invalidator: api
+            )
+        }
+        let sessionInvalidator: any AuthenticatedSessionInvalidating
+        if let accountSessionCoordinator {
+            sessionInvalidator = accountSessionCoordinator
+        } else {
+            sessionInvalidator = api
+        }
         let authenticationService = BiliAuthenticationService(
-            additionalSessionInvalidators: [api]
+            additionalSessionInvalidators: [sessionInvalidator]
         )
         let player = AVPlayer()
         let playbackPreferencesController = PlaybackPreferencesController(
@@ -194,7 +252,9 @@ struct AppEnvironment {
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService
-            )
+            ),
+            open: { sessionRegistration?.open() },
+            close: { sessionRegistration?.close() }
         )
     }
 
@@ -207,6 +267,32 @@ struct AppEnvironment {
             DanmakuLaneConfiguration.hardMaximumActiveCount,
         displayAreaFraction: 1
     )
+}
+
+@MainActor
+private final class AppEnvironmentSessionRegistration {
+    private weak var coordinator: AccountSessionCoordinator?
+    private let invalidator: any AuthenticatedSessionInvalidating
+    private var registrationID: UUID?
+
+    init(
+        coordinator: AccountSessionCoordinator,
+        invalidator: any AuthenticatedSessionInvalidating
+    ) {
+        self.coordinator = coordinator
+        self.invalidator = invalidator
+    }
+
+    func open() {
+        guard registrationID == nil, let coordinator else { return }
+        registrationID = coordinator.registerSessionInvalidator(invalidator)
+    }
+
+    func close() {
+        guard let registrationID else { return }
+        coordinator?.unregisterSessionInvalidator(registrationID)
+        self.registrationID = nil
+    }
 }
 
 private struct AuthenticationQRCodeProvider: AuthenticationQRCodeProviding {

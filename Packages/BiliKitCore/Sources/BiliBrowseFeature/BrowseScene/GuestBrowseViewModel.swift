@@ -47,6 +47,7 @@ public final class GuestBrowseViewModel {
     @ObservationIgnored private let useCase: GuestFeedUseCase
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var authenticationSessionGeneration: UInt64?
     private var popularWorkset = FeedWorkset()
     private var searchWorkset = FeedWorkset()
 
@@ -178,6 +179,26 @@ public final class GuestBrowseViewModel {
     public func retrySearchLoadMore() {
         guard searchWorkset.loadMoreError != nil else { return }
         loadMoreSearch()
+    }
+
+    /// 丢弃上一账户范围的搜索工作集；当前搜索会以同一查询重新开始，热门工作集不受影响。
+    public func synchronizeAuthenticationSession(generation newGeneration: UInt64) {
+        guard authenticationSessionGeneration != newGeneration else { return }
+        authenticationSessionGeneration = newGeneration
+
+        guard case .search(let query, _) = activeRequestIdentity else {
+            searchWorkset = FeedWorkset()
+            return
+        }
+        generation += 1
+        loadTask?.cancel()
+        loadTask = nil
+        activeRequestIdentity = nil
+        state = .idle
+        isRefreshing = false
+        refreshError = nil
+        searchWorkset = FeedWorkset()
+        activateSearch(query)
     }
 
     func retry(_ request: GuestFeedRequest) {

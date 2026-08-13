@@ -271,6 +271,114 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func searchUsesAccountReadWhileWBIKeyStaysAnonymous() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        _ = try await client.searchVideos(keyword: "macOS", page: 1)
+
+        let requests = await transport.capturedRequests()
+        #expect(requests[0].url.path == "/x/web-interface/nav")
+        #expect(requests[0].headers["Cookie"] == nil)
+        #expect(requests[1].url.path == "/x/web-interface/wbi/search/type")
+        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
+        #expect(
+            await authorizer.capturedPaths() == [
+                "/x/web-interface/wbi/search/type"
+            ]
+        )
+    }
+
+    @Test
+    func searchFallsBackAnonymouslyOnlyForMissingCredential() async throws {
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                try fixtureResponse("search"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: ThrowingRequestAuthorizer(kind: .missingCredential),
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        _ = try await client.searchVideos(keyword: "macOS", page: 1)
+
+        let requests = await transport.capturedRequests()
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
+    }
+
+    @Test(arguments: [
+        HTTPRequestAuthorizationFailureKind.invalidCredential,
+        .unavailable,
+        .denied,
+    ])
+    func searchFailsClosedForCredentialFailure(
+        kind: HTTPRequestAuthorizationFailureKind
+    ) async throws {
+        let transport = RecordingTransport(responses: [try fixtureResponse("nav")])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: ThrowingRequestAuthorizer(kind: kind),
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        if kind == .invalidCredential {
+            await #expect(throws: BiliAPIError.authenticationInvalid) {
+                try await client.searchVideos(keyword: "macOS", page: 1)
+            }
+        } else {
+            await #expect(throws: BiliAPIError.authorizationUnavailable) {
+                try await client.searchVideos(keyword: "macOS", page: 1)
+            }
+        }
+        #expect(
+            await transport.capturedRequests().map(\.url.path) == [
+                "/x/web-interface/nav"
+            ]
+        )
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func searchCannotCrossAuthenticationEpoch() async throws {
+        let authorizer = SuspendingRequestAuthorizer()
+        let transport = RecordingTransport(responses: [try fixtureResponse("nav")])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+        let task = Task {
+            try await client.searchVideos(keyword: "macOS", page: 1)
+        }
+        await authorizer.waitUntilAuthorizationStarts()
+
+        await client.invalidateAuthenticatedSession()
+        await authorizer.resumeAuthorization()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(
+            await transport.capturedRequests().map(\.url.path) == [
+                "/x/web-interface/nav"
+            ]
+        )
+    }
+
+    @Test
     func searchRejectsNegativeDuration() async throws {
         let response = try fixtureResponse("search")
         let source = try #require(
@@ -376,6 +484,7 @@ struct BiliAPIClientTests {
 
     @Test
     func httpForbiddenAlsoRefreshesWBIKeyOnce() async throws {
+        let authorizer = RecordingRequestAuthorizer()
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
@@ -386,6 +495,7 @@ struct BiliAPIClientTests {
         )
         let client = BiliAPIClient(
             transport: transport,
+            requestAuthorizer: authorizer,
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -399,6 +509,62 @@ struct BiliAPIClientTests {
                 "/x/web-interface/wbi/search/type",
             ]
         )
+        let searchRequests = await transport.capturedRequests().filter {
+            $0.url.path == "/x/web-interface/wbi/search/type"
+        }
+        #expect(
+            searchRequests.allSatisfy {
+                $0.headers["Cookie"] == "FIXTURE_AUTHORIZED"
+            }
+        )
+    }
+
+    @Test
+    func searchRiskResponseDoesNotRetryAnonymously() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                HTTPResponse(statusCode: 412, body: Data()),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        await #expect(throws: BiliAPIError.httpStatus(412)) {
+            try await client.searchVideos(keyword: "macOS", page: 1)
+        }
+        let requests = await transport.capturedRequests()
+        #expect(requests.count == 2)
+        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
+    }
+
+    @Test
+    func searchBusinessRiskDoesNotRetryAnonymously() async throws {
+        let authorizer = RecordingRequestAuthorizer()
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("nav"),
+                jsonResponse(#"{"code":-352,"message":"blocked"}"#),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        await #expect(
+            throws: BiliAPIError.apiRejected(code: -352, message: "blocked")
+        ) {
+            try await client.searchVideos(keyword: "macOS", page: 1)
+        }
+        let requests = await transport.capturedRequests()
+        #expect(requests.count == 2)
+        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
     }
 
     @Test

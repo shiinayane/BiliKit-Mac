@@ -169,6 +169,21 @@ public final class AuthenticationViewModel {
         restore()
     }
 
+    public func revalidateAfterExternalSessionChange() {
+        guard state != .signingOut else { return }
+        didStartInitialRestore = true
+        retryAction = .restore
+        begin(state: .restoring) { [weak self] operationGeneration in
+            guard let self else { return }
+            let nextState = await service.restoreAfterExternalSessionChange()
+            await apply(
+                nextState,
+                generation: operationGeneration,
+                commitsConfirmedSession: true
+            )
+        }
+    }
+
     private func restore() {
         retryAction = .restore
         begin(state: .restoring) { [weak self] operationGeneration in

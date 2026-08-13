@@ -2,6 +2,8 @@ import BiliApplication
 import BiliAuthFeature
 import BiliModels
 import Foundation
+import Observation
+import Synchronization
 import Testing
 
 @testable import BiliKit
@@ -26,6 +28,45 @@ struct AppNavigationCoordinatorTests {
         coordinator.publish(.signedOut)
         #expect(coordinator.generation == 2)
         #expect(coordinator.scope == .signedOut)
+    }
+
+    @Test
+    @MainActor
+    func accountSessionCoordinatorInvalidatesEveryRegisteredWindowSession() async {
+        let coordinator = AccountSessionCoordinator()
+        let first = RecordingSessionInvalidator()
+        let second = RecordingSessionInvalidator()
+        let closed = RecordingSessionInvalidator()
+        _ = coordinator.registerSessionInvalidator(first)
+        _ = coordinator.registerSessionInvalidator(second)
+        let closedRegistration = coordinator.registerSessionInvalidator(closed)
+        coordinator.unregisterSessionInvalidator(closedRegistration)
+
+        await coordinator.invalidateAuthenticatedSession()
+
+        #expect(await first.invalidationCount == 1)
+        #expect(await second.invalidationCount == 1)
+        #expect(await closed.invalidationCount == 0)
+    }
+
+    @Test
+    @MainActor
+    func sessionRegistrationDoesNotInvalidateObservedAccountState() {
+        let coordinator = AccountSessionCoordinator()
+        let invalidator = RecordingSessionInvalidator()
+        let observationChanged = Mutex(false)
+
+        withObservationTracking {
+            _ = coordinator.generation
+            _ = coordinator.scope
+        } onChange: {
+            observationChanged.withLock { $0 = true }
+        }
+
+        let registrationID = coordinator.registerSessionInvalidator(invalidator)
+        coordinator.unregisterSessionInvalidator(registrationID)
+
+        #expect(!observationChanged.withLock { $0 })
     }
 
     @Test
@@ -250,5 +291,13 @@ struct AppNavigationCoordinatorTests {
         #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(events.isEmpty)
+    }
+}
+
+private actor RecordingSessionInvalidator: AuthenticatedSessionInvalidating {
+    private(set) var invalidationCount = 0
+
+    func invalidateAuthenticatedSession() {
+        invalidationCount += 1
     }
 }

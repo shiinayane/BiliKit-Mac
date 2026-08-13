@@ -26,10 +26,10 @@ public enum BiliRequestAuthorizationError:
     }
 }
 
-/// 从 Keychain 按需读取 Cookie，并只授权代码内精确列出的 Bilibili API 请求。
+/// 从 Keychain 按需读取 Cookie，并只授权 Bilibili API 的只读账户请求。
 ///
-/// 调用方声明“需要认证”并不足够：scheme、host、port、method、path、query 与现有 Cookie
-/// header 都会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
+/// 调用方声明账户读取能力后，scheme、host、port、method、userinfo、fragment 与现有 Cookie
+/// header 仍会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
     private static let maximumResponseSize = 256 * 1_024
     private static let navigationValidationURL: URL = {
@@ -178,186 +178,13 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         else {
             return false
         }
-        guard
-            components.scheme?.lowercased() == "https"
-                && components.host?.lowercased() == "api.bilibili.com"
-                && (components.port == nil || components.port == 443)
-                && components.user == nil
-                && components.password == nil
-                && components.fragment == nil
-                && request.method == .get
-        else {
-            return false
-        }
-        switch components.percentEncodedPath {
-        case "/x/web-interface/nav":
-            return components.queryItems?.isEmpty != false
-        case "/x/web-interface/history/cursor":
-            return isAllowedHistoryQuery(components.queryItems)
-        case "/x/player/playurl":
-            return isAllowedPlaybackQuery(components.queryItems)
-        case "/x/player/wbi/v2":
-            return isAllowedPlayerWBIQuery(components.queryItems)
-        case "/x/v2/dm/wbi/web/seg.so":
-            return isAllowedDanmakuWBIQuery(components.queryItems)
-        default:
-            return false
-        }
-    }
-
-    private static func isAllowedDanmakuWBIQuery(
-        _ queryItems: [URLQueryItem]?
-    ) -> Bool {
-        guard let queryItems, queryItems.count == 5 else { return false }
-        var values: [String: String] = [:]
-        for item in queryItems {
-            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
-                return false
-            }
-        }
-        guard values.count == 5,
-            Set(values.keys) == ["type", "oid", "segment_index", "w_rid", "wts"],
-            values["type"] == "1",
-            let oid = values["oid"].flatMap(Int64.init),
-            oid > 0,
-            let segmentIndex = values["segment_index"].flatMap(Int.init),
-            (1...10_000).contains(segmentIndex),
-            let timestamp = values["wts"].flatMap(Int64.init),
-            timestamp > 0,
-            let signature = values["w_rid"],
-            signature.count == 32,
-            signature.allSatisfy({
-                $0.isASCII
-                    && ($0.isNumber || ("a"..."f").contains($0))
-            })
-        else {
-            return false
-        }
-        return true
-    }
-
-    private static func isAllowedPlaybackQuery(
-        _ queryItems: [URLQueryItem]?
-    ) -> Bool {
-        guard let queryItems, (6...7).contains(queryItems.count) else {
-            return false
-        }
-        var values: [String: String] = [:]
-        for item in queryItems {
-            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
-                return false
-            }
-        }
-        let requiredKeys: Set<String> = [
-            "bvid", "cid", "qn", "fnval", "fnver", "fourk",
-        ]
-        let keys = Set(values.keys)
-        guard keys == requiredKeys || keys == requiredKeys.union(["cur_language"]),
-            let bvid = values["bvid"],
-            bvid.count == 12,
-            bvid.hasPrefix("BV"),
-            bvid.allSatisfy({
-                $0.isASCII && ($0.isLetter || $0.isNumber)
-            }),
-            let cid = values["cid"].flatMap(Int64.init),
-            cid > 0,
-            let quality = values["qn"].flatMap(Int.init),
-            quality > 0,
-            values["fnval"] == "976",
-            values["fnver"] == "0",
-            values["fourk"] == "1"
-        else {
-            return false
-        }
-        if let language = values["cur_language"],
-            !isAllowedAudioLanguage(language)
-        {
-            return false
-        }
-        return true
-    }
-
-    private static func isAllowedAudioLanguage(_ value: String) -> Bool {
-        guard (2...35).contains(value.count) else { return false }
-        let subtags = value.split(
-            separator: "-",
-            omittingEmptySubsequences: false
-        )
-        guard let primary = subtags.first,
-            (2...3).contains(primary.count),
-            primary.allSatisfy({
-                $0.isASCII && $0.isLetter && $0.isLowercase
-            })
-        else {
-            return false
-        }
-        return subtags.dropFirst().allSatisfy { subtag in
-            (1...8).contains(subtag.count)
-                && subtag.allSatisfy {
-                    $0.isASCII && ($0.isLetter || $0.isNumber)
-                }
-        }
-    }
-
-    private static func isAllowedPlayerWBIQuery(
-        _ queryItems: [URLQueryItem]?
-    ) -> Bool {
-        guard let queryItems, queryItems.count == 4 else { return false }
-        var values: [String: String] = [:]
-        for item in queryItems {
-            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
-                return false
-            }
-        }
-        guard values.count == 4,
-            Set(values.keys) == ["bvid", "cid", "w_rid", "wts"],
-            let bvid = values["bvid"],
-            bvid.count == 12,
-            bvid.hasPrefix("BV"),
-            bvid.allSatisfy({
-                $0.isASCII && ($0.isLetter || $0.isNumber)
-            }),
-            let cid = values["cid"].flatMap(Int64.init),
-            cid > 0,
-            let timestamp = values["wts"].flatMap(Int64.init),
-            timestamp > 0,
-            let signature = values["w_rid"],
-            signature.count == 32,
-            signature.allSatisfy({
-                $0.isASCII
-                    && ($0.isNumber || ("a"..."f").contains($0))
-            })
-        else {
-            return false
-        }
-        return true
-    }
-
-    private static func isAllowedHistoryQuery(
-        _ queryItems: [URLQueryItem]?
-    ) -> Bool {
-        guard let queryItems, queryItems.count == 4 else { return false }
-        var values: [String: String] = [:]
-        for item in queryItems {
-            guard values.updateValue(item.value ?? "", forKey: item.name) == nil else {
-                return false
-            }
-        }
-        guard values.count == 4,
-            Set(values.keys) == ["max", "view_at", "business", "ps"],
-            let maximum = values["max"].flatMap(Int64.init),
-            let viewedAt = values["view_at"].flatMap(Int64.init),
-            let pageSize = values["ps"].flatMap(Int.init),
-            maximum >= 0,
-            viewedAt >= 0,
-            (1...50).contains(pageSize),
-            let business = values["business"],
-            business.count <= 64,
-            business.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
-        else {
-            return false
-        }
-        return true
+        return components.scheme?.lowercased() == "https"
+            && components.host?.lowercased() == "api.bilibili.com"
+            && (components.port == nil || components.port == 443)
+            && components.user == nil
+            && components.password == nil
+            && components.fragment == nil
+            && request.method == .get
     }
 
     private func purgeStoredCredential() throws {

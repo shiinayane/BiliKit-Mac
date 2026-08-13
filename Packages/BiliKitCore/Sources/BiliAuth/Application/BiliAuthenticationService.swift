@@ -44,6 +44,17 @@ public actor BiliAuthenticationService: AuthenticationServicing {
 
     /// 从 Keychain 恢复后再次向登录态 endpoint 验证；临时网络失败不会删除凭据。
     public func restore() async -> AuthenticationState {
+        await restore(propagatesSessionInvalidation: true)
+    }
+
+    /// 其他窗口已经推进全局 transport epoch；这里只复核凭据，避免重复传播同一变化。
+    public func restoreAfterExternalSessionChange() async -> AuthenticationState {
+        await restore(propagatesSessionInvalidation: false)
+    }
+
+    private func restore(
+        propagatesSessionInvalidation: Bool
+    ) async -> AuthenticationState {
         guard state != .signingOut else { return state }
         generation &+= 1
         let operationGeneration = generation
@@ -57,7 +68,9 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             guard generation == operationGeneration else { return state }
             switch restored {
             case .signedOut(let hadCredential):
-                if hadAuthenticatedSession || hadCredential {
+                if propagatesSessionInvalidation,
+                    hadAuthenticatedSession || hadCredential
+                {
                     for invalidator in additionalSessionInvalidators {
                         await invalidator.invalidateAuthenticatedSession()
                         guard generation == operationGeneration else { return state }
