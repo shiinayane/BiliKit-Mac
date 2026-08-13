@@ -281,6 +281,7 @@ public final class GuestVideoViewModel {
             )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
+            playback.beginPlayback(identity: identity, intent: intent)
             presentedPlaybackIdentity = requestedPlaybackIdentity
             state = .ready(context)
         } catch is CancellationError {
@@ -331,6 +332,7 @@ public final class GuestVideoViewModel {
             )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
+            playback.beginPlayback(identity: identity, intent: intent)
             presentedPlaybackIdentity = identity
             state = .ready(replacement)
         } catch is CancellationError {

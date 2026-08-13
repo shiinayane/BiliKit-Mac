@@ -106,6 +106,12 @@ public protocol PlaybackControlling: AnyObject {
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent
     ) async throws
+    /// 只为仍匹配本次 load intent、且尚未播放或 seek 的 item 开始播放。
+    @discardableResult
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool
     func pause()
     func stop()
 }
@@ -171,13 +177,17 @@ package final class PlaybackTimelineStore {
         durationSeconds: Double?
     ) {
         guard token == currentToken else { return }
+        let state =
+            currentSnapshot.state == .loading
+            ? PlaybackTimelineState.ready
+            : currentSnapshot.state
         publish(
             PlaybackTimelineSnapshot(
                 identity: currentSnapshot.identity,
-                positionSeconds: 0,
+                positionSeconds: currentSnapshot.positionSeconds,
                 durationSeconds: durationSeconds,
-                rate: 0,
-                state: .ready,
+                rate: currentSnapshot.rate,
+                state: state,
                 discontinuityGeneration:
                     currentSnapshot.discontinuityGeneration
             )

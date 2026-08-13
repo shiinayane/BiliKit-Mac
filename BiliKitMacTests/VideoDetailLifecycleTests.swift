@@ -543,6 +543,11 @@ private final class ControlledFailingPlayback: PlaybackControlling {
         }
     }
 
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool { true }
+
     func pause() {}
 
     func stop() {}
@@ -565,6 +570,7 @@ private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent
 @MainActor
 private final class RecordingLifecyclePlayback: PlaybackControlling {
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCallCount = 0
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
@@ -577,6 +583,14 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async throws {
         loadedIdentities.append(identity)
+    }
+
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool {
+        startedIdentities.append(identity)
+        return true
     }
 
     func pause() {}
