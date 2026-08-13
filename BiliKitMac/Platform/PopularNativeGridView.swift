@@ -6,6 +6,11 @@ struct PopularNativeGridView: View {
     @State private var imageOwner = NativeVideoImagePipelineOwner()
     let videos: [PopularVideo]
     @Binding var scrollOffsetY: CGFloat
+    let canLoadMore: Bool
+    let tailIdentity: String?
+    let isLoading: Bool
+    @Binding var scrollReset: NativeVideoGridScrollResetState
+    let onNearEnd: () -> Void
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -13,9 +18,14 @@ struct PopularNativeGridView: View {
             items: Self.makePresentations(videos),
             scrollOffsetY: $scrollOffsetY,
             accessibilityLabel: "热门视频",
-            tailState: .end,
+            tailState: NativeVideoGridTailState(
+                canLoadMore: canLoadMore,
+                tailIdentity: tailIdentity,
+                isLoading: isLoading
+            ),
+            scrollReset: $scrollReset,
             imagePipeline: imageOwner.pipeline,
-            onNearEnd: {},
+            onNearEnd: onNearEnd,
             onSelect: onSelect
         )
     }

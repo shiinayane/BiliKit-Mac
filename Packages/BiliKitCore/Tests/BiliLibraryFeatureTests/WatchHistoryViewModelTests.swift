@@ -34,12 +34,14 @@ struct WatchHistoryViewModelTests {
         model.loadIfNeeded()
         #expect(model.isBusy)
         await model.waitForCurrentTask()
+        #expect(model.successfulReloadGeneration == 1)
         let firstTailIdentity = model.paginationTailIdentity
         #expect(!model.isBusy)
         model.loadMore()
         #expect(model.isBusy)
         await model.waitForCurrentTask()
         #expect(!model.isBusy)
+        #expect(model.successfulReloadGeneration == 1)
 
         guard case .loaded(let items, let nextContinuation, let error) = model.state else {
             Issue.record("历史状态不是 loaded")
@@ -68,6 +70,7 @@ struct WatchHistoryViewModelTests {
 
         #expect(model.state == .failed(.authenticationRequired))
         #expect(model.requiresAuthentication)
+        #expect(model.successfulReloadGeneration == 0)
     }
 
     @Test
@@ -322,6 +325,7 @@ struct WatchHistoryViewModelTests {
             return
         }
         #expect(items.map(\.bvid) == ["BV1HistoryB2"])
+        #expect(model.successfulReloadGeneration == 1)
     }
 
     @Test

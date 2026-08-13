@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import CoreText
 import QuartzCore
 
 extension NSUserInterfaceItemIdentifier {
@@ -598,28 +599,84 @@ private final class NativeVideoTextField: NSTextField {
 
 @MainActor
 private final class NativeVideoCoverOverlayView: NSView {
+    private struct SymbolRasterKey: Hashable {
+        let name: String
+        let pointSize: CGFloat
+        let weight: CGFloat
+        let scale: CGFloat
+        let appearanceName: String
+        let tintName: String
+    }
+
     static let preferredHeight: CGFloat = 35
     private static let metricBottomOffset: CGFloat = 22
     private static let leadingInset: CGFloat = 9
     private static let iconSize: CGFloat = 12
+    private static let symbolPointSize: CGFloat = 11
+    private static let symbolWeight = NSFont.Weight.medium
     private static let iconTextSpacing: CGFloat = 4
     private static let metricSpacing: CGFloat = 10
     private static let trailingInset: CGFloat = 9
+    private static let maximumSymbolRasterCount = 32
+    private static var symbolRasters: [SymbolRasterKey: CGImage] = [:]
 
-    private let gradient = NSGradient(
-        starting: .clear,
-        ending: NSColor.black.withAlphaComponent(0.78)
-    )
-    private var metrics: [(icon: NSImage?, cell: NSTextFieldCell)] = []
+    private let gradientLayer = CAGradientLayer()
+    private let metricIconLayers = [CALayer(), CALayer()]
+    private let metricTextLayers = [
+        NativeVideoCoverOverlayView.makeTextLayer(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+        NativeVideoCoverOverlayView.makeTextLayer(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+    ]
+    private let metricCells = [
+        NativeVideoCoverOverlayView.makeLabelCell(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+        NativeVideoCoverOverlayView.makeLabelCell(
+            font: .systemFont(ofSize: 12, weight: .medium)
+        ),
+    ]
+    private var metricIconNames: [String?] = [nil, nil]
+    private var metricSizes: [NSSize] = [.zero, .zero]
+    private var metricCount = 0
     private let trailingCell = NativeVideoCoverOverlayView.makeLabelCell(
         font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     )
+    private let trailingTextLayer = NativeVideoCoverOverlayView.makeTextLayer(
+        font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+        alignmentMode: .right
+    )
+    private var trailingSize = NSSize.zero
 
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.masksToBounds = true
+        gradientLayer.colors = [
+            NSColor.clear.cgColor,
+            NSColor.black.withAlphaComponent(0.78).cgColor,
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        gradientLayer.actions = Self.disabledLayerActions
+        layer?.addSublayer(gradientLayer)
+        for index in metricIconLayers.indices {
+            let iconLayer = metricIconLayers[index]
+            iconLayer.contentsGravity = .resizeAspect
+            iconLayer.actions = Self.disabledLayerActions
+            iconLayer.isHidden = true
+            layer?.addSublayer(iconLayer)
+
+            metricTextLayers[index].isHidden = true
+            layer?.addSublayer(metricTextLayers[index])
+        }
+        trailingTextLayer.isHidden = true
+        layer?.addSublayer(trailingTextLayer)
+        updateContentsScale()
         setAccessibilityElement(false)
     }
 
@@ -628,74 +685,134 @@ private final class NativeVideoCoverOverlayView: NSView {
     }
 
     func configure(metrics: [NativeVideoCardMetric], trailingText: String?) {
-        self.metrics = metrics.prefix(2).map { metric in
-            let cell = Self.makeLabelCell(
-                font: .systemFont(ofSize: 12, weight: .medium)
-            )
-            cell.stringValue = metric.text
-            return (Self.makeSymbol(named: metric.systemImage), cell)
+        metricCount = min(metrics.count, metricCells.count)
+        for index in metricCells.indices {
+            guard index < metricCount else {
+                metricCells[index].stringValue = ""
+                metricIconNames[index] = nil
+                metricSizes[index] = .zero
+                metricIconLayers[index].contents = nil
+                metricIconLayers[index].isHidden = true
+                metricTextLayers[index].string = nil
+                metricTextLayers[index].isHidden = true
+                continue
+            }
+            let metric = metrics[index]
+            metricCells[index].stringValue = metric.text
+            metricTextLayers[index].string = metric.text
+            metricTextLayers[index].isHidden = false
+            metricIconNames[index] = metric.systemImage
+            metricSizes[index] = integralSize(metricCells[index].cellSize)
         }
         trailingCell.stringValue = trailingText ?? ""
-        needsDisplay = true
+        trailingTextLayer.string = trailingText ?? ""
+        trailingTextLayer.isHidden = trailingText?.isEmpty ?? true
+        trailingSize = integralSize(trailingCell.cellSize)
+        refreshMetricIcons()
+        needsLayout = true
     }
 
     func reset() {
-        metrics = []
+        metricCount = 0
+        for index in metricCells.indices {
+            metricCells[index].stringValue = ""
+            metricIconNames[index] = nil
+            metricSizes[index] = .zero
+            metricIconLayers[index].contents = nil
+            metricIconLayers[index].isHidden = true
+            metricTextLayers[index].string = nil
+            metricTextLayers[index].isHidden = true
+        }
         trailingCell.stringValue = ""
-        needsDisplay = true
+        trailingTextLayer.string = nil
+        trailingTextLayer.isHidden = true
+        trailingSize = .zero
+        needsLayout = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        gradient?.draw(
-            from: NSPoint(x: bounds.midX, y: bounds.minY),
-            to: NSPoint(x: bounds.midX, y: bounds.maxY),
-            options: []
-        )
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateContentsScale()
+        refreshMetricIcons()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateContentsScale()
+        refreshMetricIcons()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshMetricIcons()
+    }
+
+    override func layout() {
+        super.layout()
+        gradientLayer.frame = bounds
         let metricY = bounds.height - Self.metricBottomOffset
         var nextX = Self.leadingInset
-        for metric in metrics {
+        for index in 0..<metricCount {
             let iconFrame = NSRect(
                 x: nextX,
                 y: metricY + 2,
                 width: Self.iconSize,
                 height: Self.iconSize
             )
-            metric.icon?.draw(
-                in: iconFrame,
-                from: .zero,
-                operation: .sourceOver,
-                fraction: 1,
-                respectFlipped: true,
-                hints: nil
-            )
-            let cellSize = integralSize(metric.cell.cellSize)
+            metricIconLayers[index].frame = iconFrame
+            let cellSize = metricSizes[index]
             let cellFrame = NSRect(
                 x: iconFrame.maxX + Self.iconTextSpacing,
                 y: metricY,
                 width: cellSize.width,
                 height: cellSize.height
             )
-            metric.cell.draw(withFrame: cellFrame, in: self)
+            metricTextLayers[index].frame = cellFrame
             nextX = cellFrame.maxX + Self.metricSpacing
         }
-        guard !trailingCell.stringValue.isEmpty else { return }
-        let trailingSize = integralSize(trailingCell.cellSize)
-        trailingCell.draw(
-            withFrame: NSRect(
+        if !trailingCell.stringValue.isEmpty {
+            trailingTextLayer.frame = NSRect(
                 x: bounds.width - trailingSize.width - Self.trailingInset,
                 y: metricY,
                 width: trailingSize.width,
                 height: trailingSize.height
-            ),
-            in: self
-        )
+            )
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     private func integralSize(_ size: NSSize) -> NSSize {
         NSSize(width: ceil(size.width), height: ceil(size.height))
+    }
+
+    private func refreshMetricIcons() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let appearance = effectiveAppearance
+        for index in 0..<metricCount {
+            guard let name = metricIconNames[index] else {
+                metricIconLayers[index].contents = nil
+                metricIconLayers[index].isHidden = true
+                continue
+            }
+            let icon = Self.symbolRaster(
+                named: name,
+                scale: scale,
+                appearance: appearance
+            )
+            metricIconLayers[index].contents = icon
+            metricIconLayers[index].contentsScale = scale
+            metricIconLayers[index].isHidden = icon == nil
+        }
+        needsLayout = true
+    }
+
+    private func updateContentsScale() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        for textLayer in metricTextLayers {
+            textLayer.contentsScale = scale
+        }
+        trailingTextLayer.contentsScale = scale
     }
 
     private static func makeLabelCell(font: NSFont) -> NSTextFieldCell {
@@ -712,13 +829,108 @@ private final class NativeVideoCoverOverlayView: NSView {
         return cell
     }
 
-    private static func makeSymbol(named name: String) -> NSImage? {
-        let pointConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        let colorConfiguration = NSImage.SymbolConfiguration(paletteColors: [.white])
-        return NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(pointConfiguration.applying(colorConfiguration))
+    private static func makeTextLayer(
+        font: NSFont,
+        alignmentMode: CATextLayerAlignmentMode = .left
+    ) -> CATextLayer {
+        let textLayer = CATextLayer()
+        textLayer.font = CTFontCreateWithFontDescriptor(
+            font.fontDescriptor as CTFontDescriptor,
+            font.pointSize,
+            nil
+        )
+        textLayer.fontSize = font.pointSize
+        textLayer.foregroundColor = NSColor.white.cgColor
+        textLayer.alignmentMode = alignmentMode
+        textLayer.truncationMode = .end
+        textLayer.isWrapped = false
+        textLayer.actions = disabledLayerActions
+        return textLayer
+    }
+
+    private static let disabledLayerActions: [String: CAAction] = [
+        "bounds": NSNull(),
+        "contents": NSNull(),
+        "hidden": NSNull(),
+        "position": NSNull(),
+        "string": NSNull(),
+    ]
+
+    private static func symbolRaster(
+        named name: String,
+        scale: CGFloat,
+        appearance: NSAppearance
+    ) -> CGImage? {
+        let key = SymbolRasterKey(
+            name: name,
+            pointSize: symbolPointSize,
+            weight: symbolWeight.rawValue,
+            scale: scale,
+            appearanceName: appearance.name.rawValue,
+            tintName: "white"
+        )
+        if let cached = symbolRasters[key] { return cached }
+
+        var raster: CGImage?
+        appearance.performAsCurrentDrawingAppearance {
+            let pointConfiguration = NSImage.SymbolConfiguration(
+                pointSize: symbolPointSize,
+                weight: symbolWeight
+            )
+            let colorConfiguration = NSImage.SymbolConfiguration(paletteColors: [.white])
+            guard
+                let image = NSImage(
+                    systemSymbolName: name,
+                    accessibilityDescription: nil
+                )?.withSymbolConfiguration(pointConfiguration.applying(colorConfiguration))
+            else { return }
+
+            let pixelWidth = max(1, Int(ceil(iconSize * scale)))
+            let pixelHeight = max(1, Int(ceil(iconSize * scale)))
+            guard
+                let representation = NSBitmapImageRep(
+                    bitmapDataPlanes: nil,
+                    pixelsWide: pixelWidth,
+                    pixelsHigh: pixelHeight,
+                    bitsPerSample: 8,
+                    samplesPerPixel: 4,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: .deviceRGB,
+                    bytesPerRow: 0,
+                    bitsPerPixel: 0
+                )
+            else { return }
+            representation.size = NSSize(width: iconSize, height: iconSize)
+            guard let graphicsContext = NSGraphicsContext(bitmapImageRep: representation) else {
+                return
+            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphicsContext
+            graphicsContext.cgContext.clear(
+                NSRect(x: 0, y: 0, width: iconSize, height: iconSize)
+            )
+            image.draw(
+                in: NSRect(x: 0, y: 0, width: iconSize, height: iconSize),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: false,
+                hints: [.interpolation: NSImageInterpolation.high]
+            )
+            graphicsContext.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            raster = representation.cgImage
+        }
+        guard let raster else { return nil }
+
+        if symbolRasters.count >= maximumSymbolRasterCount,
+            let oldestKey = symbolRasters.keys.first
+        {
+            symbolRasters.removeValue(forKey: oldestKey)
+        }
+        symbolRasters[key] = raster
+        return raster
     }
 }
 

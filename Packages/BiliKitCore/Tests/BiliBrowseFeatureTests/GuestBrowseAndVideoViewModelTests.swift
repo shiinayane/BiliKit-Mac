@@ -85,6 +85,137 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func popularNearEndAppendsDeduplicatesAndBackpressuresSameTail() async {
+        let first = GuestFixtures(bvid: "BV1PopularA1", title: "热门第一页")
+        let second = GuestFixtures(bvid: "BV1PopularB2", title: "热门第二页")
+        let repository = PopularPaginationRepositoryStub(
+            first: first,
+            second: second
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        let firstTail = model.popularPagination(for: request)
+        #expect(firstTail.canLoadMore)
+        #expect(firstTail.tailIdentity?.contains("|1|") == true)
+
+        model.loadMorePopular()
+        model.loadMorePopular()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.popular(let page)) = model.state else {
+            Issue.record("热门结果应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(page.pageNumber == 2)
+        #expect(!page.hasMore)
+        #expect(await repository.popularCallCount == 2)
+        #expect(!model.popularPagination(for: request).canLoadMore)
+    }
+
+    @Test
+    @MainActor
+    func failedPopularAppendKeepsCardsAndRetriesOnlyNextPage() async {
+        let first = GuestFixtures(bvid: "BV1PopularC3", title: "保留热门卡片")
+        let second = GuestFixtures(bvid: "BV1PopularD4", title: "重试热门追加")
+        let repository = PopularPaginationRepositoryStub(
+            first: first,
+            second: second,
+            failFirstSecondPage: true
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        let loadedState = model.state
+
+        model.loadMorePopular()
+        await model.waitForCurrentTask()
+        #expect(model.state == loadedState)
+        #expect(
+            model.popularPagination(for: request).loadMoreError
+                == .requestRestricted
+        )
+        #expect(!model.popularPagination(for: request).canLoadMore)
+        #expect(model.popularPagination(for: request).tailIdentity == nil)
+
+        model.retryPopularLoadMore()
+        await model.waitForCurrentTask()
+        guard case .loaded(.popular(let page)) = model.state else {
+            Issue.record("热门重试后应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(await repository.popularCallCount == 3)
+    }
+
+    @Test
+    @MainActor
+    func duplicateOnlyPopularPageStopsNonProgressingPagination() async {
+        let fixture = GuestFixtures(bvid: "BV1PopularE5", title: "重复热门卡片")
+        let repository = DuplicateOnlyPopularRepositoryStub(fixtures: fixture)
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        model.loadMorePopular()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.popular(let page)) = model.state else {
+            Issue.record("全重复分页后应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [fixture.bvid])
+        #expect(page.pageNumber == 2)
+        #expect(!page.hasMore)
+        #expect(!model.popularPagination(for: request).canLoadMore)
+        #expect(await repository.popularCallCount == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func popularRefreshCancelsAndRejectsLateAppend() async throws {
+        let old = GuestFixtures(bvid: "BV1PopularF6", title: "旧热门榜单")
+        let fresh = GuestFixtures(bvid: "BV1PopularG7", title: "刷新热门榜单")
+        let repository = BlockingPopularAppendRepositoryStub(old: old, fresh: fresh)
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        model.loadMorePopular()
+        try await repository.waitForAppendStart()
+        let oldAppendTask = try #require(model.taskSnapshotForTesting())
+
+        model.refreshPopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        await repository.releaseAppend()
+        await oldAppendTask.value
+
+        guard case .loaded(.popular(let page)) = model.state else {
+            Issue.record("刷新后的热门榜单应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [fresh.bvid])
+        #expect(page.pageNumber == 1)
+        #expect(!page.hasMore)
+        #expect(model.popularSuccessfulRefreshGeneration == 1)
+    }
+
+    @Test
+    @MainActor
     func failedSearchRetriesItsOriginalRequest() async {
         let fixture = GuestFixtures()
         let model = GuestBrowseViewModel(
@@ -180,6 +311,8 @@ struct GuestBrowseAndVideoViewModelTests {
             model.searchPagination(for: "Swift").loadMoreError
                 == .transportFailure
         )
+        #expect(!model.searchPagination(for: "Swift").canLoadMore)
+        #expect(model.searchPagination(for: "Swift").tailIdentity == nil)
 
         model.retrySearchLoadMore()
         await model.waitForCurrentTask()
@@ -272,6 +405,38 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func tabRoundTripPreservesAppendedPopularWorkset() async {
+        let first = GuestFixtures(bvid: "BV1PopularH8", title: "热门第一页")
+        let second = GuestFixtures(bvid: "BV1PopularJ9", title: "热门第二页")
+        let repository = PopularPaginationRepositoryStub(
+            first: first,
+            second: second
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        model.loadMorePopular()
+        await model.waitForCurrentTask()
+
+        model.activateSearch("macOS")
+        await model.waitForCurrentTask()
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.popular(let page)) = model.state else {
+            Issue.record("返回热门时应恢复已追加工作集")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(page.pageNumber == 2)
+        #expect(await repository.popularCallCount == 2)
+    }
+
+    @Test
+    @MainActor
     func failedRefreshKeepsMatchingLoadedContentVisible() async {
         let fixture = GuestFixtures()
         let repository = WorksetRepositoryStub(fixtures: fixture)
@@ -282,6 +447,8 @@ struct GuestBrowseAndVideoViewModelTests {
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
         let loadedState = model.state
+        let successfulRefreshGeneration =
+            model.popularSuccessfulRefreshGeneration
         await repository.failNextPopularRequest()
 
         model.refreshPopular(pageSize: 50)
@@ -292,7 +459,38 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.state == loadedState)
         #expect(!model.isRefreshing)
         #expect(model.refreshError == .requestRestricted)
+        #expect(
+            model.popularSuccessfulRefreshGeneration
+                == successfulRefreshGeneration
+        )
         #expect(await repository.popularCallCount == 2)
+    }
+
+    @Test
+    @MainActor
+    func onlySuccessfulSameQueryRefreshAdvancesSearchGeneration() async {
+        let fixture = GuestFixtures()
+        let repository = WorksetRepositoryStub(fixtures: fixture)
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.search("macOS")
+        await model.waitForCurrentTask()
+        #expect(model.searchSuccessfulRefreshGeneration == 0)
+
+        model.search("macOS")
+        await model.waitForCurrentTask()
+        #expect(model.searchSuccessfulRefreshGeneration == 1)
+
+        await repository.failNextSearchRequest()
+        model.search("macOS")
+        #expect(model.isRefreshing)
+        await model.waitForCurrentTask()
+
+        #expect(model.searchSuccessfulRefreshGeneration == 1)
+        #expect(model.refreshError == .requestRestricted)
+        #expect(await repository.searchCallCount == 3)
     }
 
     @Test
@@ -1069,6 +1267,7 @@ private actor WorksetRepositoryStub: GuestContentRepository {
     private(set) var popularCallCount = 0
     private(set) var searchCallCount = 0
     private var shouldFailNextPopular = false
+    private var shouldFailNextSearch = false
 
     init(fixtures: GuestFixtures) {
         self.fixtures = fixtures
@@ -1089,6 +1288,10 @@ private actor WorksetRepositoryStub: GuestContentRepository {
 
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
         searchCallCount += 1
+        if shouldFailNextSearch {
+            shouldFailNextSearch = false
+            throw GuestApplicationError.requestRestricted
+        }
         return SearchPage(
             videos: [fixtures.searchVideo],
             pageNumber: page,
@@ -1115,6 +1318,175 @@ private actor WorksetRepositoryStub: GuestContentRepository {
 
     func failNextPopularRequest() {
         shouldFailNextPopular = true
+    }
+
+    func failNextSearchRequest() {
+        shouldFailNextSearch = true
+    }
+}
+
+private actor PopularPaginationRepositoryStub: GuestContentRepository {
+    let first: GuestFixtures
+    let second: GuestFixtures
+    let failFirstSecondPage: Bool
+    private(set) var popularCallCount = 0
+    private var secondPageAttempts = 0
+
+    init(
+        first: GuestFixtures,
+        second: GuestFixtures,
+        failFirstSecondPage: Bool = false
+    ) {
+        self.first = first
+        self.second = second
+        self.failFirstSecondPage = failFirstSecondPage
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        popularCallCount += 1
+        switch page {
+        case 1:
+            return PopularPage(
+                videos: [first.popularVideo, first.popularVideo],
+                pageNumber: 1,
+                pageSize: pageSize,
+                hasMore: true
+            )
+        case 2:
+            secondPageAttempts += 1
+            if failFirstSecondPage, secondPageAttempts == 1 {
+                throw GuestApplicationError.requestRestricted
+            }
+            return PopularPage(
+                videos: [first.popularVideo, second.popularVideo],
+                pageNumber: 2,
+                pageSize: pageSize,
+                hasMore: false
+            )
+        default:
+            throw GuestApplicationError.invalidRequest
+        }
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { first.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [first.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        first.playback
+    }
+}
+
+private actor DuplicateOnlyPopularRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    private(set) var popularCallCount = 0
+
+    init(fixtures: GuestFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        popularCallCount += 1
+        return PopularPage(
+            videos: [fixtures.popularVideo],
+            pageNumber: page,
+            pageSize: pageSize,
+            hasMore: true
+        )
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { fixtures.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [fixtures.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+}
+
+private actor BlockingPopularAppendRepositoryStub: GuestContentRepository {
+    let old: GuestFixtures
+    let fresh: GuestFixtures
+    private let appendEvents = TestEventCounter()
+    private var firstPageAttempts = 0
+    private var appendReleased = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(old: GuestFixtures, fresh: GuestFixtures) {
+        self.old = old
+        self.fresh = fresh
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        if page == 2 {
+            await appendEvents.signal()
+            await withCheckedContinuation { continuation in
+                if appendReleased {
+                    continuation.resume()
+                } else {
+                    releaseWaiters.append(continuation)
+                }
+            }
+            return PopularPage(
+                videos: [old.popularVideo],
+                pageNumber: 2,
+                pageSize: pageSize,
+                hasMore: false
+            )
+        }
+        firstPageAttempts += 1
+        let fixture = firstPageAttempts == 1 ? old : fresh
+        return PopularPage(
+            videos: [fixture.popularVideo],
+            pageNumber: 1,
+            pageSize: pageSize,
+            hasMore: firstPageAttempts == 1
+        )
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { fresh.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [fresh.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fresh.playback
+    }
+
+    func waitForAppendStart() async throws {
+        try await appendEvents.wait(until: 1)
+    }
+
+    func releaseAppend() {
+        appendReleased = true
+        let pending = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 

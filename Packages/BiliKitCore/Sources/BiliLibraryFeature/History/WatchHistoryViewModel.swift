@@ -25,6 +25,7 @@ public enum WatchHistoryState: Sendable, Equatable {
 /// `reset` 会清除个性化内容；普通路由停用只取消在途请求，并在分页中断时保留已显示条目。
 public final class WatchHistoryViewModel {
     public private(set) var state: WatchHistoryState = .idle
+    public private(set) var successfulReloadGeneration: UInt64 = 0
     /// 仅供 renderer 对 near-end 事件去重；不包含或编码远端 continuation。
     public private(set) var paginationTailIdentity: String?
     /// 空页或全重复页保留 continuation 时，必须由用户显式继续，避免 near-end 连续扫描。
@@ -74,6 +75,9 @@ public final class WatchHistoryViewModel {
             guard let self else { return }
             do {
                 let page = try await useCase.load()
+                guard generation == operationGeneration, !Task.isCancelled else {
+                    return
+                }
                 applyLoaded(
                     items: page.items,
                     continuation: page.continuation,
@@ -82,6 +86,7 @@ public final class WatchHistoryViewModel {
                     requiresManualLoadMore: page.items.isEmpty && page.continuation != nil,
                     generation: operationGeneration
                 )
+                successfulReloadGeneration &+= 1
             } catch is CancellationError {
                 return
             } catch let error as WatchHistoryError {

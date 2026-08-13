@@ -65,11 +65,18 @@ public struct PopularPage: Sendable, Equatable {
     public let videos: [PopularVideo]
     public let pageNumber: Int
     public let pageSize: Int
+    public let hasMore: Bool
 
-    public init(videos: [PopularVideo], pageNumber: Int, pageSize: Int) {
+    public init(
+        videos: [PopularVideo],
+        pageNumber: Int,
+        pageSize: Int,
+        hasMore: Bool = false
+    ) {
         self.videos = videos
         self.pageNumber = pageNumber
         self.pageSize = pageSize
+        self.hasMore = hasMore
     }
 }
 
