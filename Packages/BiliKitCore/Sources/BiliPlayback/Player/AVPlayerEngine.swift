@@ -273,6 +273,26 @@ public final class AVPlayerEngine:
         emit(.stateChanged(.idle))
     }
 
+    /// 只提交当前 load intent 的首次自动播放；旧请求、重复回调和已播放/seek 的 item 均拒绝。
+    @discardableResult
+    public func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool {
+        guard loadIntent == intent,
+            timeline.currentSnapshot.identity == identity,
+            !timeline.hasObservedPlaybackInteraction,
+            player.currentTime().seconds.isFinite,
+            player.currentTime().seconds >= 0,
+            player.currentTime().seconds <= 0.25,
+            timeline.currentSnapshot.state == .ready
+                || timeline.currentSnapshot.state == .paused,
+            player.currentItem != nil
+        else { return false }
+        play()
+        return true
+    }
+
     public func play() {
         guard player.currentItem != nil else { return }
         timeline.play()

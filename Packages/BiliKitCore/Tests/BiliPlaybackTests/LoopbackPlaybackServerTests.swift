@@ -2376,17 +2376,19 @@ struct LoopbackPlaybackServerTests {
         #expect(engine.player.currentItem == nil)
         #expect(engine.currentTimelineSnapshot == .idle)
 
+        let request = PlaybackRequest(
+            manifest: PlaybackManifest(
+                videoRepresentations: [highVideo, lowVideo],
+                originalAudioRepresentations: [audio, alternateAudio]
+            )
+        )
+        let loadIntent = PlaybackLoadIntent()
         try await engine.load(
-            PlaybackRequest(
-                manifest: PlaybackManifest(
-                    videoRepresentations: [highVideo, lowVideo],
-                    originalAudioRepresentations: [audio, alternateAudio]
-                )
-            ),
-            identity: identity
+            request,
+            identity: identity,
+            intent: loadIntent
         )
         let item = try #require(engine.player.currentItem)
-        let itemIdentity = ObjectIdentifier(item)
         let asset = try #require(item.asset as? AVURLAsset)
         let variants = try await asset.load(.variants)
         let audibleGroup = try #require(
@@ -2451,11 +2453,58 @@ struct LoopbackPlaybackServerTests {
             }
         )
 
-        engine.play()
+        #expect(
+            !engine.beginPlayback(
+                identity: identity,
+                intent: PlaybackLoadIntent()
+            )
+        )
+        #expect(
+            !engine.beginPlayback(
+                identity: PlaybackItemIdentity(
+                    bvid: "BV1StalePlayback",
+                    cid: identity.cid
+                ),
+                intent: loadIntent
+            )
+        )
+        engine.pause()
+        #expect(
+            !engine.beginPlayback(identity: identity, intent: loadIntent)
+        )
+
+        engine.stop()
+        let restartedIntent = PlaybackLoadIntent()
+        try await engine.load(
+            request,
+            identity: identity,
+            intent: restartedIntent
+        )
+        try await engine.seek(to: .milliseconds(100))
+        #expect(
+            !engine.beginPlayback(identity: identity, intent: restartedIntent)
+        )
+
+        engine.stop()
+        let playableIntent = PlaybackLoadIntent()
+        try await engine.load(
+            request,
+            identity: identity,
+            intent: playableIntent
+        )
+        let playableItemIdentity = engine.player.currentItem.map(
+            ObjectIdentifier.init
+        )
+        #expect(
+            engine.beginPlayback(identity: identity, intent: playableIntent)
+        )
+        #expect(
+            !engine.beginPlayback(identity: identity, intent: playableIntent)
+        )
         try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
         #expect(
             engine.player.currentItem.map(ObjectIdentifier.init)
-                == itemIdentity
+                == playableItemIdentity
         )
         engine.stop()
     }

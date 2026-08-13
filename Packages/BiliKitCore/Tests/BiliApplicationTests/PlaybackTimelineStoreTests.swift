@@ -51,6 +51,29 @@ struct PlaybackTimelineStoreTests {
     }
 
     @Test
+    func readyTransitionDoesNotOverwriteAnExistingUserState() {
+        let store = PlaybackTimelineStore()
+        let identity = PlaybackItemIdentity(
+            bvid: "BV1UserIntentFixture",
+            cid: 900_001
+        )
+        let token = store.beginItem(identity: identity)
+
+        store.update(
+            token: token,
+            positionSeconds: 3,
+            rate: 0,
+            state: .paused
+        )
+        store.markReady(token: token, durationSeconds: 120)
+
+        #expect(store.currentSnapshot.positionSeconds == 3)
+        #expect(store.currentSnapshot.durationSeconds == 120)
+        #expect(store.currentSnapshot.rate == 0)
+        #expect(store.currentSnapshot.state == .paused)
+    }
+
+    @Test
     func replacementRejectsOldItemUpdatesAndClear() {
         let store = PlaybackTimelineStore()
         let oldIdentity = PlaybackItemIdentity(

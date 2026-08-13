@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import BiliApplication
 import Foundation
+import Synchronization
 import os
 
 enum MomentaryRateRestorationAction: Equatable {
@@ -31,6 +32,18 @@ enum MomentaryRateRestorationPolicy {
     }
 }
 
+private final class PlaybackInteractionTracker: Sendable {
+    private let wasObserved = Mutex(false)
+
+    var hasObservedInteraction: Bool {
+        wasObserved.withLock { $0 }
+    }
+
+    func markObserved() {
+        wasObserved.withLock { $0 = true }
+    }
+}
+
 @MainActor
 /// 把 AVPlayer/KVO/notification 事件投影为平台无关、identity-safe 的播放时间线。
 ///
@@ -50,6 +63,10 @@ final class AVPlayerTimelineAdapter {
         store.currentSnapshot
     }
 
+    var hasObservedPlaybackInteraction: Bool {
+        interactionTracker.hasObservedInteraction
+    }
+
     private let player: AVPlayer
     private let store = PlaybackTimelineStore()
     private let observers = PlayerTimelineObserverBag()
@@ -57,6 +74,7 @@ final class AVPlayerTimelineAdapter {
     private var failedToken: PlaybackTimelineItemToken?
     private var momentaryRateSession: MomentaryRateSession?
     private var pendingExplicitSeekPosition: Double?
+    private var interactionTracker = PlaybackInteractionTracker()
 
     init(player: AVPlayer) {
         self.player = player
@@ -72,6 +90,7 @@ final class AVPlayerTimelineAdapter {
         momentaryRateSession = nil
         observers.reset()
         pendingExplicitSeekPosition = nil
+        interactionTracker = PlaybackInteractionTracker()
         token = store.beginItem(identity: identity)
         failedToken = nil
     }
@@ -80,6 +99,7 @@ final class AVPlayerTimelineAdapter {
     func installObservers(for item: AVPlayerItem) {
         observers.reset()
         guard let token else { return }
+        let interactionTracker = interactionTracker
 
         let periodicTimeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 30),
@@ -109,22 +129,28 @@ final class AVPlayerTimelineAdapter {
 
         let timeControlObservation = player.observe(
             \.timeControlStatus,
-            options: [.initial, .new]
-        ) { [weak self, weak item] player, _ in
+            options: [.new]
+        ) { [weak self, weak item] player, change in
+            let observedStatus = change.newValue ?? player.timeControlStatus
+            if observedStatus != .paused {
+                interactionTracker.markObserved()
+            }
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item else {
                     return
                 }
                 let currentState = self.store.currentSnapshot.state
                 guard currentState != .failed else { return }
-                switch player.timeControlStatus {
+                switch observedStatus {
                 case .paused:
-                    guard currentState != .loading, currentState != .ended else {
+                    guard currentState != .ended,
+                        currentState != .loading
+                            || interactionTracker.hasObservedInteraction
+                    else {
                         return
                     }
                     self.store.update(token: token, rate: 0, state: .paused)
                 case .waitingToPlayAtSpecifiedRate:
-                    guard currentState != .loading else { return }
                     self.store.update(
                         token: token,
                         rate: Double(player.rate),
@@ -253,6 +279,7 @@ final class AVPlayerTimelineAdapter {
 
     func pause() {
         guard let token else { return }
+        interactionTracker.markObserved()
         momentaryRateSession = nil
         player.pause()
         store.update(token: token, rate: 0, state: .paused)
@@ -326,6 +353,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func prepareExplicitSeek(to positionSeconds: Double) {
+        interactionTracker.markObserved()
         pendingExplicitSeekPosition = positionSeconds
     }
 

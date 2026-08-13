@@ -547,6 +547,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 )
             ]
         )
+        #expect(player.startedIdentities == player.loadedIdentities)
+        #expect(player.startedIntents.count == 1)
     }
 
     @Test
@@ -661,6 +663,8 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(context.detail.bvid == fast.detail.bvid)
         #expect(model.presentedContext?.detail.bvid == fast.detail.bvid)
         #expect(player.loadedPlaybacks.count == 1)
+        #expect(player.startedIdentities.count == 1)
+        #expect(player.startedIdentities.first?.bvid == fast.detail.bvid)
         #expect(player.stopCallCount == 1)
         #expect(
             player.loadedPlaybacks.first?.mediaHeaders["Referer"]?.contains(
@@ -700,10 +704,12 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.presentedContext?.selectedPage.cid == 900_002)
         #expect(model.presentedPlaybackIdentity == secondIdentity)
         #expect(player.loadedIdentities == [firstIdentity, secondIdentity])
+        #expect(player.startedIdentities == [firstIdentity, secondIdentity])
         #expect(player.stopCallCount == 1)
 
         model.selectPage(cid: 900_002)
         #expect(player.loadedIdentities == [firstIdentity, secondIdentity])
+        #expect(player.startedIdentities == [firstIdentity, secondIdentity])
         model.reset()
         #expect(model.presentedContext == nil)
         #expect(model.requestedPlaybackIdentity == nil)
@@ -857,6 +863,8 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.presentedPlaybackIdentity == firstIdentity)
         #expect(player.loadedIdentities.map(\.cid) == [900_001, 900_002, 900_001])
         #expect(player.loadedIntents[0] != player.loadedIntents[2])
+        #expect(player.startedIdentities.map(\.cid) == [900_001, 900_002, 900_001])
+        #expect(player.startedIntents == player.loadedIntents)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -2247,6 +2255,8 @@ private actor TestEventCounter {
 private final class RecordingPlayerEngine: PlaybackControlling {
     private(set) var loadedPlaybacks: [VideoPlayback] = []
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var startedIdentities: [PlaybackItemIdentity] = []
+    private(set) var startedIntents: [PlaybackLoadIntent] = []
     private(set) var pauseCallCount = 0
     private(set) var stopCallCount = 0
 
@@ -2261,6 +2271,15 @@ private final class RecordingPlayerEngine: PlaybackControlling {
     ) async throws {
         loadedPlaybacks.append(playback)
         loadedIdentities.append(identity)
+    }
+
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool {
+        startedIdentities.append(identity)
+        startedIntents.append(intent)
+        return true
     }
 
     func pause() {
@@ -2293,6 +2312,11 @@ private final class SelectiveFailingPlayerEngine: PlaybackControlling {
             throw SelectivePlaybackFailure()
         }
     }
+
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool { true }
 
     func pause() {}
 
@@ -2335,6 +2359,11 @@ private final class PostReadyFailurePlayer: PlaybackControlling {
         loadedIdentities.append(identity)
         loadedIntents[identity] = intent
     }
+
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool { true }
 
     func pause() {}
 
@@ -2410,6 +2439,11 @@ private final class FailureBeforeLoadReturnsPlayer: PlaybackControlling {
         }
     }
 
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool { true }
+
     func pause() {}
 
     func stop() {
@@ -2427,6 +2461,8 @@ private final class DelayedABAPlayback: PlaybackControlling {
     private var thirdLoadWaiters: [CheckedContinuation<Void, Never>] = []
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var loadedIntents: [PlaybackLoadIntent] = []
+    private(set) var startedIdentities: [PlaybackItemIdentity] = []
+    private(set) var startedIntents: [PlaybackLoadIntent] = []
     private(set) var stopCallCount = 0
 
     init() {
@@ -2457,6 +2493,15 @@ private final class DelayedABAPlayback: PlaybackControlling {
         await withCheckedContinuation { continuation in
             thirdLoadContinuation = continuation
         }
+    }
+
+    func beginPlayback(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) -> Bool {
+        startedIdentities.append(identity)
+        startedIntents.append(intent)
+        return true
     }
 
     func pause() {}
