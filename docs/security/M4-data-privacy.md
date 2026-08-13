@@ -45,21 +45,23 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 字幕正文 URL 必须单独验证 scheme、userinfo、端口、允许的主机和每次重定向；不得复用媒体 CDN 或游客图片的宽泛策略。M4.0 现场证据当前只确认 `aisubtitle.hdslb.com`，新增主机必须先失败关闭并取得同等级脱敏证据。
 - 目录、正文、弹幕元数据和分段分别设置 Content-Type 与大小上限。JSON、protobuf、HTML 错误页和空响应不能互相降级解析。
 - 取消、超时和换集必须终止网络与解码 Task；未知接口状态默认失败关闭。
-- 登录态 playurl 的 Cookie 必须在 API 响应前终止；映射后的 playback manifest 与媒体
-  headers 不保留 Cookie。DASH SIDX/媒体 Range、图片、相关推荐与 loopback 请求继续使用
+- 账户读取 Cookie 必须在各 API 响应前终止；映射后的 playback manifest 与媒体 headers
+  不保留 Cookie。DASH SIDX/媒体 Range、图片与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
 - 账户变化会由 App 级 owner 推进所有存活窗口 API transport 的 authentication epoch；各窗口
-  的旧 Search 分页、播放信息、字幕目录与弹幕响应不得越过该 epoch 写回。
+  的旧 Popular/Search 分页、视频详情、Related、UP 主签名、分 P、播放信息、字幕目录与弹幕
+  响应不得越过该 epoch 写回。
 - I-frame trick play 只复用同一无认证 loopback 媒体 route，并按需代理完整 fMP4 fragment
   Range；不新增远端来源、预读、持久化或独立网络 owner，也不能继承 playurl Cookie。
 - playurl 的可选 `cur_language` 只能从同一响应内存中的受限语言目录选择，并且仍由
   `BiliAPI` 私有 builder 限制精确 path/query、由 `BiliAuth` 独立复核 API origin 与 GET。语言目录、语言标题、所选媒体 URL
   和原始响应不持久化；多音轨只进入当前 `PlaybackManifest`、loopback routes 与同一个
   `AVPlayerItem`。系统 media selection 是当前唯一选择 UI，自定义音轨 UI 尚未加入。
-- 播放侧栏 UP 主签名只允许匿名 `GET https://api.bilibili.com/x/web-interface/card`；query
+- 播放侧栏 UP 主签名只允许账户读取 `GET https://api.bilibili.com/x/web-interface/card`；query
   只能包含正 `mid` 与固定 `photo=false`。响应 `data.card.mid` 必须与请求值一致，redirect、
-  HTTP／业务失败、解码失败与空白签名均只隐藏签名行。该请求不使用 Cookie、Authorization、
-  WBI、设备画像或登录授权器，也不传播 card 中的昵称、头像及其他资料字段。
+  HTTP／业务失败、解码失败与空白签名均只隐藏签名行。仅本地明确无凭据时匿名；凭据故障
+  不静默降级。该请求不使用 Authorization、WBI 或设备画像，也不传播 card 中的昵称、头像
+  及其他资料字段。
 
 ## 5. Fixture、探针与验证记录
 

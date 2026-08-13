@@ -107,8 +107,8 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - 只有 Keychain 明确不存在凭据时才使用既有匿名请求。凭据过期或损坏会清理并触发账户
   重校验；Keychain/authorizer 故障、HTTP 403/412、业务拒绝、非 JSON 与 redirect 均失败
   关闭，不自动匿名重试，也不增加 WBI、设备 Cookie、`dm_img_*` 或其他画像参数。
-- Cookie 在 playurl 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、相关推荐、
-  字幕正文与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
+- Cookie 在各 API 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、字幕正文
+  与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
   当前 item 上热换授权结果。
 - AI 音轨现场探针只在内存读取受限语言目录，并通过生产 client 对每个目录项至多执行一次
   精确请求；不得再手工重复所选语言请求。A → B → A 生命周期验收中的 B 使用匿名公开
@@ -152,8 +152,9 @@ signedIn
 
 以下本地 Gate 已满足：
 
-- 观看历史、字幕目录与精确 legacy playurl 已接入账户读取能力；负向测试证明普通游客
-  endpoint、相关推荐与跨主机重定向不会得到 Cookie。playurl 输出的
+- Popular、Search、视频详情、Related、UP 主签名、分 P 列表、观看历史、字幕目录与精确
+  legacy playurl 已接入账户读取能力；负向测试证明 WBI nav、跨主机重定向与资源链路不会
+  得到 Cookie。playurl 输出的
   `mediaHeaders` 不含 Cookie，CDN 与 loopback 继续由既有隔离 transport 消费该白名单 header。
 - authorizer 精确匹配 API origin 与 GET 能力；认证 API session 使用 epoch 隔离授权、send 与响应写回。
   登出、已确认的 signed-in → signed-out，以及初次恢复确认本地凭据失效都会推进 epoch。旧

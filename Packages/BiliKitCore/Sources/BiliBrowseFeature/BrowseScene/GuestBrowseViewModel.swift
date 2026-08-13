@@ -181,15 +181,12 @@ public final class GuestBrowseViewModel {
         loadMoreSearch()
     }
 
-    /// 丢弃上一账户范围的搜索工作集；当前搜索会以同一查询重新开始，热门工作集不受影响。
+    /// 丢弃上一账户范围的热门与搜索工作集；当前路由会以同一请求重新开始。
     public func synchronizeAuthenticationSession(generation newGeneration: UInt64) {
         guard authenticationSessionGeneration != newGeneration else { return }
         authenticationSessionGeneration = newGeneration
 
-        guard case .search(let query, _) = activeRequestIdentity else {
-            searchWorkset = FeedWorkset()
-            return
-        }
+        let activeRequest = activeRequestIdentity
         generation += 1
         loadTask?.cancel()
         loadTask = nil
@@ -197,8 +194,16 @@ public final class GuestBrowseViewModel {
         state = .idle
         isRefreshing = false
         refreshError = nil
+        popularWorkset = FeedWorkset()
         searchWorkset = FeedWorkset()
-        activateSearch(query)
+        switch activeRequest {
+        case .popular(let page, let pageSize):
+            activatePopular(page: page, pageSize: pageSize)
+        case .search(let query, _):
+            activateSearch(query)
+        case nil:
+            break
+        }
     }
 
     func retry(_ request: GuestFeedRequest) {

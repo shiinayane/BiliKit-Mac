@@ -113,7 +113,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "pn", value: String(page)),
                 URLQueryItem(name: "ps", value: String(pageSize)),
             ],
-            referer: "https://www.bilibili.com/"
+            referer: "https://www.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
         let videos = try payload.list.map { try $0.model() }
         return PopularPage(
@@ -169,7 +173,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let payload: VideoDetailPayload = try await get(
             path: "/x/web-interface/view",
             queryItems: [URLQueryItem(name: "bvid", value: bvid)],
-            referer: Self.videoReferer(bvid)
+            referer: Self.videoReferer(bvid),
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
         let detail = try payload.model()
         guard detail.bvid == bvid else {
@@ -178,7 +186,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return detail
     }
 
-    /// 匿名读取相关推荐；该路径永不请求认证授权器。
+    /// 登录增强地读取相关推荐；只有本地明确无凭据时匿名。
     public func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         guard Self.isValidBVID(bvid) else {
             throw BiliAPIError.invalidRequest
@@ -186,12 +194,16 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let payload: [RelatedVideoPayload] = try await get(
             path: "/x/web-interface/archive/related",
             queryItems: [URLQueryItem(name: "bvid", value: bvid)],
-            referer: Self.videoReferer(bvid)
+            referer: Self.videoReferer(bvid),
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
         return try payload.map { try $0.model() }
     }
 
-    /// 匿名读取公开 UP 主签名；不会请求认证授权器或 WBI 签名。
+    /// 登录增强地读取公开 UP 主签名；不会请求 WBI 签名。
     public func uploaderSignature(for ownerID: Int64) async throws -> String? {
         guard ownerID > 0 else {
             throw BiliAPIError.invalidRequest
@@ -212,7 +224,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         let payload: UploaderCardDataPayload = try await get(
             url: url,
-            referer: "https://space.bilibili.com/"
+            referer: "https://space.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
         guard payload.card.mid == ownerID else {
             throw BiliAPIError.decodingFailed
@@ -227,7 +243,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let payload: [PagePayload] = try await get(
             path: "/x/player/pagelist",
             queryItems: [URLQueryItem(name: "bvid", value: bvid)],
-            referer: Self.videoReferer(bvid)
+            referer: Self.videoReferer(bvid),
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
         )
         return try payload.map { try $0.model() }
     }

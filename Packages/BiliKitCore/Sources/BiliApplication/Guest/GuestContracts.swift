@@ -26,7 +26,7 @@ public protocol RelatedVideoRepository: Sendable {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo]
 }
 
-/// 播放页只读 UP 主签名所需的独立匿名 port。
+/// 播放页只读 UP 主签名所需的独立 port；具体账户读取策略由 adapter 隐藏。
 public protocol UploaderSignatureRepository: Sendable {
     func signature(for ownerID: Int64) async throws -> String?
 }
