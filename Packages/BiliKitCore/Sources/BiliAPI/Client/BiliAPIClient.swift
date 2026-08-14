@@ -249,7 +249,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 mapsAuthenticationInvalidation: true
             )
         )
-        return try payload.map { try $0.model() }
+        return try validatedPageModels(payload)
     }
 
     /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。

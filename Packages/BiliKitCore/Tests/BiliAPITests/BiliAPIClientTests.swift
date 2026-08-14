@@ -60,10 +60,212 @@ struct BiliAPIClientTests {
         #expect(detail.owner.id == 10_001)
         #expect(detail.statistics.likeCount == 3_456)
         #expect(detail.dimension == VideoDimension(width: 1920, height: 1080, rotation: 0))
+        #expect(detail.pages.map(\.cid) == [900_001])
 
         let request = try #require(await transport.capturedRequests().first)
         #expect(request.url.path == "/x/web-interface/view")
         #expect(request.headers["Referer"] == "https://www.bilibili.com/video/BV1FixtureA1/")
+    }
+
+    @Test
+    func videoDetailPreservesCurrentPagesAndNestedUGCCollection() async throws {
+        let response = jsonResponse(
+            #"""
+            {"code":0,"data":{"aid":7001,"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"https://images.example.invalid/current.jpg","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":300,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"当前 P1","duration":120},{"cid":900002,"page":2,"part":"当前 P2","duration":180}],"ugc_season":{"id":501,"title":"测试合集","ep_count":3,"sections":[{"season_id":501,"id":601,"title":"第一章","episodes":[{"season_id":501,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureA1","cid":900001,"title":"当前视频","arc":{"aid":7001,"bvid":"BV1FixtureA1","title":"当前视频","pic":"https://images.example.invalid/current.jpg","duration":300},"pages":[{"cid":900001,"page":1,"part":"当前 P1","duration":120},{"cid":900002,"page":2,"part":"当前 P2","duration":180}]},{"season_id":501,"section_id":601,"id":702,"aid":7002,"bvid":"BV1FixtureB2","cid":910001,"title":"下一视频","arc":{"duration":200},"page":{"cid":910001,"page":1,"part":"默认 P","duration":200}}]},{"season_id":501,"id":602,"title":"第二章","episodes":[{"season_id":501,"section_id":602,"id":703,"aid":7003,"bvid":"BV1FixtureC3","cid":920001,"title":"第三视频","arc":{"duration":100}}]}]}}}
+            """#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let detail = try await client.videoDetail(for: "BV1FixtureA1")
+
+        #expect(detail.aid == 7_001)
+        #expect(detail.pages.map(\.cid) == [900_001, 900_002])
+        let collection = try #require(detail.collection)
+        #expect(collection.id == 501)
+        #expect(collection.sections.count == 2)
+        #expect(collection.embeddedEpisodeCount == 3)
+        #expect(collection.embeddedCountMatchesReportedCount == true)
+        #expect(collection.sections[0].ordinal == 0)
+        #expect(collection.sections[1].ordinal == 1)
+        #expect(collection.sections[0].episodes[0].knownPages?.map(\.cid) == [900_001, 900_002])
+        #expect(collection.sections[0].episodes[1].knownPages == nil)
+        #expect(collection.sections[0].episodes[1].defaultCID == 910_001)
+    }
+
+    @Test
+    func videoDetailPreservesIncompleteCollectionSummary() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"摘要合集","ep_count":20}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let collection = try #require(
+            try await client.videoDetail(for: "BV1FixtureA1").collection
+        )
+
+        #expect(collection.sections.isEmpty)
+        #expect(collection.reportedEpisodeCount == 20)
+        #expect(collection.embeddedCountMatchesReportedCount == false)
+    }
+
+    @Test
+    func videoDetailRejectsDuplicatePageIdentity() async {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.decodingFailed) {
+            try await client.videoDetail(for: "BV1FixtureA1")
+        }
+    }
+
+    @Test
+    func malformedCollectionEpisodeDoesNotBlockCurrentVideo() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","ep_count":1,"sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":999,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureB2","cid":910001,"title":"","arc":{"aid":7002,"bvid":"BV1FixtureC3","duration":100},"page":{"cid":910002,"page":1,"part":"P1","duration":100}}]}]}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let detail = try await client.videoDetail(for: "BV1FixtureA1")
+
+        #expect(detail.pages.map(\.cid) == [900_001])
+        let episode = try #require(detail.collection?.sections.first?.episodes.first)
+        #expect(!episode.isIdentityConsistent)
+        #expect(episode.bvid == nil)
+        #expect(episode.defaultCID == nil)
+    }
+
+    @Test
+    func malformedCollectionElementsPreserveValidOccurrences() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureB2","title":"一"},null,{"season_id":501,"section_id":601,"id":702,"bvid":"BV1FixtureC3","title":"二"}]},null]}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let collection = try #require(
+            try await client.videoDetail(for: "BV1FixtureA1").collection
+        )
+
+        #expect(collection.sections.count == 2)
+        #expect(collection.sections[0].episodes.count == 3)
+        #expect(collection.sections[0].episodes[0].isIdentityConsistent)
+        #expect(!collection.sections[0].episodes[1].isIdentityConsistent)
+        #expect(collection.sections[0].episodes[2].isIdentityConsistent)
+        #expect(!collection.sections[1].isIdentityConsistent)
+    }
+
+    @Test
+    func duplicateSectionOccurrencesKeepEpisodeIdentitiesDistinct() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"section_id":601,"episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureB2","title":"一"}]},{"season_id":501,"id":601,"episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureC3","title":"二"}]}]}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let sections = try #require(
+            try await client.videoDetail(for: "BV1FixtureA1").collection?.sections
+        )
+        let first = try #require(sections[0].episodes.first)
+        let second = try #require(sections[1].episodes.first)
+
+        #expect(sections[0].id.occurrenceOrdinal == 0)
+        #expect(sections[1].id.occurrenceOrdinal == 1)
+        #expect(first.id != second.id)
+        #expect(first.id.sectionOccurrenceOrdinal == 0)
+        #expect(second.id.sectionOccurrenceOrdinal == 1)
+    }
+
+    @Test
+    func conflictingSectionIDAliasesAreRetainedAsInvalid() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"section_id":602,"episodes":[]}]}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let section = try #require(
+            try await client.videoDetail(for: "BV1FixtureA1")
+                .collection?.sections.first
+        )
+
+        #expect(!section.isIdentityConsistent)
+    }
+
+    @Test
+    func collectionIdentityRemainsStableWhenOrderChanges() async throws {
+        func response(order: String) -> HTTPResponse {
+            jsonResponse(
+                #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","ep_count":2,"sections":[{"season_id":501,"id":601,"title":"分部","episodes":ORDER}]}}}"#
+                    .replacingOccurrences(
+                        of: "ORDER",
+                        with: order
+                    )
+            )
+        }
+        let firstEpisode =
+            #"{"season_id":501,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureB2","cid":910001,"title":"一"}"#
+        let secondEpisode =
+            #"{"season_id":501,"section_id":601,"id":702,"aid":7002,"bvid":"BV1FixtureC3","cid":920001,"title":"二"}"#
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [
+                response(order: "[\(firstEpisode),\(secondEpisode)]"),
+                response(order: "[\(secondEpisode),\(firstEpisode)]"),
+            ])
+        )
+
+        let first = try await client.videoDetail(for: "BV1FixtureA1")
+        let second = try await client.videoDetail(for: "BV1FixtureA1")
+        let firstIDs = try #require(first.collection?.sections.first?.episodes.map(\.id))
+        let secondIDs = try #require(second.collection?.sections.first?.episodes.map(\.id))
+
+        #expect(firstIDs == secondIDs.reversed())
+        #expect(firstIDs[0].occurrenceOrdinal == nil)
+    }
+
+    @Test
+    func episodePagesAreSortedAndDefaultCIDMustBelongToThem() async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":501,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureB2","cid":999999,"title":"视频","pages":[{"cid":910002,"page":2,"part":"P2","duration":50},{"cid":910001,"page":1,"part":"P1","duration":50}]}]}]}}}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        let episode = try #require(
+            try await client.videoDetail(for: "BV1FixtureA1")
+                .collection?.sections.first?.episodes.first
+        )
+
+        #expect(episode.knownPages?.map(\.index) == [1, 2])
+        #expect(episode.defaultCID == nil)
+        #expect(!episode.isIdentityConsistent)
+    }
+
+    @Test
+    func pagelistRejectsDuplicateIdentity() async {
+        let response = jsonResponse(
+            #"{"code":0,"data":[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]}"#
+        )
+        let client = BiliAPIClient(
+            transport: RecordingTransport(responses: [response])
+        )
+
+        await #expect(throws: BiliAPIError.decodingFailed) {
+            try await client.pages(for: "BV1FixtureA1")
+        }
     }
 
     @Test

@@ -113,6 +113,7 @@ public struct RelatedVideo: Identifiable, Sendable, Equatable {
 public struct VideoDetail: Identifiable, Sendable, Equatable {
     public var id: String { bvid }
 
+    public let aid: Int64?
     public let bvid: String
     public let title: String
     public let summary: String
@@ -122,6 +123,9 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
     public let durationSeconds: Int
     public let publishedAt: Date
     public let dimension: VideoDimension?
+    /// 当前 BVID 自身的分 P；与所属合集同时存在，不表达合集 episode。
+    public let pages: [VideoPage]
+    public let collection: VideoCollection?
 
     public init(
         bvid: String,
@@ -132,8 +136,12 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
         statistics: VideoStatistics,
         durationSeconds: Int,
         publishedAt: Date,
-        dimension: VideoDimension? = nil
+        dimension: VideoDimension? = nil,
+        aid: Int64? = nil,
+        pages: [VideoPage] = [],
+        collection: VideoCollection? = nil
     ) {
+        self.aid = aid
         self.bvid = bvid
         self.title = title
         self.summary = summary
@@ -143,6 +151,8 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
         self.dimension = dimension
+        self.pages = pages
+        self.collection = collection
     }
 }
 
@@ -179,6 +189,138 @@ public struct VideoPage: Identifiable, Sendable, Equatable {
         self.title = title
         self.durationSeconds = durationSeconds
         self.dimension = dimension
+    }
+}
+
+/// 仅表示 `/x/web-interface/view` 的 `ugc_season`；不表示 series、投稿列表或 PGC season。
+public struct VideoCollection: Identifiable, Sendable, Equatable {
+    public let id: Int64
+    public let title: String
+    public let reportedEpisodeCount: Int?
+    public let sections: [VideoCollectionSection]
+
+    public var embeddedEpisodeCount: Int {
+        sections.reduce(into: 0) { $0 += $1.episodes.count }
+    }
+
+    /// 只表达计数是否相等；非公开接口没有承诺相等即代表 section 树完整。
+    public var embeddedCountMatchesReportedCount: Bool? {
+        guard let reportedEpisodeCount else { return nil }
+        return reportedEpisodeCount == embeddedEpisodeCount
+    }
+
+    public init(
+        id: Int64,
+        title: String,
+        reportedEpisodeCount: Int?,
+        sections: [VideoCollectionSection]
+    ) {
+        self.id = id
+        self.title = title
+        self.reportedEpisodeCount = reportedEpisodeCount
+        self.sections = sections
+    }
+}
+
+public struct VideoCollectionSectionIdentity: Sendable, Hashable {
+    public let seasonID: Int64
+    public let sectionID: Int64
+    /// 仅在远端 section ID 重复时区分同一响应中的 occurrence。
+    public let occurrenceOrdinal: Int?
+
+    public init(
+        seasonID: Int64,
+        sectionID: Int64,
+        occurrenceOrdinal: Int? = nil
+    ) {
+        self.seasonID = seasonID
+        self.sectionID = sectionID
+        self.occurrenceOrdinal = occurrenceOrdinal
+    }
+}
+
+public struct VideoCollectionSection: Identifiable, Sendable, Equatable {
+    public let id: VideoCollectionSectionIdentity
+    public let ordinal: Int
+    public let title: String
+    public let episodes: [VideoCollectionEpisode]
+    public let isIdentityConsistent: Bool
+
+    public init(
+        id: VideoCollectionSectionIdentity,
+        ordinal: Int,
+        title: String,
+        episodes: [VideoCollectionEpisode],
+        isIdentityConsistent: Bool = true
+    ) {
+        self.id = id
+        self.ordinal = ordinal
+        self.title = title
+        self.episodes = episodes
+        self.isIdentityConsistent = isIdentityConsistent
+    }
+}
+
+public struct VideoCollectionEpisodeIdentity: Sendable, Hashable {
+    public let seasonID: Int64
+    public let sectionID: Int64
+    /// 父 section ID 重复时继承其 occurrence，避免跨 section 的 episode identity 碰撞。
+    public let sectionOccurrenceOrdinal: Int?
+    public let episodeID: Int64?
+    /// 远端 ID 缺失或重复时才用于区分当前响应中的 occurrence。
+    public let occurrenceOrdinal: Int?
+
+    public init(
+        seasonID: Int64,
+        sectionID: Int64,
+        sectionOccurrenceOrdinal: Int? = nil,
+        episodeID: Int64?,
+        occurrenceOrdinal: Int? = nil
+    ) {
+        self.seasonID = seasonID
+        self.sectionID = sectionID
+        self.sectionOccurrenceOrdinal = sectionOccurrenceOrdinal
+        self.episodeID = episodeID
+        self.occurrenceOrdinal = occurrenceOrdinal
+    }
+}
+
+public struct VideoCollectionEpisode: Identifiable, Sendable, Equatable {
+    public let id: VideoCollectionEpisodeIdentity
+    public let ordinal: Int
+    public let aid: Int64?
+    public let bvid: String?
+    public let title: String
+    public let coverURL: URL?
+    public let durationSeconds: Int?
+    public let defaultCID: Int64?
+    /// `nil` 表示详情摘要没有给出分 P；空数组表示远端明确给出空列表。
+    public let knownPages: [VideoPage]?
+    /// 重复身份字段冲突或缺少标题时为 false；仍保留 occurrence 供 UI 解释不可用状态。
+    public let isIdentityConsistent: Bool
+
+    public init(
+        id: VideoCollectionEpisodeIdentity,
+        ordinal: Int,
+        aid: Int64?,
+        bvid: String?,
+        title: String,
+        coverURL: URL?,
+        durationSeconds: Int?,
+        defaultCID: Int64?,
+        knownPages: [VideoPage]?,
+        isIdentityConsistent: Bool = true
+    ) {
+        self.id = id
+        self.ordinal = ordinal
+        self.aid = aid
+        self.bvid = bvid
+        self.title = title
+        self.coverURL = coverURL
+        self.durationSeconds = durationSeconds
+        self.defaultCID = defaultCID
+        self.knownPages = knownPages
+        self.isIdentityConsistent = isIdentityConsistent
     }
 }
 
