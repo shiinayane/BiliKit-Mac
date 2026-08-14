@@ -2454,23 +2454,29 @@ struct LoopbackPlaybackServerTests {
         )
 
         #expect(
-            !engine.beginPlayback(
+            await engine.beginPlayback(
                 identity: identity,
-                intent: PlaybackLoadIntent()
-            )
+                intent: PlaybackLoadIntent(),
+                initialPositionSeconds: nil
+            ) == .rejected
         )
         #expect(
-            !engine.beginPlayback(
+            await engine.beginPlayback(
                 identity: PlaybackItemIdentity(
                     bvid: "BV1StalePlayback",
                     cid: identity.cid
                 ),
-                intent: loadIntent
-            )
+                intent: loadIntent,
+                initialPositionSeconds: nil
+            ) == .rejected
         )
         engine.pause()
         #expect(
-            !engine.beginPlayback(identity: identity, intent: loadIntent)
+            await engine.beginPlayback(
+                identity: identity,
+                intent: loadIntent,
+                initialPositionSeconds: nil
+            ) == .rejected
         )
 
         engine.stop()
@@ -2482,7 +2488,11 @@ struct LoopbackPlaybackServerTests {
         )
         try await engine.seek(to: .milliseconds(100))
         #expect(
-            !engine.beginPlayback(identity: identity, intent: restartedIntent)
+            await engine.beginPlayback(
+                identity: identity,
+                intent: restartedIntent,
+                initialPositionSeconds: nil
+            ) == .rejected
         )
 
         engine.stop()
@@ -2496,15 +2506,74 @@ struct LoopbackPlaybackServerTests {
             ObjectIdentifier.init
         )
         #expect(
-            engine.beginPlayback(identity: identity, intent: playableIntent)
+            await engine.beginPlayback(
+                identity: identity,
+                intent: playableIntent,
+                initialPositionSeconds: nil
+            ) == .startedAtBeginning
         )
         #expect(
-            !engine.beginPlayback(identity: identity, intent: playableIntent)
+            await engine.beginPlayback(
+                identity: identity,
+                intent: playableIntent,
+                initialPositionSeconds: nil
+            ) == .rejected
         )
         try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
         #expect(
             engine.player.currentItem.map(ObjectIdentifier.init)
                 == playableItemIdentity
+        )
+        engine.stop()
+
+        let resumeIntent = PlaybackLoadIntent()
+        try await engine.load(
+            request,
+            identity: identity,
+            intent: resumeIntent
+        )
+        let resumeOutcome = await engine.beginPlayback(
+            identity: identity,
+            intent: resumeIntent,
+            initialPositionSeconds: 0.3
+        )
+        let diagnosticDuration = engine.player.currentItem?.duration.seconds ?? -1
+        let diagnosticSeekableCount =
+            engine.player.currentItem?.seekableTimeRanges.count ?? -1
+        let diagnosticLoadedCount =
+            engine.player.currentItem?.loadedTimeRanges.count ?? -1
+        guard case .resumed(let position, let resumeToken, _) = resumeOutcome
+        else {
+            let diagnostic =
+                "有效首次断点未完成 seek-before-play；state=\(engine.currentTimelineSnapshot.state)，time=\(engine.player.currentTime().seconds)，duration=\(diagnosticDuration)，seekable=\(diagnosticSeekableCount)，loaded=\(diagnosticLoadedCount)"
+            Issue.record(Comment(rawValue: diagnostic))
+            engine.stop()
+            return
+        }
+        #expect(position >= 0.05)
+        #expect(engine.player.currentTime().seconds >= 0.05)
+        try await waitUntilPlaybackStarts(engine.player)
+
+        async let firstRestart = engine.restartFromBeginning(
+            identity: identity,
+            intent: resumeIntent,
+            resumeToken: resumeToken
+        )
+        async let overlappingRestart = engine.restartFromBeginning(
+            identity: identity,
+            intent: resumeIntent,
+            resumeToken: resumeToken
+        )
+        let restartResults = await [firstRestart, overlappingRestart]
+        #expect(restartResults.filter { $0 }.count == 1)
+        #expect(restartResults.filter { !$0 }.count == 1)
+        #expect(engine.player.currentTime().seconds < 0.25)
+        #expect(
+            !(await engine.restartFromBeginning(
+                identity: identity,
+                intent: resumeIntent,
+                resumeToken: resumeToken
+            ))
         )
         engine.stop()
     }
@@ -3884,6 +3953,20 @@ struct LoopbackPlaybackServerTests {
     ) async throws {
         for _ in 0..<100 {
             if player.currentTime().seconds >= target {
+                return
+            }
+            if player.currentItem?.status == .failed {
+                throw player.currentItem?.error
+                    ?? LoopbackFixtureError.itemFailedWithoutError
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw LoopbackFixtureError.timedOut
+    }
+
+    private func waitUntilPlaybackStarts(_ player: AVPlayer) async throws {
+        for _ in 0..<100 {
+            if player.timeControlStatus == .playing {
                 return
             }
             if player.currentItem?.status == .failed {

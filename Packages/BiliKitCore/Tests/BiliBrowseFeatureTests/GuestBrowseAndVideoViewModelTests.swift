@@ -616,6 +616,125 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func authenticatedResumeSelectsRecordedPartBeforeStartingAndCanRestart()
+        async throws
+    {
+        let fixture = GuestFixtures()
+        let resumeToken = PlaybackResumeToken()
+        let repository = ResumeRepositoryStub(
+            fixtures: fixture,
+            metadata: try #require(
+                PlaybackResumeMetadata(
+                    lastPlayedCID: 900_002,
+                    positionMilliseconds: 42_500
+                )
+            )
+        )
+        let player = RecordingPlayerEngine(
+            startOutcome: .resumed(
+                positionSeconds: 42.5,
+                token: resumeToken,
+                discontinuityGeneration: 3
+            ),
+            restartSucceeds: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedContext?.selectedPage.cid == 900_002)
+        #expect(await repository.playbackCIDs == [900_001, 900_002])
+        #expect(player.startedInitialPositions == [42.5])
+        #expect(
+            model.resumeNotice
+                == PlaybackResumeNotice(
+                    positionSeconds: 42.5,
+                    token: resumeToken
+                )
+        )
+
+        model.restartFromBeginning()
+        await model.waitForResumeActionForTesting()
+
+        #expect(model.resumeNotice == nil)
+        #expect(player.restartTokens == [resumeToken])
+    }
+
+    @Test
+    @MainActor
+    func resumePreparationFailureUsesExistingPlaybackRetryState() async {
+        let fixture = GuestFixtures()
+        let player = RecordingPlayerEngine(
+            startOutcome: .preparationFailed
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: GuestRepositoryStub(fixtures: fixture)
+            ),
+            playback: player
+        )
+
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+
+        #expect(
+            model.state
+                == .failed(bvid: fixture.bvid, failure: .playback)
+        )
+        #expect(model.resumeNotice == nil)
+    }
+
+    @Test(arguments: [0, 115_000, 120_000, 900_000])
+    func zeroCompletedAndOutOfRangeResumePositionsStartAtBeginning(
+        positionMilliseconds: Int64
+    ) async throws {
+        let fixture = GuestFixtures()
+        let repository = ResumeRepositoryStub(
+            fixtures: fixture,
+            metadata: try #require(
+                PlaybackResumeMetadata(
+                    lastPlayedCID: 900_001,
+                    positionMilliseconds: positionMilliseconds
+                )
+            ),
+            includesSecondPage: false
+        )
+
+        let context = try await GuestVideoUseCase(
+            repository: repository
+        ).prepareVideo(bvid: fixture.bvid)
+
+        #expect(context.selectedPage.cid == 900_001)
+        #expect(context.resumePositionSeconds == nil)
+    }
+
+    @Test
+    func explicitPartSelectionDoesNotBounceToServerRecordedPart() async throws {
+        let fixture = GuestFixtures()
+        let repository = ResumeRepositoryStub(
+            fixtures: fixture,
+            metadata: try #require(
+                PlaybackResumeMetadata(
+                    lastPlayedCID: 900_002,
+                    positionMilliseconds: 42_500
+                )
+            )
+        )
+        let useCase = GuestVideoUseCase(repository: repository)
+        let initial = try await useCase.prepareVideo(bvid: fixture.bvid)
+
+        let selected = try await useCase.preparePage(in: initial, cid: 900_002)
+
+        #expect(selected.selectedPage.cid == 900_002)
+        #expect(selected.resumePositionSeconds == nil)
+    }
+
+    @Test
+    @MainActor
     func resettingVideoLoadClearsDetailAndStopsPlayer() async {
         let fixture = GuestFixtures()
         let player = RecordingPlayerEngine()
@@ -2558,6 +2677,63 @@ private actor GuestRepositoryStub: GuestContentRepository {
     }
 }
 
+private actor ResumeRepositoryStub: GuestContentRepository {
+    let fixtures: GuestFixtures
+    let metadata: PlaybackResumeMetadata
+    let includesSecondPage: Bool
+    private(set) var playbackCIDs: [Int64] = []
+
+    init(
+        fixtures: GuestFixtures,
+        metadata: PlaybackResumeMetadata,
+        includesSecondPage: Bool = true
+    ) {
+        self.fixtures = fixtures
+        self.metadata = metadata
+        self.includesSecondPage = includesSecondPage
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        guard includesSecondPage else { return [fixtures.page] }
+        return [
+            fixtures.page,
+            VideoPage(
+                cid: 900_002,
+                index: 2,
+                title: "P2",
+                durationSeconds: 120
+            ),
+        ]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        playbackCIDs.append(cid)
+        return VideoPlayback(
+            manifest: fixtures.playback.manifest,
+            mediaHeaders: fixtures.playback.mediaHeaders,
+            resumeMetadata: metadata
+        )
+    }
+}
+
 private actor PlaybackFailureRepositoryStub: GuestContentRepository {
     let fixtures: GuestFixtures
     let error: GuestApplicationError
@@ -3085,8 +3261,20 @@ private final class RecordingPlayerEngine: PlaybackControlling {
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var startedIntents: [PlaybackLoadIntent] = []
+    private(set) var startedInitialPositions: [Double?] = []
+    private(set) var restartTokens: [PlaybackResumeToken] = []
     private(set) var pauseCallCount = 0
     private(set) var stopCallCount = 0
+    private let startOutcome: PlaybackStartOutcome
+    private let restartSucceeds: Bool
+
+    init(
+        startOutcome: PlaybackStartOutcome = .startedAtBeginning,
+        restartSucceeds: Bool = false
+    ) {
+        self.startOutcome = startOutcome
+        self.restartSucceeds = restartSucceeds
+    }
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
         finishedPlaybackFailureEvents()
@@ -3103,11 +3291,22 @@ private final class RecordingPlayerEngine: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool {
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome {
         startedIdentities.append(identity)
         startedIntents.append(intent)
-        return true
+        startedInitialPositions.append(initialPositionSeconds)
+        return startOutcome
+    }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool {
+        restartTokens.append(resumeToken)
+        return restartSucceeds
     }
 
     func pause() {
@@ -3143,8 +3342,15 @@ private final class SelectiveFailingPlayerEngine: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool { true }
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome { .startedAtBeginning }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 
@@ -3190,8 +3396,15 @@ private final class PostReadyFailurePlayer: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool { true }
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome { .startedAtBeginning }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 
@@ -3269,8 +3482,15 @@ private final class FailureBeforeLoadReturnsPlayer: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool { true }
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome { .startedAtBeginning }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 
@@ -3325,12 +3545,19 @@ private final class DelayedABAPlayback: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool {
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome {
         startedIdentities.append(identity)
         startedIntents.append(intent)
-        return true
+        return .startedAtBeginning
     }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 

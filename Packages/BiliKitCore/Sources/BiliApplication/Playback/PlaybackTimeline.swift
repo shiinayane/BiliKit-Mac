@@ -26,6 +26,31 @@ public struct PlaybackLoadIntent: Sendable, Hashable {
     }
 }
 
+/// 一次成功断点定位的不可复用能力；旧浮层不能控制后来加载的 item。
+public struct PlaybackResumeToken: Sendable, Hashable {
+    private let value: UUID
+
+    public init() {
+        value = UUID()
+    }
+}
+
+public enum PlaybackStartOutcome: Sendable, Equatable {
+    case rejected
+    case preparationFailed
+    case startedAtBeginning
+    case resumed(
+        positionSeconds: Double,
+        token: PlaybackResumeToken,
+        discontinuityGeneration: UInt64
+    )
+}
+
+public enum PlaybackResumePolicy {
+    /// 接近片尾的服务器位置按已看完处理，避免恢复到结束画面。
+    public static let completedThresholdSeconds = 5.0
+}
+
 public struct PlaybackFailureEvent: Sendable, Equatable {
     public let identity: PlaybackItemIdentity
     public let intent: PlaybackLoadIntent
@@ -106,12 +131,18 @@ public protocol PlaybackControlling: AnyObject {
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent
     ) async throws
-    /// 只为仍匹配本次 load intent、且尚未播放或 seek 的 item 开始播放。
-    @discardableResult
+    /// 为当前 load intent 原子完成可选首次定位与开播；用户意图可在任一 await 后否决提交。
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome
+    /// 仅允许当前断点浮层把仍匹配的 item 定位到 0 秒并继续播放。
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool
     func pause()
     func stop()
 }

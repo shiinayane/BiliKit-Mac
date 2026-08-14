@@ -109,6 +109,9 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - 登录态自动画质使用精确 legacy playurl endpoint 级 Cookie 授权；只有明确无本地凭据时
   保持匿名。凭据故障、HTTP 403/412 与业务拒绝不匿名降级，Cookie 不进入媒体、图片、
   相关推荐或 loopback。
+- 登录态进入详情时复用同一 playurl 响应的服务端分 P／毫秒断点，在首次发声和出帧前由
+  单一播放器完成定位再开播；匿名、无效、片尾和 CID 不匹配记录从头播放。播放器左下角以
+  当前 item token 约束的浮层提供“从头播放”操作，不增加本地进度持久化或历史写入。
 - 服务实际返回且 AVC/AAC decoder 可消费的全部 representations 继续进入既有单一
   `AVPlayerItem` 原生 ABR；没有手动画质菜单、双播放器或 4K 保证。
 

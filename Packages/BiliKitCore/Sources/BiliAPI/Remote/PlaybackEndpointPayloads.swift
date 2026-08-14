@@ -7,12 +7,16 @@ struct PlayURLPayload: Decodable, Sendable {
     let currentLanguage: String?
     let currentProductionType: Int?
     let languageCatalog: AudioLanguageCatalogPayload?
+    let lastPlayTime: Int64?
+    let lastPlayCID: Int64?
 
     private enum CodingKeys: String, CodingKey {
         case dash
         case currentLanguage = "cur_language"
         case currentProductionType = "cur_production_type"
         case languageCatalog = "language"
+        case lastPlayTime = "last_play_time"
+        case lastPlayCID = "last_play_cid"
     }
 
     init(from decoder: any Decoder) throws {
@@ -29,6 +33,16 @@ struct PlayURLPayload: Decodable, Sendable {
         languageCatalog = try? container.decode(
             AudioLanguageCatalogPayload.self,
             forKey: .languageCatalog
+        )
+        lastPlayTime = try? container.decode(Int64.self, forKey: .lastPlayTime)
+        lastPlayCID = try? container.decode(Int64.self, forKey: .lastPlayCID)
+    }
+
+    var resumeMetadata: PlaybackResumeMetadata? {
+        guard let lastPlayCID, let lastPlayTime else { return nil }
+        return PlaybackResumeMetadata(
+            lastPlayedCID: lastPlayCID,
+            positionMilliseconds: lastPlayTime
         )
     }
 }

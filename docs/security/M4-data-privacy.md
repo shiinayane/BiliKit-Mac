@@ -48,6 +48,10 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 账户读取 Cookie 必须在各 API 响应前终止；映射后的 playback manifest 与媒体 headers
   不保留 Cookie。DASH SIDX/媒体 Range、图片与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- 登录态 playurl 可把同一响应中的服务端分 P 与毫秒位置映射为一次性的首次定位候选；匿名
+  响应不消费该账户字段。播放器在首次 `play` 前完成受 identity、load intent、item generation
+  与用户交互 revision 保护的 seek，切视频、切 P、暂停、拖动或 teardown 都能否决迟到提交。
+  该位置不落盘；本阶段不发送 heartbeat 或任何观看历史写请求。
 - 账户变化会由 App 级 owner 推进所有存活窗口 API transport 的 authentication epoch；各窗口
   的旧 Popular/Search 分页、视频详情、Related、UP 主签名、分 P、播放信息、字幕目录与弹幕
   响应不得越过该 epoch 写回。

@@ -36,6 +36,18 @@ public enum CollectionEpisodePagesState: Sendable, Equatable {
     case failed(GuestApplicationError)
 }
 
+public struct PlaybackResumeNotice: Sendable, Equatable {
+    public let positionSeconds: Double
+    public let token: PlaybackResumeToken
+
+    public init(positionSeconds: Double, token: PlaybackResumeToken) {
+        self.positionSeconds = positionSeconds
+        self.token = token
+    }
+}
+
+private struct PlaybackStartPreparationFailure: Error {}
+
 @MainActor
 @Observable
 /// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一 generation。
@@ -60,6 +72,8 @@ public final class GuestVideoViewModel {
     public private(set) var expandedCollectionEpisodes: Set<VideoCollectionEpisodeIdentity> = []
     public private(set) var collectionEpisodePageStates:
         [VideoCollectionEpisodeIdentity: CollectionEpisodePagesState] = [:]
+    /// 只在当前 item 已完成首次定位并开始播放后出现。
+    public private(set) var resumeNotice: PlaybackResumeNotice?
 
     @ObservationIgnored private let useCase: GuestVideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
@@ -69,6 +83,7 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private var relatedVideoTask: Task<Void, Never>?
     @ObservationIgnored private var uploaderSignatureTask: Task<Void, Never>?
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
+    @ObservationIgnored private var resumeActionTask: Task<Void, Never>?
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
     @ObservationIgnored private var collectionEpisodeTask: Task<Void, Never>?
     @ObservationIgnored private var activeCollectionEpisodeRequest: CollectionEpisodePageRequest?
@@ -107,6 +122,7 @@ public final class GuestVideoViewModel {
         uploaderSignatureTask?.cancel()
         playbackFailureTask?.cancel()
         collectionEpisodeTask?.cancel()
+        resumeActionTask?.cancel()
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
@@ -122,6 +138,7 @@ public final class GuestVideoViewModel {
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
         playbackIntent = nil
+        clearResumeNotice()
         state = .loading(bvid: bvid)
         loadRelatedVideos(for: bvid)
         loadTask = Task { [weak self] in
@@ -187,6 +204,7 @@ public final class GuestVideoViewModel {
         let currentGeneration = generation
         loadTask?.cancel()
         playback.stop()
+        clearResumeNotice()
         requestedPlaybackIdentity = targetIdentity
         presentedPlaybackIdentity = nil
         let intent = PlaybackLoadIntent()
@@ -235,8 +253,39 @@ public final class GuestVideoViewModel {
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
         playbackIntent = nil
+        clearResumeNotice()
         state = .idle
         playback.stop()
+    }
+
+    /// 当前浮层的 token、identity 与 load intent 都匹配时才允许回到 0 秒。
+    public func restartFromBeginning() {
+        guard let resumeNotice,
+            let identity = presentedPlaybackIdentity,
+            let intent = playbackIntent
+        else { return }
+        let currentGeneration = generation
+        resumeActionTask?.cancel()
+        resumeActionTask = Task { [weak self, playback] in
+            let restarted = await playback.restartFromBeginning(
+                identity: identity,
+                intent: intent,
+                resumeToken: resumeNotice.token
+            )
+            guard let self else { return }
+            guard generation == currentGeneration,
+                self.resumeNotice?.token == resumeNotice.token
+            else {
+                if generation == currentGeneration {
+                    self.resumeActionTask = nil
+                }
+                return
+            }
+            if restarted {
+                self.resumeNotice = nil
+            }
+            self.resumeActionTask = nil
+        }
     }
 
     public func waitForCurrentTask() async {
@@ -253,6 +302,10 @@ public final class GuestVideoViewModel {
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
         loadTask
+    }
+
+    func waitForResumeActionForTesting() async {
+        await resumeActionTask?.value
     }
 
     public func waitForCurrentRelatedVideoTask() async {
@@ -347,12 +400,23 @@ public final class GuestVideoViewModel {
             )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
-            playback.beginPlayback(identity: identity, intent: intent)
+            let startOutcome = await playback.beginPlayback(
+                identity: identity,
+                intent: intent,
+                initialPositionSeconds: context.resumePositionSeconds
+            )
+            try Task.checkCancellation()
+            guard generation == currentGeneration else { return }
+            if startOutcome == .preparationFailed {
+                throw PlaybackStartPreparationFailure()
+            }
+            applyResumeNotice(from: startOutcome)
             presentedPlaybackIdentity = requestedPlaybackIdentity
             state = .ready(context)
         } catch is CancellationError {
             guard generation == currentGeneration else { return }
             clearCollectionEpisodeState()
+            clearResumeNotice()
             presentedContext = nil
             requestedPlaybackIdentity = nil
             presentedPlaybackIdentity = nil
@@ -360,10 +424,12 @@ public final class GuestVideoViewModel {
             state = .idle
         } catch let error as GuestApplicationError {
             guard generation == currentGeneration else { return }
+            clearResumeNotice()
             recordAuthenticationInvalidationIfNeeded(error)
             state = .failed(bvid: bvid, failure: .content(error))
         } catch {
             guard generation == currentGeneration else { return }
+            clearResumeNotice()
             state = .failed(bvid: bvid, failure: .playback)
         }
 
@@ -399,12 +465,23 @@ public final class GuestVideoViewModel {
             )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
-            playback.beginPlayback(identity: identity, intent: intent)
+            let startOutcome = await playback.beginPlayback(
+                identity: identity,
+                intent: intent,
+                initialPositionSeconds: replacement.resumePositionSeconds
+            )
+            try Task.checkCancellation()
+            guard generation == currentGeneration else { return }
+            if startOutcome == .preparationFailed {
+                throw PlaybackStartPreparationFailure()
+            }
+            applyResumeNotice(from: startOutcome)
             presentedPlaybackIdentity = identity
             state = .ready(replacement)
         } catch is CancellationError {
             guard generation == currentGeneration else { return }
             clearCollectionEpisodeState()
+            clearResumeNotice()
             requestedPlaybackIdentity = nil
             presentedPlaybackIdentity = nil
             playbackIntent = nil
@@ -412,6 +489,7 @@ public final class GuestVideoViewModel {
             presentedContext = nil
         } catch let error as GuestApplicationError {
             guard generation == currentGeneration else { return }
+            clearResumeNotice()
             recordAuthenticationInvalidationIfNeeded(error)
             state = .failedPage(
                 context: context,
@@ -420,6 +498,7 @@ public final class GuestVideoViewModel {
             )
         } catch {
             guard generation == currentGeneration else { return }
+            clearResumeNotice()
             state = .failedPage(
                 context: context,
                 targetPage: targetPage,
@@ -454,6 +533,7 @@ public final class GuestVideoViewModel {
         loadTask?.cancel()
         loadTask = nil
         playback.stop()
+        clearResumeNotice()
         requestedPlaybackIdentity = event.identity
         presentedPlaybackIdentity = nil
         state = .failedPage(
@@ -468,6 +548,24 @@ public final class GuestVideoViewModel {
     ) {
         guard error == .authenticationInvalid else { return }
         authenticationRevalidationGeneration += 1
+    }
+
+    private func applyResumeNotice(from outcome: PlaybackStartOutcome) {
+        switch outcome {
+        case .resumed(let positionSeconds, let token, _):
+            resumeNotice = PlaybackResumeNotice(
+                positionSeconds: positionSeconds,
+                token: token
+            )
+        case .rejected, .preparationFailed, .startedAtBeginning:
+            resumeNotice = nil
+        }
+    }
+
+    private func clearResumeNotice() {
+        resumeActionTask?.cancel()
+        resumeActionTask = nil
+        resumeNotice = nil
     }
 
     private func loadUploaderSignature(for ownerID: Int64) {

@@ -545,8 +545,15 @@ private final class ControlledFailingPlayback: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool { true }
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome { .startedAtBeginning }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 
@@ -587,11 +594,18 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
 
     func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool {
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome {
         startedIdentities.append(identity)
-        return true
+        return .startedAtBeginning
     }
+
+    func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool { false }
 
     func pause() {}
 
