@@ -327,13 +327,32 @@ public struct VideoCollectionEpisode: Identifiable, Sendable, Equatable {
 public struct VideoPlayback: Sendable, Equatable {
     public let manifest: PlaybackManifest
     public let mediaHeaders: [String: String]
+    /// 已认证 playurl 返回的账户级断点；匿名响应与异常字段保持为 nil。
+    public let resumeMetadata: PlaybackResumeMetadata?
 
     public init(
         manifest: PlaybackManifest,
-        mediaHeaders: [String: String]
+        mediaHeaders: [String: String],
+        resumeMetadata: PlaybackResumeMetadata? = nil
     ) {
         self.manifest = manifest
         self.mediaHeaders = mediaHeaders
+        self.resumeMetadata = resumeMetadata
+    }
+}
+
+/// 账户对同一 BVID 最近播放分 P 的服务器记录；位置单位固定为毫秒。
+public struct PlaybackResumeMetadata: Sendable, Equatable {
+    public let lastPlayedCID: Int64
+    public let positionMilliseconds: Int64
+
+    public init?(
+        lastPlayedCID: Int64,
+        positionMilliseconds: Int64
+    ) {
+        guard lastPlayedCID > 0, positionMilliseconds >= 0 else { return nil }
+        self.lastPlayedCID = lastPlayedCID
+        self.positionMilliseconds = positionMilliseconds
     }
 }
 

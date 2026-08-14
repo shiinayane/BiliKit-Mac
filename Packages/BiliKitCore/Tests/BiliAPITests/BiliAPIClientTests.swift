@@ -930,6 +930,45 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func authenticatedPlaybackMapsServerResumeMetadata() async throws {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try resumePlayURLResponse()]
+            ),
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(
+            playback.resumeMetadata
+                == PlaybackResumeMetadata(
+                    lastPlayedCID: 900_002,
+                    positionMilliseconds: 42_500
+                )
+        )
+    }
+
+    @Test
+    func anonymousPlaybackDropsServerResumeMetadata() async throws {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try resumePlayURLResponse()]
+            )
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.resumeMetadata == nil)
+    }
+
+    @Test
     func playbackUsesAnonymousRequestOnlyForExplicitlyMissingCredential()
         async throws
     {
@@ -1622,6 +1661,26 @@ struct BiliAPIClientTests {
             statusCode: 200,
             headers: ["Content-Type": "application/json; charset=utf-8"],
             body: try Data(contentsOf: url)
+        )
+    }
+
+    private func resumePlayURLResponse() throws -> HTTPResponse {
+        let fixture = try fixtureResponse("playurl")
+        var object = try #require(
+            JSONSerialization.jsonObject(with: fixture.body)
+                as? [String: Any]
+        )
+        var data = try #require(object["data"] as? [String: Any])
+        data["last_play_cid"] = 900_002
+        data["last_play_time"] = 42_500
+        object["data"] = data
+        return HTTPResponse(
+            statusCode: fixture.statusCode,
+            headers: fixture.headers,
+            body: try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            )
         )
     }
 

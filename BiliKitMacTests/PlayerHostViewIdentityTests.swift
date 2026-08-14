@@ -12,6 +12,54 @@ import Testing
 @Suite(.serialized)
 struct PlayerHostViewIdentityTests {
     @Test
+    func resumeNoticeUsesCompactCopyAndTokenScopedFiveSecondDismissal() {
+        let scheduledToken = PlaybackResumeToken()
+        let replacementToken = PlaybackResumeToken()
+
+        #expect(PlayerResumeNoticePresentation.title == "从头播放")
+        #expect(PlayerResumeNoticeDismissalPolicy.delay == .seconds(5))
+        #expect(PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds == 0.2)
+        #expect(
+            PlayerResumeNoticeDismissalPolicy.shouldDismiss(
+                displayedToken: scheduledToken,
+                scheduledToken: scheduledToken
+            )
+        )
+        #expect(
+            !PlayerResumeNoticeDismissalPolicy.shouldDismiss(
+                displayedToken: replacementToken,
+                scheduledToken: scheduledToken
+            )
+        )
+    }
+
+    @Test
+    @MainActor
+    func playbackPreparationBlocksNativePlayerInputAndAccessibility() {
+        let renderer = CoreAnimationDanmakuRenderer()
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: Self.emptyDanmakuConfiguration
+        )
+        let view = DanmakuPlayerView(
+            renderer: renderer,
+            controller: controller,
+            beginMomentaryPlaybackRate: nil,
+            endMomentaryPlaybackRate: nil
+        )
+
+        view.setPlaybackPreparationBlocked(true)
+        #expect(view.controlsStyle == .none)
+        #expect(!view.acceptsFirstResponder)
+        #expect(view.hitTest(.zero) == nil)
+        #expect(view.isAccessibilityHidden())
+
+        view.setPlaybackPreparationBlocked(false)
+        #expect(view.controlsStyle == .default)
+        #expect(!view.isAccessibilityHidden())
+    }
+
+    @Test
     @MainActor
     func danmakuSurfaceSurvivesTemporaryWindowReparenting() throws {
         let renderer = CoreAnimationDanmakuRenderer()

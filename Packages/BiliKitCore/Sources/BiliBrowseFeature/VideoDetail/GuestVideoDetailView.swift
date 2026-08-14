@@ -90,7 +90,7 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
             if isPreparingPlayback {
                 ZStack {
                     Rectangle()
-                        .fill(.black.opacity(0.45))
+                        .fill(.black)
                     ProgressView("正在准备播放…")
                         .controlSize(.large)
                         .font(.title3)

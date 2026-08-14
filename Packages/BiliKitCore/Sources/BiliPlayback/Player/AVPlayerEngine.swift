@@ -43,6 +43,8 @@ public final class AVPlayerEngine:
     private var readinessTask: Task<Void, any Error>?
     private var loadGeneration = UUID()
     private var loadIntent: PlaybackLoadIntent?
+    private var activeResumeToken: PlaybackResumeToken?
+    private var restartOperation: UUID?
     private var preparedAsset: PreparedPlaybackAsset?
     private var subtitleIdentity: PlaybackItemIdentity?
     private var subtitleResetTask: Task<Void, Never>?
@@ -168,6 +170,8 @@ public final class AVPlayerEngine:
 
         loadGeneration = generation
         loadIntent = intent
+        activeResumeToken = nil
+        restartOperation = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -261,6 +265,8 @@ public final class AVPlayerEngine:
         guard loadGeneration == generation else { return }
         loadGeneration = UUID()
         loadIntent = nil
+        activeResumeToken = nil
+        restartOperation = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -273,12 +279,12 @@ public final class AVPlayerEngine:
         emit(.stateChanged(.idle))
     }
 
-    /// 只提交当前 load intent 的首次自动播放；旧请求、重复回调和已播放/seek 的 item 均拒绝。
-    @discardableResult
+    /// 当前 item 保持暂停，先完成受 intent 和交互 revision 保护的首次定位，再开始播放。
     public func beginPlayback(
         identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) -> Bool {
+        intent: PlaybackLoadIntent,
+        initialPositionSeconds: Double?
+    ) async -> PlaybackStartOutcome {
         guard loadIntent == intent,
             timeline.currentSnapshot.identity == identity,
             !timeline.hasObservedPlaybackInteraction,
@@ -287,9 +293,122 @@ public final class AVPlayerEngine:
             player.currentTime().seconds <= 0.25,
             timeline.currentSnapshot.state == .ready
                 || timeline.currentSnapshot.state == .paused,
-            player.currentItem != nil
+            let item = player.currentItem
+        else { return .rejected }
+
+        let currentGeneration = loadGeneration
+        let interactionRevision = timeline.playbackInteractionRevision
+        guard let initialPositionSeconds,
+            let durationSeconds = Self.validSeconds(item.duration),
+            initialPositionSeconds.isFinite,
+            initialPositionSeconds > 0,
+            initialPositionSeconds < durationSeconds - 0.05
+        else {
+            activeResumeToken = nil
+            play()
+            return .startedAtBeginning
+        }
+
+        timeline.prepareInitialSeek(to: initialPositionSeconds)
+        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
+        let didSeek = await player.seek(
+            to: CMTime(seconds: initialPositionSeconds, preferredTimescale: 600),
+            toleranceBefore: tolerance,
+            toleranceAfter: tolerance
+        )
+        guard didSeek else {
+            timeline.initialSeekFailed()
+            return .preparationFailed
+        }
+        guard loadGeneration == currentGeneration,
+            loadIntent == intent,
+            player.currentItem === item,
+            timeline.currentSnapshot.identity == identity,
+            timeline.playbackInteractionRevision == interactionRevision,
+            timeline.currentSnapshot.state == .ready
+                || timeline.currentSnapshot.state == .paused
+                || timeline.currentSnapshot.state == .buffering
+        else {
+            if player.currentItem === item {
+                timeline.initialSeekFailed()
+            }
+            return .rejected
+        }
+
+        guard
+            let resolvedPosition = Self.validatedResolvedInitialPosition(
+                player.currentTime(),
+                durationSeconds: durationSeconds
+            )
+        else {
+            timeline.initialSeekFailed()
+            return .preparationFailed
+        }
+        timeline.initialSeekCompleted(at: resolvedPosition)
+        let token = PlaybackResumeToken()
+        activeResumeToken = token
+        timeline.playAfterInternalSeek()
+        emit(.stateChanged(.playing))
+        return .resumed(
+            positionSeconds: resolvedPosition,
+            token: token,
+            discontinuityGeneration:
+                timeline.currentSnapshot.discontinuityGeneration
+        )
+    }
+
+    public func restartFromBeginning(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        resumeToken: PlaybackResumeToken
+    ) async -> Bool {
+        guard activeResumeToken == resumeToken,
+            restartOperation == nil,
+            loadIntent == intent,
+            timeline.currentSnapshot.identity == identity,
+            let item = player.currentItem
         else { return false }
-        play()
+        let operation = UUID()
+        restartOperation = operation
+        defer {
+            if restartOperation == operation {
+                restartOperation = nil
+            }
+        }
+        let currentGeneration = loadGeneration
+        timeline.prepareResumeRestart()
+        let interactionRevision = timeline.playbackInteractionRevision
+        let didSeek = await player.seek(
+            to: .zero,
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+        guard didSeek else {
+            timeline.resumeRestartFailed()
+            return false
+        }
+        guard activeResumeToken == resumeToken,
+            loadGeneration == currentGeneration,
+            loadIntent == intent,
+            player.currentItem === item,
+            timeline.currentSnapshot.identity == identity,
+            timeline.playbackInteractionRevision == interactionRevision
+        else {
+            if player.currentItem === item {
+                timeline.resumeRestartFailed()
+            }
+            return false
+        }
+        guard let resolvedPosition = Self.validSeconds(player.currentTime()),
+            resolvedPosition <= 0.5
+        else {
+            timeline.resumeRestartFailed()
+            return false
+        }
+        timeline.resumeRestartCompleted()
+        activeResumeToken = nil
+        timeline.playAfterInternalSeek()
+        emit(.stateChanged(.playing))
         return true
     }
 
@@ -345,6 +464,8 @@ public final class AVPlayerEngine:
     public func stop() {
         loadGeneration = UUID()
         loadIntent = nil
+        activeResumeToken = nil
+        restartOperation = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
@@ -356,6 +477,24 @@ public final class AVPlayerEngine:
         timeline.clear()
         _ = enqueueSubtitleReset()
         emit(.stateChanged(.idle))
+    }
+
+    private static func validSeconds(_ time: CMTime) -> Double? {
+        let seconds = CMTimeGetSeconds(time)
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        return seconds
+    }
+
+    static func validatedResolvedInitialPosition(
+        _ time: CMTime,
+        durationSeconds: Double
+    ) -> Double? {
+        guard let positionSeconds = validSeconds(time),
+            durationSeconds.isFinite,
+            positionSeconds > 0.25,
+            positionSeconds < durationSeconds - 0.05
+        else { return nil }
+        return positionSeconds
     }
 
     private func selectedVideos(

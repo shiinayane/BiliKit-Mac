@@ -332,7 +332,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             mediaHeaders: [
                 "Referer": referer,
                 "User-Agent": userAgent,
-            ]
+            ],
+            resumeMetadata:
+                resolved.authorizationProvenance == .authenticated
+                ? payload.resumeMetadata : nil
         )
     }
 

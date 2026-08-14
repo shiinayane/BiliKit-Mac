@@ -161,12 +161,13 @@ struct AppEnvironment {
         )
     }
 
-    func makePlayerView() -> AnyView {
+    func makePlayerView(videoModel: GuestVideoViewModel) -> AnyView {
         AnyView(
             PlayerHostView(
                 player: playerEngine.player,
                 danmakuRenderer: danmakuRenderer,
                 danmakuController: danmakuController,
+                videoModel: videoModel,
                 beginMomentaryPlaybackRate: { [playerEngine] rate in
                     try? playerEngine.beginMomentaryPlaybackRate(Double(rate))
                 },

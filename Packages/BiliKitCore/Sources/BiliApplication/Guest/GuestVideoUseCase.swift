@@ -6,17 +6,20 @@ public struct GuestVideoContext: Sendable, Equatable {
     public let pages: [VideoPage]
     public let selectedPage: VideoPage
     public let playback: VideoPlayback
+    public let resumePositionSeconds: Double?
 
     public init(
         detail: VideoDetail,
         pages: [VideoPage],
         selectedPage: VideoPage,
-        playback: VideoPlayback
+        playback: VideoPlayback,
+        resumePositionSeconds: Double? = nil
     ) {
         self.detail = detail
         self.pages = pages
         self.selectedPage = selectedPage
         self.playback = playback
+        self.resumePositionSeconds = resumePositionSeconds
     }
 }
 
@@ -40,20 +43,39 @@ public struct GuestVideoUseCase: Sendable {
             : resolvedDetail.pages
         try Task.checkCancellation()
         let sortedPages = resolvedPages.sorted(by: { $0.index < $1.index })
-        guard let selectedPage = sortedPages.first else {
+        guard let provisionalPage = sortedPages.first else {
             throw GuestApplicationError.invalidResponse
         }
-        let playback = try await repository.playback(
+        let provisionalPlayback = try await repository.playback(
             for: bvid,
-            cid: selectedPage.cid
+            cid: provisionalPage.cid
         )
         try Task.checkCancellation()
+
+        let selectedPage =
+            provisionalPlayback.resumeMetadata.flatMap { metadata in
+                sortedPages.first(where: { $0.cid == metadata.lastPlayedCID })
+            } ?? provisionalPage
+        let playback: VideoPlayback
+        if selectedPage.cid == provisionalPage.cid {
+            playback = provisionalPlayback
+        } else {
+            playback = try await repository.playback(
+                for: bvid,
+                cid: selectedPage.cid
+            )
+            try Task.checkCancellation()
+        }
 
         return GuestVideoContext(
             detail: resolvedDetail,
             pages: sortedPages,
             selectedPage: selectedPage,
-            playback: playback
+            playback: playback,
+            resumePositionSeconds: Self.resumePosition(
+                metadata: provisionalPlayback.resumeMetadata,
+                page: selectedPage
+            )
         )
     }
 
@@ -93,5 +115,21 @@ public struct GuestVideoUseCase: Sendable {
             selectedPage: selectedPage,
             playback: playback
         )
+    }
+
+    static func resumePosition(
+        metadata: PlaybackResumeMetadata?,
+        page: VideoPage
+    ) -> Double? {
+        guard let metadata,
+            metadata.lastPlayedCID == page.cid,
+            page.durationSeconds > 0
+        else { return nil }
+        let seconds = Double(metadata.positionMilliseconds) / 1_000
+        let latestUsefulPosition =
+            Double(page.durationSeconds)
+            - PlaybackResumePolicy.completedThresholdSeconds
+        guard seconds > 0, seconds < latestUsefulPosition else { return nil }
+        return seconds
     }
 }

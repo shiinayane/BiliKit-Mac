@@ -42,7 +42,7 @@ final class AppWindowOwner {
             danmakuModel: danmakuModel,
             authenticationModel: environment.makeAuthenticationViewModel(),
             historyModel: environment.makeWatchHistoryViewModel(),
-            playerContent: environment.makePlayerView(),
+            playerContent: environment.makePlayerView(videoModel: videoModel),
             playbackPreferencesController: environment.playbackPreferencesController,
             openEnvironment: environment.open,
             closeEnvironment: environment.close

@@ -110,6 +110,9 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - Cookie 在各 API 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、字幕正文
   与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
   当前 item 上热换授权结果。
+- 同一已授权 playurl 响应中的 `last_play_cid` 与 `last_play_time` 只映射为当前进程内存中的
+  断点候选；匿名 provenance 必须丢弃这两个字段。候选只能匹配已解析的正 CID，位置按毫秒
+  转换并由分 P 时长裁剪；不写入本地存储，不因此增加写请求，也不向媒体链路传播账户信息。
 - AI 音轨现场探针只在内存读取受限语言目录，并通过生产 client 对每个目录项至多执行一次
   精确请求；不得再手工重复所选语言请求。A → B → A 生命周期验收中的 B 使用匿名公开
   playback，不扩大登录态请求集合。探针不保存语言标题、内容 identity、媒体 URL 或响应

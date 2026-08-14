@@ -1,5 +1,8 @@
 import AVKit
+import BiliApplication
+import BiliBrowseFeature
 import BiliDanmaku
+import BiliUI
 import SwiftUI
 
 /// 把唯一 `AVPlayer` 宿主与弹幕 overlay 组合为稳定的播放 surface。
@@ -10,6 +13,7 @@ struct PlayerHostView: View {
     let player: AVPlayer
     let danmakuRenderer: CoreAnimationDanmakuRenderer
     let danmakuController: DanmakuPresentationController
+    let videoModel: GuestVideoViewModel?
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
 
@@ -17,12 +21,14 @@ struct PlayerHostView: View {
         player: AVPlayer,
         danmakuRenderer: CoreAnimationDanmakuRenderer,
         danmakuController: DanmakuPresentationController,
+        videoModel: GuestVideoViewModel? = nil,
         beginMomentaryPlaybackRate: ((Float) -> UUID?)? = nil,
         endMomentaryPlaybackRate: ((UUID) -> Void)? = nil
     ) {
         self.player = player
         self.danmakuRenderer = danmakuRenderer
         self.danmakuController = danmakuController
+        self.videoModel = videoModel
         self.beginMomentaryPlaybackRate = beginMomentaryPlaybackRate
         self.endMomentaryPlaybackRate = endMomentaryPlaybackRate
     }
@@ -32,9 +38,22 @@ struct PlayerHostView: View {
             player: player,
             renderer: danmakuRenderer,
             controller: danmakuController,
+            blocksNativePlaybackInteraction: blocksNativePlaybackInteraction,
+            resumeNotice: videoModel?.resumeNotice,
+            restartFromBeginning: { videoModel?.restartFromBeginning() },
             beginMomentaryPlaybackRate: beginMomentaryPlaybackRate,
             endMomentaryPlaybackRate: endMomentaryPlaybackRate
         )
+    }
+
+    private var blocksNativePlaybackInteraction: Bool {
+        guard let videoModel else { return false }
+        return switch videoModel.state {
+        case .loading, .loadingPage, .preparingPlayback:
+            true
+        case .idle, .ready, .failed, .failedPage:
+            false
+        }
     }
 }
 
@@ -42,6 +61,9 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let player: AVPlayer
     let renderer: CoreAnimationDanmakuRenderer
     let controller: DanmakuPresentationController
+    let blocksNativePlaybackInteraction: Bool
+    let resumeNotice: PlaybackResumeNotice?
+    let restartFromBeginning: () -> Void
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
 
@@ -54,17 +76,26 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         )
         view.player = player
         view.startObservingPlayerItemChanges()
-        view.controlsStyle = .default
+        view.setPlaybackPreparationBlocked(blocksNativePlaybackInteraction)
         view.showsFullScreenToggleButton = true
         view.allowsPictureInPicturePlayback = true
         view.installWindowScrollWheelShield()
+        view.setResumeNotice(
+            resumeNotice,
+            restartFromBeginning: restartFromBeginning
+        )
         return view
     }
 
     func updateNSView(_ view: DanmakuPlayerView, context: Context) {
         view.installWindowScrollWheelShield()
+        view.setPlaybackPreparationBlocked(blocksNativePlaybackInteraction)
         view.requestMomentaryPlaybackRate = beginMomentaryPlaybackRate
         view.finishMomentaryPlaybackRate = endMomentaryPlaybackRate
+        view.setResumeNotice(
+            resumeNotice,
+            restartFromBeginning: restartFromBeginning
+        )
         if view.player !== player {
             view.cancelMomentaryPlaybackRate()
             view.player = player
@@ -77,6 +108,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         _ view: DanmakuPlayerView,
         coordinator: ()
     ) {
+        view.setResumeNotice(nil, restartFromBeginning: {})
         view.danmakuOverlay.detachSurface()
         view.stopObservingFocusLoss()
         view.stopObservingPlayerItemChanges()
@@ -132,13 +164,13 @@ private struct PlayerMomentaryRateBadge: View {
         .font(.title3.weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .modifier(PlayerMomentaryRateBadgeBackground())
+        .modifier(PlayerGlassCapsuleBackground())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(rate.accessibilityLabel)
     }
 }
 
-private struct PlayerMomentaryRateBadgeBackground: ViewModifier {
+private struct PlayerGlassCapsuleBackground: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
@@ -162,6 +194,76 @@ private struct PlayerMomentaryRateBadgeBackground: ViewModifier {
     }
 }
 
+struct PlayerResumeNoticeLayout {
+    static let leadingInset: CGFloat = 20
+    static let bottomInset: CGFloat = 64
+}
+
+enum PlayerResumeNoticePresentation {
+    static let title = "从头播放"
+}
+
+enum PlayerResumeNoticeDismissalPolicy {
+    static let delay: Duration = .seconds(5)
+    static let fadeDurationSeconds: TimeInterval = 0.2
+
+    static func shouldDismiss(
+        displayedToken: PlaybackResumeToken?,
+        scheduledToken: PlaybackResumeToken
+    ) -> Bool {
+        displayedToken == scheduledToken
+    }
+}
+
+enum PlayerPlaybackPreparationPolicy {
+    static func controlsStyle(
+        blocksNativePlaybackInteraction: Bool
+    ) -> AVPlayerViewControlsStyle {
+        blocksNativePlaybackInteraction ? .none : .default
+    }
+}
+
+private struct PlayerResumeButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(
+                PlayerResumeNoticePresentation.title,
+                systemImage: "arrow.uturn.backward"
+            )
+            .fontWeight(.semibold)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+        }
+        .modifier(PlayerResumeButtonStyle())
+        .accessibilityLabel(PlayerResumeNoticePresentation.title)
+        .accessibilityHint("将当前视频定位到开头并继续播放")
+    }
+}
+
+private struct PlayerResumeButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                content.buttonStyle(.glass)
+            } else {
+                fallback(content)
+            }
+        #else
+            fallback(content)
+        #endif
+    }
+
+    private func fallback(_ content: Content) -> some View {
+        content
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .modifier(PlayerGlassCapsuleBackground())
+    }
+}
+
 @MainActor
 private final class PlayerMomentaryRateBadgeHostingView:
     NSHostingView<PlayerMomentaryRateBadge>
@@ -172,7 +274,7 @@ private final class PlayerMomentaryRateBadgeHostingView:
 }
 
 @MainActor
-private final class DanmakuPlayerView: AVPlayerView {
+final class DanmakuPlayerView: AVPlayerView {
     let danmakuOverlay: DanmakuOverlayView
     private let scrollWheelCaptureView = PlayerScrollWheelCaptureView()
     private let windowScrollWheelShieldView = PlayerScrollWheelShieldView()
@@ -183,6 +285,13 @@ private final class DanmakuPlayerView: AVPlayerView {
     private weak var observedPlayer: AVPlayer?
     private var playerItemObservation: NSKeyValueObservation?
     private var playerTimeControlObservation: NSKeyValueObservation?
+    private var playerItemTimeJumpObserver: NSObjectProtocol?
+    private var resumeButtonHostingView: NSHostingView<PlayerResumeButton>?
+    private var displayedResumeNotice: PlaybackResumeNotice?
+    private var dismissedResumeToken: PlaybackResumeToken?
+    private var resumeRestartAction: (() -> Void)?
+    private var resumeNoticeDismissTask: Task<Void, Never>?
+    private var blocksNativePlaybackInteraction = false
     private var appResignObserver: NSObjectProtocol?
     private var windowResignObserver: NSObjectProtocol?
     var requestMomentaryPlaybackRate: ((Float) -> UUID?)?
@@ -213,6 +322,57 @@ private final class DanmakuPlayerView: AVPlayerView {
         installDanmakuOverlayIfNeeded()
     }
 
+    override var acceptsFirstResponder: Bool {
+        !blocksNativePlaybackInteraction && super.acceptsFirstResponder
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !blocksNativePlaybackInteraction else { return nil }
+        return super.hitTest(point)
+    }
+
+    func setPlaybackPreparationBlocked(_ blocked: Bool) {
+        guard blocksNativePlaybackInteraction != blocked else { return }
+        blocksNativePlaybackInteraction = blocked
+        controlsStyle = PlayerPlaybackPreparationPolicy.controlsStyle(
+            blocksNativePlaybackInteraction: blocked
+        )
+        setAccessibilityHidden(blocked)
+        guard blocked,
+            let window,
+            let responderView = window.firstResponder as? NSView,
+            responderView === self || responderView.isDescendant(of: self)
+        else { return }
+        window.makeFirstResponder(nil)
+    }
+
+    func setResumeNotice(
+        _ notice: PlaybackResumeNotice?,
+        restartFromBeginning: @escaping () -> Void
+    ) {
+        resumeRestartAction = restartFromBeginning
+        guard let notice else {
+            clearResumeNotice(markDismissed: false)
+            dismissedResumeToken = nil
+            return
+        }
+        guard dismissedResumeToken != notice.token else { return }
+        if displayedResumeNotice?.token == notice.token,
+            let resumeButtonHostingView
+        {
+            resumeButtonHostingView.rootView = makeResumeButton(
+                restartFromBeginning: restartFromBeginning
+            )
+            return
+        }
+        clearResumeNotice(markDismissed: false)
+        displayedResumeNotice = notice
+        installResumeButtonIfPossible(
+            notice: notice,
+            restartFromBeginning: restartFromBeginning
+        )
+    }
+
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if window !== newWindow {
             stopObservingFocusLoss()
@@ -226,6 +386,15 @@ private final class DanmakuPlayerView: AVPlayerView {
         installDanmakuOverlayIfNeeded()
         installWindowScrollWheelShield()
         startObservingFocusLoss()
+        if let displayedResumeNotice,
+            resumeButtonHostingView == nil,
+            let resumeRestartAction
+        {
+            installResumeButtonIfPossible(
+                notice: displayedResumeNotice,
+                restartFromBeginning: resumeRestartAction
+            )
+        }
     }
 
     override func layout() {
@@ -302,6 +471,8 @@ private final class DanmakuPlayerView: AVPlayerView {
             [weak self] _, _ in
             Task { @MainActor in
                 self?.cancelMomentaryPlaybackRateIfItemChanged()
+                self?.clearResumeNotice(markDismissed: true)
+                self?.startObservingCurrentItemTimeJumps()
             }
         }
         playerTimeControlObservation = player.observe(
@@ -323,6 +494,33 @@ private final class DanmakuPlayerView: AVPlayerView {
                 self.cancelMomentaryPlaybackRate()
             }
         }
+        startObservingCurrentItemTimeJumps()
+    }
+
+    private func startObservingCurrentItemTimeJumps() {
+        if let playerItemTimeJumpObserver {
+            NotificationCenter.default.removeObserver(playerItemTimeJumpObserver)
+            self.playerItemTimeJumpObserver = nil
+        }
+        guard let item = player?.currentItem else { return }
+        playerItemTimeJumpObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.timeJumpedNotification,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self,
+                    self.player?.currentItem != nil,
+                    let notice = self.displayedResumeNotice
+                else { return }
+                let currentSeconds = self.player?.currentTime().seconds ?? .nan
+                guard
+                    !currentSeconds.isFinite
+                        || abs(currentSeconds - notice.positionSeconds) > 0.5
+                else { return }
+                self.clearResumeNotice(markDismissed: true)
+            }
+        }
     }
 
     func stopObservingPlayerItemChanges() {
@@ -330,6 +528,10 @@ private final class DanmakuPlayerView: AVPlayerView {
         playerItemObservation = nil
         playerTimeControlObservation?.invalidate()
         playerTimeControlObservation = nil
+        if let playerItemTimeJumpObserver {
+            NotificationCenter.default.removeObserver(playerItemTimeJumpObserver)
+            self.playerItemTimeJumpObserver = nil
+        }
         observedPlayer = nil
     }
 
@@ -374,6 +576,96 @@ private final class DanmakuPlayerView: AVPlayerView {
                 equalTo: contentOverlayView.bottomAnchor
             ),
         ])
+    }
+
+    private func installResumeButtonIfPossible(
+        notice: PlaybackResumeNotice,
+        restartFromBeginning: @escaping () -> Void
+    ) {
+        guard let contentOverlayView else { return }
+        let hostingView = NSHostingView(
+            rootView: makeResumeButton(
+                restartFromBeginning: restartFromBeginning
+            )
+        )
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        contentOverlayView.addSubview(
+            hostingView,
+            positioned: .above,
+            relativeTo: nil
+        )
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(
+                equalTo: contentOverlayView.leadingAnchor,
+                constant: PlayerResumeNoticeLayout.leadingInset
+            ),
+            hostingView.bottomAnchor.constraint(
+                equalTo: contentOverlayView.bottomAnchor,
+                constant: -PlayerResumeNoticeLayout.bottomInset
+            ),
+        ])
+        resumeButtonHostingView = hostingView
+        scheduleResumeNoticeDismissal(for: notice.token)
+    }
+
+    private func makeResumeButton(
+        restartFromBeginning: @escaping () -> Void
+    ) -> PlayerResumeButton {
+        PlayerResumeButton {
+            restartFromBeginning()
+        }
+    }
+
+    private func scheduleResumeNoticeDismissal(
+        for token: PlaybackResumeToken
+    ) {
+        resumeNoticeDismissTask?.cancel()
+        resumeNoticeDismissTask = Task { [weak self] in
+            do {
+                try await Task.sleep(
+                    for: PlayerResumeNoticeDismissalPolicy.delay
+                )
+            } catch {
+                return
+            }
+            guard let self,
+                PlayerResumeNoticeDismissalPolicy.shouldDismiss(
+                    displayedToken: self.displayedResumeNotice?.token,
+                    scheduledToken: token
+                )
+            else { return }
+            guard let hostingView = self.resumeButtonHostingView else {
+                self.resumeNoticeDismissTask = nil
+                self.clearResumeNotice(markDismissed: true)
+                return
+            }
+            await NSAnimationContext.runAnimationGroup { context in
+                context.duration =
+                    PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds
+                hostingView.animator().alphaValue = 0
+            }
+            guard
+                !Task.isCancelled,
+                PlayerResumeNoticeDismissalPolicy.shouldDismiss(
+                    displayedToken: self.displayedResumeNotice?.token,
+                    scheduledToken: token
+                ),
+                self.resumeButtonHostingView === hostingView
+            else { return }
+            self.resumeNoticeDismissTask = nil
+            self.clearResumeNotice(markDismissed: true)
+        }
+    }
+
+    private func clearResumeNotice(markDismissed: Bool) {
+        resumeNoticeDismissTask?.cancel()
+        resumeNoticeDismissTask = nil
+        if markDismissed {
+            dismissedResumeToken = displayedResumeNotice?.token
+        }
+        displayedResumeNotice = nil
+        resumeButtonHostingView?.removeFromSuperview()
+        resumeButtonHostingView = nil
     }
 
     private var canBeginMomentaryPlaybackRate: Bool {
