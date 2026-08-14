@@ -19,6 +19,30 @@ struct GuestVideoUseCaseTests {
     }
 
     @Test
+    func usesPagesEmbeddedInDetailWithoutPagelistRequest() async throws {
+        let repository = GuestRepositoryStub(detailHasPages: true)
+        let useCase = GuestVideoUseCase(repository: repository)
+
+        let context = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+
+        #expect(context.pages.map(\.cid) == [900_001, 900_002])
+        #expect(await repository.pageRequestCount() == 0)
+    }
+
+    @Test
+    func collectionEpisodePagesUseDetailBeforePagelistFallback() async throws {
+        let repository = GuestRepositoryStub(detailHasPages: true)
+        let useCase = GuestVideoUseCase(repository: repository)
+
+        let pages = try await useCase.pagesForCollectionEpisode(
+            bvid: "BV1FixtureA1"
+        )
+
+        #expect(pages.map(\.cid) == [900_001, 900_002])
+        #expect(await repository.pageRequestCount() == 0)
+    }
+
+    @Test
     func rejectsVideoWithoutPagesBeforeRequestingPlayback() async {
         let repository = GuestRepositoryStub(hasPages: false)
         let useCase = GuestVideoUseCase(repository: repository)
@@ -57,14 +81,112 @@ struct GuestVideoUseCaseTests {
         }
         #expect(await repository.playbackCIDs() == [900_001])
     }
+
+    @Test
+    func cancellationDuringPagelistFallbackPreventsPlayback() async throws {
+        let repository = FallbackCancellationRepository()
+        let useCase = GuestVideoUseCase(repository: repository)
+        let task = Task {
+            try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+        }
+
+        await repository.waitForPagesRequest()
+        task.cancel()
+        await repository.releasePages()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(await repository.playbackRequestCount() == 0)
+    }
+}
+
+private actor FallbackCancellationRepository: GuestContentRepository {
+    private var pagesStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var playbackRequests = 0
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        VideoDetail(
+            bvid: bvid,
+            title: "详情",
+            summary: "说明",
+            coverURL: nil,
+            owner: VideoOwner(id: 1, name: "作者"),
+            statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
+            durationSeconds: 10,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        pagesStarted = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+        return [VideoPage(cid: 900_001, index: 1, title: "P1", durationSeconds: 10)]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        playbackRequests += 1
+        return VideoPlayback(
+            manifest: PlaybackManifest(
+                videoRepresentations: [],
+                originalAudioRepresentations: []
+            ),
+            mediaHeaders: [:]
+        )
+    }
+
+    func waitForPagesRequest() async {
+        guard !pagesStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func releasePages() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func playbackRequestCount() -> Int {
+        playbackRequests
+    }
 }
 
 private actor GuestRepositoryStub: GuestContentRepository {
     private let hasPages: Bool
+    private let detailHasPages: Bool
     private var observedPlaybackCIDs: [Int64] = []
+    private var observedPageRequestCount = 0
 
-    init(hasPages: Bool = true) {
+    init(hasPages: Bool = true, detailHasPages: Bool = false) {
         self.hasPages = hasPages
+        self.detailHasPages = detailHasPages
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
@@ -86,8 +208,17 @@ private actor GuestRepositoryStub: GuestContentRepository {
     }
 
     func pages(for bvid: String) async throws -> [VideoPage] {
+        observedPageRequestCount += 1
         guard hasPages else { return [] }
-        return [
+        return fixturePages
+    }
+
+    func pageRequestCount() -> Int {
+        observedPageRequestCount
+    }
+
+    private var fixturePages: [VideoPage] {
+        [
             VideoPage(
                 cid: 900_002,
                 index: 2,
@@ -128,7 +259,8 @@ private actor GuestRepositoryStub: GuestContentRepository {
                 likeCount: 20
             ),
             durationSeconds: 360,
-            publishedAt: Date(timeIntervalSince1970: 1_720_000_000)
+            publishedAt: Date(timeIntervalSince1970: 1_720_000_000),
+            pages: detailHasPages ? fixturePages : []
         )
     }
 

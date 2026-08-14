@@ -20,7 +20,7 @@ public struct GuestVideoContext: Sendable, Equatable {
     }
 }
 
-/// 并行取得详情与分 P，再为排序后的首分 P 取得播放清单。
+/// 优先使用详情响应自带的分 P；旧响应缺失时才回退到独立分 P endpoint。
 ///
 /// 用例不拥有播放器，也不保留可变状态；任何一个阶段取消都会阻止后续播放请求或结果返回。
 public struct GuestVideoUseCase: Sendable {
@@ -31,11 +31,14 @@ public struct GuestVideoUseCase: Sendable {
     }
 
     public func prepareVideo(bvid: String) async throws -> GuestVideoContext {
-        async let detail = repository.videoDetail(for: bvid)
-        async let pages = repository.pages(for: bvid)
-        let (resolvedDetail, resolvedPages) = try await (detail, pages)
+        let resolvedDetail = try await repository.videoDetail(for: bvid)
         try Task.checkCancellation()
 
+        let resolvedPages =
+            resolvedDetail.pages.isEmpty
+            ? try await repository.pages(for: bvid)
+            : resolvedDetail.pages
+        try Task.checkCancellation()
         let sortedPages = resolvedPages.sorted(by: { $0.index < $1.index })
         guard let selectedPage = sortedPages.first else {
             throw GuestApplicationError.invalidResponse
@@ -52,6 +55,21 @@ public struct GuestVideoUseCase: Sendable {
             selectedPage: selectedPage,
             playback: playback
         )
+    }
+
+    /// 取得合集 episode 的分 P；详情已含 pages 时不重复请求独立 pagelist。
+    public func pagesForCollectionEpisode(bvid: String) async throws -> [VideoPage] {
+        let detail = try await repository.videoDetail(for: bvid)
+        try Task.checkCancellation()
+        guard detail.bvid == bvid else {
+            throw GuestApplicationError.invalidResponse
+        }
+        let resolvedPages =
+            detail.pages.isEmpty
+            ? try await repository.pages(for: bvid)
+            : detail.pages
+        try Task.checkCancellation()
+        return resolvedPages.sorted(by: { $0.index < $1.index })
     }
 
     /// 复用同一视频已经取得的详情与分 P，只为指定 CID 重新取得播放清单。
