@@ -18,6 +18,10 @@ CI 必须同时运行：
 - `macos-15`：代表最低支持运行时。
 - `macos-26`：代表当前开发运行时。
 
+两个 job 必须通过 `DEVELOPER_DIR` 显式使用同一套新 Xcode/SDK；矩阵只比较
+宿主运行时，不承诺旧 SDK 编译兼容。新 SDK 声明但要求新系统的 API 继续使用
+availability guard，以保持 macOS 15 deployment target。
+
 真实 B 站播放继续作为显式探针，而不是 PR 必过检查，因为游客 API、媒体 URL、样本和 CDN 行为均属于动态外部依赖。
 
 ## 影响
