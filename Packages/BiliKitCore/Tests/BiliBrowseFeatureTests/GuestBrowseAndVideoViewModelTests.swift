@@ -712,7 +712,8 @@ struct GuestBrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(slow.detail.bvid)
-        try await repository.waitForSlowRequestCount(2)
+        // `/view` 先返回后才决定是否需要 pagelist，因此旧请求此时只有 detail 在飞行。
+        try await repository.waitForSlowRequestCount(1)
         let supersededTask = try #require(model.taskSnapshotForTesting())
         model.loadVideo(fast.detail.bvid)
         await model.waitForCurrentTask()
@@ -1225,6 +1226,664 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.state == .idle)
         #expect(model.presentedContext == nil)
         #expect(model.uploaderSignatureState == .loaded(nil))
+    }
+
+    @Test
+    @MainActor
+    func embeddedCollectionPagesLoadWithoutAnotherDetailRequest() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(
+            fixtures.embeddedEpisode,
+            expanded: true
+        )
+
+        #expect(
+            model.collectionEpisodePageStates[fixtures.embeddedEpisode.id]
+                == .loaded(bvid: fixtures.rootBVID)
+        )
+        #expect(
+            model.collectionEpisodePages(for: fixtures.embeddedEpisode.id) == fixtures.rootPages
+        )
+        #expect(await repository.episodeDetailRequestCount() == 0)
+    }
+
+    @Test
+    @MainActor
+    func duplicateBVIDEpisodeExpansionsShareOneDetailRequest() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.setCollectionEpisodeExpanded(
+            fixtures.duplicateLazyEpisode,
+            expanded: true
+        )
+        await repository.waitForEpisodeDetailRequest()
+        await repository.releaseEpisodeDetail()
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(await repository.episodeDetailRequestCount() == 1)
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+        #expect(
+            model.collectionEpisodePageStates[fixtures.duplicateLazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+    }
+
+    @Test
+    @MainActor
+    func collapsingOneDuplicateWaiterKeepsTheSharedRequestAlive() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.setCollectionEpisodeExpanded(
+            fixtures.duplicateLazyEpisode,
+            expanded: true
+        )
+        await repository.waitForEpisodeDetailRequest()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
+        await repository.releaseEpisodeDetail()
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(await repository.episodeDetailRequestCount() == 1)
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .idle
+        )
+        #expect(
+            model.collectionEpisodePageStates[fixtures.duplicateLazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+    }
+
+    @Test
+    @MainActor
+    func collapsingAndImmediatelyReexpandingStartsANewGeneration() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await repository.waitForEpisodeDetailRequest(count: 1)
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await repository.waitForEpisodeDetailRequest(count: 2)
+        await repository.releaseEpisodeDetail()
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(await repository.episodeDetailRequestCount() == 2)
+        #expect(model.expandedCollectionEpisodes.contains(fixtures.lazyEpisode.id))
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+    }
+
+    @Test
+    @MainActor
+    func cancelledEpisodeFailureDoesNotRevalidateAuthentication() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true,
+            episodeFailureAfterRelease: .authenticationInvalid
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await repository.waitForEpisodeDetailRequest()
+        let cancelledTask = try #require(
+            model.collectionEpisodeTaskSnapshotForTesting()
+        )
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
+        await repository.releaseEpisodeDetail()
+        await cancelledTask.value
+
+        #expect(model.authenticationRevalidationGeneration == 0)
+        #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle)
+    }
+
+    @Test
+    @MainActor
+    func episodeFailureIsLocalAndRetryCanRecover() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            failsFirstEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .failed(.transportFailure)
+        )
+        #expect(model.presentedContext?.detail.bvid == fixtures.rootBVID)
+
+        model.retryCollectionEpisodePages(fixtures.lazyEpisode)
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+        #expect(await repository.episodeDetailRequestCount() == 2)
+    }
+
+    @Test
+    @MainActor
+    func resetRejectsLateCollectionEpisodePages() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await repository.waitForEpisodeDetailRequest()
+        let lateTask = try #require(
+            model.collectionEpisodeTaskSnapshotForTesting()
+        )
+
+        model.reset()
+        await repository.releaseEpisodeDetail()
+        await lateTask.value
+
+        #expect(model.expandedCollectionEpisodes.isEmpty)
+        #expect(model.collectionEpisodePageStates.isEmpty)
+        #expect(model.presentedContext == nil)
+    }
+
+    @Test
+    @MainActor
+    func differentBVIDExpansionsRunSeriallyWithoutLeavingIdleExpandedItem() async throws {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        await repository.waitForEpisodeDetailRequest(count: 1)
+        model.setCollectionEpisodeExpanded(fixtures.thirdLazyEpisode, expanded: true)
+
+        #expect(await repository.episodeDetailRequestCount() == 1)
+        #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .loading)
+        #expect(model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id] == .loading)
+
+        await repository.releaseEpisodeDetail()
+        await repository.waitForEpisodeDetailRequest(count: 2)
+        await repository.releaseEpisodeDetail()
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(await repository.episodeDetailRequestCount() == 2)
+        #expect(
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        )
+        #expect(
+            model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id]
+                == .loaded(bvid: fixtures.thirdBVID)
+        )
+    }
+
+    @Test
+    @MainActor
+    func currentAndEmbeddedPagesPopulateBVIDCacheWithoutRemoteDetail() async {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.setCollectionEpisodeExpanded(fixtures.rootSummaryEpisode, expanded: true)
+        model.setCollectionEpisodeExpanded(fixtures.embeddedRemoteEpisode, expanded: true)
+        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+
+        #expect(await repository.episodeDetailRequestCount() == 0)
+        #expect(
+            model.collectionEpisodePages(for: fixtures.rootSummaryEpisode.id)
+                == fixtures.rootPages
+        )
+        #expect(
+            model.collectionEpisodePages(for: fixtures.lazyEpisode.id)
+                == fixtures.episodePages
+        )
+    }
+
+    @Test
+    @MainActor
+    func episodePageCacheEvictsAndReleasesTheThirteenthBVID() async {
+        let fixtures = BoundedCollectionCacheFixtures()
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(
+                repository: StaticCollectionRepositoryStub(fixtures: fixtures)
+            ),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        for episode in fixtures.episodes {
+            model.setCollectionEpisodeExpanded(episode, expanded: true)
+        }
+
+        let first = fixtures.episodes[0]
+        let last = fixtures.episodes[12]
+        #expect(!model.expandedCollectionEpisodes.contains(first.id))
+        #expect(model.collectionEpisodePageStates[first.id] == .idle)
+        #expect(model.collectionEpisodePages(for: first.id) == nil)
+        #expect(model.collectionEpisodePageStates[last.id] == .loaded(bvid: last.bvid!))
+        #expect(model.collectionEpisodePages(for: last.id) == last.knownPages)
+    }
+}
+
+private struct BoundedCollectionCacheFixtures: Sendable {
+    let rootBVID = "BV1CacheRoot"
+
+    var episodes: [VideoCollectionEpisode] {
+        (1...13).map { value in
+            let bvid = String(format: "BV1Cache%04d", value)
+            let page = VideoPage(
+                cid: Int64(930_000 + value),
+                index: 1,
+                title: "P1",
+                durationSeconds: 10
+            )
+            return VideoCollectionEpisode(
+                id: VideoCollectionEpisodeIdentity(
+                    seasonID: 801,
+                    sectionID: 802,
+                    episodeID: Int64(8_100 + value)
+                ),
+                ordinal: value - 1,
+                aid: Int64(9_100 + value),
+                bvid: bvid,
+                title: "缓存视频 \(value)",
+                coverURL: nil,
+                durationSeconds: 10,
+                defaultCID: page.cid,
+                knownPages: [page]
+            )
+        }
+    }
+
+    var detail: VideoDetail {
+        let rootPage = VideoPage(
+            cid: 939_999,
+            index: 1,
+            title: "当前 P1",
+            durationSeconds: 10
+        )
+        return VideoDetail(
+            bvid: rootBVID,
+            title: "缓存边界",
+            summary: "脱敏详情",
+            coverURL: nil,
+            owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
+            statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
+            durationSeconds: 10,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pages: [rootPage],
+            collection: VideoCollection(
+                id: 801,
+                title: "缓存合集",
+                reportedEpisodeCount: 13,
+                sections: [
+                    VideoCollectionSection(
+                        id: VideoCollectionSectionIdentity(
+                            seasonID: 801,
+                            sectionID: 802
+                        ),
+                        ordinal: 0,
+                        title: "分部",
+                        episodes: episodes
+                    )
+                ]
+            )
+        )
+    }
+
+    var playback: VideoPlayback {
+        VideoPlayback(
+            manifest: PlaybackManifest(
+                videoRepresentations: [],
+                originalAudioRepresentations: []
+            ),
+            mediaHeaders: [:]
+        )
+    }
+}
+
+private actor StaticCollectionRepositoryStub: GuestContentRepository {
+    let fixtures: BoundedCollectionCacheFixtures
+
+    init(fixtures: BoundedCollectionCacheFixtures) {
+        self.fixtures = fixtures
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixtures.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        fixtures.detail.pages
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+}
+
+private struct CollectionFixtures: Sendable {
+    let rootBVID = "BV1FixtureA1"
+    let episodeBVID = "BV1FixtureB2"
+    let thirdBVID = "BV1FixtureC3"
+    let rootPages = [
+        VideoPage(cid: 900_001, index: 1, title: "当前 P1", durationSeconds: 120),
+        VideoPage(cid: 900_002, index: 2, title: "当前 P2", durationSeconds: 180),
+    ]
+    let episodePages = [
+        VideoPage(cid: 910_001, index: 1, title: "下一 P1", durationSeconds: 90),
+        VideoPage(cid: 910_002, index: 2, title: "下一 P2", durationSeconds: 110),
+    ]
+    let thirdPages = [
+        VideoPage(cid: 920_001, index: 1, title: "第三 P1", durationSeconds: 80)
+    ]
+
+    var embeddedEpisode: VideoCollectionEpisode {
+        episode(
+            episodeID: 701,
+            ordinal: 0,
+            bvid: rootBVID,
+            pages: rootPages
+        )
+    }
+
+    var lazyEpisode: VideoCollectionEpisode {
+        episode(
+            episodeID: 702,
+            ordinal: 1,
+            bvid: episodeBVID,
+            pages: nil
+        )
+    }
+
+    var duplicateLazyEpisode: VideoCollectionEpisode {
+        episode(
+            episodeID: 703,
+            ordinal: 2,
+            bvid: episodeBVID,
+            pages: nil
+        )
+    }
+
+    var thirdLazyEpisode: VideoCollectionEpisode {
+        episode(episodeID: 704, ordinal: 3, bvid: thirdBVID, pages: nil)
+    }
+
+    var rootSummaryEpisode: VideoCollectionEpisode {
+        episode(episodeID: 705, ordinal: 4, bvid: rootBVID, pages: nil)
+    }
+
+    var embeddedRemoteEpisode: VideoCollectionEpisode {
+        episode(episodeID: 706, ordinal: 5, bvid: episodeBVID, pages: episodePages)
+    }
+
+    var rootDetail: VideoDetail {
+        detail(
+            bvid: rootBVID,
+            pages: rootPages,
+            collection: VideoCollection(
+                id: 501,
+                title: "测试合集",
+                reportedEpisodeCount: 6,
+                sections: [
+                    VideoCollectionSection(
+                        id: VideoCollectionSectionIdentity(
+                            seasonID: 501,
+                            sectionID: 601
+                        ),
+                        ordinal: 0,
+                        title: "第一章",
+                        episodes: [
+                            embeddedEpisode,
+                            lazyEpisode,
+                            duplicateLazyEpisode,
+                            thirdLazyEpisode,
+                            rootSummaryEpisode,
+                            embeddedRemoteEpisode,
+                        ]
+                    )
+                ]
+            )
+        )
+    }
+
+    var episodeDetail: VideoDetail {
+        detail(bvid: episodeBVID, pages: episodePages, collection: nil)
+    }
+
+    var thirdDetail: VideoDetail {
+        detail(bvid: thirdBVID, pages: thirdPages, collection: nil)
+    }
+
+    var playback: VideoPlayback {
+        VideoPlayback(
+            manifest: PlaybackManifest(
+                videoRepresentations: [],
+                originalAudioRepresentations: []
+            ),
+            mediaHeaders: [:]
+        )
+    }
+
+    private func episode(
+        episodeID: Int64,
+        ordinal: Int,
+        bvid: String,
+        pages: [VideoPage]?
+    ) -> VideoCollectionEpisode {
+        VideoCollectionEpisode(
+            id: VideoCollectionEpisodeIdentity(
+                seasonID: 501,
+                sectionID: 601,
+                episodeID: episodeID
+            ),
+            ordinal: ordinal,
+            aid: episodeID + 6_000,
+            bvid: bvid,
+            title: "合集视频 \(ordinal + 1)",
+            coverURL: nil,
+            durationSeconds: pages?.reduce(0) { $0 + $1.durationSeconds },
+            defaultCID: pages?.first?.cid,
+            knownPages: pages
+        )
+    }
+
+    private func detail(
+        bvid: String,
+        pages: [VideoPage],
+        collection: VideoCollection?
+    ) -> VideoDetail {
+        VideoDetail(
+            bvid: bvid,
+            title: "详情 \(bvid)",
+            summary: "脱敏详情",
+            coverURL: nil,
+            owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
+            statistics: VideoStatistics(
+                viewCount: 10,
+                danmakuCount: 2,
+                likeCount: 3
+            ),
+            durationSeconds: pages.reduce(0) { $0 + $1.durationSeconds },
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pages: pages,
+            collection: collection
+        )
+    }
+}
+
+private actor CollectionEpisodeRepositoryStub: GuestContentRepository {
+    let fixtures: CollectionFixtures
+    let blocksEpisodeDetail: Bool
+    let episodeFailureAfterRelease: GuestApplicationError?
+    var failsFirstEpisodeDetail: Bool
+    private var episodeRequests = 0
+    private let episodeRequestEvents = TestEventCounter()
+    private var episodeReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(
+        fixtures: CollectionFixtures,
+        blocksEpisodeDetail: Bool = false,
+        failsFirstEpisodeDetail: Bool = false,
+        episodeFailureAfterRelease: GuestApplicationError? = nil
+    ) {
+        self.fixtures = fixtures
+        self.blocksEpisodeDetail = blocksEpisodeDetail
+        self.failsFirstEpisodeDetail = failsFirstEpisodeDetail
+        self.episodeFailureAfterRelease = episodeFailureAfterRelease
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        guard bvid != fixtures.rootBVID else {
+            return fixtures.rootDetail
+        }
+        episodeRequests += 1
+        await episodeRequestEvents.signal()
+        if failsFirstEpisodeDetail {
+            failsFirstEpisodeDetail = false
+            throw GuestApplicationError.transportFailure
+        }
+        if blocksEpisodeDetail {
+            await withCheckedContinuation { continuation in
+                episodeReleaseWaiters.append(continuation)
+            }
+        }
+        if let episodeFailureAfterRelease {
+            throw episodeFailureAfterRelease
+        }
+        return bvid == fixtures.episodeBVID
+            ? fixtures.episodeDetail
+            : fixtures.thirdDetail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        bvid == fixtures.rootBVID ? fixtures.rootPages : fixtures.episodePages
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fixtures.playback
+    }
+
+    func episodeDetailRequestCount() -> Int {
+        episodeRequests
+    }
+
+    func waitForEpisodeDetailRequest(count: Int = 1) async {
+        try? await episodeRequestEvents.wait(until: count)
+    }
+
+    func releaseEpisodeDetail() {
+        let waiters = episodeReleaseWaiters
+        episodeReleaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 }
 
