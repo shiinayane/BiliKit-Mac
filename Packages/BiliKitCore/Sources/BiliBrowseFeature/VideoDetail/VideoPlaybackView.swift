@@ -6,25 +6,38 @@ import SwiftUI
 ///
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
 /// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
-public struct VideoPlaybackView<PlayerContent: View>: View {
+public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestVideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
     private let onSelectRelatedVideo: (String) -> Void
     private let playerContent: () -> PlayerContent
+    private let makeRelatedContent:
+        (
+            String,
+            [RelatedVideoCardPresentation],
+            @escaping (String) -> Void
+        ) -> RelatedContent
 
     public init(
         model: GuestVideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
         onRetry: @escaping () -> Void,
         onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
+        @ViewBuilder makeRelatedContent:
+            @escaping (
+                String,
+                [RelatedVideoCardPresentation],
+                @escaping (String) -> Void
+            ) -> RelatedContent,
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
         self.danmakuModel = danmakuModel
         self.onRetry = onRetry
         self.onSelectRelatedVideo = onSelectRelatedVideo
+        self.makeRelatedContent = makeRelatedContent
         self.playerContent = playerContent
     }
 
@@ -65,40 +78,22 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var detailSurface: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                detailSurfaceContent
-                    .id(PlaybackDetailScrollAnchor.top)
-                    .overlay(alignment: .topLeading) {
-                        if currentContext != nil, isLoadingReplacement {
-                            replacementLoadingOverlay
-                                .frame(
-                                    maxWidth: .infinity,
-                                    maxHeight: .infinity,
-                                    alignment: .topLeading
-                                )
-                                .background(.background)
-                                .transition(.opacity)
-                        }
-                    }
-            }
-            .onChange(of: presentedBVID) { previousBVID, bvid in
-                guard
-                    PlaybackDetailScrollResetPolicy.shouldReset(
-                        from: previousBVID,
-                        to: bvid
-                    )
-                else { return }
-                proxy.scrollTo(PlaybackDetailScrollAnchor.top, anchor: .top)
+        detailSurfaceContent
+            .overlay(alignment: .topLeading) {
+                if currentContext != nil, isLoadingReplacement {
+                    replacementLoadingOverlay
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .topLeading
+                        )
+                        .background(.background)
+                        .transition(.opacity)
+                }
             }
             .overlay {
                 replacementFailureOverlay
             }
-        }
-    }
-
-    private var presentedBVID: String? {
-        currentContext?.detail.bvid
     }
 
     private var isLoadingReplacement: Bool {
@@ -118,7 +113,8 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 relatedVideoState: model.relatedVideoState,
                 onSelectRelatedVideo: onSelectRelatedVideo,
                 onRetryRelatedVideos: model.retryRelatedVideos,
-                playerContent: playerContent
+                playerContent: playerContent,
+                makeRelatedContent: makeRelatedContent
             )
             .disabled(blocksRetainedContext)
             .allowsHitTesting(!blocksRetainedContext)
@@ -247,16 +243,5 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         } else {
             onRetry()
         }
-    }
-}
-
-enum PlaybackDetailScrollAnchor: Hashable {
-    case top
-}
-
-enum PlaybackDetailScrollResetPolicy {
-    static func shouldReset(from previousBVID: String?, to bvid: String?) -> Bool {
-        guard let previousBVID, let bvid else { return false }
-        return previousBVID != bvid
     }
 }

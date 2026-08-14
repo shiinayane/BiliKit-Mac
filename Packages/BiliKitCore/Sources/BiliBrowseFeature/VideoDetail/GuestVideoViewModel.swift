@@ -63,6 +63,8 @@ public final class GuestVideoViewModel {
     /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
     /// context 后原子替换，最终 reset 或当前请求取消回到 idle 时清空。
     public private(set) var presentedContext: GuestVideoContext?
+    /// App 层只用这个稳定身份协调详情 surface 的滚动重置，不需要跨越 Feature 边界读取模型。
+    public var presentedBVID: String? { presentedContext?.detail.bvid }
     /// 用户最新请求的媒体身份；在 playurl 或播放器准备失败时仍保留给 retry。
     public private(set) var requestedPlaybackIdentity: PlaybackItemIdentity?
     /// 已经由播放器成功安装的媒体身份；切换开始和失败后必须为 nil。

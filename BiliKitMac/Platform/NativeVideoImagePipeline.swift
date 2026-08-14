@@ -580,8 +580,12 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
 final class NativeVideoImagePipelineOwner {
     let pipeline = NativeVideoImagePipeline()
 
-    deinit {
+    func shutdown() {
         pipeline.shutdown()
+    }
+
+    deinit {
+        shutdown()
     }
 }
 

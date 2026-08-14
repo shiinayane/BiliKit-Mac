@@ -11,10 +11,12 @@ struct VideoDetailSkeleton: View {
         } controls: {
             controls
         } related: {
-            RelatedVideoShelf(
+            RelatedVideoShelf<EmptyView>(
                 state: .loading,
+                contentIdentity: "loading",
                 onSelect: { _ in },
-                onRetry: {}
+                onRetry: {},
+                makeLoadedContent: { _, _, _ in EmptyView() }
             )
         }
         .background(.background)
