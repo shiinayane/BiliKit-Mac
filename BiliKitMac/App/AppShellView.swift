@@ -180,6 +180,8 @@ struct AppShellView: View {
 }
 
 private struct PlaybackDestinationView: View {
+    @State private var relatedImageOwner: NativeVideoImagePipelineOwner? =
+        NativeVideoImagePipelineOwner()
     let model: GuestVideoViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
@@ -187,16 +189,51 @@ private struct PlaybackDestinationView: View {
     let onSelectRelatedVideo: (String) -> Void
 
     var body: some View {
-        VideoPlaybackView(
-            model: model,
-            danmakuModel: danmakuModel,
-            onRetry: onRetry,
-            onSelectRelatedVideo: onSelectRelatedVideo
-        ) {
-            playerContent
+        Group {
+            if let relatedImageOwner {
+                playbackDetail(imageOwner: relatedImageOwner)
+            }
+        }
+        .onAppear {
+            if relatedImageOwner == nil {
+                relatedImageOwner = NativeVideoImagePipelineOwner()
+            }
+        }
+        .onDisappear {
+            relatedImageOwner?.shutdown()
+            relatedImageOwner = nil
         }
         .navigationTitle("播放")
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    }
+
+    private func playbackDetail(
+        imageOwner: NativeVideoImagePipelineOwner
+    ) -> some View {
+        NativePlaybackDetailView(
+            contentIdentity: model.presentedBVID
+        ) {
+            VideoPlaybackView(
+                model: model,
+                danmakuModel: danmakuModel,
+                onRetry: onRetry,
+                onSelectRelatedVideo: onSelectRelatedVideo,
+                makeRelatedContent: {
+                    contentIdentity,
+                    presentations,
+                    onSelect in
+                    RelatedNativeShelfView(
+                        contentIdentity: contentIdentity,
+                        presentations: presentations,
+                        imagePipeline: imageOwner.pipeline,
+                        onSelect: onSelect
+                    )
+                }
+            ) {
+                playerContent
+            }
+        }
+        .ignoresSafeArea(.container, edges: .horizontal)
     }
 }

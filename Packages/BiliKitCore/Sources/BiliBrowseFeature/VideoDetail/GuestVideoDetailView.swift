@@ -3,7 +3,7 @@ import BiliUI
 import Foundation
 import SwiftUI
 
-struct GuestVideoDetailView<PlayerContent: View>: View {
+struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
@@ -12,6 +12,12 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
     let onSelectRelatedVideo: (String) -> Void
     let onRetryRelatedVideos: () -> Void
     let playerContent: () -> PlayerContent
+    let makeRelatedContent:
+        (
+            String,
+            [RelatedVideoCardPresentation],
+            @escaping (String) -> Void
+        ) -> RelatedContent
 
     var body: some View {
         mainContent
@@ -28,8 +34,10 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
         } related: {
             RelatedVideoShelf(
                 state: shelfState,
+                contentIdentity: context.detail.bvid,
                 onSelect: onSelectRelatedVideo,
-                onRetry: onRetryRelatedVideos
+                onRetry: onRetryRelatedVideos,
+                makeLoadedContent: makeRelatedContent
             )
         }
     }
@@ -40,17 +48,7 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
             .loading
         case .loaded(let bvid, let videos) where bvid == context.detail.bvid:
             .loaded(
-                videos.map {
-                    RelatedVideoShelfItem(
-                        bvid: $0.bvid,
-                        title: $0.title,
-                        coverURL: $0.coverURL,
-                        ownerName: $0.ownerName,
-                        viewCount: $0.viewCount,
-                        danmakuCount: $0.danmakuCount,
-                        durationSeconds: $0.durationSeconds
-                    )
-                }
+                videos.map(RelatedVideoCardPresentation.init)
             )
         case .empty(let bvid) where bvid == context.detail.bvid:
             .empty

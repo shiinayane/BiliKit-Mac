@@ -167,6 +167,11 @@ final class NativeVideoCollectionItem: NSCollectionViewItem {
         invalidate()
     }
 
+    deinit {
+        coverTask?.cancel()
+        avatarTask?.cancel()
+    }
+
     func invalidateImageRequests() {
         coverTask?.cancel()
         avatarTask?.cancel()
@@ -302,7 +307,6 @@ final class NativeVideoCardView: NSView {
     private var footerTrailingWidthCache = NativeVideoSingleLineWidthCache()
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -365,6 +369,7 @@ final class NativeVideoCardView: NSView {
         footerTrailing.stringValue = presentation.footerTrailingText ?? ""
         footerTrailing.isHidden = presentation.footerTrailingText == nil
         setAccessibilityLabel(presentation.accessibilityLabel)
+        setAccessibilityHelp(presentation.accessibilityHelp)
         setAccessibilityValue(selected ? "已选择" : nil)
         needsLayout = true
     }
@@ -421,6 +426,7 @@ final class NativeVideoCardView: NSView {
         isPressed = false
         updateInteractionAppearance(animated: false)
         setAccessibilityLabel(nil)
+        setAccessibilityHelp(nil)
         setAccessibilityValue(nil)
         if wasHovered { hoverDidChange?(false) }
         hoverDidChange = nil
@@ -498,7 +504,8 @@ final class NativeVideoCardView: NSView {
     override func mouseExited(with event: NSEvent) { setHovered(false) }
 
     override func accessibilityPerformPress() -> Bool {
-        activation?()
+        guard let activation else { return false }
+        activation()
         return true
     }
 

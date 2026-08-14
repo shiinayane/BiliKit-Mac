@@ -32,7 +32,8 @@ struct VideoDetailLifecycleTests {
                 VideoPlaybackView(
                     model: videoModel,
                     danmakuModel: danmakuModel,
-                    onRetry: {}
+                    onRetry: {},
+                    makeRelatedContent: { _, _, _ in EmptyView() }
                 ) {
                     EmptyView()
                 }

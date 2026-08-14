@@ -20,6 +20,7 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
     let footerLeadingText: String
     let footerTrailingText: String?
     let accessibilityLabel: String
+    let accessibilityHelp: String?
 
     init(
         id: String,
@@ -31,7 +32,8 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
         coverTrailingText: String? = nil,
         footerLeadingText: String,
         footerTrailingText: String? = nil,
-        accessibilityLabel: String
+        accessibilityLabel: String,
+        accessibilityHelp: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -43,6 +45,7 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
         self.footerLeadingText = footerLeadingText
         self.footerTrailingText = footerTrailingText
         self.accessibilityLabel = accessibilityLabel
+        self.accessibilityHelp = accessibilityHelp
     }
 }
 
