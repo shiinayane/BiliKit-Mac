@@ -15,7 +15,8 @@ sh Scripts/run-quality-gates.sh app
 Gate 每次使用私有临时目录保存 SwiftPM 与 Xcode 产物，退出时清理；不修改全局
 `xcode-select`。手写 `xcodebuild`、XCUI 和 App 启动也必须统一使用本任务唯一的临时产物
 根目录，并在任务结束时清理。其他 worktree 或旧共享 DerivedData 不算 fresh closure；仅用于
-临时运行时诊断时需注明证据边界。CI 使用同一入口。
+临时运行时诊断时需注明证据边界。CI 使用同一入口，并在 macOS 15/26
+宿主上显式选择同一套新 Xcode/SDK；这个矩阵不承诺旧 SDK 编译兼容。
 
 仅在明确的性能裁决中运行 Instruments/`xctrace`；事前限定问题、时长、次数和产物目录。
 摘要完成后默认删除 raw trace，并退出 Instruments、确认没有开放 trace、清理临时产物。

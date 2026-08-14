@@ -520,7 +520,7 @@ struct PopularNativeGridTests {
     @Test
     func releasingImageOwnerSynchronouslyInvalidatesRetainedPipeline() async {
         var owner: NativeVideoImagePipelineOwner? = NativeVideoImagePipelineOwner()
-        weak var weakOwner = owner
+        weak let weakOwner = owner
         let pipeline = owner!.pipeline
 
         owner = nil

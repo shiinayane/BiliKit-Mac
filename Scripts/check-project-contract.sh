@@ -25,6 +25,9 @@ project="BiliKitMac.xcodeproj/project.pbxproj"
 app="BiliKitMac/App/BiliKitMacApp.swift"
 entitlements="BiliKitMac/BiliKitMac.entitlements"
 package="Packages/BiliKitCore/Package.swift"
+ci_workflow=".github/workflows/ci.yml"
+app_source_roots="BiliKitMac/App/AppSourceRootViews.swift"
+player_host="BiliKitMac/Platform/PlayerHostView.swift"
 
 /usr/bin/plutil -lint "$project" >/dev/null || fail "Xcode 工程格式无效"
 /usr/bin/plutil -lint "$entitlements" >/dev/null || fail "entitlements 格式无效"
@@ -57,6 +60,9 @@ deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/
 set -- $deployment
 [ "$1" -gt 0 ] && [ "$2" -eq 0 ] || fail "Xcode target 必须统一支持 macOS 15"
 expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
+expect_count 1 'DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer' "$ci_workflow" "CI 必须显式使用统一的新 Xcode"
+expect_count 0 '#if compiler(>=6.2)' "$app_source_roots" "搜索栏不得为旧 SDK 保留编译期回退"
+expect_count 0 '#if compiler(>=6.2)' "$player_host" "播放器提示不得为旧 SDK 保留编译期回退"
 
 sh -n Scripts/run-quality-gates.sh || fail "质量 Gate 脚本语法无效"
 

@@ -89,11 +89,7 @@ struct SearchTabRoot: View {
     }
 
     private var searchFieldPlacement: SearchFieldPlacement {
-        #if compiler(>=6.2)
-            .toolbarPrincipal
-        #else
-            .toolbar
-        #endif
+        .toolbarPrincipal
     }
 }
 

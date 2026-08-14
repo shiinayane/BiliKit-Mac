@@ -173,15 +173,11 @@ private struct PlayerMomentaryRateBadge: View {
 private struct PlayerGlassCapsuleBackground: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                content.glassEffect(.regular, in: Capsule())
-            } else {
-                fallbackBackground(content)
-            }
-        #else
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
             fallbackBackground(content)
-        #endif
+        }
     }
 
     private func fallbackBackground(_ content: Content) -> some View {
@@ -245,15 +241,11 @@ private struct PlayerResumeButton: View {
 private struct PlayerResumeButtonStyle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                content.buttonStyle(.glass)
-            } else {
-                fallback(content)
-            }
-        #else
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
             fallback(content)
-        #endif
+        }
     }
 
     private func fallback(_ content: Content) -> some View {
