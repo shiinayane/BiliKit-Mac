@@ -91,12 +91,25 @@ struct GuestVideoDetailView<PlayerContent: View>: View {
                 ZStack {
                     Rectangle()
                         .fill(.black)
-                    ProgressView("正在准备播放…")
-                        .controlSize(.large)
-                        .font(.title3)
-                        .foregroundStyle(.white)
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.large)
+                            .tint(.white)
+                        Text("正在准备播放…")
+                            .font(.title3)
+                            .foregroundStyle(.white)
+                    }
+                    .environment(\.colorScheme, .dark)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("正在准备播放")
                 }
-                .transition(.opacity)
+                .transition(
+                    .asymmetric(
+                        insertion: .identity,
+                        removal: .opacity
+                    )
+                )
             }
         }
         .animation(
