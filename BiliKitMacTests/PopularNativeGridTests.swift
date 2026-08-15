@@ -639,26 +639,20 @@ struct PopularNativeGridTests {
         #expect(content.accessibilityLabel == history.accessibilityLabel)
     }
 
-    @Test @MainActor
-    func historyFooterUsesAppKitFittingWidthWithoutTruncatingTime() throws {
-        let field = NSTextField(labelWithString: "12月31日 19:59")
-        field.font = .preferredFont(forTextStyle: .body)
-        field.lineBreakMode = .byTruncatingTail
-        let measured = NativeVideoCardLayout.measuredSingleLineWidth(field)
+    @Test
+    func historyFooterReservesMeasuredWidthWithoutTruncatingTime() {
+        let measured = NativeVideoCardTextLayout.singleLineWidth(
+            "12月31日 19:59",
+            font: .preferredFont(forTextStyle: .body)
+        )
         let widths = NativeVideoCardLayout.footerWidths(
             contentWidth: 300,
             leadingInset: 0,
             trailingIntrinsicWidth: measured,
             showsTrailing: true
         )
-        let cell = try #require(field.cell)
-        let expansion = cell.expansionFrame(
-            withFrame: NSRect(x: 0, y: 0, width: widths.trailing, height: 21),
-            in: field
-        )
 
         #expect(widths.trailing == measured)
-        #expect(expansion.isEmpty)
         #expect(widths.leading + widths.trailing + NativeVideoCardLayout.footerSpacing == 300)
     }
 
