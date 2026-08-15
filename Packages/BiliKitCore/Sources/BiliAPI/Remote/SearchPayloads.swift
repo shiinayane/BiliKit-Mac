@@ -60,7 +60,7 @@ struct SearchVideoPayload: Decodable, Sendable {
         }
         return SearchVideo(
             bvid: bvid,
-            title: Self.strippingTags(title),
+            title: RemoteVideoTitleNormalizer.searchResult(title),
             coverURL: WebImageURL.parse(pic),
             owner: VideoOwner(
                 id: mid,
@@ -75,24 +75,6 @@ struct SearchVideoPayload: Decodable, Sendable {
             durationSeconds: Self.durationSeconds(duration),
             publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate))
         )
-    }
-
-    private static func strippingTags(_ value: String) -> String {
-        var result = ""
-        var isInsideTag = false
-        for character in value {
-            switch character {
-            case "<":
-                isInsideTag = true
-            case ">":
-                isInsideTag = false
-            default:
-                if !isInsideTag {
-                    result.append(character)
-                }
-            }
-        }
-        return result
     }
 
     private static func durationSeconds(_ value: String) -> Int? {

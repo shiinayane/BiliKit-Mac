@@ -18,6 +18,7 @@ struct BiliAPIClientTests {
         #expect(page.hasMore)
         #expect(page.videos.count == 2)
         #expect(page.videos[0].bvid == "BV1FixtureA1")
+        #expect(page.videos[0].title == "合成热门样本 'A' <测试>")
         #expect(page.videos[0].owner.name == "测试作者甲")
         #expect(page.videos[0].statistics.viewCount == 12_345)
         #expect(page.videos[0].coverURL?.scheme == "https")
@@ -282,6 +283,7 @@ struct BiliAPIClientTests {
         let videos = try await client.relatedVideos(to: "BV1FixtureA1")
 
         #expect(videos.map(\.bvid) == ["BV1RelatedA1", "BV1RelatedB2"])
+        #expect(videos[0].title == "合成相关推荐 'A' <测试>")
         #expect(videos[0].ownerName == "相关作者甲")
         #expect(videos[0].viewCount == 22_222)
         #expect(videos[0].durationSeconds == 222)
@@ -454,7 +456,7 @@ struct BiliAPIClientTests {
 
         #expect(page.totalResults == 3)
         #expect(page.videos.count == 2)
-        #expect(page.videos[0].title == "学习macOS 的第一步")
+        #expect(page.videos[0].title == "学习macOS 'A' <测试>")
         #expect(page.videos[0].durationSeconds == 3_723)
         #expect(page.videos[0].coverURL?.scheme == "https")
         #expect(page.videos[1].durationSeconds == 754)
@@ -1477,6 +1479,7 @@ struct BiliAPIClientTests {
         let page = try await client.watchHistory(pageSize: 2)
 
         #expect(page.items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2"])
+        #expect(page.items[0].title == "手写历史视频 '甲' <测试>")
         #expect(page.items[0].progressSeconds == 125)
         #expect(page.items[1].progressSeconds == 300)
         #expect(page.items[0].coverURL?.scheme == "https")

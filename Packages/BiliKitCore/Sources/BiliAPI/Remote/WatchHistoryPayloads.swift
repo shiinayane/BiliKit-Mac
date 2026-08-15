@@ -117,7 +117,7 @@ struct WatchHistoryItemPayload: Decodable, Sendable {
             : min(progress, duration)
         return WatchHistoryItem(
             bvid: bvid,
-            title: title,
+            title: RemoteVideoTitleNormalizer.plainText(title),
             coverURL: WebImageURL.parse(cover),
             owner: VideoOwner(
                 id: authorID,

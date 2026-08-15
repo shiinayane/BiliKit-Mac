@@ -6,7 +6,7 @@
     "list": [
       {
         "bvid": "BV1FixtureA1",
-        "title": "合成热门样本 A",
+        "title": "合成热门样本 &#x27;A&#x27; &lt;测试&gt;",
         "pic": "http://images.example.invalid/cover-a.jpg",
         "owner": {
           "mid": 10001,
