@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import CoreText
 import QuartzCore
 
 extension NSUserInterfaceItemIdentifier {
@@ -43,11 +42,6 @@ enum NativeVideoCardLayout {
             ),
             trailing: trailingWidth
         )
-    }
-
-    @MainActor
-    static func measuredSingleLineWidth(_ field: NSTextField) -> CGFloat {
-        ceil(field.fittingSize.width)
     }
 }
 
@@ -282,20 +276,17 @@ final class NativeVideoCollectionItem: NSCollectionViewItem {
 
 @MainActor
 final class NativeVideoCardView: NSView {
-    private let coverContainer = NativeVideoFlippedView()
-    private let cover = NativeVideoLayerImageView(
-        placeholderSystemSymbolName: "photo",
-        placeholderTintColor: .tertiaryLabelColor,
-        placeholderFrameSize: NSSize(width: 32, height: 32)
-    )
-    private let coverOverlay = NativeVideoCoverOverlayView()
+    private let cover = NativeVideoMergedCoverView(frame: .zero)
     private let avatar = NativeVideoLayerImageView(
         placeholderSystemSymbolName: "person.crop.circle.fill",
         placeholderTintColor: .quaternaryLabelColor
     )
-    private let title = NativeVideoTextField(wrappingLabelWithString: "")
-    private let footerLeading = NativeVideoTextField(labelWithString: "")
-    private let footerTrailing = NativeVideoTextField(labelWithString: "")
+    private let titleFont = NSFont.systemFont(
+        ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
+        weight: .medium
+    )
+    private let footerFont = NSFont.preferredFont(forTextStyle: .body)
+    private let textRenderer = NativeVideoCardTextRenderer()
     private var activation: (() -> Void)?
     private var hoverDidChange: ((Bool) -> Void)?
     private var trackingArea: NSTrackingArea?
@@ -304,7 +295,6 @@ final class NativeVideoCardView: NSView {
     private var selected = false
     private var showsKeyboardFocus = false
     private var isPressed = false
-    private var footerTrailingWidthCache = NativeVideoSingleLineWidthCache()
 
     override var isFlipped: Bool { true }
 
@@ -312,37 +302,11 @@ final class NativeVideoCardView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = 12
-        coverContainer.wantsLayer = true
-        coverContainer.layer?.cornerRadius = 10
-        coverContainer.layer?.masksToBounds = true
-        coverContainer.layer?.backgroundColor =
-            NSColor.secondaryLabelColor
-            .withAlphaComponent(0.12).cgColor
-
-        title.font = .systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
-            weight: .medium
-        )
-        title.maximumNumberOfLines = 2
-        title.lineBreakMode = .byWordWrapping
-        title.cell?.wraps = true
-        title.cell?.truncatesLastVisibleLine = true
-        for field in [footerLeading, footerTrailing] {
-            field.font = .preferredFont(forTextStyle: .body)
-            field.textColor = .secondaryLabelColor
-            field.lineBreakMode = .byTruncatingTail
-        }
-        footerTrailing.alignment = .right
-
-        addSubview(coverContainer)
-        for subview in [cover, coverOverlay] {
-            subview.setAccessibilityElement(false)
-            coverContainer.addSubview(subview)
-        }
-        for subview in [avatar, title, footerLeading, footerTrailing] {
+        for subview in [cover, avatar] {
             subview.setAccessibilityElement(false)
             addSubview(subview)
         }
+        if let layer { textRenderer.install(in: layer) }
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
     }
@@ -360,14 +324,15 @@ final class NativeVideoCardView: NSView {
         self.hoverDidChange = hoverDidChange
         showsAvatar = presentation.showsAvatar
         avatar.isHidden = !showsAvatar
-        title.stringValue = presentation.title
-        coverOverlay.configure(
+        cover.configure(
             metrics: presentation.coverMetrics,
             trailingText: presentation.coverTrailingText
         )
-        footerLeading.stringValue = presentation.footerLeadingText
-        footerTrailing.stringValue = presentation.footerTrailingText ?? ""
-        footerTrailing.isHidden = presentation.footerTrailingText == nil
+        textRenderer.configure(
+            title: presentation.title,
+            footerLeading: presentation.footerLeadingText,
+            footerTrailing: presentation.footerTrailingText
+        )
         setAccessibilityLabel(presentation.accessibilityLabel)
         setAccessibilityHelp(presentation.accessibilityHelp)
         setAccessibilityValue(selected ? "已选择" : nil)
@@ -410,12 +375,8 @@ final class NativeVideoCardView: NSView {
         layer?.removeAllAnimations()
         let wasHovered = isHovered
         activation = nil
-        title.stringValue = ""
-        coverOverlay.reset()
-        footerLeading.stringValue = ""
-        footerTrailing.stringValue = ""
-        footerTrailing.isHidden = true
-        footerTrailingWidthCache.reset()
+        cover.reset()
+        textRenderer.reset()
         avatar.isHidden = false
         showsAvatar = true
         setCover(nil, animated: false)
@@ -434,53 +395,68 @@ final class NativeVideoCardView: NSView {
 
     func refreshEnvironmentAppearance() {
         updateInteractionAppearance(animated: false)
+        needsLayout = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsLayout = true
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsLayout = true
     }
 
     override func layout() {
         super.layout()
         let coverHeight = floor(bounds.width * 9 / 16)
-        coverContainer.frame = NSRect(x: 0, y: 0, width: bounds.width, height: coverHeight)
-        cover.frame = coverContainer.bounds
-        let overlayHeight = min(NativeVideoCoverOverlayView.preferredHeight, coverHeight)
-        coverOverlay.frame = NSRect(
-            x: 0,
-            y: coverHeight - overlayHeight,
-            width: bounds.width,
-            height: overlayHeight
-        )
+        cover.frame = NSRect(x: 0, y: 0, width: bounds.width, height: coverHeight)
         let textX: CGFloat = showsAvatar ? 44 : 0
         avatar.frame = NSRect(x: 0, y: coverHeight + 10, width: 34, height: 34)
         avatar.layer?.cornerRadius = 17
-        title.frame = NSRect(
+        let titleFrame = NSRect(
             x: textX,
             y: coverHeight + 10,
             width: max(1, bounds.width - textX),
             height: 47
         )
         let footerY = coverHeight + 63
-        let trailingWidth =
-            footerTrailing.isHidden
-            ? 0
-            : footerTrailingWidthCache.width(for: footerTrailing.stringValue) {
-                NativeVideoCardLayout.measuredSingleLineWidth(footerTrailing)
-            }
+        let showsFooterTrailing = textRenderer.showsFooterTrailing
+        let trailingWidth = textRenderer.trailingWidth(font: footerFont)
         let footerWidths = NativeVideoCardLayout.footerWidths(
             contentWidth: bounds.width,
             leadingInset: textX,
             trailingIntrinsicWidth: trailingWidth,
-            showsTrailing: !footerTrailing.isHidden
+            showsTrailing: showsFooterTrailing
         )
-        footerLeading.frame = NSRect(
+        let footerLeadingFrame = NSRect(
             x: textX,
             y: footerY,
             width: footerWidths.leading,
             height: 21
         )
-        footerTrailing.frame = NSRect(
+        let footerTrailingFrame = NSRect(
             x: max(textX, bounds.width - footerWidths.trailing),
             y: footerY,
             width: footerWidths.trailing,
             height: 21
+        )
+        textRenderer.layout(
+            titleFrame: titleFrame,
+            footerLeadingFrame: footerLeadingFrame,
+            footerTrailingFrame: footerTrailingFrame,
+            titleFont: titleFont,
+            footerFont: footerFont,
+            appearance: effectiveAppearance,
+            contentsScale: window?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor
+                ?? 2
         )
     }
 
@@ -600,12 +576,7 @@ final class NativeVideoCardView: NSView {
 }
 
 @MainActor
-private final class NativeVideoTextField: NSTextField {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-@MainActor
-private final class NativeVideoCoverOverlayView: NSView {
+private final class NativeVideoMergedCoverView: NSView {
     private struct SymbolRasterKey: Hashable {
         let name: String
         let pointSize: CGFloat
@@ -615,7 +586,7 @@ private final class NativeVideoCoverOverlayView: NSView {
         let tintName: String
     }
 
-    static let preferredHeight: CGFloat = 35
+    private static let overlayHeight: CGFloat = 35
     private static let metricBottomOffset: CGFloat = 22
     private static let leadingInset: CGFloat = 9
     private static let iconSize: CGFloat = 12
@@ -627,42 +598,52 @@ private final class NativeVideoCoverOverlayView: NSView {
     private static let maximumSymbolRasterCount = 32
     private static var symbolRasters: [SymbolRasterKey: CGImage] = [:]
 
+    private let placeholderLayer = CALayer()
+    private let imageLayer = CALayer()
     private let gradientLayer = CAGradientLayer()
     private let metricIconLayers = [CALayer(), CALayer()]
     private let metricTextLayers = [
-        NativeVideoCoverOverlayView.makeTextLayer(
+        NativeVideoMergedCoverView.makeTextLayer(
             font: .systemFont(ofSize: 12, weight: .medium)
         ),
-        NativeVideoCoverOverlayView.makeTextLayer(
+        NativeVideoMergedCoverView.makeTextLayer(
             font: .systemFont(ofSize: 12, weight: .medium)
         ),
     ]
     private let metricCells = [
-        NativeVideoCoverOverlayView.makeLabelCell(
+        NativeVideoMergedCoverView.makeLabelCell(
             font: .systemFont(ofSize: 12, weight: .medium)
         ),
-        NativeVideoCoverOverlayView.makeLabelCell(
+        NativeVideoMergedCoverView.makeLabelCell(
             font: .systemFont(ofSize: 12, weight: .medium)
         ),
     ]
     private var metricIconNames: [String?] = [nil, nil]
     private var metricSizes: [NSSize] = [.zero, .zero]
     private var metricCount = 0
-    private let trailingCell = NativeVideoCoverOverlayView.makeLabelCell(
+    private let trailingCell = NativeVideoMergedCoverView.makeLabelCell(
         font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     )
-    private let trailingTextLayer = NativeVideoCoverOverlayView.makeTextLayer(
+    private let trailingTextLayer = NativeVideoMergedCoverView.makeTextLayer(
         font: .monospacedDigitSystemFont(ofSize: 12, weight: .medium),
         alignmentMode: .right
     )
     private var trailingSize = NSSize.zero
+    private var imageGeneration: UInt64 = 0
 
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.cornerRadius = 10
         layer?.masksToBounds = true
+        layer?.backgroundColor = Self.backgroundColor
+
+        placeholderLayer.contentsGravity = .center
+        placeholderLayer.actions = Self.imageLayerActions
+        imageLayer.contentsGravity = .resizeAspectFill
+        imageLayer.actions = Self.imageLayerActions
         gradientLayer.colors = [
             NSColor.clear.cgColor,
             NSColor.black.withAlphaComponent(0.78).cgColor,
@@ -670,6 +651,8 @@ private final class NativeVideoCoverOverlayView: NSView {
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
         gradientLayer.actions = Self.disabledLayerActions
+        layer?.addSublayer(placeholderLayer)
+        layer?.addSublayer(imageLayer)
         layer?.addSublayer(gradientLayer)
         for index in metricIconLayers.indices {
             let iconLayer = metricIconLayers[index]
@@ -683,6 +666,8 @@ private final class NativeVideoCoverOverlayView: NSView {
         }
         trailingTextLayer.isHidden = true
         layer?.addSublayer(trailingTextLayer)
+        refreshPlaceholderImage()
+        setImage(nil, animated: false)
         updateContentsScale()
         setAccessibilityElement(false)
     }
@@ -734,13 +719,44 @@ private final class NativeVideoCoverOverlayView: NSView {
         trailingTextLayer.string = nil
         trailingTextLayer.isHidden = true
         trailingSize = .zero
+        setImage(nil, animated: false)
         needsLayout = true
+    }
+
+    func setImage(_ image: CGImage?, animated: Bool) {
+        imageGeneration &+= 1
+        let generation = imageGeneration
+        imageLayer.removeAnimation(forKey: "native-video-image.fade")
+        imageLayer.contents = image
+        imageLayer.opacity = 1
+        guard
+            image != nil,
+            animated,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            placeholderLayer.isHidden = image != nil
+            return
+        }
+        placeholderLayer.isHidden = false
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0
+        animation.toValue = 1
+        animation.duration = 0.15
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, imageGeneration == generation else { return }
+            placeholderLayer.isHidden = true
+        }
+        imageLayer.add(animation, forKey: "native-video-image.fade")
+        CATransaction.commit()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateContentsScale()
         refreshMetricIcons()
+        needsLayout = true
     }
 
     override func viewDidChangeBackingProperties() {
@@ -751,12 +767,29 @@ private final class NativeVideoCoverOverlayView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        layer?.backgroundColor = Self.backgroundColor
+        refreshPlaceholderImage()
         refreshMetricIcons()
     }
 
     override func layout() {
         super.layout()
-        gradientLayer.frame = bounds
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let placeholderSize = NSSize(width: 32, height: 32)
+        placeholderLayer.frame = NSRect(
+            x: floor((bounds.width - placeholderSize.width) / 2),
+            y: floor((bounds.height - placeholderSize.height) / 2),
+            width: placeholderSize.width,
+            height: placeholderSize.height
+        )
+        imageLayer.frame = bounds
+        let overlayHeight = min(Self.overlayHeight, bounds.height)
+        gradientLayer.frame = NSRect(
+            x: 0,
+            y: bounds.height - overlayHeight,
+            width: bounds.width,
+            height: overlayHeight
+        )
         let metricY = bounds.height - Self.metricBottomOffset
         var nextX = Self.leadingInset
         for index in 0..<metricCount {
@@ -785,6 +818,8 @@ private final class NativeVideoCoverOverlayView: NSView {
                 height: trailingSize.height
             )
         }
+        placeholderLayer.contentsScale = scale
+        imageLayer.contentsScale = scale
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -814,8 +849,20 @@ private final class NativeVideoCoverOverlayView: NSView {
         needsLayout = true
     }
 
+    private func refreshPlaceholderImage() {
+        let configuration = NSImage.SymbolConfiguration(
+            paletteColors: [.tertiaryLabelColor]
+        )
+        placeholderLayer.contents = NSImage(
+            systemSymbolName: "photo",
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(configuration)
+    }
+
     private func updateContentsScale() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        placeholderLayer.contentsScale = scale
+        imageLayer.contentsScale = scale
         for textLayer in metricTextLayers {
             textLayer.contentsScale = scale
         }
@@ -841,11 +888,7 @@ private final class NativeVideoCoverOverlayView: NSView {
         alignmentMode: CATextLayerAlignmentMode = .left
     ) -> CATextLayer {
         let textLayer = CATextLayer()
-        textLayer.font = CTFontCreateWithFontDescriptor(
-            font.fontDescriptor as CTFontDescriptor,
-            font.pointSize,
-            nil
-        )
+        textLayer.font = NativeVideoCardTextLayout.ctFont(font)
         textLayer.fontSize = font.pointSize
         textLayer.foregroundColor = NSColor.white.cgColor
         textLayer.alignmentMode = alignmentMode
@@ -861,6 +904,14 @@ private final class NativeVideoCoverOverlayView: NSView {
         "hidden": NSNull(),
         "position": NSNull(),
         "string": NSNull(),
+    ]
+
+    private static let imageLayerActions: [String: CAAction] = [
+        "bounds": NSNull(),
+        "contents": NSNull(),
+        "hidden": NSNull(),
+        "opacity": NSNull(),
+        "position": NSNull(),
     ]
 
     private static func symbolRaster(
@@ -939,11 +990,10 @@ private final class NativeVideoCoverOverlayView: NSView {
         symbolRasters[key] = raster
         return raster
     }
-}
 
-@MainActor
-private final class NativeVideoFlippedView: NSView {
-    override var isFlipped: Bool { true }
+    private static var backgroundColor: CGColor {
+        NSColor.secondaryLabelColor.withAlphaComponent(0.12).cgColor
+    }
 }
 
 @MainActor
