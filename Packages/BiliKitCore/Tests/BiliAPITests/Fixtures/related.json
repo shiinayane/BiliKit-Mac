@@ -4,7 +4,7 @@
   "data": [
     {
       "bvid": "BV1RelatedA1",
-      "title": "合成相关推荐 A",
+      "title": "合成相关推荐 &#39;A&#39; &lt;测试&gt;",
       "pic": "//image.example.invalid/related-a.jpg",
       "owner": { "name": "相关作者甲" },
       "stat": { "view": 22222, "danmaku": 222 },

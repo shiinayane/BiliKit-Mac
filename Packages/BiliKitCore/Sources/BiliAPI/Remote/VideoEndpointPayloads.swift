@@ -27,7 +27,7 @@ struct PopularVideoPayload: Decodable, Sendable {
         }
         return PopularVideo(
             bvid: bvid,
-            title: title,
+            title: RemoteVideoTitleNormalizer.plainText(title),
             coverURL: WebImageURL.parse(pic),
             owner: owner.model(),
             statistics: stat.model(),
@@ -62,7 +62,7 @@ struct RelatedVideoPayload: Decodable, Sendable {
         }
         return RelatedVideo(
             bvid: bvid,
-            title: title,
+            title: RemoteVideoTitleNormalizer.plainText(title),
             coverURL: pic.flatMap(WebImageURL.parse),
             ownerName: owner.name,
             viewCount: stat.view,
