@@ -29,31 +29,32 @@ public final class CoreAnimationDanmakuRenderer:
 
     public weak var delegate: (any DanmakuRenderingBackendDelegate)?
     public let rootLayer: CALayer
+    public let style: CoreAnimationDanmakuStyle
 
     public private(set) var renderEpoch: UInt64 = 0
     public var activeLayerCount: Int { entries.count }
 
     private let contentsScale: CGFloat
-    private let darkInkShadow: NSShadow = {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black
-        shadow.shadowOffset = .zero
-        shadow.shadowBlurRadius = 1.5
-        return shadow
-    }()
-    private let lightInkShadow: NSShadow = {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.white
-        shadow.shadowOffset = .zero
-        shadow.shadowBlurRadius = 1.5
-        return shadow
-    }()
+    private let darkInkShadow: NSShadow
+    private let lightInkShadow: NSShadow
     private var entries: [String: Entry] = [:]
     private var nextObjectIdentity: UInt64 = 0
     private var surfaceSize = CGSize.zero
 
-    public init(contentsScale: Double = 2) {
+    public init(
+        style: CoreAnimationDanmakuStyle = .production,
+        contentsScale: Double = 2
+    ) {
+        self.style = style
         self.contentsScale = max(CGFloat(contentsScale), 1)
+        darkInkShadow = Self.makeShadow(
+            color: .black,
+            blurRadius: style.shadowBlurRadius
+        )
+        lightInkShadow = Self.makeShadow(
+            color: .white,
+            blurRadius: style.shadowBlurRadius
+        )
         rootLayer = CALayer()
         rootLayer.anchorPoint = .zero
         rootLayer.isGeometryFlipped = true
@@ -250,9 +251,29 @@ public final class CoreAnimationDanmakuRenderer:
             Self.supportedFontSizes.contains(event.fontSize)
             ? event.fontSize : 25
         return NSFont.systemFont(
-            ofSize: CGFloat(normalizedFontSize),
-            weight: .semibold
+            ofSize: CGFloat(normalizedFontSize * style.fontScale),
+            weight: fontWeight
         )
+    }
+
+    private var fontWeight: NSFont.Weight {
+        switch style.fontWeight {
+        case .regular: .regular
+        case .medium: .medium
+        case .semibold: .semibold
+        case .bold: .bold
+        }
+    }
+
+    private static func makeShadow(
+        color: NSColor,
+        blurRadius: Double
+    ) -> NSShadow {
+        let shadow = NSShadow()
+        shadow.shadowColor = color
+        shadow.shadowOffset = .zero
+        shadow.shadowBlurRadius = CGFloat(blurRadius)
+        return shadow
     }
 
     private func rgbComponents(

@@ -11,6 +11,52 @@ import Testing
 @Suite
 struct DanmakuPresentationControllerTests {
     @Test
+    func productionVisualDefaultsAreSingleSourceAndBounded() {
+        #expect(
+            CoreAnimationDanmakuStyle.production
+                == CoreAnimationDanmakuStyle(
+                    fontScale: 1,
+                    fontWeight: .semibold,
+                    shadowBlurRadius: 1.5
+                )
+        )
+
+        let bounded = CoreAnimationDanmakuStyle(
+            fontScale: 99,
+            fontWeight: .bold,
+            shadowBlurRadius: -99
+        )
+        #expect(bounded.fontScale == CoreAnimationDanmakuStyle.fontScaleRange.upperBound)
+        #expect(bounded.fontWeight == .bold)
+        #expect(
+            bounded.shadowBlurRadius
+                == CoreAnimationDanmakuStyle.shadowBlurRadiusRange.lowerBound
+        )
+
+        let nonfinite = CoreAnimationDanmakuStyle(
+            fontScale: .nan,
+            fontWeight: .regular,
+            shadowBlurRadius: .infinity
+        )
+        #expect(nonfinite.fontScale == 1)
+        #expect(nonfinite.fontWeight == .regular)
+        #expect(nonfinite.shadowBlurRadius == 1.5)
+
+        let laneConfiguration = DanmakuLaneConfiguration.production(
+            surfaceWidth: 1_280,
+            surfaceHeight: 720
+        )
+        #expect(laneConfiguration.laneHeight == 36)
+        #expect(laneConfiguration.minimumHorizontalGap == 24)
+        #expect(
+            laneConfiguration.maximumActiveCount
+                == DanmakuLaneConfiguration.hardMaximumActiveCount
+        )
+        #expect(laneConfiguration.displayAreaFraction == 1)
+        #expect(laneConfiguration.maximumOverlapDepth == 1)
+    }
+
+    @Test
     func densityPoliciesMatchProductionSpacingAndOverlapDepths() {
         let policies = DanmakuDensity.allCases.map(
             DanmakuDensityAdmissionPolicy.init
@@ -712,6 +758,52 @@ struct DanmakuPresentationControllerTests {
         #expect(shadow.shadowBlurRadius == 1.5)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
+    }
+
+    @Test
+    func coreAnimationStyleMapsScaleWeightAndShadowIntoMeasurementAndLayer() throws {
+        let productionRenderer = CoreAnimationDanmakuRenderer(
+            style: .production,
+            contentsScale: 2
+        )
+        let customStyle = CoreAnimationDanmakuStyle(
+            fontScale: 1.5,
+            fontWeight: .bold,
+            shadowBlurRadius: 4
+        )
+        let customRenderer = CoreAnimationDanmakuRenderer(
+            style: customStyle,
+            contentsScale: 2
+        )
+        let fixture = event(id: "custom-style", mode: .top, fontSize: 25)
+        let productionMetrics = productionRenderer.measure(fixture)
+        let customMetrics = customRenderer.measure(fixture)
+
+        #expect(customRenderer.style == customStyle)
+        #expect(customMetrics.width > productionMetrics.width)
+        #expect(customMetrics.height > productionMetrics.height)
+
+        customRenderer.updateSurfaceSize(width: 800, height: 240)
+        customRenderer.render(
+            placement(
+                event: fixture,
+                metrics: customMetrics,
+                originY: 20
+            )
+        )
+        let layer = try #require(customRenderer.textLayer(forEventID: fixture.id))
+        let attributed = try #require(layer.string as? NSAttributedString)
+        let font = try #require(
+            attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        )
+        let shadow = try #require(
+            attributed.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
+        )
+
+        #expect(Double(font.pointSize) == 37.5)
+        #expect(font.fontDescriptor.symbolicTraits.contains(.bold))
+        #expect(shadow.shadowBlurRadius == 4)
+        #expect(layer.shadowOpacity == 0)
     }
 
     @Test

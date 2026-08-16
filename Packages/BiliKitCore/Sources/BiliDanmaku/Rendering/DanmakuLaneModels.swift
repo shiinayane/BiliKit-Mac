@@ -4,6 +4,20 @@ import Foundation
 public struct DanmakuLaneConfiguration: Sendable, Equatable {
     public static let hardMaximumActiveCount = 640
 
+    public static func production(
+        surfaceWidth: Double,
+        surfaceHeight: Double
+    ) -> Self {
+        Self(
+            surfaceWidth: surfaceWidth,
+            surfaceHeight: surfaceHeight,
+            laneHeight: 36,
+            minimumHorizontalGap: 24,
+            maximumActiveCount: hardMaximumActiveCount,
+            displayAreaFraction: 1
+        )
+    }
+
     public let surfaceWidth: Double
     public let surfaceHeight: Double
     public let laneHeight: Double
