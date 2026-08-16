@@ -13,10 +13,16 @@ struct NativeVideoCardTextLayoutTests {
         let language =
             CTFontDescriptorCopyAttribute(
                 descriptor,
-                kCTFontDescriptorLanguageAttribute
+                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
             ) as? String
 
         #expect(language == NativeVideoCardTextLayout.typesettingLanguage)
+        #if compiler(>=6.3)
+            #expect(
+                NativeVideoCardTextLayout.languageDescriptorAttribute
+                    == kCTFontDescriptorLanguageAttribute as String
+            )
+        #endif
         #expect(CTFontGetSize(font) == source.pointSize)
         let sourceCTFont = CTFontCreateWithFontDescriptor(
             source.fontDescriptor as CTFontDescriptor,
@@ -76,7 +82,7 @@ struct NativeVideoCardTextLayoutTests {
         #expect(
             CTFontDescriptorCopyAttribute(
                 CTFontCopyFontDescriptor(titleFont),
-                kCTFontDescriptorLanguageAttribute
+                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
             ) as? String == NativeVideoCardTextLayout.typesettingLanguage
         )
         #expect(

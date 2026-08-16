@@ -4,6 +4,13 @@ import QuartzCore
 
 enum NativeVideoCardTextLayout {
     static let typesettingLanguage = "zh-Hans"
+    static let languageDescriptorAttribute: String = {
+        #if compiler(>=6.3)
+            kCTFontDescriptorLanguageAttribute as String
+        #else
+            "CTFontDescriptorLanguageAttribute"
+        #endif
+    }()
 
     static func singleLineWidth(
         _ text: String,
@@ -32,7 +39,7 @@ enum NativeVideoCardTextLayout {
         let descriptor = CTFontDescriptorCreateCopyWithAttributes(
             font.fontDescriptor as CTFontDescriptor,
             [
-                kCTFontDescriptorLanguageAttribute: typesettingLanguage
+                languageDescriptorAttribute: typesettingLanguage
             ] as CFDictionary
         )
         return CTFontCreateWithFontDescriptor(
