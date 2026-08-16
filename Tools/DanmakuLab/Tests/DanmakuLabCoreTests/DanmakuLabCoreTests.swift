@@ -907,7 +907,7 @@ struct DanmakuLabCoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let sampleID = UUID()
         let pending = [
-            "protocol-version=2",
+            "protocol-version=3",
             "sample-id=\(sampleID.uuidString.lowercased())",
             "preset=steady-80@1",
             "renderer=production-core-animation",
@@ -944,6 +944,7 @@ struct DanmakuLabCoreTests {
         statistics.generated = preset.expectedGeneratedEvents
         statistics.attempted = preset.expectedGeneratedEvents
         statistics.droppedNoLane = preset.expectedGeneratedEvents
+        statistics.peakActive = 86
         let evidence = LabPerformanceRunEvidence(
             attemptID: sampleID,
             presetIdentity: preset.catalogIdentity,
@@ -986,9 +987,11 @@ struct DanmakuLabCoreTests {
             encoding: .utf8
         )
         #expect(result.contains("sample-id=\(sampleID.uuidString.lowercased())"))
+        #expect(result.contains("protocol-version=3"))
         #expect(result.contains("repetition=2"))
         #expect(result.contains("logical-ticks-actual=900"))
         #expect(result.contains("disposition=eligible"))
+        #expect(result.contains("peak-active=86"))
     }
 
     @Test("candidate renderer is Lab-owned and tears down in an isolated run")

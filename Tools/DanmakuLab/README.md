@@ -111,32 +111,42 @@ The trace envelope reserves 60 seconds for the human handoff before the fixed wa
 Only the unique Measurement signpost interval is quantitative; the extra setup capture is excluded
 from metric extraction and prevents UI round-trip latency from truncating an otherwise valid run.
 
-Use Time Profiler for process CPU, call-tree attribution, and detected main-thread hangs (the stock
-template reports hangs at 250 ms or longer), Animation Hitches for shorter frame-lifetime and hitch
+Use Time Profiler for process CPU, retained main-thread CPU, temporary call-tree review before
+finalization, and detected main-thread hangs (the stock template reports hangs at 250 ms or longer),
+Animation Hitches for shorter frame-lifetime and hitch
 evidence, and Allocations for allocation lifetime and memory trends. Workload preset and
 renderer identity are separate sample dimensions. Each repetition uses a fresh process, and each
 preset/renderer/template tuple forms one three-repetition series; metrics from different traces are
-never called the same sample. Renderer active/peak layers and admitted/drop accounting come from the frozen Lab
-run. RSS and Physical Footprint are sampled at 1 Hz with the low-frequency `task_vm_info` sampler while
+never called the same sample. Renderer admission/drop accounting and peak active presentations come
+from the frozen Lab run. For the production Core Animation baseline, one active presentation owns one
+`CATextLayer`; candidate renderers must not claim that mapping. RSS and Physical Footprint are sampled
+at 1 Hz with the low-frequency `task_vm_info` sampler while
 the HUD remains frozen; record those as in-process supporting metrics, not as Allocations evidence.
 HUD cadence and visual smoothness are not trace evidence. Run only one renderer in the process;
 side-by-side visual comparison is never a quantitative sample.
 
 The recorder machine-validates exactly one complete `DanmakuLab Measurement` Points of Interest
 interval whose attempt UUID matches the Lab result. For Time Profiler it also exports the samples in
-that interval, computes process CPU from sample weights, and records the maximum detected hang; zero
-means no hang met the template's 250 ms reporting floor, not that every main-thread interval was zero.
+that interval, computes process and main-thread CPU from sample weights, and records the maximum
+detected hang; zero means no hang met the template's 250 ms reporting floor, not that every
+main-thread interval was zero.
 Complete only the remaining human-review fields in the generated Markdown summary. The summary
-already binds the sample to binary and frozen
-threshold hashes. Window occlusion, loss of visibility, display movement, power-source/thermal-state
-changes, and material unrelated foreground load are environment pollution and must be marked `YES`;
-the automatically recorded machine/display/power files are provenance, not proof that none occurred.
+already binds the sample to binary and frozen threshold hashes. After Measurement, the operator must
+explicitly answer every generated checklist field: full-window visibility, target-display identity,
+absence of unrelated foreground load, and stable power/thermal state. An unconfirmed or failed item
+cannot be represented as an unpolluted sample. Window occlusion, loss of visibility, display
+movement, power-source/thermal-state changes, and material unrelated foreground load are environment
+pollution and must be marked `YES`;
+an adjudication sample whose measured refresh rate falls outside the preregistered range must also be
+marked `YES` rather than retaining contradictory unpolluted evidence.
+The automatically recorded machine/display/power files are provenance, not proof that none occurred.
 The Lab atomically claims the recorder's pending sample and writes a machine-readable
 result containing preset, renderer, repetition, attempt UUID, exact ticks/events, disposition,
 admission totals, measurement duration, and low-frequency memory samples. Finalization cross-checks
 the hand-reviewed trace fields against the frozen result hash and refuses incomplete or inconsistent
-Lab/trace decisions, records a raw-trace tree hash, and deletes the corresponding raw trace by default while
-retaining the summary and environment record. It then freezes a sample-finalization manifest and
+Lab/trace decisions. The recorder deletes its temporary xctrace XML exports after extracting the
+machine-readable metrics. Finalization records a raw-trace tree hash and deletes the corresponding raw
+trace by default while retaining the summary and environment record. It then freezes a sample-finalization manifest and
 summary hash; downstream aggregation rejects a missing marker or any post-finalization edit:
 
 ```sh
@@ -150,8 +160,9 @@ summary, relaunch a fresh process, and repeat the same repetition with attempt `
 on. Polluted attempts never occupy one of the three valid repetitions.
 
 An adjudication run repeats every template and preset exactly as preregistered. All three valid
-repetitions must satisfy the budgets, and their relative spread must remain within the preregistered
-limit; there is no silent outlier deletion. A calibration pilot may preregister only one tuple, but it
+repetitions must satisfy the budgets, and each metric's relative spread must remain within its own
+preregistered limit; there is no shared catch-all spread budget and no silent outlier deletion. A
+calibration pilot may preregister only one tuple, but it
 still uses three fresh-process repetitions and reports median, worst, and spread without turning them
 into a pass. After finalizing the three samples, run
 `finalize-performance-series.sh ARTIFACT_ROOT PRESET_ID RENDERER_ID TEMPLATE_SLUG`; it verifies shared
@@ -167,3 +178,7 @@ fixed-environment regression benchmark for the presentation controller plus rend
 autonomous metric extractor, cross-machine score, or full-App playback benchmark. Close Instruments and remove the remaining
 task-local build/cache root after retained summaries have been reviewed and copied to their reviewed
 destination.
+
+Performance artifact protocol 3 adds the explicit operator checklist, retained main-thread CPU,
+peak-active evidence, and metric-specific spread budgets. Protocol 2 calibration summaries remain
+historical evidence only and cannot be mixed into a protocol 3 adjudication root.

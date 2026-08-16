@@ -16,6 +16,8 @@ renderer_id=$3
 repetition=$4
 attempt=$5
 template_slug=$6
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 3 ] \
+    || fail "benchmark manifest protocol version is unsupported"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)
 case "$decision_mode" in
     calibration|adjudication) ;;
@@ -53,6 +55,8 @@ trace_path="$artifact_root/raw/$preset_id-$renderer_id-r$repetition-a$attempt-$t
 summary_path="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug.md"
 [ -e "$trace_path" ] || fail "raw trace is missing"
 [ -f "$summary_path" ] || fail "summary is missing"
+[ "$(sed -n 's/^- protocol-version: //p' "$summary_path")" = 3 ] \
+    || fail "summary protocol version is unsupported"
 [ "$(sed -n 's/^- preset: //p' "$summary_path")" = "$preset_id@1" ] \
     || fail "summary preset does not match"
 [ "$(sed -n 's/^- renderer: //p' "$summary_path")" = "$renderer_id" ] \
@@ -75,6 +79,8 @@ case "$sample_id" in
 esac
 claimed_sample="$artifact_root/claimed-samples/$sample_id.txt"
 [ -f "$claimed_sample" ] || fail "claimed pending-sample manifest is missing"
+[ "$(sed -n 's/^protocol-version=//p' "$claimed_sample")" = 3 ] \
+    || fail "claimed sample protocol version is unsupported"
 [ "$(sed -n 's/^sample-id=//p' "$claimed_sample")" = "$sample_id" ] \
     || fail "claimed sample identity mismatch"
 [ "$(sed -n 's/^preset=//p' "$claimed_sample")" = "$preset_id@1" ] \
@@ -105,6 +111,7 @@ summary_value() {
 exceeds() {
     awk -v actual="$1" -v limit="$2" 'BEGIN { exit !(actual > limit) }'
 }
+[ "$(result_value protocol-version)" = 3 ] || fail "Lab result protocol version is unsupported"
 [ "$(result_value sample-id)" = "$sample_id" ] || fail "Lab result sample mismatch"
 [ "$(result_value preset)" = "$preset_id@1" ] || fail "Lab result preset mismatch"
 [ "$(result_value renderer)" = "$renderer_id" ] || fail "Lab result renderer mismatch"
@@ -153,6 +160,31 @@ grep -Eq '^- lab-disposition: (POLLUTED|REVISE|ELIGIBLE FOR TRACE REVIEW)$' "$su
     || fail "Lab disposition is missing or invalid"
 grep -Eq '^- environment-pollution: (YES|NO)$' "$summary_path" \
     || fail "environment pollution must be classified"
+for operator_field in \
+    operator-window-visible-entire-measurement \
+    operator-target-display-confirmed \
+    operator-no-unrelated-foreground-load \
+    operator-power-and-thermal-state-stable
+do
+    grep -Eq "^- $operator_field: (YES|NO)$" "$summary_path" \
+        || fail "$operator_field must be explicitly confirmed"
+    if [ "$(summary_value "$operator_field")" = NO ] \
+        && [ "$(summary_value environment-pollution)" != YES ]
+    then
+        fail "a failed operator environment check must mark the sample polluted"
+    fi
+done
+if [ "$(summary_value environment-pollution)" = NO ]; then
+    for operator_field in \
+        operator-window-visible-entire-measurement \
+        operator-target-display-confirmed \
+        operator-no-unrelated-foreground-load \
+        operator-power-and-thermal-state-stable
+    do
+        [ "$(summary_value "$operator_field")" = YES ] \
+            || fail "an unpolluted sample requires every operator environment check"
+    done
+fi
 grep -Eq '^- measurement-duration-seconds: [0-9]+([.][0-9]+)?$' "$summary_path" \
     || fail "measurement duration must be numeric"
 result_attempt=$(result_value attempt-id)
@@ -178,10 +210,18 @@ grep -Eq '^- rss-and-physical-footprint-mib: [0-9]+([.][0-9]+)? / [0-9]+([.][0-9
     || fail "RSS and footprint evidence must be numeric"
 grep -Eq '^- admitted-and-dropped-events: [0-9]+ / [0-9]+$' "$summary_path" \
     || fail "admitted and dropped evidence must be numeric"
+grep -Eq '^- peak-active-presentations: [0-9]+$' "$summary_path" \
+    || fail "peak active presentation evidence must be numeric"
 case "$template_slug" in
     time-profiler)
         grep -Eq '^- process-cpu-percent: [0-9]+([.][0-9]+)?$' "$summary_path" \
             || fail "Time Profiler CPU result must be numeric"
+        grep -Eq '^- main-thread-cpu-percent: [0-9]+([.][0-9]+)?$' "$summary_path" \
+            || fail "Time Profiler main-thread CPU result must be numeric"
+        awk -v main="$(summary_value main-thread-cpu-percent)" \
+            -v process="$(summary_value process-cpu-percent)" \
+            'BEGIN { exit !(main <= process) }' \
+            || fail "main-thread CPU cannot exceed process CPU"
         grep -Eq '^- maximum-detected-main-thread-hang-ms: [0-9]+([.][0-9]+)?$' "$summary_path" \
             || fail "Time Profiler detected-hang result must be numeric"
         ;;
@@ -230,6 +270,8 @@ admitted_result=$(result_value admitted-events)
 dropped_result=$(result_value dropped-events)
 [ "$(summary_value admitted-and-dropped-events)" = "$admitted_result / $dropped_result" ] \
     || fail "summary admission totals do not match the structured result"
+[ "$(summary_value peak-active-presentations)" = "$(result_value peak-active)" ] \
+    || fail "summary peak active presentations do not match the structured result"
 rss_result_mib=$(awk -v bytes="$(result_value rss-peak-bytes)" 'BEGIN { printf "%.1f", bytes / 1048576 }')
 footprint_result_mib=$(awk -v bytes="$(result_value physical-footprint-peak-bytes)" 'BEGIN { printf "%.1f", bytes / 1048576 }')
 [ "$(summary_value rss-and-physical-footprint-mib)" = "$rss_result_mib / $footprint_result_mib" ] \
@@ -251,10 +293,13 @@ drop_fraction=$(awk -v admitted="$admitted" -v dropped="$dropped" \
         else print dropped / total
     }')
 if [ "$decision_mode" = adjudication ]; then
-    awk -v actual="$refresh" -v target="$(threshold_value target-display-refresh-hz)" \
+    if awk -v actual="$refresh" -v target="$(threshold_value target-display-refresh-hz)" \
         -v limit="$(threshold_value maximum-display-refresh-deviation-hz)" \
-        'BEGIN { difference = actual - target; if (difference < 0) difference = -difference; exit !(difference > limit) }' \
-        && environment_pollution=YES
+        'BEGIN { difference = actual - target; if (difference < 0) difference = -difference; exit !(difference > limit) }'
+    then
+        [ "$environment_pollution" = YES ] \
+            || fail "display refresh outside the registered range must mark the sample polluted"
+    fi
     measurement_duration=$(summary_value measurement-duration-seconds)
     registered_measurement_seconds=$(sed -n 's/^measurement-seconds=//p' \
         "$artifact_root/benchmark-manifest.txt")
@@ -265,12 +310,16 @@ if [ "$decision_mode" = adjudication ]; then
         "$(threshold_value maximum-measurement-duration-deviation-ms)" && metrics_failed=1
     exceeds "$rss" "$(threshold_value maximum-rss-mib)" && metrics_failed=1
     exceeds "$footprint" "$(threshold_value maximum-physical-footprint-mib)" && metrics_failed=1
+    exceeds "$(summary_value peak-active-presentations)" \
+        "$(threshold_value maximum-peak-active-presentations)" && metrics_failed=1
     exceeds "$drop_fraction" "$(threshold_value maximum-drop-fraction-$preset_id)" \
         && metrics_failed=1
     case "$template_slug" in
     time-profiler)
         exceeds "$(summary_value process-cpu-percent)" \
             "$(threshold_value maximum-process-cpu-percent)" && metrics_failed=1
+        exceeds "$(summary_value main-thread-cpu-percent)" \
+            "$(threshold_value maximum-main-thread-cpu-percent)" && metrics_failed=1
         exceeds "$(summary_value maximum-detected-main-thread-hang-ms)" \
             "$(threshold_value maximum-detected-main-thread-hang-ms)" && metrics_failed=1
         ;;
@@ -327,7 +376,7 @@ finalized_sample="$artifact_root/frozen/$sample_id-finalized-sample.txt"
 rm -rf -- "$trace_path"
 [ ! -e "$trace_path" ] || fail "raw trace deletion did not complete"
 {
-    echo "protocol-version=2"
+    echo "protocol-version=3"
     echo "sample-id=$sample_id"
     echo "summary-path=$summary_path"
     echo "summary-sha256=$summary_sha256"

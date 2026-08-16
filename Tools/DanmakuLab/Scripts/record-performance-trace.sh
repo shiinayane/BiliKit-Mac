@@ -36,6 +36,8 @@ esac
 [ -f "$artifact_root/binary-path.txt" ] || fail "prepared binary path is missing"
 [ -f "$artifact_root/binary-sha256.txt" ] || fail "prepared binary hash is missing"
 [ -f "$artifact_root/thresholds.md" ] || fail "threshold preregistration is missing"
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt")" = 3 ] \
+    || fail "benchmark manifest protocol version is unsupported"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt")
 case "$decision_mode" in
     calibration|adjudication) ;;
@@ -63,13 +65,25 @@ if [ "$decision_mode" = adjudication ]; then
     maximum-hitch-count-in-measurement-window \
     maximum-hitch-duration-ms \
     maximum-process-cpu-percent \
+    maximum-main-thread-cpu-percent \
     maximum-rss-mib \
     maximum-physical-footprint-mib \
     maximum-persistent-allocation-growth-mib \
+    maximum-peak-active-presentations \
     maximum-drop-fraction-steady-80 \
     maximum-drop-fraction-burst-320 \
     maximum-drop-fraction-capacity-640 \
-    maximum-relative-spread-percent-across-three-repetitions
+    maximum-rss-relative-spread-percent \
+    maximum-physical-footprint-relative-spread-percent \
+    maximum-measurement-duration-relative-spread-percent \
+    maximum-drop-fraction-relative-spread-percent \
+    maximum-peak-active-relative-spread-percent \
+    maximum-process-cpu-relative-spread-percent \
+    maximum-main-thread-cpu-relative-spread-percent \
+    maximum-detected-main-thread-hang-relative-spread-percent \
+    maximum-hitch-count-relative-spread-percent \
+    maximum-hitch-duration-relative-spread-percent \
+    maximum-allocation-growth-relative-spread-percent
     do
         grep -Eq "^- $threshold: [0-9]+([.][0-9]+)?$" "$artifact_root/thresholds.md" \
             || fail "threshold $threshold must be a nonnegative number"
@@ -111,6 +125,7 @@ case "$template" in
     "Time Profiler")
         template_slug=time-profiler
         cpu_result=PENDING
+        main_thread_cpu_result=PENDING
         main_thread_result=PENDING
         hitch_result=N/A
         allocation_result=N/A
@@ -118,6 +133,7 @@ case "$template" in
     "Animation Hitches")
         template_slug=animation-hitches
         cpu_result=N/A
+        main_thread_cpu_result=N/A
         main_thread_result=N/A
         hitch_result=PENDING
         allocation_result=N/A
@@ -125,6 +141,7 @@ case "$template" in
     "Allocations")
         template_slug=allocations
         cpu_result=N/A
+        main_thread_cpu_result=N/A
         main_thread_result=N/A
         hitch_result=N/A
         allocation_result=PENDING
@@ -180,7 +197,7 @@ pending_sample="$artifact_root/pending-sample.txt"
 [ ! -e "$pending_sample" ] \
     || fail "another sample is pending; finish or discard it first"
 {
-    echo "protocol-version=2"
+    echo "protocol-version=3"
     echo "sample-id=$sample_id"
     echo "preset=$preset_id@1"
     echo "renderer=$renderer_id"
@@ -205,6 +222,7 @@ trace_time_limit=$(awk \
 {
     echo "# Danmaku Lab performance sample"
     echo
+    echo "- protocol-version: 3"
     echo "- preset: $preset_id@1"
     echo "- renderer: $renderer_id"
     echo "- repetition: $repetition / 3"
@@ -224,17 +242,23 @@ trace_time_limit=$(awk \
     echo "- threshold-source: $frozen_thresholds"
     echo "- lab-disposition: PENDING"
     echo "- environment-pollution: PENDING"
+    echo "- operator-window-visible-entire-measurement: PENDING"
+    echo "- operator-target-display-confirmed: PENDING"
+    echo "- operator-no-unrelated-foreground-load: PENDING"
+    echo "- operator-power-and-thermal-state-stable: PENDING"
     echo "- unique-complete-measurement-signpost: PENDING"
     echo "- measurement-duration-seconds: PENDING"
     echo "- logical-ticks-actual-expected: PENDING"
     echo "- generated-events-actual-expected: PENDING"
     echo "- actual-display-refresh-hz: PENDING"
     echo "- process-cpu-percent: $cpu_result"
+    echo "- main-thread-cpu-percent: $main_thread_cpu_result"
     echo "- maximum-detected-main-thread-hang-ms: $main_thread_result"
     echo "- hitch-count-and-maximum-duration-ms: $hitch_result"
     echo "- rss-and-physical-footprint-mib: PENDING"
     echo "- persistent-allocation-growth-mib: $allocation_result"
     echo "- admitted-and-dropped-events: PENDING"
+    echo "- peak-active-presentations: PENDING"
     echo "- notes: PENDING"
     echo
     echo "Only the DanmakuLab Measurement signpost interval is the quantitative window."
@@ -261,6 +285,10 @@ then
     fail "xctrace recording failed; partial artifacts were removed"
 fi
 recording_finished_epoch=$(date +%s)
+{
+    echo "recording-finished-at-utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    echo "power-source-after=$(pmset -g batt | tr '\n' ' ')"
+} >>"$runtime_path"
 
 lab_result="$artifact_root/lab-results/$sample_id.txt"
 if [ ! -f "$lab_result" ]; then
@@ -271,6 +299,8 @@ fi
 result_value() {
     sed -n "s/^$1=//p" "$lab_result"
 }
+[ "$(result_value protocol-version)" = 3 ] \
+    || fail "Lab result protocol version is unsupported"
 [ "$(result_value sample-id)" = "$sample_id" ] \
     || fail "Lab result sample identity mismatch"
 [ "$(result_value preset)" = "$preset_id@1" ] \
@@ -309,7 +339,13 @@ replace_summary_field() {
     sed "s|^- $field: PENDING$|- $field: $value|" "$summary_path" >"$temporary"
     mv "$temporary" "$summary_path"
 }
-signpost_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-signposts.xml"
+trace_export_root=$(mktemp -d "$artifact_root/.trace-export-$sample_id.XXXXXX")
+cleanup_trace_exports() {
+    rm -rf -- "$trace_export_root"
+}
+trap cleanup_trace_exports EXIT
+trap 'exit 1' HUP INT TERM
+signpost_export="$trace_export_root/signposts.xml"
 DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} \
     xcrun xctrace export \
     --input "$trace_path" \
@@ -348,10 +384,11 @@ measurement_trace_seconds=$(awk -v begin="$measurement_begin_ns" -v end="$measur
     || fail "Measurement signpost duration is invalid"
 
 trace_cpu_percent=N/A
+trace_main_thread_cpu_percent=N/A
 maximum_detected_hang_ms=N/A
 if [ "$template_slug" = time-profiler ]; then
-    profile_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-profile.xml"
-    hangs_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-hangs.xml"
+    profile_export="$trace_export_root/profile.xml"
+    hangs_export="$trace_export_root/hangs.xml"
     DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} \
         xcrun xctrace export \
         --input "$trace_path" \
@@ -363,8 +400,21 @@ if [ "$template_slug" = time-profiler ]; then
     profile_sample_count=$(xmllint --xpath \
         "count(//row[number(sample-time) >= $measurement_begin_ns and number(sample-time) <= $measurement_end_ns])" \
         "$profile_export")
+    main_thread_identifier=$(xmllint --xpath \
+        'string((//thread[contains(@fmt, "Main Thread")])[1]/@id)' \
+        "$profile_export")
+    [ -n "$main_thread_identifier" ] \
+        || fail "Time Profiler main-thread identity is missing"
+    main_thread_sample_count=$(xmllint --xpath \
+        "count(//row[number(sample-time) >= $measurement_begin_ns and number(sample-time) <= $measurement_end_ns and (thread/@id='$main_thread_identifier' or thread/@ref='$main_thread_identifier')])" \
+        "$profile_export")
     trace_cpu_percent=$(awk \
         -v samples="$profile_sample_count" \
+        -v weight="$sample_weight_ns" \
+        -v duration="$measurement_trace_seconds" \
+        'BEGIN { printf "%.4f", samples * weight / 1000000000 / duration * 100 }')
+    trace_main_thread_cpu_percent=$(awk \
+        -v samples="$main_thread_sample_count" \
         -v weight="$sample_weight_ns" \
         -v duration="$measurement_trace_seconds" \
         'BEGIN { printf "%.4f", samples * weight / 1000000000 / duration * 100 }')
@@ -408,8 +458,10 @@ replace_summary_field rss-and-physical-footprint-mib \
     "$rss_result_mib / $footprint_result_mib"
 replace_summary_field admitted-and-dropped-events \
     "$(result_value admitted-events) / $(result_value dropped-events)"
+replace_summary_field peak-active-presentations "$(result_value peak-active)"
 if [ "$template_slug" = time-profiler ]; then
     replace_summary_field process-cpu-percent "$trace_cpu_percent"
+    replace_summary_field main-thread-cpu-percent "$trace_main_thread_cpu_percent"
     replace_summary_field maximum-detected-main-thread-hang-ms \
         "$maximum_detected_hang_ms"
 fi
@@ -418,8 +470,11 @@ fi
     echo "measurement-end-ns=$measurement_end_ns"
     echo "measurement-trace-seconds=$measurement_trace_seconds"
     echo "time-profiler-process-cpu-percent=$trace_cpu_percent"
+    echo "time-profiler-main-thread-cpu-percent=$trace_main_thread_cpu_percent"
     echo "maximum-detected-main-thread-hang-ms=$maximum_detected_hang_ms"
 } >>"$runtime_path"
+
+cleanup_trace_exports
 
 echo "Raw trace: $trace_path"
 echo "Structured Lab result: $lab_result"

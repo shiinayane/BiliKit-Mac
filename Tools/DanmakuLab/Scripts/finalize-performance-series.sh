@@ -39,20 +39,47 @@ esac
 
 thresholds="$artifact_root/frozen/thresholds.md"
 [ -f "$thresholds" ] || fail "frozen thresholds are missing"
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 3 ] \
+    || fail "benchmark manifest protocol version is unsupported"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt")
+threshold_value() {
+    sed -n "s/^- $1: //p" "$thresholds"
+}
+registered_spread_limit() {
+    value=$(threshold_value "$1")
+    case "$value" in
+        ""|*[!0-9.]*) fail "spread threshold $1 is invalid" ;;
+    esac
+    echo "$value"
+}
 case "$decision_mode" in
     calibration)
         sample_decision=CALIBRATION
-        spread_limit=N/A
+        rss_spread_limit=N/A
+        footprint_spread_limit=N/A
+        duration_spread_limit=N/A
+        drop_spread_limit=N/A
+        peak_active_spread_limit=N/A
+        process_cpu_spread_limit=N/A
+        main_thread_cpu_spread_limit=N/A
+        detected_hang_spread_limit=N/A
+        hitch_count_spread_limit=N/A
+        hitch_duration_spread_limit=N/A
+        allocation_growth_spread_limit=N/A
         ;;
     adjudication)
         sample_decision=ACCEPTED
-        spread_limit=$(sed -n \
-            's/^- maximum-relative-spread-percent-across-three-repetitions: //p' \
-            "$thresholds")
-        case "$spread_limit" in
-            ""|*[!0-9.]*) fail "spread threshold is invalid" ;;
-        esac
+        rss_spread_limit=$(registered_spread_limit maximum-rss-relative-spread-percent)
+        footprint_spread_limit=$(registered_spread_limit maximum-physical-footprint-relative-spread-percent)
+        duration_spread_limit=$(registered_spread_limit maximum-measurement-duration-relative-spread-percent)
+        drop_spread_limit=$(registered_spread_limit maximum-drop-fraction-relative-spread-percent)
+        peak_active_spread_limit=$(registered_spread_limit maximum-peak-active-relative-spread-percent)
+        process_cpu_spread_limit=$(registered_spread_limit maximum-process-cpu-relative-spread-percent)
+        main_thread_cpu_spread_limit=$(registered_spread_limit maximum-main-thread-cpu-relative-spread-percent)
+        detected_hang_spread_limit=$(registered_spread_limit maximum-detected-main-thread-hang-relative-spread-percent)
+        hitch_count_spread_limit=$(registered_spread_limit maximum-hitch-count-relative-spread-percent)
+        hitch_duration_spread_limit=$(registered_spread_limit maximum-hitch-duration-relative-spread-percent)
+        allocation_growth_spread_limit=$(registered_spread_limit maximum-allocation-growth-relative-spread-percent)
         ;;
     *) fail "benchmark decision mode is invalid" ;;
 esac
@@ -112,6 +139,8 @@ validate_finalized_sample() {
     esac
     finalized="$artifact_root/frozen/$sample_id-finalized-sample.txt"
     [ -f "$finalized" ] || fail "sample $sample_id has no finalization manifest"
+    [ "$(sed -n 's/^protocol-version=//p' "$finalized")" = 3 ] \
+        || fail "sample $sample_id finalization protocol version is unsupported"
     [ "$(sed -n 's/^summary-path=//p' "$finalized")" = "$candidate" ] \
         || fail "sample finalization path mismatch"
     [ "$(sed -n 's/^summary-sha256=//p' "$finalized")" = \
@@ -131,6 +160,8 @@ validate_finalized_sample() {
 }
 validate_summary_identity() {
     candidate=$1
+    [ "$(sed -n 's/^- protocol-version: //p' "$candidate")" = 3 ] \
+        || fail "sample protocol version changed"
     [ "$(sed -n 's/^- preset: //p' "$candidate")" = "$preset_id@1" ] \
         || fail "sample preset identity changed"
     [ "$(sed -n 's/^- renderer: //p' "$candidate")" = "$renderer_id" ] \
@@ -157,6 +188,7 @@ do
         {
             echo "# Danmaku Lab performance series"
             echo
+            echo "- protocol-version: 3"
             echo "- preset: $preset_id@1"
             echo "- renderer: $renderer_id"
             echo "- template: $template_slug"
@@ -227,8 +259,17 @@ rss_worst=$(maximum_value "$rss1" "$rss2" "$rss3")
 footprint_median=$(median_value "$footprint1" "$footprint2" "$footprint3")
 footprint_worst=$(maximum_value "$footprint1" "$footprint2" "$footprint3")
 if [ "$decision_mode" = adjudication ]; then
-    exceeds "$rss_spread" "$spread_limit" && series_decision=REVISE
-    exceeds "$footprint_spread" "$spread_limit" && series_decision=REVISE
+    exceeds "$rss_spread" "$rss_spread_limit" && series_decision=REVISE
+    exceeds "$footprint_spread" "$footprint_spread_limit" && series_decision=REVISE
+fi
+peak_active1=$(summary_value 1 peak-active-presentations)
+peak_active2=$(summary_value 2 peak-active-presentations)
+peak_active3=$(summary_value 3 peak-active-presentations)
+peak_active_spread=$(spread_percent "$peak_active1" "$peak_active2" "$peak_active3")
+peak_active_median=$(median_value "$peak_active1" "$peak_active2" "$peak_active3")
+peak_active_worst=$(maximum_value "$peak_active1" "$peak_active2" "$peak_active3")
+if [ "$decision_mode" = adjudication ]; then
+    exceeds "$peak_active_spread" "$peak_active_spread_limit" && series_decision=REVISE
 fi
 duration1=$(summary_value 1 measurement-duration-seconds)
 duration2=$(summary_value 2 measurement-duration-seconds)
@@ -237,7 +278,7 @@ duration_spread=$(spread_percent "$duration1" "$duration2" "$duration3")
 duration_median=$(median_value "$duration1" "$duration2" "$duration3")
 duration_worst=$(maximum_value "$duration1" "$duration2" "$duration3")
 if [ "$decision_mode" = adjudication ]; then
-    exceeds "$duration_spread" "$spread_limit" && series_decision=REVISE
+    exceeds "$duration_spread" "$duration_spread_limit" && series_decision=REVISE
 fi
 drop_fraction() {
     pair=$(summary_value "$1" admitted-and-dropped-events)
@@ -257,21 +298,33 @@ drop_spread=$(spread_percent "$drop1" "$drop2" "$drop3")
 drop_median=$(median_value "$drop1" "$drop2" "$drop3")
 drop_worst=$(maximum_value "$drop1" "$drop2" "$drop3")
 if [ "$decision_mode" = adjudication ]; then
-    exceeds "$drop_spread" "$spread_limit" && series_decision=REVISE
+    exceeds "$drop_spread" "$drop_spread_limit" && series_decision=REVISE
 fi
 
 case "$template_slug" in
     time-profiler)
         primary_name=process-cpu-percent
-        secondary_name=maximum-detected-main-thread-hang-ms
+        primary_spread_limit=$process_cpu_spread_limit
+        secondary_name=main-thread-cpu-percent
+        secondary_spread_limit=$main_thread_cpu_spread_limit
+        tertiary_name=maximum-detected-main-thread-hang-ms
+        tertiary_spread_limit=$detected_hang_spread_limit
         ;;
     animation-hitches)
         primary_name=hitch-maximum-duration-ms
+        primary_spread_limit=$hitch_duration_spread_limit
         secondary_name=
+        secondary_spread_limit=N/A
+        tertiary_name=
+        tertiary_spread_limit=N/A
         ;;
     allocations)
         primary_name=persistent-allocation-growth-mib
+        primary_spread_limit=$allocation_growth_spread_limit
         secondary_name=
+        secondary_spread_limit=N/A
+        tertiary_name=
+        tertiary_spread_limit=N/A
         ;;
 esac
 if [ "$template_slug" = animation-hitches ]; then
@@ -287,7 +340,7 @@ primary_spread=$(spread_percent "$primary1" "$primary2" "$primary3")
 primary_median=$(median_value "$primary1" "$primary2" "$primary3")
 primary_worst=$(maximum_value "$primary1" "$primary2" "$primary3")
 if [ "$decision_mode" = adjudication ]; then
-    exceeds "$primary_spread" "$spread_limit" && series_decision=REVISE
+    exceeds "$primary_spread" "$primary_spread_limit" && series_decision=REVISE
 fi
 
 secondary_spread=N/A
@@ -301,7 +354,22 @@ if [ -n "$secondary_name" ]; then
     secondary_median=$(median_value "$secondary1" "$secondary2" "$secondary3")
     secondary_worst=$(maximum_value "$secondary1" "$secondary2" "$secondary3")
     if [ "$decision_mode" = adjudication ]; then
-        exceeds "$secondary_spread" "$spread_limit" && series_decision=REVISE
+        exceeds "$secondary_spread" "$secondary_spread_limit" && series_decision=REVISE
+    fi
+fi
+
+tertiary_spread=N/A
+tertiary_median=N/A
+tertiary_worst=N/A
+if [ -n "$tertiary_name" ]; then
+    tertiary1=$(summary_value 1 "$tertiary_name")
+    tertiary2=$(summary_value 2 "$tertiary_name")
+    tertiary3=$(summary_value 3 "$tertiary_name")
+    tertiary_spread=$(spread_percent "$tertiary1" "$tertiary2" "$tertiary3")
+    tertiary_median=$(median_value "$tertiary1" "$tertiary2" "$tertiary3")
+    tertiary_worst=$(maximum_value "$tertiary1" "$tertiary2" "$tertiary3")
+    if [ "$decision_mode" = adjudication ]; then
+        exceeds "$tertiary_spread" "$tertiary_spread_limit" && series_decision=REVISE
     fi
 fi
 
@@ -316,13 +384,14 @@ if [ "$template_slug" = animation-hitches ]; then
     hitch_count_median=$(median_value "$hitch_count1" "$hitch_count2" "$hitch_count3")
     hitch_count_worst=$(maximum_value "$hitch_count1" "$hitch_count2" "$hitch_count3")
     if [ "$decision_mode" = adjudication ]; then
-        exceeds "$hitch_count_spread" "$spread_limit" && series_decision=REVISE
+        exceeds "$hitch_count_spread" "$hitch_count_spread_limit" && series_decision=REVISE
     fi
 fi
 
 {
     echo "# Danmaku Lab performance series"
     echo
+    echo "- protocol-version: 3"
     echo "- preset: $preset_id@1"
     echo "- renderer: $renderer_id"
     echo "- template: $template_slug"
@@ -333,24 +402,38 @@ fi
     echo "- repetition-1-summary-sha256: $sample1_hash"
     echo "- repetition-2-summary-sha256: $sample2_hash"
     echo "- repetition-3-summary-sha256: $sample3_hash"
-    echo "- spread-limit-percent: $spread_limit"
     echo "- rss-median-worst-mib: $rss_median / $rss_worst"
     echo "- rss-spread-percent: $rss_spread"
+    echo "- rss-spread-limit-percent: $rss_spread_limit"
     echo "- physical-footprint-median-worst-mib: $footprint_median / $footprint_worst"
     echo "- physical-footprint-spread-percent: $footprint_spread"
+    echo "- physical-footprint-spread-limit-percent: $footprint_spread_limit"
+    echo "- peak-active-presentations-median-worst: $peak_active_median / $peak_active_worst"
+    echo "- peak-active-presentations-spread-percent: $peak_active_spread"
+    echo "- peak-active-presentations-spread-limit-percent: $peak_active_spread_limit"
     echo "- measurement-duration-median-worst-seconds: $duration_median / $duration_worst"
     echo "- measurement-duration-spread-percent: $duration_spread"
+    echo "- measurement-duration-spread-limit-percent: $duration_spread_limit"
     echo "- drop-fraction-median-worst: $drop_median / $drop_worst"
     echo "- drop-fraction-spread-percent: $drop_spread"
+    echo "- drop-fraction-spread-limit-percent: $drop_spread_limit"
     echo "- $primary_name-median-worst: $primary_median / $primary_worst"
     echo "- $primary_name-spread-percent: $primary_spread"
+    echo "- $primary_name-spread-limit-percent: $primary_spread_limit"
     if [ -n "$secondary_name" ]; then
         echo "- $secondary_name-median-worst: $secondary_median / $secondary_worst"
         echo "- $secondary_name-spread-percent: $secondary_spread"
+        echo "- $secondary_name-spread-limit-percent: $secondary_spread_limit"
+    fi
+    if [ -n "$tertiary_name" ]; then
+        echo "- $tertiary_name-median-worst: $tertiary_median / $tertiary_worst"
+        echo "- $tertiary_name-spread-percent: $tertiary_spread"
+        echo "- $tertiary_name-spread-limit-percent: $tertiary_spread_limit"
     fi
     if [ "$template_slug" = animation-hitches ]; then
         echo "- hitch-count-median-worst: $hitch_count_median / $hitch_count_worst"
         echo "- hitch-count-spread-percent: $hitch_count_spread"
+        echo "- hitch-count-spread-limit-percent: $hitch_count_spread_limit"
     fi
     echo "- decision: $series_decision"
 } >"$series_summary"

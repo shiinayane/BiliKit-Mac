@@ -55,7 +55,7 @@ public final class LabPerformanceArtifactStore {
             throw LabPerformanceArtifactError.missingPendingSample
         }
         let values = Self.values(in: content)
-        guard values["protocol-version"] == "2",
+        guard values["protocol-version"] == "3",
             let sampleIDValue = values["sample-id"],
             let sampleID = UUID(uuidString: sampleIDValue),
             let pendingPreset = values["preset"],
@@ -122,7 +122,7 @@ public final class LabPerformanceArtifactStore {
             statistics.droppedCapacity
         )
         let values: [(String, String)] = [
-            ("protocol-version", "2"),
+            ("protocol-version", "3"),
             ("sample-id", pending.sampleID.uuidString.lowercased()),
             ("preset", pending.presetIdentity),
             ("renderer", pending.rendererID.rawValue),

@@ -22,6 +22,8 @@ esac
 case "$renderer_id" in
     ""|*[!A-Za-z0-9._-]*) fail "renderer ID must be a static safe identifier" ;;
 esac
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 3 ] \
+    || fail "benchmark manifest protocol version is unsupported"
 [ "$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt")" = adjudication ] \
     || fail "a calibration run cannot produce an adjudication matrix"
 
@@ -44,6 +46,8 @@ do
             || fail "series changed after finalization for $preset/$template"
         [ "$(sed -n 's/^- preset: //p' "$series")" = "$preset@1" ] \
             || fail "series preset identity mismatch for $preset/$template"
+        [ "$(sed -n 's/^- protocol-version: //p' "$series")" = 3 ] \
+            || fail "series protocol version mismatch for $preset/$template"
         [ "$(sed -n 's/^- renderer: //p' "$series")" = "$renderer_id" ] \
             || fail "series renderer identity mismatch for $preset/$template"
         [ "$(sed -n 's/^- template: //p' "$series")" = "$template" ] \
@@ -68,6 +72,7 @@ done
 {
     echo "# Danmaku Lab performance matrix"
     echo
+    echo "- protocol-version: 3"
     echo "- renderer: $renderer_id"
     echo "- binary-sha256: $binary_hash"
     echo "- threshold-sha256: $threshold_hash"
