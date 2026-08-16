@@ -324,8 +324,13 @@ measurement_identifier=$(xmllint --xpath \
     'string(//row[signpost-name="DanmakuLab Measurement"]/os-signpost-identifier/@id)' \
     "$signpost_export")
 [ -n "$measurement_identifier" ] || fail "Measurement signpost identifier is missing"
+measurement_end_event_type_identifier=$(xmllint --xpath \
+    'string(//event-type[text()="End"][1]/@id)' \
+    "$signpost_export")
+[ -n "$measurement_end_event_type_identifier" ] \
+    || fail "Measurement end event type identifier is missing"
 measurement_end_count=$(xmllint --xpath \
-    "count(//row[os-signpost-identifier/@ref='$measurement_identifier' and event-type='End'])" \
+    "count(//row[os-signpost-identifier/@ref='$measurement_identifier' and (event-type='End' or event-type/@ref='$measurement_end_event_type_identifier')])" \
     "$signpost_export")
 [ "$measurement_end_count" = 1 ] \
     || fail "trace must contain exactly one matching Measurement end signpost"
@@ -333,7 +338,7 @@ measurement_begin_ns=$(xmllint --xpath \
     'string(//row[signpost-name="DanmakuLab Measurement"]/event-time)' \
     "$signpost_export")
 measurement_end_ns=$(xmllint --xpath \
-    "string(//row[os-signpost-identifier/@ref='$measurement_identifier' and event-type='End']/event-time)" \
+    "string(//row[os-signpost-identifier/@ref='$measurement_identifier' and (event-type='End' or event-type/@ref='$measurement_end_event_type_identifier')]/event-time)" \
     "$signpost_export")
 attempt_upper=$(echo "$(result_value attempt-id)" | tr '[:lower:]' '[:upper:]')
 grep -q "$attempt_upper" "$signpost_export" \

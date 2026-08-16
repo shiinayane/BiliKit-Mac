@@ -245,7 +245,11 @@ admission_pair=$(summary_value admitted-and-dropped-events)
 admitted=$(echo "$admission_pair" | awk '{print $1}')
 dropped=$(echo "$admission_pair" | awk '{print $3}')
 drop_fraction=$(awk -v admitted="$admitted" -v dropped="$dropped" \
-    'BEGIN { total = admitted + dropped; print total == 0 ? 0 : dropped / total }')
+    'BEGIN {
+        total = admitted + dropped
+        if (total == 0) print 0
+        else print dropped / total
+    }')
 if [ "$decision_mode" = adjudication ]; then
     awk -v actual="$refresh" -v target="$(threshold_value target-display-refresh-hz)" \
         -v limit="$(threshold_value maximum-display-refresh-deviation-hz)" \

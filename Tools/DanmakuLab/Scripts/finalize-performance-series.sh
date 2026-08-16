@@ -80,7 +80,8 @@ spread_percent() {
         maximum = a; if (b > maximum) maximum = b; if (c > maximum) maximum = c
         median = a + b + c - minimum - maximum
         if (median == 0) {
-            printf "%.4f", maximum == minimum ? 0 : 999999
+            if (maximum == minimum) printf "%.4f", 0
+            else printf "%.4f", 999999
         } else {
             printf "%.4f", (maximum - minimum) / median * 100
         }
@@ -243,7 +244,11 @@ drop_fraction() {
     admitted=$(echo "$pair" | awk '{print $1}')
     dropped=$(echo "$pair" | awk '{print $3}')
     awk -v admitted="$admitted" -v dropped="$dropped" \
-        'BEGIN { total = admitted + dropped; print total == 0 ? 0 : dropped / total }'
+        'BEGIN {
+            total = admitted + dropped
+            if (total == 0) print 0
+            else print dropped / total
+        }'
 }
 drop1=$(drop_fraction 1)
 drop2=$(drop_fraction 2)
