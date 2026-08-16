@@ -6,6 +6,7 @@ public struct LabPerformancePendingSample: Sendable, Equatable {
     public let rendererID: LabRendererID
     public let repetition: Int
     public let binarySHA256: String
+    public let benchmarkManifestSHA256: String
     public let thresholdSHA256: String
 }
 
@@ -55,7 +56,7 @@ public final class LabPerformanceArtifactStore {
             throw LabPerformanceArtifactError.missingPendingSample
         }
         let values = Self.values(in: content)
-        guard values["protocol-version"] == "3",
+        guard values["protocol-version"] == "4",
             let sampleIDValue = values["sample-id"],
             let sampleID = UUID(uuidString: sampleIDValue),
             let pendingPreset = values["preset"],
@@ -63,6 +64,7 @@ public final class LabPerformanceArtifactStore {
             let repetitionValue = values["repetition"],
             let pendingRepetition = Int(repetitionValue),
             let binarySHA256 = values["binary-sha256"],
+            let benchmarkManifestSHA256 = values["benchmark-manifest-sha256"],
             let thresholdSHA256 = values["threshold-sha256"]
         else {
             throw LabPerformanceArtifactError.invalidPendingSample
@@ -95,6 +97,7 @@ public final class LabPerformanceArtifactStore {
             rendererID: LabRendererID(rawValue: pendingRenderer),
             repetition: pendingRepetition,
             binarySHA256: binarySHA256,
+            benchmarkManifestSHA256: benchmarkManifestSHA256,
             thresholdSHA256: thresholdSHA256
         )
     }
@@ -122,12 +125,13 @@ public final class LabPerformanceArtifactStore {
             statistics.droppedCapacity
         )
         let values: [(String, String)] = [
-            ("protocol-version", "3"),
+            ("protocol-version", "4"),
             ("sample-id", pending.sampleID.uuidString.lowercased()),
             ("preset", pending.presetIdentity),
             ("renderer", pending.rendererID.rawValue),
             ("repetition", "\(pending.repetition)"),
             ("binary-sha256", pending.binarySHA256),
+            ("benchmark-manifest-sha256", pending.benchmarkManifestSHA256),
             ("threshold-sha256", pending.thresholdSHA256),
             ("attempt-id", evidence?.attemptID.uuidString.lowercased() ?? "none"),
             ("disposition", assessment.disposition.artifactValue),

@@ -76,7 +76,7 @@ The UI classifies samples before trace interpretation:
 
 Formal traces require a clean worktree and a task-specific root under `/private/tmp`. Preparation
 builds an unsigned SwiftPM Release executable and records its canonical path and SHA-256 together with
-the package lock, toolchain, machine, and protocol manifest; Debug runs remain functional evidence only. Developer
+the package lock, toolchain, machine, and a read-only hashed protocol manifest; Debug runs remain functional evidence only. Developer
 ID signing is not required by the Lab contract. If the local Instruments attachment policy requires
 different signing or entitlements, that is a separate explicitly authorized runtime step and must be
 recorded with the sample.
@@ -131,7 +131,7 @@ that interval, computes process and main-thread CPU from sample weights, and rec
 detected hang; zero means no hang met the template's 250 ms reporting floor, not that every
 main-thread interval was zero.
 Complete only the remaining human-review fields in the generated Markdown summary. The summary
-already binds the sample to binary and frozen threshold hashes. After Measurement, the operator must
+already binds the sample to binary, protocol-manifest, and frozen-threshold hashes. After Measurement, the operator must
 explicitly answer every generated checklist field: full-window visibility, target-display identity,
 absence of unrelated foreground load, and stable power/thermal state. An unconfirmed or failed item
 cannot be represented as an unpolluted sample. Window occlusion, loss of visibility, display
@@ -147,7 +147,8 @@ the hand-reviewed trace fields against the frozen result hash and refuses incomp
 Lab/trace decisions. The recorder deletes its temporary xctrace XML exports after extracting the
 machine-readable metrics. Finalization records a raw-trace tree hash and deletes the corresponding raw
 trace by default while retaining the summary and environment record. It then freezes a sample-finalization manifest and
-summary hash; downstream aggregation rejects a missing marker or any post-finalization edit:
+summary hash; downstream aggregation carries the same manifest identity and rejects a missing marker
+or any post-finalization edit:
 
 ```sh
 Tools/DanmakuLab/Scripts/finalize-performance-sample.sh \
@@ -179,6 +180,7 @@ autonomous metric extractor, cross-machine score, or full-App playback benchmark
 task-local build/cache root after retained summaries have been reviewed and copied to their reviewed
 destination.
 
-Performance artifact protocol 3 adds the explicit operator checklist, retained main-thread CPU,
-peak-active evidence, and metric-specific spread budgets. Protocol 2 calibration summaries remain
-historical evidence only and cannot be mixed into a protocol 3 adjudication root.
+Performance artifact protocol 4 binds the read-only benchmark manifest throughout the sample,
+series, and matrix hash chain. It retains protocol 3's explicit operator checklist, main-thread CPU,
+peak-active evidence, and metric-specific spread budgets. Protocol 2 and 3 calibration summaries
+remain historical evidence only and cannot be mixed into a protocol 4 adjudication root.

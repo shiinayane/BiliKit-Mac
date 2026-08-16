@@ -100,7 +100,7 @@ echo "$binary_path" >"$artifact_root/binary-path.txt"
 echo "$binary_sha256" >"$artifact_root/binary-sha256.txt"
 echo "$package_resolved_sha256" >"$artifact_root/package-resolved-sha256.txt"
 {
-    echo "protocol-version=3"
+    echo "protocol-version=4"
     echo "decision-mode=$decision_mode"
     echo "binary-sha256=$binary_sha256"
     echo "package-resolved-sha256=$package_resolved_sha256"
@@ -115,6 +115,11 @@ echo "$package_resolved_sha256" >"$artifact_root/package-resolved-sha256.txt"
     echo "aggregation=all-valid-repetitions-must-pass-and-spread-must-stay-within-budget"
     echo "process-policy=fresh-process-per-sample"
 } >"$artifact_root/benchmark-manifest.txt"
+benchmark_manifest_sha256=$(shasum -a 256 "$artifact_root/benchmark-manifest.txt" | awk '{print $1}')
+echo "$benchmark_manifest_sha256" >"$artifact_root/benchmark-manifest-sha256.txt"
+chmod 0444 \
+    "$artifact_root/benchmark-manifest.txt" \
+    "$artifact_root/benchmark-manifest-sha256.txt"
 {
     echo "# Danmaku Lab decision thresholds"
     echo

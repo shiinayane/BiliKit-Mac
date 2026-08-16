@@ -39,8 +39,11 @@ esac
 
 thresholds="$artifact_root/frozen/thresholds.md"
 [ -f "$thresholds" ] || fail "frozen thresholds are missing"
-[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 3 ] \
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 4 ] \
     || fail "benchmark manifest protocol version is unsupported"
+benchmark_manifest_hash=$(shasum -a 256 "$artifact_root/benchmark-manifest.txt" | awk '{print $1}')
+[ "$benchmark_manifest_hash" = "$(sed -n '1p' "$artifact_root/benchmark-manifest-sha256.txt" 2>/dev/null || true)" ] \
+    || fail "benchmark manifest changed after preparation"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt")
 threshold_value() {
     sed -n "s/^- $1: //p" "$thresholds"
@@ -139,7 +142,7 @@ validate_finalized_sample() {
     esac
     finalized="$artifact_root/frozen/$sample_id-finalized-sample.txt"
     [ -f "$finalized" ] || fail "sample $sample_id has no finalization manifest"
-    [ "$(sed -n 's/^protocol-version=//p' "$finalized")" = 3 ] \
+    [ "$(sed -n 's/^protocol-version=//p' "$finalized")" = 4 ] \
         || fail "sample $sample_id finalization protocol version is unsupported"
     [ "$(sed -n 's/^summary-path=//p' "$finalized")" = "$candidate" ] \
         || fail "sample finalization path mismatch"
@@ -154,13 +157,19 @@ validate_finalized_sample() {
     [ "$(sed -n 's/^lab-result-sha256=//p' "$finalized")" = \
         "$(sed -n 's/^- lab-result-sha256: //p' "$candidate")" ] \
         || fail "sample Lab result hash does not match its summary"
+    [ "$(sed -n 's/^benchmark-manifest-sha256=//p' "$finalized")" = \
+        "$(sed -n 's/^- benchmark-manifest-sha256: //p' "$candidate")" ] \
+        || fail "sample benchmark manifest hash does not match its summary"
+    [ "$(sed -n 's/^- benchmark-manifest-sha256: //p' "$candidate")" = \
+        "$benchmark_manifest_hash" ] \
+        || fail "sample benchmark manifest does not match the prepared root"
     trace_name=$(basename "$candidate" .md).trace
     [ ! -e "$artifact_root/raw/$trace_name" ] \
         || fail "sample raw trace still exists after claimed finalization"
 }
 validate_summary_identity() {
     candidate=$1
-    [ "$(sed -n 's/^- protocol-version: //p' "$candidate")" = 3 ] \
+    [ "$(sed -n 's/^- protocol-version: //p' "$candidate")" = 4 ] \
         || fail "sample protocol version changed"
     [ "$(sed -n 's/^- preset: //p' "$candidate")" = "$preset_id@1" ] \
         || fail "sample preset identity changed"
@@ -188,11 +197,12 @@ do
         {
             echo "# Danmaku Lab performance series"
             echo
-            echo "- protocol-version: 3"
+            echo "- protocol-version: 4"
             echo "- preset: $preset_id@1"
             echo "- renderer: $renderer_id"
             echo "- template: $template_slug"
             echo "- binary-sha256: $stopped_binary_hash"
+            echo "- benchmark-manifest-sha256: $benchmark_manifest_hash"
             echo "- threshold-sha256: $stopped_threshold_hash"
             echo "- decision-mode: $decision_mode"
             echo "- stopped-by-sample: $candidate"
@@ -391,12 +401,13 @@ fi
 {
     echo "# Danmaku Lab performance series"
     echo
-    echo "- protocol-version: 3"
+    echo "- protocol-version: 4"
     echo "- preset: $preset_id@1"
     echo "- renderer: $renderer_id"
     echo "- template: $template_slug"
     echo "- repetitions: 3"
     echo "- binary-sha256: $binary_hash"
+    echo "- benchmark-manifest-sha256: $benchmark_manifest_hash"
     echo "- threshold-sha256: $threshold_hash"
     echo "- decision-mode: $decision_mode"
     echo "- repetition-1-summary-sha256: $sample1_hash"

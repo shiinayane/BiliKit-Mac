@@ -16,7 +16,7 @@ renderer_id=$3
 repetition=$4
 attempt=$5
 template_slug=$6
-[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 3 ] \
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)" = 4 ] \
     || fail "benchmark manifest protocol version is unsupported"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt" 2>/dev/null || true)
 case "$decision_mode" in
@@ -55,7 +55,7 @@ trace_path="$artifact_root/raw/$preset_id-$renderer_id-r$repetition-a$attempt-$t
 summary_path="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug.md"
 [ -e "$trace_path" ] || fail "raw trace is missing"
 [ -f "$summary_path" ] || fail "summary is missing"
-[ "$(sed -n 's/^- protocol-version: //p' "$summary_path")" = 3 ] \
+[ "$(sed -n 's/^- protocol-version: //p' "$summary_path")" = 4 ] \
     || fail "summary protocol version is unsupported"
 [ "$(sed -n 's/^- preset: //p' "$summary_path")" = "$preset_id@1" ] \
     || fail "summary preset does not match"
@@ -79,7 +79,7 @@ case "$sample_id" in
 esac
 claimed_sample="$artifact_root/claimed-samples/$sample_id.txt"
 [ -f "$claimed_sample" ] || fail "claimed pending-sample manifest is missing"
-[ "$(sed -n 's/^protocol-version=//p' "$claimed_sample")" = 3 ] \
+[ "$(sed -n 's/^protocol-version=//p' "$claimed_sample")" = 4 ] \
     || fail "claimed sample protocol version is unsupported"
 [ "$(sed -n 's/^sample-id=//p' "$claimed_sample")" = "$sample_id" ] \
     || fail "claimed sample identity mismatch"
@@ -111,13 +111,20 @@ summary_value() {
 exceeds() {
     awk -v actual="$1" -v limit="$2" 'BEGIN { exit !(actual > limit) }'
 }
-[ "$(result_value protocol-version)" = 3 ] || fail "Lab result protocol version is unsupported"
+[ "$(result_value protocol-version)" = 4 ] || fail "Lab result protocol version is unsupported"
 [ "$(result_value sample-id)" = "$sample_id" ] || fail "Lab result sample mismatch"
 [ "$(result_value preset)" = "$preset_id@1" ] || fail "Lab result preset mismatch"
 [ "$(result_value renderer)" = "$renderer_id" ] || fail "Lab result renderer mismatch"
 [ "$(result_value repetition)" = "$repetition" ] || fail "Lab result repetition mismatch"
 [ "$(result_value binary-sha256)" = "$(sed -n '1p' "$artifact_root/binary-sha256.txt")" ] \
     || fail "Lab result binary hash mismatch"
+benchmark_manifest_hash=$(shasum -a 256 "$artifact_root/benchmark-manifest.txt" | awk '{print $1}')
+[ "$benchmark_manifest_hash" = "$(sed -n '1p' "$artifact_root/benchmark-manifest-sha256.txt")" ] \
+    || fail "benchmark manifest changed after preparation"
+[ "$(sed -n 's/^benchmark-manifest-sha256=//p' "$claimed_sample")" = "$benchmark_manifest_hash" ] \
+    || fail "claimed benchmark manifest identity mismatch"
+[ "$(result_value benchmark-manifest-sha256)" = "$benchmark_manifest_hash" ] \
+    || fail "Lab result benchmark manifest hash mismatch"
 frozen_threshold_hash=$(shasum -a 256 "$artifact_root/frozen/thresholds.md" | awk '{print $1}')
 [ "$(sed -n 's/^threshold-sha256=//p' "$claimed_sample")" = "$frozen_threshold_hash" ] \
     || fail "claimed threshold identity mismatch"
@@ -125,6 +132,8 @@ frozen_threshold_hash=$(shasum -a 256 "$artifact_root/frozen/thresholds.md" | aw
     || fail "Lab result threshold hash mismatch"
 [ "$(sed -n 's/^- binary-sha256: //p' "$summary_path")" = "$(result_value binary-sha256)" ] \
     || fail "summary binary hash mismatch"
+[ "$(sed -n 's/^- benchmark-manifest-sha256: //p' "$summary_path")" = "$benchmark_manifest_hash" ] \
+    || fail "summary benchmark manifest hash mismatch"
 [ "$(sed -n 's/^- threshold-sha256: //p' "$summary_path")" = "$frozen_threshold_hash" ] \
     || fail "summary threshold hash mismatch"
 process_record="$artifact_root/frozen/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-process.txt"
@@ -376,11 +385,12 @@ finalized_sample="$artifact_root/frozen/$sample_id-finalized-sample.txt"
 rm -rf -- "$trace_path"
 [ ! -e "$trace_path" ] || fail "raw trace deletion did not complete"
 {
-    echo "protocol-version=3"
+    echo "protocol-version=4"
     echo "sample-id=$sample_id"
     echo "summary-path=$summary_path"
     echo "summary-sha256=$summary_sha256"
     echo "lab-result-sha256=$(sed -n '1p' "$result_hash_path")"
+    echo "benchmark-manifest-sha256=$benchmark_manifest_hash"
     echo "raw-trace-tree-sha256=$trace_tree_sha256"
 } >"$finalized_sample"
 chmod 0444 "$summary_path" "$finalized_sample"

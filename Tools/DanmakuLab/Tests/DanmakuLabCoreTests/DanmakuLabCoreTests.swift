@@ -907,12 +907,13 @@ struct DanmakuLabCoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let sampleID = UUID()
         let pending = [
-            "protocol-version=3",
+            "protocol-version=4",
             "sample-id=\(sampleID.uuidString.lowercased())",
             "preset=steady-80@1",
             "renderer=production-core-animation",
             "repetition=2",
             "binary-sha256=binary-hash",
+            "benchmark-manifest-sha256=manifest-hash",
             "threshold-sha256=threshold-hash",
             "",
         ].joined(separator: "\n")
@@ -987,7 +988,8 @@ struct DanmakuLabCoreTests {
             encoding: .utf8
         )
         #expect(result.contains("sample-id=\(sampleID.uuidString.lowercased())"))
-        #expect(result.contains("protocol-version=3"))
+        #expect(result.contains("protocol-version=4"))
+        #expect(result.contains("benchmark-manifest-sha256=manifest-hash"))
         #expect(result.contains("repetition=2"))
         #expect(result.contains("logical-ticks-actual=900"))
         #expect(result.contains("disposition=eligible"))

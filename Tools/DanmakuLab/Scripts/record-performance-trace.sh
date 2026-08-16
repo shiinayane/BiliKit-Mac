@@ -35,9 +35,14 @@ esac
 [ -f "$artifact_root/benchmark-manifest.txt" ] || fail "benchmark manifest is missing"
 [ -f "$artifact_root/binary-path.txt" ] || fail "prepared binary path is missing"
 [ -f "$artifact_root/binary-sha256.txt" ] || fail "prepared binary hash is missing"
+[ -f "$artifact_root/benchmark-manifest-sha256.txt" ] \
+    || fail "benchmark manifest hash is missing"
 [ -f "$artifact_root/thresholds.md" ] || fail "threshold preregistration is missing"
-[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt")" = 3 ] \
+[ "$(sed -n 's/^protocol-version=//p' "$artifact_root/benchmark-manifest.txt")" = 4 ] \
     || fail "benchmark manifest protocol version is unsupported"
+benchmark_manifest_sha256=$(shasum -a 256 "$artifact_root/benchmark-manifest.txt" | awk '{print $1}')
+[ "$benchmark_manifest_sha256" = "$(sed -n '1p' "$artifact_root/benchmark-manifest-sha256.txt")" ] \
+    || fail "benchmark manifest changed after preparation"
 decision_mode=$(sed -n 's/^decision-mode=//p' "$artifact_root/benchmark-manifest.txt")
 case "$decision_mode" in
     calibration|adjudication) ;;
@@ -197,12 +202,13 @@ pending_sample="$artifact_root/pending-sample.txt"
 [ ! -e "$pending_sample" ] \
     || fail "another sample is pending; finish or discard it first"
 {
-    echo "protocol-version=3"
+    echo "protocol-version=4"
     echo "sample-id=$sample_id"
     echo "preset=$preset_id@1"
     echo "renderer=$renderer_id"
     echo "repetition=$repetition"
     echo "binary-sha256=$process_sha256"
+    echo "benchmark-manifest-sha256=$benchmark_manifest_sha256"
     echo "threshold-sha256=$frozen_threshold_sha256"
 } >"$pending_sample"
 
@@ -222,7 +228,7 @@ trace_time_limit=$(awk \
 {
     echo "# Danmaku Lab performance sample"
     echo
-    echo "- protocol-version: 3"
+    echo "- protocol-version: 4"
     echo "- preset: $preset_id@1"
     echo "- renderer: $renderer_id"
     echo "- repetition: $repetition / 3"
@@ -232,6 +238,7 @@ trace_time_limit=$(awk \
     echo "- process-started: $process_started"
     echo "- executable: $process_binary"
     echo "- binary-sha256: $process_sha256"
+    echo "- benchmark-manifest-sha256: $benchmark_manifest_sha256"
     echo "- threshold-sha256: $frozen_threshold_sha256"
     echo "- decision-mode: $decision_mode"
     echo "- sample-id: $sample_id"
@@ -299,7 +306,7 @@ fi
 result_value() {
     sed -n "s/^$1=//p" "$lab_result"
 }
-[ "$(result_value protocol-version)" = 3 ] \
+[ "$(result_value protocol-version)" = 4 ] \
     || fail "Lab result protocol version is unsupported"
 [ "$(result_value sample-id)" = "$sample_id" ] \
     || fail "Lab result sample identity mismatch"
@@ -311,6 +318,8 @@ result_value() {
     || fail "Lab result repetition mismatch"
 [ "$(result_value binary-sha256)" = "$process_sha256" ] \
     || fail "Lab result binary identity mismatch"
+[ "$(result_value benchmark-manifest-sha256)" = "$benchmark_manifest_sha256" ] \
+    || fail "Lab result benchmark manifest identity mismatch"
 [ "$(result_value threshold-sha256)" = "$frozen_threshold_sha256" ] \
     || fail "Lab result threshold identity mismatch"
 [ ! -e "$pending_sample" ] \
