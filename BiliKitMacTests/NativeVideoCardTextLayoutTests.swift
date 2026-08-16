@@ -6,6 +6,42 @@ import Testing
 
 struct NativeVideoCardTextLayoutTests {
     @Test
+    func languageAwareFontCopiesSourceDescriptorAndAddsSimplifiedChineseLanguage() {
+        let source = NSFont.systemFont(ofSize: 15, weight: .medium)
+        let font = NativeVideoCardTextLayout.languageAwareCTFont(source)
+        let descriptor = CTFontCopyFontDescriptor(font)
+        let language =
+            CTFontDescriptorCopyAttribute(
+                descriptor,
+                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
+            ) as? String
+
+        #expect(language == NativeVideoCardTextLayout.typesettingLanguage)
+        #if compiler(>=6.3)
+            #expect(
+                NativeVideoCardTextLayout.languageDescriptorAttribute
+                    == kCTFontDescriptorLanguageAttribute as String
+            )
+        #endif
+        #expect(CTFontGetSize(font) == source.pointSize)
+        let sourceCTFont = CTFontCreateWithFontDescriptor(
+            source.fontDescriptor as CTFontDescriptor,
+            source.pointSize,
+            nil
+        )
+        #expect(CTFontGetSymbolicTraits(font) == CTFontGetSymbolicTraits(sourceCTFont))
+        let sourceWeight =
+            (CTFontCopyTraits(sourceCTFont) as NSDictionary)[
+                kCTFontWeightTrait
+            ] as? NSNumber
+        let resolvedWeight =
+            (CTFontCopyTraits(font) as NSDictionary)[
+                kCTFontWeightTrait
+            ] as? NSNumber
+        #expect(resolvedWeight == sourceWeight)
+    }
+
+    @Test
     func singleLineMeasurementHandlesEmptyAndMixedText() {
         let font = NSFont.preferredFont(forTextStyle: .body)
 
@@ -41,6 +77,23 @@ struct NativeVideoCardTextLayoutTests {
         #expect(renderer.footerLeadingLayer.truncationMode == .end)
         #expect(renderer.footerTrailingLayer.alignmentMode == .right)
         #expect(renderer.titleLayer.contentsScale == 2)
+        let titleFont = renderer.titleLayer.font as! CTFont
+        let footerFont = renderer.footerTrailingLayer.font as! CTFont
+        #expect(
+            CTFontDescriptorCopyAttribute(
+                CTFontCopyFontDescriptor(titleFont),
+                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
+            ) as? String == NativeVideoCardTextLayout.typesettingLanguage
+        )
+        #expect(
+            renderer.trailingWidth(font: .preferredFont(forTextStyle: .body))
+                == NativeVideoCardTextLayout.singleLineWidth("昨天", font: footerFont)
+        )
+        let cachedTitleFont = renderer.titleLayer.font
+        let cachedFooterFont = renderer.footerTrailingLayer.font
+        layout(renderer, scale: 2, appearance: appearance)
+        #expect(renderer.titleLayer.font === cachedTitleFont)
+        #expect(renderer.footerTrailingLayer.font === cachedFooterFont)
 
         renderer.configure(
             title: "新标题",

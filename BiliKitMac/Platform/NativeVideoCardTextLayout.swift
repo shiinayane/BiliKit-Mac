@@ -3,23 +3,47 @@ import CoreText
 import QuartzCore
 
 enum NativeVideoCardTextLayout {
+    static let typesettingLanguage = "zh-Hans"
+    static let languageDescriptorAttribute: String = {
+        #if compiler(>=6.3)
+            kCTFontDescriptorLanguageAttribute as String
+        #else
+            "CTFontDescriptorLanguageAttribute"
+        #endif
+    }()
+
     static func singleLineWidth(
         _ text: String,
         font: NSFont
+    ) -> CGFloat {
+        singleLineWidth(text, font: languageAwareCTFont(font))
+    }
+
+    static func singleLineWidth(
+        _ text: String,
+        font: CTFont
     ) -> CGFloat {
         guard !text.isEmpty else { return 0 }
         let line = CTLineCreateWithAttributedString(
             NSAttributedString(
                 string: text,
-                attributes: [.font: font]
+                attributes: [
+                    kCTFontAttributeName as NSAttributedString.Key: font
+                ]
             )
         )
         return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
     }
 
-    static func ctFont(_ font: NSFont) -> CTFont {
-        CTFontCreateWithFontDescriptor(
+    static func languageAwareCTFont(_ font: NSFont) -> CTFont {
+        let descriptor = CTFontDescriptorCreateCopyWithAttributes(
             font.fontDescriptor as CTFontDescriptor,
+            [
+                languageDescriptorAttribute: typesettingLanguage
+            ] as CFDictionary
+        )
+        return CTFontCreateWithFontDescriptor(
+            descriptor,
             font.pointSize,
             nil
         )
@@ -50,6 +74,8 @@ final class NativeVideoCardTextRenderer {
     private var footerLeading = ""
     private var footerTrailing: String?
     private var footerTrailingWidthCache = NativeVideoSingleLineWidthCache()
+    private var cachedTitleFont: (source: NSFont, resolved: CTFont)?
+    private var cachedFooterFont: (source: NSFont, resolved: CTFont)?
 
     var showsFooterTrailing: Bool { footerTrailing != nil }
 
@@ -84,6 +110,7 @@ final class NativeVideoCardTextRenderer {
 
     func trailingWidth(font: NSFont) -> CGFloat {
         guard let footerTrailing else { return 0 }
+        let font = resolvedFooterFont(for: font)
         return footerTrailingWidthCache.width(for: footerTrailing) {
             NativeVideoCardTextLayout.singleLineWidth(footerTrailing, font: font)
         }
@@ -104,13 +131,13 @@ final class NativeVideoCardTextRenderer {
 
         titleLayer.frame = titleFrame
         titleLayer.contentsScale = contentsScale
-        titleLayer.font = NativeVideoCardTextLayout.ctFont(titleFont)
+        titleLayer.font = resolvedTitleFont(for: titleFont)
         titleLayer.fontSize = titleFont.pointSize
         titleLayer.foregroundColor = colors.title.cgColor
         titleLayer.string = title.isEmpty ? nil : title
         titleLayer.isHidden = title.isEmpty
 
-        let footerCTFont = NativeVideoCardTextLayout.ctFont(footerFont)
+        let footerCTFont = resolvedFooterFont(for: footerFont)
         for footerLayer in [footerLeadingLayer, footerTrailingLayer] {
             footerLayer.contentsScale = contentsScale
             footerLayer.font = footerCTFont
@@ -125,6 +152,25 @@ final class NativeVideoCardTextRenderer {
         footerTrailingLayer.isHidden = footerTrailing == nil
 
         CATransaction.commit()
+    }
+
+    private func resolvedTitleFont(for font: NSFont) -> CTFont {
+        if let cachedTitleFont, cachedTitleFont.source == font {
+            return cachedTitleFont.resolved
+        }
+        let resolved = NativeVideoCardTextLayout.languageAwareCTFont(font)
+        cachedTitleFont = (font, resolved)
+        return resolved
+    }
+
+    private func resolvedFooterFont(for font: NSFont) -> CTFont {
+        if let cachedFooterFont, cachedFooterFont.source == font {
+            return cachedFooterFont.resolved
+        }
+        let resolved = NativeVideoCardTextLayout.languageAwareCTFont(font)
+        cachedFooterFont = (font, resolved)
+        footerTrailingWidthCache.reset()
+        return resolved
     }
 
     private static func makeTextLayer(

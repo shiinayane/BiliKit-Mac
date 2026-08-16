@@ -888,7 +888,7 @@ private final class NativeVideoMergedCoverView: NSView {
         alignmentMode: CATextLayerAlignmentMode = .left
     ) -> CATextLayer {
         let textLayer = CATextLayer()
-        textLayer.font = NativeVideoCardTextLayout.ctFont(font)
+        textLayer.font = NativeVideoCardTextLayout.languageAwareCTFont(font)
         textLayer.fontSize = font.pointSize
         textLayer.foregroundColor = NSColor.white.cgColor
         textLayer.alignmentMode = alignmentMode
