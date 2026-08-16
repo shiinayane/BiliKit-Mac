@@ -97,7 +97,7 @@ struct AppEnvironment {
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
         self.danmakuPreferencesStore = danmakuPreferencesStore
-        let renderer = CoreAnimationDanmakuRenderer()
+        let renderer = CoreAnimationDanmakuRenderer(style: .production)
         let controller = DanmakuPresentationController(
             backend: renderer,
             configuration: Self.emptyDanmakuConfiguration
@@ -259,14 +259,9 @@ struct AppEnvironment {
         )
     }
 
-    private static let emptyDanmakuConfiguration = DanmakuLaneConfiguration(
+    private static let emptyDanmakuConfiguration = DanmakuLaneConfiguration.production(
         surfaceWidth: 0,
-        surfaceHeight: 0,
-        laneHeight: 36,
-        minimumHorizontalGap: 24,
-        maximumActiveCount:
-            DanmakuLaneConfiguration.hardMaximumActiveCount,
-        displayAreaFraction: 1
+        surfaceHeight: 0
     )
 }
 
