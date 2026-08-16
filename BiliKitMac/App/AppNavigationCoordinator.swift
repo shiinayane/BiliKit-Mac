@@ -11,9 +11,19 @@ struct PlaybackDestination: Hashable {
     let surfaceID: UUID
 }
 
+struct PlaybackSelectionIntent: Hashable {
+    let bvid: String
+    let preferredCID: Int64?
+
+    init(bvid: String, preferredCID: Int64? = nil) {
+        self.bvid = bvid
+        self.preferredCID = preferredCID
+    }
+}
+
 private struct ActivePlayback: Equatable {
     let destination: PlaybackDestination
-    var bvid: String
+    var intent: PlaybackSelectionIntent
 }
 
 @MainActor
@@ -40,16 +50,19 @@ final class AppNavigationCoordinator {
         }
     }
     var currentPlaybackBVID: String? {
-        activePlayback?.bvid
+        activePlayback?.intent.bvid
+    }
+    var currentPlaybackIntent: PlaybackSelectionIntent? {
+        activePlayback?.intent
     }
     var searchDraft = ""
 
     private var activePlayback: ActivePlayback?
-    @ObservationIgnored private let startPlayback: (String) -> Void
+    @ObservationIgnored private let startPlayback: (PlaybackSelectionIntent) -> Void
     @ObservationIgnored private let stopPlayback: () -> Void
 
     init(
-        startPlayback: @escaping (String) -> Void,
+        startPlayback: @escaping (PlaybackSelectionIntent) -> Void,
         stopPlayback: @escaping () -> Void
     ) {
         self.startPlayback = startPlayback
@@ -58,24 +71,28 @@ final class AppNavigationCoordinator {
 
     /// 首次打开建立播放 surface；连续打开其他视频只替换媒体 identity。
     func openPlayback(_ bvid: String) {
-        guard !bvid.isEmpty else { return }
-        guard currentPlaybackBVID != bvid else { return }
+        openPlayback(PlaybackSelectionIntent(bvid: bvid))
+    }
+
+    func openPlayback(_ intent: PlaybackSelectionIntent) {
+        guard !intent.bvid.isEmpty else { return }
+        guard currentPlaybackIntent != intent else { return }
 
         if var activePlayback {
-            activePlayback.bvid = bvid
+            activePlayback.intent = intent
             self.activePlayback = activePlayback
         } else {
             activePlayback = ActivePlayback(
                 destination: PlaybackDestination(surfaceID: UUID()),
-                bvid: bvid
+                intent: intent
             )
         }
-        startPlayback(bvid)
+        startPlayback(intent)
     }
 
     func retryPlayback() {
-        guard let bvid = currentPlaybackBVID else { return }
-        startPlayback(bvid)
+        guard let intent = currentPlaybackIntent else { return }
+        startPlayback(intent)
     }
 
     /// 登出只关闭当前播放，不改变来源 Tab 或尚未提交的搜索草稿。

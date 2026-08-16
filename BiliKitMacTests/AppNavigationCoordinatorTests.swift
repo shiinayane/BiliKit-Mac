@@ -131,7 +131,7 @@ struct AppNavigationCoordinatorTests {
     func replacementKeepsSurfaceSourceAndDraftWhileOrderingSideEffects() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0)") },
+            startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") }
         )
         coordinator.selectedTab = .search
@@ -161,7 +161,7 @@ struct AppNavigationCoordinatorTests {
     func nonemptyPathWriteCannotForgeOrReplacePlayback() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0)") },
+            startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") }
         )
         let forgedDestination = PlaybackDestination(surfaceID: UUID())
@@ -198,20 +198,43 @@ struct AppNavigationCoordinatorTests {
 
     @Test
     @MainActor
-    func retryKeepsSurfaceAndMediaIdentity() {
-        var events: [String] = []
+    func sameBVIDDifferentCIDIsANewAtomicSelectionIntent() {
+        var intents: [PlaybackSelectionIntent] = []
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0)") },
-            stopPlayback: { events.append("stop") }
+            startPlayback: { intents.append($0) },
+            stopPlayback: {}
         )
 
-        coordinator.openPlayback("BV1RetryA")
+        coordinator.openPlayback(
+            PlaybackSelectionIntent(bvid: "BV1SameA", preferredCID: 101)
+        )
+        coordinator.openPlayback(
+            PlaybackSelectionIntent(bvid: "BV1SameA", preferredCID: 102)
+        )
+
+        #expect(intents.map(\.preferredCID) == [101, 102])
+        #expect(coordinator.currentPlaybackIntent?.preferredCID == 102)
+        #expect(coordinator.playbackPath.count == 1)
+    }
+
+    @Test
+    @MainActor
+    func retryKeepsSurfaceAndMediaIdentity() {
+        var intents: [PlaybackSelectionIntent] = []
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { intents.append($0) },
+            stopPlayback: {}
+        )
+
+        coordinator.openPlayback(
+            PlaybackSelectionIntent(bvid: "BV1RetryA", preferredCID: 202)
+        )
         let destination = coordinator.playbackPath.first
         coordinator.retryPlayback()
 
         #expect(coordinator.playbackPath.first == destination)
         #expect(coordinator.currentPlaybackBVID == "BV1RetryA")
-        #expect(events == ["start:BV1RetryA", "start:BV1RetryA"])
+        #expect(intents.map(\.preferredCID) == [202, 202])
     }
 
     @Test
@@ -282,7 +305,7 @@ struct AppNavigationCoordinatorTests {
     func emptyBVIDDoesNotCreatePlaybackState() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0)") },
+            startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") }
         )
 

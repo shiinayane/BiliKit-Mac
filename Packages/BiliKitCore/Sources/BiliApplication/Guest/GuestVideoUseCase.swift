@@ -33,9 +33,15 @@ public struct GuestVideoUseCase: Sendable {
         self.repository = repository
     }
 
-    public func prepareVideo(bvid: String) async throws -> GuestVideoContext {
+    public func prepareVideo(
+        bvid: String,
+        preferredCID: Int64? = nil
+    ) async throws -> GuestVideoContext {
         let resolvedDetail = try await repository.videoDetail(for: bvid)
         try Task.checkCancellation()
+        guard resolvedDetail.bvid == bvid else {
+            throw GuestApplicationError.invalidResponse
+        }
 
         let resolvedPages =
             resolvedDetail.pages.isEmpty
@@ -43,21 +49,43 @@ public struct GuestVideoUseCase: Sendable {
             : resolvedDetail.pages
         try Task.checkCancellation()
         let sortedPages = resolvedPages.sorted(by: { $0.index < $1.index })
-        guard let provisionalPage = sortedPages.first else {
+        guard let firstPage = sortedPages.first else {
             throw GuestApplicationError.invalidResponse
         }
+
+        if let preferredCID {
+            guard
+                let selectedPage = sortedPages.first(where: {
+                    $0.cid == preferredCID
+                })
+            else {
+                throw GuestApplicationError.invalidRequest
+            }
+            let playback = try await repository.playback(
+                for: bvid,
+                cid: selectedPage.cid
+            )
+            try Task.checkCancellation()
+            return GuestVideoContext(
+                detail: resolvedDetail,
+                pages: sortedPages,
+                selectedPage: selectedPage,
+                playback: playback
+            )
+        }
+
         let provisionalPlayback = try await repository.playback(
             for: bvid,
-            cid: provisionalPage.cid
+            cid: firstPage.cid
         )
         try Task.checkCancellation()
 
         let selectedPage =
             provisionalPlayback.resumeMetadata.flatMap { metadata in
                 sortedPages.first(where: { $0.cid == metadata.lastPlayedCID })
-            } ?? provisionalPage
+            } ?? firstPage
         let playback: VideoPlayback
-        if selectedPage.cid == provisionalPage.cid {
+        if selectedPage.cid == firstPage.cid {
             playback = provisionalPlayback
         } else {
             playback = try await repository.playback(

@@ -83,6 +83,41 @@ struct GuestVideoUseCaseTests {
     }
 
     @Test
+    func explicitCIDRequestsOnlyTheValidatedTargetAndOverridesResume() async throws {
+        let repository = GuestRepositoryStub(
+            resumeMetadata: PlaybackResumeMetadata(
+                lastPlayedCID: 900_001,
+                positionMilliseconds: 5_000
+            )
+        )
+        let useCase = GuestVideoUseCase(repository: repository)
+
+        let context = try await useCase.prepareVideo(
+            bvid: "BV1FixtureA1",
+            preferredCID: 900_002
+        )
+
+        #expect(context.selectedPage.cid == 900_002)
+        #expect(context.resumePositionSeconds == nil)
+        #expect(await repository.playbackCIDs() == [900_002])
+    }
+
+    @Test
+    func invalidExplicitCIDNeverRequestsPlayback() async {
+        let repository = GuestRepositoryStub()
+        let useCase = GuestVideoUseCase(repository: repository)
+
+        await #expect(throws: GuestApplicationError.invalidRequest) {
+            try await useCase.prepareVideo(
+                bvid: "BV1FixtureA1",
+                preferredCID: 999_999
+            )
+        }
+
+        #expect(await repository.playbackCIDs().isEmpty)
+    }
+
+    @Test
     func cancellationDuringPagelistFallbackPreventsPlayback() async throws {
         let repository = FallbackCancellationRepository()
         let useCase = GuestVideoUseCase(repository: repository)
@@ -181,12 +216,18 @@ private actor FallbackCancellationRepository: GuestContentRepository {
 private actor GuestRepositoryStub: GuestContentRepository {
     private let hasPages: Bool
     private let detailHasPages: Bool
+    private let resumeMetadata: PlaybackResumeMetadata?
     private var observedPlaybackCIDs: [Int64] = []
     private var observedPageRequestCount = 0
 
-    init(hasPages: Bool = true, detailHasPages: Bool = false) {
+    init(
+        hasPages: Bool = true,
+        detailHasPages: Bool = false,
+        resumeMetadata: PlaybackResumeMetadata? = nil
+    ) {
         self.hasPages = hasPages
         self.detailHasPages = detailHasPages
+        self.resumeMetadata = resumeMetadata
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
@@ -298,7 +339,8 @@ private actor GuestRepositoryStub: GuestContentRepository {
                     )
                 ]
             ),
-            mediaHeaders: [:]
+            mediaHeaders: [:],
+            resumeMetadata: resumeMetadata
         )
     }
 }

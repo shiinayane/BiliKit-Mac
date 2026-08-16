@@ -78,7 +78,7 @@ struct PlaybackContextSidebarSkeleton: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 uploader
 
                 Divider()
@@ -90,10 +90,9 @@ struct PlaybackContextSidebarSkeleton: View {
 
                 Divider()
 
-                sectionTitle(width: 92)
-                ForEach(0..<3, id: \.self) { _ in
-                    partRow
-                }
+                sectionTitle(width: 132)
+                selectionField
+                selectionField
 
                 Divider()
 
@@ -154,19 +153,15 @@ struct PlaybackContextSidebarSkeleton: View {
         .frame(height: 13)
     }
 
-    private var partRow: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(.quinary)
-                .frame(width: 16, height: 16)
+    private var selectionField: some View {
+        HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 3)
                 .fill(.quinary)
-                .frame(width: 32, height: 14)
+                .frame(width: 42, height: 14)
             RoundedRectangle(cornerRadius: 3)
                 .fill(.quaternary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 14)
+                .frame(height: 24)
         }
-        .frame(height: 32)
     }
 }

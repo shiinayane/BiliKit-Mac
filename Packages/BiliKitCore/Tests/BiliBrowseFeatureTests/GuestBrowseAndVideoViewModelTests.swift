@@ -1349,6 +1349,93 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func crossBVIDExplicitCIDLoadsOnlyTheAtomicTarget() async {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(
+            fixtures.episodeBVID,
+            preferredCID: fixtures.episodePages[1].cid
+        )
+        #expect(model.requestedSelectionBVID == fixtures.episodeBVID)
+        #expect(model.requestedPreferredCID == fixtures.episodePages[1].cid)
+        #expect(model.presentedPlaybackIdentity == nil)
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedPlaybackIdentity?.bvid == fixtures.episodeBVID)
+        #expect(model.presentedPlaybackIdentity?.cid == fixtures.episodePages[1].cid)
+        #expect(await repository.playbackBVIDs() == [fixtures.episodeBVID])
+        #expect(await repository.playbackCIDs() == [fixtures.episodePages[1].cid])
+    }
+
+    @Test
+    @MainActor
+    func crossBVIDFailureRetryRetainsExplicitCID() async {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            failsFirstEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(
+            fixtures.episodeBVID,
+            preferredCID: fixtures.episodePages[1].cid
+        )
+        await model.waitForCurrentTask()
+        #expect(model.requestedPreferredCID == fixtures.episodePages[1].cid)
+        #expect(model.presentedPlaybackIdentity == nil)
+
+        model.retry()
+        await model.waitForCurrentTask()
+
+        #expect(model.presentedPlaybackIdentity?.cid == fixtures.episodePages[1].cid)
+        #expect(await repository.playbackBVIDs() == [fixtures.episodeBVID])
+        #expect(await repository.playbackCIDs() == [fixtures.episodePages[1].cid])
+    }
+
+    @Test
+    @MainActor
+    func unknownEpisodePagesStayPendingThenResolveOneValidatedIntent() async {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(
+            fixtures: fixtures,
+            blocksEpisodeDetail: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        var resolved: [(String, Int64?)] = []
+
+        model.selectCollectionEpisode(fixtures.lazyEpisode) {
+            resolved.append(($0, $1))
+        }
+        await repository.waitForEpisodeDetailRequest()
+
+        #expect(model.selectedCollectionEpisode == fixtures.lazyEpisode.id)
+        #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .loading)
+        #expect(resolved.isEmpty)
+
+        await repository.releaseEpisodeDetail()
+        await model.waitForCurrentCollectionEpisodeTask()
+
+        #expect(resolved.count == 1)
+        #expect(resolved.first?.0 == fixtures.episodeBVID)
+        #expect(resolved.first?.1 == fixtures.episodePages.first?.cid)
+    }
+
+    @Test
+    @MainActor
     func embeddedCollectionPagesLoadWithoutAnotherDetailRequest() async throws {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
@@ -1359,10 +1446,10 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(
-            fixtures.embeddedEpisode,
-            expanded: true
-        )
+        var resolvedSelection: (String, Int64?)?
+        model.selectCollectionEpisode(fixtures.embeddedEpisode) {
+            resolvedSelection = ($0, $1)
+        }
 
         #expect(
             model.collectionEpisodePageStates[fixtures.embeddedEpisode.id]
@@ -1372,11 +1459,36 @@ struct GuestBrowseAndVideoViewModelTests {
             model.collectionEpisodePages(for: fixtures.embeddedEpisode.id) == fixtures.rootPages
         )
         #expect(await repository.episodeDetailRequestCount() == 0)
+        #expect(resolvedSelection?.0 == fixtures.rootBVID)
     }
 
     @Test
     @MainActor
-    func duplicateBVIDEpisodeExpansionsShareOneDetailRequest() async throws {
+    func explicitDuplicateBVIDOccurrenceSurvivesContextReconciliation() async {
+        let fixtures = CollectionFixtures()
+        let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingPlayerEngine()
+        )
+
+        model.loadVideo(fixtures.rootBVID)
+        await model.waitForCurrentTask()
+        model.selectCollectionEpisode(fixtures.rootSummaryEpisode) { _, _ in }
+        #expect(model.selectedCollectionEpisode == fixtures.rootSummaryEpisode.id)
+
+        model.loadVideo(
+            fixtures.rootBVID,
+            preferredCID: fixtures.rootPages[1].cid
+        )
+        await model.waitForCurrentTask()
+
+        #expect(model.selectedCollectionEpisode == fixtures.rootSummaryEpisode.id)
+    }
+
+    @Test
+    @MainActor
+    func duplicateBVIDEpisodeSelectionsShareOneDetailRequest() async throws {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(
             fixtures: fixtures,
@@ -1389,19 +1501,15 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
-        model.setCollectionEpisodeExpanded(
-            fixtures.duplicateLazyEpisode,
-            expanded: true
-        )
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
+        model.selectCollectionEpisode(fixtures.duplicateLazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
         await repository.releaseEpisodeDetail()
         await model.waitForCurrentCollectionEpisodeTask()
 
         #expect(await repository.episodeDetailRequestCount() == 1)
         #expect(
-            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
-                == .loaded(bvid: fixtures.episodeBVID)
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle
         )
         #expect(
             model.collectionEpisodePageStates[fixtures.duplicateLazyEpisode.id]
@@ -1411,7 +1519,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
-    func collapsingOneDuplicateWaiterKeepsTheSharedRequestAlive() async throws {
+    func replacingDuplicateBVIDSelectionKeepsTheSharedRequestAlive() async throws {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(
             fixtures: fixtures,
@@ -1424,13 +1532,9 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
-        model.setCollectionEpisodeExpanded(
-            fixtures.duplicateLazyEpisode,
-            expanded: true
-        )
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
+        model.selectCollectionEpisode(fixtures.duplicateLazyEpisode) { _, _ in }
         await repository.releaseEpisodeDetail()
         await model.waitForCurrentCollectionEpisodeTask()
 
@@ -1447,7 +1551,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
-    func collapsingAndImmediatelyReexpandingStartsANewGeneration() async throws {
+    func replacingDifferentBVIDSelectionStartsANewGeneration() async throws {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(
             fixtures: fixtures,
@@ -1460,19 +1564,18 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest(count: 1)
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.thirdLazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest(count: 2)
         await repository.releaseEpisodeDetail()
         await model.waitForCurrentCollectionEpisodeTask()
 
         #expect(await repository.episodeDetailRequestCount() == 2)
-        #expect(model.expandedCollectionEpisodes.contains(fixtures.lazyEpisode.id))
+        #expect(model.selectedCollectionEpisode == fixtures.thirdLazyEpisode.id)
         #expect(
-            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
-                == .loaded(bvid: fixtures.episodeBVID)
+            model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id]
+                == .loaded(bvid: fixtures.thirdBVID)
         )
     }
 
@@ -1492,12 +1595,12 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
         let cancelledTask = try #require(
             model.collectionEpisodeTaskSnapshotForTesting()
         )
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: false)
+        model.selectCollectionEpisode(fixtures.embeddedEpisode) { _, _ in }
         await repository.releaseEpisodeDetail()
         await cancelledTask.value
 
@@ -1520,7 +1623,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await model.waitForCurrentCollectionEpisodeTask()
 
         #expect(
@@ -1554,7 +1657,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
         let lateTask = try #require(
             model.collectionEpisodeTaskSnapshotForTesting()
@@ -1564,14 +1667,14 @@ struct GuestBrowseAndVideoViewModelTests {
         await repository.releaseEpisodeDetail()
         await lateTask.value
 
-        #expect(model.expandedCollectionEpisodes.isEmpty)
+        #expect(model.selectedCollectionEpisode == nil)
         #expect(model.collectionEpisodePageStates.isEmpty)
         #expect(model.presentedContext == nil)
     }
 
     @Test
     @MainActor
-    func differentBVIDExpansionsRunSeriallyWithoutLeavingIdleExpandedItem() async throws {
+    func differentBVIDSelectionCancelsOldRequestAndRejectsItsLateResult() async throws {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(
             fixtures: fixtures,
@@ -1584,23 +1687,21 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest(count: 1)
-        model.setCollectionEpisodeExpanded(fixtures.thirdLazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.thirdLazyEpisode) { _, _ in }
 
-        #expect(await repository.episodeDetailRequestCount() == 1)
-        #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .loading)
+        await repository.waitForEpisodeDetailRequest(count: 2)
+        #expect(await repository.episodeDetailRequestCount() == 2)
+        #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle)
         #expect(model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id] == .loading)
 
-        await repository.releaseEpisodeDetail()
-        await repository.waitForEpisodeDetailRequest(count: 2)
         await repository.releaseEpisodeDetail()
         await model.waitForCurrentCollectionEpisodeTask()
 
         #expect(await repository.episodeDetailRequestCount() == 2)
         #expect(
-            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
-                == .loaded(bvid: fixtures.episodeBVID)
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle
         )
         #expect(
             model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id]
@@ -1610,7 +1711,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
-    func currentAndEmbeddedPagesPopulateBVIDCacheWithoutRemoteDetail() async {
+    func knownEpisodePagesResolveSelectionsWithoutRemoteDetail() async {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
         let model = GuestVideoViewModel(
@@ -1620,15 +1721,11 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
-        model.setCollectionEpisodeExpanded(fixtures.rootSummaryEpisode, expanded: true)
-        model.setCollectionEpisodeExpanded(fixtures.embeddedRemoteEpisode, expanded: true)
-        model.setCollectionEpisodeExpanded(fixtures.lazyEpisode, expanded: true)
+        model.selectCollectionEpisode(fixtures.rootSummaryEpisode) { _, _ in }
+        model.selectCollectionEpisode(fixtures.embeddedRemoteEpisode) { _, _ in }
+        model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
 
         #expect(await repository.episodeDetailRequestCount() == 0)
-        #expect(
-            model.collectionEpisodePages(for: fixtures.rootSummaryEpisode.id)
-                == fixtures.rootPages
-        )
         #expect(
             model.collectionEpisodePages(for: fixtures.lazyEpisode.id)
                 == fixtures.episodePages
@@ -1649,12 +1746,12 @@ struct GuestBrowseAndVideoViewModelTests {
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
         for episode in fixtures.episodes {
-            model.setCollectionEpisodeExpanded(episode, expanded: true)
+            model.selectCollectionEpisode(episode) { _, _ in }
         }
 
         let first = fixtures.episodes[0]
         let last = fixtures.episodes[12]
-        #expect(!model.expandedCollectionEpisodes.contains(first.id))
+        #expect(model.selectedCollectionEpisode == last.id)
         #expect(model.collectionEpisodePageStates[first.id] == .idle)
         #expect(model.collectionEpisodePages(for: first.id) == nil)
         #expect(model.collectionEpisodePageStates[last.id] == .loaded(bvid: last.bvid!))
@@ -1929,6 +2026,7 @@ private actor CollectionEpisodeRepositoryStub: GuestContentRepository {
     let episodeFailureAfterRelease: GuestApplicationError?
     var failsFirstEpisodeDetail: Bool
     private var episodeRequests = 0
+    private var observedPlaybackRequests: [(String, Int64)] = []
     private let episodeRequestEvents = TestEventCounter()
     private var episodeReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -1986,7 +2084,16 @@ private actor CollectionEpisodeRepositoryStub: GuestContentRepository {
     }
 
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
-        fixtures.playback
+        observedPlaybackRequests.append((bvid, cid))
+        return fixtures.playback
+    }
+
+    func playbackBVIDs() -> [String] {
+        observedPlaybackRequests.map(\.0)
+    }
+
+    func playbackCIDs() -> [Int64] {
+        observedPlaybackRequests.map(\.1)
     }
 
     func episodeDetailRequestCount() -> Int {

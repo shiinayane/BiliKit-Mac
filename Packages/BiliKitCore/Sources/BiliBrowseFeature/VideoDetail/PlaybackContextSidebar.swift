@@ -11,16 +11,17 @@ public struct PlaybackContextSidebar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestVideoViewModel
     private let onRetry: () -> Void
+    private let onSelectPlayback: (String, Int64?) -> Void
     @State private var isSummaryExpanded = true
-    @State private var arePartsExpanded = true
-    @ScaledMetric(relativeTo: .callout) private var partRowHeight: CGFloat = 40
 
     public init(
         model: GuestVideoViewModel,
-        onRetry: @escaping () -> Void
+        onRetry: @escaping () -> Void,
+        onSelectPlayback: @escaping (String, Int64?) -> Void
     ) {
         self.model = model
         self.onRetry = onRetry
+        self.onSelectPlayback = onSelectPlayback
     }
 
     public var body: some View {
@@ -63,8 +64,9 @@ public struct PlaybackContextSidebar: View {
                     Divider()
                 }
 
-                if context.pages.count > 1 {
-                    partsSection(context)
+                let projection = selectionProjection(context)
+                if !projection.isHidden {
+                    playbackSelectionSection(context, projection: projection)
                     Divider()
                 }
 
@@ -89,148 +91,173 @@ public struct PlaybackContextSidebar: View {
         .font(.headline)
     }
 
-    private func partsSection(_ context: GuestVideoContext) -> some View {
-        ScrollViewReader { proxy in
-            DisclosureGroup(isExpanded: $arePartsExpanded) {
-                List {
-                    ForEach(context.pages) { page in
-                        partRow(
-                            page,
-                            identity: PlaybackItemIdentity(
-                                bvid: context.detail.bvid,
-                                cid: page.cid
-                            )
-                        )
-                        .id(page.cid)
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .frame(height: partsListHeight(pageCount: context.pages.count))
-                .padding(.top, 8)
-            } label: {
-                Text("分 P（\(context.pages.count)）")
-            }
-            .font(.headline)
-            .onChange(of: arePartsExpanded) { _, isExpanded in
-                guard isExpanded,
-                    let selectedCID = model.presentedPlaybackIdentity?.cid,
-                    context.pages.contains(where: { $0.cid == selectedCID })
-                else { return }
-                Task { @MainActor in
-                    await Task.yield()
-                    proxy.scrollTo(selectedCID, anchor: .center)
+    private func selectionProjection(
+        _ context: GuestVideoContext
+    ) -> PlaybackSelectionProjection {
+        let episodes = context.detail.collection?.sections.flatMap(\.episodes) ?? []
+        let pagesByEpisode = Dictionary(
+            uniqueKeysWithValues: episodes.compactMap { episode in
+                model.collectionEpisodePages(for: episode.id).map {
+                    (episode.id, $0)
                 }
             }
-        }
+        )
+        return PlaybackSelectionProjection(
+            context: context,
+            selectedEpisodeID: model.selectedCollectionEpisode,
+            requestedBVID: model.requestedSelectionBVID,
+            requestedCID: model.requestedPreferredCID,
+            presentedIdentity: model.presentedPlaybackIdentity,
+            pageStates: model.collectionEpisodePageStates,
+            pagesByEpisode: pagesByEpisode
+        )
     }
 
-    private func partRow(
-        _ page: VideoPage,
-        identity: PlaybackItemIdentity
+    @ViewBuilder
+    private func playbackSelectionSection(
+        _ context: GuestVideoContext,
+        projection: PlaybackSelectionProjection
     ) -> some View {
-        let isSelected = model.presentedPlaybackIdentity == identity
-        let isRequested = model.requestedPlaybackIdentity == identity
-        let isFailed = isRequested && isPageFailure
-        let isLoading = isRequested && !isSelected && !isFailed
-        let accessibilityStatus = accessibilityStatus(
-            isLoading: isLoading,
-            isFailed: isFailed
-        )
-        return Button {
-            if isFailed {
-                model.retry()
-            } else {
-                model.selectPage(cid: page.cid)
-            }
-        } label: {
-            HStack(alignment: .top, spacing: 8) {
-                Group {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(
-                            systemName: isFailed
-                                ? "exclamationmark.circle"
-                                : (isSelected ? "play.circle.fill" : "circle")
-                        )
-                        .foregroundStyle(
-                            isFailed
-                                ? Color.red
-                                : (isSelected ? Color.accentColor : .secondary)
-                        )
+        VStack(alignment: .leading, spacing: 10) {
+            if let collectionTitle = projection.collectionTitle {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(collectionTitle)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    if let position = projection.episodePositionText {
+                        Text(position)
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                 }
-                .frame(width: 16, height: 16)
-                .accessibilityHidden(true)
-
-                Text("P\(page.index)")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 30, alignment: .leading)
-
-                Text(page.title)
-                    .font(.callout)
-                    .lineLimit(2)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 8)
-
-                Text(
-                    VideoDurationFormatting.string(
-                        seconds: page.durationSeconds
-                    )
-                )
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .fixedSize()
+                .font(.headline)
             }
-            .contentShape(.rect)
+
+            if projection.showsEpisodePicker {
+                episodePicker(context, projection: projection)
+            } else if projection.showsStaticEpisodeTitle,
+                let episodeTitle = projection.selectedEpisodeTitle
+            {
+                LabeledContent("选集") {
+                    Text(episodeTitle)
+                        .multilineTextAlignment(.trailing)
+                }
+                .font(.callout)
+            }
+
+            if let placeholder = projection.episodePlaceholder {
+                Text(placeholder)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            selectedEpisodePages(context, projection: projection)
         }
-        .buttonStyle(.plain)
-        .disabled(isSelected || isLoading)
-        .frame(minHeight: partRowHeight)
-        .listRowInsets(
-            EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "第 \(page.index) 分 P，\(page.title)，"
-                + VideoDurationFormatting.string(
-                    seconds: page.durationSeconds
+    }
+
+    private func episodePicker(
+        _ context: GuestVideoContext,
+        projection: PlaybackSelectionProjection
+    ) -> some View {
+        Picker(
+            "选集",
+            selection: Binding(
+                get: { projection.selectedEpisodeID },
+                set: { identity in
+                    guard let identity,
+                        let episode = context.detail.collection?.sections
+                            .flatMap(\.episodes)
+                            .first(where: { $0.id == identity })
+                    else { return }
+                    selectEpisode(episode)
+                }
+            )
+        ) {
+            if projection.selectedEpisodeID == nil {
+                Text("当前视频不在合集目录中")
+                    .tag(Optional<VideoCollectionEpisodeIdentity>.none)
+                    .disabled(true)
+            }
+            ForEach(projection.episodeSections) { section in
+                Section(section.title.isEmpty ? "选集" : section.title) {
+                    ForEach(section.episodes) { episode in
+                        Text(episode.title)
+                            .tag(Optional(episode.id))
+                            .disabled(!episode.isEnabled)
+                    }
+                }
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    @ViewBuilder
+    private func selectedEpisodePages(
+        _ context: GuestVideoContext,
+        projection: PlaybackSelectionProjection
+    ) -> some View {
+        switch projection.selectedPages {
+        case .ready(let pages) where pages.count > 1:
+            Picker(
+                "分 P",
+                selection: Binding(
+                    get: { projection.selectedPageCID },
+                    set: { cid in
+                        guard let cid else { return }
+                        onSelectPlayback(context.detail.bvid, cid)
+                    }
                 )
-                + (accessibilityStatus.map { "，\($0)" } ?? "")
-        )
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .accessibilityHint(
-            isFailed
-                ? "点按重试"
-                : (isSelected
-                    ? ""
-                    : (isLoading ? "" : "切换到此分 P"))
-        )
-        .help(isFailed ? "加载失败，点按重试" : "")
-    }
-
-    private func partsListHeight(pageCount: Int) -> CGFloat {
-        CGFloat(min(pageCount, 5)) * partRowHeight + 4
-    }
-
-    private func accessibilityStatus(
-        isLoading: Bool,
-        isFailed: Bool
-    ) -> String? {
-        if isFailed { return "加载失败，可重试" }
-        if isLoading { return "正在载入" }
-        return nil
-    }
-
-    private var isPageFailure: Bool {
-        if case .failedPage = model.state {
-            return true
+            ) {
+                if projection.selectedPageCID == nil {
+                    Text("请选择分 P")
+                        .tag(Optional<Int64>.none)
+                        .disabled(true)
+                }
+                ForEach(pages) { page in
+                    Text(
+                        "P\(page.index) · \(page.title) · "
+                            + VideoDurationFormatting.string(
+                                seconds: page.durationSeconds
+                            )
+                    )
+                    .tag(Optional(page.cid))
+                }
+            }
+            .pickerStyle(.menu)
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("正在加载所选视频的分 P")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        case .failed:
+            HStack(spacing: 8) {
+                Text("无法加载所选视频的分 P")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("重试") {
+                    guard let identity = projection.selectedEpisodeID,
+                        let episode = context.detail.collection?.sections
+                            .flatMap(\.episodes)
+                            .first(where: { $0.id == identity })
+                    else { return }
+                    model.retryCollectionEpisodePages(episode)
+                }
+            }
+            .font(.callout)
+        case .ready, .empty:
+            EmptyView()
         }
-        return false
+    }
+
+    private func selectEpisode(_ episode: VideoCollectionEpisode) {
+        model.selectCollectionEpisode(episode) { bvid, preferredCID in
+            onSelectPlayback(bvid, preferredCID)
+        }
     }
 
     private var commentsUnavailableSection: some View {
