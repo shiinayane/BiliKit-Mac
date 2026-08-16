@@ -56,7 +56,7 @@ final class DanmakuLabModel {
     private var activePerformanceSample: LabPerformancePendingSample?
     private let performanceLog = OSLog(
         subsystem: "com.shirokyan.BiliKit.DanmakuLab",
-        category: "PerformanceProtocol"
+        category: .pointsOfInterest
     )
 
     init(

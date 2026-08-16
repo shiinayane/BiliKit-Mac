@@ -60,7 +60,8 @@ Measurement ends only after the exact logical tick and generated-event targets h
 timer is not allowed to make a slow run do less work. Any detach, resize, or backing-scale change after
 the signpost begins irreversibly pollutes that attempt, even if the final surface later returns to the
 expected geometry. Each signpost contains a unique attempt UUID, preset identity, expected ticks, and
-expected generated count.
+expected generated count. Formal intervals use the system Points of Interest category so the stock
+Time Profiler template records the same quantitative window without a custom Instruments template.
 
 The UI classifies samples before trace interpretation:
 
