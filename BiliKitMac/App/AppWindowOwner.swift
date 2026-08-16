@@ -27,8 +27,11 @@ final class AppWindowOwner {
         let videoModel = environment.makeVideoViewModel()
         let danmakuModel = environment.makeDanmakuViewModel()
         let navigationCoordinator = AppNavigationCoordinator(
-            startPlayback: { bvid in
-                videoModel.loadVideo(bvid)
+            startPlayback: { intent in
+                AppWindowOwner.handlePlaybackSelection(
+                    intent,
+                    with: videoModel
+                )
             },
             stopPlayback: {
                 videoModel.reset()
@@ -47,6 +50,26 @@ final class AppWindowOwner {
             openEnvironment: environment.open,
             closeEnvironment: environment.close
         )
+    }
+
+    static func handlePlaybackSelection(
+        _ intent: PlaybackSelectionIntent,
+        with videoModel: GuestVideoViewModel
+    ) {
+        guard videoModel.presentedBVID == intent.bvid,
+            let preferredCID = intent.preferredCID
+        else {
+            videoModel.loadVideo(
+                intent.bvid,
+                preferredCID: intent.preferredCID
+            )
+            return
+        }
+        if videoModel.failedPageCID == preferredCID {
+            videoModel.retry()
+        } else {
+            videoModel.selectPage(cid: preferredCID)
+        }
     }
 
     init(

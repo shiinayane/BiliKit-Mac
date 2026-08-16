@@ -55,6 +55,10 @@ private struct PlaybackStartPreparationFailure: Error {}
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
     public private(set) var state: GuestVideoState = .idle
+    public var failedPageCID: Int64? {
+        guard case .failedPage(_, let targetPage, _) = state else { return nil }
+        return targetPage.cid
+    }
     public private(set) var relatedVideoState: RelatedVideoState = .idle
     public private(set) var uploaderSignatureState: VideoUploaderSignatureState =
         .loaded(nil)
@@ -67,11 +71,16 @@ public final class GuestVideoViewModel {
     public var presentedBVID: String? { presentedContext?.detail.bvid }
     /// 用户最新请求的媒体身份；在 playurl 或播放器准备失败时仍保留给 retry。
     public private(set) var requestedPlaybackIdentity: PlaybackItemIdentity?
+    /// App 层最新选择意图的 BVID；与已成功安装的媒体身份分离。
+    public private(set) var requestedSelectionBVID: String?
+    /// 显式用户 CID；未知 pages 时可以先存在，绝不据此伪造已呈现媒体。
+    public private(set) var requestedPreferredCID: Int64?
     /// 已经由播放器成功安装的媒体身份；切换开始和失败后必须为 nil。
     public private(set) var presentedPlaybackIdentity: PlaybackItemIdentity?
     /// 仅在确认凭据失效时递增，由 App 层协调账户重校验；其他播放失败不能触发登出。
     public private(set) var authenticationRevalidationGeneration = 0
-    public private(set) var expandedCollectionEpisodes: Set<VideoCollectionEpisodeIdentity> = []
+    /// Picker 当前请求的合集 episode；可能先于新视频 context 到达。
+    public private(set) var selectedCollectionEpisode: VideoCollectionEpisodeIdentity?
     public private(set) var collectionEpisodePageStates:
         [VideoCollectionEpisodeIdentity: CollectionEpisodePagesState] = [:]
     /// 只在当前 item 已完成首次定位并开始播放后出现。
@@ -94,6 +103,8 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private var pendingCollectionEpisodeBVIDs: [String] = []
     @ObservationIgnored private var collectionEpisodeCache: [String: [VideoPage]] = [:]
     @ObservationIgnored private var collectionEpisodeCacheOrder: [String] = []
+    @ObservationIgnored private var collectionEpisodeSelectionHandler: ((String, Int64?) -> Void)?
+    @ObservationIgnored private var selectedCollectionEpisodeIsExplicit = false
     @ObservationIgnored private var collectionSeasonID: Int64?
     @ObservationIgnored private var collectionEpisodeRequestGeneration = 0
     @ObservationIgnored private var generation = 0
@@ -128,7 +139,7 @@ public final class GuestVideoViewModel {
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
-    public func loadVideo(_ bvid: String) {
+    public func loadVideo(_ bvid: String, preferredCID: Int64? = nil) {
         generation += 1
         let currentGeneration = generation
         loadTask?.cancel()
@@ -139,6 +150,14 @@ public final class GuestVideoViewModel {
         }
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
+        requestedSelectionBVID = bvid
+        requestedPreferredCID = preferredCID
+        if let preferredCID {
+            requestedPlaybackIdentity = PlaybackItemIdentity(
+                bvid: bvid,
+                cid: preferredCID
+            )
+        }
         playbackIntent = nil
         clearResumeNotice()
         state = .loading(bvid: bvid)
@@ -146,31 +165,33 @@ public final class GuestVideoViewModel {
         loadTask = Task { [weak self] in
             await self?.performLoad(
                 bvid: bvid,
+                preferredCID: preferredCID,
                 generation: currentGeneration
             )
         }
     }
 
-    /// 合集 episode 的展开由 Feature 持有；远端未内嵌 pages 时才按 BVID 请求详情。
-    public func setCollectionEpisodeExpanded(
+    /// Picker 选择 episode 后解析其 pages；未知 pages 只在校验完成后提交跨 BVID 意图。
+    public func selectCollectionEpisode(
         _ episode: VideoCollectionEpisode,
-        expanded: Bool
+        onResolved: @escaping (String, Int64?) -> Void
     ) {
         guard collectionContains(episode) else { return }
-        if !expanded {
-            expandedCollectionEpisodes.remove(episode.id)
-            removeCollectionEpisodeWaiter(episode)
-            return
+        if selectedCollectionEpisode != episode.id {
+            clearSelectedCollectionEpisodeRequest(
+                preservingRequestForBVID: episode.bvid
+            )
         }
-
-        expandedCollectionEpisodes.insert(episode.id)
+        selectedCollectionEpisode = episode.id
+        selectedCollectionEpisodeIsExplicit = true
+        collectionEpisodeSelectionHandler = onResolved
         resolveOrEnqueueCollectionEpisode(episode)
     }
 
     public func retryCollectionEpisodePages(
         _ episode: VideoCollectionEpisode
     ) {
-        guard expandedCollectionEpisodes.contains(episode.id),
+        guard selectedCollectionEpisode == episode.id,
             collectionContains(episode),
             episode.isIdentityConsistent,
             let bvid = episode.bvid
@@ -208,6 +229,8 @@ public final class GuestVideoViewModel {
         playback.stop()
         clearResumeNotice()
         requestedPlaybackIdentity = targetIdentity
+        requestedSelectionBVID = context.detail.bvid
+        requestedPreferredCID = targetPage.cid
         presentedPlaybackIdentity = nil
         let intent = PlaybackLoadIntent()
         playbackIntent = intent
@@ -226,7 +249,7 @@ public final class GuestVideoViewModel {
     public func retry() {
         switch state {
         case .failed(let bvid, _):
-            loadVideo(bvid)
+            loadVideo(bvid, preferredCID: requestedPreferredCID)
         case .failedPage(_, let targetPage, _):
             requestedPlaybackIdentity = nil
             selectPage(cid: targetPage.cid)
@@ -254,6 +277,8 @@ public final class GuestVideoViewModel {
         presentedContext = nil
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
+        requestedSelectionBVID = nil
+        requestedPreferredCID = nil
         playbackIntent = nil
         clearResumeNotice()
         state = .idle
@@ -377,10 +402,14 @@ public final class GuestVideoViewModel {
 
     private func performLoad(
         bvid: String,
+        preferredCID: Int64?,
         generation currentGeneration: Int
     ) async {
         do {
-            let context = try await useCase.prepareVideo(bvid: bvid)
+            let context = try await useCase.prepareVideo(
+                bvid: bvid,
+                preferredCID: preferredCID
+            )
             try Task.checkCancellation()
             guard generation == currentGeneration else { return }
 
@@ -392,6 +421,8 @@ public final class GuestVideoViewModel {
                 cid: context.selectedPage.cid
             )
             requestedPlaybackIdentity = identity
+            requestedSelectionBVID = context.detail.bvid
+            requestedPreferredCID = preferredCID
             let intent = PlaybackLoadIntent()
             playbackIntent = intent
             state = .preparingPlayback(context)
@@ -628,6 +659,7 @@ public final class GuestVideoViewModel {
         if collectionEpisodeCache[bvid] != nil {
             touchCollectionEpisodeCache(bvid)
             collectionEpisodePageStates[episode.id] = .loaded(bvid: bvid)
+            completeSelectedCollectionEpisodeIfPossible(episode)
             return
         }
         enqueueCollectionEpisode(episode, bvid: bvid)
@@ -700,6 +732,7 @@ public final class GuestVideoViewModel {
                 for identity in waiters {
                     collectionEpisodePageStates[identity] = .loaded(bvid: request.bvid)
                 }
+                completeSelectedCollectionEpisodeIfPossible()
             } catch let error as GuestApplicationError {
                 for identity in waiters {
                     collectionEpisodePageStates[identity] = .failed(error)
@@ -734,13 +767,8 @@ public final class GuestVideoViewModel {
         do {
             let resolved = try validatedCollectionPages(pages)
             storeCollectionEpisodeCache(resolved, for: bvid)
-            let matchingExpanded = expandedCollectionEpisodes.filter {
-                collectionEpisode(identity: $0)?.bvid == bvid
-            }
-            for matchingIdentity in matchingExpanded {
-                collectionEpisodePageStates[matchingIdentity] = .loaded(bvid: bvid)
-            }
             collectionEpisodePageStates[identity] = .loaded(bvid: bvid)
+            completeSelectedCollectionEpisodeIfPossible()
         } catch let error as GuestApplicationError {
             collectionEpisodePageStates[identity] = .failed(error)
         } catch {
@@ -769,7 +797,7 @@ public final class GuestVideoViewModel {
     {
         Set(
             (collectionEpisodeWaitersByBVID[bvid] ?? []).filter { identity in
-                expandedCollectionEpisodes.contains(identity)
+                selectedCollectionEpisode == identity
                     && collectionEpisode(identity: identity)?.bvid == bvid
             }
         )
@@ -792,9 +820,7 @@ public final class GuestVideoViewModel {
         pendingCollectionEpisodeBVIDs.removeAll()
     }
 
-    private func removeCollectionEpisodeWaiter(
-        _ episode: VideoCollectionEpisode
-    ) {
+    private func removeCollectionEpisodeWaiter(_ episode: VideoCollectionEpisode) {
         collectionEpisodePageStates[episode.id] = .idle
         guard let bvid = episode.bvid else { return }
         collectionEpisodeWaitersByBVID[bvid]?.remove(episode.id)
@@ -817,31 +843,72 @@ public final class GuestVideoViewModel {
             return
         }
         if collectionSeasonID != collection.id {
+            let explicitSelection =
+                selectedCollectionEpisodeIsExplicit
+                ? selectedCollectionEpisode : nil
             clearCollectionEpisodeState()
             collectionSeasonID = collection.id
+            if let explicitSelection,
+                collection.sections.flatMap(\.episodes).contains(where: {
+                    $0.id == explicitSelection
+                })
+            {
+                selectedCollectionEpisode = explicitSelection
+                selectedCollectionEpisodeIsExplicit = true
+            }
+            synchronizeSelectedCollectionEpisodeWithPresentedContext()
             return
         }
         let validIdentities = Set(
             collection.sections.flatMap(\.episodes).map(\.id)
         )
-        expandedCollectionEpisodes.formIntersection(validIdentities)
+        if let selectedCollectionEpisode,
+            !validIdentities.contains(selectedCollectionEpisode)
+        {
+            self.selectedCollectionEpisode = nil
+            selectedCollectionEpisodeIsExplicit = false
+            collectionEpisodeSelectionHandler = nil
+        }
         collectionEpisodePageStates = collectionEpisodePageStates.filter {
             validIdentities.contains($0.key)
         }
-        resumeExpandedCollectionEpisodeLoads()
+        synchronizeSelectedCollectionEpisodeWithPresentedContext()
     }
 
-    private func resumeExpandedCollectionEpisodeLoads() {
-        let identities = expandedCollectionEpisodes
-        for identity in identities {
-            guard let episode = collectionEpisode(identity: identity) else { continue }
-            resolveOrEnqueueCollectionEpisode(episode)
+    private func synchronizeSelectedCollectionEpisodeWithPresentedContext() {
+        guard let context = presentedContext else { return }
+        let episodes = context.detail.collection?.sections.flatMap(\.episodes) ?? []
+        let explicitSelection =
+            selectedCollectionEpisodeIsExplicit
+            ? selectedCollectionEpisode : nil
+        let explicitSelectionForContext = explicitSelection.flatMap { identity in
+            episodes.first(where: {
+                $0.id == identity && $0.bvid == context.detail.bvid
+            })?.id
         }
+        let currentEpisode = PlaybackCollectionEpisodeResolver.resolve(
+            episodes: episodes,
+            explicitlySelectedID: explicitSelectionForContext,
+            bvid: context.detail.bvid,
+            cid: requestedPreferredCID ?? context.selectedPage.cid
+        )
+        selectedCollectionEpisode = currentEpisode?.id
+        selectedCollectionEpisodeIsExplicit =
+            currentEpisode?.id == explicitSelectionForContext
+        collectionEpisodeSelectionHandler = nil
+        guard let currentEpisode else { return }
+        cacheAndMarkCollectionPages(
+            context.pages,
+            bvid: context.detail.bvid,
+            requested: currentEpisode.id
+        )
     }
 
     private func clearCollectionEpisodeState() {
         cancelCollectionEpisodeRequest(markWaitersIdle: false)
-        expandedCollectionEpisodes.removeAll()
+        selectedCollectionEpisode = nil
+        selectedCollectionEpisodeIsExplicit = false
+        collectionEpisodeSelectionHandler = nil
         collectionEpisodePageStates.removeAll()
         collectionEpisodeCache.removeAll()
         collectionEpisodeCacheOrder.removeAll()
@@ -874,7 +941,6 @@ public final class GuestVideoViewModel {
             }
             for identity in evictedIdentities {
                 collectionEpisodePageStates[identity] = .idle
-                expandedCollectionEpisodes.remove(identity)
             }
         }
     }
@@ -882,6 +948,56 @@ public final class GuestVideoViewModel {
     private func touchCollectionEpisodeCache(_ bvid: String) {
         collectionEpisodeCacheOrder.removeAll(where: { $0 == bvid })
         collectionEpisodeCacheOrder.append(bvid)
+    }
+
+    private func clearSelectedCollectionEpisodeRequest(
+        preservingRequestForBVID preservedBVID: String? = nil
+    ) {
+        guard let selectedCollectionEpisode,
+            let episode = collectionEpisode(identity: selectedCollectionEpisode)
+        else {
+            self.selectedCollectionEpisode = nil
+            selectedCollectionEpisodeIsExplicit = false
+            collectionEpisodeSelectionHandler = nil
+            return
+        }
+        if episode.bvid == preservedBVID,
+            let bvid = episode.bvid,
+            activeCollectionEpisodeRequest?.bvid == bvid
+        {
+            collectionEpisodePageStates[episode.id] = .idle
+            collectionEpisodeWaitersByBVID[bvid]?.remove(episode.id)
+        } else {
+            removeCollectionEpisodeWaiter(episode)
+        }
+        self.selectedCollectionEpisode = nil
+        selectedCollectionEpisodeIsExplicit = false
+        collectionEpisodeSelectionHandler = nil
+    }
+
+    private func completeSelectedCollectionEpisodeIfPossible(
+        _ resolvedEpisode: VideoCollectionEpisode? = nil
+    ) {
+        guard let selectedCollectionEpisode,
+            let episode = resolvedEpisode
+                ?? collectionEpisode(identity: selectedCollectionEpisode),
+            episode.id == selectedCollectionEpisode,
+            episode.isIdentityConsistent,
+            let bvid = episode.bvid,
+            case .loaded(let loadedBVID) = collectionEpisodePageStates[episode.id],
+            loadedBVID == bvid,
+            let pages = collectionEpisodeCache[bvid],
+            !pages.isEmpty
+        else { return }
+        if let defaultCID = episode.defaultCID,
+            !pages.contains(where: { $0.cid == defaultCID })
+        {
+            collectionEpisodePageStates[episode.id] = .failed(.invalidResponse)
+            return
+        }
+        let handler = collectionEpisodeSelectionHandler
+        collectionEpisodeSelectionHandler = nil
+        handler?(bvid, episode.defaultCID ?? pages.first?.cid)
     }
 }
 

@@ -112,8 +112,11 @@ struct VideoDetailLifecycleTests {
             )
         )
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { bvid in
-                videoModel.loadVideo(bvid)
+            startPlayback: { intent in
+                videoModel.loadVideo(
+                    intent.bvid,
+                    preferredCID: intent.preferredCID
+                )
             },
             stopPlayback: {
                 videoModel.reset()
@@ -164,8 +167,11 @@ struct VideoDetailLifecycleTests {
             )
         )
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { bvid in
-                videoModel.loadVideo(bvid)
+            startPlayback: { intent in
+                videoModel.loadVideo(
+                    intent.bvid,
+                    preferredCID: intent.preferredCID
+                )
             },
             stopPlayback: {
                 videoModel.reset()
@@ -301,7 +307,9 @@ struct VideoDetailLifecycleTests {
             qrCodeProvider: LifecycleQRCodeProvider()
         )
         let coordinator = AppNavigationCoordinator(
-            startPlayback: { videoModel.loadVideo($0) },
+            startPlayback: {
+                videoModel.loadVideo($0.bvid, preferredCID: $0.preferredCID)
+            },
             stopPlayback: {
                 videoModel.reset()
                 danmakuModel.reset()
@@ -354,6 +362,49 @@ struct VideoDetailLifecycleTests {
         #expect(playback.loadedIdentities.isEmpty)
         #expect(playback.stopCallCount == 1)
         window.contentView = NSView()
+    }
+
+    @Test
+    @MainActor
+    func failedPageSelectionRoutesANewCIDInsteadOfRetryingTheOldTarget() async {
+        let fixture = PageSelectionRoutingFixture()
+        let repository = PageSelectionRoutingRepository(fixture: fixture)
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingLifecyclePlayback()
+        )
+
+        videoModel.loadVideo(
+            fixture.bvid,
+            preferredCID: fixture.initialPage.cid
+        )
+        await videoModel.waitForCurrentTask()
+        videoModel.selectPage(cid: fixture.failingPage.cid)
+        await videoModel.waitForCurrentTask()
+        guard case .failedPage(_, let failedPage, _) = videoModel.state else {
+            Issue.record("切换失败后应保留失败的分 P 目标")
+            return
+        }
+        #expect(failedPage.cid == fixture.failingPage.cid)
+
+        AppWindowOwner.handlePlaybackSelection(
+            PlaybackSelectionIntent(
+                bvid: fixture.bvid,
+                preferredCID: fixture.replacementPage.cid
+            ),
+            with: videoModel
+        )
+        await videoModel.waitForCurrentTask()
+
+        #expect(videoModel.requestedPreferredCID == fixture.replacementPage.cid)
+        #expect(videoModel.presentedPlaybackIdentity?.cid == fixture.replacementPage.cid)
+        #expect(
+            await repository.playbackCIDs() == [
+                fixture.initialPage.cid,
+                fixture.failingPage.cid,
+                fixture.replacementPage.cid,
+            ]
+        )
     }
 
     @MainActor
@@ -475,6 +526,103 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
     ) async throws -> VideoPlayback {
         if let playbackError { throw playbackError }
         return fixture.playback
+    }
+}
+
+private struct PageSelectionRoutingFixture: Sendable {
+    let bvid = "BV1PageRoute"
+    let initialPage = VideoPage(
+        cid: 910_001,
+        index: 1,
+        title: "P1",
+        durationSeconds: 60
+    )
+    let failingPage = VideoPage(
+        cid: 910_002,
+        index: 2,
+        title: "P2",
+        durationSeconds: 60
+    )
+    let replacementPage = VideoPage(
+        cid: 910_003,
+        index: 3,
+        title: "P3",
+        durationSeconds: 60
+    )
+
+    var pages: [VideoPage] {
+        [initialPage, failingPage, replacementPage]
+    }
+
+    var detail: VideoDetail {
+        VideoDetail(
+            bvid: bvid,
+            title: "分 P 路由测试",
+            summary: "手写测试数据",
+            coverURL: nil,
+            owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
+            statistics: VideoStatistics(
+                viewCount: 10,
+                danmakuCount: 2,
+                likeCount: 3
+            ),
+            durationSeconds: 180,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pages: pages
+        )
+    }
+
+    var playback: VideoPlayback {
+        VideoPlayback(
+            manifest: PlaybackManifest(
+                videoRepresentations: [],
+                originalAudioRepresentations: []
+            ),
+            mediaHeaders: [:]
+        )
+    }
+}
+
+private actor PageSelectionRoutingRepository: GuestContentRepository {
+    let fixture: PageSelectionRoutingFixture
+    private var observedPlaybackCIDs: [Int64] = []
+
+    init(fixture: PageSelectionRoutingFixture) {
+        self.fixture = fixture
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        fixture.detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        fixture.pages
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        observedPlaybackCIDs.append(cid)
+        if cid == fixture.failingPage.cid {
+            throw GuestApplicationError.transportFailure
+        }
+        return fixture.playback
+    }
+
+    func playbackCIDs() -> [Int64] {
+        observedPlaybackCIDs
     }
 }
 

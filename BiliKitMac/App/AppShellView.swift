@@ -121,7 +121,15 @@ struct AppShellView: View {
     private func playbackSidebar(for bvid: String) -> some View {
         PlaybackContextSidebar(
             model: videoModel,
-            onRetry: navigationCoordinator.retryPlayback
+            onRetry: navigationCoordinator.retryPlayback,
+            onSelectPlayback: { bvid, preferredCID in
+                navigationCoordinator.openPlayback(
+                    PlaybackSelectionIntent(
+                        bvid: bvid,
+                        preferredCID: preferredCID
+                    )
+                )
+            }
         )
     }
 
