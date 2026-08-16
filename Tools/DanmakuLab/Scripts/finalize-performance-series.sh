@@ -258,7 +258,7 @@ fi
 case "$template_slug" in
     time-profiler)
         primary_name=process-cpu-percent
-        secondary_name=maximum-main-thread-block-ms
+        secondary_name=maximum-detected-main-thread-hang-ms
         ;;
     animation-hitches)
         primary_name=hitch-maximum-duration-ms

@@ -8,6 +8,11 @@ fail() {
     exit 1
 }
 
+developer_dir=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+[ -x "$developer_dir/usr/bin/xctrace" ] || fail "full Xcode with xctrace is required"
+export DEVELOPER_DIR=$developer_dir
+command -v xmllint >/dev/null || fail "xmllint is required for trace evidence extraction"
+
 [ "$#" -eq 7 ] \
     || fail "usage: $0 ARTIFACT_ROOT PRESET_ID RENDERER_ID REPETITION ATTEMPT TEMPLATE PID"
 artifact_root=$1
@@ -53,7 +58,7 @@ if [ "$decision_mode" = adjudication ]; then
     for threshold in \
     target-display-refresh-hz \
     maximum-display-refresh-deviation-hz \
-    maximum-main-thread-block-ms \
+    maximum-detected-main-thread-hang-ms \
     maximum-measurement-duration-deviation-ms \
     maximum-hitch-count-in-measurement-window \
     maximum-hitch-duration-ms \
@@ -216,7 +221,7 @@ trace_time_limit=$(awk -v warmup="$warmup_seconds" -v measurement="$measurement_
     echo "- generated-events-actual-expected: PENDING"
     echo "- actual-display-refresh-hz: PENDING"
     echo "- process-cpu-percent: $cpu_result"
-    echo "- maximum-main-thread-block-ms: $main_thread_result"
+    echo "- maximum-detected-main-thread-hang-ms: $main_thread_result"
     echo "- hitch-count-and-maximum-duration-ms: $hitch_result"
     echo "- rss-and-physical-footprint-mib: PENDING"
     echo "- persistent-allocation-growth-mib: $allocation_result"
@@ -287,6 +292,120 @@ summary_temporary="$summary_path.tmp"
 sed "s/^- lab-result-sha256: PENDING$/- lab-result-sha256: $lab_result_sha256/" \
     "$summary_path" >"$summary_temporary"
 mv "$summary_temporary" "$summary_path"
+
+replace_summary_field() {
+    field=$1
+    value=$2
+    temporary="$summary_path.tmp"
+    sed "s|^- $field: PENDING$|- $field: $value|" "$summary_path" >"$temporary"
+    mv "$temporary" "$summary_path"
+}
+signpost_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-signposts.xml"
+DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} \
+    xcrun xctrace export \
+    --input "$trace_path" \
+    --xpath '/trace-toc/run[@number="1"]/data/table[@schema="os-signpost" and @category="PointsOfInterest"]' \
+    --output "$signpost_export" >/dev/null
+measurement_count=$(xmllint --xpath \
+    'count(//row[signpost-name="DanmakuLab Measurement"])' \
+    "$signpost_export")
+[ "$measurement_count" = 1 ] \
+    || fail "trace must contain exactly one Measurement begin signpost"
+measurement_identifier=$(xmllint --xpath \
+    'string(//row[signpost-name="DanmakuLab Measurement"]/os-signpost-identifier/@id)' \
+    "$signpost_export")
+[ -n "$measurement_identifier" ] || fail "Measurement signpost identifier is missing"
+measurement_end_count=$(xmllint --xpath \
+    "count(//row[os-signpost-identifier/@ref='$measurement_identifier' and event-type='End'])" \
+    "$signpost_export")
+[ "$measurement_end_count" = 1 ] \
+    || fail "trace must contain exactly one matching Measurement end signpost"
+measurement_begin_ns=$(xmllint --xpath \
+    'string(//row[signpost-name="DanmakuLab Measurement"]/event-time)' \
+    "$signpost_export")
+measurement_end_ns=$(xmllint --xpath \
+    "string(//row[os-signpost-identifier/@ref='$measurement_identifier' and event-type='End']/event-time)" \
+    "$signpost_export")
+attempt_upper=$(echo "$(result_value attempt-id)" | tr '[:lower:]' '[:upper:]')
+grep -q "$attempt_upper" "$signpost_export" \
+    || fail "Measurement signpost attempt UUID does not match the Lab result"
+measurement_trace_seconds=$(awk -v begin="$measurement_begin_ns" -v end="$measurement_end_ns" \
+    'BEGIN { duration = (end - begin) / 1000000000; if (duration <= 0) exit 1; printf "%.9f", duration }') \
+    || fail "Measurement signpost duration is invalid"
+
+trace_cpu_percent=N/A
+maximum_detected_hang_ms=N/A
+if [ "$template_slug" = time-profiler ]; then
+    profile_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-profile.xml"
+    hangs_export="$artifact_root/summaries/$preset_id-$renderer_id-r$repetition-a$attempt-$template_slug-hangs.xml"
+    DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} \
+        xcrun xctrace export \
+        --input "$trace_path" \
+        --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' \
+        --output "$profile_export" >/dev/null
+    sample_weight_ns=$(xmllint --xpath \
+        'string(//row[1]/weight)' "$profile_export")
+    [ -n "$sample_weight_ns" ] || fail "Time Profiler sample weight is missing"
+    profile_sample_count=$(xmllint --xpath \
+        "count(//row[number(sample-time) >= $measurement_begin_ns and number(sample-time) <= $measurement_end_ns])" \
+        "$profile_export")
+    trace_cpu_percent=$(awk \
+        -v samples="$profile_sample_count" \
+        -v weight="$sample_weight_ns" \
+        -v duration="$measurement_trace_seconds" \
+        'BEGIN { printf "%.4f", samples * weight / 1000000000 / duration * 100 }')
+    rm -f -- "$profile_export"
+
+    DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} \
+        xcrun xctrace export \
+        --input "$trace_path" \
+        --xpath '/trace-toc/run[@number="1"]/data/table[@schema="potential-hangs"]' \
+        --output "$hangs_export" >/dev/null
+    maximum_detected_hang_ns=$(xmllint --xpath \
+        "//row[number(start-time) >= $measurement_begin_ns and number(start-time) <= $measurement_end_ns]/duration" \
+        "$hangs_export" 2>/dev/null \
+        | sed 's/></>\
+</g' \
+        | sed -n 's/.*<duration[^>]*>\([0-9][0-9]*\)<.*/\1/p' \
+        | awk 'BEGIN { maximum = 0 } { if ($1 > maximum) maximum = $1 } END { print maximum }')
+    maximum_detected_hang_ms=$(awk -v duration="$maximum_detected_hang_ns" \
+        'BEGIN { printf "%.3f", duration / 1000000 }')
+fi
+
+case "$(result_value disposition)" in
+    polluted) recorded_lab_disposition=POLLUTED ;;
+    revise) recorded_lab_disposition=REVISE ;;
+    eligible) recorded_lab_disposition="ELIGIBLE FOR TRACE REVIEW" ;;
+    *) fail "structured Lab disposition is invalid" ;;
+esac
+rss_result_mib=$(awk -v bytes="$(result_value rss-peak-bytes)" \
+    'BEGIN { printf "%.1f", bytes / 1048576 }')
+footprint_result_mib=$(awk -v bytes="$(result_value physical-footprint-peak-bytes)" \
+    'BEGIN { printf "%.1f", bytes / 1048576 }')
+replace_summary_field run-attempt-id-from-signpost "$(result_value attempt-id)"
+replace_summary_field lab-disposition "$recorded_lab_disposition"
+replace_summary_field unique-complete-measurement-signpost YES
+replace_summary_field measurement-duration-seconds "$(result_value measurement-duration-seconds)"
+replace_summary_field logical-ticks-actual-expected \
+    "$(result_value logical-ticks-actual) / $(result_value logical-ticks-expected)"
+replace_summary_field generated-events-actual-expected \
+    "$(result_value generated-events-actual) / $(result_value generated-events-expected)"
+replace_summary_field rss-and-physical-footprint-mib \
+    "$rss_result_mib / $footprint_result_mib"
+replace_summary_field admitted-and-dropped-events \
+    "$(result_value admitted-events) / $(result_value dropped-events)"
+if [ "$template_slug" = time-profiler ]; then
+    replace_summary_field process-cpu-percent "$trace_cpu_percent"
+    replace_summary_field maximum-detected-main-thread-hang-ms \
+        "$maximum_detected_hang_ms"
+fi
+{
+    echo "measurement-begin-ns=$measurement_begin_ns"
+    echo "measurement-end-ns=$measurement_end_ns"
+    echo "measurement-trace-seconds=$measurement_trace_seconds"
+    echo "time-profiler-process-cpu-percent=$trace_cpu_percent"
+    echo "maximum-detected-main-thread-hang-ms=$maximum_detected_hang_ms"
+} >>"$runtime_path"
 
 echo "Raw trace: $trace_path"
 echo "Structured Lab result: $lab_result"

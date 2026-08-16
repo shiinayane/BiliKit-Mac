@@ -181,8 +181,8 @@ case "$template_slug" in
     time-profiler)
         grep -Eq '^- process-cpu-percent: [0-9]+([.][0-9]+)?$' "$summary_path" \
             || fail "Time Profiler CPU result must be numeric"
-        grep -Eq '^- maximum-main-thread-block-ms: [0-9]+([.][0-9]+)?$' "$summary_path" \
-            || fail "Time Profiler main-thread result must be numeric"
+        grep -Eq '^- maximum-detected-main-thread-hang-ms: [0-9]+([.][0-9]+)?$' "$summary_path" \
+            || fail "Time Profiler detected-hang result must be numeric"
         ;;
     animation-hitches)
         grep -Eq '^- hitch-count-and-maximum-duration-ms: [0-9]+ / [0-9]+([.][0-9]+)?$' "$summary_path" \
@@ -266,8 +266,8 @@ if [ "$decision_mode" = adjudication ]; then
     time-profiler)
         exceeds "$(summary_value process-cpu-percent)" \
             "$(threshold_value maximum-process-cpu-percent)" && metrics_failed=1
-        exceeds "$(summary_value maximum-main-thread-block-ms)" \
-            "$(threshold_value maximum-main-thread-block-ms)" && metrics_failed=1
+        exceeds "$(summary_value maximum-detected-main-thread-hang-ms)" \
+            "$(threshold_value maximum-detected-main-thread-hang-ms)" && metrics_failed=1
         ;;
     animation-hitches)
         hitch_pair=$(summary_value hitch-count-and-maximum-duration-ms)

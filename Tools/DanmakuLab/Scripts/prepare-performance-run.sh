@@ -124,7 +124,7 @@ echo "$package_resolved_sha256" >"$artifact_root/package-resolved-sha256.txt"
     else
         echo "- target-display-refresh-hz: TODO"
         echo "- maximum-display-refresh-deviation-hz: TODO"
-        echo "- maximum-main-thread-block-ms: TODO"
+        echo "- maximum-detected-main-thread-hang-ms: TODO"
         echo "- maximum-measurement-duration-deviation-ms: TODO"
         echo "- maximum-hitch-count-in-measurement-window: TODO"
         echo "- maximum-hitch-duration-ms: TODO"

@@ -107,8 +107,9 @@ Tools/DanmakuLab/Scripts/record-performance-trace.sh \
   steady-80 production-core-animation 1 1 "Time Profiler" PID
 ```
 
-Use Time Profiler for process CPU and main-thread attribution, Animation Hitches for frame lifetime
-and hitch evidence, and Allocations for allocation lifetime and memory trends. Workload preset and
+Use Time Profiler for process CPU, call-tree attribution, and detected main-thread hangs (the stock
+template reports hangs at 250 ms or longer), Animation Hitches for shorter frame-lifetime and hitch
+evidence, and Allocations for allocation lifetime and memory trends. Workload preset and
 renderer identity are separate sample dimensions. Each repetition uses a fresh process, and each
 preset/renderer/template tuple forms one three-repetition series; metrics from different traces are
 never called the same sample. Renderer active/peak layers and admitted/drop accounting come from the frozen Lab
@@ -117,8 +118,12 @@ the HUD remains frozen; record those as in-process supporting metrics, not as Al
 HUD cadence and visual smoothness are not trace evidence. Run only one renderer in the process;
 side-by-side visual comparison is never a quantitative sample.
 
-Complete the generated Markdown summary using only the one complete `DanmakuLab Measurement` signpost
-whose attempt UUID matches the Lab result. The summary already binds the sample to binary and frozen
+The recorder machine-validates exactly one complete `DanmakuLab Measurement` Points of Interest
+interval whose attempt UUID matches the Lab result. For Time Profiler it also exports the samples in
+that interval, computes process CPU from sample weights, and records the maximum detected hang; zero
+means no hang met the template's 250 ms reporting floor, not that every main-thread interval was zero.
+Complete only the remaining human-review fields in the generated Markdown summary. The summary
+already binds the sample to binary and frozen
 threshold hashes. Window occlusion, loss of visibility, display movement, power-source/thermal-state
 changes, and material unrelated foreground load are environment pollution and must be marked `YES`;
 the automatically recorded machine/display/power files are provenance, not proof that none occurred.
