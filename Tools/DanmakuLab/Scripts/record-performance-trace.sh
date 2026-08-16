@@ -191,8 +191,17 @@ pending_sample="$artifact_root/pending-sample.txt"
 
 warmup_seconds=$(sed -n 's/^warmup-seconds=//p' "$artifact_root/benchmark-manifest.txt")
 measurement_seconds=$(sed -n 's/^measurement-seconds=//p' "$artifact_root/benchmark-manifest.txt")
-trace_time_limit=$(awk -v warmup="$warmup_seconds" -v measurement="$measurement_seconds" \
-    'BEGIN { print int(warmup + measurement + 15) }')
+trace_setup_allowance_seconds=$(sed -n \
+    's/^trace-setup-allowance-seconds=//p' \
+    "$artifact_root/benchmark-manifest.txt")
+case "$trace_setup_allowance_seconds" in
+    *[!0-9]*|"") fail "trace setup allowance must be a nonnegative integer" ;;
+esac
+trace_time_limit=$(awk \
+    -v warmup="$warmup_seconds" \
+    -v measurement="$measurement_seconds" \
+    -v setup="$trace_setup_allowance_seconds" \
+    'BEGIN { print int(warmup + measurement + setup) }')
 {
     echo "# Danmaku Lab performance sample"
     echo

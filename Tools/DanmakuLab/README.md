@@ -107,6 +107,10 @@ Tools/DanmakuLab/Scripts/record-performance-trace.sh \
   steady-80 production-core-animation 1 1 "Time Profiler" PID
 ```
 
+The trace envelope reserves 60 seconds for the human handoff before the fixed warmup and measurement.
+Only the unique Measurement signpost interval is quantitative; the extra setup capture is excluded
+from metric extraction and prevents UI round-trip latency from truncating an otherwise valid run.
+
 Use Time Profiler for process CPU, call-tree attribution, and detected main-thread hangs (the stock
 template reports hangs at 250 ms or longer), Animation Hitches for shorter frame-lifetime and hitch
 evidence, and Allocations for allocation lifetime and memory trends. Workload preset and

@@ -78,7 +78,7 @@ public struct LabPerformancePreset: Identifiable, Sendable, Equatable {
     }
 
     public var traceTimeLimitSeconds: Int {
-        Int(ceil(warmupSeconds + measurementSeconds + 15))
+        Int(ceil(warmupSeconds + measurementSeconds + 60))
     }
 
     public var expectedMeasurementTicks: Int {

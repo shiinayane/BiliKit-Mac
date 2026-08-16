@@ -138,7 +138,8 @@ process_started=${process_remainder%|*}
 registered_trace_limit=$(awk \
     -v warmup="$(sed -n 's/^warmup-seconds=//p' "$artifact_root/benchmark-manifest.txt")" \
     -v measurement="$(sed -n 's/^measurement-seconds=//p' "$artifact_root/benchmark-manifest.txt")" \
-    'BEGIN { print int(warmup + measurement + 15) "s" }')
+    -v setup="$(sed -n 's/^trace-setup-allowance-seconds=//p' "$artifact_root/benchmark-manifest.txt")" \
+    'BEGIN { print int(warmup + measurement + setup) "s" }')
 [ "$(summary_value trace-time-limit)" = "$registered_trace_limit" ] \
     || fail "summary trace time limit does not match the benchmark manifest"
 if grep -Eq 'TODO|PENDING' "$summary_path"; then

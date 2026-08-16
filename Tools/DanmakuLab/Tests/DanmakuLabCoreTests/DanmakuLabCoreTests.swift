@@ -487,7 +487,7 @@ struct DanmakuLabCoreTests {
                     && $0.warmupSeconds == 5
                     && $0.measurementSeconds == 30
                     && $0.repetitions == 3
-                    && $0.traceTimeLimitSeconds == 50
+                    && $0.traceTimeLimitSeconds == 95
                     && $0.logicalTicksPerSecond == 30
                     && $0.expectedMeasurementTicks == 900
             }
