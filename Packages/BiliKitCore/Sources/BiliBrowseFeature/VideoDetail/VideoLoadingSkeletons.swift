@@ -19,7 +19,6 @@ struct VideoDetailSkeleton: View {
                 makeLoadedContent: { _, _, _ in EmptyView() }
             )
         }
-        .background(.background)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(loadingLabel)
     }
@@ -62,106 +61,6 @@ struct VideoDetailSkeleton: View {
                 .fill(.quaternary)
                 .frame(width: 108, height: 28)
             Spacer()
-        }
-    }
-}
-
-struct PlaybackContextSidebarSkeleton: View {
-    let loadingLabel: String
-
-    @ScaledMetric(relativeTo: .title3)
-    private var uploaderNameSkeletonHeight =
-        VideoUploaderHeaderMetrics.nameSkeletonHeight
-    @ScaledMetric(relativeTo: .callout)
-    private var uploaderSignatureSkeletonHeight =
-        VideoUploaderHeaderMetrics.signatureSkeletonHeight
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                uploader
-
-                Divider()
-
-                sectionTitle(width: 64)
-                textLine()
-                textLine(width: 0.9)
-                textLine(width: 0.68)
-
-                Divider()
-
-                sectionTitle(width: 132)
-                selectionField
-                selectionField
-
-                Divider()
-
-                sectionTitle(width: 116)
-                textLine(width: 0.82)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(.background)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(loadingLabel)
-    }
-
-    private var uploader: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(.quaternary)
-                .frame(
-                    width: VideoUploaderHeaderMetrics.avatarSize,
-                    height: VideoUploaderHeaderMetrics.avatarSize
-                )
-
-            VStack(
-                alignment: .leading,
-                spacing: VideoUploaderHeaderMetrics.textSpacing
-            ) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.quaternary)
-                    .frame(
-                        width: VideoUploaderHeaderMetrics.nameSkeletonWidth,
-                        height: uploaderNameSkeletonHeight
-                    )
-
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(.quinary)
-                    .frame(
-                        maxWidth:
-                            VideoUploaderHeaderMetrics.signatureSkeletonWidth
-                    )
-                    .frame(height: uploaderSignatureSkeletonHeight)
-            }
-        }
-    }
-
-    private func sectionTitle(width: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill(.quaternary)
-            .frame(width: width, height: 18)
-    }
-
-    private func textLine(width: CGFloat = 1) -> some View {
-        GeometryReader { geometry in
-            RoundedRectangle(cornerRadius: 3)
-                .fill(.quinary)
-                .frame(width: geometry.size.width * width, height: 13)
-        }
-        .frame(height: 13)
-    }
-
-    private var selectionField: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(.quinary)
-                .frame(width: 42, height: 14)
-            RoundedRectangle(cornerRadius: 3)
-                .fill(.quaternary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
         }
     }
 }

@@ -20,7 +20,7 @@ struct PlaybackSelectionProjectionTests {
     }
 
     @Test
-    func singleEpisodeCollectionUsesStaticTitleAndShowsPagePickerOnlyForMultiplePages() {
+    func singleEpisodeCollectionUsesPickerAndShowsPagePickerOnlyForMultiplePages() {
         let onePage = [page(1)]
         let twoPages = [page(1), page(2)]
         let episode = episode(ordinal: 0, bvid: "BVCurrent", pages: twoPages)
@@ -34,11 +34,31 @@ struct PlaybackSelectionProjectionTests {
         )
 
         #expect(single.collectionTitle == "合集")
-        #expect(single.showsStaticEpisodeTitle)
-        #expect(!single.showsEpisodePicker)
+        #expect(single.showsEpisodePicker)
+        #expect(!single.showsSectionPicker)
         #expect(!single.showsPagePicker)
-        #expect(multiple.showsStaticEpisodeTitle)
+        #expect(multiple.showsEpisodePicker)
         #expect(multiple.showsPagePicker)
+    }
+
+    @Test
+    func emptyRemoteSectionDoesNotBecomeAnEpisodePickerGroup() {
+        let episode = episode(
+            ordinal: 0,
+            bvid: "BVCurrent",
+            pages: [page(1)],
+            section: 1
+        )
+        let projection = projection(
+            context: context(
+                pages: [page(1)],
+                collection: collection(sections: [[], [episode]])
+            )
+        )
+
+        #expect(projection.showsEpisodePicker)
+        #expect(projection.episodeCount == 1)
+        #expect(projection.episodeSections.map(\.title) == ["分区 2"])
     }
 
     @Test
@@ -66,6 +86,7 @@ struct PlaybackSelectionProjectionTests {
         #expect(projection.episodeCount == 80)
         #expect(projection.episodeSections.count == 4)
         #expect(projection.showsEpisodePicker)
+        #expect(projection.showsSectionPicker)
         #expect(projection.episodeSections.last?.episodes.last?.isEnabled == false)
     }
 
@@ -99,7 +120,7 @@ struct PlaybackSelectionProjectionTests {
     }
 
     @Test
-    func currentEpisodePositionUsesFlattenedRealCollectionOrder() {
+    func currentEpisodePositionUsesItsSectionOrder() {
         let episodes = (0..<10).map { ordinal in
             episode(
                 ordinal: ordinal,
@@ -117,7 +138,8 @@ struct PlaybackSelectionProjectionTests {
             )
         )
 
-        #expect(projection.episodePositionText == "5/10")
+        #expect(projection.selectedEpisodeSectionID == projection.episodeSections[1].id)
+        #expect(projection.episodePositionText == "2/7")
     }
 
     @Test
