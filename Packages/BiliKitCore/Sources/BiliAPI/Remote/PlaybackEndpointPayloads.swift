@@ -204,11 +204,12 @@ struct DASHRepresentationPayload: Decodable, Sendable {
         case .video:
             guard let width,
                 let height,
-                let frameRate = Self.videoFrameRate(from: frameRate),
                 let attributes = try? VideoRepresentationAttributes(
                     width: width,
                     height: height,
-                    frameRate: frameRate
+                    frameRate: BiliFrameRateNormalizer.normalizedValue(
+                        from: frameRate
+                    )
                 )
             else {
                 throw BiliAPIError.invalidMediaData
@@ -228,25 +229,6 @@ struct DASHRepresentationPayload: Decodable, Sendable {
             backupURLs: Array(urls.dropFirst()),
             segmentBase: try segmentBase.model()
         )
-    }
-
-    private static func videoFrameRate(from value: String?) -> Double? {
-        guard let value, !value.isEmpty else { return nil }
-        let components = value.split(
-            separator: "/",
-            omittingEmptySubsequences: false
-        )
-        if components.count == 1 {
-            return Double(components[0])
-        }
-        guard components.count == 2,
-            let numerator = Double(components[0]),
-            let denominator = Double(components[1]),
-            denominator != 0
-        else {
-            return nil
-        }
-        return numerator / denominator
     }
 
     private static func validMediaURL(_ value: String) -> URL? {

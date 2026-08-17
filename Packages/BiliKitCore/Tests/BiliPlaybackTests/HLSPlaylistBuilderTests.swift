@@ -228,6 +228,25 @@ struct HLSPlaylistBuilderTests {
     }
 
     @Test
+    func serializesDomainFrameRateWithoutBiliSpecificPolicy() throws {
+        let highFrameRatePlaylist = try makeMasterPlaylist(frameRate: 120)
+        #expect(highFrameRatePlaylist.contains("FRAME-RATE=120.000"))
+
+        let arbitraryFrameRatePlaylist = try makeMasterPlaylist(
+            frameRate: 62.5
+        )
+        #expect(arbitraryFrameRatePlaylist.contains("FRAME-RATE=62.500"))
+
+        let missingFrameRatePlaylist = try makeMasterPlaylist(frameRate: nil)
+        #expect(!missingFrameRatePlaylist.contains("FRAME-RATE="))
+        #expect(
+            missingFrameRatePlaylist.contains(
+                "bilikit-playlist://video/116.m3u8"
+            )
+        )
+    }
+
+    @Test
     func usesOnlyConformingPeakWindowsForRegularAndIFrameVariants() throws {
         let video = try makeRepresentation(
             id: 80,
@@ -865,6 +884,47 @@ struct HLSPlaylistBuilderTests {
                 initialization: try MediaByteRange(start: 0, endInclusive: 99),
                 index: try MediaByteRange(start: 100, endInclusive: 155)
             )
+        )
+    }
+
+    private func makeMasterPlaylist(frameRate: Double?) throws -> String {
+        let video = try makeRepresentation(
+            id: 116,
+            kind: .video,
+            codecs: "avc1.640032",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 1_920,
+                height: 1_080,
+                frameRate: frameRate
+            )
+        )
+        let audio = try makeRepresentation(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: nil
+        )
+        let index = try makeIndex(byteCounts: [1_000], durations: [1])
+        return try HLSMasterPlaylistBuilder().build(
+            videoVariants: [
+                HLSVideoVariant(
+                    representation: video,
+                    index: index,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://video/116.m3u8")
+                    )
+                )
+            ],
+            audioRenditions: [
+                try makeAudioRendition(
+                    representation: audio,
+                    index: index,
+                    playlistURI: #require(
+                        URL(string: "bilikit-playlist://audio/30280.m3u8")
+                    )
+                )
+            ]
         )
     }
 

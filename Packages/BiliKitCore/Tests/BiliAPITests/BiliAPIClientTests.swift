@@ -1413,7 +1413,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func playURLRejectsInvalidVideoFrameRate() async throws {
+    func playURLPreservesVideoWhenFrameRateCannotBeNormalized() async throws {
         let fixture = try fixtureResponse("playurl")
         let invalidBody = String(decoding: fixture.body, as: UTF8.self)
             .replacingOccurrences(
@@ -1429,13 +1429,15 @@ struct BiliAPIClientTests {
             transport: RecordingTransport(responses: [response])
         )
 
-        await #expect(throws: BiliAPIError.invalidMediaData) {
-            try await client.playback(
-                for: "BV1FixtureA1",
-                cid: 900_001,
-                quality: 32
-            )
-        }
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001,
+            quality: 32
+        )
+
+        let video = try #require(playback.manifest.videoRepresentations.first)
+        #expect(video.id == 32)
+        #expect(video.videoAttributes?.frameRate == nil)
     }
 
     @Test

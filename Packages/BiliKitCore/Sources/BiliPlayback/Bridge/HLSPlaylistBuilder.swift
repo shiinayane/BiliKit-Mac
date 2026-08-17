@@ -18,7 +18,6 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case invalidTimescale
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
     case missingVideoAttributes(representationID: Int)
-    case unsupportedFrameRate(representationID: Int)
     case invalidSegmentDuration
     case invalidCalculatedBitRate
     case bandwidthOverflow
@@ -443,9 +442,11 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                     representationID: video.id
                 )
             }
-            guard attributes.frameRate <= 60 else {
-                throw HLSPlaylistBuilderError.unsupportedFrameRate(
-                    representationID: video.id
+            let frameRate = attributes.frameRate.map {
+                String(
+                    format: "%.3f",
+                    locale: Locale(identifier: "en_US_POSIX"),
+                    $0
                 )
             }
 
@@ -460,16 +461,15 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             )
             let videoURI = try safeURI(variant.playlistURI)
             let videoCodecs = try safeAttribute(video.codecs)
-            let frameRate = String(
-                format: "%.3f",
-                locale: Locale(identifier: "en_US_POSIX"),
-                attributes.frameRate
-            )
             let codecs = try safeAttribute(
                 ([videoCodecs] + audioCodecs).joined(separator: ",")
             )
             var streamAttributes =
-                "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height),FRAME-RATE=\(frameRate),CODECS=\"\(codecs)\",AUDIO=\"\(audioGroupID)\""
+                "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height)"
+            if let frameRate {
+                streamAttributes += ",FRAME-RATE=\(frameRate)"
+            }
+            streamAttributes += ",CODECS=\"\(codecs)\",AUDIO=\"\(audioGroupID)\""
             if !subtitleRenditions.isEmpty {
                 streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
             }
