@@ -14,8 +14,7 @@ struct NativePlaybackDetailUpdatePlan: Equatable {
 
 /// 让 AppKit 独占详情页的纵向滚动，同时把现有 SwiftUI 详情内容作为一个稳定 document 承载。
 ///
-/// 根视图覆盖整个 detail pane；普通 SwiftUI 内容继续遵守系统 safe area，只有显式
-/// `ignoresSafeArea` 的相关推荐 shelf 可以进入 sidebar 下方。
+/// 根视图延伸到 toolbar 下方，由 NSScrollView 的自动 content inset 保持正文可见起点。
 struct NativePlaybackDetailView<Content: View>: NSViewRepresentable {
     let contentIdentity: String?
     private let content: Content
@@ -195,8 +194,10 @@ final class NativePlaybackDetailRootView: NSView {
         scrollView.hasHorizontalScroller = false
         scrollView.verticalScrollElasticity = .automatic
         scrollView.horizontalScrollElasticity = .none
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsetsZero
+        scrollView.automaticallyAdjustsContentInsets = true
+        scrollView.onContentInsetsChange = { [weak self] oldInsets, newInsets in
+            self?.contentInsetsDidChange(from: oldInsets, to: newInsets)
+        }
         scrollView.documentView = documentView
         addSubview(scrollView)
 
@@ -286,7 +287,28 @@ final class NativePlaybackDetailRootView: NSView {
 
     func scrollToLeading() {
         guard !isReset else { return }
-        scrollView.contentView.scroll(to: .zero)
+        let leadingOffset = NativeVideoScrollCoordinateSpace.physicalOffsetY(
+            logicalOffsetY: 0,
+            topInset: scrollView.contentInsets.top
+        )
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: leadingOffset))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func contentInsetsDidChange(
+        from oldInsets: NSEdgeInsets,
+        to newInsets: NSEdgeInsets
+    ) {
+        guard !isReset else { return }
+        let logicalOffset = NativeVideoScrollCoordinateSpace.logicalOffsetY(
+            physicalOffsetY: scrollView.contentView.bounds.origin.y,
+            topInset: oldInsets.top
+        )
+        let physicalOffset = NativeVideoScrollCoordinateSpace.physicalOffsetY(
+            logicalOffsetY: logicalOffset,
+            topInset: newInsets.top
+        )
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: physicalOffset))
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
@@ -303,12 +325,24 @@ final class NativePlaybackDetailRootView: NSView {
         hostedContentView = nil
         contentHeightForWidth = nil
         documentHeightConstraint = nil
+        scrollView.onContentInsetsChange = nil
         scrollView.documentView = nil
     }
 }
 
 @MainActor
 final class NativePlaybackDetailScrollView: NSScrollView {
+    var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
+    private var lastContentInsets = NSEdgeInsetsZero
+
+    override func layout() {
+        super.layout()
+        guard abs(contentInsets.top - lastContentInsets.top) > 0.5 else { return }
+        let oldInsets = lastContentInsets
+        lastContentInsets = contentInsets
+        onContentInsetsChange?(oldInsets, contentInsets)
+    }
+
     override func wantsForwardedScrollEvents(for axis: NSEvent.GestureAxis) -> Bool {
         axis == .vertical
     }

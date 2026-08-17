@@ -36,7 +36,7 @@ struct NativePlaybackDetailTests {
 
     @Test
     @MainActor
-    func outerDetailOwnsVerticalForwardingWithoutAHorizontalScroller() {
+    func outerDetailOwnsOnlyVerticalScrollingWithoutHorizontalElasticity() {
         let hostingController = NSHostingController(
             rootView: Color.clear.frame(height: 1)
         )
@@ -49,6 +49,8 @@ struct NativePlaybackDetailTests {
         #expect(!scrollView.wantsForwardedScrollEvents(for: .horizontal))
         #expect(scrollView.hasVerticalScroller)
         #expect(!scrollView.hasHorizontalScroller)
+        #expect(scrollView.horizontalScrollElasticity == .none)
+        #expect(scrollView.automaticallyAdjustsContentInsets)
 
         root.reset()
     }

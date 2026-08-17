@@ -87,7 +87,6 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
                             maxHeight: .infinity,
                             alignment: .topLeading
                         )
-                        .background(.background)
                         .transition(.opacity)
                 }
             }
@@ -203,7 +202,19 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
 
     @ViewBuilder
     private var replacementLoadingOverlay: some View {
-        VideoDetailSkeleton(loadingLabel: "正在加载所选视频")
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text("正在加载所选视频")
+                .font(.callout.weight(.medium))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("正在加载所选视频")
     }
 
     @ViewBuilder
@@ -216,8 +227,13 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
                     message: failure.message,
                     retry: retryAction
                 )
+                .frame(maxWidth: 420)
+                .padding(24)
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 16)
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background)
                 .transition(.opacity)
             case .idle, .loading, .loadingPage, .preparingPlayback, .ready:
                 EmptyView()

@@ -241,6 +241,6 @@ private struct PlaybackDestinationView: View {
                 playerContent
             }
         }
-        .ignoresSafeArea(.container, edges: .horizontal)
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
