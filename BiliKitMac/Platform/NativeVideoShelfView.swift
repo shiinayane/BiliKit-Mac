@@ -434,6 +434,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             guard changed else { return }
             if isEnabled {
                 if reconfiguresCards { reconfigureVisibleCards() }
+                updateHoverForCurrentPointerLocation()
             } else {
                 invalidateInteractionAndImageRequestsForContentReplacement()
             }
@@ -543,6 +544,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private func updateHoverForCurrentPointerLocation() {
+            guard isInteractionEnabled else {
+                setHoveredItem(nil)
+                return
+            }
             let candidate: NativeVideoCollectionItem?
             if let windowPoint = collectionView.window?.mouseLocationOutsideOfEventStream {
                 let collectionPoint = collectionView.convert(windowPoint, from: nil)
@@ -572,6 +577,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
             didChangeHover isHovered: Bool
         ) {
             guard !isReset else { return }
+            guard isInteractionEnabled else {
+                if isHovered { item.clearHover() }
+                return
+            }
             if isHovered {
                 guard hoveredItem !== item else { return }
                 let previous = hoveredItem
