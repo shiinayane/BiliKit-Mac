@@ -43,17 +43,17 @@ public enum MediaKind: String, Sendable, Equatable {
 public struct VideoRepresentationAttributes: Sendable, Equatable {
     public let width: Int
     public let height: Int
-    public let frameRate: Double
+    public let frameRate: Double?
 
     public init(
         width: Int,
         height: Int,
-        frameRate: Double
+        frameRate: Double?
     ) throws {
         guard width > 0,
             height > 0,
-            frameRate.isFinite,
-            frameRate > 0
+            frameRate?.isFinite != false,
+            frameRate.map({ $0 > 0 }) != false
         else {
             throw VideoRepresentationAttributesError.invalidValues(
                 width: width,
@@ -69,7 +69,7 @@ public struct VideoRepresentationAttributes: Sendable, Equatable {
 }
 
 public enum VideoRepresentationAttributesError: Error, Sendable, Equatable {
-    case invalidValues(width: Int, height: Int, frameRate: Double)
+    case invalidValues(width: Int, height: Int, frameRate: Double?)
 }
 
 public struct MediaRepresentation: Sendable, Equatable {

@@ -107,4 +107,15 @@ struct PlaybackManifestTests {
             )
         }
     }
+
+    @Test
+    func videoAttributesAllowMissingFrameRateMetadata() throws {
+        let attributes = try VideoRepresentationAttributes(
+            width: 1_920,
+            height: 1_080,
+            frameRate: nil
+        )
+
+        #expect(attributes.frameRate == nil)
+    }
 }
