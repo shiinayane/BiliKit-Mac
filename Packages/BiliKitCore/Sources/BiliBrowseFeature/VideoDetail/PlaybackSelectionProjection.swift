@@ -80,7 +80,6 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
     public let collectionTitle: String?
     public let episodeSections: [PlaybackEpisodeSectionPresentation]
     public let selectedEpisodeID: VideoCollectionEpisodeIdentity?
-    public let selectedEpisodeTitle: String?
     public let episodePositionText: String?
     public let episodePlaceholder: String?
     public let selectedPages: PlaybackSelectedEpisodePagesPresentation
@@ -90,10 +89,15 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
         episodeSections.reduce(into: 0) { $0 += $1.episodes.count }
     }
 
-    public var showsEpisodePicker: Bool { episodeCount > 1 }
+    public var showsEpisodePicker: Bool { episodeCount > 0 }
 
-    public var showsStaticEpisodeTitle: Bool {
-        episodeCount == 1 && selectedEpisodeTitle != nil
+    public var showsSectionPicker: Bool { episodeSections.count > 1 }
+
+    public var selectedEpisodeSectionID: VideoCollectionSectionIdentity? {
+        guard let selectedEpisodeID else { return nil }
+        return episodeSections.first {
+            $0.episodes.contains(where: { $0.id == selectedEpisodeID })
+        }?.id
     }
 
     public var showsPagePicker: Bool {
@@ -117,8 +121,9 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
         let collection = context.detail.collection
         collectionTitle = collection?.title
         episodeSections =
-            collection?.sections.map { section in
-                PlaybackEpisodeSectionPresentation(
+            collection?.sections.compactMap { section in
+                guard !section.episodes.isEmpty else { return nil }
+                return PlaybackEpisodeSectionPresentation(
                     id: section.id,
                     title: section.title,
                     episodes: section.episodes.map { episode in
@@ -150,10 +155,13 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
             cid: targetCID
         )
         selectedEpisodeID = selectedEpisode?.id
-        selectedEpisodeTitle = selectedEpisode?.title.nonempty
         episodePositionText = selectedEpisode.flatMap { episode in
-            episodes.firstIndex(where: { $0.id == episode.id }).map {
-                "\($0 + 1)/\(episodes.count)"
+            collection?.sections.first(where: { section in
+                section.episodes.contains(where: { $0.id == episode.id })
+            }).flatMap { section in
+                section.episodes.firstIndex(where: { $0.id == episode.id }).map {
+                    "\($0 + 1)/\(section.episodes.count)"
+                }
             }
         }
         episodePlaceholder =
@@ -213,8 +221,4 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
             selectedPageCID = nil
         }
     }
-}
-
-extension String {
-    fileprivate var nonempty: String? { isEmpty ? nil : self }
 }

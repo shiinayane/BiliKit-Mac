@@ -19,7 +19,7 @@ struct BrowseFailureView: View {
 }
 
 extension GuestVideoFailure {
-    var title: String {
+    public var title: String {
         switch self {
         case .content(let error):
             error.guestTitle
@@ -28,7 +28,7 @@ extension GuestVideoFailure {
         }
     }
 
-    var message: String {
+    public var message: String {
         switch self {
         case .content(let error):
             error.guestMessage

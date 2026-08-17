@@ -31,8 +31,8 @@ struct AppShellView: View {
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             Group {
-                if let playbackBVID = navigationCoordinator.currentPlaybackBVID {
-                    playbackSidebar(for: playbackBVID)
+                if navigationCoordinator.currentPlaybackBVID != nil {
+                    playbackSidebar
                 } else {
                     AppNavigationSidebar(
                         selection: $navigationCoordinator.selectedTab,
@@ -117,9 +117,8 @@ struct AppShellView: View {
         authenticationModel.sessionScope
     }
 
-    @ViewBuilder
-    private func playbackSidebar(for bvid: String) -> some View {
-        PlaybackContextSidebar(
+    private var playbackSidebar: some View {
+        NativePlaybackSidebarView(
             model: videoModel,
             onRetry: navigationCoordinator.retryPlayback,
             onSelectPlayback: { bvid, preferredCID in
@@ -134,15 +133,15 @@ struct AppShellView: View {
     }
 
     private var sidebarMinimumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 320
+        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 440
     }
 
     private var sidebarIdealWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 360
+        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 440
     }
 
     private var sidebarMaximumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 440
+        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 520
     }
 
     @ViewBuilder
