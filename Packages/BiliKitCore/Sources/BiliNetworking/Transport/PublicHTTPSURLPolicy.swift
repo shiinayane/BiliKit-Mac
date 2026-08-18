@@ -22,6 +22,7 @@ public struct PublicHTTPSURLPolicy: Sendable {
 
         let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         guard !host.isEmpty,
+            !host.hasSuffix("."),
             host != "localhost",
             !host.hasSuffix(".localhost"),
             !host.hasSuffix(".local"),

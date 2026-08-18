@@ -411,10 +411,18 @@ struct CommentMemberPayload: Decodable, Sendable {
         case "女": authorSex = .female
         default: authorSex = .unspecified
         }
+        let avatarReference =
+            avatar
+            .flatMap(WebImageURL.parse)
+            .flatMap { url -> CommentAssetReference? in
+                guard url.user == nil, url.password == nil else { return nil }
+                return CommentAssetReference(remoteURL: url)
+            }
+
         return CommentAuthor(
             id: CommentAuthorID(rawValue: mid),
             name: name,
-            avatar: nil,
+            avatar: avatarReference,
             sex: authorSex,
             level: level.flatMap {
                 (0...6).contains($0.currentLevel) ? $0.currentLevel : nil
@@ -461,7 +469,7 @@ struct CommentContentPayload: Decodable, Sendable {
     let message: String
     let emote: [String: CommentEmotePayload]
     let jumpURLs: [String: CommentJumpURLPayload]
-    let pictures: [CommentPicturePayload]
+    let pictures: [CommentPicturePayload?]
     let pictureCount: Int
     let members: [CommentMentionPayload]
 
@@ -491,7 +499,7 @@ struct CommentContentPayload: Decodable, Sendable {
                 [LossyCommentPicturePayload].self,
                 forKey: .pictures
             ) ?? []
-        pictures = lossyPictures.compactMap(\.value)
+        pictures = lossyPictures.map(\.value)
         pictureCount = lossyPictures.count
         members =
             container.decodeLossyIfPresent(
@@ -504,18 +512,112 @@ struct CommentContentPayload: Decodable, Sendable {
         guard pictureCount <= 9 else {
             throw BiliAPIError.decodingFailed
         }
-        let emotes: [CommentEmote] = []
-        let links = jumpURLs.flatMap { label, payload -> [CommentLink] in
+        let emotes = mappedEmotes()
+        let mappedPictures = mappedPictures()
+        let jumpLinks = jumpURLs.flatMap { label, payload -> [CommentLink] in
             guard let target = CommentRemoteURL.linkTarget(payload.url) else { return [] }
             return ranges(of: label).map { CommentLink(range: $0, target: target) }
         }
+        var mentionTargetsByToken: [String: Set<CommentAuthorID>] = [:]
+        for member in members where !member.mid.isEmpty && !member.name.isEmpty {
+            let token = member.name.hasPrefix("@") ? member.name : "@\(member.name)"
+            mentionTargetsByToken[token, default: []].insert(
+                CommentAuthorID(rawValue: member.mid)
+            )
+        }
+        let mentionLinks = mentionTargetsByToken.flatMap { token, targets -> [CommentLink] in
+            // 接口不给 mention 的正文位置；同名对应多个账号时不能安全猜测目标。
+            guard targets.count == 1, let target = targets.first else { return [] }
+            return ranges(of: token).map {
+                CommentLink(range: $0, target: .member(target))
+            }
+        }
+        let links = Self.nonoverlappingLinks(jumpLinks + mentionLinks)
         return CommentContent(
             message: message,
             emotes: emotes,
             links: links,
-            pictures: [],
+            pictures: mappedPictures,
             pictureCount: pictureCount
         )
+    }
+
+    private func mappedPictures() -> [CommentImage] {
+        var assetByURL: [URL: CommentAssetReference] = [:]
+        return pictures.enumerated().compactMap { position, payload in
+            guard let payload else { return nil }
+            guard let url = WebImageURL.parse(payload.url),
+                url.user == nil,
+                url.password == nil
+            else { return nil }
+            let asset = assetByURL[url] ?? CommentAssetReference(remoteURL: url)
+            assetByURL[url] = asset
+            return CommentImage(
+                asset: asset,
+                position: position,
+                pixelWidth: Self.positiveDimension(payload.width),
+                pixelHeight: Self.positiveDimension(payload.height)
+            )
+        }
+    }
+
+    private static func positiveDimension(_ value: Int?) -> Int? {
+        guard let value, value > 0 else { return nil }
+        return value
+    }
+
+    private func mappedEmotes() -> [CommentEmote] {
+        var assetByURL: [URL: CommentAssetReference] = [:]
+        var result: [CommentEmote] = []
+
+        for (token, payload) in emote {
+            guard !token.isEmpty,
+                payload.text == nil || payload.text == token,
+                let url = WebImageURL.parse(payload.url),
+                url.user == nil,
+                url.password == nil
+            else { continue }
+
+            let asset = assetByURL[url] ?? CommentAssetReference(remoteURL: url)
+            assetByURL[url] = asset
+            let size: CommentEmoteSize =
+                switch payload.meta?.size {
+                case 1: .standard
+                case 2: .large
+                default: .unknown
+                }
+            result.append(
+                contentsOf: ranges(of: token).map {
+                    CommentEmote(
+                        text: token,
+                        range: $0,
+                        asset: asset,
+                        size: size
+                    )
+                }
+            )
+        }
+
+        let sorted = result.sorted {
+            if $0.range.location != $1.range.location {
+                return $0.range.location < $1.range.location
+            }
+            if $0.range.length != $1.range.length {
+                return $0.range.length > $1.range.length
+            }
+            return $0.text < $1.text
+        }
+        var nonoverlapping: [CommentEmote] = []
+        for candidate in sorted {
+            guard let previous = nonoverlapping.last else {
+                nonoverlapping.append(candidate)
+                continue
+            }
+            guard candidate.range.location >= previous.range.location + previous.range.length
+            else { continue }
+            nonoverlapping.append(candidate)
+        }
+        return nonoverlapping
     }
 
     private func ranges(of token: String) -> [CommentTextRange] {
@@ -532,10 +634,63 @@ struct CommentContentPayload: Decodable, Sendable {
         }
         return result
     }
+
+    private static func nonoverlappingLinks(_ links: [CommentLink]) -> [CommentLink] {
+        let sorted = links.sorted {
+            if $0.range.location != $1.range.location {
+                return $0.range.location < $1.range.location
+            }
+            if $0.range.length != $1.range.length {
+                return $0.range.length > $1.range.length
+            }
+            return linkOrderKey($0.target) < linkOrderKey($1.target)
+        }
+        var result: [CommentLink] = []
+        for link in sorted {
+            guard let previous = result.last else {
+                result.append(link)
+                continue
+            }
+            guard link.range.location >= previous.range.location + previous.range.length
+            else { continue }
+            result.append(link)
+        }
+        return result
+    }
+
+    private static func linkOrderKey(_ target: CommentLinkTarget) -> String {
+        switch target {
+        case .video(let bvid):
+            "0:\(bvid)"
+        case .member(let authorID):
+            "1:\(authorID.rawValue)"
+        case .external(let reference):
+            "2:\(reference.remoteURL?.absoluteString ?? "")"
+        }
+    }
 }
 
 struct CommentEmotePayload: Decodable, Sendable {
     let url: String
+    let text: String?
+    let meta: CommentEmoteMetaPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case url
+        case text
+        case meta
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(String.self, forKey: .url)
+        text = container.decodeLossyIfPresent(String.self, forKey: .text)
+        meta = container.decodeLossyIfPresent(CommentEmoteMetaPayload.self, forKey: .meta)
+    }
+}
+
+struct CommentEmoteMetaPayload: Decodable, Sendable {
+    let size: Int?
 }
 
 struct CommentJumpURLPayload: Decodable, Sendable {
@@ -569,6 +724,16 @@ struct CommentMentionPayload: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case mid
         case name = "uname"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let value = try? container.decode(String.self, forKey: .mid) {
+            mid = value
+        } else {
+            mid = String(try container.decode(Int64.self, forKey: .mid))
+        }
+        name = try container.decode(String.self, forKey: .name)
     }
 }
 
@@ -608,7 +773,8 @@ private enum CommentRemoteURL {
         {
             return .video(bvid: String(parts[1]))
         }
-        return nil
+        guard let url = components.url else { return nil }
+        return .external(CommentExternalLinkReference(remoteURL: url))
     }
 
     private static func components(_ value: String?) -> URLComponents? {
