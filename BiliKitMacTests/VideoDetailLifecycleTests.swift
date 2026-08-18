@@ -364,6 +364,97 @@ struct VideoDetailLifecycleTests {
         window.contentView = NSView()
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func invalidCommentCredentialRevalidatesAndClosesPlayback() async throws {
+        let fixture = VideoDetailLifecycleFixture(
+            aid: 700_003,
+            bvid: "BV1CommentAuth",
+            cid: 900_003,
+            title: "评论认证失效"
+        )
+        let repository = CommentLifecycleVideoRepository(fixtures: [fixture])
+        let playback = RecordingLifecyclePlayback()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: playback
+        )
+        let commentsModel = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(
+                repository: AuthenticationInvalidLifecycleCommentRepository()
+            )
+        )
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: RecordingPresentation()
+        )
+        let authenticationService = LifecycleAuthenticationService(
+            restoreState: .signedIn(nil)
+        )
+        let authenticationModel = AuthenticationViewModel(
+            service: authenticationService,
+            qrCodeProvider: LifecycleQRCodeProvider()
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { intent in
+                videoModel.loadVideo(
+                    intent.bvid,
+                    preferredCID: intent.preferredCID
+                )
+            },
+            stopPlayback: {
+                videoModel.reset()
+                danmakuModel.reset()
+            }
+        )
+        let hostingView = NSHostingView(
+            rootView: AppRootView(
+                navigationCoordinator: coordinator,
+                browseModel: GuestBrowseViewModel(
+                    useCase: GuestFeedUseCase(repository: repository)
+                ),
+                videoModel: videoModel,
+                commentsModel: commentsModel,
+                danmakuModel: danmakuModel,
+                authenticationModel: authenticationModel,
+                historyModel: WatchHistoryViewModel(
+                    useCase: WatchHistoryUseCase(
+                        repository: EmptyLifecycleHistoryRepository()
+                    )
+                ),
+                playerContent: AnyView(EmptyView())
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 680),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.layoutIfNeeded()
+        #expect(
+            await waitUntilAsync {
+                await authenticationService.restoreCallCount() == 1
+                    && authenticationModel.sessionState == .signedIn(nil)
+            }
+        )
+
+        await authenticationService.setRestoreState(.signedOut)
+        coordinator.openPlayback(fixture.bvid)
+
+        #expect(
+            await waitUntilAsync {
+                await authenticationService.restoreCallCount() == 2
+                    && commentsModel.authenticationRevalidationGeneration == 1
+                    && authenticationModel.sessionState == .signedOut
+                    && coordinator.currentPlaybackBVID == nil
+                    && videoModel.state == .idle
+            }
+        )
+        #expect(playback.stopCallCount == 1)
+        window.contentView = NSView()
+    }
+
     @Test
     @MainActor
     func failedPageSelectionRoutesANewCIDInsteadOfRetryingTheOldTarget() async {
@@ -407,6 +498,110 @@ struct VideoDetailLifecycleTests {
         )
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func appRootActivatesCommentsByAIDAndClearsThemOnBack() async {
+        let first = VideoDetailLifecycleFixture(
+            aid: 700_001,
+            bvid: "BV1CommentLifecycleA",
+            cid: 900_001,
+            title: "评论生命周期 A"
+        )
+        let replacement = VideoDetailLifecycleFixture(
+            aid: 700_002,
+            bvid: "BV1CommentLifecycleB",
+            cid: 900_002,
+            title: "评论生命周期 B"
+        )
+        let repository = CommentLifecycleVideoRepository(
+            fixtures: [first, replacement]
+        )
+        let commentsRepository = EmptyLifecycleCommentRepository()
+        let videoModel = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: RecordingLifecyclePlayback()
+        )
+        let commentsModel = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: commentsRepository)
+        )
+        let danmakuModel = DanmakuControlsViewModel(
+            presentation: RecordingPresentation()
+        )
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { intent in
+                videoModel.loadVideo(
+                    intent.bvid,
+                    preferredCID: intent.preferredCID
+                )
+            },
+            stopPlayback: {
+                videoModel.reset()
+                danmakuModel.reset()
+            }
+        )
+        let hostingView = NSHostingView(
+            rootView: AppRootView(
+                navigationCoordinator: coordinator,
+                browseModel: GuestBrowseViewModel(
+                    useCase: GuestFeedUseCase(repository: repository)
+                ),
+                videoModel: videoModel,
+                commentsModel: commentsModel,
+                danmakuModel: danmakuModel,
+                authenticationModel: AuthenticationViewModel(
+                    service: LifecycleAuthenticationService(restoreState: .signedOut),
+                    qrCodeProvider: LifecycleQRCodeProvider()
+                ),
+                historyModel: WatchHistoryViewModel(
+                    useCase: WatchHistoryUseCase(
+                        repository: EmptyLifecycleHistoryRepository()
+                    )
+                ),
+                playerContent: AnyView(EmptyView())
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 680),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.layoutIfNeeded()
+
+        coordinator.openPlayback(first.bvid)
+        await videoModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                commentsModel.subject == .video(aid: first.aid)
+                    && commentsModel.rootState == .empty
+            }
+        )
+
+        coordinator.openPlayback(replacement.bvid)
+        await videoModel.waitForCurrentTask()
+        #expect(
+            await waitUntil {
+                commentsModel.subject == .video(aid: replacement.aid)
+                    && commentsModel.rootState == .empty
+            }
+        )
+        #expect(
+            await commentsRepository.requestedSubjects()
+                == [.video(aid: first.aid), .video(aid: replacement.aid)]
+        )
+
+        coordinator.playbackPath = []
+        #expect(
+            await waitUntil {
+                commentsModel.subject == nil
+                    && commentsModel.rootState == .idle
+                    && videoModel.state == .idle
+            }
+        )
+        window.contentView = NSView()
+    }
+
     @MainActor
     private func waitUntil(
         _ condition: @MainActor () -> Bool
@@ -435,15 +630,18 @@ struct VideoDetailLifecycleTests {
 }
 
 private struct VideoDetailLifecycleFixture: Sendable {
+    let aid: Int64
     let bvid: String
     let page: VideoPage
     let title: String
 
     init(
+        aid: Int64 = 700_000,
         bvid: String = "BV1LifecycleFixture",
         cid: Int64 = 900_001,
         title: String = "生命周期测试视频"
     ) {
+        self.aid = aid
         self.bvid = bvid
         page = VideoPage(
             cid: cid,
@@ -471,7 +669,8 @@ private struct VideoDetailLifecycleFixture: Sendable {
                 likeCount: 3
             ),
             durationSeconds: 120,
-            publishedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            aid: aid
         )
     }
 
@@ -526,6 +725,107 @@ private actor VideoDetailLifecycleRepository: GuestContentRepository {
     ) async throws -> VideoPlayback {
         if let playbackError { throw playbackError }
         return fixture.playback
+    }
+}
+
+private actor CommentLifecycleVideoRepository: GuestContentRepository {
+    private let fixtures: [String: VideoDetailLifecycleFixture]
+
+    init(fixtures: [VideoDetailLifecycleFixture]) {
+        self.fixtures = Dictionary(
+            uniqueKeysWithValues: fixtures.map { ($0.bvid, $0) }
+        )
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        try fixture(for: bvid).detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [try fixture(for: bvid).page]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        try fixture(for: bvid).playback
+    }
+
+    private func fixture(
+        for bvid: String
+    ) throws -> VideoDetailLifecycleFixture {
+        guard let fixture = fixtures[bvid] else {
+            throw GuestApplicationError.invalidRequest
+        }
+        return fixture
+    }
+}
+
+private actor EmptyLifecycleCommentRepository: CommentRepository {
+    private var subjects: [CommentSubjectIdentity] = []
+
+    func rootComments(
+        for subject: CommentSubjectIdentity,
+        sort: CommentSort,
+        after continuation: CommentContinuation?
+    ) async throws -> CommentRootPage {
+        subjects.append(subject)
+        return CommentRootPage(
+            threads: [],
+            totalCount: 0,
+            continuation: nil,
+            isEnd: true
+        )
+    }
+
+    func replies(
+        for subject: CommentSubjectIdentity,
+        rootID: CommentID,
+        page: Int,
+        pageSize: Int
+    ) async throws -> CommentReplyPage {
+        CommentReplyPage(
+            rootID: rootID,
+            replies: [],
+            pageNumber: page,
+            pageSize: pageSize,
+            totalCount: 0
+        )
+    }
+
+    func requestedSubjects() -> [CommentSubjectIdentity] {
+        subjects
+    }
+}
+
+private actor AuthenticationInvalidLifecycleCommentRepository: CommentRepository {
+    func rootComments(
+        for subject: CommentSubjectIdentity,
+        sort: CommentSort,
+        after continuation: CommentContinuation?
+    ) throws -> CommentRootPage {
+        throw CommentReadError.authenticationInvalid
+    }
+
+    func replies(
+        for subject: CommentSubjectIdentity,
+        rootID: CommentID,
+        page: Int,
+        pageSize: Int
+    ) throws -> CommentReplyPage {
+        throw CommentReadError.authenticationInvalid
     }
 }
 

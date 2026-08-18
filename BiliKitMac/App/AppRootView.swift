@@ -42,6 +42,7 @@ struct AppRootView: View {
         navigationCoordinator: AppNavigationCoordinator,
         browseModel: GuestBrowseViewModel,
         videoModel: GuestVideoViewModel,
+        commentsModel: PlaybackCommentsViewModel? = nil,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
@@ -54,6 +55,7 @@ struct AppRootView: View {
                 navigationCoordinator: navigationCoordinator,
                 browseModel: browseModel,
                 videoModel: videoModel,
+                commentsModel: commentsModel,
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
@@ -67,6 +69,7 @@ struct AppRootView: View {
             navigationCoordinator: navigationCoordinator,
             browseModel: browseModel,
             videoModel: videoModel,
+            commentsModel: commentsModel,
             danmakuModel: danmakuModel,
             authenticationModel: authenticationModel,
             historyModel: historyModel,
@@ -77,6 +80,9 @@ struct AppRootView: View {
         )
         .task(id: browseActivation) {
             await applyBrowseActivation(for: browseActivation)
+        }
+        .task(id: commentActivationAID) {
+            await applyCommentActivation(aid: commentActivationAID)
         }
         .onAppear {
             windowOwner.open()
@@ -135,6 +141,12 @@ struct AppRootView: View {
             guard generation > previousGeneration else { return }
             authenticationModel.revalidate()
         }
+        .onChange(of: commentAuthenticationRevalidationGeneration) {
+            previousGeneration,
+            generation in
+            guard generation > previousGeneration else { return }
+            authenticationModel.revalidate()
+        }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
             guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
@@ -147,6 +159,7 @@ struct AppRootView: View {
             browseModel.reset()
             authenticationModel.cancelTransientWork()
             historyModel.reset()
+            commentsModel?.reset()
             windowOwner.close()
         }
     }
@@ -161,6 +174,10 @@ struct AppRootView: View {
 
     private var videoModel: GuestVideoViewModel {
         windowOwner.videoModel
+    }
+
+    private var commentsModel: PlaybackCommentsViewModel? {
+        windowOwner.commentsModel
     }
 
     private var danmakuModel: DanmakuControlsViewModel {
@@ -181,6 +198,18 @@ struct AppRootView: View {
 
     private var playerContent: AnyView {
         windowOwner.playerContent
+    }
+
+    private var commentActivationAID: Int64? {
+        guard let currentBVID = navigationCoordinator.currentPlaybackBVID,
+            let videoIdentity = videoModel.presentedVideoIdentity,
+            videoIdentity.bvid == currentBVID
+        else { return nil }
+        return videoIdentity.aid
+    }
+
+    private var commentAuthenticationRevalidationGeneration: Int {
+        commentsModel?.authenticationRevalidationGeneration ?? 0
     }
 
     private var normalizedSearchDraft: String {
@@ -221,6 +250,16 @@ struct AppRootView: View {
             browseModel.activateSearch(query)
             await browseModel.waitForCurrentTask()
         }
+    }
+
+    private func applyCommentActivation(aid: Int64?) async {
+        guard let commentsModel else { return }
+        guard let aid else {
+            commentsModel.reset()
+            return
+        }
+        commentsModel.activateVideo(aid: aid)
+        await commentsModel.waitForCurrentRootTask()
     }
 
     /// 先让本窗口认证 owner 完成凭据复核和 transport 失效，再重启账户化 Browse 请求。

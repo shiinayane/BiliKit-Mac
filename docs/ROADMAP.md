@@ -144,16 +144,17 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/semantic-audio-hls-stage7-2026-08-09.md`](./validation/semantic-audio-hls-stage7-2026-08-09.md)
 - [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
 
-## 4. 唯一当前阶段：播放工作台上下文侧栏与真实分 P
+## 4. 唯一当前阶段：原生播放侧栏与只读评论
 
-当前阶段把已经通过独立布局 spike 比较的“观看工作台”方向收口为生产信息架构。spike
-中的评论、推荐、分 P 选择和播放器均为合成内容，只提供布局与交互证据，不作为生产代码
-或能力完成证据。
+当前阶段在已经生产化的原生播放侧栏和真实选择链上接入只读评论。评论读取使用与其他公开
+Browse 一致的登录增强语义：本地有凭据时携带短生命周期 Cookie 取得属地等增强字段，明确
+无凭据时仍匿名读取。旧 spike 只提供性能与交互边界；生产视觉、数据状态和生命周期按当前
+AppKit 架构重写。
 
 ### 用户结果
 
-- 播放状态继续使用同一个系统 `NavigationSplitView` sidebar：依次显示真实可折叠简介、
-  真实紧凑分 P 目录和诚实的评论 unavailable state。
+- 播放状态继续使用同一个系统 `NavigationSplitView` sidebar：显示 UP 主、五行折叠简介、
+  分区／选集／分 P 与只读评论。
 - 单分 P 隐藏整个目录；多分 P 显示当前项、标题和时长，并可在同一播放目的地内按真实
   `(bvid, cid)` 切换 playurl、播放器 item、字幕和弹幕；目录使用最多同时显示 5 行的
   独立滚动 `List`，标题显示总数，行高随文字尺寸缩放；折叠后重新展开会定位当前分 P，
@@ -172,8 +173,11 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - A → B 仍只替换媒体 identity；系统返回恢复来源入口、搜索草稿、工作集和语义滚动位置。
 - 同 BVID 分 P 切换不增加导航层级；BVID 级展示上下文与请求中／已呈现媒体 identity 分离，
   loading、failure 与 retry 不把旧分 P 继续标作当前媒体。
-- 不增加 endpoint、Repository、第二个 Package、空 target、通用 Store 或媒体内容／播放进度持久化；播放器音量、静音和首选倍速可作为设备级非内容偏好保存。
-- 评论继续显示能力未接入；不加入合成评论、评论读取或写操作。
+- 评论 API DTO 留在 `BiliAPI`，只读 port/use case 留在 `BiliApplication`，模型留在
+  `BiliModels`，唯一评论页面状态继续由 `PlaybackCommentsViewModel` 拥有；不增加第二个 Package、
+  空 target、通用 Store 或第二套分页状态。
+- 整条侧栏只有一个 `NSScrollView + NSCollectionView`；评论正文使用不可独立滚动的原生
+  `NSTextView`，不加入每行 hosting、评论写操作或从不透明资源引用反推图片 URL。
 - 横向相关推荐已经确定为后续播放工作台方向，但本阶段不建立占位 View、数据模型、fixture
   seam 或网络实现，也不把它登记为当前并行阶段。
 
@@ -191,6 +195,9 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
   资源清理。窗口 resize、系统 Back、sidebar、长文本与大字体仍需按当前产品真实观察。
 - VoiceOver 与 Full Keyboard Access 必须分别真人检查阅读／焦点顺序；AX tree、截图或 build
   不能替代真人辅助功能结论。
+- 评论契约测试证明 A → B、排序 reset、主评论 append、1,000 条内存上限、楼中楼展开／收起／
+  翻页／失败重试和迟到结果隔离；renderer 契约证明稳定 RowID、单滚动 owner、可选择 TextKit、
+  2,048 高度缓存和每批 32 行 resize 精测。真实网络、连续 resize 与真人辅助功能仍单独验收。
 
 阶段验证记录：
 [`M5.0-playback-context-sidebar-2026-08-07.md`](./validation/M5.0-playback-context-sidebar-2026-08-07.md)。
@@ -207,7 +214,7 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - 多账号。
 - 区域解锁、DRM 绕过或权限规避。
 - 评论、关注、收藏、稍后再看等写操作。
-- 服务端观看进度写入和完整评论阅读；它们是独立的 v1.1 候选。
+- 服务端观看进度写入；它是独立候选。
 
 新增产品范围必须先更新产品愿景；已经接受但尚未排期的事项进入候选登记。只有被选为
 唯一下一阶段时才更新本路线图，不能通过顺手增加 endpoint、占位 target 或通用基础设施

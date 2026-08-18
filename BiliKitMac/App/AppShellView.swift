@@ -11,6 +11,7 @@ struct AppShellView: View {
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
+    let commentsModel: PlaybackCommentsViewModel?
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
@@ -120,6 +121,7 @@ struct AppShellView: View {
     private var playbackSidebar: some View {
         NativePlaybackSidebarView(
             model: videoModel,
+            commentsModel: commentsModel,
             onRetry: navigationCoordinator.retryPlayback,
             onSelectPlayback: { bvid, preferredCID in
                 navigationCoordinator.openPlayback(
@@ -128,8 +130,10 @@ struct AppShellView: View {
                         preferredCID: preferredCID
                     )
                 )
-            }
+            },
+            onSelectCommentVideo: navigationCoordinator.openPlayback
         )
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     private var sidebarMinimumWidth: CGFloat {
@@ -212,7 +216,7 @@ private struct PlaybackDestinationView: View {
         }
         .navigationTitle("播放")
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 
     private func playbackDetail(
@@ -241,6 +245,6 @@ private struct PlaybackDestinationView: View {
                 playerContent
             }
         }
-        .ignoresSafeArea(.container, edges: .top)
+        .ignoresSafeArea(.container, edges: [.top, .horizontal])
     }
 }

@@ -69,6 +69,13 @@ public final class GuestVideoViewModel {
     public private(set) var presentedContext: GuestVideoContext?
     /// App 层只用这个稳定身份协调详情 surface 的滚动重置，不需要跨越 Feature 边界读取模型。
     public var presentedBVID: String? { presentedContext?.detail.bvid }
+    /// App 层只用稳定的视频 subject 协调评论；分 P/CID 切换不重置同一视频评论。
+    public var presentedVideoIdentity: (bvid: String, aid: Int64)? {
+        guard let detail = presentedContext?.detail, let aid = detail.aid else {
+            return nil
+        }
+        return (detail.bvid, aid)
+    }
     /// 用户最新请求的媒体身份；在 playurl 或播放器准备失败时仍保留给 retry。
     public private(set) var requestedPlaybackIdentity: PlaybackItemIdentity?
     /// App 层最新选择意图的 BVID；与已成功安装的媒体身份分离。
