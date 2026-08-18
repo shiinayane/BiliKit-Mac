@@ -6,11 +6,16 @@ import BiliAuthFeature
 import BiliBrowseFeature
 import BiliDanmaku
 import BiliLibraryFeature
+import BiliModels
 import BiliNetworking
 import BiliPlayback
 import CoreGraphics
 import Foundation
 import SwiftUI
+
+typealias CommentAssetURLResolver = @Sendable (CommentAssetReference) -> URL?
+typealias CommentVideoLinkResolver = @Sendable (CommentLinkTarget) -> String?
+typealias CommentLinkURLResolver = @Sendable (CommentLinkTarget) -> URL?
 
 @MainActor
 @Observable
@@ -62,6 +67,9 @@ struct AppEnvironment {
     private let relatedVideoRepository: any RelatedVideoRepository
     private let uploaderSignatureRepository: any UploaderSignatureRepository
     private let commentRepository: any CommentRepository
+    let commentAssetURLResolver: CommentAssetURLResolver
+    let commentVideoLinkResolver: CommentVideoLinkResolver
+    let commentLinkURLResolver: CommentLinkURLResolver
     private let historyRepository: any WatchHistoryRepository
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
@@ -77,6 +85,12 @@ struct AppEnvironment {
         relatedVideoRepository: any RelatedVideoRepository,
         uploaderSignatureRepository: any UploaderSignatureRepository,
         commentRepository: any CommentRepository,
+        commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
+        commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { target in
+            guard case .video(let bvid) = target else { return nil }
+            return bvid
+        },
+        commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
         historyRepository: any WatchHistoryRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
@@ -96,6 +110,9 @@ struct AppEnvironment {
         self.relatedVideoRepository = relatedVideoRepository
         self.uploaderSignatureRepository = uploaderSignatureRepository
         self.commentRepository = commentRepository
+        self.commentAssetURLResolver = commentAssetURLResolver
+        self.commentVideoLinkResolver = commentVideoLinkResolver
+        self.commentLinkURLResolver = commentLinkURLResolver
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
@@ -251,11 +268,19 @@ struct AppEnvironment {
             subtitleUseCase: SubtitleUseCase(repository: subtitleRepository)
         )
         let guestRepository = BiliGuestRepository(client: api)
+        let commentAssetResolver = BiliCommentAssetResolver()
+        let commentLinkResolver = BiliCommentLinkResolver()
         return AppEnvironment(
             guestContentRepository: guestRepository,
             relatedVideoRepository: guestRepository,
             uploaderSignatureRepository: guestRepository,
             commentRepository: BiliCommentRepository(client: api),
+            commentAssetURLResolver: { reference in
+                commentAssetResolver.imageURL(for: reference)
+            },
+            commentLinkURLResolver: { target in
+                commentLinkResolver.externalURL(for: target)
+            },
             historyRepository: BiliWatchHistoryRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,

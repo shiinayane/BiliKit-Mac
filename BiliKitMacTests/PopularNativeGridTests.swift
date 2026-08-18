@@ -436,6 +436,8 @@ struct PopularNativeGridTests {
     func imageVariantsUseDistinctDecodeBoundsAndCacheIdentities() throws {
         #expect(NativeVideoImageVariant.cover.maximumDecodedPixelSize == 640)
         #expect(NativeVideoImageVariant.avatar.maximumDecodedPixelSize == 96)
+        #expect(NativeVideoImageVariant.commentEmote.maximumDecodedPixelSize == 128)
+        #expect(NativeVideoImageVariant.commentPicture.maximumDecodedPixelSize == 1_024)
 
         let url = try #require(URL(string: "https://i.example/shared.webp"))
         let coverKey = NativeVideoImageKey(url: url, variant: .cover)
