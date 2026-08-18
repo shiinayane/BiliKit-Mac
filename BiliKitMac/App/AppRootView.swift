@@ -47,6 +47,9 @@ struct AppRootView: View {
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView,
+        commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
+        commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
+        commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
         accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
@@ -59,7 +62,10 @@ struct AppRootView: View {
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
-                playerContent: playerContent
+                playerContent: playerContent,
+                commentAssetURLResolver: commentAssetURLResolver,
+                commentVideoLinkResolver: commentVideoLinkResolver,
+                commentLinkURLResolver: commentLinkURLResolver
             )
         )
     }
@@ -74,6 +80,9 @@ struct AppRootView: View {
             authenticationModel: authenticationModel,
             historyModel: historyModel,
             playerContent: playerContent,
+            commentAssetURLResolver: windowOwner.commentAssetURLResolver,
+            commentVideoLinkResolver: windowOwner.commentVideoLinkResolver,
+            commentLinkURLResolver: windowOwner.commentLinkURLResolver,
             isAuthenticationPresented: $isAuthenticationPresented,
             submittedSearchQuery: submittedSearchQuery,
             onSubmitSearch: performSearch

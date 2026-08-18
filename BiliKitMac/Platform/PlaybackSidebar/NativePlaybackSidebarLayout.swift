@@ -443,6 +443,13 @@ enum NativePlaybackSidebarTextLayout {
         )
     }
 
+    static func height(
+        _ attributedText: NSAttributedString,
+        width: CGFloat
+    ) -> CGFloat {
+        measurer.height(attributedText, width: width)
+    }
+
     static func singleLineWidth(_ text: String, font: NSFont) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
@@ -494,6 +501,22 @@ private final class NativePlaybackSidebarTextMeasurer {
                 ]
             )
         )
+        manager.ensureLayout(for: container)
+        return ceil(manager.usedRect(for: container).height)
+    }
+
+    func height(
+        _ attributedText: NSAttributedString,
+        width: CGFloat
+    ) -> CGFloat {
+        guard attributedText.length > 0 else { return 0 }
+        container.containerSize = NSSize(
+            width: max(1, width),
+            height: .greatestFiniteMagnitude
+        )
+        container.maximumNumberOfLines = 0
+        container.lineBreakMode = .byCharWrapping
+        storage.setAttributedString(attributedText)
         manager.ensureLayout(for: container)
         return ceil(manager.usedRect(for: container).height)
     }

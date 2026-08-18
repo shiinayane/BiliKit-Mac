@@ -34,18 +34,24 @@ enum NativePlaybackCommentsItemMeasurement {
 
     static func thread(
         _ presentation: NativePlaybackCommentThreadPresentation,
-        width: CGFloat
+        width: CGFloat,
+        textRenderer: NativePlaybackCommentTextRenderer? = nil
     ) -> CGFloat {
+        let textScope = presentation.textScope
         let rootHeight = comment(
             presentation.thread.root,
             width: width,
-            isReply: false
+            isReply: false,
+            textRenderer: textRenderer,
+            textScope: textScope
         )
         let panelWidth = max(80, width - replyPanelLeading)
         let panelHeight = repliesPanel(
             thread: presentation.thread,
             replyState: presentation.replyState,
-            width: panelWidth
+            width: panelWidth,
+            textRenderer: textRenderer,
+            textScope: textScope
         )
         return ceil(
             rootVerticalInset + rootHeight
@@ -57,7 +63,9 @@ enum NativePlaybackCommentsItemMeasurement {
     static func comment(
         _ comment: BiliModels.Comment,
         width: CGFloat,
-        isReply: Bool
+        isReply: Bool,
+        textRenderer: NativePlaybackCommentTextRenderer? = nil,
+        textScope: NativePlaybackCommentTextScope? = nil
     ) -> CGFloat {
         switch comment.payload {
         case .unavailable:
@@ -67,11 +75,20 @@ enum NativePlaybackCommentsItemMeasurement {
             let contentWidth = max(60, width - avatar - contentGap)
             let bodyHeight = max(
                 18,
-                NativePlaybackSidebarTextLayout.height(
-                    details.content.message,
-                    width: contentWidth,
-                    font: .preferredFont(forTextStyle: .body)
-                )
+                textRenderer.flatMap { renderer in
+                    textScope.map {
+                        renderer.height(
+                            details.content,
+                            width: contentWidth,
+                            scope: $0
+                        )
+                    }
+                }
+                    ?? NativePlaybackSidebarTextLayout.height(
+                        details.content.message,
+                        width: contentWidth,
+                        font: .preferredFont(forTextStyle: .body)
+                    )
             )
             let authorHeight = authorLineHeight(
                 details.author,
@@ -80,12 +97,14 @@ enum NativePlaybackCommentsItemMeasurement {
             )
             var contentHeight: CGFloat = authorHeight + 6 + bodyHeight
             if details.content.pictureCount > 0 {
+                let pictureLayout = NativePlaybackCommentPictureLayout.make(
+                    images: details.content.pictures,
+                    count: details.content.pictureCount,
+                    availableWidth: contentWidth
+                )
                 contentHeight +=
                     8
-                    + pictureGridHeight(
-                        count: details.content.pictureCount,
-                        width: contentWidth
-                    )
+                    + pictureLayout.size.height
             }
             contentHeight += 6 + 18
             if hasVisibleProvenance(details.provenance) {
@@ -98,7 +117,9 @@ enum NativePlaybackCommentsItemMeasurement {
     static func repliesPanel(
         thread: CommentThread,
         replyState: PlaybackCommentReplyState?,
-        width: CGFloat
+        width: CGFloat,
+        textRenderer: NativePlaybackCommentTextRenderer? = nil,
+        textScope: NativePlaybackCommentTextScope? = nil
     ) -> CGFloat {
         guard case .available(let details) = thread.root.payload,
             details.replyCount > 0
@@ -108,7 +129,13 @@ enum NativePlaybackCommentsItemMeasurement {
         if let replyState, replyState.isExpanded {
             height += 20 + 10
             for (index, reply) in replyState.replies.enumerated() {
-                height += comment(reply, width: innerWidth, isReply: true)
+                height += comment(
+                    reply,
+                    width: innerWidth,
+                    isReply: true,
+                    textRenderer: textRenderer,
+                    textScope: textScope
+                )
                 if index < replyState.replies.count - 1 { height += 8 }
             }
             if replyState.isLoading || replyState.error != nil {
@@ -120,7 +147,13 @@ enum NativePlaybackCommentsItemMeasurement {
         } else {
             let replies = Array(thread.replyPreview.prefix(2))
             for (index, reply) in replies.enumerated() {
-                height += comment(reply, width: innerWidth, isReply: true)
+                height += comment(
+                    reply,
+                    width: innerWidth,
+                    isReply: true,
+                    textRenderer: textRenderer,
+                    textScope: textScope
+                )
                 if index < replies.count - 1 { height += 8 }
             }
             if replies.count < details.replyCount {
@@ -129,21 +162,6 @@ enum NativePlaybackCommentsItemMeasurement {
             }
         }
         return ceil(height + replyPanelPadding)
-    }
-
-    static func pictureGridHeight(count: Int, width: CGFloat) -> CGFloat {
-        let displayedCount = min(max(count, 0), 9)
-        guard displayedCount > 0 else { return 0 }
-        if displayedCount == 1 {
-            return min(168, floor(width * 0.75))
-        }
-        let columns = displayedCount >= 5 ? 3 : 2
-        let gap: CGFloat = 4
-        let tile = floor(
-            (width - CGFloat(columns - 1) * gap) / CGFloat(columns)
-        )
-        let rows = (displayedCount + columns - 1) / columns
-        return CGFloat(rows) * tile + CGFloat(rows - 1) * gap
     }
 
     static func hasVisibleProvenance(_ values: [CommentProvenance]) -> Bool {
@@ -651,22 +669,30 @@ final class NativePlaybackCommentThreadItem: NSCollectionViewItem {
 
     func configure(
         presentation: NativePlaybackCommentThreadPresentation,
+        textRenderer: NativePlaybackCommentTextRenderer,
+        avatarLoader: NativePlaybackCommentAvatarLoader,
+        pictureLoader: NativePlaybackCommentPictureLoader,
+        onTextLayoutChange: @escaping () -> Void,
         onExpand: @escaping () -> Void,
         onCollapse: @escaping () -> Void,
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenVideo: @escaping (String) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void
     ) {
         representedObject = presentation
         contentView.configure(
             presentation: presentation,
+            textRenderer: textRenderer,
+            avatarLoader: avatarLoader,
+            pictureLoader: pictureLoader,
+            onTextLayoutChange: onTextLayoutChange,
             onExpand: onExpand,
             onCollapse: onCollapse,
             onPrevious: onPrevious,
             onNext: onNext,
             onRetry: onRetry,
-            onOpenVideo: onOpenVideo
+            onOpenLink: onOpenLink
         )
     }
 
@@ -688,6 +714,7 @@ private final class NativePlaybackCommentThreadView: NSView {
     private let repliesPanel = NativePlaybackCommentRepliesPanelView()
     private let separator = NSBox()
     private var presentation: NativePlaybackCommentThreadPresentation?
+    private var textRenderer: NativePlaybackCommentTextRenderer?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -703,28 +730,44 @@ private final class NativePlaybackCommentThreadView: NSView {
 
     func configure(
         presentation: NativePlaybackCommentThreadPresentation,
+        textRenderer: NativePlaybackCommentTextRenderer,
+        avatarLoader: NativePlaybackCommentAvatarLoader,
+        pictureLoader: NativePlaybackCommentPictureLoader,
+        onTextLayoutChange: @escaping () -> Void,
         onExpand: @escaping () -> Void,
         onCollapse: @escaping () -> Void,
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenVideo: @escaping (String) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void
     ) {
         self.presentation = presentation
+        self.textRenderer = textRenderer
+        let textScope = presentation.textScope
         rootRow.configure(
             comment: presentation.thread.root,
             isReply: false,
-            onOpenVideo: onOpenVideo
+            textRenderer: textRenderer,
+            avatarLoader: avatarLoader,
+            pictureLoader: pictureLoader,
+            textScope: textScope,
+            onTextLayoutChange: onTextLayoutChange,
+            onOpenLink: onOpenLink
         )
         repliesPanel.configure(
             thread: presentation.thread,
             replyState: presentation.replyState,
+            textRenderer: textRenderer,
+            avatarLoader: avatarLoader,
+            pictureLoader: pictureLoader,
+            textScope: textScope,
+            onTextLayoutChange: onTextLayoutChange,
             onExpand: onExpand,
             onCollapse: onCollapse,
             onPrevious: onPrevious,
             onNext: onNext,
             onRetry: onRetry,
-            onOpenVideo: onOpenVideo
+            onOpenLink: onOpenLink
         )
         needsLayout = true
     }
@@ -735,7 +778,9 @@ private final class NativePlaybackCommentThreadView: NSView {
         let rootHeight = NativePlaybackCommentsItemMeasurement.comment(
             presentation.thread.root,
             width: bounds.width,
-            isReply: false
+            isReply: false,
+            textRenderer: textRenderer,
+            textScope: presentation.textScope
         )
         rootRow.frame = NSRect(
             x: 0,
@@ -750,7 +795,9 @@ private final class NativePlaybackCommentThreadView: NSView {
         let panelHeight = NativePlaybackCommentsItemMeasurement.repliesPanel(
             thread: presentation.thread,
             replyState: presentation.replyState,
-            width: panelWidth
+            width: panelWidth,
+            textRenderer: textRenderer,
+            textScope: presentation.textScope
         )
         repliesPanel.isHidden = panelHeight <= 0
         repliesPanel.frame = NSRect(
@@ -768,12 +815,13 @@ private final class NativePlaybackCommentThreadView: NSView {
     }
 
     func releaseOffscreenResources() {
-        rootRow.releaseTextStorage()
-        repliesPanel.releaseTextStorage()
+        rootRow.releaseOffscreenResources()
+        repliesPanel.releaseOffscreenResources()
     }
 
     func reset() {
         presentation = nil
+        textRenderer = nil
         rootRow.reset()
         repliesPanel.reset()
     }
@@ -794,6 +842,8 @@ private final class NativePlaybackCommentRowView: NSView {
     private let unavailableLabel = NSTextField(labelWithString: "")
     private var comment: BiliModels.Comment?
     private var isReply = false
+    private var textRenderer: NativePlaybackCommentTextRenderer?
+    private var textScope: NativePlaybackCommentTextScope?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -846,13 +896,22 @@ private final class NativePlaybackCommentRowView: NSView {
     func configure(
         comment: BiliModels.Comment,
         isReply: Bool,
-        onOpenVideo: @escaping (String) -> Void
+        textRenderer: NativePlaybackCommentTextRenderer,
+        avatarLoader: NativePlaybackCommentAvatarLoader,
+        pictureLoader: NativePlaybackCommentPictureLoader,
+        textScope: NativePlaybackCommentTextScope,
+        onTextLayoutChange: @escaping () -> Void,
+        onOpenLink: @escaping (CommentLinkTarget) -> Void
     ) {
         self.comment = comment
         self.isReply = isReply
-        bodyText.onOpenVideo = onOpenVideo
+        self.textRenderer = textRenderer
+        self.textScope = textScope
+        bodyText.onOpenLink = onOpenLink
         switch comment.payload {
         case .unavailable(let reason):
+            avatar.releaseImage()
+            pictures.releaseImages()
             avatar.isHidden = true
             authorLabel.isHidden = true
             authorBadges.isHidden = true
@@ -874,15 +933,28 @@ private final class NativePlaybackCommentRowView: NSView {
             likeImage.isHidden = false
             likeLabel.isHidden = false
             unavailableLabel.isHidden = true
-            avatar.configure(author: details.author, isReply: isReply)
+            avatar.configure(
+                author: details.author,
+                isReply: isReply,
+                loader: avatarLoader
+            )
             authorLabel.stringValue = details.author.name
             authorLabel.textColor = Self.authorColor(details.author)
             authorLabel.setAccessibilityLabel(
                 Self.authorAccessibility(details.author)
             )
             authorBadges.configure(author: details.author, isReply: isReply)
-            bodyText.setContent(details.content)
-            pictures.count = details.content.pictureCount
+            bodyText.setContent(
+                details.content,
+                renderer: textRenderer,
+                scope: textScope,
+                onLayoutChange: onTextLayoutChange
+            )
+            pictures.configure(
+                images: details.content.pictures,
+                count: details.content.pictureCount,
+                loader: pictureLoader
+            )
             pictures.isHidden = details.content.pictureCount == 0
             metadataLabel.stringValue = Self.metadataLeading(details)
             metadataLabel.setAccessibilityLabel(Self.metadataAccessibility(details))
@@ -948,27 +1020,37 @@ private final class NativePlaybackCommentRowView: NSView {
                 ) + 6
             let bodyHeight = max(
                 18,
-                NativePlaybackSidebarTextLayout.height(
-                    details.content.message,
-                    width: contentWidth,
-                    font: .preferredFont(forTextStyle: .body)
-                )
+                textRenderer.flatMap { renderer in
+                    textScope.map {
+                        renderer.height(
+                            details.content,
+                            width: contentWidth,
+                            scope: $0
+                        )
+                    }
+                }
+                    ?? NativePlaybackSidebarTextLayout.height(
+                        details.content.message,
+                        width: contentWidth,
+                        font: .preferredFont(forTextStyle: .body)
+                    )
             )
             bodyText.frame = NSRect(x: contentX, y: y, width: contentWidth, height: bodyHeight)
             y += bodyHeight
             if details.content.pictureCount > 0 {
                 y += 8
-                let picturesHeight = NativePlaybackCommentsItemMeasurement.pictureGridHeight(
+                let pictureLayout = NativePlaybackCommentPictureLayout.make(
+                    images: details.content.pictures,
                     count: details.content.pictureCount,
-                    width: contentWidth
+                    availableWidth: contentWidth
                 )
                 pictures.frame = NSRect(
                     x: contentX,
                     y: y,
-                    width: contentWidth,
-                    height: picturesHeight
+                    width: pictureLayout.size.width,
+                    height: pictureLayout.size.height
                 )
-                y += picturesHeight
+                y += pictureLayout.size.height
             } else {
                 pictures.frame = .zero
             }
@@ -1010,12 +1092,17 @@ private final class NativePlaybackCommentRowView: NSView {
         }
     }
 
-    func releaseTextStorage() {
+    func releaseOffscreenResources() {
         bodyText.releaseTextStorage()
+        avatar.releaseImage()
+        pictures.releaseImages()
     }
 
     func reset() {
         comment = nil
+        textRenderer = nil
+        textScope = nil
+        avatar.reset()
         bodyText.reset()
         unavailableLabel.stringValue = ""
         authorLabel.stringValue = ""
@@ -1023,7 +1110,7 @@ private final class NativePlaybackCommentRowView: NSView {
         metadataLabel.stringValue = ""
         likeLabel.stringValue = ""
         provenanceBadges.reset()
-        pictures.count = 0
+        pictures.reset()
     }
 
     private static func authorColor(_ author: CommentAuthor) -> NSColor {
@@ -1388,7 +1475,14 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
 
 @MainActor
 private final class NativePlaybackCommentTextView: NSTextView, NSTextViewDelegate {
-    var onOpenVideo: ((String) -> Void)?
+    var onOpenLink: ((CommentLinkTarget) -> Void)?
+    private var content: CommentContent?
+    private var renderer: NativePlaybackCommentTextRenderer?
+    private var scope: NativePlaybackCommentTextScope?
+    private var onLayoutChange: (() -> Void)?
+    private var renderGeneration: UInt64 = 0
+    private var renderTask: Task<Void, Never>?
+    private var linkTargets: [CommentLinkTarget] = []
 
     init() {
         let storage = NSTextStorage()
@@ -1409,8 +1503,7 @@ private final class NativePlaybackCommentTextView: NSTextView, NSTextViewDelegat
         isVerticallyResizable = false
         textContainerInset = .zero
         linkTextAttributes = [
-            .foregroundColor: NSColor.linkColor,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .foregroundColor: NSColor.linkColor
         ]
         setAccessibilityRole(.staticText)
     }
@@ -1426,44 +1519,115 @@ private final class NativePlaybackCommentTextView: NSTextView, NSTextViewDelegat
         super.layout()
     }
 
-    func setContent(_ content: CommentContent) {
+    func setContent(
+        _ content: CommentContent,
+        renderer: NativePlaybackCommentTextRenderer,
+        scope: NativePlaybackCommentTextScope,
+        onLayoutChange: @escaping () -> Void
+    ) {
+        renderGeneration &+= 1
+        renderTask?.cancel()
+        self.content = content
+        self.renderer = renderer
+        self.scope = scope
+        self.onLayoutChange = onLayoutChange
+        applyContent()
+    }
+
+    private func applyContent() {
+        guard let content, let renderer, let scope else { return }
         let previousSelections = selectedRanges
-        let attributed = NSMutableAttributedString(
-            string: content.message,
-            attributes: [
-                .font: NSFont.preferredFont(forTextStyle: .body),
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle,
-            ]
-        )
-        let fullLength = attributed.length
-        for link in content.links {
-            let range = NSRange(location: link.range.location, length: link.range.length)
-            guard range.location >= 0, range.length >= 0,
-                NSMaxRange(range) <= fullLength
-            else { continue }
-            guard case .video(let bvid) = link.target,
-                let escaped = bvid.addingPercentEncoding(
-                    withAllowedCharacters: .urlPathAllowed
-                ),
-                let url = URL(string: "bilikit-comment://video/\(escaped)")
-            else { continue }
-            attributed.addAttribute(.link, value: url, range: range)
-        }
-        textStorage?.setAttributedString(attributed)
+        let rendered = renderer.render(content, scope: scope)
+        textStorage?.setAttributedString(rendered.attributedString)
+        linkTargets = rendered.linkTargets
         selectedRanges = NativePlaybackSidebarReadOnlyTextView.clampedSelections(
             previousSelections,
-            textLength: fullLength
+            textLength: rendered.attributedString.length
         )
         setAccessibilityLabel(content.message)
+        scheduleLoads(rendered)
+    }
+
+    private func scheduleLoads(
+        _ rendered: NativePlaybackCommentTextRenderer.RenderedText
+    ) {
+        renderTask?.cancel()
+        guard let renderer, let scheduledScope = scope,
+            !rendered.pendingAssets.isEmpty
+        else {
+            renderTask = nil
+            return
+        }
+        let generation = renderGeneration
+        renderTask = Task { [weak self] in
+            let results = await withTaskGroup(
+                of: (
+                    NativePlaybackCommentTextRenderer.PendingAsset,
+                    NativeVideoImageLoadResult?
+                ).self
+            ) { group in
+                for pending in rendered.pendingAssets {
+                    group.addTask {
+                        (pending, await renderer.load(pending))
+                    }
+                }
+                var values:
+                    [(
+                        NativePlaybackCommentTextRenderer.PendingAsset,
+                        NativeVideoImageLoadResult?
+                    )] = []
+                for await value in group { values.append(value) }
+                return values
+            }
+            guard !Task.isCancelled,
+                let self,
+                generation == self.renderGeneration,
+                self.scope == scheduledScope
+            else { return }
+
+            var hasFailure = false
+            for (pending, result) in results {
+                if let result {
+                    renderer.apply(
+                        result,
+                        to: rendered.attachments[pending.reference] ?? []
+                    )
+                } else if renderer.markUnavailable(
+                    pending.reference,
+                    in: scheduledScope
+                ) {
+                    hasFailure = true
+                }
+            }
+            if hasFailure {
+                applyContent()
+                onLayoutChange?()
+            } else {
+                layoutManager?.invalidateDisplay(
+                    forCharacterRange: NSRange(
+                        location: 0,
+                        length: textStorage?.length ?? 0
+                    )
+                )
+                needsDisplay = true
+            }
+        }
     }
 
     func releaseTextStorage() {
+        renderGeneration &+= 1
+        renderTask?.cancel()
+        renderTask = nil
+        content = nil
+        renderer = nil
+        scope = nil
+        onLayoutChange = nil
+        linkTargets.removeAll(keepingCapacity: false)
         textStorage?.setAttributedString(NSAttributedString(string: ""))
     }
 
     func reset() {
-        onOpenVideo = nil
+        onOpenLink = nil
         releaseTextStorage()
     }
 
@@ -1472,33 +1636,47 @@ private final class NativePlaybackCommentTextView: NSTextView, NSTextViewDelegat
         clickedOnLink link: Any,
         at charIndex: Int
     ) -> Bool {
-        guard let url = link as? URL,
-            url.scheme == "bilikit-comment",
-            url.host == "video"
-        else { return false }
-        let bvid = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !bvid.isEmpty else { return false }
-        onOpenVideo?(bvid)
+        guard let value = link as? String,
+            value.hasPrefix("bilikit-comment-link-"),
+            let index = Int(value.dropFirst("bilikit-comment-link-".count)),
+            linkTargets.indices.contains(index)
+        else { return true }
+        onOpenLink?(linkTargets[index])
         return true
+    }
+}
+
+enum NativePlaybackCommentImageTransition {
+    static let duration: CFTimeInterval = 0.15
+
+    static func shouldAnimate(loadOrigin: NativeVideoImageLoadOrigin) -> Bool {
+        loadOrigin.shouldAnimate
     }
 }
 
 @MainActor
 private final class NativePlaybackCommentAvatarView: NSView {
     override var isFlipped: Bool { true }
+    private let avatarImage = NSImageView()
     private let initialLabel = NSTextField(labelWithString: "")
     private let badgeImage = NSImageView()
     private var author: CommentAuthor?
     private var isReply = false
+    private var imageGeneration: UInt64 = 0
+    private var imageTask: Task<Void, Never>?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        avatarImage.wantsLayer = true
+        avatarImage.imageScaling = .scaleAxesIndependently
+        avatarImage.setAccessibilityElement(false)
         initialLabel.alignment = .center
         initialLabel.textColor = .white
         badgeImage.contentTintColor = .white
         badgeImage.imageScaling = .scaleProportionallyDown
         badgeImage.setAccessibilityElement(false)
+        addSubview(avatarImage)
         addSubview(initialLabel)
         addSubview(badgeImage)
         setAccessibilityElement(false)
@@ -1507,9 +1685,17 @@ private final class NativePlaybackCommentAvatarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    func configure(author: CommentAuthor, isReply: Bool) {
+    func configure(
+        author: CommentAuthor,
+        isReply: Bool,
+        loader: NativePlaybackCommentAvatarLoader
+    ) {
+        cancelImageRequest()
         self.author = author
         self.isReply = isReply
+        avatarImage.image = nil
+        avatarImage.isHidden = true
+        initialLabel.isHidden = false
         initialLabel.stringValue = author.name.first.map(String.init) ?? "•"
         initialLabel.font = .systemFont(ofSize: isReply ? 9 : 12, weight: .bold)
         let symbolName: String? =
@@ -1522,12 +1708,38 @@ private final class NativePlaybackCommentAvatarView: NSView {
             NSImage(systemSymbolName: $0, accessibilityDescription: nil)
         }
         badgeImage.isHidden = badgeImage.image == nil
+        if let reference = author.avatar {
+            if let cached = loader.cachedImage(for: reference) {
+                apply(cached, animated: false)
+            } else {
+                let generation = imageGeneration
+                imageTask = Task { [weak self] in
+                    let result = await loader.image(for: reference)
+                    guard let self, !Task.isCancelled,
+                        self.imageGeneration == generation,
+                        self.author?.avatar == reference
+                    else { return }
+                    self.imageTask = nil
+                    guard let result else { return }
+                    self.apply(
+                        result.image,
+                        animated: NativePlaybackCommentImageTransition.shouldAnimate(
+                            loadOrigin: result.origin
+                        )
+                    )
+                }
+            }
+        }
         needsLayout = true
         needsDisplay = true
     }
 
     override func layout() {
         super.layout()
+        avatarImage.frame = bounds
+        avatarImage.wantsLayer = true
+        avatarImage.layer?.cornerRadius = bounds.width / 2
+        avatarImage.layer?.masksToBounds = true
         initialLabel.frame = bounds
         let badgeSize: CGFloat = isReply ? 10 : 13
         badgeImage.frame = NSRect(
@@ -1547,6 +1759,7 @@ private final class NativePlaybackCommentAvatarView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        guard !initialLabel.isHidden else { return }
         let path = NSBezierPath(ovalIn: bounds)
         path.addClip()
         NSGradient(
@@ -1554,63 +1767,416 @@ private final class NativePlaybackCommentAvatarView: NSView {
             ending: .systemBlue
         )?.draw(in: bounds, angle: -45)
     }
+
+    func releaseImage() {
+        cancelImageRequest()
+        avatarImage.image = nil
+        avatarImage.isHidden = true
+        initialLabel.isHidden = false
+        needsDisplay = true
+    }
+
+    func reset() {
+        releaseImage()
+        author = nil
+        initialLabel.stringValue = ""
+        badgeImage.image = nil
+        badgeImage.isHidden = true
+    }
+
+    private func cancelImageRequest() {
+        imageGeneration &+= 1
+        imageTask?.cancel()
+        imageTask = nil
+        avatarImage.layer?.removeAnimation(
+            forKey: "native-playback-comment-avatar.fade"
+        )
+        avatarImage.layer?.opacity = 1
+    }
+
+    private func apply(_ image: CGImage, animated: Bool) {
+        let generation = imageGeneration
+        avatarImage.image = NSImage(
+            cgImage: image,
+            size: NSSize(width: image.width, height: image.height)
+        )
+        avatarImage.isHidden = false
+        guard animated,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            let imageLayer = avatarImage.layer
+        else {
+            initialLabel.isHidden = true
+            needsDisplay = true
+            return
+        }
+        imageLayer.removeAnimation(
+            forKey: "native-playback-comment-avatar.fade"
+        )
+        imageLayer.opacity = 1
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0
+        animation.toValue = 1
+        animation.duration = NativePlaybackCommentImageTransition.duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, self.imageGeneration == generation else { return }
+            self.initialLabel.isHidden = true
+            self.needsDisplay = true
+        }
+        imageLayer.add(
+            animation,
+            forKey: "native-playback-comment-avatar.fade"
+        )
+        CATransaction.commit()
+        needsDisplay = true
+    }
+}
+
+struct NativePlaybackCommentPictureSlot: Equatable {
+    let reference: CommentAssetReference?
+    let pixelWidth: Int?
+    let pixelHeight: Int?
+}
+
+struct NativePlaybackCommentPictureSlots {
+    static func slots(
+        images: [CommentImage],
+        count: Int
+    ) -> [NativePlaybackCommentPictureSlot] {
+        let displayedCount = min(max(count, 0), 9)
+        var result = [NativePlaybackCommentPictureSlot](
+            repeating: NativePlaybackCommentPictureSlot(
+                reference: nil,
+                pixelWidth: nil,
+                pixelHeight: nil
+            ),
+            count: displayedCount
+        )
+        for (fallbackPosition, image) in images.enumerated() {
+            let position = image.position ?? fallbackPosition
+            guard result.indices.contains(position),
+                result[position].reference == nil
+            else { continue }
+            result[position] = NativePlaybackCommentPictureSlot(
+                reference: image.asset,
+                pixelWidth: image.pixelWidth,
+                pixelHeight: image.pixelHeight
+            )
+        }
+        return result
+    }
+}
+
+struct NativePlaybackCommentPictureLayout: Equatable {
+    static let maximumContentWidth: CGFloat = 364
+    static let maximumImageHeight: CGFloat = 180
+    static let gap: CGFloat = 4
+    static let fallbackExtent: CGFloat = 120
+    static let sourcePixelScale: CGFloat = 2
+
+    let frames: [CGRect]
+    let size: CGSize
+
+    static func make(
+        images: [CommentImage],
+        count: Int,
+        availableWidth: CGFloat
+    ) -> Self {
+        make(
+            slots: NativePlaybackCommentPictureSlots.slots(
+                images: images,
+                count: count
+            ),
+            availableWidth: availableWidth
+        )
+    }
+
+    static func make(
+        slots: [NativePlaybackCommentPictureSlot],
+        availableWidth: CGFloat
+    ) -> Self {
+        let contentWidth = floor(
+            min(max(0, availableWidth), maximumContentWidth)
+        )
+        guard !slots.isEmpty, contentWidth >= 1 else {
+            return Self(frames: [], size: .zero)
+        }
+
+        var frames: [CGRect] = []
+        frames.reserveCapacity(slots.count)
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for slot in slots {
+            let itemSize = displaySize(
+                for: slot,
+                availableWidth: contentWidth
+            )
+            if x > 0, x + itemSize.width > contentWidth {
+                y += rowHeight + gap
+                x = 0
+                rowHeight = 0
+            }
+            let frame = CGRect(origin: CGPoint(x: x, y: y), size: itemSize)
+            frames.append(frame)
+            x = frame.maxX + gap
+            rowHeight = max(rowHeight, itemSize.height)
+        }
+
+        return Self(
+            frames: frames,
+            size: CGSize(width: contentWidth, height: ceil(y + rowHeight))
+        )
+    }
+
+    private static func displaySize(
+        for slot: NativePlaybackCommentPictureSlot,
+        availableWidth: CGFloat
+    ) -> CGSize {
+        guard let pixelWidth = slot.pixelWidth,
+            let pixelHeight = slot.pixelHeight,
+            pixelWidth > 0,
+            pixelHeight > 0
+        else {
+            let extent = min(fallbackExtent, availableWidth)
+            return CGSize(width: extent, height: extent)
+        }
+
+        let sourceWidth = CGFloat(pixelWidth) / sourcePixelScale
+        let sourceHeight = CGFloat(pixelHeight) / sourcePixelScale
+        let scale = min(
+            1,
+            min(
+                availableWidth / sourceWidth,
+                maximumImageHeight / sourceHeight
+            )
+        )
+        return CGSize(
+            width: max(1, floor(sourceWidth * scale)),
+            height: max(1, floor(sourceHeight * scale))
+        )
+    }
 }
 
 @MainActor
 private final class NativePlaybackCommentPicturesView: NSView {
     override var isFlipped: Bool { true }
-    private static let placeholderText = NSAttributedString(
-        string: "暂不可用",
-        attributes: [
-            .font: NSFont.preferredFont(forTextStyle: .caption2),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ]
-    )
-    private static let placeholderSize = placeholderText.size()
-    private static let tileBackground = NSColor.secondaryLabelColor.withAlphaComponent(0.10)
-    var count = 0 {
-        didSet {
-            guard count != oldValue else { return }
-            setAccessibilityElement(count > 0)
-            setAccessibilityLabel("图片内容暂不可用，共 \(count) 张")
-            needsDisplay = true
+    private let tiles = (0..<9).map { _ in NativePlaybackCommentPictureTileView() }
+    private var slots: [NativePlaybackCommentPictureSlot] = []
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        for tile in tiles {
+            tile.isHidden = true
+            addSubview(tile)
+        }
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    func configure(
+        images: [CommentImage],
+        count: Int,
+        loader: NativePlaybackCommentPictureLoader
+    ) {
+        slots = NativePlaybackCommentPictureSlots.slots(
+            images: images,
+            count: count
+        )
+        for (index, tile) in tiles.enumerated() {
+            guard slots.indices.contains(index) else {
+                tile.isHidden = true
+                tile.reset()
+                continue
+            }
+            tile.isHidden = false
+            tile.configure(
+                reference: slots[index].reference,
+                loader: loader
+            )
+        }
+        setAccessibilityElement(!slots.isEmpty)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("评论图片，共 \(slots.count) 张")
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let pictureLayout = NativePlaybackCommentPictureLayout.make(
+            slots: slots,
+            availableWidth: bounds.width
+        )
+        for (index, frame) in pictureLayout.frames.enumerated() {
+            tiles[index].frame = frame
         }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        let displayedCount = min(max(count, 0), 9)
-        guard displayedCount > 0 else { return }
-        let columns = displayedCount == 1 ? 1 : (displayedCount >= 5 ? 3 : 2)
-        let gap: CGFloat = 4
-        let tileWidth =
-            displayedCount == 1
-            ? bounds.width
-            : floor((bounds.width - CGFloat(columns - 1) * gap) / CGFloat(columns))
-        let tileHeight =
-            displayedCount == 1
-            ? bounds.height
-            : tileWidth
-        for index in 0..<displayedCount {
-            let column = index % columns
-            let row = index / columns
-            let rect = NSRect(
-                x: CGFloat(column) * (tileWidth + gap),
-                y: CGFloat(row) * (tileHeight + gap),
-                width: tileWidth,
-                height: tileHeight
-            )
-            Self.tileBackground.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).fill()
-            NSColor.separatorColor.setStroke()
-            NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).stroke()
-            Self.placeholderText.draw(
-                at: NSPoint(
-                    x: rect.midX - Self.placeholderSize.width / 2,
-                    y: rect.midY - Self.placeholderSize.height / 2
+    func releaseImages() {
+        for tile in tiles { tile.releaseImage() }
+    }
+
+    func reset() {
+        slots = []
+        for tile in tiles {
+            tile.isHidden = true
+            tile.reset()
+        }
+        setAccessibilityElement(false)
+        setAccessibilityLabel(nil)
+    }
+}
+
+@MainActor
+private final class NativePlaybackCommentPictureTileView: NSView {
+    override var isFlipped: Bool { true }
+    private let imageView = NSImageView()
+    private let placeholderLabel = NSTextField(labelWithString: "图片")
+    private var reference: CommentAssetReference?
+    private var imageGeneration: UInt64 = 0
+    private var imageTask: Task<Void, Never>?
+    private var isShowingPlaceholder = true
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        imageView.wantsLayer = true
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageAlignment = .alignCenter
+        imageView.setAccessibilityElement(false)
+        placeholderLabel.font = .preferredFont(forTextStyle: .caption2)
+        placeholderLabel.textColor = .secondaryLabelColor
+        placeholderLabel.alignment = .center
+        placeholderLabel.setAccessibilityElement(false)
+        addSubview(imageView)
+        addSubview(placeholderLabel)
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.backgroundColor =
+            isShowingPlaceholder
+            ? NSColor.secondaryLabelColor.withAlphaComponent(0.06).cgColor
+            : NSColor.clear.cgColor
+        layer?.borderWidth = 0
+    }
+
+    override func layout() {
+        super.layout()
+        imageView.frame = bounds
+        placeholderLabel.frame = NSRect(
+            x: 4,
+            y: max(0, bounds.midY - 9),
+            width: max(0, bounds.width - 8),
+            height: 18
+        )
+    }
+
+    func configure(
+        reference: CommentAssetReference?,
+        loader: NativePlaybackCommentPictureLoader
+    ) {
+        cancelImageRequest()
+        self.reference = reference
+        imageView.image = nil
+        imageView.isHidden = true
+        placeholderLabel.isHidden = false
+        isShowingPlaceholder = true
+        needsDisplay = true
+        guard let reference else { return }
+        if let cached = loader.cachedImage(for: reference) {
+            apply(cached, animated: false)
+            return
+        }
+        let generation = imageGeneration
+        imageTask = Task { [weak self] in
+            let result = await loader.image(for: reference)
+            guard let self, !Task.isCancelled,
+                self.imageGeneration == generation,
+                self.reference == reference
+            else { return }
+            self.imageTask = nil
+            guard let result else { return }
+            self.apply(
+                result.image,
+                animated: NativePlaybackCommentImageTransition.shouldAnimate(
+                    loadOrigin: result.origin
                 )
             )
         }
+    }
+
+    func releaseImage() {
+        cancelImageRequest()
+        imageView.image = nil
+        imageView.isHidden = true
+        placeholderLabel.isHidden = false
+        isShowingPlaceholder = true
+        needsDisplay = true
+    }
+
+    func reset() {
+        releaseImage()
+        reference = nil
+    }
+
+    private func cancelImageRequest() {
+        imageGeneration &+= 1
+        imageTask?.cancel()
+        imageTask = nil
+        imageView.layer?.removeAnimation(
+            forKey: "native-playback-comment-picture.fade"
+        )
+        imageView.layer?.opacity = 1
+    }
+
+    private func apply(_ image: CGImage, animated: Bool) {
+        let generation = imageGeneration
+        imageView.image = NSImage(
+            cgImage: image,
+            size: NSSize(width: image.width, height: image.height)
+        )
+        imageView.isHidden = false
+        placeholderLabel.isHidden = true
+        guard animated,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            let imageLayer = imageView.layer
+        else {
+            isShowingPlaceholder = false
+            needsDisplay = true
+            return
+        }
+        imageLayer.removeAnimation(
+            forKey: "native-playback-comment-picture.fade"
+        )
+        imageLayer.opacity = 1
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0
+        animation.toValue = 1
+        animation.duration = NativePlaybackCommentImageTransition.duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, self.imageGeneration == generation else { return }
+            self.isShowingPlaceholder = false
+            self.needsDisplay = true
+        }
+        imageLayer.add(
+            animation,
+            forKey: "native-playback-comment-picture.fade"
+        )
+        CATransaction.commit()
+        needsDisplay = true
     }
 }
 
@@ -1628,6 +2194,8 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
     private var replyRows: [NativePlaybackCommentRowView] = []
     private var thread: CommentThread?
     private var replyState: PlaybackCommentReplyState?
+    private var textRenderer: NativePlaybackCommentTextRenderer?
+    private var textScope: NativePlaybackCommentTextScope?
     private var onExpand: (() -> Void)?
     private var onCollapse: (() -> Void)?
     private var onPrevious: (() -> Void)?
@@ -1707,16 +2275,23 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
     func configure(
         thread: CommentThread,
         replyState: PlaybackCommentReplyState?,
+        textRenderer: NativePlaybackCommentTextRenderer,
+        avatarLoader: NativePlaybackCommentAvatarLoader,
+        pictureLoader: NativePlaybackCommentPictureLoader,
+        textScope: NativePlaybackCommentTextScope,
+        onTextLayoutChange: @escaping () -> Void,
         onExpand: @escaping () -> Void,
         onCollapse: @escaping () -> Void,
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenVideo: @escaping (String) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void
     ) {
         resetRows()
         self.thread = thread
         self.replyState = replyState
+        self.textRenderer = textRenderer
+        self.textScope = textScope
         self.onExpand = onExpand
         self.onCollapse = onCollapse
         self.onPrevious = onPrevious
@@ -1739,7 +2314,12 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
             row.configure(
                 comment: reply,
                 isReply: true,
-                onOpenVideo: onOpenVideo
+                textRenderer: textRenderer,
+                avatarLoader: avatarLoader,
+                pictureLoader: pictureLoader,
+                textScope: textScope,
+                onTextLayoutChange: onTextLayoutChange,
+                onOpenLink: onOpenLink
             )
             addSubview(row)
             replyRows.append(row)
@@ -1820,7 +2400,9 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
             let height = NativePlaybackCommentsItemMeasurement.comment(
                 reply,
                 width: width,
-                isReply: true
+                isReply: true,
+                textRenderer: textRenderer,
+                textScope: textScope
             )
             row.frame = NSRect(x: padding, y: y, width: width, height: height)
             y += height + 8
@@ -1865,14 +2447,16 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
         _ = details
     }
 
-    func releaseTextStorage() {
-        for row in replyRows { row.releaseTextStorage() }
+    func releaseOffscreenResources() {
+        for row in replyRows { row.releaseOffscreenResources() }
     }
 
     func reset() {
         resetRows()
         thread = nil
         replyState = nil
+        textRenderer = nil
+        textScope = nil
         onExpand = nil
         onCollapse = nil
         onPrevious = nil
@@ -1884,7 +2468,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
 
     private func resetRows() {
         for row in replyRows {
-            row.releaseTextStorage()
+            row.releaseOffscreenResources()
             row.removeFromSuperview()
         }
         replyRows.removeAll(keepingCapacity: true)

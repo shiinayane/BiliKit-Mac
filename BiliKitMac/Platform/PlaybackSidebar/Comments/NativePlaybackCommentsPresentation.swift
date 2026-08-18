@@ -9,6 +9,14 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
     let replyState: PlaybackCommentReplyState?
     let revision: Int
 
+    var textScope: NativePlaybackCommentTextScope {
+        NativePlaybackCommentTextScope(
+            subject: subject,
+            rootID: thread.id,
+            revision: revision
+        )
+    }
+
     init(
         subject: CommentSubjectIdentity,
         thread: CommentThread,
@@ -43,6 +51,7 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
         case .available(let details):
             hasher.combine(details.author.id)
             hasher.combine(details.author.name)
+            hasher.combine(details.author.avatar)
             hasher.combine(details.author.sex)
             hasher.combine(details.author.level)
             hasher.combine(details.author.isHardcoreMember)
@@ -50,7 +59,9 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
             hasher.combine(details.author.verification)
             hasher.combine(details.author.isUploader)
             hasher.combine(details.content.message)
+            hasher.combine(details.content.emotes)
             hasher.combine(details.content.links)
+            hasher.combine(details.content.pictures)
             hasher.combine(details.content.pictureCount)
             hasher.combine(details.createdAt)
             hasher.combine(details.location)
