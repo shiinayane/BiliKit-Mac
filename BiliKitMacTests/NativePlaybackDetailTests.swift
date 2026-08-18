@@ -49,10 +49,86 @@ struct NativePlaybackDetailTests {
         #expect(!scrollView.wantsForwardedScrollEvents(for: .horizontal))
         #expect(scrollView.hasVerticalScroller)
         #expect(!scrollView.hasHorizontalScroller)
+        #expect(scrollView.usesPredominantAxisScrolling)
         #expect(scrollView.horizontalScrollElasticity == .none)
-        #expect(scrollView.automaticallyAdjustsContentInsets)
+        #expect(!scrollView.allowsMagnification)
+        #expect(!scrollView.automaticallyAdjustsContentInsets)
 
         root.reset()
+    }
+
+    @Test
+    @MainActor
+    func outerDetailConsumesHorizontalScrollWithoutMovingItsDocument() throws {
+        let hostingController = NSHostingController(
+            rootView: Color.clear.frame(height: 1_200)
+        )
+        let root = NativePlaybackDetailRootView(
+            hostingController: hostingController
+        )
+        root.frame = NSRect(x: 0, y: 0, width: 800, height: 500)
+        let window = NSWindow(
+            contentRect: root.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = root
+        window.layoutIfNeeded()
+        root.layoutSubtreeIfNeeded()
+        let initialOrigin = root.scrollView.contentView.bounds.origin
+
+        root.scrollView.scrollWheel(
+            with: try makeScrollWheelEvent(deltaX: -80, deltaY: 0)
+        )
+
+        #expect(root.scrollView.contentView.bounds.origin == initialOrigin)
+        root.reset()
+        window.contentView = NSView()
+    }
+
+    @Test
+    @MainActor
+    func outerDetailUsesTheLocalViewportAcrossContinuousResize() {
+        let hostingController = NSHostingController(
+            rootView: Color.clear.frame(height: 1_200)
+        )
+        let root = NativePlaybackDetailRootView(
+            hostingController: hostingController
+        )
+        root.frame = NSRect(x: 0, y: 0, width: 800, height: 500)
+        let window = NSWindow(
+            contentRect: root.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = root
+        window.layoutIfNeeded()
+        root.layoutSubtreeIfNeeded()
+
+        for width in [640.0, 720.0, 800.0] {
+            window.setContentSize(NSSize(width: width, height: 500))
+            window.layoutIfNeeded()
+            root.layoutSubtreeIfNeeded()
+
+            #expect(abs(root.bounds.width - width) <= 0.5)
+            #expect(abs(root.scrollView.contentSize.width - width) <= 0.5)
+            #expect(
+                abs((root.scrollView.documentView?.frame.width ?? 0) - width)
+                    <= 0.5
+            )
+            #expect(
+                abs(
+                    (root.scrollView.documentView?.subviews.first?.frame.width ?? 0)
+                        - width
+                ) <= 0.5
+            )
+            #expect(abs(root.scrollView.contentView.bounds.origin.x) <= 0.5)
+        }
+
+        root.reset()
+        window.contentView = NSView()
     }
 
     @Test
@@ -194,6 +270,23 @@ struct NativePlaybackDetailTests {
         relay.report(CGSize(width: 800, height: 180), generation: replacedGeneration)
 
         #expect(receivedHeights == [700])
+    }
+
+    private func makeScrollWheelEvent(
+        deltaX: Int32,
+        deltaY: Int32
+    ) throws -> NSEvent {
+        let event = try #require(
+            CGEvent(
+                scrollWheelEvent2Source: nil,
+                units: .pixel,
+                wheelCount: 2,
+                wheel1: deltaY,
+                wheel2: deltaX,
+                wheel3: 0
+            )
+        )
+        return try #require(NSEvent(cgEvent: event))
     }
 }
 

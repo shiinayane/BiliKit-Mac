@@ -64,6 +64,23 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
+    func rootReportsTheCurrentViewportDuringTheSameResizeLayoutPass() {
+        let root = NativePlaybackSidebarRootView()
+        root.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
+        root.layout()
+        var observedWidths: [CGFloat] = []
+        root.viewportSizeDidChange = { observedWidths.append($0.width) }
+
+        root.frame.size.width = 520
+        root.layout()
+
+        #expect(root.scrollView.frame.width == 520)
+        #expect(root.scrollView.contentSize.width == 520)
+        #expect(observedWidths.last == 520)
+    }
+
+    @Test
+    @MainActor
     func summaryUsesSelectableNonScrollingTextKitAtSidebarWidths() throws {
         let text = String(
             repeating: "这是一段需要按字符精确换行的简介，后续链接拦截也由同一个TextKit正文视图承担。",

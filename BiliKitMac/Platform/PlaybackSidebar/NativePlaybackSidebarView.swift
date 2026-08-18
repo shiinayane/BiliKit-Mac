@@ -219,9 +219,9 @@ final class NativePlaybackSidebarRootView: NSView {
     }
 
     override func layout() {
-        super.layout()
         scrollView.frame = bounds
         overlayView.frame = bounds
+        super.layout()
         viewportSizeDidChange?(scrollView.contentSize)
     }
 }

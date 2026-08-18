@@ -14,7 +14,8 @@ struct NativePlaybackDetailUpdatePlan: Equatable {
 
 /// 让 AppKit 独占详情页的纵向滚动，同时把现有 SwiftUI 详情内容作为一个稳定 document 承载。
 ///
-/// 根视图延伸到 toolbar 下方，由 NSScrollView 的自动 content inset 保持正文可见起点。
+/// 根视图延伸到 toolbar 与侧栏下方；外层仅投影纵向 safe area，水平安全区由 SwiftUI
+/// 正文和横向 shelf 分别处理，避免祖先 clip view 重复缩进或裁剪 shelf。
 struct NativePlaybackDetailView<Content: View>: NSViewRepresentable {
     let contentIdentity: String?
     private let content: Content
@@ -170,6 +171,8 @@ final class NativePlaybackDetailRootView: NSView {
     private weak var hostedContentView: NSView?
     private var contentHeightForWidth: ((CGFloat) -> CGFloat)?
     private var documentHeightConstraint: NSLayoutConstraint?
+    private var lastMeasuredViewportWidth: CGFloat?
+    private var needsDocumentMeasurement = true
     private var layoutGeneration: UInt64 = 0
     private var isReset = false
 
@@ -192,13 +195,16 @@ final class NativePlaybackDetailRootView: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.hasHorizontalScroller = false
+        scrollView.usesPredominantAxisScrolling = true
         scrollView.verticalScrollElasticity = .automatic
         scrollView.horizontalScrollElasticity = .none
-        scrollView.automaticallyAdjustsContentInsets = true
+        scrollView.allowsMagnification = false
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.onContentInsetsChange = { [weak self] oldInsets, newInsets in
             self?.contentInsetsDidChange(from: oldInsets, to: newInsets)
         }
         scrollView.documentView = documentView
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
 
         documentView.translatesAutoresizingMaskIntoConstraints = false
@@ -209,8 +215,11 @@ final class NativePlaybackDetailRootView: NSView {
         )
         self.documentHeightConstraint = documentHeightConstraint
         NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
             documentHeightConstraint,
@@ -227,13 +236,41 @@ final class NativePlaybackDetailRootView: NSView {
 
     override func layout() {
         super.layout()
-        scrollView.frame = bounds
-        updateDocumentHeight()
+        projectSafeAreaInsets()
+        let viewportWidth = scrollView.contentView.bounds.width
+        if lastMeasuredViewportWidth.map({ abs($0 - viewportWidth) > 0.5 }) ?? true {
+            needsDocumentMeasurement = true
+        }
+        updateDocumentHeightIfNeeded()
+    }
+
+    private func projectSafeAreaInsets() {
+        let projectedScrollInsets = NSEdgeInsets(
+            top: safeAreaInsets.top,
+            left: 0,
+            bottom: safeAreaInsets.bottom,
+            right: 0
+        )
+        if abs(scrollView.contentInsets.top - projectedScrollInsets.top) > 0.5
+            || abs(scrollView.contentInsets.bottom - projectedScrollInsets.bottom) > 0.5
+        {
+            scrollView.contentInsets = projectedScrollInsets
+        }
+        if abs(scrollView.contentView.bounds.origin.x) > 0.5 {
+            scrollView.contentView.scroll(
+                to: NSPoint(
+                    x: 0,
+                    y: scrollView.contentView.bounds.origin.y
+                )
+            )
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     func invalidateDocumentLayout() {
         guard !isReset else { return }
         layoutGeneration &+= 1
+        needsDocumentMeasurement = true
         let generation = layoutGeneration
         DispatchQueue.main.async { [weak self] in
             guard
@@ -243,18 +280,20 @@ final class NativePlaybackDetailRootView: NSView {
             else { return }
             self.documentView.needsLayout = true
             self.hostedContentView?.needsLayout = true
-            self.updateDocumentHeight()
-            self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            self.needsLayout = true
         }
     }
 
-    private func updateDocumentHeight() {
+    private func updateDocumentHeightIfNeeded() {
         guard
             !isReset,
+            needsDocumentMeasurement,
             let contentHeightForWidth
         else { return }
         let viewportSize = scrollView.contentView.bounds.size
         guard viewportSize.width > 0 else { return }
+        needsDocumentMeasurement = false
+        lastMeasuredViewportWidth = viewportSize.width
         let measuredHeight = contentHeightForWidth(viewportSize.width)
         applyDocumentHeight(measuredHeight, viewportHeight: viewportSize.height)
     }
@@ -265,10 +304,9 @@ final class NativePlaybackDetailRootView: NSView {
         guard
             viewportSize.width > 0,
             abs(size.width - viewportSize.width) <= 1
-        else {
-            invalidateDocumentLayout()
-            return
-        }
+        else { return }
+        lastMeasuredViewportWidth = viewportSize.width
+        needsDocumentMeasurement = false
         applyDocumentHeight(size.height, viewportHeight: viewportSize.height)
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
@@ -308,7 +346,12 @@ final class NativePlaybackDetailRootView: NSView {
             logicalOffsetY: logicalOffset,
             topInset: newInsets.top
         )
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: physicalOffset))
+        scrollView.contentView.scroll(
+            to: NSPoint(
+                x: 0,
+                y: physicalOffset
+            )
+        )
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
@@ -337,7 +380,12 @@ final class NativePlaybackDetailScrollView: NSScrollView {
 
     override func layout() {
         super.layout()
-        guard abs(contentInsets.top - lastContentInsets.top) > 0.5 else { return }
+        let changed =
+            abs(contentInsets.top - lastContentInsets.top) > 0.5
+            || abs(contentInsets.left - lastContentInsets.left) > 0.5
+            || abs(contentInsets.bottom - lastContentInsets.bottom) > 0.5
+            || abs(contentInsets.right - lastContentInsets.right) > 0.5
+        guard changed else { return }
         let oldInsets = lastContentInsets
         lastContentInsets = contentInsets
         onContentInsetsChange?(oldInsets, contentInsets)
@@ -345,6 +393,13 @@ final class NativePlaybackDetailScrollView: NSScrollView {
 
     override func wantsForwardedScrollEvents(for axis: NSEvent.GestureAxis) -> Bool {
         axis == .vertical
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let horizontalMagnitude = abs(event.scrollingDeltaX)
+        let verticalMagnitude = abs(event.scrollingDeltaY)
+        guard horizontalMagnitude <= verticalMagnitude else { return }
+        super.scrollWheel(with: event)
     }
 }
 
