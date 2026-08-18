@@ -1,0 +1,36 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "page": {
+      "num": 2,
+      "size": 10,
+      "count": 11
+    },
+    "upper": {
+      "mid": 100
+    },
+    "replies": [
+      {
+        "rpid": 211,
+        "oid": 700001,
+        "type": 1,
+        "root": 102,
+        "parent": 102,
+        "state": 0,
+        "ctime": 1700000300,
+        "like": 2,
+        "rcount": 0,
+        "member": {
+          "mid": "302",
+          "uname": "末页回复用户",
+          "sex": "女",
+          "level_info": { "current_level": 3 }
+        },
+        "content": {
+          "message": "楼中楼末页"
+        }
+      }
+    ]
+  }
+}

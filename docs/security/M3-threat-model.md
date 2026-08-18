@@ -155,7 +155,7 @@ signedIn
 
 以下本地 Gate 已满足：
 
-- Popular、Search、视频详情、Related、UP 主签名、分 P 列表、观看历史、字幕目录与精确
+- Popular、Search、视频详情、Related、UP 主签名、分 P 列表、评论根列表与楼中楼、观看历史、字幕目录与精确
   legacy playurl 已接入账户读取能力；负向测试证明 WBI nav、跨主机重定向与资源链路不会
   得到 Cookie。playurl 输出的
   `mediaHeaders` 不含 Cookie，CDN 与 loopback 继续由既有隔离 transport 消费该白名单 header。

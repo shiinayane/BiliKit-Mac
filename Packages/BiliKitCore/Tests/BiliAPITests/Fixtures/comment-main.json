@@ -1,0 +1,112 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "cursor": {
+      "all_count": 3,
+      "is_end": false,
+      "next": 1,
+      "pagination_reply": {
+        "next_offset": "fixture-page-2"
+      }
+    },
+    "upper": {
+      "mid": 100
+    },
+    "top": {
+      "admin": {
+        "rpid": 101,
+        "oid": 700001,
+        "type": 1,
+        "root": 0,
+        "parent": 0,
+        "state": 0,
+        "ctime": 1700000000,
+        "like": 20,
+        "rcount": 0,
+        "member": {
+          "mid": "201",
+          "uname": "置顶测试用户",
+          "avatar": "https://example.invalid/avatar.png",
+          "sex": "女",
+          "level_info": { "current_level": 6 },
+          "vip": { "vipType": 2, "vipStatus": 1 },
+          "official_verify": { "type": 0, "desc": "测试认证" }
+        },
+        "content": {
+          "message": "这是手写的置顶评论"
+        },
+        "reply_control": {
+          "location": "IP属地：东京",
+          "up_like": true
+        }
+      },
+      "upper": null,
+      "vote": null
+    },
+    "top_replies": null,
+    "replies": [
+      {
+        "rpid": 102,
+        "oid": 700001,
+        "type": 1,
+        "root": 0,
+        "parent": 0,
+        "state": 0,
+        "ctime": 1700000100,
+        "like": 5,
+        "rcount": 2,
+        "member": {
+          "mid": "100",
+          "uname": "测试UP主",
+          "avatar": "https://example.invalid/uploader.png",
+          "sex": "保密",
+          "level_info": { "current_level": 5 },
+          "vip": { "vipType": 0, "vipStatus": 0 },
+          "official_verify": { "type": -1, "desc": "" }
+        },
+        "content": {
+          "message": "主评论与 @回复用户",
+          "members": [
+            { "mid": "301", "uname": "回复用户" }
+          ],
+          "emote": {},
+          "jump_url": {},
+          "pictures": []
+        },
+        "replies": [
+          {
+            "rpid": 201,
+            "oid": 700001,
+            "type": 1,
+            "root": 102,
+            "parent": 102,
+            "state": 0,
+            "ctime": 1700000200,
+            "like": 1,
+            "rcount": 0,
+            "member": {
+              "mid": "301",
+              "uname": "回复用户",
+              "sex": "男"
+            },
+            "content": {
+              "message": "楼中楼预览"
+            }
+          }
+        ],
+        "reply_control": {
+          "up_like": false
+        }
+      },
+      {
+        "rpid": 103,
+        "state": 7,
+        "invisible": false
+      },
+      {
+        "rpid": "malformed"
+      }
+    ]
+  }
+}
