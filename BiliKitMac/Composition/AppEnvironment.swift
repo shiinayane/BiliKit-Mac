@@ -61,6 +61,7 @@ struct AppEnvironment {
     private let guestContentRepository: any GuestContentRepository
     private let relatedVideoRepository: any RelatedVideoRepository
     private let uploaderSignatureRepository: any UploaderSignatureRepository
+    private let commentRepository: any CommentRepository
     private let historyRepository: any WatchHistoryRepository
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
@@ -75,6 +76,7 @@ struct AppEnvironment {
         guestContentRepository: any GuestContentRepository,
         relatedVideoRepository: any RelatedVideoRepository,
         uploaderSignatureRepository: any UploaderSignatureRepository,
+        commentRepository: any CommentRepository,
         historyRepository: any WatchHistoryRepository,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
@@ -93,6 +95,7 @@ struct AppEnvironment {
         self.guestContentRepository = guestContentRepository
         self.relatedVideoRepository = relatedVideoRepository
         self.uploaderSignatureRepository = uploaderSignatureRepository
+        self.commentRepository = commentRepository
         self.historyRepository = historyRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
@@ -135,6 +138,12 @@ struct AppEnvironment {
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: uploaderSignatureRepository
             )
+        )
+    }
+
+    func makeCommentsViewModel() -> PlaybackCommentsViewModel {
+        PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: commentRepository)
         )
     }
 
@@ -193,8 +202,8 @@ struct AppEnvironment {
 
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
-    /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；公开 Browse、Search、playurl 与
-    /// WBI 弹幕分段在明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的
+    /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；公开 Browse、Search、评论、
+    /// playurl 与 WBI 弹幕分段在明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的
     /// ephemeral transport，使旧认证会话中的在途请求失效。
     static func live(
         accountSessionCoordinator: AccountSessionCoordinator? = nil
@@ -246,6 +255,7 @@ struct AppEnvironment {
             guestContentRepository: guestRepository,
             relatedVideoRepository: guestRepository,
             uploaderSignatureRepository: guestRepository,
+            commentRepository: BiliCommentRepository(client: api),
             historyRepository: BiliWatchHistoryRepository(client: api),
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,

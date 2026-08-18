@@ -3,6 +3,7 @@
   "message": "OK",
   "ttl": 1,
   "data": {
+    "aid": 700001,
     "bvid": "BV1FixtureA1",
     "title": "合成视频详情 A",
     "desc": "这是手写的脱敏详情说明。",

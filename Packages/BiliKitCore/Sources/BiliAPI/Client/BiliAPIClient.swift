@@ -65,6 +65,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private static let maximumResponseSize = 5 * 1_024 * 1_024
     private static let maximumSubtitleCatalogSize = 1 * 1_024 * 1_024
     private static let maximumDanmakuSegmentSize = 2 * 1_024 * 1_024
+    private static let maximumCommentPageSize = 2 * 1_024 * 1_024
 
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
@@ -184,6 +185,59 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw BiliAPIError.decodingFailed
         }
         return detail
+    }
+
+    func commentRootPage(
+        for subject: CommentSubjectIdentity,
+        sort: CommentSort,
+        offset: String?
+    ) async throws -> CommentRemoteRootPage {
+        guard subject.type == 1, subject.oid > 0 else {
+            throw BiliAPIError.invalidRequest
+        }
+        do {
+            return try await signedCommentRootPage(
+                for: subject,
+                sort: sort,
+                offset: offset,
+                forceKeyRefresh: false
+            )
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
+            return try await signedCommentRootPage(
+                for: subject,
+                sort: sort,
+                offset: offset,
+                forceKeyRefresh: true
+            )
+        }
+    }
+
+    func commentReplyPage(
+        for subject: CommentSubjectIdentity,
+        rootID: CommentID,
+        page: Int,
+        pageSize: Int
+    ) async throws -> CommentRemoteReplyPage {
+        guard subject.type == 1, subject.oid > 0,
+            rootID.rawValue > 0, page > 0, pageSize == 10
+        else { throw BiliAPIError.invalidRequest }
+        let payload: CommentReplyListPayload = try await get(
+            path: "/x/v2/reply/reply",
+            queryItems: [
+                URLQueryItem(name: "type", value: String(subject.type)),
+                URLQueryItem(name: "oid", value: String(subject.oid)),
+                URLQueryItem(name: "root", value: String(rootID.rawValue)),
+                URLQueryItem(name: "pn", value: String(page)),
+                URLQueryItem(name: "ps", value: String(pageSize)),
+            ],
+            referer: "https://www.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            ),
+            maximumResponseSize: Self.maximumCommentPageSize
+        )
+        return try payload.page(subject: subject, rootID: rootID)
     }
 
     /// 登录增强地读取相关推荐；只有本地明确无凭据时匿名。
@@ -794,6 +848,43 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.model()
     }
 
+    private func signedCommentRootPage(
+        for subject: CommentSubjectIdentity,
+        sort: CommentSort,
+        offset: String?,
+        forceKeyRefresh: Bool
+    ) async throws -> CommentRemoteRootPage {
+        let paginationData = try JSONSerialization.data(
+            withJSONObject: ["offset": offset ?? ""],
+            options: [.sortedKeys]
+        )
+        guard let pagination = String(data: paginationData, encoding: .utf8) else {
+            throw BiliAPIError.invalidRequest
+        }
+        let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        let query = try wbiSigner.sign(
+            parameters: [
+                "type": String(subject.type),
+                "oid": String(subject.oid),
+                "mode": sort == .hot ? "3" : "2",
+                "pagination_str": pagination,
+            ],
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let payload: CommentMainPayload = try await get(
+            path: "/x/v2/reply/wbi/main",
+            percentEncodedQuery: query,
+            referer: "https://www.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            ),
+            maximumResponseSize: Self.maximumCommentPageSize
+        )
+        return try payload.page(for: subject)
+    }
+
     private func signedSubtitleResources(
         for identity: PlaybackItemIdentity,
         forceKeyRefresh: Bool
@@ -956,8 +1047,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return url
     }
 
-    private static func isValidBVID(_ bvid: String) -> Bool {
+    static func isValidBVID(_ bvid: String) -> Bool {
         bvid.hasPrefix("BV")
+            && bvid.count > 2
             && bvid.count <= 24
             && bvid.dropFirst(2).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }

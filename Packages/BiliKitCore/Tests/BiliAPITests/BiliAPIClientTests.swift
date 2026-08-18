@@ -55,6 +55,7 @@ struct BiliAPIClientTests {
 
         let detail = try await client.videoDetail(for: "BV1FixtureA1")
 
+        #expect(detail.aid == 700_001)
         #expect(detail.bvid == "BV1FixtureA1")
         #expect(detail.title == "合成视频详情 A")
         #expect(detail.summary == "这是手写的脱敏详情说明。")

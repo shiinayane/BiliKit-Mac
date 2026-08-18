@@ -104,8 +104,6 @@ enum NativePlaybackSidebarItemMeasurement {
         return sectionTopInset + heights.reduce(0, +)
             + CGFloat(heights.count - 1) * sectionSpacing
     }
-
-    static let commentsUnavailable: CGFloat = 54
 }
 
 @MainActor
@@ -171,7 +169,17 @@ final class NativePlaybackSidebarReadOnlyTextView: NSTextView {
             )
         )
         let textLength = (text as NSString).length
-        selectedRanges = previousSelections.map { value in
+        selectedRanges = Self.clampedSelections(
+            previousSelections,
+            textLength: textLength
+        )
+    }
+
+    static func clampedSelections(
+        _ selections: [NSValue],
+        textLength: Int
+    ) -> [NSValue] {
+        selections.map { value in
             let range = value.rangeValue
             let location = min(range.location, textLength)
             return NSValue(

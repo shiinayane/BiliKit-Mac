@@ -12,6 +12,7 @@ final class AppWindowOwner {
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
+    let commentsModel: PlaybackCommentsViewModel?
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
@@ -25,6 +26,7 @@ final class AppWindowOwner {
     convenience init(environment: AppEnvironment) {
         let browseModel = environment.makeBrowseViewModel()
         let videoModel = environment.makeVideoViewModel()
+        let commentsModel = environment.makeCommentsViewModel()
         let danmakuModel = environment.makeDanmakuViewModel()
         let navigationCoordinator = AppNavigationCoordinator(
             startPlayback: { intent in
@@ -42,6 +44,7 @@ final class AppWindowOwner {
             navigationCoordinator: navigationCoordinator,
             browseModel: browseModel,
             videoModel: videoModel,
+            commentsModel: commentsModel,
             danmakuModel: danmakuModel,
             authenticationModel: environment.makeAuthenticationViewModel(),
             historyModel: environment.makeWatchHistoryViewModel(),
@@ -76,6 +79,7 @@ final class AppWindowOwner {
         navigationCoordinator: AppNavigationCoordinator,
         browseModel: GuestBrowseViewModel,
         videoModel: GuestVideoViewModel,
+        commentsModel: PlaybackCommentsViewModel? = nil,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
@@ -87,6 +91,7 @@ final class AppWindowOwner {
         self.navigationCoordinator = navigationCoordinator
         self.browseModel = browseModel
         self.videoModel = videoModel
+        self.commentsModel = commentsModel
         self.danmakuModel = danmakuModel
         self.authenticationModel = authenticationModel
         self.historyModel = historyModel
