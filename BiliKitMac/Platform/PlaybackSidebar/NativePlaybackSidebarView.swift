@@ -439,6 +439,11 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             == presentation.content?.comments.subject
             && previousPresentation.content?.comments.sort
                 != presentation.content?.comments.sort
+        let preservesCommentPaginationPosition =
+            NativePlaybackCommentsAnchorPolicy.preservesRelativePosition(
+                previous: previousPresentation.content?.comments,
+                next: presentation.content?.comments
+            )
         if changesIdentity {
             summaryExpanded = false
             signatureExpanded = false
@@ -475,6 +480,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         applySnapshot(
             resetToTop: changesIdentity,
             scrollToComments: changesCommentSort,
+            preservesCommentPaginationPosition: preservesCommentPaginationPosition,
             changedItemIDs: changedItemIDs
         )
     }
@@ -707,13 +713,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private func applySnapshot(
         resetToTop: Bool,
         scrollToComments: Bool,
+        preservesCommentPaginationPosition: Bool,
         changedItemIDs: Set<NativePlaybackSidebarItemID>
     ) {
         guard let dataSource else { return }
         cancelRefinement()
         paginationTask?.cancel()
         paginationTask = nil
-        let anchor = resetToTop ? nil : captureAnchor()
+        let anchor =
+            resetToTop
+            ? nil
+            : captureAnchor(
+                allowsBottomFollowing: !preservesCommentPaginationPosition
+            )
         if resetToTop {
             pendingResetToTop = true
             pendingScrollToComments = false
@@ -966,13 +978,17 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         let wasPinnedToBottom: Bool
     }
 
-    private func captureAnchor() -> Anchor? {
+    private func captureAnchor(
+        allowsBottomFollowing: Bool = true
+    ) -> Anchor? {
         collectionView.layoutSubtreeIfNeeded()
         let viewport = rootView.scrollView.documentVisibleRect
-        let wasPinnedToBottom = NativePlaybackSidebarAnchorPolicy.isBottomPinned(
-            contentHeight: layout.collectionViewContentSize.height,
-            viewport: viewport
-        )
+        let wasPinnedToBottom =
+            allowsBottomFollowing
+            && NativePlaybackSidebarAnchorPolicy.isBottomPinned(
+                contentHeight: layout.collectionViewContentSize.height,
+                viewport: viewport
+            )
         return collectionView.indexPathsForVisibleItems()
             .compactMap { indexPath -> (NativePlaybackSidebarItemID, NSRect)? in
                 guard let itemID = dataSource?.itemIdentifier(for: indexPath),
@@ -1251,7 +1267,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             return .init(canLoadMore: true, identity: identity, isLoading: false)
         case .loading:
             return .init(canLoadMore: true, identity: identity, isLoading: true)
-        case .retry, .end:
+        case .retry, .stopped, .end:
             return .init(canLoadMore: false, identity: identity, isLoading: false)
         }
     }
@@ -1276,6 +1292,24 @@ enum NativePlaybackSidebarIdentityPolicy {
         nextBVID: String?
     ) -> Bool {
         nextBVID != nil && previousBVID != nextBVID
+    }
+}
+
+enum NativePlaybackCommentsAnchorPolicy {
+    static func preservesRelativePosition(
+        previous: NativePlaybackCommentsPresentation?,
+        next: NativePlaybackCommentsPresentation?
+    ) -> Bool {
+        guard let previous, let next, previous.subject != nil,
+            previous.subject == next.subject, previous.sort == next.sort,
+            previous.rootState == .loaded, next.rootState == .loaded
+        else { return false }
+
+        if previous.footer != next.footer { return true }
+        let previousIDs = previous.threads.map { $0.thread.id }
+        let nextIDs = next.threads.map { $0.thread.id }
+        return nextIDs.count > previousIDs.count
+            && Array(nextIDs.prefix(previousIDs.count)) == previousIDs
     }
 }
 

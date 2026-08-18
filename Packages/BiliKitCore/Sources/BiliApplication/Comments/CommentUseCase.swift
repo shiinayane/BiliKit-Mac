@@ -30,8 +30,6 @@ public struct CommentUseCase: Sendable {
             termination = .emptyPage
         } else if uniqueThreads.isEmpty {
             termination = .duplicatePage
-        } else if page.continuation == continuation {
-            termination = .continuationStalled
         } else {
             termination = nil
         }
@@ -39,7 +37,7 @@ public struct CommentUseCase: Sendable {
         return CommentRootBatch(
             threads: uniqueThreads,
             totalCount: page.totalCount,
-            continuation: termination == nil ? page.continuation : nil,
+            continuation: termination == .serverEnd ? nil : page.continuation,
             termination: termination
         )
     }

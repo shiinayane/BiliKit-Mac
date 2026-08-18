@@ -655,7 +655,7 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func appendPreservesRowAnchorUnlessTheViewportIsBottomPinned() async throws {
+    func commentPaginationPreservesRowAnchorAtAndAboveTheOldBottom() async throws {
         let controller = NativePlaybackSidebarController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
@@ -744,6 +744,57 @@ struct NativePlaybackSidebarTests {
                     - previousMaximumY
             ) <= 2
         )
+        collectionView.layoutSubtreeIfNeeded()
+        let bottomAnchorPath = try #require(
+            collectionView.indexPathsForVisibleItems()
+                .filter { $0.section == 3 && (1...70).contains($0.item) }
+                .min { lhs, rhs in
+                    let lhsY =
+                        collectionLayout.layoutAttributesForItem(at: lhs)?
+                        .frame.minY ?? .greatestFiniteMagnitude
+                    let rhsY =
+                        collectionLayout.layoutAttributesForItem(at: rhs)?
+                        .frame.minY ?? .greatestFiniteMagnitude
+                    return lhsY < rhsY
+                }
+        )
+        let bottomAnchor = try #require(
+            collectionLayout.layoutAttributesForItem(at: bottomAnchorPath)
+        )
+        let bottomRelativeY =
+            bottomAnchor.frame.minY
+            - controller.rootView.scrollView.documentVisibleRect.minY
+
+        let loadingAtBottom = commentsPresentation(
+            subject: subject,
+            threads: (1...70).map {
+                commentThread(id: Int64($0), message: "第 \($0) 条评论")
+            },
+            isLoadingNextPage: true
+        )
+        controller.update(
+            presentation: presentation(
+                bvid: "BVAnchor",
+                comments: loadingAtBottom
+            ),
+            actions: actions
+        )
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                guard
+                    collectionView.numberOfItems(inSection: 3) == 72,
+                    let preservedAnchor = collectionLayout.layoutAttributesForItem(
+                        at: bottomAnchorPath
+                    )
+                else { return false }
+                return abs(
+                    preservedAnchor.frame.minY
+                        - controller.rootView.scrollView.documentVisibleRect.minY
+                        - bottomRelativeY
+                ) <= 1
+            }
+        )
+
         let appendedAtBottom = commentsPresentation(
             subject: subject,
             threads: (1...80).map {
@@ -761,7 +812,10 @@ struct NativePlaybackSidebarTests {
             await waitUntil(timeout: .seconds(5)) {
                 guard
                     collectionView.numberOfItems(inSection: 3) == 82,
-                    sidebarLayout.pendingRefinementIndexes.isEmpty
+                    sidebarLayout.pendingRefinementIndexes.isEmpty,
+                    let preservedAnchor = collectionLayout.layoutAttributesForItem(
+                        at: bottomAnchorPath
+                    )
                 else {
                     return false
                 }
@@ -771,10 +825,24 @@ struct NativePlaybackSidebarTests {
                         - controller.rootView.scrollView.documentVisibleRect.height
                 )
                 return abs(
-                    controller.rootView.scrollView.documentVisibleRect.minY
-                        - maximumY
-                ) <= 2
+                    preservedAnchor.frame.minY
+                        - controller.rootView.scrollView.documentVisibleRect.minY
+                        - bottomRelativeY
+                ) <= 1
+                    && maximumY
+                        - controller.rootView.scrollView.documentVisibleRect.minY
+                        > 40
             }
+        )
+        let appendedFooter = try #require(
+            collectionLayout.layoutAttributesForItem(
+                at: IndexPath(item: 81, section: 3)
+            )
+        )
+        #expect(
+            !appendedFooter.frame.intersects(
+                controller.rootView.scrollView.documentVisibleRect
+            )
         )
     }
 
@@ -987,6 +1055,38 @@ struct NativePlaybackSidebarTests {
             onLoadMore: {}
         )
         #expect(!footer.view.isAccessibilityElement())
+    }
+
+    @Test
+    @MainActor
+    func commentsFooterOnlyClaimsAllCommentsForServerEnd() throws {
+        let subject = CommentSubjectIdentity.video(aid: 700_001)
+        let stopped = NativePlaybackCommentsPresentation(
+            subject: subject,
+            sort: .hot,
+            rootState: .loaded,
+            totalCount: 2,
+            threads: [],
+            paginationTermination: .duplicatePage
+        )
+        let ended = NativePlaybackCommentsPresentation(
+            subject: subject,
+            sort: .hot,
+            rootState: .loaded,
+            totalCount: 2,
+            threads: [],
+            paginationTermination: .serverEnd,
+            reachedEnd: true
+        )
+
+        #expect(stopped.footer == .stopped)
+        #expect(ended.footer == .end(memoryLimited: false))
+
+        let footer = NativePlaybackCommentsFooterItem()
+        footer.configure(footer: stopped.footer, onRetry: {}, onLoadMore: {})
+        let statusLabels = descendants(of: footer.view).compactMap { $0 as? NSTextField }
+        #expect(statusLabels.contains { $0.stringValue == "后续评论暂不可用" })
+        #expect(!statusLabels.contains { $0.stringValue == "已显示全部评论" })
     }
 
     @Test
@@ -1697,7 +1797,8 @@ struct NativePlaybackSidebarTests {
     @MainActor
     private func commentsPresentation(
         subject: CommentSubjectIdentity,
-        threads: [CommentThread]
+        threads: [CommentThread],
+        isLoadingNextPage: Bool = false
     ) -> NativePlaybackCommentsPresentation {
         NativePlaybackCommentsPresentation(
             subject: subject,
@@ -1710,7 +1811,8 @@ struct NativePlaybackSidebarTests {
                     thread: $0,
                     replyState: nil
                 )
-            }
+            },
+            isLoadingNextPage: isLoadingNextPage
         )
     }
 

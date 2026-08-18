@@ -42,6 +42,104 @@ struct PlaybackCommentsViewModelTests {
 
     @Test
     @MainActor
+    func stableContinuationCanAppendMultiplePagesUntilTheServerEnds() async {
+        let continuation = CommentContinuation(rawValue: "stable-session")
+        let repository = SequencedCommentRepository(
+            rootPages: [
+                CommentRootPage(
+                    threads: [thread(1)],
+                    totalCount: 3,
+                    continuation: continuation,
+                    isEnd: false
+                ),
+                CommentRootPage(
+                    threads: [thread(2)],
+                    totalCount: 3,
+                    continuation: continuation,
+                    isEnd: false
+                ),
+                CommentRootPage(
+                    threads: [thread(3)],
+                    totalCount: 3,
+                    continuation: continuation,
+                    isEnd: true
+                ),
+            ]
+        )
+        let model = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: repository)
+        )
+
+        model.activate(subject: .video(aid: 700_001))
+        await model.waitForCurrentRootTask()
+        model.loadNextPage()
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [1, 2])
+        #expect(!model.reachedEnd)
+        #expect(model.paginationTermination == nil)
+
+        model.loadNextPage()
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [1, 2, 3])
+        #expect(model.reachedEnd)
+        #expect(model.paginationTermination == .serverEnd)
+    }
+
+    @Test
+    @MainActor
+    func duplicatePageStopsAutomaticPagingAndExplicitRetryUsesTheSameContinuation() async {
+        let continuation = CommentContinuation(rawValue: "stable-session")
+        let repository = SequencedCommentRepository(
+            rootPages: [
+                CommentRootPage(
+                    threads: [thread(1)],
+                    totalCount: 2,
+                    continuation: continuation,
+                    isEnd: false
+                ),
+                CommentRootPage(
+                    threads: [thread(1)],
+                    totalCount: 2,
+                    continuation: continuation,
+                    isEnd: false
+                ),
+                CommentRootPage(
+                    threads: [thread(2)],
+                    totalCount: 2,
+                    continuation: nil,
+                    isEnd: true
+                ),
+            ]
+        )
+        let model = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: repository)
+        )
+
+        model.activate(subject: .video(aid: 700_001))
+        await model.waitForCurrentRootTask()
+        model.loadNextPage()
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [1])
+        #expect(!model.reachedEnd)
+        #expect(model.paginationTermination == .duplicatePage)
+
+        model.loadNextPage()
+        await model.waitForCurrentRootTask()
+        #expect(await repository.rootRequestCount == 2)
+
+        model.retryRoot()
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [1, 2])
+        #expect(model.paginationTermination == .serverEnd)
+        #expect(await repository.rootRequestCount == 3)
+    }
+
+    @Test
+    @MainActor
     func sameSubjectKeepsWorksetWhileNewSubjectReplacesIt() async {
         let repository = SequencedCommentRepository(
             rootPages: [

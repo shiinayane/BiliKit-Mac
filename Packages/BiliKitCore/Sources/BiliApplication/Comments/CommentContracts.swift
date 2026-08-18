@@ -79,7 +79,6 @@ public enum CommentPaginationTermination: Sendable, Equatable {
     case serverEnd
     case emptyPage
     case duplicatePage
-    case continuationStalled
 }
 
 public struct CommentRootBatch: Sendable, Equatable {

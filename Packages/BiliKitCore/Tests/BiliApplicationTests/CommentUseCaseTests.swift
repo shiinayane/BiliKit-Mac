@@ -30,7 +30,7 @@ struct CommentUseCaseTests {
     }
 
     @Test
-    func repeatedContinuationTerminatesAfterKeepingNewItems() async throws {
+    func repeatedContinuationKeepsPagingWhenThePageContainsNewItems() async throws {
         let continuation = commentContinuation("same")
         let useCase = CommentUseCase(
             repository: CommentRepositoryStub(
@@ -52,19 +52,48 @@ struct CommentUseCaseTests {
         )
 
         #expect(batch.threads.map(\.id.rawValue) == [1])
-        #expect(batch.continuation == nil)
-        #expect(batch.termination == .continuationStalled)
+        #expect(batch.continuation == continuation)
+        #expect(batch.termination == nil)
     }
 
     @Test
-    func emptyRootPageTerminatesWithoutScanningAhead() async throws {
+    func duplicateRootPageStopsAutomaticPagingButKeepsContinuationForRetry() async throws {
+        let continuation = commentContinuation("same")
+        let useCase = CommentUseCase(
+            repository: CommentRepositoryStub(
+                rootPages: [
+                    CommentRootPage(
+                        threads: [thread(1)],
+                        totalCount: 2,
+                        continuation: continuation,
+                        isEnd: false
+                    )
+                ]
+            )
+        )
+
+        let batch = try await useCase.loadRoots(
+            for: .video(aid: 700_001),
+            sort: .hot,
+            after: continuation,
+            excluding: [CommentID(rawValue: 1)]
+        )
+
+        #expect(batch.threads.isEmpty)
+        #expect(batch.continuation == continuation)
+        #expect(batch.termination == .duplicatePage)
+    }
+
+    @Test
+    func emptyRootPageStopsAutomaticPagingButKeepsContinuationForRetry() async throws {
+        let continuation = commentContinuation("next")
         let useCase = CommentUseCase(
             repository: CommentRepositoryStub(
                 rootPages: [
                     CommentRootPage(
                         threads: [],
                         totalCount: 0,
-                        continuation: commentContinuation("next"),
+                        continuation: continuation,
                         isEnd: false
                     )
                 ]
@@ -77,7 +106,7 @@ struct CommentUseCaseTests {
         )
 
         #expect(batch.termination == .emptyPage)
-        #expect(batch.continuation == nil)
+        #expect(batch.continuation == continuation)
     }
 
     @Test

@@ -42,6 +42,7 @@ public final class PlaybackCommentsViewModel {
     public private(set) var totalCount = 0
     public private(set) var isLoadingNextPage = false
     public private(set) var paginationError: CommentReadError?
+    public private(set) var paginationTermination: CommentPaginationTermination?
     public private(set) var reachedEnd = false
     public private(set) var reachedMemoryLimit = false
     public private(set) var replyStates: [CommentID: PlaybackCommentReplyState] = [:]
@@ -97,7 +98,8 @@ public final class PlaybackCommentsViewModel {
 
     public func loadNextPage() {
         guard subject != nil, !isLoadingNextPage, !reachedEnd,
-            continuation != nil, rootState == .loaded
+            continuation != nil, paginationTermination == nil,
+            rootState == .loaded
         else { return }
         loadRootPage(isInitial: false)
     }
@@ -108,6 +110,11 @@ public final class PlaybackCommentsViewModel {
             loadInitialPage()
         case .loaded where paginationError != nil:
             loadNextPage()
+        case .loaded where paginationTermination != nil:
+            paginationTermination = nil
+            loadRootPage(isInitial: false)
+        case .empty where paginationTermination != nil:
+            loadInitialPage()
         case .idle, .loading, .loaded, .empty:
             break
         }
@@ -173,6 +180,7 @@ public final class PlaybackCommentsViewModel {
         continuation = nil
         isLoadingNextPage = false
         paginationError = nil
+        paginationTermination = nil
         reachedEnd = false
         reachedMemoryLimit = false
         replyStates = [:]
@@ -216,6 +224,7 @@ public final class PlaybackCommentsViewModel {
         continuation = nil
         isLoadingNextPage = false
         paginationError = nil
+        paginationTermination = nil
         reachedEnd = false
         reachedMemoryLimit = false
         replyStates = [:]
@@ -232,6 +241,7 @@ public final class PlaybackCommentsViewModel {
         totalCount = 0
         isLoadingNextPage = false
         paginationError = nil
+        paginationTermination = nil
         reachedEnd = false
         reachedMemoryLimit = false
         replyStates = [:]
@@ -274,7 +284,9 @@ public final class PlaybackCommentsViewModel {
                     || (threads.count == Self.maximumRetainedRootThreads
                         && batch.termination == nil)
                 continuation = reachedMemoryLimit ? nil : batch.continuation
-                reachedEnd = batch.termination != nil || reachedMemoryLimit
+                paginationTermination = batch.termination
+                reachedEnd =
+                    batch.termination == .serverEnd || reachedMemoryLimit
                 rootState = threads.isEmpty ? .empty : .loaded
                 isLoadingNextPage = false
                 paginationError = nil

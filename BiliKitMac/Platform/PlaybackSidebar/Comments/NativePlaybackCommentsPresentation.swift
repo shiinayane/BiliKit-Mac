@@ -70,6 +70,7 @@ struct NativePlaybackCommentsPresentation: Equatable {
     let threads: [NativePlaybackCommentThreadPresentation]
     let isLoadingNextPage: Bool
     let paginationError: CommentReadError?
+    let paginationTermination: CommentPaginationTermination?
     let reachedEnd: Bool
     let reachedMemoryLimit: Bool
 
@@ -81,6 +82,7 @@ struct NativePlaybackCommentsPresentation: Equatable {
         totalCount = model?.totalCount ?? 0
         isLoadingNextPage = model?.isLoadingNextPage ?? false
         paginationError = model?.paginationError
+        paginationTermination = model?.paginationTermination
         reachedEnd = model?.reachedEnd ?? false
         reachedMemoryLimit = model?.reachedMemoryLimit ?? false
         guard let model, let subject = model.subject else {
@@ -104,6 +106,7 @@ struct NativePlaybackCommentsPresentation: Equatable {
         threads: [NativePlaybackCommentThreadPresentation],
         isLoadingNextPage: Bool = false,
         paginationError: CommentReadError? = nil,
+        paginationTermination: CommentPaginationTermination? = nil,
         reachedEnd: Bool = false,
         reachedMemoryLimit: Bool = false
     ) {
@@ -114,6 +117,7 @@ struct NativePlaybackCommentsPresentation: Equatable {
         self.threads = threads
         self.isLoadingNextPage = isLoadingNextPage
         self.paginationError = paginationError
+        self.paginationTermination = paginationTermination
         self.reachedEnd = reachedEnd
         self.reachedMemoryLimit = reachedMemoryLimit
     }
@@ -125,6 +129,11 @@ struct NativePlaybackCommentsPresentation: Equatable {
     var footer: NativePlaybackCommentsFooter {
         if isLoadingNextPage { return .loading }
         if paginationError != nil { return .retry }
+        if paginationTermination == .emptyPage
+            || paginationTermination == .duplicatePage
+        {
+            return .stopped
+        }
         if reachedEnd {
             return .end(memoryLimited: reachedMemoryLimit)
         }
@@ -135,6 +144,7 @@ struct NativePlaybackCommentsPresentation: Equatable {
 enum NativePlaybackCommentsFooter: Equatable, Hashable {
     case loading
     case retry
+    case stopped
     case end(memoryLimited: Bool)
     case loadMore
 }

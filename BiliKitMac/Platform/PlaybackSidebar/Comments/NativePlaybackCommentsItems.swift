@@ -26,7 +26,7 @@ enum NativePlaybackCommentsItemMeasurement {
     static func footer(_ footer: NativePlaybackCommentsFooter) -> CGFloat {
         switch footer {
         case .loading: 122
-        case .retry: 48
+        case .retry, .stopped: 48
         case .end: 32
         case .loadMore: 40
         }
@@ -546,6 +546,12 @@ private final class NativePlaybackCommentsFooterView: NSView {
             actionButton.isHidden = false
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
+        case .stopped:
+            label.stringValue = "后续评论暂不可用"
+            actionButton.title = "重试"
+            actionButton.isHidden = false
+            setAccessibilityElement(false)
+            setAccessibilityValue(nil)
         case .end(let memoryLimited):
             label.stringValue =
                 memoryLimited
@@ -566,7 +572,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
 
     override func layout() {
         super.layout()
-        if footer == .retry {
+        if footer == .retry || footer == .stopped {
             label.alignment = .left
             label.frame = NSRect(x: 0, y: 14, width: max(1, bounds.width - 84), height: 20)
             actionButton.frame = NSRect(x: max(0, bounds.width - 76), y: 8, width: 76, height: 30)
@@ -624,7 +630,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
 
     @objc private func performAction() {
         switch footer {
-        case .retry:
+        case .retry, .stopped:
             onRetry?()
         case .loadMore:
             onLoadMore?()
