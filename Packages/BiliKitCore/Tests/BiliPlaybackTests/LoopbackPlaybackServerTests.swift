@@ -361,23 +361,23 @@ struct LoopbackPlaybackServerTests {
             )
             #expect(
                 httpResponse.statusCode == testCase.expected.status,
-                Comment(rawValue: testCase.name)
+                Testing.Comment(rawValue: testCase.name)
             )
             #expect(
                 httpResponse.value(
                     forHTTPHeaderField: "Content-Length"
                 ) == testCase.expected.contentLength,
-                Comment(rawValue: testCase.name)
+                Testing.Comment(rawValue: testCase.name)
             )
             #expect(
                 httpResponse.value(
                     forHTTPHeaderField: "Content-Range"
                 ) == testCase.expected.contentRange,
-                Comment(rawValue: testCase.name)
+                Testing.Comment(rawValue: testCase.name)
             )
             #expect(
                 body == testCase.expected.body,
-                Comment(rawValue: testCase.name)
+                Testing.Comment(rawValue: testCase.name)
             )
         }
     }
@@ -2546,7 +2546,7 @@ struct LoopbackPlaybackServerTests {
         else {
             let diagnostic =
                 "有效首次断点未完成 seek-before-play；state=\(engine.currentTimelineSnapshot.state)，time=\(engine.player.currentTime().seconds)，duration=\(diagnosticDuration)，seekable=\(diagnosticSeekableCount)，loaded=\(diagnosticLoadedCount)"
-            Issue.record(Comment(rawValue: diagnostic))
+            Issue.record(Testing.Comment(rawValue: diagnostic))
             engine.stop()
             return
         }
