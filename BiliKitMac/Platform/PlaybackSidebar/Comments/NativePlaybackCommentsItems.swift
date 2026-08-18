@@ -1087,13 +1087,36 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
         let horizontalPadding: CGFloat
     }
 
-    private var segments: [Segment] = []
-    private var font = NSFont.systemFont(ofSize: 10, weight: .bold)
+    @MainActor
+    private struct RenderedSegment {
+        let text: String
+        let background: NSColor?
+        let stroke: NSColor?
+        let attributedText: NSAttributedString
+        let textSize: NSSize
+        let width: CGFloat
+
+        init(_ segment: Segment, font: NSFont) {
+            text = segment.text
+            background = segment.background
+            stroke = segment.stroke
+            attributedText = NSAttributedString(
+                string: segment.text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: segment.foreground,
+                ]
+            )
+            textSize = attributedText.size()
+            width = ceil(textSize.width + segment.horizontalPadding * 2)
+        }
+    }
+
+    private var segments: [RenderedSegment] = []
+    private var cachedPreferredWidth: CGFloat = 0
     private(set) var displayedTexts: [String] = []
 
-    var preferredWidth: CGFloat {
-        Self.preferredWidth(segments: segments, font: font)
-    }
+    var preferredWidth: CGFloat { cachedPreferredWidth }
 
     static func preferredWidth(for author: CommentAuthor, isReply: Bool) -> CGFloat {
         let font = NSFont.systemFont(ofSize: isReply ? 9 : 10, weight: .bold)
@@ -1109,8 +1132,11 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
     required init?(coder: NSCoder) { nil }
 
     func configure(author: CommentAuthor, isReply: Bool) {
-        font = .systemFont(ofSize: isReply ? 9 : 10, weight: .bold)
-        segments = Self.segments(for: author)
+        let font = NSFont.systemFont(ofSize: isReply ? 9 : 10, weight: .bold)
+        segments = Self.segments(for: author).map {
+            RenderedSegment($0, font: font)
+        }
+        cachedPreferredWidth = Self.preferredWidth(segments: segments)
         displayedTexts = segments.map(\.text)
         isHidden = segments.isEmpty
         needsDisplay = true
@@ -1185,6 +1211,7 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
 
     func reset() {
         segments.removeAll(keepingCapacity: true)
+        cachedPreferredWidth = 0
         displayedTexts.removeAll(keepingCapacity: true)
         isHidden = true
         needsDisplay = true
@@ -1196,8 +1223,12 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
         let badgeHeight = min(14, bounds.height)
         let y = floor((bounds.height - badgeHeight) / 2)
         for segment in segments {
-            let width = segmentWidth(segment)
-            let rect = NSRect(x: x, y: y, width: width, height: badgeHeight)
+            let rect = NSRect(
+                x: x,
+                y: y,
+                width: segment.width,
+                height: badgeHeight
+            )
             if let background = segment.background {
                 background.setFill()
                 NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
@@ -1208,25 +1239,20 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
                 NSBezierPath(roundedRect: strokeRect, xRadius: 2, yRadius: 2)
                     .stroke()
             }
-            let text = segment.text as NSString
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: segment.foreground,
-            ]
-            let size = text.size(withAttributes: attributes)
-            text.draw(
+            segment.attributedText.draw(
                 at: NSPoint(
-                    x: rect.midX - size.width / 2,
-                    y: rect.midY - size.height / 2
-                ),
-                withAttributes: attributes
+                    x: rect.midX - segment.textSize.width / 2,
+                    y: rect.midY - segment.textSize.height / 2
+                )
             )
-            x += width + 5
+            x += segment.width + 5
         }
     }
 
-    private func segmentWidth(_ segment: Segment) -> CGFloat {
-        Self.segmentWidth(segment, font: font)
+    private static func preferredWidth(segments: [RenderedSegment]) -> CGFloat {
+        guard !segments.isEmpty else { return 0 }
+        return segments.reduce(CGFloat.zero) { $0 + $1.width }
+            + CGFloat(max(0, segments.count - 1)) * 5
     }
 
     private static func preferredWidth(
@@ -1263,38 +1289,53 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
 
-    private struct Segment {
+    @MainActor
+    private struct RenderedSegment {
         let text: String
-        let foreground: NSColor
         let background: NSColor
+        let attributedText: NSAttributedString
+        let textSize: NSSize
+        let width: CGFloat
+
+        init(text: String, foreground: NSColor, background: NSColor) {
+            self.text = text
+            self.background = background
+            attributedText = NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: NativePlaybackCommentProvenanceBadgesView.font,
+                    .foregroundColor: foreground,
+                ]
+            )
+            textSize = attributedText.size()
+            width = ceil(textSize.width) + 14
+        }
     }
 
-    private let font = NSFont.systemFont(
+    private static let font = NSFont.systemFont(
         ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize,
         weight: .semibold
     )
-    private var segments: [Segment] = []
+    private static let pinnedSegment = RenderedSegment(
+        text: "置顶",
+        foreground: .systemPink,
+        background: NSColor.systemPink.withAlphaComponent(0.14)
+    )
+    private static let uploaderLikedSegment = RenderedSegment(
+        text: "UP 主觉得很赞",
+        foreground: .secondaryLabelColor,
+        background: NSColor.secondaryLabelColor.withAlphaComponent(0.12)
+    )
+    private var segments: [RenderedSegment] = []
     private(set) var displayedTexts: [String] = []
 
     func configure(_ provenance: [CommentProvenance]) {
-        var result: [Segment] = []
+        var result: [RenderedSegment] = []
         if provenance.contains(.adminPinned) || provenance.contains(.uploaderPinned) {
-            result.append(
-                Segment(
-                    text: "置顶",
-                    foreground: .systemPink,
-                    background: NSColor.systemPink.withAlphaComponent(0.14)
-                )
-            )
+            result.append(Self.pinnedSegment)
         }
         if provenance.contains(.uploaderLiked) {
-            result.append(
-                Segment(
-                    text: "UP 主觉得很赞",
-                    foreground: .secondaryLabelColor,
-                    background: NSColor.secondaryLabelColor.withAlphaComponent(0.12)
-                )
-            )
+            result.append(Self.uploaderLikedSegment)
         }
         segments = result
         displayedTexts = result.map(\.text)
@@ -1322,26 +1363,25 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
         let height = min(18, bounds.height)
         let y = floor((bounds.height - height) / 2)
         for segment in segments {
-            let textSize = (segment.text as NSString).size(withAttributes: [.font: font])
-            let width = ceil(textSize.width) + 14
-            let rect = NSRect(x: x, y: y, width: width, height: height)
+            let rect = NSRect(
+                x: x,
+                y: y,
+                width: segment.width,
+                height: height
+            )
             segment.background.setFill()
             NSBezierPath(
                 roundedRect: rect,
                 xRadius: height / 2,
                 yRadius: height / 2
             ).fill()
-            (segment.text as NSString).draw(
+            segment.attributedText.draw(
                 at: NSPoint(
-                    x: rect.midX - textSize.width / 2,
-                    y: rect.midY - textSize.height / 2
-                ),
-                withAttributes: [
-                    .font: font,
-                    .foregroundColor: segment.foreground,
-                ]
+                    x: rect.midX - segment.textSize.width / 2,
+                    y: rect.midY - segment.textSize.height / 2
+                )
             )
-            x += width + 6
+            x += segment.width + 6
         }
     }
 }
@@ -1519,8 +1559,18 @@ private final class NativePlaybackCommentAvatarView: NSView {
 @MainActor
 private final class NativePlaybackCommentPicturesView: NSView {
     override var isFlipped: Bool { true }
+    private static let placeholderText = NSAttributedString(
+        string: "暂不可用",
+        attributes: [
+            .font: NSFont.preferredFont(forTextStyle: .caption2),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+    )
+    private static let placeholderSize = placeholderText.size()
+    private static let tileBackground = NSColor.secondaryLabelColor.withAlphaComponent(0.10)
     var count = 0 {
         didSet {
+            guard count != oldValue else { return }
             setAccessibilityElement(count > 0)
             setAccessibilityLabel("图片内容暂不可用，共 \(count) 张")
             needsDisplay = true
@@ -1550,19 +1600,15 @@ private final class NativePlaybackCommentPicturesView: NSView {
                 width: tileWidth,
                 height: tileHeight
             )
-            NSColor.secondaryLabelColor.withAlphaComponent(0.10).setFill()
+            Self.tileBackground.setFill()
             NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).fill()
             NSColor.separatorColor.setStroke()
             NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7).stroke()
-            let text = "暂不可用" as NSString
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.preferredFont(forTextStyle: .caption2),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let size = text.size(withAttributes: attributes)
-            text.draw(
-                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
-                withAttributes: attributes
+            Self.placeholderText.draw(
+                at: NSPoint(
+                    x: rect.midX - Self.placeholderSize.width / 2,
+                    y: rect.midY - Self.placeholderSize.height / 2
+                )
             )
         }
     }

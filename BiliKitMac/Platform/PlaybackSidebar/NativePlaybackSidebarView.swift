@@ -717,6 +717,28 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         changedItemIDs: Set<NativePlaybackSidebarItemID>
     ) {
         guard let dataSource else { return }
+        let currentSnapshot = dataSource.snapshot()
+        let currentSections = currentSnapshot.sectionIdentifiers.map {
+            NativePlaybackSidebarSnapshotSection(
+                id: $0,
+                items: currentSnapshot.itemIdentifiers(inSection: $0)
+            )
+        }
+        let nextSections = presentation.snapshotSections
+        let strategy = NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+            current: currentSections,
+            next: nextSections,
+            changedItemIDs: changedItemIDs,
+            hasSnapshotInFlight: snapshotApplicationsInFlight > 0
+        )
+        guard strategy != .none else {
+            paginationTask?.cancel()
+            paginationTask = nil
+            if !presentation.overlay.blocksContent {
+                scheduleNextCommentsPageIfNeeded()
+            }
+            return
+        }
         cancelRefinement()
         paginationTask?.cancel()
         paginationTask = nil
@@ -733,6 +755,18 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             pendingScrollToComments = true
         }
         itemIDs = presentation.itemIDs
+        if strategy == .reloadChangedItems {
+            snapshotGeneration &+= 1
+            updateLayoutEntries(invalidating: changedItemIDs)
+            let indexPaths = Set(
+                changedItemIDs.compactMap { dataSource.indexPath(for: $0) }
+            )
+            if !indexPaths.isEmpty {
+                collectionView.reloadItems(at: indexPaths)
+            }
+            completeCollectionUpdate(anchor: anchor)
+            return
+        }
         var snapshot = NSDiffableDataSourceSnapshot<
             NativePlaybackSidebarSectionID,
             NativePlaybackSidebarItemID
@@ -742,7 +776,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             snapshot.appendItems(section.items, toSection: section.id)
         }
         if !changedItemIDs.isEmpty {
-            let existing = Set(dataSource.snapshot().itemIdentifiers)
+            let existing = Set(currentSnapshot.itemIdentifiers)
             let reloadable = itemIDs.filter {
                 existing.contains($0) && changedItemIDs.contains($0)
             }
@@ -753,7 +787,12 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         snapshotGeneration &+= 1
         let generation = snapshotGeneration
         snapshotApplicationsInFlight += 1
-        dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+        let updatesLayoutBeforeSnapshot = strategy == .appendComments
+        if updatesLayoutBeforeSnapshot {
+            updateLayoutEntries(invalidating: changedItemIDs)
+            collectionView.layoutSubtreeIfNeeded()
+        }
+        let completion = { [weak self] in
             guard let self else { return }
             self.snapshotApplicationsInFlight = max(
                 0,
@@ -766,14 +805,37 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
                 }
                 return
             }
-            self.updateLayoutEntries(invalidating: changedItemIDs)
-            self.collectionView.layoutSubtreeIfNeeded()
-            self.synchronizeDocumentFrame()
-            self.applyPendingViewportIntent(fallbackAnchor: anchor)
-            self.scheduleRefinement()
-            self.updateCommentsTopButton()
-            self.scheduleNextCommentsPageIfNeeded()
+            if !updatesLayoutBeforeSnapshot {
+                self.updateLayoutEntries(invalidating: changedItemIDs)
+            }
+            self.completeCollectionUpdate(anchor: anchor)
         }
+        if strategy == .appendComments {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                dataSource.apply(
+                    snapshot,
+                    animatingDifferences: true,
+                    completion: completion
+                )
+            }
+        } else {
+            dataSource.apply(
+                snapshot,
+                animatingDifferences: false,
+                completion: completion
+            )
+        }
+    }
+
+    private func completeCollectionUpdate(anchor: Anchor?) {
+        collectionView.layoutSubtreeIfNeeded()
+        synchronizeDocumentFrame()
+        applyPendingViewportIntent(fallbackAnchor: anchor)
+        scheduleRefinement()
+        updateCommentsTopButton()
+        scheduleNextCommentsPageIfNeeded()
     }
 
     private func updateLayoutEntries(

@@ -241,6 +241,64 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
+    func collectionUpdatePolicySeparatesStableRowsFromCommentAppend() throws {
+        let subject = CommentSubjectIdentity.video(aid: 700_001)
+        let first = commentThread(id: 1, message: "第一条评论")
+        let original = presentation(
+            bvid: "BVCurrent",
+            comments: commentsPresentation(subject: subject, threads: [first])
+        )
+        let changed = presentation(
+            bvid: "BVCurrent",
+            comments: commentsPresentation(
+                subject: subject,
+                threads: [commentThread(id: 1, message: "修改后的正文")]
+            )
+        )
+        let appended = presentation(
+            bvid: "BVCurrent",
+            comments: commentsPresentation(
+                subject: subject,
+                threads: [first, commentThread(id: 2, message: "第二条评论")]
+            )
+        )
+
+        #expect(
+            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+                current: original.snapshotSections,
+                next: original.snapshotSections,
+                changedItemIDs: [],
+                hasSnapshotInFlight: false
+            ) == .none
+        )
+        #expect(
+            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+                current: original.snapshotSections,
+                next: changed.snapshotSections,
+                changedItemIDs: changed.changedItemIDs(comparedTo: original),
+                hasSnapshotInFlight: false
+            ) == .reloadChangedItems
+        )
+        #expect(
+            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+                current: original.snapshotSections,
+                next: appended.snapshotSections,
+                changedItemIDs: appended.changedItemIDs(comparedTo: original),
+                hasSnapshotInFlight: false
+            ) == .appendComments
+        )
+        #expect(
+            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+                current: original.snapshotSections,
+                next: appended.snapshotSections,
+                changedItemIDs: appended.changedItemIDs(comparedTo: original),
+                hasSnapshotInFlight: true
+            ) == .replaceSnapshot
+        )
+    }
+
+    @Test
+    @MainActor
     func blockingOverlayReleasesHiddenSidebarFirstResponder() {
         let controller = NativePlaybackSidebarController()
         controller.rootView.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
@@ -1328,6 +1386,15 @@ struct NativePlaybackSidebarTests {
                 )
         )
         #expect(authorBadges.frame.minY == authorLabel.frame.minY)
+        #expect(
+            abs(
+                authorBadges.preferredWidth
+                    - NativePlaybackCommentAuthorBadgesView.preferredWidth(
+                        for: author,
+                        isReply: false
+                    )
+            ) <= 0.5
+        )
         #expect(authorBadges.displayedTexts.contains("LV6⚡︎"))
         #expect(!authorBadges.displayedTexts.contains("硬核"))
         #expect(statusBadges.displayedTexts == ["置顶", "UP 主觉得很赞"])

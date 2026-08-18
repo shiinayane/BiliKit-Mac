@@ -82,6 +82,71 @@ enum NativePlaybackCommentsStateKind: Hashable {
     case failed
 }
 
+struct NativePlaybackSidebarSnapshotSection: Equatable {
+    let id: NativePlaybackSidebarSectionID
+    let items: [NativePlaybackSidebarItemID]
+}
+
+enum NativePlaybackSidebarCollectionUpdateStrategy: Equatable {
+    case none
+    case reloadChangedItems
+    case appendComments
+    case replaceSnapshot
+}
+
+enum NativePlaybackSidebarCollectionUpdatePolicy {
+    static func resolve(
+        current: [NativePlaybackSidebarSnapshotSection],
+        next: [NativePlaybackSidebarSnapshotSection],
+        changedItemIDs: Set<NativePlaybackSidebarItemID>,
+        hasSnapshotInFlight: Bool
+    ) -> NativePlaybackSidebarCollectionUpdateStrategy {
+        guard !hasSnapshotInFlight else { return .replaceSnapshot }
+        if current == next {
+            return changedItemIDs.isEmpty ? .none : .reloadChangedItems
+        }
+        if appendsCommentsBeforeStableFooter(current: current, next: next) {
+            return .appendComments
+        }
+        return .replaceSnapshot
+    }
+
+    private static func appendsCommentsBeforeStableFooter(
+        current: [NativePlaybackSidebarSnapshotSection],
+        next: [NativePlaybackSidebarSnapshotSection]
+    ) -> Bool {
+        guard current.count == next.count else { return false }
+        var appendedComments = false
+        for (previousSection, nextSection) in zip(current, next) {
+            guard previousSection.id == nextSection.id else { return false }
+            guard previousSection.id == .comments else {
+                guard previousSection.items == nextSection.items else { return false }
+                continue
+            }
+            let previousItems = previousSection.items
+            let nextItems = nextSection.items
+            guard previousItems.count >= 2,
+                nextItems.count > previousItems.count,
+                previousItems.first == nextItems.first,
+                previousItems.last == nextItems.last,
+                Array(nextItems.prefix(previousItems.count - 1))
+                    == Array(previousItems.dropLast())
+            else { return false }
+            let insertedItems = nextItems[
+                (previousItems.count - 1)..<(nextItems.count - 1)
+            ]
+            guard
+                insertedItems.allSatisfy({ itemID in
+                    if case .commentThread = itemID { return true }
+                    return false
+                })
+            else { return false }
+            appendedComments = true
+        }
+        return appendedComments
+    }
+}
+
 extension NativePlaybackSidebarPresentation {
     var sections: [(id: NativePlaybackSidebarSectionID, items: [NativePlaybackSidebarItemID])] {
         guard let content else { return [] }
@@ -130,6 +195,12 @@ extension NativePlaybackSidebarPresentation {
 
     var itemIDs: [NativePlaybackSidebarItemID] {
         sections.flatMap(\.items)
+    }
+
+    var snapshotSections: [NativePlaybackSidebarSnapshotSection] {
+        sections.map {
+            NativePlaybackSidebarSnapshotSection(id: $0.id, items: $0.items)
+        }
     }
 
     func changedItemIDs(
