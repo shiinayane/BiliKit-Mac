@@ -37,19 +37,47 @@ public struct CommentAuthorID: Sendable, Equatable, Hashable {
 
 /// 资源的进程内不透明引用；远端 URL 只由具体 adapter 解析和消费。
 public struct CommentAssetReference: Sendable, Equatable, Hashable {
-    private let token: UUID
+    private enum Storage: Sendable, Equatable, Hashable {
+        case opaque(UUID)
+        case remote(URL)
+    }
 
-    package init() {
-        token = UUID()
+    private let storage: Storage
+
+    package var remoteURL: URL? {
+        guard case .remote(let url) = storage else { return nil }
+        return url
+    }
+
+    public init() {
+        storage = .opaque(UUID())
+    }
+
+    package init(remoteURL: URL) {
+        storage = .remote(remoteURL)
     }
 }
 
 /// 外部 HTTPS 链接的进程内不透明引用。
 public struct CommentExternalLinkReference: Sendable, Equatable, Hashable {
-    private let token: UUID
+    private enum Storage: Sendable, Equatable, Hashable {
+        case opaque(UUID)
+        case remote(URL)
+    }
 
-    package init() {
-        token = UUID()
+    private let storage: Storage
+
+    package var remoteURL: URL? {
+        guard case .remote(let url) = storage else { return nil }
+        return url
+    }
+
+    public init() {
+        storage = .opaque(UUID())
+    }
+
+    package init(remoteURL: URL) {
+        storage = .remote(remoteURL)
     }
 }
 
@@ -113,16 +141,25 @@ public struct CommentEmote: Sendable, Equatable, Hashable {
     public let text: String
     public let range: CommentTextRange
     public let asset: CommentAssetReference
+    public let size: CommentEmoteSize
 
     public init(
         text: String,
         range: CommentTextRange,
-        asset: CommentAssetReference
+        asset: CommentAssetReference,
+        size: CommentEmoteSize = .unknown
     ) {
         self.text = text
         self.range = range
         self.asset = asset
+        self.size = size
     }
+}
+
+public enum CommentEmoteSize: Sendable, Equatable, Hashable {
+    case standard
+    case large
+    case unknown
 }
 
 public enum CommentLinkTarget: Sendable, Equatable, Hashable {
@@ -141,19 +178,20 @@ public struct CommentLink: Sendable, Equatable, Hashable {
     }
 }
 
-public struct CommentImage: Sendable, Equatable, Hashable, Identifiable {
-    public var id: CommentAssetReference { asset }
-
+public struct CommentImage: Sendable, Equatable, Hashable {
     public let asset: CommentAssetReference
+    public let position: Int?
     public let pixelWidth: Int?
     public let pixelHeight: Int?
 
     public init(
         asset: CommentAssetReference,
+        position: Int? = nil,
         pixelWidth: Int? = nil,
         pixelHeight: Int? = nil
     ) {
         self.asset = asset
+        self.position = position
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
     }
