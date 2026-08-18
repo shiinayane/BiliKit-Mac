@@ -1292,8 +1292,8 @@ struct NativePlaybackSidebarTests {
         }
         #expect(likeImage != nil)
         #expect(
-            views.compactMap { $0 as? NSButton }.allSatisfy {
-                $0.title != "共 1 条回复"
+            views.compactMap { $0 as? NSButton }.contains {
+                $0.title == "共 1 条回复"
             }
         )
     }
@@ -1677,14 +1677,14 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func replySummaryOnlyAppearsWhenRepliesRemainHidden() throws {
+    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply() throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let previews = [
             comment(id: 31, rootID: 3, message: "回复一"),
             comment(id: 32, rootID: 3, message: "回复二"),
         ]
 
-        for (replyCount, shouldShowSummary) in [(2, false), (3, true)] {
+        for replyCount in [2, 3] {
             let row = NativePlaybackCommentThreadPresentation(
                 subject: subject,
                 thread: commentThread(
@@ -1719,7 +1719,7 @@ struct NativePlaybackSidebarTests {
 
             let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
                 .first { $0.title == "共 \(replyCount) 条回复" }
-            #expect((summary != nil) == shouldShowSummary)
+            #expect(summary != nil)
         }
     }
 

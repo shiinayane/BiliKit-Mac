@@ -156,10 +156,8 @@ enum NativePlaybackCommentsItemMeasurement {
                 )
                 if index < replies.count - 1 { height += 8 }
             }
-            if replies.count < details.replyCount {
-                if !replies.isEmpty { height += 9 }
-                height += 24
-            }
+            if !replies.isEmpty { height += 9 }
+            height += 24
         }
         return ceil(height + replyPanelPadding)
     }
@@ -2324,12 +2322,9 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
             addSubview(row)
             replyRows.append(row)
         }
-        let effectiveTotal =
-            (replyState?.totalCount ?? 0) > 0
-            ? (replyState?.totalCount ?? 0) : details.replyCount
-        headerLabel.isHidden = !expanded || replies.count >= effectiveTotal
+        headerLabel.isHidden = !expanded
         collapseButton.isHidden = !expanded
-        expandButton.isHidden = expanded || replies.count >= details.replyCount
+        expandButton.isHidden = expanded
         retryButton.isHidden = true
         statusLabel.isHidden = true
         previousButton.isHidden = true
