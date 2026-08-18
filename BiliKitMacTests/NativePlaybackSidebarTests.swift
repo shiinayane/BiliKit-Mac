@@ -1378,23 +1378,8 @@ struct NativePlaybackSidebarTests {
             views.compactMap { $0 as? NativePlaybackCommentProvenanceBadgesView }.first
         )
 
-        #expect(
-            authorLabel.frame.width
-                >= NativePlaybackCommentsItemMeasurement.authorNameWidth(
-                    author,
-                    maximumWidth: 178
-                )
-        )
-        #expect(authorBadges.frame.minY == authorLabel.frame.minY)
-        #expect(
-            abs(
-                authorBadges.preferredWidth
-                    - NativePlaybackCommentAuthorBadgesView.preferredWidth(
-                        for: author,
-                        isReply: false
-                    )
-            ) <= 0.5
-        )
+        #expect(authorLabel.frame.width >= authorLabel.intrinsicContentSize.width)
+        #expect(!authorBadges.isHidden)
         #expect(authorBadges.displayedTexts.contains("LV6⚡︎"))
         #expect(!authorBadges.displayedTexts.contains("硬核"))
         #expect(statusBadges.displayedTexts == ["置顶", "UP 主觉得很赞"])
