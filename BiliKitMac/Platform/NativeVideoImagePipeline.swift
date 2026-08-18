@@ -18,6 +18,8 @@ struct NativeVideoImageLoadResult: @unchecked Sendable {
 enum NativeVideoImageVariant: Hashable, Sendable {
     case cover
     case avatar
+    case commentEmote
+    case commentPicture
 
     var maximumDecodedPixelSize: Int {
         switch self {
@@ -25,6 +27,10 @@ enum NativeVideoImageVariant: Hashable, Sendable {
             640
         case .avatar:
             96
+        case .commentEmote:
+            128
+        case .commentPicture:
+            1_024
         }
     }
 }

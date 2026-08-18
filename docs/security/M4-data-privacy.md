@@ -49,6 +49,20 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 账户读取 Cookie 必须在各 API 响应前终止；映射后的 playback manifest 与媒体 headers
   不保留 Cookie。DASH SIDX/媒体 Range、图片与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- 评论头像、自定义表情与正文图片只消费当前评论 `member.avatar`／`content.emote`／
+  `content.pictures` 返回的资源，不下载或维护全量头像、表情包或图片索引。
+  映射层把接口历史遗留的 HTTP／协议相对地址升级为 HTTPS；实际加载前由具体 adapter 再次限制
+  精确 `i0.hdslb.com`／`i1.hdslb.com`／`i2.hdslb.com`、默认或 443 端口，以及
+  非空且无歧义的 `/bfs/` 资源路径；不把其下 `emote`、`garb`、`activity-plat` 等服务端内部
+  子目录当作稳定 API 契约，并拒绝 userinfo、query、fragment、点段、编码分隔符与全部
+  redirect。加载复用无 Cookie、无 credential、无磁盘 cache 的图片会话，响应必须是图片且不超过
+  8 MiB；表情解码最长边不超过 128 px、头像不超过 96 px、正文图片不超过 1,024 px；cell 离屏、
+  复用和窗口 teardown 必须取消等待者，
+  内存 cache 继续服从既有有界上限。
+- 评论链接只在用户明确点击后行动。视频 `jump_url` 仅把合法 BVID 回送现有 App 内播放导航；成员提及
+  仅允许正整数 MID 并交给 `https://space.bilibili.com/<mid>`；其他目标必须保持不透明，直到 App
+  composition 复核 HTTPS、无 userinfo、默认／443 端口、非本地域名且非 IP literal 后才交给系统
+  `OpenURLAction`。App 不预取、不解析 DNS、不跟随目标重定向，也不为该导航附加 Cookie 或 credential。
 - 登录态 playurl 可把同一响应中的服务端分 P 与毫秒位置映射为一次性的首次定位候选；匿名
   响应不消费该账户字段。播放器在首次 `play` 前完成受 identity、load intent、item generation
   与用户交互 revision 保护的 seek，切视频、切 P、暂停、拖动或 teardown 都能否决迟到提交。
