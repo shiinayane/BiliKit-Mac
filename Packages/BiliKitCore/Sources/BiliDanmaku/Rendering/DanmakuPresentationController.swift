@@ -9,10 +9,10 @@ struct DanmakuDensityAdmissionPolicy: Sendable, Equatable {
     init(_ density: DanmakuDensity) {
         switch density {
         case .normal:
-            minimumHorizontalGap = 24
+            minimumHorizontalGap = 40
             maximumOverlapDepth = 1
         case .increased:
-            minimumHorizontalGap = 12
+            minimumHorizontalGap = 20
             maximumOverlapDepth = 1
         case .overlapping:
             minimumHorizontalGap = 0

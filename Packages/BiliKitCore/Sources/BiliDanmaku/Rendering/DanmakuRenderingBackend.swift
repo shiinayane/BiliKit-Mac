@@ -46,8 +46,8 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
     public init(
         basePointSpeed: Double = 130,
         lengthReferenceWidth: Double = 960,
-        lengthCoefficient: Double = 0.25,
-        maximumLengthBonus: Double = 0.45,
+        lengthCoefficient: Double = 0.3,
+        maximumLengthBonus: Double = .infinity,
         minimumScrollingSeconds: Double = 1.5,
         maximumScrollingSeconds: Double = 60,
         fixedSeconds: Double = 4
@@ -65,8 +65,8 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
     init(fixedDurations: DanmakuRendererDurations) {
         basePointSpeed = 130
         lengthReferenceWidth = 960
-        lengthCoefficient = 0.25
-        maximumLengthBonus = 0.45
+        lengthCoefficient = 0.3
+        maximumLengthBonus = .infinity
         minimumScrollingSeconds = 4
         maximumScrollingSeconds = 30
         fixedSeconds = fixedDurations.fixedSeconds
@@ -92,7 +92,7 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
                 lengthReferenceWidth > 0,
                 lengthCoefficient.isFinite,
                 lengthCoefficient >= 0,
-                maximumLengthBonus.isFinite,
+                !maximumLengthBonus.isNaN,
                 maximumLengthBonus >= 0,
                 minimumScrollingSeconds.isFinite,
                 minimumScrollingSeconds > 0,

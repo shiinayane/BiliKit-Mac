@@ -17,7 +17,7 @@ struct DanmakuPresentationControllerTests {
                 == CoreAnimationDanmakuStyle(
                     fontScale: 1,
                     fontWeight: .semibold,
-                    shadowBlurRadius: 1.5
+                    shadowBlurRadius: 2
                 )
         )
 
@@ -40,14 +40,14 @@ struct DanmakuPresentationControllerTests {
         )
         #expect(nonfinite.fontScale == 1)
         #expect(nonfinite.fontWeight == .regular)
-        #expect(nonfinite.shadowBlurRadius == 1.5)
+        #expect(nonfinite.shadowBlurRadius == 2)
 
         let laneConfiguration = DanmakuLaneConfiguration.production(
             surfaceWidth: 1_280,
             surfaceHeight: 720
         )
         #expect(laneConfiguration.laneHeight == 36)
-        #expect(laneConfiguration.minimumHorizontalGap == 24)
+        #expect(laneConfiguration.minimumHorizontalGap == 40)
         #expect(
             laneConfiguration.maximumActiveCount
                 == DanmakuLaneConfiguration.hardMaximumActiveCount
@@ -62,7 +62,7 @@ struct DanmakuPresentationControllerTests {
             DanmakuDensityAdmissionPolicy.init
         )
 
-        #expect(policies.map(\.minimumHorizontalGap) == [24, 12, 0])
+        #expect(policies.map(\.minimumHorizontalGap) == [40, 20, 0])
         #expect(policies.map(\.maximumOverlapDepth) == [1, 1, 3])
     }
 
@@ -233,10 +233,7 @@ struct DanmakuPresentationControllerTests {
         for scenario in scenarios {
             let lengthFactor =
                 1
-                + min(
-                    0.25 * scenario.textWidth / 960,
-                    0.45
-                )
+                + 0.3 * scenario.textWidth / 960
             var actualSpeeds: [Double] = []
             for (level, pointSpeed) in levelPointSpeeds {
                 let duration = policy.duration(
@@ -259,11 +256,11 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
-    func lengthBonusIsContinuousAtItsCap() {
+    func lengthBonusGrowsLinearlyWithoutCap() {
         let policy = DanmakuMotionPolicy()
         let surfaceWidth = 1_100.0
-        let capWidth = 1_728.0
-        let epsilon = 0.001
+
+        #expect(policy.maximumLengthBonus == .infinity)
 
         func speed(textWidth: Double) -> Double {
             let duration = policy.duration(
@@ -275,19 +272,27 @@ struct DanmakuPresentationControllerTests {
             return (surfaceWidth + textWidth) / duration
         }
 
-        #expect(abs(speed(textWidth: capWidth) - 188.5) < 0.001)
-        #expect(
-            abs(
-                speed(textWidth: capWidth - epsilon)
-                    - speed(textWidth: capWidth)
-            ) < 0.001
-        )
-        #expect(
-            abs(
-                speed(textWidth: capWidth + epsilon)
-                    - speed(textWidth: capWidth)
-            ) < 0.001
-        )
+        #expect(abs(speed(textWidth: 960) - 169) < 0.001)
+        #expect(abs(speed(textWidth: 1_728) - 200.2) < 0.001)
+        #expect(abs(speed(textWidth: 4_000) - 292.5) < 0.001)
+    }
+
+    @Test
+    func explicitLengthBonusCapRemainsAvailableForCompatibility() {
+        let policy = DanmakuMotionPolicy(maximumLengthBonus: 0.45)
+        let surfaceWidth = 1_100.0
+
+        func speed(textWidth: Double) -> Double {
+            let duration = policy.duration(
+                for: .scrolling,
+                textWidth: textWidth,
+                surfaceWidth: surfaceWidth,
+                speedLevel: .three
+            )
+            return (surfaceWidth + textWidth) / duration
+        }
+
+        #expect(abs(speed(textWidth: 1_728) - 188.5) < 0.001)
         #expect(abs(speed(textWidth: 4_000) - 188.5) < 0.001)
     }
 
@@ -755,7 +760,7 @@ struct DanmakuPresentationControllerTests {
         )
 
         #expect(layer.shadowOpacity == 0)
-        #expect(shadow.shadowBlurRadius == 1.5)
+        #expect(shadow.shadowBlurRadius == 2)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
     }
