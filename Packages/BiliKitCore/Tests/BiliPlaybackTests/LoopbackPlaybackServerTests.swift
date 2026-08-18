@@ -9,6 +9,9 @@ import Testing
 
 @testable import BiliPlayback
 
+// Swift Testing macros reference their diagnostic comment type without qualification.
+private typealias Comment = Testing.Comment
+
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct LoopbackPlaybackServerTests {
     @Test
