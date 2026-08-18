@@ -7,13 +7,15 @@ import SwiftUI
 struct NativePlaybackSidebarView: View {
     let model: GuestVideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
+    let commentAssetURLResolver: CommentAssetURLResolver
     let onRetry: () -> Void
     let onSelectPlayback: (String, Int64?) -> Void
-    let onSelectCommentVideo: (String) -> Void
+    let onOpenCommentLink: (CommentLinkTarget) -> Void
 
     var body: some View {
         NativePlaybackSidebarRepresentable(
             presentation: presentation,
+            commentAssetURLResolver: commentAssetURLResolver,
             actions: NativePlaybackSidebarActions(
                 retry: retry,
                 selectEpisode: selectEpisode,
@@ -29,7 +31,7 @@ struct NativePlaybackSidebarView: View {
                 },
                 nextReplyPage: { commentsModel?.showNextReplyPage(for: $0) },
                 retryReplies: { commentsModel?.retryReplies(for: $0) },
-                openCommentVideo: onSelectCommentVideo
+                openCommentLink: onOpenCommentLink
             )
         )
         .navigationTitle("观看辅助")
@@ -136,15 +138,18 @@ struct NativePlaybackSidebarActions {
     let previousReplyPage: (CommentID) -> Void
     let nextReplyPage: (CommentID) -> Void
     let retryReplies: (CommentID) -> Void
-    let openCommentVideo: (String) -> Void
+    let openCommentLink: (CommentLinkTarget) -> Void
 }
 
 private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
     let presentation: NativePlaybackSidebarPresentation
+    let commentAssetURLResolver: CommentAssetURLResolver
     let actions: NativePlaybackSidebarActions
 
     func makeCoordinator() -> NativePlaybackSidebarController {
-        NativePlaybackSidebarController()
+        NativePlaybackSidebarController(
+            commentAssetURLResolver: commentAssetURLResolver
+        )
     }
 
     func makeNSView(context: Context) -> NativePlaybackSidebarRootView {
@@ -330,6 +335,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private let layout = NativePlaybackSidebarLayout()
     private let heightCache = NativePlaybackSidebarHeightCache(capacity: 2_048)
     private let imageOwner = NativeVideoImagePipelineOwner()
+    private let commentAssetURLResolver: CommentAssetURLResolver
+    private lazy var commentTextRenderer = NativePlaybackCommentTextRenderer(
+        imagePipeline: imageOwner.pipeline,
+        resolveURL: commentAssetURLResolver
+    )
+    private lazy var commentAvatarLoader = NativePlaybackCommentAvatarLoader(
+        imagePipeline: imageOwner.pipeline,
+        resolveURL: commentAssetURLResolver
+    )
+    private lazy var commentPictureLoader = NativePlaybackCommentPictureLoader(
+        imagePipeline: imageOwner.pipeline,
+        resolveURL: commentAssetURLResolver
+    )
     private var dataSource:
         NSCollectionViewDiffableDataSource<
             NativePlaybackSidebarSectionID,
@@ -352,11 +370,12 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         previousReplyPage: { _ in },
         nextReplyPage: { _ in },
         retryReplies: { _ in },
-        openCommentVideo: { _ in }
+        openCommentLink: { _ in }
     )
     private var itemIDs: [NativePlaybackSidebarItemID] = []
     private var commentThreadsByItemID:
         [NativePlaybackSidebarItemID: NativePlaybackCommentThreadPresentation] = [:]
+    private var commentRenderRevisions: [NativePlaybackSidebarItemID: UInt64] = [:]
     private var summaryExpanded = false
     private var signatureExpanded = false
     private var browsedSectionID: VideoCollectionSectionIdentity?
@@ -378,7 +397,8 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private var liveScrollEndObservation: NSObjectProtocol?
     private var isTornDown = false
 
-    override init() {
+    init(commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil }) {
+        self.commentAssetURLResolver = commentAssetURLResolver
         super.init()
         configureCollectionView()
         rootView.commentsTopButton.target = self
@@ -476,6 +496,12 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
                 )
             } ?? []
         )
+        commentTextRenderer.retainFailureScopes(
+            Set(commentThreadsByItemID.values.map(\.textScope))
+        )
+        commentRenderRevisions = commentRenderRevisions.filter {
+            commentThreadsByItemID[$0.key] != nil
+        }
         updateOverlay()
         applySnapshot(
             resetToTop: changesIdentity,
@@ -519,6 +545,8 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         dataSource = nil
         itemIDs.removeAll()
         commentThreadsByItemID.removeAll(keepingCapacity: false)
+        commentRenderRevisions.removeAll(keepingCapacity: false)
+        commentTextRenderer.removeAllFailures()
         heightCache.removeAll()
         collectionView.delegate = nil
         rootView.scrollView.documentView = nil
@@ -664,12 +692,18 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             else { return nil }
             item.configure(
                 presentation: thread,
+                textRenderer: commentTextRenderer,
+                avatarLoader: commentAvatarLoader,
+                pictureLoader: commentPictureLoader,
+                onTextLayoutChange: { [weak self] in
+                    self?.commentTextLayoutDidChange(for: itemID)
+                },
                 onExpand: { [weak self] in self?.actions.expandReplies(rootID) },
                 onCollapse: { [weak self] in self?.actions.collapseReplies(rootID) },
                 onPrevious: { [weak self] in self?.actions.previousReplyPage(rootID) },
                 onNext: { [weak self] in self?.actions.nextReplyPage(rootID) },
                 onRetry: { [weak self] in self?.actions.retryReplies(rootID) },
-                onOpenVideo: { [weak self] in self?.actions.openCommentVideo($0) }
+                onOpenLink: { [weak self] in self?.actions.openCommentLink($0) }
             )
             return item
         case .commentsFooter:
@@ -898,6 +932,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             hasher.combine(kind)
         case .commentThread:
             hasher.combine(commentThreadsByItemID[itemID]?.revision ?? 0)
+            hasher.combine(commentRenderRevisions[itemID] ?? 0)
         case .commentsFooter:
             hasher.combine(content.comments.footer)
         }
@@ -934,7 +969,11 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             return NativePlaybackCommentsItemMeasurement.state(kind, width: width)
         case .commentThread:
             guard let thread = commentThreadsByItemID[itemID] else { return 1 }
-            return NativePlaybackCommentsItemMeasurement.thread(thread, width: width)
+            return NativePlaybackCommentsItemMeasurement.thread(
+                thread,
+                width: width,
+                textRenderer: commentTextRenderer
+            )
         case .commentsFooter:
             return NativePlaybackCommentsItemMeasurement.footer(content.comments.footer)
         }
@@ -1032,6 +1071,27 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             self.scheduleRefinement()
             self.scheduleNextCommentsPageIfNeeded()
         }
+    }
+
+    private func commentTextLayoutDidChange(
+        for itemID: NativePlaybackSidebarItemID
+    ) {
+        guard !isTornDown, itemIDs.contains(itemID) else { return }
+        cancelRefinement()
+        paginationTask?.cancel()
+        paginationTask = nil
+        let anchor = captureAnchor()
+        commentRenderRevisions[itemID, default: 0] &+= 1
+        updateLayoutEntries(invalidating: [itemID])
+        if let indexPath = dataSource?.indexPath(for: itemID) {
+            collectionView.item(at: indexPath)?.view.needsLayout = true
+        }
+        collectionView.layoutSubtreeIfNeeded()
+        synchronizeDocumentFrame()
+        if let anchor { restore(anchor) }
+        scheduleRefinement()
+        updateCommentsTopButton()
+        scheduleNextCommentsPageIfNeeded()
     }
 
     private struct Anchor {

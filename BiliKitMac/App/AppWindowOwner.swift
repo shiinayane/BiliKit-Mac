@@ -17,6 +17,9 @@ final class AppWindowOwner {
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
+    let commentAssetURLResolver: CommentAssetURLResolver
+    let commentVideoLinkResolver: CommentVideoLinkResolver
+    let commentLinkURLResolver: CommentLinkURLResolver
     private let playbackPreferencesController: PlaybackPreferencesController?
     private let openEnvironment: (@MainActor @Sendable () -> Void)?
     private let closeEnvironment: (@MainActor @Sendable () -> Void)?
@@ -49,6 +52,9 @@ final class AppWindowOwner {
             authenticationModel: environment.makeAuthenticationViewModel(),
             historyModel: environment.makeWatchHistoryViewModel(),
             playerContent: environment.makePlayerView(videoModel: videoModel),
+            commentAssetURLResolver: environment.commentAssetURLResolver,
+            commentVideoLinkResolver: environment.commentVideoLinkResolver,
+            commentLinkURLResolver: environment.commentLinkURLResolver,
             playbackPreferencesController: environment.playbackPreferencesController,
             openEnvironment: environment.open,
             closeEnvironment: environment.close
@@ -84,6 +90,9 @@ final class AppWindowOwner {
         authenticationModel: AuthenticationViewModel,
         historyModel: WatchHistoryViewModel,
         playerContent: AnyView,
+        commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
+        commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
+        commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
         playbackPreferencesController: PlaybackPreferencesController? = nil,
         openEnvironment: (@MainActor @Sendable () -> Void)? = nil,
         closeEnvironment: (@MainActor @Sendable () -> Void)? = nil
@@ -96,6 +105,9 @@ final class AppWindowOwner {
         self.authenticationModel = authenticationModel
         self.historyModel = historyModel
         self.playerContent = playerContent
+        self.commentAssetURLResolver = commentAssetURLResolver
+        self.commentVideoLinkResolver = commentVideoLinkResolver
+        self.commentLinkURLResolver = commentLinkURLResolver
         self.playbackPreferencesController = playbackPreferencesController
         self.openEnvironment = openEnvironment
         self.closeEnvironment = closeEnvironment

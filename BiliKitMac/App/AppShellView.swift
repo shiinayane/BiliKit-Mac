@@ -8,6 +8,7 @@ import SwiftUI
 /// 系统返回通过 path Binding 回写 coordinator，使播放停止与视觉导航保持同一事实来源；
 /// SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
 struct AppShellView: View {
+    @Environment(\.openURL) private var openURL
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
@@ -16,6 +17,9 @@ struct AppShellView: View {
     let authenticationModel: AuthenticationViewModel
     let historyModel: WatchHistoryViewModel
     let playerContent: AnyView
+    let commentAssetURLResolver: CommentAssetURLResolver
+    let commentVideoLinkResolver: CommentVideoLinkResolver
+    let commentLinkURLResolver: CommentLinkURLResolver
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
@@ -122,6 +126,7 @@ struct AppShellView: View {
         NativePlaybackSidebarView(
             model: videoModel,
             commentsModel: commentsModel,
+            commentAssetURLResolver: commentAssetURLResolver,
             onRetry: navigationCoordinator.retryPlayback,
             onSelectPlayback: { bvid, preferredCID in
                 navigationCoordinator.openPlayback(
@@ -131,7 +136,13 @@ struct AppShellView: View {
                     )
                 )
             },
-            onSelectCommentVideo: navigationCoordinator.openPlayback
+            onOpenCommentLink: { target in
+                if let bvid = commentVideoLinkResolver(target) {
+                    navigationCoordinator.openPlayback(bvid)
+                } else if let url = commentLinkURLResolver(target) {
+                    openURL(url)
+                }
+            }
         )
         .ignoresSafeArea(.container, edges: .top)
     }

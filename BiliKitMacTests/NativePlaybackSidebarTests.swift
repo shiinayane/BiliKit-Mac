@@ -594,7 +594,7 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func commentRevisionTracksRenderedVerificationAndLinks() {
+    func commentRevisionTracksRenderedVerificationLinksAndPictures() {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let message = "查看视频"
         let range = CommentTextRange(location: 0, length: 4)
@@ -607,6 +607,11 @@ struct NativePlaybackSidebarTests {
             name: "评论者",
             verification: .personal(description: "认证")
         )
+        let avatarAuthor = CommentAuthor(
+            id: CommentAuthorID(rawValue: "author"),
+            name: "评论者",
+            avatar: CommentAssetReference()
+        )
         let plain = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: commentThread(id: 1, message: message, author: plainAuthor),
@@ -615,6 +620,11 @@ struct NativePlaybackSidebarTests {
         let verified = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: commentThread(id: 1, message: message, author: verifiedAuthor),
+            replyState: nil
+        )
+        let avatar = NativePlaybackCommentThreadPresentation(
+            subject: subject,
+            thread: commentThread(id: 1, message: message, author: avatarAuthor),
             replyState: nil
         )
         let linked = NativePlaybackCommentThreadPresentation(
@@ -632,9 +642,24 @@ struct NativePlaybackSidebarTests {
             ),
             replyState: nil
         )
+        let pictured = NativePlaybackCommentThreadPresentation(
+            subject: subject,
+            thread: commentThread(
+                id: 1,
+                message: message,
+                links: [
+                    CommentLink(range: range, target: .video(bvid: "BV1FixtureA1"))
+                ],
+                pictures: [CommentImage(asset: CommentAssetReference())],
+                author: verifiedAuthor
+            ),
+            replyState: nil
+        )
 
+        #expect(plain.revision != avatar.revision)
         #expect(plain.revision != verified.revision)
         #expect(verified.revision != linked.revision)
+        #expect(linked.revision != pictured.revision)
     }
 
     @Test
@@ -1040,12 +1065,16 @@ struct NativePlaybackSidebarTests {
             )
             item.configure(
                 presentation: row,
+                textRenderer: makeCommentTextRenderer(),
+                avatarLoader: makeCommentAvatarLoader(),
+                pictureLoader: makeCommentPictureLoader(),
+                onTextLayoutChange: {},
                 onExpand: {},
                 onCollapse: {},
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenVideo: { _ in }
+                onOpenLink: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
@@ -1151,8 +1180,9 @@ struct NativePlaybackSidebarTests {
     @MainActor
     func commentThreadUsesSelectableNonScrollingTextKitAndNativeLinkAttributes() throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let message = "跳转 BV1FixtureA1 查看视频"
+        let message = "跳转 BV1FixtureA1 查看视频 @回复用户"
         let linkRange = (message as NSString).range(of: "BV1FixtureA1")
+        let memberRange = (message as NSString).range(of: "@回复用户")
         let thread = commentThread(
             id: 1,
             message: message,
@@ -1163,12 +1193,20 @@ struct NativePlaybackSidebarTests {
                         length: linkRange.length
                     ),
                     target: .video(bvid: "BV1FixtureA1")
-                )
+                ),
+                CommentLink(
+                    range: CommentTextRange(
+                        location: memberRange.location,
+                        length: memberRange.length
+                    ),
+                    target: .member(CommentAuthorID(rawValue: "301"))
+                ),
             ],
             replyCount: 1,
             preview: [comment(id: 11, rootID: 1, message: "楼中楼正文")]
         )
         let item = NativePlaybackCommentThreadItem()
+        var openedTargets: [CommentLinkTarget] = []
         let row = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: thread,
@@ -1182,12 +1220,16 @@ struct NativePlaybackSidebarTests {
         )
         item.configure(
             presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
             onExpand: {},
             onCollapse: {},
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenVideo: { _ in }
+            onOpenLink: { openedTargets.append($0) }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1196,12 +1238,30 @@ struct NativePlaybackSidebarTests {
         let rootBody = try #require(
             textViews.first { $0.string == message }
         )
-        let link =
+        let link = try #require(
             rootBody.textStorage?.attribute(
                 .link,
                 at: linkRange.location,
                 effectiveRange: nil
-            ) as? URL
+            )
+        )
+        let handled = rootBody.delegate?.textView?(
+            rootBody,
+            clickedOnLink: link,
+            at: linkRange.location
+        )
+        let memberLink = try #require(
+            rootBody.textStorage?.attribute(
+                .link,
+                at: memberRange.location,
+                effectiveRange: nil
+            )
+        )
+        let handledMember = rootBody.delegate?.textView?(
+            rootBody,
+            clickedOnLink: memberLink,
+            at: memberRange.location
+        )
 
         #expect(textViews.count >= 2)
         #expect(textViews.allSatisfy { $0.isSelectable && !$0.isEditable })
@@ -1212,9 +1272,14 @@ struct NativePlaybackSidebarTests {
                 !String(describing: type(of: $0)).contains("NSHostingView")
             }
         )
-        #expect(link?.scheme == "bilikit-comment")
-        #expect(link?.host == "video")
-        #expect(link?.path == "/BV1FixtureA1")
+        #expect(handled == true)
+        #expect(handledMember == true)
+        #expect(
+            openedTargets == [
+                .video(bvid: "BV1FixtureA1"),
+                .member(CommentAuthorID(rawValue: "301")),
+            ]
+        )
         let labels = views.compactMap { $0 as? NSTextField }
         #expect(labels.contains { $0.stringValue.contains("东京") })
         #expect(labels.allSatisfy { !$0.stringValue.contains("IP属地：") })
@@ -1231,6 +1296,333 @@ struct NativePlaybackSidebarTests {
                 $0.title != "共 1 条回复"
             }
         )
+    }
+
+    @Test
+    @MainActor
+    func commentImageTransitionOnlyAnimatesNetworkResults() {
+        #expect(
+            !NativePlaybackCommentImageTransition.shouldAnimate(
+                loadOrigin: .memoryCache
+            )
+        )
+        #expect(
+            NativePlaybackCommentImageTransition.shouldAnimate(
+                loadOrigin: .network
+            )
+        )
+        #expect(NativePlaybackCommentImageTransition.duration == 0.15)
+    }
+
+    @Test
+    @MainActor
+    func commentPictureLayoutMatchesTheBoundedOfficialWebFlow() {
+        let portrait = CommentImage(
+            asset: CommentAssetReference(),
+            position: 0,
+            pixelWidth: 270,
+            pixelHeight: 360
+        )
+        let landscape = CommentImage(
+            asset: CommentAssetReference(),
+            position: 1,
+            pixelWidth: 446,
+            pixelHeight: 270
+        )
+
+        let layout = NativePlaybackCommentPictureLayout.make(
+            images: [portrait, landscape],
+            count: 2,
+            availableWidth: 408
+        )
+
+        #expect(layout.size == CGSize(width: 364, height: 180))
+        #expect(
+            layout.frames == [
+                CGRect(x: 0, y: 0, width: 135, height: 180),
+                CGRect(x: 139, y: 0, width: 223, height: 135),
+            ]
+        )
+    }
+
+    @Test
+    @MainActor
+    func commentPicturesUseMetadataDrivenFlowWithoutNestedScrolling() throws {
+        let first = CommentAssetReference()
+        let third = CommentAssetReference()
+        let pictures = [
+            CommentImage(
+                asset: first,
+                position: 0,
+                pixelWidth: 270,
+                pixelHeight: 360
+            ),
+            CommentImage(
+                asset: third,
+                position: 2,
+                pixelWidth: 446,
+                pixelHeight: 270
+            ),
+        ]
+        let slots = NativePlaybackCommentPictureSlots.slots(
+            images: pictures,
+            count: 3
+        )
+        #expect(slots.map(\.reference) == [first, nil, third])
+        #expect(slots.map(\.pixelWidth) == [270, nil, 446])
+        #expect(slots.map(\.pixelHeight) == [360, nil, 270])
+
+        let layout = NativePlaybackCommentPictureLayout.make(
+            slots: slots,
+            availableWidth: 408
+        )
+        #expect(layout.size == CGSize(width: 364, height: 319))
+        #expect(layout.frames[0].size == CGSize(width: 135, height: 180))
+        #expect(layout.frames[1].size == CGSize(width: 120, height: 120))
+        #expect(layout.frames[2].origin == CGPoint(x: 0, y: 184))
+        #expect(layout.frames[2].size == CGSize(width: 223, height: 135))
+
+        let row = NativePlaybackCommentThreadPresentation(
+            subject: .video(aid: 700_001),
+            thread: commentThread(
+                id: 7,
+                message: "带图评论",
+                pictures: pictures,
+                pictureCount: 3
+            ),
+            replyState: nil
+        )
+        let item = NativePlaybackCommentThreadItem()
+        item.view.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 408,
+            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
+        )
+        item.configure(
+            presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onPrevious: {},
+            onNext: {},
+            onRetry: {},
+            onOpenLink: { _ in }
+        )
+        item.view.layoutSubtreeIfNeeded()
+
+        let views = descendants(of: item.view)
+        let pictureGroup = try #require(
+            views.first { $0.accessibilityLabel() == "评论图片，共 3 张" }
+        )
+        let pictureImageViews = descendants(of: pictureGroup).compactMap {
+            $0 as? NSImageView
+        }
+        #expect(pictureGroup.accessibilityRole() == .group)
+        #expect(!pictureImageViews.isEmpty)
+        #expect(
+            pictureImageViews.allSatisfy {
+                $0.imageScaling == .scaleProportionallyUpOrDown
+            }
+        )
+        #expect(!views.contains { $0 is NSScrollView })
+        #expect(
+            !views.contains {
+                String(describing: type(of: $0)).contains("NSHostingView")
+            }
+        )
+
+        item.releaseOffscreenResources()
+        item.prepareForReuse()
+    }
+
+    @Test
+    @MainActor
+    func commentEmoteRendererUsesFixedTextKitAttachmentsAndLiteralFallback() throws {
+        let asset = CommentAssetReference()
+        let url = try #require(
+            URL(string: "https://i0.hdslb.com/bfs/emote/doge.png")
+        )
+        let renderer = makeCommentTextRenderer { reference in
+            reference == asset ? url : nil
+        }
+        let content = CommentContent(
+            message: "前[doge]后",
+            emotes: [
+                CommentEmote(
+                    text: "[doge]",
+                    range: CommentTextRange(location: 1, length: 6),
+                    asset: asset,
+                    size: .standard
+                )
+            ]
+        )
+        let scope = NativePlaybackCommentTextScope(
+            subject: .video(aid: 1),
+            rootID: CommentID(rawValue: 10),
+            revision: 1
+        )
+
+        let rendered = renderer.render(content, scope: scope)
+        let attachment = try #require(
+            rendered.attributedString.attribute(
+                .attachment,
+                at: 1,
+                effectiveRange: nil
+            ) as? NSTextAttachment
+        )
+
+        #expect(rendered.attributedString.string == "前\u{fffc}后")
+        #expect(attachment.bounds.size == NSSize(width: 18, height: 18))
+        #expect(attachment.bounds.origin.y == NSFont.preferredFont(forTextStyle: .body).descender)
+        #expect(!attachment.allowsTextAttachmentView)
+        #expect(rendered.pendingAssets.map(\.reference) == [asset])
+
+        renderer.retainFailureScopes([scope])
+        #expect(renderer.markUnavailable(asset, in: scope))
+        #expect(renderer.markUnavailable(asset, in: scope))
+        let fallback = renderer.render(content, scope: scope)
+        #expect(fallback.attributedString.string == content.message)
+        #expect(fallback.pendingAssets.isEmpty)
+
+        let otherScope = NativePlaybackCommentTextScope(
+            subject: .video(aid: 2),
+            rootID: CommentID(rawValue: 10),
+            revision: 1
+        )
+        #expect(renderer.render(content, scope: otherScope).pendingAssets.count == 1)
+        renderer.retainFailureScopes([otherScope])
+        #expect(renderer.render(content, scope: scope).pendingAssets.count == 1)
+    }
+
+    @Test
+    @MainActor
+    func commentEmoteFailureCacheIsBoundedByStableRenderScope() throws {
+        let asset = CommentAssetReference()
+        let url = try #require(
+            URL(string: "https://i0.hdslb.com/bfs/emote/doge.png")
+        )
+        let renderer = makeCommentTextRenderer { reference in
+            reference == asset ? url : nil
+        }
+        let content = CommentContent(
+            message: "[doge]",
+            emotes: [
+                CommentEmote(
+                    text: "[doge]",
+                    range: CommentTextRange(location: 0, length: 6),
+                    asset: asset,
+                    size: .standard
+                )
+            ]
+        )
+        let scopes = (0...512).map {
+            NativePlaybackCommentTextScope(
+                subject: .video(aid: 1),
+                rootID: CommentID(rawValue: 10),
+                revision: $0
+            )
+        }
+
+        renderer.retainFailureScopes(Set(scopes))
+        for scope in scopes {
+            renderer.markUnavailable(asset, in: scope)
+        }
+
+        #expect(renderer.render(content, scope: scopes[0]).pendingAssets.count == 1)
+        #expect(renderer.render(content, scope: scopes[512]).pendingAssets.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func lateCommentEmoteFailureCannotReenterAnInactiveScope() throws {
+        let asset = CommentAssetReference()
+        let url = try #require(
+            URL(string: "https://i0.hdslb.com/bfs/emote/doge.png")
+        )
+        let renderer = makeCommentTextRenderer { reference in
+            reference == asset ? url : nil
+        }
+        let content = CommentContent(
+            message: "[doge]",
+            emotes: [
+                CommentEmote(
+                    text: "[doge]",
+                    range: CommentTextRange(location: 0, length: 6),
+                    asset: asset,
+                    size: .standard
+                )
+            ]
+        )
+        let scopeA = NativePlaybackCommentTextScope(
+            subject: .video(aid: 1),
+            rootID: CommentID(rawValue: 10),
+            revision: 1
+        )
+        let scopeB = NativePlaybackCommentTextScope(
+            subject: .video(aid: 2),
+            rootID: CommentID(rawValue: 20),
+            revision: 1
+        )
+
+        renderer.retainFailureScopes([scopeA])
+        renderer.retainFailureScopes([scopeB])
+        #expect(!renderer.markUnavailable(asset, in: scopeA))
+        renderer.retainFailureScopes([scopeA])
+
+        #expect(renderer.render(content, scope: scopeA).pendingAssets.count == 1)
+    }
+
+    @Test
+    @MainActor
+    func largeAndUnknownCommentEmotesKeepExplicitMeasurementSemantics() throws {
+        let largeAsset = CommentAssetReference()
+        let unknownAsset = CommentAssetReference()
+        let url = try #require(
+            URL(string: "https://i0.hdslb.com/bfs/emote/large.png")
+        )
+        let renderer = makeCommentTextRenderer { reference in
+            reference == largeAsset ? url : nil
+        }
+        let content = CommentContent(
+            message: "[大][未知]",
+            emotes: [
+                CommentEmote(
+                    text: "[大]",
+                    range: CommentTextRange(location: 0, length: 3),
+                    asset: largeAsset,
+                    size: .large
+                ),
+                CommentEmote(
+                    text: "[未知]",
+                    range: CommentTextRange(location: 3, length: 4),
+                    asset: unknownAsset,
+                    size: .unknown
+                ),
+            ]
+        )
+        let scope = NativePlaybackCommentTextScope(
+            subject: .video(aid: 1),
+            rootID: CommentID(rawValue: 11),
+            revision: 1
+        )
+
+        let rendered = renderer.render(content, scope: scope)
+        let attachment = try #require(
+            rendered.attributedString.attribute(
+                .attachment,
+                at: 0,
+                effectiveRange: nil
+            ) as? NSTextAttachment
+        )
+
+        #expect(rendered.attributedString.string == "\u{fffc}[未知]")
+        #expect(attachment.bounds.size == NSSize(width: 36, height: 36))
+        #expect(attachment.bounds.origin.y == NSFont.preferredFont(forTextStyle: .body).descender)
+        #expect(renderer.height(content, width: 200, scope: scope) >= 36)
     }
 
     @Test
@@ -1261,12 +1653,16 @@ struct NativePlaybackSidebarTests {
             )
             item.configure(
                 presentation: row,
+                textRenderer: makeCommentTextRenderer(),
+                avatarLoader: makeCommentAvatarLoader(),
+                pictureLoader: makeCommentPictureLoader(),
+                onTextLayoutChange: {},
                 onExpand: {},
                 onCollapse: {},
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenVideo: { _ in }
+                onOpenLink: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
@@ -1308,12 +1704,16 @@ struct NativePlaybackSidebarTests {
             )
             item.configure(
                 presentation: row,
+                textRenderer: makeCommentTextRenderer(),
+                avatarLoader: makeCommentAvatarLoader(),
+                pictureLoader: makeCommentPictureLoader(),
+                onTextLayoutChange: {},
                 onExpand: {},
                 onCollapse: {},
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenVideo: { _ in }
+                onOpenLink: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
@@ -1356,12 +1756,16 @@ struct NativePlaybackSidebarTests {
         )
         item.configure(
             presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
             onExpand: {},
             onCollapse: {},
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenVideo: { _ in }
+            onOpenLink: { _ in }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1412,12 +1816,16 @@ struct NativePlaybackSidebarTests {
         )
         item.configure(
             presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
             onExpand: {},
             onCollapse: {},
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenVideo: { _ in }
+            onOpenLink: { _ in }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1771,7 +2179,7 @@ struct NativePlaybackSidebarTests {
             previousReplyPage: { _ in },
             nextReplyPage: { _ in },
             retryReplies: { _ in },
-            openCommentVideo: { _ in }
+            openCommentLink: { _ in }
         )
 
         controller.update(
@@ -1813,7 +2221,7 @@ struct NativePlaybackSidebarTests {
             previousReplyPage: { _ in },
             nextReplyPage: { _ in },
             retryReplies: { _ in },
-            openCommentVideo: { _ in }
+            openCommentLink: { _ in }
         )
     }
 
@@ -1901,6 +2309,8 @@ struct NativePlaybackSidebarTests {
         id: Int64,
         message: String,
         links: [CommentLink] = [],
+        pictures: [CommentImage] = [],
+        pictureCount: Int? = nil,
         replyCount: Int = 0,
         preview: [BiliModels.Comment] = [],
         author: CommentAuthor? = nil,
@@ -1911,6 +2321,8 @@ struct NativePlaybackSidebarTests {
                 id: id,
                 message: message,
                 links: links,
+                pictures: pictures,
+                pictureCount: pictureCount,
                 replyCount: replyCount,
                 author: author,
                 provenance: provenance
@@ -1924,6 +2336,8 @@ struct NativePlaybackSidebarTests {
         rootID: Int64? = nil,
         message: String,
         links: [CommentLink] = [],
+        pictures: [CommentImage] = [],
+        pictureCount: Int? = nil,
         replyCount: Int = 0,
         author: CommentAuthor? = nil,
         provenance: [CommentProvenance] = []
@@ -1940,7 +2354,12 @@ struct NativePlaybackSidebarTests {
                             level: 6,
                             isVIP: true
                         ),
-                    content: CommentContent(message: message, links: links),
+                    content: CommentContent(
+                        message: message,
+                        links: links,
+                        pictures: pictures,
+                        pictureCount: pictureCount
+                    ),
                     createdAt: Date(timeIntervalSince1970: 1_700_000_000),
                     location: "东京",
                     likeCount: 42,
@@ -2044,6 +2463,36 @@ struct NativePlaybackSidebarTests {
                     durationSeconds: 61
                 )
             ]
+        )
+    }
+
+    @MainActor
+    private func makeCommentTextRenderer(
+        resolveURL: @escaping CommentAssetURLResolver = { _ in nil }
+    ) -> NativePlaybackCommentTextRenderer {
+        NativePlaybackCommentTextRenderer(
+            imagePipeline: NativeVideoImagePipeline(),
+            resolveURL: resolveURL
+        )
+    }
+
+    @MainActor
+    private func makeCommentAvatarLoader(
+        resolveURL: @escaping CommentAssetURLResolver = { _ in nil }
+    ) -> NativePlaybackCommentAvatarLoader {
+        NativePlaybackCommentAvatarLoader(
+            imagePipeline: NativeVideoImagePipeline(),
+            resolveURL: resolveURL
+        )
+    }
+
+    @MainActor
+    private func makeCommentPictureLoader(
+        resolveURL: @escaping CommentAssetURLResolver = { _ in nil }
+    ) -> NativePlaybackCommentPictureLoader {
+        NativePlaybackCommentPictureLoader(
+            imagePipeline: NativeVideoImagePipeline(),
+            resolveURL: resolveURL
         )
     }
 
