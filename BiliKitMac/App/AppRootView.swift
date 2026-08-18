@@ -83,6 +83,7 @@ struct AppRootView: View {
             commentAssetURLResolver: windowOwner.commentAssetURLResolver,
             commentVideoLinkResolver: windowOwner.commentVideoLinkResolver,
             commentLinkURLResolver: windowOwner.commentLinkURLResolver,
+            commentImagePipeline: windowOwner.commentImagePipeline,
             isAuthenticationPresented: $isAuthenticationPresented,
             submittedSearchQuery: submittedSearchQuery,
             onSubmitSearch: performSearch

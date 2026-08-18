@@ -8,14 +8,17 @@ struct NativePlaybackSidebarView: View {
     let model: GuestVideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
     let commentAssetURLResolver: CommentAssetURLResolver
+    let commentImagePipeline: NativeVideoImagePipeline
     let onRetry: () -> Void
     let onSelectPlayback: (String, Int64?) -> Void
     let onOpenCommentLink: (CommentLinkTarget) -> Void
+    let onOpenCommentPictures: (NativePlaybackCommentPictureGallery) -> Void
 
     var body: some View {
         NativePlaybackSidebarRepresentable(
             presentation: presentation,
             commentAssetURLResolver: commentAssetURLResolver,
+            commentImagePipeline: commentImagePipeline,
             actions: NativePlaybackSidebarActions(
                 retry: retry,
                 selectEpisode: selectEpisode,
@@ -31,7 +34,8 @@ struct NativePlaybackSidebarView: View {
                 },
                 nextReplyPage: { commentsModel?.showNextReplyPage(for: $0) },
                 retryReplies: { commentsModel?.retryReplies(for: $0) },
-                openCommentLink: onOpenCommentLink
+                openCommentLink: onOpenCommentLink,
+                openCommentPictures: onOpenCommentPictures
             )
         )
         .navigationTitle("观看辅助")
@@ -139,16 +143,19 @@ struct NativePlaybackSidebarActions {
     let nextReplyPage: (CommentID) -> Void
     let retryReplies: (CommentID) -> Void
     let openCommentLink: (CommentLinkTarget) -> Void
+    let openCommentPictures: (NativePlaybackCommentPictureGallery) -> Void
 }
 
 private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
     let presentation: NativePlaybackSidebarPresentation
     let commentAssetURLResolver: CommentAssetURLResolver
+    let commentImagePipeline: NativeVideoImagePipeline
     let actions: NativePlaybackSidebarActions
 
     func makeCoordinator() -> NativePlaybackSidebarController {
         NativePlaybackSidebarController(
-            commentAssetURLResolver: commentAssetURLResolver
+            commentAssetURLResolver: commentAssetURLResolver,
+            imagePipeline: commentImagePipeline
         )
     }
 
@@ -334,18 +341,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private let collectionView = NSCollectionView()
     private let layout = NativePlaybackSidebarLayout()
     private let heightCache = NativePlaybackSidebarHeightCache(capacity: 2_048)
-    private let imageOwner = NativeVideoImagePipelineOwner()
+    private let imageOwner: NativeVideoImagePipelineOwner?
+    private let imagePipeline: NativeVideoImagePipeline
     private let commentAssetURLResolver: CommentAssetURLResolver
     private lazy var commentTextRenderer = NativePlaybackCommentTextRenderer(
-        imagePipeline: imageOwner.pipeline,
+        imagePipeline: imagePipeline,
         resolveURL: commentAssetURLResolver
     )
     private lazy var commentAvatarLoader = NativePlaybackCommentAvatarLoader(
-        imagePipeline: imageOwner.pipeline,
+        imagePipeline: imagePipeline,
         resolveURL: commentAssetURLResolver
     )
     private lazy var commentPictureLoader = NativePlaybackCommentPictureLoader(
-        imagePipeline: imageOwner.pipeline,
+        imagePipeline: imagePipeline,
         resolveURL: commentAssetURLResolver
     )
     private var dataSource:
@@ -370,7 +378,8 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         previousReplyPage: { _ in },
         nextReplyPage: { _ in },
         retryReplies: { _ in },
-        openCommentLink: { _ in }
+        openCommentLink: { _ in },
+        openCommentPictures: { _ in }
     )
     private var itemIDs: [NativePlaybackSidebarItemID] = []
     private var commentThreadsByItemID:
@@ -397,8 +406,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private var liveScrollEndObservation: NSObjectProtocol?
     private var isTornDown = false
 
-    init(commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil }) {
+    init(
+        commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
+        imagePipeline: NativeVideoImagePipeline? = nil
+    ) {
         self.commentAssetURLResolver = commentAssetURLResolver
+        if let imagePipeline {
+            imageOwner = nil
+            self.imagePipeline = imagePipeline
+        } else {
+            let owner = NativeVideoImagePipelineOwner()
+            imageOwner = owner
+            self.imagePipeline = owner.pipeline
+        }
         super.init()
         configureCollectionView()
         rootView.commentsTopButton.target = self
@@ -550,7 +570,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         heightCache.removeAll()
         collectionView.delegate = nil
         rootView.scrollView.documentView = nil
-        imageOwner.shutdown()
+        imageOwner?.shutdown()
     }
 
     private func configureCollectionView() {
@@ -622,7 +642,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             item.configure(
                 content: content.uploader,
                 signatureExpanded: signatureExpanded,
-                imagePipeline: imageOwner.pipeline,
+                imagePipeline: imagePipeline,
                 onToggleSignature: { [weak self] in self?.toggleSignature() }
             )
             return item
@@ -703,7 +723,10 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
                 onPrevious: { [weak self] in self?.actions.previousReplyPage(rootID) },
                 onNext: { [weak self] in self?.actions.nextReplyPage(rootID) },
                 onRetry: { [weak self] in self?.actions.retryReplies(rootID) },
-                onOpenLink: { [weak self] in self?.actions.openCommentLink($0) }
+                onOpenLink: { [weak self] in self?.actions.openCommentLink($0) },
+                onOpenPictures: { [weak self] in
+                    self?.actions.openCommentPictures($0)
+                }
             )
             return item
         case .commentsFooter:

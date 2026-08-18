@@ -20,6 +20,7 @@ enum NativeVideoImageVariant: Hashable, Sendable {
     case avatar
     case commentEmote
     case commentPicture
+    case commentPicturePreview
 
     var maximumDecodedPixelSize: Int {
         switch self {
@@ -31,6 +32,8 @@ enum NativeVideoImageVariant: Hashable, Sendable {
             128
         case .commentPicture:
             1_024
+        case .commentPicturePreview:
+            3_840
         }
     }
 }
