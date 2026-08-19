@@ -6,13 +6,15 @@ import BiliDanmaku
 import BiliLibraryFeature
 import BiliModels
 import CoreGraphics
+import Observation
 import SwiftUI
 import Testing
 
 @testable import BiliKit
 
+@Suite(.serialized)
 struct VideoDetailLifecycleTests {
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     @MainActor
     func playbackFailureStopsPresentationAndRetryStartsItAgain() async {
         let fixture = VideoDetailLifecycleFixture()
@@ -47,50 +49,36 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
-        #expect(
-            await waitUntil {
-                presentation.stopCount > 0
-            }
-        )
+        await presentation.waitForStopCount(1)
         let baselineStopCount = presentation.stopCount
 
         videoModel.loadVideo(fixture.bvid)
-        #expect(
-            await waitUntil {
-                player.loadCallCount == 1
-                    && videoModel.presentedContext?.detail.bvid == fixture.bvid
-                    && presentation.startedIdentities.count == 1
-            }
-        )
+        await player.waitForLoadCallCount(1)
+        await presentation.waitForStartedCount(1)
+        #expect(player.loadCallCount == 1)
+        #expect(presentation.startedIdentities.count == 1)
+        #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
         player.failPendingLoad()
         await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                if case .failed = videoModel.state {
-                    return videoModel.presentedContext?.detail.bvid
-                        == fixture.bvid
-                        && presentation.stopCount == baselineStopCount + 1
-                }
-                return false
-            }
-        )
+        await presentation.waitForStopCount(baselineStopCount + 1)
+        #expect(presentation.stopCount == baselineStopCount + 1)
+        guard case .failed = videoModel.state else {
+            Issue.record("播放加载失败后应进入失败状态")
+            return
+        }
+        #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
         videoModel.loadVideo(fixture.bvid)
-        #expect(
-            await waitUntil {
-                player.loadCallCount == 2
-                    && presentation.startedIdentities.count == 2
-            }
-        )
+        await player.waitForLoadCallCount(2)
+        await presentation.waitForStartedCount(2)
+        #expect(player.loadCallCount == 2)
+        #expect(presentation.startedIdentities.count == 2)
 
         player.failPendingLoad()
         await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                presentation.stopCount == baselineStopCount + 2
-            }
-        )
+        await presentation.waitForStopCount(baselineStopCount + 2)
+        #expect(presentation.stopCount == baselineStopCount + 2)
 
         window.contentView = NSView()
     }
@@ -202,12 +190,8 @@ struct VideoDetailLifecycleTests {
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                playback.loadedIdentities == [fixture.identity]
-                    && videoModel.presentedContext?.detail.bvid == fixture.bvid
-            }
-        )
+        #expect(playback.loadedIdentities == [fixture.identity])
+        #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
         let loadCountBeforeRestore = playback.loadedIdentities.count
         let stopCountBeforeRestore = playback.stopCallCount
@@ -227,13 +211,10 @@ struct VideoDetailLifecycleTests {
         let stopCountBeforeIdentity = playback.stopCallCount
         authenticationModel.revalidate()
         await authenticationModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                authenticationModel.sessionState == .signedIn(identity)
-                    && videoModel.state == .idle
-                    && coordinator.currentPlaybackBVID == nil
-            }
-        )
+        await playback.waitForStopCallCount(stopCountBeforeIdentity + 1)
+        #expect(authenticationModel.sessionState == .signedIn(identity))
+        #expect(videoModel.state == .idle)
+        #expect(coordinator.currentPlaybackBVID == nil)
         #expect(playback.stopCallCount == stopCountBeforeIdentity + 1)
 
         coordinator.openPlayback(fixture.bvid)
@@ -243,40 +224,32 @@ struct VideoDetailLifecycleTests {
         let stopCountBeforeLogout = playback.stopCallCount
         authenticationModel.logout()
         await authenticationModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                authenticationModel.sessionState == .signedOut
-                    && videoModel.state == .idle
-                    && coordinator.currentPlaybackBVID == nil
-            }
-        )
+        await playback.waitForStopCallCount(stopCountBeforeLogout + 1)
+        #expect(authenticationModel.sessionState == .signedOut)
+        #expect(videoModel.state == .idle)
+        #expect(coordinator.currentPlaybackBVID == nil)
         #expect(playback.stopCallCount == stopCountBeforeLogout + 1)
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
         #expect(
-            await waitUntil {
-                playback.loadedIdentities == [
-                    fixture.identity,
-                    fixture.identity,
-                    fixture.identity,
-                ]
-                    && coordinator.currentPlaybackBVID == fixture.bvid
-            }
+            playback.loadedIdentities == [
+                fixture.identity,
+                fixture.identity,
+                fixture.identity,
+            ]
         )
+        #expect(coordinator.currentPlaybackBVID == fixture.bvid)
         let loadCountBeforeSignIn = playback.loadedIdentities.count
         let stopCountBeforeSignIn = playback.stopCallCount
 
         await authenticationService.setRestoreState(.signedIn(identity))
         authenticationModel.revalidate()
         await authenticationModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                authenticationModel.sessionState == .signedIn(identity)
-                    && videoModel.state == .idle
-                    && coordinator.currentPlaybackBVID == nil
-            }
-        )
+        await playback.waitForStopCallCount(stopCountBeforeSignIn + 1)
+        #expect(authenticationModel.sessionState == .signedIn(identity))
+        #expect(videoModel.state == .idle)
+        #expect(coordinator.currentPlaybackBVID == nil)
         #expect(playback.loadedIdentities.count == loadCountBeforeSignIn)
         #expect(playback.stopCallCount == stopCountBeforeSignIn + 1)
 
@@ -340,25 +313,20 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
-        #expect(
-            await waitUntilAsync {
-                await authenticationService.restoreCallCount() == 1
-                    && authenticationModel.sessionState == .signedIn(nil)
-            }
-        )
+        await authenticationService.waitForRestoreCallCount(1)
+        await authenticationModel.waitForCurrentTask()
+        #expect(authenticationModel.sessionState == .signedIn(nil))
 
         await authenticationService.setRestoreState(.signedOut)
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
+        await authenticationService.waitForRestoreCallCount(2)
+        await authenticationModel.waitForCurrentTask()
+        await playback.waitForStopCallCount(1)
 
-        #expect(
-            await waitUntilAsync {
-                await authenticationService.restoreCallCount() == 2
-                    && authenticationModel.sessionState == .signedOut
-                    && coordinator.currentPlaybackBVID == nil
-                    && videoModel.state == .idle
-            }
-        )
+        #expect(authenticationModel.sessionState == .signedOut)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(videoModel.state == .idle)
         #expect(playback.loadedIdentities.isEmpty)
         #expect(playback.stopCallCount == 1)
         window.contentView = NSView()
@@ -432,25 +400,20 @@ struct VideoDetailLifecycleTests {
         )
         window.contentView = hostingView
         window.layoutIfNeeded()
-        #expect(
-            await waitUntilAsync {
-                await authenticationService.restoreCallCount() == 1
-                    && authenticationModel.sessionState == .signedIn(nil)
-            }
-        )
+        await authenticationService.waitForRestoreCallCount(1)
+        await authenticationModel.waitForCurrentTask()
+        #expect(authenticationModel.sessionState == .signedIn(nil))
 
         await authenticationService.setRestoreState(.signedOut)
         coordinator.openPlayback(fixture.bvid)
+        await authenticationService.waitForRestoreCallCount(2)
+        await authenticationModel.waitForCurrentTask()
+        await playback.waitForStopCallCount(1)
 
-        #expect(
-            await waitUntilAsync {
-                await authenticationService.restoreCallCount() == 2
-                    && commentsModel.authenticationRevalidationGeneration == 1
-                    && authenticationModel.sessionState == .signedOut
-                    && coordinator.currentPlaybackBVID == nil
-                    && videoModel.state == .idle
-            }
-        )
+        #expect(commentsModel.authenticationRevalidationGeneration == 1)
+        #expect(authenticationModel.sessionState == .signedOut)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(videoModel.state == .idle)
         #expect(playback.stopCallCount == 1)
         window.contentView = NSView()
     }
@@ -571,61 +534,47 @@ struct VideoDetailLifecycleTests {
 
         coordinator.openPlayback(first.bvid)
         await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                commentsModel.subject == .video(aid: first.aid)
-                    && commentsModel.rootState == .empty
-            }
-        )
+        await commentsRepository.waitForRequestCount(1)
+        await commentsModel.waitForCurrentRootTask()
+        #expect(commentsModel.subject == .video(aid: first.aid))
+        #expect(commentsModel.rootState == .empty)
 
         coordinator.openPlayback(replacement.bvid)
         await videoModel.waitForCurrentTask()
-        #expect(
-            await waitUntil {
-                commentsModel.subject == .video(aid: replacement.aid)
-                    && commentsModel.rootState == .empty
-            }
-        )
+        await commentsRepository.waitForRequestCount(2)
+        await commentsModel.waitForCurrentRootTask()
+        #expect(commentsModel.subject == .video(aid: replacement.aid))
+        #expect(commentsModel.rootState == .empty)
         #expect(
             await commentsRepository.requestedSubjects()
                 == [.video(aid: first.aid), .video(aid: replacement.aid)]
         )
 
         coordinator.playbackPath = []
-        #expect(
-            await waitUntil {
-                commentsModel.subject == nil
-                    && commentsModel.rootState == .idle
-                    && videoModel.state == .idle
-            }
-        )
+        await waitForObservedState {
+            commentsModel.subject == nil
+                && commentsModel.rootState == .idle
+                && videoModel.state == .idle
+        }
+        #expect(commentsModel.subject == nil)
+        #expect(commentsModel.rootState == .idle)
+        #expect(videoModel.state == .idle)
         window.contentView = NSView()
     }
 
     @MainActor
-    private func waitUntil(
-        _ condition: @MainActor () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
+    private func waitForObservedState(
+        _ condition: @MainActor @escaping () -> Bool
+    ) async {
         while !condition() {
-            guard clock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(1))
+            await withCheckedContinuation { continuation in
+                withObservationTracking {
+                    _ = condition()
+                } onChange: {
+                    continuation.resume()
+                }
+            }
         }
-        return true
-    }
-
-    @MainActor
-    private func waitUntilAsync(
-        _ condition: @MainActor () async -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !(await condition()) {
-            guard clock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(1))
-        }
-        return true
     }
 }
 
@@ -775,6 +724,7 @@ private actor CommentLifecycleVideoRepository: GuestContentRepository {
 
 private actor EmptyLifecycleCommentRepository: CommentRepository {
     private var subjects: [CommentSubjectIdentity] = []
+    private var requestWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func rootComments(
         for subject: CommentSubjectIdentity,
@@ -782,6 +732,11 @@ private actor EmptyLifecycleCommentRepository: CommentRepository {
         after continuation: CommentContinuation?
     ) async throws -> CommentRootPage {
         subjects.append(subject)
+        let ready = requestWaiters.filter { $0.target <= subjects.count }
+        requestWaiters.removeAll { $0.target <= subjects.count }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
         return CommentRootPage(
             threads: [],
             totalCount: 0,
@@ -807,6 +762,13 @@ private actor EmptyLifecycleCommentRepository: CommentRepository {
 
     func requestedSubjects() -> [CommentSubjectIdentity] {
         subjects
+    }
+
+    func waitForRequestCount(_ target: Int) async {
+        guard subjects.count < target else { return }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((target, continuation))
+        }
     }
 }
 
@@ -976,6 +938,7 @@ private actor PendingLifecycleUploaderSignatureRepository:
 private final class ControlledFailingPlayback: PlaybackControlling {
     private(set) var loadCallCount = 0
     private var pendingLoad: CheckedContinuation<Void, any Error>?
+    private var loadWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
         finishedPlaybackFailureEvents()
@@ -987,6 +950,7 @@ private final class ControlledFailingPlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async throws {
         loadCallCount += 1
+        resumeLoadWaiters()
         try await withCheckedThrowingContinuation { continuation in
             pendingLoad = continuation
         }
@@ -1012,6 +976,21 @@ private final class ControlledFailingPlayback: PlaybackControlling {
         pendingLoad?.resume(throwing: ControlledPlaybackFailure())
         pendingLoad = nil
     }
+
+    func waitForLoadCallCount(_ target: Int) async {
+        guard loadCallCount < target else { return }
+        await withCheckedContinuation { continuation in
+            loadWaiters.append((target, continuation))
+        }
+    }
+
+    private func resumeLoadWaiters() {
+        let ready = loadWaiters.filter { $0.target <= loadCallCount }
+        loadWaiters.removeAll { $0.target <= loadCallCount }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
 }
 
 @MainActor
@@ -1028,6 +1007,7 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCallCount = 0
+    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
         finishedPlaybackFailureEvents()
@@ -1060,6 +1040,18 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
 
     func stop() {
         stopCallCount += 1
+        let ready = stopWaiters.filter { $0.target <= stopCallCount }
+        stopWaiters.removeAll { $0.target <= stopCallCount }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
+
+    func waitForStopCallCount(_ target: Int) async {
+        guard stopCallCount < target else { return }
+        await withCheckedContinuation { continuation in
+            stopWaiters.append((target, continuation))
+        }
     }
 }
 
@@ -1067,9 +1059,12 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
 private final class RecordingPresentation: DanmakuPresentationControlling {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCount = 0
+    private var startWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func start(for identity: PlaybackItemIdentity) {
         startedIdentities.append(identity)
+        resumeStartWaiters()
     }
 
     func setEnabled(_ enabled: Bool) {}
@@ -1086,6 +1081,37 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
 
     func stop() {
         stopCount += 1
+        resumeStopWaiters()
+    }
+
+    func waitForStartedCount(_ target: Int) async {
+        guard startedIdentities.count < target else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append((target, continuation))
+        }
+    }
+
+    func waitForStopCount(_ target: Int) async {
+        guard stopCount < target else { return }
+        await withCheckedContinuation { continuation in
+            stopWaiters.append((target, continuation))
+        }
+    }
+
+    private func resumeStartWaiters() {
+        let ready = startWaiters.filter { $0.target <= startedIdentities.count }
+        startWaiters.removeAll { $0.target <= startedIdentities.count }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
+
+    private func resumeStopWaiters() {
+        let ready = stopWaiters.filter { $0.target <= stopCount }
+        stopWaiters.removeAll { $0.target <= stopCount }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
     }
 }
 
@@ -1097,6 +1123,8 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     private var firstRestoreReleased = false
     private var restoreStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var restoreCountWaiters:
+        [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     init(
         restoreState: AuthenticationState,
@@ -1116,6 +1144,7 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
 
     func restore() async -> AuthenticationState {
         restoreCount += 1
+        resumeRestoreCountWaiters()
         if blocksFirstRestore, restoreCount == 1 {
             firstRestoreStarted = true
             resume(&restoreStartWaiters)
@@ -1137,6 +1166,13 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
         }
     }
 
+    func waitForRestoreCallCount(_ target: Int) async {
+        guard restoreCount < target else { return }
+        await withCheckedContinuation { continuation in
+            restoreCountWaiters.append((target, continuation))
+        }
+    }
+
     func releaseFirstRestore() {
         firstRestoreReleased = true
         resume(&restoreReleaseWaiters)
@@ -1147,6 +1183,14 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
         waiters.removeAll(keepingCapacity: false)
         for waiter in pending {
             waiter.resume()
+        }
+    }
+
+    private func resumeRestoreCountWaiters() {
+        let ready = restoreCountWaiters.filter { $0.target <= restoreCount }
+        restoreCountWaiters.removeAll { $0.target <= restoreCount }
+        for waiter in ready {
+            waiter.continuation.resume()
         }
     }
     func requestQRCode() async -> AuthenticationState { .signedOut }
