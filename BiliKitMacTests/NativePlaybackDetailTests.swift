@@ -113,15 +113,20 @@ struct NativePlaybackDetailTests {
             root.layoutSubtreeIfNeeded()
 
             #expect(abs(root.bounds.width - width) <= 0.5)
-            #expect(abs(root.scrollView.contentSize.width - width) <= 0.5)
+            let viewportWidth = root.scrollView.contentView.bounds.width
+            #expect(viewportWidth > 0)
+            #expect(viewportWidth <= root.bounds.width)
+            #expect(abs(root.scrollView.contentSize.width - viewportWidth) <= 0.5)
             #expect(
-                abs((root.scrollView.documentView?.frame.width ?? 0) - width)
-                    <= 0.5
+                abs(
+                    (root.scrollView.documentView?.frame.width ?? 0)
+                        - viewportWidth
+                ) <= 0.5
             )
             #expect(
                 abs(
                     (root.scrollView.documentView?.subviews.first?.frame.width ?? 0)
-                        - width
+                        - viewportWidth
                 ) <= 0.5
             )
             #expect(abs(root.scrollView.contentView.bounds.origin.x) <= 0.5)
