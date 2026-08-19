@@ -156,10 +156,8 @@ enum NativePlaybackCommentsItemMeasurement {
                 )
                 if index < replies.count - 1 { height += 8 }
             }
-            if replies.count < details.replyCount {
-                if !replies.isEmpty { height += 9 }
-                height += 24
-            }
+            if !replies.isEmpty { height += 9 }
+            height += 24
         }
         return ceil(height + replyPanelPadding)
     }
@@ -678,7 +676,8 @@ final class NativePlaybackCommentThreadItem: NSCollectionViewItem {
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenLink: @escaping (CommentLinkTarget) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void,
+        onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void
     ) {
         representedObject = presentation
         contentView.configure(
@@ -692,7 +691,8 @@ final class NativePlaybackCommentThreadItem: NSCollectionViewItem {
             onPrevious: onPrevious,
             onNext: onNext,
             onRetry: onRetry,
-            onOpenLink: onOpenLink
+            onOpenLink: onOpenLink,
+            onOpenPictures: onOpenPictures
         )
     }
 
@@ -739,7 +739,8 @@ private final class NativePlaybackCommentThreadView: NSView {
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenLink: @escaping (CommentLinkTarget) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void,
+        onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void
     ) {
         self.presentation = presentation
         self.textRenderer = textRenderer
@@ -752,7 +753,8 @@ private final class NativePlaybackCommentThreadView: NSView {
             pictureLoader: pictureLoader,
             textScope: textScope,
             onTextLayoutChange: onTextLayoutChange,
-            onOpenLink: onOpenLink
+            onOpenLink: onOpenLink,
+            onOpenPictures: onOpenPictures
         )
         repliesPanel.configure(
             thread: presentation.thread,
@@ -767,7 +769,8 @@ private final class NativePlaybackCommentThreadView: NSView {
             onPrevious: onPrevious,
             onNext: onNext,
             onRetry: onRetry,
-            onOpenLink: onOpenLink
+            onOpenLink: onOpenLink,
+            onOpenPictures: onOpenPictures
         )
         needsLayout = true
     }
@@ -901,7 +904,8 @@ private final class NativePlaybackCommentRowView: NSView {
         pictureLoader: NativePlaybackCommentPictureLoader,
         textScope: NativePlaybackCommentTextScope,
         onTextLayoutChange: @escaping () -> Void,
-        onOpenLink: @escaping (CommentLinkTarget) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void,
+        onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void
     ) {
         self.comment = comment
         self.isReply = isReply
@@ -953,7 +957,8 @@ private final class NativePlaybackCommentRowView: NSView {
             pictures.configure(
                 images: details.content.pictures,
                 count: details.content.pictureCount,
-                loader: pictureLoader
+                loader: pictureLoader,
+                onOpen: onOpenPictures
             )
             pictures.isHidden = details.content.pictureCount == 0
             metadataLabel.stringValue = Self.metadataLeading(details)
@@ -1961,10 +1966,18 @@ struct NativePlaybackCommentPictureLayout: Equatable {
 }
 
 @MainActor
+struct NativePlaybackCommentPictureGallery {
+    let references: [CommentAssetReference]
+    let selectedIndex: Int
+    let restoreFocus: () -> Void
+}
+
+@MainActor
 private final class NativePlaybackCommentPicturesView: NSView {
     override var isFlipped: Bool { true }
     private let tiles = (0..<9).map { _ in NativePlaybackCommentPictureTileView() }
     private var slots: [NativePlaybackCommentPictureSlot] = []
+    private var onOpen: ((NativePlaybackCommentPictureGallery) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1981,8 +1994,10 @@ private final class NativePlaybackCommentPicturesView: NSView {
     func configure(
         images: [CommentImage],
         count: Int,
-        loader: NativePlaybackCommentPictureLoader
+        loader: NativePlaybackCommentPictureLoader,
+        onOpen: @escaping (NativePlaybackCommentPictureGallery) -> Void
     ) {
+        self.onOpen = onOpen
         slots = NativePlaybackCommentPictureSlots.slots(
             images: images,
             count: count
@@ -1996,7 +2011,9 @@ private final class NativePlaybackCommentPicturesView: NSView {
             tile.isHidden = false
             tile.configure(
                 reference: slots[index].reference,
-                loader: loader
+                position: index,
+                loader: loader,
+                onOpen: { [weak self] in self?.openPicture(at: index) }
             )
         }
         setAccessibilityElement(!slots.isEmpty)
@@ -2022,6 +2039,7 @@ private final class NativePlaybackCommentPicturesView: NSView {
 
     func reset() {
         slots = []
+        onOpen = nil
         for tile in tiles {
             tile.isHidden = true
             tile.reset()
@@ -2029,10 +2047,37 @@ private final class NativePlaybackCommentPicturesView: NSView {
         setAccessibilityElement(false)
         setAccessibilityLabel(nil)
     }
+
+    private func openPicture(at slotIndex: Int) {
+        let validSlots = slots.enumerated().compactMap { index, slot in
+            slot.reference.map { (slotIndex: index, reference: $0) }
+        }
+        guard
+            let selectedIndex = validSlots.firstIndex(where: {
+                $0.slotIndex == slotIndex
+            }), tiles.indices.contains(slotIndex)
+        else { return }
+        let sourceTile = tiles[slotIndex]
+        let selectedReference = validSlots[selectedIndex].reference
+        onOpen?(
+            NativePlaybackCommentPictureGallery(
+                references: validSlots.map(\.reference),
+                selectedIndex: selectedIndex,
+                restoreFocus: { [weak sourceTile] in
+                    guard
+                        let sourceTile,
+                        sourceTile.represents(selectedReference),
+                        let window = sourceTile.window
+                    else { return }
+                    window.makeFirstResponder(sourceTile)
+                }
+            )
+        )
+    }
 }
 
 @MainActor
-private final class NativePlaybackCommentPictureTileView: NSView {
+private final class NativePlaybackCommentPictureTileView: NSButton {
     override var isFlipped: Bool { true }
     private let imageView = NSImageView()
     private let placeholderLabel = NSTextField(labelWithString: "图片")
@@ -2040,9 +2085,15 @@ private final class NativePlaybackCommentPictureTileView: NSView {
     private var imageGeneration: UInt64 = 0
     private var imageTask: Task<Void, Never>?
     private var isShowingPlaceholder = true
+    private var onOpen: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        title = ""
+        isBordered = false
+        focusRingType = .exterior
+        target = self
+        action = #selector(openPicture)
         wantsLayer = true
         layer?.cornerRadius = 6
         layer?.masksToBounds = true
@@ -2061,6 +2112,11 @@ private final class NativePlaybackCommentPictureTileView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil else { return nil }
+        return self
+    }
 
     override func updateLayer() {
         super.updateLayer()
@@ -2084,10 +2140,19 @@ private final class NativePlaybackCommentPictureTileView: NSView {
 
     func configure(
         reference: CommentAssetReference?,
-        loader: NativePlaybackCommentPictureLoader
+        position: Int,
+        loader: NativePlaybackCommentPictureLoader,
+        onOpen: @escaping () -> Void
     ) {
         cancelImageRequest()
         self.reference = reference
+        self.onOpen = reference == nil ? nil : onOpen
+        isEnabled = reference != nil
+        setAccessibilityElement(reference != nil)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(
+            reference == nil ? nil : "查看第 \(position + 1) 张评论图片"
+        )
         imageView.image = nil
         imageView.isHidden = true
         placeholderLabel.isHidden = false
@@ -2128,6 +2193,14 @@ private final class NativePlaybackCommentPictureTileView: NSView {
     func reset() {
         releaseImage()
         reference = nil
+        onOpen = nil
+        isEnabled = false
+        setAccessibilityElement(false)
+        setAccessibilityLabel(nil)
+    }
+
+    func represents(_ reference: CommentAssetReference) -> Bool {
+        self.reference == reference && isEnabled && !isHidden
     }
 
     private func cancelImageRequest() {
@@ -2177,6 +2250,10 @@ private final class NativePlaybackCommentPictureTileView: NSView {
         )
         CATransaction.commit()
         needsDisplay = true
+    }
+
+    @objc private func openPicture() {
+        onOpen?()
     }
 }
 
@@ -2285,7 +2362,8 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onRetry: @escaping () -> Void,
-        onOpenLink: @escaping (CommentLinkTarget) -> Void
+        onOpenLink: @escaping (CommentLinkTarget) -> Void,
+        onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void
     ) {
         resetRows()
         self.thread = thread
@@ -2319,17 +2397,15 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
                 pictureLoader: pictureLoader,
                 textScope: textScope,
                 onTextLayoutChange: onTextLayoutChange,
-                onOpenLink: onOpenLink
+                onOpenLink: onOpenLink,
+                onOpenPictures: onOpenPictures
             )
             addSubview(row)
             replyRows.append(row)
         }
-        let effectiveTotal =
-            (replyState?.totalCount ?? 0) > 0
-            ? (replyState?.totalCount ?? 0) : details.replyCount
-        headerLabel.isHidden = !expanded || replies.count >= effectiveTotal
+        headerLabel.isHidden = !expanded
         collapseButton.isHidden = !expanded
-        expandButton.isHidden = expanded || replies.count >= details.replyCount
+        expandButton.isHidden = expanded
         retryButton.isHidden = true
         statusLabel.isHidden = true
         previousButton.isHidden = true

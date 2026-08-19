@@ -20,6 +20,8 @@ final class AppWindowOwner {
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
+    let commentImagePipeline: NativeVideoImagePipeline
+    private let commentImagePipelineOwner: NativeVideoImagePipelineOwner
     private let playbackPreferencesController: PlaybackPreferencesController?
     private let openEnvironment: (@MainActor @Sendable () -> Void)?
     private let closeEnvironment: (@MainActor @Sendable () -> Void)?
@@ -93,6 +95,8 @@ final class AppWindowOwner {
         commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
         commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
         commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
+        commentImagePipelineOwner: NativeVideoImagePipelineOwner =
+            NativeVideoImagePipelineOwner(),
         playbackPreferencesController: PlaybackPreferencesController? = nil,
         openEnvironment: (@MainActor @Sendable () -> Void)? = nil,
         closeEnvironment: (@MainActor @Sendable () -> Void)? = nil
@@ -108,6 +112,8 @@ final class AppWindowOwner {
         self.commentAssetURLResolver = commentAssetURLResolver
         self.commentVideoLinkResolver = commentVideoLinkResolver
         self.commentLinkURLResolver = commentLinkURLResolver
+        self.commentImagePipelineOwner = commentImagePipelineOwner
+        commentImagePipeline = commentImagePipelineOwner.pipeline
         self.playbackPreferencesController = playbackPreferencesController
         self.openEnvironment = openEnvironment
         self.closeEnvironment = closeEnvironment
@@ -122,6 +128,7 @@ final class AppWindowOwner {
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        commentImagePipelineOwner.shutdown()
         if isOpen {
             closeEnvironment?()
         }

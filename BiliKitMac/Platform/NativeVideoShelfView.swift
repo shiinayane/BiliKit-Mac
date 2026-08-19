@@ -221,8 +221,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
             scrollView.install(collectionView: collectionView)
             applyInteractionState(isInteractionEnabled, reconfiguresCards: false)
-            scrollView.onViewportLayout = { [weak self] oldInsets in
-                self?.viewportDidLayout(previousInsets: oldInsets)
+            scrollView.onViewportLayout = { [weak self] in
+                self?.viewportDidLayout()
             }
             scrollView.onPageBackward = { [weak self] in self?.page(by: -1) }
             scrollView.onPageForward = { [weak self] in self?.page(by: 1) }
@@ -457,18 +457,20 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 || abs(collectionView.frame.height - targetSize.height) > 0.5
             if sizeChanged { collectionView.setFrameSize(targetSize) }
             if invalidateLayout { layout.invalidateLayout() }
-            if sizeChanged || invalidateLayout { collectionView.layoutSubtreeIfNeeded() }
+            if sizeChanged || invalidateLayout { collectionView.needsLayout = true }
             updatePageControls()
         }
 
-        private func viewportDidLayout(previousInsets: NSEdgeInsets?) {
+        private func viewportDidLayout() {
             guard !isReset else { return }
-            let oldLogicalOffset = NativeVideoShelfScrollCoordinates.logicalOffsetX(
-                physicalOffsetX: scrollView.contentView.bounds.origin.x,
-                leadingInset: previousInsets?.left ?? scrollView.contentInsets.left
-            )
+            let logicalOffset = currentLogicalOffsetX
             resizeDocument(invalidateLayout: false)
-            applyLogicalScrollOffset(oldLogicalOffset, animated: false)
+            let clampedOffset = min(logicalOffset, maximumLogicalOffsetX)
+            if abs(clampedOffset - logicalOffset) > 0.5 {
+                applyLogicalScrollOffset(clampedOffset, animated: false)
+            } else {
+                updatePageControls()
+            }
             updateHoverForCurrentPointerLocation()
         }
 
@@ -629,7 +631,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
 @MainActor
 final class NativeVideoShelfScrollView: NSScrollView {
-    var onViewportLayout: ((NSEdgeInsets?) -> Void)?
+    var onViewportLayout: (() -> Void)?
     var onPageBackward: (() -> Void)?
     var onPageForward: (() -> Void)?
     var onWindowChange: ((NSWindow?) -> Void)?
@@ -642,6 +644,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
     private var canGoForward = false
     private var lastViewportSize: NSSize?
     private var lastContentInsets = NSEdgeInsetsZero
+    private var viewportUpdateScheduled = false
     private var focusUpdateScheduled = false
     private var isInteractionEnabled = true
 
@@ -727,10 +730,19 @@ final class NativeVideoShelfScrollView: NSScrollView {
             || abs(lastContentInsets.top - contentInsets.top) > 0.5
             || abs(lastContentInsets.bottom - contentInsets.bottom) > 0.5
         guard viewportChanged || insetsChanged else { return }
-        let oldInsets = insetsChanged ? lastContentInsets : nil
         lastViewportSize = viewportSize
         lastContentInsets = contentInsets
-        onViewportLayout?(oldInsets)
+        scheduleViewportUpdate()
+    }
+
+    private func scheduleViewportUpdate() {
+        guard !viewportUpdateScheduled else { return }
+        viewportUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.viewportUpdateScheduled = false
+            self.onViewportLayout?()
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -805,6 +817,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
 
     func reset() {
         clearTransientControls()
+        viewportUpdateScheduled = false
         onViewportLayout = nil
         onPageBackward = nil
         onPageForward = nil

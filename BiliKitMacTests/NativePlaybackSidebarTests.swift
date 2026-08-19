@@ -64,6 +64,23 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
+    func rootReportsTheCurrentViewportDuringTheSameResizeLayoutPass() {
+        let root = NativePlaybackSidebarRootView()
+        root.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
+        root.layout()
+        var observedWidths: [CGFloat] = []
+        root.viewportSizeDidChange = { observedWidths.append($0.width) }
+
+        root.frame.size.width = 520
+        root.layout()
+
+        #expect(root.scrollView.frame.width == 520)
+        #expect(root.scrollView.contentSize.width == 520)
+        #expect(observedWidths.last == 520)
+    }
+
+    @Test
+    @MainActor
     func summaryUsesSelectableNonScrollingTextKitAtSidebarWidths() throws {
         let text = String(
             repeating: "这是一段需要按字符精确换行的简介，后续链接拦截也由同一个TextKit正文视图承担。",
@@ -1074,7 +1091,8 @@ struct NativePlaybackSidebarTests {
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenLink: { _ in }
+                onOpenLink: { _ in },
+                onOpenPictures: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
@@ -1229,7 +1247,8 @@ struct NativePlaybackSidebarTests {
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenLink: { openedTargets.append($0) }
+            onOpenLink: { openedTargets.append($0) },
+            onOpenPictures: { _ in }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1292,8 +1311,8 @@ struct NativePlaybackSidebarTests {
         }
         #expect(likeImage != nil)
         #expect(
-            views.compactMap { $0 as? NSButton }.allSatisfy {
-                $0.title != "共 1 条回复"
+            views.compactMap { $0 as? NSButton }.contains {
+                $0.title == "共 1 条回复"
             }
         )
     }
@@ -1393,6 +1412,7 @@ struct NativePlaybackSidebarTests {
             replyState: nil
         )
         let item = NativePlaybackCommentThreadItem()
+        var openedGallery: NativePlaybackCommentPictureGallery?
         item.view.frame = NSRect(
             x: 0,
             y: 0,
@@ -1410,7 +1430,8 @@ struct NativePlaybackSidebarTests {
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenLink: { _ in }
+            onOpenLink: { _ in },
+            onOpenPictures: { openedGallery = $0 }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1434,9 +1455,149 @@ struct NativePlaybackSidebarTests {
                 String(describing: type(of: $0)).contains("NSHostingView")
             }
         )
+        let thirdPictureButton = try #require(
+            views.compactMap { $0 as? NSButton }.first {
+                $0.accessibilityLabel() == "查看第 3 张评论图片"
+            }
+        )
+        thirdPictureButton.performClick(nil)
+        #expect(openedGallery?.references == [first, third])
+        #expect(openedGallery?.selectedIndex == 1)
+
+        let focusWindow = NSWindow(
+            contentRect: item.view.bounds,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let fallbackResponder = NSButton()
+        item.view.addSubview(fallbackResponder)
+        focusWindow.contentView = item.view
+        let replacement = CommentAssetReference()
+        let replacementRow = NativePlaybackCommentThreadPresentation(
+            subject: .video(aid: 700_001),
+            thread: commentThread(
+                id: 7,
+                message: "已复用评论",
+                pictures: [
+                    CommentImage(
+                        asset: replacement,
+                        position: 2,
+                        pixelWidth: 446,
+                        pixelHeight: 270
+                    )
+                ],
+                pictureCount: 3
+            ),
+            replyState: nil
+        )
+        item.configure(
+            presentation: replacementRow,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onPrevious: {},
+            onNext: {},
+            onRetry: {},
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
+        )
+        item.view.layoutSubtreeIfNeeded()
+        focusWindow.makeFirstResponder(fallbackResponder)
+
+        openedGallery?.restoreFocus()
+
+        #expect(focusWindow.firstResponder === fallbackResponder)
 
         item.releaseOffscreenResources()
         item.prepareForReuse()
+        focusWindow.contentView = NSView()
+    }
+
+    @Test
+    @MainActor
+    func commentImagePreviewClampsSelectionAndNavigatesWithoutWrapping() {
+        var selection = NativeCommentImagePreviewSelection(
+            count: 3,
+            requestedIndex: 9
+        )
+        #expect(selection.index == 2)
+        #expect(selection.canSelectPrevious)
+        #expect(!selection.canSelectNext)
+        let didSelectPastEnd = selection.selectNext()
+        let didSelectPrevious = selection.selectPrevious()
+        #expect(!didSelectPastEnd)
+        #expect(didSelectPrevious)
+        #expect(selection.index == 1)
+
+        selection = NativeCommentImagePreviewSelection(
+            count: 3,
+            requestedIndex: -4
+        )
+        #expect(selection.index == 0)
+        #expect(!selection.canSelectPrevious)
+        #expect(selection.canSelectNext)
+    }
+
+    @Test
+    @MainActor
+    func commentImagePreviewUsesOneNativeModalSurfaceAndSemanticControls() throws {
+        let owner = NativeVideoImagePipelineOwner()
+        let references = [CommentAssetReference(), CommentAssetReference()]
+        var dismissCount = 0
+        let preview = NativeCommentImagePreviewRootView(
+            imagePipeline: owner.pipeline,
+            resolveURL: { _ in nil }
+        )
+        preview.frame = NSRect(x: 0, y: 0, width: 900, height: 620)
+        preview.configure(
+            request: NativeCommentImagePreviewRequest(
+                bvid: "BVPreview",
+                references: references,
+                selectedIndex: 1,
+                restoreFocus: {}
+            ),
+            onDismiss: { dismissCount += 1 }
+        )
+        preview.layoutSubtreeIfNeeded()
+
+        let views = descendants(of: preview)
+        let buttons = views.compactMap { $0 as? NSButton }
+        let previous = try #require(
+            buttons.first { $0.accessibilityLabel() == "上一张图片" }
+        )
+        let next = try #require(
+            buttons.first { $0.accessibilityLabel() == "下一张图片" }
+        )
+        let close = try #require(
+            buttons.first { $0.accessibilityLabel() == "关闭图片预览" }
+        )
+        let counter = try #require(
+            views.compactMap { $0 as? NSTextField }.first {
+                $0.stringValue == "2 / 2"
+            }
+        )
+
+        #expect(preview.accessibilityRole() == .group)
+        #expect(preview.accessibilitySubrole() == .dialog)
+        #expect(preview.isAccessibilityModal())
+        #expect(preview.accessibilityLabel() == "评论图片预览")
+        #expect(!views.contains { $0 is NSScrollView })
+        #expect(counter.stringValue == "2 / 2")
+        #expect(previous.isEnabled)
+        #expect(!next.isEnabled)
+        previous.performClick(nil)
+        #expect(counter.stringValue == "1 / 2")
+        #expect(!previous.isEnabled)
+        #expect(next.isEnabled)
+        close.performClick(nil)
+        #expect(dismissCount == 1)
+
+        preview.tearDown()
+        owner.shutdown()
     }
 
     @Test
@@ -1662,7 +1823,8 @@ struct NativePlaybackSidebarTests {
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenLink: { _ in }
+                onOpenLink: { _ in },
+                onOpenPictures: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
@@ -1677,14 +1839,14 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func replySummaryOnlyAppearsWhenRepliesRemainHidden() throws {
+    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply() throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let previews = [
             comment(id: 31, rootID: 3, message: "回复一"),
             comment(id: 32, rootID: 3, message: "回复二"),
         ]
 
-        for (replyCount, shouldShowSummary) in [(2, false), (3, true)] {
+        for replyCount in [2, 3] {
             let row = NativePlaybackCommentThreadPresentation(
                 subject: subject,
                 thread: commentThread(
@@ -1713,13 +1875,14 @@ struct NativePlaybackSidebarTests {
                 onPrevious: {},
                 onNext: {},
                 onRetry: {},
-                onOpenLink: { _ in }
+                onOpenLink: { _ in },
+                onOpenPictures: { _ in }
             )
             item.view.layoutSubtreeIfNeeded()
 
             let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
                 .first { $0.title == "共 \(replyCount) 条回复" }
-            #expect((summary != nil) == shouldShowSummary)
+            #expect(summary != nil)
         }
     }
 
@@ -1765,7 +1928,8 @@ struct NativePlaybackSidebarTests {
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenLink: { _ in }
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -1825,7 +1989,8 @@ struct NativePlaybackSidebarTests {
             onPrevious: {},
             onNext: {},
             onRetry: {},
-            onOpenLink: { _ in }
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
         )
         item.view.layoutSubtreeIfNeeded()
 
@@ -2179,7 +2344,8 @@ struct NativePlaybackSidebarTests {
             previousReplyPage: { _ in },
             nextReplyPage: { _ in },
             retryReplies: { _ in },
-            openCommentLink: { _ in }
+            openCommentLink: { _ in },
+            openCommentPictures: { _ in }
         )
 
         controller.update(
@@ -2221,7 +2387,8 @@ struct NativePlaybackSidebarTests {
             previousReplyPage: { _ in },
             nextReplyPage: { _ in },
             retryReplies: { _ in },
-            openCommentLink: { _ in }
+            openCommentLink: { _ in },
+            openCommentPictures: { _ in }
         )
     }
 

@@ -56,6 +56,7 @@ struct NativeVideoShelfTests {
         scrollView.layoutSubtreeIfNeeded()
 
         #expect(scrollView.usesPredominantAxisScrolling)
+        #expect(scrollView.automaticallyAdjustsContentInsets)
         #expect(!scrollView.wantsForwardedScrollEvents(for: .vertical))
         #expect(!scrollView.wantsForwardedScrollEvents(for: .horizontal))
         #expect(scrollView.hasHorizontalScroller)
@@ -92,6 +93,43 @@ struct NativeVideoShelfTests {
 
         scrollView.updatePointerInside(false)
         #expect(buttons.allSatisfy { $0.isHidden })
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func viewportAndInsetNotificationsAreDeferredBeyondTheCurrentLayoutPass() async {
+        let scrollView = NativeVideoShelfScrollView(
+            frame: NSRect(x: 0, y: 0, width: 900, height: 232)
+        )
+        scrollView.install(collectionView: NSCollectionView())
+        let (notifications, continuation) = AsyncStream<Void>.makeStream()
+        var notificationCount = 0
+        scrollView.onViewportLayout = {
+            notificationCount += 1
+            continuation.yield()
+        }
+        var iterator = notifications.makeAsyncIterator()
+
+        scrollView.layoutSubtreeIfNeeded()
+
+        #expect(notificationCount == 0)
+        _ = await iterator.next()
+        #expect(notificationCount == 1)
+
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(
+            top: 0,
+            left: 120,
+            bottom: 0,
+            right: 0
+        )
+        scrollView.layout()
+
+        #expect(notificationCount == 1)
+        _ = await iterator.next()
+        continuation.finish()
+        #expect(notificationCount == 2)
+        scrollView.reset()
     }
 
     @Test

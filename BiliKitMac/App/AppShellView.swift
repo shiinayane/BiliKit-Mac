@@ -20,6 +20,7 @@ struct AppShellView: View {
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
+    let commentImagePipeline: NativeVideoImagePipeline
     @Binding var isAuthenticationPresented: Bool
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
@@ -30,11 +31,12 @@ struct AppShellView: View {
     @State private var popularScrollReset = NativeVideoGridScrollResetState()
     @State private var searchScrollReset = NativeVideoGridScrollResetState()
     @State private var historyScrollReset = NativeVideoGridScrollResetState()
+    @State private var commentImagePreview: NativeCommentImagePreviewRequest?
 
     var body: some View {
         @Bindable var navigationCoordinator = navigationCoordinator
 
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: guardedColumnVisibility) {
             Group {
                 if navigationCoordinator.currentPlaybackBVID != nil {
                     playbackSidebar
@@ -55,7 +57,7 @@ struct AppShellView: View {
                 max: sidebarMaximumWidth
             )
         } detail: {
-            NavigationStack(path: $navigationCoordinator.playbackPath) {
+            NavigationStack(path: guardedPlaybackPath) {
                 selectedSourceRoot
                     .navigationDestination(
                         for: PlaybackDestination.self
@@ -72,7 +74,26 @@ struct AppShellView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbarVisibility(
+            isCommentImagePreviewPresented ? .hidden : .automatic,
+            for: .windowToolbar
+        )
         .frame(minWidth: 760, minHeight: 560)
+        .overlay {
+            if let commentImagePreview,
+                commentImagePreview.bvid
+                    == navigationCoordinator.currentPlaybackBVID
+            {
+                NativeCommentImagePreviewView(
+                    request: commentImagePreview,
+                    imagePipeline: commentImagePipeline,
+                    resolveURL: commentAssetURLResolver,
+                    onDismiss: {
+                        dismissCommentImagePreview(restoringFocus: true)
+                    }
+                )
+            }
+        }
         .sheet(isPresented: $isAuthenticationPresented) {
             AuthenticationView(model: authenticationModel)
         }
@@ -110,12 +131,44 @@ struct AppShellView: View {
             historyScrollOffsetY = 0
             historyScrollReset.request()
         }
+        .onChange(of: navigationCoordinator.currentPlaybackBVID) {
+            previousBVID,
+            currentBVID in
+            guard previousBVID != currentBVID else { return }
+            dismissCommentImagePreview(restoringFocus: false)
+        }
     }
 
     private var sidebarContextID: String {
         navigationCoordinator.currentPlaybackBVID == nil
             ? "navigation"
             : "playback"
+    }
+
+    private var isCommentImagePreviewPresented: Bool {
+        guard let commentImagePreview else { return false }
+        return commentImagePreview.bvid
+            == navigationCoordinator.currentPlaybackBVID
+    }
+
+    private var guardedColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { columnVisibility },
+            set: { nextVisibility in
+                guard !isCommentImagePreviewPresented else { return }
+                columnVisibility = nextVisibility
+            }
+        )
+    }
+
+    private var guardedPlaybackPath: Binding<[PlaybackDestination]> {
+        Binding(
+            get: { navigationCoordinator.playbackPath },
+            set: { path in
+                guard !isCommentImagePreviewPresented else { return }
+                navigationCoordinator.playbackPath = path
+            }
+        )
     }
 
     private var historyAccountScope: AccountSessionScope {
@@ -127,6 +180,7 @@ struct AppShellView: View {
             model: videoModel,
             commentsModel: commentsModel,
             commentAssetURLResolver: commentAssetURLResolver,
+            commentImagePipeline: commentImagePipeline,
             onRetry: navigationCoordinator.retryPlayback,
             onSelectPlayback: { bvid, preferredCID in
                 navigationCoordinator.openPlayback(
@@ -142,7 +196,8 @@ struct AppShellView: View {
                 } else if let url = commentLinkURLResolver(target) {
                     openURL(url)
                 }
-            }
+            },
+            onOpenCommentPictures: openCommentPictures
         )
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -157,6 +212,30 @@ struct AppShellView: View {
 
     private var sidebarMaximumWidth: CGFloat {
         navigationCoordinator.currentPlaybackBVID == nil ? 320 : 520
+    }
+
+    private func openCommentPictures(
+        _ gallery: NativePlaybackCommentPictureGallery
+    ) {
+        guard let bvid = navigationCoordinator.currentPlaybackBVID,
+            !gallery.references.isEmpty
+        else { return }
+        commentImagePreview = NativeCommentImagePreviewRequest(
+            bvid: bvid,
+            references: gallery.references,
+            selectedIndex: gallery.selectedIndex,
+            restoreFocus: gallery.restoreFocus
+        )
+    }
+
+    private func dismissCommentImagePreview(restoringFocus: Bool) {
+        guard let request = commentImagePreview else { return }
+        commentImagePreview = nil
+        guard restoringFocus else { return }
+        Task { @MainActor in
+            await Task.yield()
+            request.restoreFocus()
+        }
     }
 
     @ViewBuilder

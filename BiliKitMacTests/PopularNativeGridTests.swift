@@ -438,10 +438,23 @@ struct PopularNativeGridTests {
         #expect(NativeVideoImageVariant.avatar.maximumDecodedPixelSize == 96)
         #expect(NativeVideoImageVariant.commentEmote.maximumDecodedPixelSize == 128)
         #expect(NativeVideoImageVariant.commentPicture.maximumDecodedPixelSize == 1_024)
+        #expect(
+            NativeVideoImageVariant.commentPicturePreview.maximumDecodedPixelSize
+                == 3_840
+        )
 
         let url = try #require(URL(string: "https://i.example/shared.webp"))
         let coverKey = NativeVideoImageKey(url: url, variant: .cover)
         let avatarKey = NativeVideoImageKey(url: url, variant: .avatar)
+        let commentPictureKey = NativeVideoImageKey(
+            url: url,
+            variant: .commentPicture
+        )
+        let commentPreviewKey = NativeVideoImageKey(
+            url: url,
+            variant: .commentPicturePreview
+        )
+        #expect(commentPictureKey != commentPreviewKey)
         let cover = try #require(makeImage(width: 8, height: 4))
         let avatar = try #require(makeImage(width: 4, height: 4))
         var cache = NativeVideoImageCache(countLimit: 2, costLimit: 1_024)
