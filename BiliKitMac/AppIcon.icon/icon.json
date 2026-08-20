@@ -1,0 +1,54 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "image-name" : "02-blue-foreground 1.svg",
+          "name" : "02-blue-foreground 1"
+        }
+      ],
+      "name" : "Blue Foreground",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "image-name" : "01a-k-lower-underlay 1.svg",
+          "name" : "01a-k-lower-underlay 1"
+        },
+        {
+          "image-name" : "01b-k-upper-underlay 1.svg",
+          "name" : "01b-k-upper-underlay 1"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Coral K Underlay",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
