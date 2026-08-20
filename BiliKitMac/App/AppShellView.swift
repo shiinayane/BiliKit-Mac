@@ -25,9 +25,11 @@ struct AppShellView: View {
     let submittedSearchQuery: String?
     let onSubmitSearch: () -> Void
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var homeScrollOffsetY: CGFloat = 0
     @State private var popularScrollOffsetY: CGFloat = 0
     @State private var searchScrollOffsetY: CGFloat = 0
     @State private var historyScrollOffsetY: CGFloat = 0
+    @State private var homeScrollReset = NativeVideoGridScrollResetState()
     @State private var popularScrollReset = NativeVideoGridScrollResetState()
     @State private var searchScrollReset = NativeVideoGridScrollResetState()
     @State private var historyScrollReset = NativeVideoGridScrollResetState()
@@ -102,6 +104,13 @@ struct AppShellView: View {
             searchScrollOffsetY = 0
             searchScrollReset.request()
         }
+        .onChange(of: browseModel.recommendationSuccessfulRefreshGeneration) {
+            previousGeneration,
+            generation in
+            guard previousGeneration != generation else { return }
+            homeScrollOffsetY = 0
+            homeScrollReset.request()
+        }
         .onChange(of: browseModel.popularSuccessfulRefreshGeneration) {
             previousGeneration,
             generation in
@@ -128,6 +137,8 @@ struct AppShellView: View {
             else {
                 return
             }
+            homeScrollOffsetY = 0
+            homeScrollReset.request()
             historyScrollOffsetY = 0
             historyScrollReset.request()
         }
@@ -241,6 +252,13 @@ struct AppShellView: View {
     @ViewBuilder
     private var selectedSourceRoot: some View {
         switch navigationCoordinator.selectedTab {
+        case .home:
+            RecommendedTabRoot(
+                model: browseModel,
+                scrollOffsetY: $homeScrollOffsetY,
+                scrollReset: $homeScrollReset,
+                onSelect: navigationCoordinator.openPlayback
+            )
         case .search:
             SearchTabRoot(
                 model: browseModel,

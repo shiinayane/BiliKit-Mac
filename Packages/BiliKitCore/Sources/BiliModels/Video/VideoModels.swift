@@ -80,6 +80,63 @@ public struct PopularPage: Sendable, Equatable {
     }
 }
 
+public struct RecommendationContinuation: Sendable, Equatable {
+    public let freshIndex: Int
+
+    public init(freshIndex: Int) {
+        self.freshIndex = freshIndex
+    }
+}
+
+public struct RecommendedVideo: Identifiable, Sendable, Equatable {
+    public var id: String { bvid }
+
+    public let bvid: String
+    public let title: String
+    public let coverURL: URL?
+    public let owner: VideoOwner
+    public let statistics: VideoStatistics
+    public let durationSeconds: Int
+    public let publishedAt: Date
+    public let recommendationReason: String?
+
+    public init(
+        bvid: String,
+        title: String,
+        coverURL: URL?,
+        owner: VideoOwner,
+        statistics: VideoStatistics,
+        durationSeconds: Int,
+        publishedAt: Date,
+        recommendationReason: String?
+    ) {
+        self.bvid = bvid
+        self.title = title
+        self.coverURL = coverURL
+        self.owner = owner
+        self.statistics = statistics
+        self.durationSeconds = durationSeconds
+        self.publishedAt = publishedAt
+        self.recommendationReason = recommendationReason
+    }
+}
+
+public struct RecommendationPage: Sendable, Equatable {
+    public let videos: [RecommendedVideo]
+    public let continuation: RecommendationContinuation
+    public let nextContinuation: RecommendationContinuation?
+
+    public init(
+        videos: [RecommendedVideo],
+        continuation: RecommendationContinuation,
+        nextContinuation: RecommendationContinuation?
+    ) {
+        self.videos = videos
+        self.continuation = continuation
+        self.nextContinuation = nextContinuation
+    }
+}
+
 public struct RelatedVideo: Identifiable, Sendable, Equatable {
     public var id: String { bvid }
 

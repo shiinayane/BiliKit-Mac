@@ -145,6 +145,12 @@ struct AppRootView: View {
             guard generation > previousGeneration else { return }
             authenticationModel.revalidate()
         }
+        .onChange(of: browseModel.authenticationRevalidationGeneration) {
+            previousGeneration,
+            generation in
+            guard generation > previousGeneration else { return }
+            authenticationModel.revalidate()
+        }
         .onChange(of: danmakuModel.authenticationRevalidationGeneration) {
             previousGeneration,
             generation in
@@ -237,6 +243,8 @@ struct AppRootView: View {
 
     private var browseActivation: BrowseActivation {
         switch navigationCoordinator.selectedTab {
+        case .home:
+            return .recommendation
         case .popular:
             return .popular
         case .search:
@@ -251,6 +259,9 @@ struct AppRootView: View {
         for activation: BrowseActivation
     ) async {
         switch activation {
+        case .recommendation:
+            browseModel.activateRecommendation()
+            await browseModel.waitForCurrentTask()
         case .popular:
             browseModel.activatePopular(pageSize: 50)
             await browseModel.waitForCurrentTask()
@@ -292,6 +303,7 @@ struct AppRootView: View {
 }
 
 private enum BrowseActivation: Hashable {
+    case recommendation
     case popular
     case search(query: String?)
     case inactive

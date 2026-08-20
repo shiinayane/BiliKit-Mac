@@ -120,6 +120,116 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func recommendationBatchesAppendDeduplicateAndStopWithoutProgress() async {
+        let first = GuestFixtures(bvid: "BV1RcmdOneA", title: "推荐一")
+        let second = GuestFixtures(bvid: "BV1RcmdTwoB", title: "推荐二")
+        let repository = RecommendationPaginationRepositoryStub(
+            first: first,
+            second: second
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activateRecommendation()
+        await model.waitForCurrentTask()
+        #expect(model.recommendationPagination().canLoadMore)
+
+        model.loadMoreRecommendations()
+        await model.waitForCurrentTask()
+        guard case .loaded(.recommendation(let secondBatch)) = model.state else {
+            Issue.record("推荐追加后应保持 loaded")
+            return
+        }
+        #expect(secondBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(secondBatch.nextContinuation == RecommendationContinuation(freshIndex: 3))
+
+        model.loadMoreRecommendations()
+        await model.waitForCurrentTask()
+        guard case .loaded(.recommendation(let finalBatch)) = model.state else {
+            Issue.record("全重复推荐批次后应保持 loaded")
+            return
+        }
+        #expect(finalBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
+        #expect(finalBatch.nextContinuation == nil)
+        #expect(!model.recommendationPagination().canLoadMore)
+        #expect(await repository.callCount == 3)
+    }
+
+    @Test
+    @MainActor
+    func recommendationWorksetStopsAtItsRetainedCapacity() async {
+        let repository = RecommendationCapacityRepositoryStub()
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activateRecommendation()
+        await model.waitForCurrentTask()
+        model.loadMoreRecommendations()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.recommendation(let page)) = model.state else {
+            Issue.record("推荐达到容量后应保持 loaded")
+            return
+        }
+        #expect(
+            page.videos.count
+                == GuestBrowseViewModel.maximumRetainedRecommendationVideos
+        )
+        #expect(page.nextContinuation == nil)
+        #expect(!model.recommendationPagination().canLoadMore)
+    }
+
+    @Test
+    @MainActor
+    func recommendationAuthenticationFailureRequestsRevalidation() async {
+        let repository = RecommendationAuthenticationFailureRepositoryStub(
+            failsInitialRequest: true
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activateRecommendation()
+        await model.waitForCurrentTask()
+
+        #expect(model.authenticationRevalidationGeneration == 1)
+        #expect(
+            model.state
+                == .failed(
+                    request: .recommendation(continuation: nil),
+                    error: .authenticationInvalid
+                )
+        )
+    }
+
+    @Test
+    @MainActor
+    func recommendationTailAuthenticationFailureKeepsCardsAndRequestsRevalidation() async {
+        let repository = RecommendationAuthenticationFailureRepositoryStub(
+            failsInitialRequest: false
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activateRecommendation()
+        await model.waitForCurrentTask()
+        model.loadMoreRecommendations()
+        await model.waitForCurrentTask()
+
+        guard case .loaded(.recommendation(let page)) = model.state else {
+            Issue.record("认证失效的推荐追加应保留已有卡片")
+            return
+        }
+        #expect(page.videos.count == 1)
+        #expect(model.authenticationRevalidationGeneration == 1)
+        #expect(model.recommendationPagination().loadMoreError == .authenticationInvalid)
+    }
+
+    @Test
+    @MainActor
     func failedPopularAppendKeepsCardsAndRetriesOnlyNextPage() async {
         let first = GuestFixtures(bvid: "BV1PopularC3", title: "保留热门卡片")
         let second = GuestFixtures(bvid: "BV1PopularD4", title: "重试热门追加")
@@ -411,6 +521,37 @@ struct GuestBrowseAndVideoViewModelTests {
 
         guard case .loaded(.popular(let page)) = model.state else {
             Issue.record("账户切换后的热门结果应保持 loaded")
+            return
+        }
+        #expect(page.videos.map(\.bvid) == [fresh.bvid])
+        #expect(await repository.requestCount == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func authenticationEpochRestartsRecommendationAndRejectsLateOldResult() async throws {
+        let old = GuestFixtures(bvid: "BV1RcmdOld01", title: "旧账户推荐")
+        let fresh = GuestFixtures(bvid: "BV1RcmdNew02", title: "新账户推荐")
+        let repository = AuthenticationEpochRecommendationRepositoryStub()
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activateRecommendation()
+        try await repository.waitForRequestCount(1)
+        let oldTask = try #require(model.taskSnapshotForTesting())
+
+        model.synchronizeAuthenticationSession(generation: 1)
+        try await repository.waitForRequestCount(2)
+        await repository.releaseRequest(1, fixture: fresh)
+        await model.waitForCurrentTask()
+
+        model.synchronizeAuthenticationSession(generation: 1)
+        await repository.releaseRequest(0, fixture: old)
+        await oldTask.value
+
+        guard case .loaded(.recommendation(let page)) = model.state else {
+            Issue.record("账户切换后的首页推荐应保持 loaded")
             return
         }
         #expect(page.videos.map(\.bvid) == [fresh.bvid])
@@ -2341,6 +2482,139 @@ private actor PopularPaginationRepositoryStub: GuestContentRepository {
     }
 }
 
+private actor RecommendationPaginationRepositoryStub: GuestContentRepository {
+    let first: GuestFixtures
+    let second: GuestFixtures
+    private(set) var callCount = 0
+
+    init(first: GuestFixtures, second: GuestFixtures) {
+        self.first = first
+        self.second = second
+    }
+
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        callCount += 1
+        switch continuation?.freshIndex ?? 1 {
+        case 1:
+            return RecommendationPage(
+                videos: [first.recommendedVideo, first.recommendedVideo],
+                continuation: RecommendationContinuation(freshIndex: 1),
+                nextContinuation: RecommendationContinuation(freshIndex: 2)
+            )
+        case 2:
+            return RecommendationPage(
+                videos: [first.recommendedVideo, second.recommendedVideo],
+                continuation: RecommendationContinuation(freshIndex: 2),
+                nextContinuation: RecommendationContinuation(freshIndex: 3)
+            )
+        case 3:
+            return RecommendationPage(
+                videos: [second.recommendedVideo],
+                continuation: RecommendationContinuation(freshIndex: 3),
+                nextContinuation: RecommendationContinuation(freshIndex: 4)
+            )
+        default:
+            throw GuestApplicationError.invalidRequest
+        }
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { first.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [first.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        first.playback
+    }
+}
+
+private actor RecommendationCapacityRepositoryStub: GuestContentRepository {
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        let freshIndex = continuation?.freshIndex ?? 1
+        let range = freshIndex == 1 ? 0..<999 : 999..<1_004
+        return RecommendationPage(
+            videos: range.map { index in
+                GuestFixtures(
+                    bvid: "BV-capacity-\(index)",
+                    title: "推荐 \(index)"
+                ).recommendedVideo
+            },
+            continuation: RecommendationContinuation(freshIndex: freshIndex),
+            nextContinuation: RecommendationContinuation(freshIndex: freshIndex + 1)
+        )
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        GuestFixtures().detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [GuestFixtures().page]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        GuestFixtures().playback
+    }
+}
+
+private actor RecommendationAuthenticationFailureRepositoryStub:
+    GuestContentRepository
+{
+    let failsInitialRequest: Bool
+    private let fixture = GuestFixtures(
+        bvid: "BV1AuthRcmd1",
+        title: "认证推荐"
+    )
+
+    init(failsInitialRequest: Bool) {
+        self.failsInitialRequest = failsInitialRequest
+    }
+
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        if failsInitialRequest || continuation != nil {
+            throw GuestApplicationError.authenticationInvalid
+        }
+        return RecommendationPage(
+            videos: [fixture.recommendedVideo],
+            continuation: RecommendationContinuation(freshIndex: 1),
+            nextContinuation: RecommendationContinuation(freshIndex: 2)
+        )
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        throw GuestApplicationError.invalidRequest
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail { fixture.detail }
+    func pages(for bvid: String) async throws -> [VideoPage] { [fixture.page] }
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        fixture.playback
+    }
+}
+
 private actor DuplicateOnlyPopularRepositoryStub: GuestContentRepository {
     let fixtures: GuestFixtures
     private(set) var popularCallCount = 0
@@ -2608,6 +2882,67 @@ private actor AuthenticationEpochPopularRepositoryStub: GuestContentRepository {
     }
 }
 
+private actor AuthenticationEpochRecommendationRepositoryStub: GuestContentRepository {
+    private let requestEvents = TestEventCounter()
+    private var continuations: [CheckedContinuation<RecommendationPage, Never>?] = []
+
+    var requestCount: Int {
+        continuations.count
+    }
+
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        let index = continuations.count
+        continuations.append(nil)
+        await requestEvents.signal()
+        return await withCheckedContinuation { continuation in
+            continuations[index] = continuation
+        }
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func videoDetail(for bvid: String) async throws -> VideoDetail {
+        GuestFixtures().detail
+    }
+
+    func pages(for bvid: String) async throws -> [VideoPage] {
+        [GuestFixtures().page]
+    }
+
+    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
+        GuestFixtures().playback
+    }
+
+    func waitForRequestCount(_ count: Int) async throws {
+        try await requestEvents.wait(until: count)
+    }
+
+    func releaseRequest(_ index: Int, fixture: GuestFixtures) {
+        continuations[index]?.resume(
+            returning: RecommendationPage(
+                videos: [fixture.recommendedVideo],
+                continuation: RecommendationContinuation(freshIndex: 1),
+                nextContinuation: RecommendationContinuation(freshIndex: 2)
+            )
+        )
+        continuations[index] = nil
+    }
+}
+
 private actor BlockingSearchAppendRepositoryStub: GuestContentRepository {
     let old: GuestFixtures
     let fresh: GuestFixtures
@@ -2694,6 +3029,19 @@ private struct GuestFixtures: Sendable {
             statistics: VideoStatistics(viewCount: 10, danmakuCount: 2, likeCount: 3),
             durationSeconds: 120,
             publishedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    var recommendedVideo: RecommendedVideo {
+        RecommendedVideo(
+            bvid: bvid,
+            title: title,
+            coverURL: nil,
+            owner: owner,
+            statistics: popularVideo.statistics,
+            durationSeconds: popularVideo.durationSeconds,
+            publishedAt: popularVideo.publishedAt,
+            recommendationReason: "正在流行"
         )
     }
 

@@ -129,6 +129,35 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
+    public func recommendations(
+        after continuation: RecommendationContinuation? = nil
+    ) async throws -> RecommendationPage {
+        let freshIndex = continuation?.freshIndex ?? 1
+        guard freshIndex > 0 else {
+            throw BiliAPIError.invalidRequest
+        }
+        let sessionEpoch = authenticatedSessionEpoch
+        do {
+            return try await signedRecommendations(
+                freshIndex: freshIndex,
+                sessionEpoch: sessionEpoch,
+                forceKeyRefresh: false
+            )
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
+            return try await signedRecommendations(
+                freshIndex: freshIndex,
+                sessionEpoch: sessionEpoch,
+                forceKeyRefresh: true
+            )
+        } catch BiliAPIError.httpStatus(403) {
+            return try await signedRecommendations(
+                freshIndex: freshIndex,
+                sessionEpoch: sessionEpoch,
+                forceKeyRefresh: true
+            )
+        }
+    }
+
     public func searchVideos(
         keyword: String,
         page: Int = 1
@@ -846,6 +875,44 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
         try requireAuthenticatedSessionEpoch(sessionEpoch)
         return try payload.model()
+    }
+
+    private func signedRecommendations(
+        freshIndex: Int,
+        sessionEpoch: UInt64,
+        forceKeyRefresh: Bool
+    ) async throws -> RecommendationPage {
+        let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+        try requireAuthenticatedSessionEpoch(sessionEpoch)
+        let query = try wbiSigner.sign(
+            parameters: [
+                "fresh_idx": String(freshIndex),
+                "fresh_idx_1h": String(freshIndex),
+            ],
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let payload: RecommendationPayload = try await get(
+            path: "/x/web-interface/wbi/index/top/feed/rcmd",
+            percentEncodedQuery: query,
+            referer: "https://www.bilibili.com/",
+            access: .accountRead(
+                missingCredential: .useAnonymousRequest,
+                mapsAuthenticationInvalidation: true
+            )
+        )
+        try requireAuthenticatedSessionEpoch(sessionEpoch)
+        let videos = payload.item.compactMap { $0.model() }
+        let current = RecommendationContinuation(freshIndex: freshIndex)
+        let next =
+            freshIndex < Int.max && !videos.isEmpty
+            ? RecommendationContinuation(freshIndex: freshIndex + 1)
+            : nil
+        return RecommendationPage(
+            videos: videos,
+            continuation: current,
+            nextContinuation: next
+        )
     }
 
     private func signedCommentRootPage(

@@ -3,6 +3,42 @@ import BiliBrowseFeature
 import BiliLibraryFeature
 import SwiftUI
 
+struct RecommendedTabRoot: View {
+    let model: GuestBrowseViewModel
+    @Binding var scrollOffsetY: CGFloat
+    @Binding var scrollReset: NativeVideoGridScrollResetState
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        RecommendedFeedView(
+            model: model,
+            scrollOffsetY: $scrollOffsetY,
+            makeLoadedContent: {
+                videos,
+                scrollOffsetY,
+                canLoadMore,
+                tailIdentity,
+                isLoading,
+                onNearEnd,
+                onSelect in
+                RecommendedNativeGridView(
+                    videos: videos,
+                    scrollOffsetY: scrollOffsetY,
+                    canLoadMore: canLoadMore,
+                    tailIdentity: tailIdentity,
+                    isLoading: isLoading,
+                    scrollReset: $scrollReset,
+                    onNearEnd: onNearEnd,
+                    onSelect: onSelect
+                )
+                .ignoresSafeArea(.container, edges: .top)
+            },
+            onSelect: onSelect
+        )
+        .navigationTitle("首页")
+    }
+}
+
 struct PopularTabRoot: View {
     let model: GuestBrowseViewModel
     @Binding var scrollOffsetY: CGFloat

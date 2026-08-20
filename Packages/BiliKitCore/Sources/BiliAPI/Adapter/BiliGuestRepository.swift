@@ -10,6 +10,14 @@ public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepositor
         self.client = client
     }
 
+    public func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        try await mapError {
+            try await client.recommendations(after: continuation)
+        }
+    }
+
     public func popular(page: Int, pageSize: Int) async throws -> PopularPage {
         try await mapError {
             try await client.popular(page: page, pageSize: pageSize)
