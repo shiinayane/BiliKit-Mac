@@ -39,6 +39,7 @@
 		A10000000000000000000025 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		A10000000000000000000026 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		A10000000000000000000027 /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_NOTICES.md; sourceTree = "<group>"; };
+		A1000000000000000000002C /* BRAND-ASSETS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "BRAND-ASSETS.md"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,6 +56,26 @@
 		8DFA902B300F37DA00DF3E1D /* docs */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = docs;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000028 /* Design */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Design;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000029 /* Packages */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000002A /* Scripts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Scripts;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000002B /* Tools */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Tools;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -93,12 +114,17 @@
 				A10000000000000000000021 /* .gitignore */,
 				A10000000000000000000022 /* .swift-format */,
 				A10000000000000000000023 /* AGENTS.md */,
+				A1000000000000000000002C /* BRAND-ASSETS.md */,
 				A10000000000000000000024 /* CLAUDE.md */,
 				A10000000000000000000025 /* LICENSE */,
 				A10000000000000000000026 /* README.md */,
 				A10000000000000000000027 /* THIRD_PARTY_NOTICES.md */,
 				8DFA9003300F375500DF3E1D /* BiliKitMac */,
 				8DFA9011300F375600DF3E1D /* BiliKitMacTests */,
+				A10000000000000000000028 /* Design */,
+				A10000000000000000000029 /* Packages */,
+				A1000000000000000000002A /* Scripts */,
+				A1000000000000000000002B /* Tools */,
 				8DFA902B300F37DA00DF3E1D /* docs */,
 				8DFA9002300F375500DF3E1D /* Products */,
 			);
