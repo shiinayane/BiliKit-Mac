@@ -20,6 +20,9 @@ struct AppNavigationSidebar: View {
             Label("搜索", systemImage: "magnifyingglass")
                 .tag(AppTab.search)
 
+            Label("首页", systemImage: "house")
+                .tag(AppTab.home)
+
             Label("热门", systemImage: "flame")
                 .tag(AppTab.popular)
 

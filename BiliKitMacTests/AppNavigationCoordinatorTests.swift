@@ -106,7 +106,7 @@ struct AppNavigationCoordinatorTests {
     @Test
     @MainActor
     func nativeBackReturnsEachSourceInOnePop() {
-        for source in [AppTab.search, .popular, .history] {
+        for source in [AppTab.search, .home, .popular, .history] {
             var stopCount = 0
             let coordinator = AppNavigationCoordinator(
                 startPlayback: { _ in },
@@ -272,7 +272,7 @@ struct AppNavigationCoordinatorTests {
         coordinator.resetForWindowClosure()
 
         #expect(stopCount == 1)
-        #expect(coordinator.selectedTab == .popular)
+        #expect(coordinator.selectedTab == .home)
         #expect(coordinator.searchDraft.isEmpty)
         #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)

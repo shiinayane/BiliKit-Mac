@@ -597,6 +597,44 @@ struct PopularNativeGridTests {
     }
 
     @Test @MainActor
+    func recommendationMappingUsesBrandCapsuleOnlyWhenReasonExists() throws {
+        let video = RecommendedVideo(
+            bvid: "BV-rcmd-stable",
+            title: "首页推荐卡片",
+            coverURL: nil,
+            owner: VideoOwner(id: 1, name: "作者"),
+            statistics: VideoStatistics(viewCount: 10, danmakuCount: 2, likeCount: 3),
+            durationSeconds: 125,
+            publishedAt: Date(timeIntervalSince1970: 0),
+            recommendationReason: "正在流行"
+        )
+
+        let content = try #require(
+            RecommendedNativeGridView.makePresentations([video, video]).first
+        )
+        #expect(RecommendedNativeGridView.makePresentations([video, video]).count == 1)
+        #expect(content.footerTrailingText == "正在流行")
+        #expect(content.footerTrailingStyle == .brandOutlinedCapsule)
+        #expect(content.accessibilityLabel.contains("推荐理由 正在流行"))
+
+        let withoutReason = RecommendedVideo(
+            bvid: "BV-rcmd-plain",
+            title: video.title,
+            coverURL: nil,
+            owner: video.owner,
+            statistics: video.statistics,
+            durationSeconds: video.durationSeconds,
+            publishedAt: video.publishedAt,
+            recommendationReason: nil
+        )
+        let plain = try #require(
+            RecommendedNativeGridView.makePresentations([withoutReason]).first
+        )
+        #expect(plain.footerTrailingText == nil)
+        #expect(plain.footerTrailingStyle == .plain)
+    }
+
+    @Test @MainActor
     func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
         let video = SearchVideo(
             bvid: "BV-search-stable",
@@ -669,6 +707,25 @@ struct PopularNativeGridTests {
 
         #expect(widths.trailing == measured)
         #expect(widths.leading + widths.trailing + NativeVideoCardLayout.footerSpacing == 300)
+    }
+
+    @Test
+    func recommendationCapsulePreservesUploaderFooterWidth() {
+        let widths = NativeVideoCardLayout.recommendationFooterWidths(
+            contentWidth: 224,
+            leadingInset: 44,
+            capsuleIntrinsicWidth: 500
+        )
+
+        #expect(
+            widths.leading
+                >= NativeVideoCardLayout.recommendationFooterMinimumLeadingWidth
+        )
+        #expect(
+            widths.leading + widths.trailing
+                + NativeVideoCardTextLayout.recommendationCapsuleSpacing
+                == 180
+        )
     }
 
     @Test

@@ -23,6 +23,13 @@ struct PopularPaginationPresentation: Sendable, Equatable {
     let loadMoreError: GuestApplicationError?
 }
 
+struct RecommendationPaginationPresentation: Sendable, Equatable {
+    let canLoadMore: Bool
+    let tailIdentity: String?
+    let isLoadingMore: Bool
+    let loadMoreError: GuestApplicationError?
+}
+
 struct SearchPaginationPresentation: Sendable, Equatable {
     let canLoadMore: Bool
     let tailIdentity: String?
@@ -32,12 +39,16 @@ struct SearchPaginationPresentation: Sendable, Equatable {
 
 @MainActor
 @Observable
-/// 拥有热门与最后一次搜索两份独立工作集，以及当前路由的请求 Task。
+/// 拥有首页推荐、热门与最后一次搜索三份独立工作集，以及当前路由的请求 Task。
 ///
 /// `generation + activeRequestIdentity` 共同阻止已取消或已切路由的结果写回；进入播放页时
-/// 普通 deactivate 会保留当前两份工作集，`reset` 则清空两者；不同请求会替换对应工作集。
+/// 普通 deactivate 会保留当前三份工作集，`reset` 则清空它们；不同请求会替换对应工作集。
 public final class GuestBrowseViewModel {
+    static let maximumRetainedRecommendationVideos = 1_000
+
     public private(set) var state: GuestFeedState = .idle
+    public private(set) var authenticationRevalidationGeneration = 0
+    public private(set) var recommendationSuccessfulRefreshGeneration: UInt64 = 0
     public private(set) var popularSuccessfulRefreshGeneration: UInt64 = 0
     public private(set) var searchSuccessfulRefreshGeneration: UInt64 = 0
     private(set) var activeRequestIdentity: GuestFeedRequest?
@@ -48,11 +59,24 @@ public final class GuestBrowseViewModel {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var authenticationSessionGeneration: UInt64?
+    private var recommendationWorkset = FeedWorkset()
     private var popularWorkset = FeedWorkset()
     private var searchWorkset = FeedWorkset()
 
     public init(useCase: GuestFeedUseCase) {
         self.useCase = useCase
+    }
+
+    public func activateRecommendation() {
+        let request = GuestFeedRequest.recommendation(continuation: nil)
+        let workset =
+            recommendationWorkset.request == request
+            ? recommendationWorkset
+            : FeedWorkset(request: request)
+        if recommendationWorkset.request != request {
+            recommendationWorkset = workset
+        }
+        activateWorkset(request, workset: workset)
     }
 
     public func activatePopular(page: Int = 1, pageSize: Int = 20) {
@@ -87,6 +111,46 @@ public final class GuestBrowseViewModel {
 
     func refreshPopular(page: Int = 1, pageSize: Int = 20) {
         refresh(.popular(page: page, pageSize: pageSize))
+    }
+
+    func refreshRecommendation() {
+        refresh(.recommendation(continuation: nil))
+    }
+
+    public func loadMoreRecommendations() {
+        let baseRequest = GuestFeedRequest.recommendation(continuation: nil)
+        guard
+            activeRequestIdentity == baseRequest,
+            case .loaded(.recommendation(let page)) = state,
+            let nextContinuation = page.nextContinuation,
+            !page.videos.isEmpty,
+            !isRefreshing,
+            !recommendationWorkset.isLoadingMore,
+            loadTask == nil
+        else {
+            return
+        }
+
+        let nextRequest = GuestFeedRequest.recommendation(
+            continuation: nextContinuation
+        )
+        generation += 1
+        let currentGeneration = generation
+        recommendationWorkset.isLoadingMore = true
+        recommendationWorkset.loadMoreError = nil
+        storeActiveWorkset()
+        loadTask = Task { [weak self] in
+            await self?.performRecommendationAppend(
+                nextRequest,
+                baseRequest: baseRequest,
+                generation: currentGeneration
+            )
+        }
+    }
+
+    public func retryRecommendationLoadMore() {
+        guard recommendationWorkset.loadMoreError != nil else { return }
+        loadMoreRecommendations()
     }
 
     public func loadMorePopular() {
@@ -181,7 +245,7 @@ public final class GuestBrowseViewModel {
         loadMoreSearch()
     }
 
-    /// 丢弃上一账户范围的热门与搜索工作集；当前路由会以同一请求重新开始。
+    /// 丢弃上一账户范围的推荐、热门与搜索工作集；当前路由会以同一请求重新开始。
     public func synchronizeAuthenticationSession(generation newGeneration: UInt64) {
         guard authenticationSessionGeneration != newGeneration else { return }
         authenticationSessionGeneration = newGeneration
@@ -194,9 +258,12 @@ public final class GuestBrowseViewModel {
         state = .idle
         isRefreshing = false
         refreshError = nil
+        recommendationWorkset = FeedWorkset()
         popularWorkset = FeedWorkset()
         searchWorkset = FeedWorkset()
         switch activeRequest {
+        case .recommendation:
+            activateRecommendation()
         case .popular(let page, let pageSize):
             activatePopular(page: page, pageSize: pageSize)
         case .search(let query, _):
@@ -230,9 +297,10 @@ public final class GuestBrowseViewModel {
         refreshError = nil
     }
 
-    /// 取消请求并丢弃两份内存工作集，适用于窗口关闭而非普通页面 push/pop。
+    /// 取消请求并丢弃三份内存工作集，适用于窗口关闭而非普通页面 push/pop。
     public func reset() {
         deactivateRoute()
+        recommendationWorkset = FeedWorkset()
         popularWorkset = FeedWorkset()
         searchWorkset = FeedWorkset()
     }
@@ -283,6 +351,34 @@ public final class GuestBrowseViewModel {
             tailIdentity: canLoadMore ? tailIdentity : nil,
             isLoadingMore: popularWorkset.isLoadingMore,
             loadMoreError: popularWorkset.loadMoreError
+        )
+    }
+
+    func recommendationPagination() -> RecommendationPaginationPresentation {
+        let request = GuestFeedRequest.recommendation(continuation: nil)
+        guard
+            recommendationWorkset.request == request,
+            case .loaded(.recommendation(let page)) = recommendationWorkset.state
+        else {
+            return RecommendationPaginationPresentation(
+                canLoadMore: false,
+                tailIdentity: nil,
+                isLoadingMore: false,
+                loadMoreError: nil
+            )
+        }
+        let canLoadMore =
+            recommendationWorkset.loadMoreError == nil
+            && page.nextContinuation != nil
+            && !page.videos.isEmpty
+        let tailIdentity = page.videos.last.map {
+            "recommendation|\(page.continuation.freshIndex)|\($0.bvid)"
+        }
+        return RecommendationPaginationPresentation(
+            canLoadMore: canLoadMore,
+            tailIdentity: canLoadMore ? tailIdentity : nil,
+            isLoadingMore: recommendationWorkset.isLoadingMore,
+            loadMoreError: recommendationWorkset.loadMoreError
         )
     }
 
@@ -356,6 +452,9 @@ public final class GuestBrowseViewModel {
         loadTask?.cancel()
         refreshError = nil
         switch request {
+        case .recommendation:
+            recommendationWorkset.isLoadingMore = false
+            recommendationWorkset.loadMoreError = nil
         case .popular:
             popularWorkset.isLoadingMore = false
             popularWorkset.loadMoreError = nil
@@ -405,6 +504,8 @@ public final class GuestBrowseViewModel {
             refreshError = nil
             if recordsSuccessfulRefresh {
                 switch request {
+                case .recommendation:
+                    recommendationSuccessfulRefreshGeneration &+= 1
                 case .popular:
                     popularSuccessfulRefreshGeneration &+= 1
                 case .search:
@@ -500,6 +601,79 @@ public final class GuestBrowseViewModel {
         }
     }
 
+    private func performRecommendationAppend(
+        _ request: GuestFeedRequest,
+        baseRequest: GuestFeedRequest,
+        generation currentGeneration: Int
+    ) async {
+        do {
+            let content = try await useCase.execute(request)
+            try Task.checkCancellation()
+            guard
+                generation == currentGeneration,
+                activeRequestIdentity == baseRequest,
+                case .recommendation(let requestedContinuation) = request,
+                let requestedContinuation,
+                case .recommendation(let responsePage) = content,
+                responsePage.continuation == requestedContinuation,
+                case .loaded(.recommendation(let loadedPage)) = state,
+                loadedPage.nextContinuation == requestedContinuation
+            else {
+                throw GuestApplicationError.invalidResponse
+            }
+
+            var seen = Set(loadedPage.videos.map(\.bvid))
+            let appended = responsePage.videos.filter {
+                seen.insert($0.bvid).inserted
+            }
+            let remainingCapacity = max(
+                0,
+                Self.maximumRetainedRecommendationVideos - loadedPage.videos.count
+            )
+            let retainedAppend = Array(appended.prefix(remainingCapacity))
+            let madeProgress = !retainedAppend.isEmpty
+            let hasCapacity =
+                loadedPage.videos.count + retainedAppend.count
+                < Self.maximumRetainedRecommendationVideos
+            state = .loaded(
+                .recommendation(
+                    RecommendationPage(
+                        videos: loadedPage.videos + retainedAppend,
+                        continuation: responsePage.continuation,
+                        nextContinuation: madeProgress && hasCapacity
+                            ? responsePage.nextContinuation
+                            : nil
+                    )
+                )
+            )
+            recommendationWorkset.isLoadingMore = false
+            recommendationWorkset.loadMoreError = nil
+        } catch is CancellationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            recommendationWorkset.isLoadingMore = false
+        } catch let error as GuestApplicationError {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            recommendationWorkset.isLoadingMore = false
+            recommendationWorkset.loadMoreError = error
+            recordAuthenticationInvalidationIfNeeded(error)
+        } catch {
+            guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
+                return
+            }
+            recommendationWorkset.isLoadingMore = false
+            recommendationWorkset.loadMoreError = .unavailable
+        }
+
+        if generation == currentGeneration, activeRequestIdentity == baseRequest {
+            loadTask = nil
+            storeActiveWorkset()
+        }
+    }
+
     private func performPopularAppend(
         _ request: GuestFeedRequest,
         baseRequest: GuestFeedRequest,
@@ -568,6 +742,7 @@ public final class GuestBrowseViewModel {
         _ error: GuestApplicationError,
         request: GuestFeedRequest
     ) {
+        recordAuthenticationInvalidationIfNeeded(error)
         if case .loaded = state {
             isRefreshing = false
             refreshError = error
@@ -581,6 +756,12 @@ public final class GuestBrowseViewModel {
         request: GuestFeedRequest
     ) -> Bool {
         switch (request, content) {
+        case (
+            .recommendation(let requestedContinuation),
+            .recommendation(let page)
+        ):
+            page.continuation
+                == (requestedContinuation ?? RecommendationContinuation(freshIndex: 1))
         case (.popular(let requestedPage, let requestedSize), .popular(let page)):
             page.pageNumber == requestedPage && page.pageSize == requestedSize
         case (
@@ -602,6 +783,25 @@ public final class GuestBrowseViewModel {
         _ content: GuestFeedContent
     ) -> GuestFeedContent {
         switch content {
+        case .recommendation(let page):
+            var seen: Set<String> = []
+            let uniqueVideos = page.videos.filter {
+                seen.insert($0.bvid).inserted
+            }
+            let videos = Array(
+                uniqueVideos.prefix(Self.maximumRetainedRecommendationVideos)
+            )
+            return .recommendation(
+                RecommendationPage(
+                    videos: videos,
+                    continuation: page.continuation,
+                    nextContinuation:
+                        videos.isEmpty
+                        || videos.count == Self.maximumRetainedRecommendationVideos
+                        ? nil
+                        : page.nextContinuation
+                )
+            )
         case .popular(let page):
             var seen: Set<String> = []
             let videos = page.videos.filter { seen.insert($0.bvid).inserted }
@@ -636,6 +836,8 @@ public final class GuestBrowseViewModel {
             state = .idle
         }
         switch activeRequestIdentity {
+        case .recommendation:
+            recommendationWorkset.isLoadingMore = false
         case .popular:
             popularWorkset.isLoadingMore = false
         case .search:
@@ -643,6 +845,13 @@ public final class GuestBrowseViewModel {
         case nil:
             break
         }
+    }
+
+    private func recordAuthenticationInvalidationIfNeeded(
+        _ error: GuestApplicationError
+    ) {
+        guard error == .authenticationInvalid else { return }
+        authenticationRevalidationGeneration &+= 1
     }
 
     private func apply(_ workset: FeedWorkset) {
@@ -656,6 +865,9 @@ public final class GuestBrowseViewModel {
         let isLoadingMore: Bool
         let loadMoreError: GuestApplicationError?
         switch activeRequestIdentity {
+        case .recommendation:
+            isLoadingMore = recommendationWorkset.isLoadingMore
+            loadMoreError = recommendationWorkset.loadMoreError
         case .popular:
             isLoadingMore = popularWorkset.isLoadingMore
             loadMoreError = popularWorkset.loadMoreError
@@ -678,6 +890,8 @@ public final class GuestBrowseViewModel {
         _ update: (inout FeedWorkset) -> Void
     ) {
         switch request {
+        case .recommendation:
+            update(&recommendationWorkset)
         case .popular:
             update(&popularWorkset)
         case .search:
@@ -687,6 +901,9 @@ public final class GuestBrowseViewModel {
 
     private func workset(for request: GuestFeedRequest) -> FeedWorkset? {
         switch request {
+        case .recommendation:
+            guard recommendationWorkset.request == request else { return nil }
+            return recommendationWorkset
         case .popular:
             guard popularWorkset.request == request else { return nil }
             return popularWorkset

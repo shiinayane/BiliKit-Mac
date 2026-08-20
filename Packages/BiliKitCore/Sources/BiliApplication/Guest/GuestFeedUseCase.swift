@@ -2,11 +2,13 @@ import BiliModels
 import Foundation
 
 public enum GuestFeedRequest: Sendable, Equatable {
+    case recommendation(continuation: RecommendationContinuation?)
     case popular(page: Int, pageSize: Int)
     case search(query: String, page: Int)
 }
 
 public enum GuestFeedContent: Sendable, Equatable {
+    case recommendation(RecommendationPage)
     case popular(PopularPage)
     case search(query: String, page: SearchPage)
 }
@@ -22,6 +24,13 @@ public struct GuestFeedUseCase: Sendable {
     /// 执行一个独立请求；取消和“哪次意图仍可写回 UI”由上层 ViewModel 保留。
     public func execute(_ request: GuestFeedRequest) async throws -> GuestFeedContent {
         switch request {
+        case .recommendation(let continuation):
+            guard continuation.map({ $0.freshIndex > 0 }) ?? true else {
+                throw GuestApplicationError.invalidRequest
+            }
+            return .recommendation(
+                try await repository.recommendations(after: continuation)
+            )
         case .popular(let page, let pageSize):
             guard page > 0, (1...50).contains(pageSize) else {
                 throw GuestApplicationError.invalidRequest

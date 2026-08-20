@@ -3,6 +3,7 @@ import Observation
 
 enum AppTab: Hashable {
     case search
+    case home
     case popular
     case history
 }
@@ -33,7 +34,7 @@ private struct ActivePlayback: Equatable {
 /// Coordinator 不拥有播放器；typed path 只表达是否位于播放层级，当前 BVID 则表达该
 /// 层级内的媒体 identity。系统返回、切换来源与关窗都通过同一条播放副作用边界收口。
 final class AppNavigationCoordinator {
-    var selectedTab: AppTab = .popular {
+    var selectedTab: AppTab = .home {
         didSet {
             guard selectedTab != oldValue else { return }
             closePlayback()
@@ -103,7 +104,7 @@ final class AppNavigationCoordinator {
     /// 关闭当前播放，并恢复一个新窗口应有的来源与搜索草稿。
     func resetForWindowClosure() {
         closePlayback()
-        selectedTab = .popular
+        selectedTab = .home
         searchDraft = ""
     }
 

@@ -5,6 +5,11 @@ struct NativeVideoCardMetric: Equatable, Sendable {
     let systemImage: String
 }
 
+enum NativeVideoCardFooterTrailingStyle: Equatable, Sendable {
+    case plain
+    case brandOutlinedCapsule
+}
+
 /// AppKit 卡片唯一消费的、无业务语义的展示值。
 ///
 /// Feature 或 composition adapter 负责图片 URL 优化、数字/日期/进度格式化与 AX 文案；
@@ -19,6 +24,7 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
     let coverTrailingText: String?
     let footerLeadingText: String
     let footerTrailingText: String?
+    let footerTrailingStyle: NativeVideoCardFooterTrailingStyle
     let accessibilityLabel: String
     let accessibilityHelp: String?
 
@@ -32,6 +38,7 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
         coverTrailingText: String? = nil,
         footerLeadingText: String,
         footerTrailingText: String? = nil,
+        footerTrailingStyle: NativeVideoCardFooterTrailingStyle = .plain,
         accessibilityLabel: String,
         accessibilityHelp: String? = nil
     ) {
@@ -44,6 +51,7 @@ struct NativeVideoCardPresentation: Equatable, Sendable {
         self.coverTrailingText = coverTrailingText
         self.footerLeadingText = footerLeadingText
         self.footerTrailingText = footerTrailingText
+        self.footerTrailingStyle = footerTrailingStyle
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityHelp = accessibilityHelp
     }

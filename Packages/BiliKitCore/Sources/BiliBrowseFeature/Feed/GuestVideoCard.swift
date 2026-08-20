@@ -42,6 +42,48 @@ public struct PopularVideoCardPresentation: Sendable, Equatable {
     }
 }
 
+public struct RecommendedVideoCardPresentation: Sendable, Equatable {
+    public let bvid: String
+    public let title: String
+    public let coverURL: URL?
+    public let avatarURL: URL?
+    public let ownerName: String
+    public let viewCountText: String
+    public let danmakuCountText: String
+    public let durationText: String
+    public let footerText: String
+    public let recommendationReason: String?
+
+    public init(video: RecommendedVideo) {
+        bvid = video.bvid
+        title = video.title
+        coverURL = optimizedBiliImageURL(
+            video.coverURL,
+            width: 640,
+            height: 360
+        )
+        avatarURL = optimizedBiliImageURL(
+            video.owner.avatarURL,
+            width: 96,
+            height: 96
+        )
+        ownerName = video.owner.name
+        viewCountText = VideoMetadataFormatting.compactCount(
+            video.statistics.viewCount
+        )
+        danmakuCountText = VideoMetadataFormatting.compactCount(
+            video.statistics.danmakuCount
+        )
+        durationText = VideoDurationFormatting.string(
+            seconds: video.durationSeconds
+        )
+        footerText =
+            "\(video.owner.name) · "
+            + VideoMetadataFormatting.publishedDate(video.publishedAt)
+        recommendationReason = video.recommendationReason
+    }
+}
+
 public struct SearchVideoCardPresentation: Sendable, Equatable {
     public let bvid: String
     public let title: String

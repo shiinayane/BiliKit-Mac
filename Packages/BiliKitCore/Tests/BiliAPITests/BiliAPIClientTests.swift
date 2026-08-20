@@ -7,6 +7,59 @@ import Testing
 
 struct BiliAPIClientTests {
     @Test
+    func recommendationsUseWBIAccountReadAndFilterUnsupportedCards() async throws {
+        let response = jsonResponse(
+            #"""
+            {"code":0,"data":{"item":[
+              {"goto":"av","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","pic":"//i0.hdslb.com/a.jpg","owner":{"mid":10001,"name":"作者","face":"//i1.hdslb.com/a.jpg"},"stat":{"view":12345,"danmaku":67,"like":8},"duration":125,"pubdate":1700000000,"rcmd_reason":{"content":"正在流行"}},
+              {"goto":"live","bvid":"BV1FixtureB2","title":"直播","owner":{"mid":2,"name":"主播"},"stat":{"view":1,"danmaku":0,"like":0},"duration":0,"pubdate":1700000000},
+              {"goto":"av","bvid":"BV1FixtureC3","title":"广告","owner":{"mid":3,"name":"广告主"},"stat":{"view":1,"danmaku":0,"like":0},"duration":10,"pubdate":1700000000,"business_info":{}}
+            ]}}
+            """#
+        )
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("nav"), response]
+        )
+        let authorizer = RecordingRequestAuthorizer()
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        let page = try await client.recommendations()
+
+        #expect(page.videos.map(\.bvid) == ["BV1FixtureA1"])
+        #expect(page.videos.first?.title == "推荐 & 视频")
+        #expect(page.videos.first?.recommendationReason == "正在流行")
+        #expect(page.continuation == RecommendationContinuation(freshIndex: 1))
+        #expect(page.nextContinuation == RecommendationContinuation(freshIndex: 2))
+
+        let requests = await transport.capturedRequests()
+        #expect(
+            requests.map(\.url.path) == [
+                "/x/web-interface/nav",
+                "/x/web-interface/wbi/index/top/feed/rcmd",
+            ]
+        )
+        #expect(requests[0].headers["Cookie"] == nil)
+        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
+        #expect(requests[1].headers["Referer"] == "https://www.bilibili.com/")
+        let query = URLComponents(
+            url: requests[1].url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(query?.first(where: { $0.name == "fresh_idx" })?.value == "1")
+        #expect(query?.first(where: { $0.name == "fresh_idx_1h" })?.value == "1")
+        #expect(query?.first(where: { $0.name == "wts" })?.value == "1700000000")
+        #expect(query?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
+        #expect(
+            await authorizer.capturedPaths()
+                == ["/x/web-interface/wbi/index/top/feed/rcmd"]
+        )
+    }
+
+    @Test
     func popularDecodesSanitizedContractAndBuildsGuestRequest() async throws {
         let transport = RecordingTransport(responses: [try fixtureResponse("popular")])
         let client = BiliAPIClient(transport: transport)

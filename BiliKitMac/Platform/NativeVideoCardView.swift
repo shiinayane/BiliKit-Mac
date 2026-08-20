@@ -13,6 +13,7 @@ struct NativeVideoCardFooterWidths: Equatable {
 
 enum NativeVideoCardLayout {
     static let footerSpacing: CGFloat = 8
+    static let recommendationFooterMinimumLeadingWidth: CGFloat = 72
 
     static func footerWidths(
         contentWidth: CGFloat,
@@ -43,24 +44,59 @@ enum NativeVideoCardLayout {
             trailing: trailingWidth
         )
     }
+
+    static func recommendationFooterWidths(
+        contentWidth: CGFloat,
+        leadingInset: CGFloat,
+        capsuleIntrinsicWidth: CGFloat
+    ) -> NativeVideoCardFooterWidths {
+        let availableWidth = max(0, contentWidth - leadingInset)
+        let reservedLeadingWidth = min(
+            recommendationFooterMinimumLeadingWidth,
+            availableWidth
+        )
+        let maximumCapsuleWidth = max(
+            0,
+            availableWidth
+                - NativeVideoCardTextLayout.recommendationCapsuleSpacing
+                - reservedLeadingWidth
+        )
+        let capsuleWidth = min(
+            max(0, ceil(capsuleIntrinsicWidth)),
+            maximumCapsuleWidth
+        )
+        return NativeVideoCardFooterWidths(
+            leading: max(
+                0,
+                availableWidth
+                    - capsuleWidth
+                    - NativeVideoCardTextLayout.recommendationCapsuleSpacing
+            ),
+            trailing: capsuleWidth
+        )
+    }
 }
 
 struct NativeVideoSingleLineWidthCache {
     private var text: String?
+    private var variant = ""
     private var width: CGFloat = 0
 
     mutating func width(
         for text: String,
+        variant: String = "",
         measure: () -> CGFloat
     ) -> CGFloat {
-        guard self.text != text else { return width }
+        guard self.text != text || self.variant != variant else { return width }
         self.text = text
+        self.variant = variant
         width = measure()
         return width
     }
 
     mutating func reset() {
         text = nil
+        variant = ""
         width = 0
     }
 }
@@ -331,7 +367,8 @@ final class NativeVideoCardView: NSView {
         textRenderer.configure(
             title: presentation.title,
             footerLeading: presentation.footerLeadingText,
-            footerTrailing: presentation.footerTrailingText
+            footerTrailing: presentation.footerTrailingText,
+            footerTrailingStyle: presentation.footerTrailingStyle
         )
         setAccessibilityLabel(presentation.accessibilityLabel)
         setAccessibilityHelp(presentation.accessibilityHelp)
@@ -429,24 +466,58 @@ final class NativeVideoCardView: NSView {
         let footerY = coverHeight + 63
         let showsFooterTrailing = textRenderer.showsFooterTrailing
         let trailingWidth = textRenderer.trailingWidth(font: footerFont)
-        let footerWidths = NativeVideoCardLayout.footerWidths(
-            contentWidth: bounds.width,
-            leadingInset: textX,
-            trailingIntrinsicWidth: trailingWidth,
-            showsTrailing: showsFooterTrailing
-        )
-        let footerLeadingFrame = NSRect(
-            x: textX,
-            y: footerY,
-            width: footerWidths.leading,
-            height: 21
-        )
-        let footerTrailingFrame = NSRect(
-            x: max(textX, bounds.width - footerWidths.trailing),
-            y: footerY,
-            width: footerWidths.trailing,
-            height: 21
-        )
+        let contentsScale =
+            window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        let footerLeadingFrame: NSRect
+        let footerTrailingFrame: NSRect
+        if textRenderer.usesLeadingCapsule {
+            let footerWidths = NativeVideoCardLayout.recommendationFooterWidths(
+                contentWidth: bounds.width,
+                leadingInset: textX,
+                capsuleIntrinsicWidth: trailingWidth
+            )
+            footerTrailingFrame = Self.pixelAligned(
+                NSRect(
+                    x: textX,
+                    y: footerY
+                        + (21 - NativeVideoCardTextLayout.recommendationCapsuleHeight) / 2
+                        + NativeVideoCardTextLayout.recommendationCapsuleVerticalAdjustment,
+                    width: footerWidths.trailing,
+                    height: NativeVideoCardTextLayout.recommendationCapsuleHeight
+                ),
+                scale: contentsScale
+            )
+            let leadingX =
+                footerTrailingFrame.maxX
+                + NativeVideoCardTextLayout.recommendationCapsuleSpacing
+            footerLeadingFrame = NSRect(
+                x: leadingX,
+                y: footerY,
+                width: footerWidths.leading,
+                height: 21
+            )
+        } else {
+            let footerWidths = NativeVideoCardLayout.footerWidths(
+                contentWidth: bounds.width,
+                leadingInset: textX,
+                trailingIntrinsicWidth: trailingWidth,
+                showsTrailing: showsFooterTrailing
+            )
+            footerLeadingFrame = NSRect(
+                x: textX,
+                y: footerY,
+                width: footerWidths.leading,
+                height: 21
+            )
+            footerTrailingFrame = NSRect(
+                x: max(textX, bounds.width - footerWidths.trailing),
+                y: footerY,
+                width: footerWidths.trailing,
+                height: 21
+            )
+        }
         textRenderer.layout(
             titleFrame: titleFrame,
             footerLeadingFrame: footerLeadingFrame,
@@ -454,9 +525,21 @@ final class NativeVideoCardView: NSView {
             titleFont: titleFont,
             footerFont: footerFont,
             appearance: effectiveAppearance,
-            contentsScale: window?.backingScaleFactor
-                ?? NSScreen.main?.backingScaleFactor
-                ?? 2
+            contentsScale: contentsScale
+        )
+    }
+
+    private static func pixelAligned(_ rect: NSRect, scale: CGFloat) -> NSRect {
+        let scale = max(1, scale)
+        let minX = round(rect.minX * scale) / scale
+        let minY = round(rect.minY * scale) / scale
+        let maxX = round(rect.maxX * scale) / scale
+        let maxY = round(rect.maxY * scale) / scale
+        return NSRect(
+            x: minX,
+            y: minY,
+            width: max(0, maxX - minX),
+            height: max(0, maxY - minY)
         )
     }
 

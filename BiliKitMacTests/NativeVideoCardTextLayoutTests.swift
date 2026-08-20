@@ -120,6 +120,81 @@ struct NativeVideoCardTextLayoutTests {
     }
 
     @Test @MainActor
+    func recommendationReasonUsesOutlinedBrandCapsuleAndClearsOnReuse() throws {
+        let renderer = NativeVideoCardTextRenderer()
+        renderer.install(in: CALayer())
+        renderer.configure(
+            title: "推荐视频",
+            footerLeading: "作者",
+            footerTrailing: "正在流行",
+            footerTrailingStyle: .brandOutlinedCapsule
+        )
+        let appearance = try #require(NSAppearance(named: .aqua))
+
+        layout(
+            renderer,
+            scale: 2,
+            appearance: appearance,
+            footerTrailingFrame: NSRect(x: 152, y: 190.5, width: 72, height: 16)
+        )
+
+        #expect(renderer.footerTrailingLayer.alignmentMode == .center)
+        #expect(renderer.footerTrailingLayer.borderWidth == 0.5)
+        #expect(renderer.footerTrailingLayer.cornerRadius == 8)
+        #expect(renderer.footerTrailingLayer.centersTextVertically)
+        #expect(renderer.footerTrailingLayer.fontSize == 11)
+        #expect(renderer.footerTrailingLayer.frame.minY == 190.5)
+        let textOffset = NativeVideoCardTextLayout.recommendationCapsuleTextOffset(
+            height: 16,
+            fontSize: 11
+        )
+        #expect(abs(textOffset - 0.62) < 0.001)
+        #expect(renderer.footerTrailingLayer.backgroundColor == NSColor.clear.cgColor)
+        let border = try #require(renderer.footerTrailingLayer.borderColor)
+        let color = NSColor(cgColor: border)?.usingColorSpace(.sRGB)
+        #expect(abs((color?.redComponent ?? -1) - 0) < 0.001)
+        #expect(abs((color?.greenComponent ?? -1) - 174.0 / 255.0) < 0.001)
+        #expect(abs((color?.blueComponent ?? -1) - 236.0 / 255.0) < 0.001)
+        let measuredText = NativeVideoCardTextLayout.singleLineWidth(
+            "正在流行",
+            font: .systemFont(ofSize: 11, weight: .medium)
+        )
+        let capsuleWidth = renderer.trailingWidth(
+            font: .preferredFont(forTextStyle: .body)
+        )
+        #expect(capsuleWidth == measuredText + 10)
+
+        renderer.configure(
+            title: "普通尾注",
+            footerLeading: "作者",
+            footerTrailing: "正在流行"
+        )
+        let plainWidth = renderer.trailingWidth(
+            font: .preferredFont(forTextStyle: .body)
+        )
+        #expect(
+            plainWidth
+                == NativeVideoCardTextLayout.singleLineWidth(
+                    "正在流行",
+                    font: .preferredFont(forTextStyle: .body)
+                )
+        )
+        #expect(plainWidth != capsuleWidth)
+
+        renderer.configure(
+            title: "复用视频",
+            footerLeading: "新作者",
+            footerTrailing: "昨天"
+        )
+        layout(renderer, scale: 2, appearance: appearance)
+        #expect(renderer.footerTrailingLayer.alignmentMode == .right)
+        #expect(renderer.footerTrailingLayer.borderColor == nil)
+        #expect(renderer.footerTrailingLayer.borderWidth == 0)
+        #expect(renderer.footerTrailingLayer.cornerRadius == 0)
+        #expect(!renderer.footerTrailingLayer.centersTextVertically)
+    }
+
+    @Test @MainActor
     func cardRetainsAggregatedButtonAccessibilityAcrossReset() {
         let card = NativeVideoCardView(
             frame: NSRect(x: 0, y: 0, width: 224, height: 210)
@@ -157,12 +232,18 @@ struct NativeVideoCardTextLayoutTests {
     private func layout(
         _ renderer: NativeVideoCardTextRenderer,
         scale: CGFloat,
-        appearance: NSAppearance
+        appearance: NSAppearance,
+        footerTrailingFrame: NSRect = NSRect(
+            x: 152,
+            y: 189,
+            width: 72,
+            height: 21
+        )
     ) {
         renderer.layout(
             titleFrame: NSRect(x: 44, y: 136, width: 180, height: 47),
             footerLeadingFrame: NSRect(x: 44, y: 189, width: 100, height: 21),
-            footerTrailingFrame: NSRect(x: 152, y: 189, width: 72, height: 21),
+            footerTrailingFrame: footerTrailingFrame,
             titleFont: .systemFont(
                 ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
                 weight: .medium
