@@ -3012,6 +3012,7 @@ struct LoopbackPlaybackServerTests {
             )
         )
 
+        #expect(!engine.requestSeek(to: .seconds(0.5)))
         try await engine.load(request, identity: identity)
         let firstItem = try #require(engine.player.currentItem)
         let loadGeneration = engine.currentTimelineSnapshot
@@ -3055,6 +3056,23 @@ struct LoopbackPlaybackServerTests {
         #expect(abs(engine.player.rate - 1.5) < 0.01)
         try engine.setRate(1.25)
 
+        engine.pause()
+        let requestedSeekGeneration = engine.currentTimelineSnapshot
+            .discontinuityGeneration
+        #expect(engine.requestSeek(to: .seconds(0.2)))
+        #expect(engine.requestSeek(to: .seconds(0.5)))
+        try await waitUntilAsync {
+            engine.currentTimelineSnapshot.discontinuityGeneration
+                > requestedSeekGeneration
+        }
+        #expect(
+            engine.currentTimelineSnapshot.discontinuityGeneration
+                == requestedSeekGeneration + 1
+        )
+        #expect(abs(engine.currentTimelineSnapshot.positionSeconds - 0.5) < 0.05)
+        #expect(!engine.requestSeek(to: .seconds(10)))
+        engine.play()
+
         try await engine.seek(to: .seconds(0.7))
         #expect(engine.currentTimelineSnapshot.positionSeconds >= 0.65)
         #expect(
@@ -3073,6 +3091,7 @@ struct LoopbackPlaybackServerTests {
         let staleMomentarySession = try #require(
             try engine.beginMomentaryPlaybackRate(2)
         )
+        #expect(engine.requestSeek(to: .seconds(0.2)))
         try await engine.load(request, identity: replacementIdentity)
         engine.endMomentaryPlaybackRate(sessionID: staleMomentarySession)
         #expect(engine.player.currentItem !== firstItem)
@@ -3091,8 +3110,10 @@ struct LoopbackPlaybackServerTests {
         let stoppedMomentarySession = try #require(
             try engine.beginMomentaryPlaybackRate(0.5)
         )
+        #expect(engine.requestSeek(to: .seconds(0.2)))
         engine.stop()
         engine.endMomentaryPlaybackRate(sessionID: stoppedMomentarySession)
+        await Task { @MainActor in }.value
         #expect(engine.player.currentItem == nil)
         #expect(engine.currentTimelineSnapshot.identity == nil)
         #expect(engine.currentTimelineSnapshot.state == .idle)

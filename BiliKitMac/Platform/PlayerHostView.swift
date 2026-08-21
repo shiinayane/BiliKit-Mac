@@ -302,6 +302,7 @@ final class DanmakuPlayerView: AVPlayerView {
         requestMomentaryPlaybackRate = beginMomentaryPlaybackRate
         finishMomentaryPlaybackRate = endMomentaryPlaybackRate
         super.init(frame: .zero)
+        updatesNowPlayingInfoCenter = false
         scrollWheelCaptureView.isMomentaryRateAvailable = { [weak self] in
             self?.canBeginMomentaryPlaybackRate == true
         }

@@ -45,6 +45,7 @@ public final class AVPlayerEngine:
     private var loadIntent: PlaybackLoadIntent?
     private var activeResumeToken: PlaybackResumeToken?
     private var restartOperation: UUID?
+    private var explicitSeekOperation = UUID()
     private var preparedAsset: PreparedPlaybackAsset?
     private var subtitleIdentity: PlaybackItemIdentity?
     private var subtitleResetTask: Task<Void, Never>?
@@ -169,6 +170,7 @@ public final class AVPlayerEngine:
         try Task.checkCancellation()
 
         loadGeneration = generation
+        explicitSeekOperation = UUID()
         loadIntent = intent
         activeResumeToken = nil
         restartOperation = nil
@@ -234,6 +236,7 @@ public final class AVPlayerEngine:
             if loadGeneration == generation {
                 loadTask = nil
                 readinessTask = nil
+                explicitSeekOperation = UUID()
                 preparedAsset?.stop()
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
@@ -246,6 +249,7 @@ public final class AVPlayerEngine:
             if loadGeneration == generation {
                 loadTask = nil
                 readinessTask = nil
+                explicitSeekOperation = UUID()
                 preparedAsset?.stop()
                 preparedAsset = nil
                 player.replaceCurrentItem(with: nil)
@@ -264,6 +268,7 @@ public final class AVPlayerEngine:
     private func cancelLoad(generation: UUID) {
         guard loadGeneration == generation else { return }
         loadGeneration = UUID()
+        explicitSeekOperation = UUID()
         loadIntent = nil
         activeResumeToken = nil
         restartOperation = nil
@@ -376,6 +381,7 @@ public final class AVPlayerEngine:
             }
         }
         let currentGeneration = loadGeneration
+        explicitSeekOperation = UUID()
         timeline.prepareResumeRestart()
         let interactionRevision = timeline.playbackInteractionRevision
         let didSeek = await player.seek(
@@ -383,6 +389,9 @@ public final class AVPlayerEngine:
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
+        guard restartOperation == operation else {
+            return false
+        }
         guard didSeek else {
             timeline.resumeRestartFailed()
             return false
@@ -440,9 +449,13 @@ public final class AVPlayerEngine:
 
     /// 执行精确 seek，并只为一次用户 seek 发布一个 discontinuity generation。
     public func seek(to time: Duration) async throws {
-        guard player.currentItem != nil else {
+        guard let item = player.currentItem else {
             throw AVPlayerEngineError.seekFailed
         }
+        let generation = loadGeneration
+        let operation = UUID()
+        restartOperation = nil
+        explicitSeekOperation = operation
         let components = time.components
         let seconds =
             Double(components.seconds)
@@ -453,6 +466,12 @@ public final class AVPlayerEngine:
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
+        guard explicitSeekOperation == operation,
+            loadGeneration == generation,
+            player.currentItem === item
+        else {
+            throw CancellationError()
+        }
         guard didSeek else {
             timeline.explicitSeekFailed()
             throw AVPlayerEngineError.seekFailed
@@ -460,9 +479,53 @@ public final class AVPlayerEngine:
         timeline.explicitSeekCompleted(at: seconds)
     }
 
+    /// 同步接受当前 item 上的精确 seek，并在 engine 内完成 generation-safe 的异步收尾。
+    ///
+    /// 返回 `true` 表示 AVPlayer 已经收到请求；系统远程命令的同步 handler 无法等待完成回调。
+    @discardableResult
+    public func requestSeek(to time: Duration) -> Bool {
+        guard let item = player.currentItem,
+            let duration = currentTimelineSnapshot.durationSeconds
+        else { return false }
+        let components = time.components
+        let seconds =
+            Double(components.seconds)
+            + Double(components.attoseconds) / 1_000_000_000_000_000_000
+        guard seconds.isFinite, seconds >= 0, seconds <= duration else {
+            return false
+        }
+
+        let generation = loadGeneration
+        let operation = UUID()
+        restartOperation = nil
+        explicitSeekOperation = operation
+        timeline.prepareExplicitSeek(to: seconds)
+        player.seek(
+            to: CMTime(seconds: seconds, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        ) { [weak self, weak item] didSeek in
+            Task { @MainActor in
+                guard let self, let item,
+                    self.explicitSeekOperation == operation,
+                    self.loadGeneration == generation,
+                    self.player.currentItem === item
+                else { return }
+                self.explicitSeekOperation = UUID()
+                if didSeek {
+                    self.timeline.explicitSeekCompleted(at: seconds)
+                } else {
+                    self.timeline.explicitSeekFailed()
+                }
+            }
+        }
+        return true
+    }
+
     /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
         loadGeneration = UUID()
+        explicitSeekOperation = UUID()
         loadIntent = nil
         activeResumeToken = nil
         restartOperation = nil
@@ -590,6 +653,7 @@ public final class AVPlayerEngine:
             let intent = loadIntent
         else { return }
         loadGeneration = UUID()
+        explicitSeekOperation = UUID()
         loadIntent = nil
         loadTask?.cancel()
         loadTask = nil

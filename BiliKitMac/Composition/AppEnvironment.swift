@@ -17,6 +17,22 @@ typealias CommentAssetURLResolver = @Sendable (CommentAssetReference) -> URL?
 typealias CommentVideoLinkResolver = @Sendable (CommentLinkTarget) -> String?
 typealias CommentLinkURLResolver = @Sendable (CommentLinkTarget) -> URL?
 
+enum SystemNowPlayingSeekTarget {
+    static func relative(
+        positionSeconds: Double,
+        durationSeconds: Double,
+        offsetSeconds: Double
+    ) -> Double? {
+        guard positionSeconds.isFinite,
+            durationSeconds.isFinite,
+            durationSeconds > 0,
+            offsetSeconds.isFinite,
+            offsetSeconds != 0
+        else { return nil }
+        return min(max(positionSeconds + offsetSeconds, 0), durationSeconds)
+    }
+}
+
 @MainActor
 @Observable
 final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
@@ -137,6 +153,101 @@ struct AppEnvironment {
 
     var nativeSubtitlesEnabled: Bool {
         playerEngine.nativeSubtitlesEnabled
+    }
+
+    func makeSystemNowPlayingPlaybackConnection()
+        -> SystemNowPlayingPlaybackConnection
+    {
+        SystemNowPlayingPlaybackConnection(
+            currentSnapshot: { [playerEngine] in
+                playerEngine.currentTimelineSnapshot
+            },
+            timelineUpdates: { [playerEngine] in
+                playerEngine.timelineUpdates()
+            },
+            currentItemIdentifier: { [playerEngine] in
+                playerEngine.player.currentItem.map(ObjectIdentifier.init)
+            },
+            currentDefaultPlaybackRate: { [playerEngine] in
+                Double(playerEngine.player.defaultRate)
+            },
+            observeDefaultPlaybackRate: { [playerEngine] notify in
+                let observation = playerEngine.player.observe(
+                    \.defaultRate,
+                    options: [.new]
+                ) { player, change in
+                    let rate = Double(change.newValue ?? player.defaultRate)
+                    Task { @MainActor in notify(rate) }
+                }
+                return SystemNowPlayingDefaultRateObservation {
+                    observation.invalidate()
+                }
+            },
+            perform: { [playerEngine] command, identity, itemIdentifier in
+                guard playerEngine.currentTimelineSnapshot.identity == identity,
+                    let item = playerEngine.player.currentItem,
+                    ObjectIdentifier(item) == itemIdentifier
+                else { return false }
+                switch command {
+                case .play:
+                    playerEngine.play()
+                    return true
+                case .pause:
+                    playerEngine.pause()
+                    return true
+                case .togglePlayPause:
+                    if playerEngine.currentTimelineSnapshot.state == .playing
+                        || playerEngine.currentTimelineSnapshot.state == .buffering
+                    {
+                        playerEngine.pause()
+                    } else {
+                        playerEngine.play()
+                    }
+                    return true
+                case .seek(let positionSeconds):
+                    return Self.requestSystemSeek(
+                        positionSeconds,
+                        engine: playerEngine,
+                        identity: identity,
+                        itemIdentifier: itemIdentifier
+                    )
+                case .skip(let offsetSeconds):
+                    let snapshot = playerEngine.currentTimelineSnapshot
+                    guard let duration = snapshot.durationSeconds,
+                        let target = SystemNowPlayingSeekTarget.relative(
+                            positionSeconds: snapshot.positionSeconds,
+                            durationSeconds: duration,
+                            offsetSeconds: offsetSeconds
+                        )
+                    else {
+                        return false
+                    }
+                    return Self.requestSystemSeek(
+                        target,
+                        engine: playerEngine,
+                        identity: identity,
+                        itemIdentifier: itemIdentifier
+                    )
+                }
+            }
+        )
+    }
+
+    private static func requestSystemSeek(
+        _ positionSeconds: Double,
+        engine: AVPlayerEngine,
+        identity: PlaybackItemIdentity,
+        itemIdentifier: ObjectIdentifier
+    ) -> Bool {
+        guard positionSeconds.isFinite, positionSeconds >= 0,
+            let duration = engine.currentTimelineSnapshot.durationSeconds,
+            positionSeconds <= duration
+        else { return false }
+        guard engine.currentTimelineSnapshot.identity == identity,
+            let item = engine.player.currentItem,
+            ObjectIdentifier(item) == itemIdentifier
+        else { return false }
+        return engine.requestSeek(to: .seconds(positionSeconds))
     }
 
     func makeBrowseViewModel() -> GuestBrowseViewModel {
