@@ -23,12 +23,16 @@ final class AppWindowOwner {
     let commentImagePipeline: NativeVideoImagePipeline
     private let commentImagePipelineOwner: NativeVideoImagePipelineOwner
     private let playbackPreferencesController: PlaybackPreferencesController?
+    private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator?
     private let openEnvironment: (@MainActor @Sendable () -> Void)?
     private let closeEnvironment: (@MainActor @Sendable () -> Void)?
     private var isOpen = false
     private var isClosed = false
 
-    convenience init(environment: AppEnvironment) {
+    convenience init(
+        environment: AppEnvironment,
+        systemNowPlayingController: SystemNowPlayingController? = nil
+    ) {
         let browseModel = environment.makeBrowseViewModel()
         let videoModel = environment.makeVideoViewModel()
         let commentsModel = environment.makeCommentsViewModel()
@@ -58,6 +62,9 @@ final class AppWindowOwner {
             commentVideoLinkResolver: environment.commentVideoLinkResolver,
             commentLinkURLResolver: environment.commentLinkURLResolver,
             playbackPreferencesController: environment.playbackPreferencesController,
+            systemNowPlayingController: systemNowPlayingController,
+            systemNowPlayingConnection:
+                environment.makeSystemNowPlayingPlaybackConnection(),
             openEnvironment: environment.open,
             closeEnvironment: environment.close
         )
@@ -98,6 +105,8 @@ final class AppWindowOwner {
         commentImagePipelineOwner: NativeVideoImagePipelineOwner =
             NativeVideoImagePipelineOwner(),
         playbackPreferencesController: PlaybackPreferencesController? = nil,
+        systemNowPlayingController: SystemNowPlayingController? = nil,
+        systemNowPlayingConnection: SystemNowPlayingPlaybackConnection? = nil,
         openEnvironment: (@MainActor @Sendable () -> Void)? = nil,
         closeEnvironment: (@MainActor @Sendable () -> Void)? = nil
     ) {
@@ -115,6 +124,15 @@ final class AppWindowOwner {
         self.commentImagePipelineOwner = commentImagePipelineOwner
         commentImagePipeline = commentImagePipelineOwner.pipeline
         self.playbackPreferencesController = playbackPreferencesController
+        if let systemNowPlayingController, let systemNowPlayingConnection {
+            systemNowPlayingCoordinator = SystemNowPlayingWindowCoordinator(
+                controller: systemNowPlayingController,
+                connection: systemNowPlayingConnection,
+                videoModel: videoModel
+            )
+        } else {
+            systemNowPlayingCoordinator = nil
+        }
         self.openEnvironment = openEnvironment
         self.closeEnvironment = closeEnvironment
     }
@@ -123,14 +141,20 @@ final class AppWindowOwner {
         guard !isOpen, !isClosed else { return }
         isOpen = true
         openEnvironment?()
+        systemNowPlayingCoordinator?.start()
     }
 
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        systemNowPlayingCoordinator?.close()
         commentImagePipelineOwner.shutdown()
         if isOpen {
             closeEnvironment?()
         }
+    }
+
+    func markWindowActive() {
+        systemNowPlayingCoordinator?.markWindowActive()
     }
 }

@@ -35,6 +35,24 @@ struct PlayerHostViewIdentityTests {
 
     @Test
     @MainActor
+    func nativePlayerViewLeavesNowPlayingOwnershipToProcessController() {
+        let renderer = CoreAnimationDanmakuRenderer()
+        let controller = DanmakuPresentationController(
+            backend: renderer,
+            configuration: Self.emptyDanmakuConfiguration
+        )
+        let view = DanmakuPlayerView(
+            renderer: renderer,
+            controller: controller,
+            beginMomentaryPlaybackRate: nil,
+            endMomentaryPlaybackRate: nil
+        )
+
+        #expect(!view.updatesNowPlayingInfoCenter)
+    }
+
+    @Test
+    @MainActor
     func playbackPreparationBlocksNativePlayerInputAndAccessibility() {
         let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(

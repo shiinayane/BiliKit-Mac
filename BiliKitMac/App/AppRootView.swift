@@ -27,14 +27,18 @@ struct AppRootView: View {
     @State private var submittedSearchQuery: String?
     init(
         environment: AppEnvironment? = nil,
-        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
+        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator(),
+        systemNowPlayingController: SystemNowPlayingController? = nil
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
         let environment =
             environment
             ?? .live(accountSessionCoordinator: accountSessionCoordinator)
         _windowOwner = State(
-            initialValue: AppWindowOwner(environment: environment)
+            initialValue: AppWindowOwner(
+                environment: environment,
+                systemNowPlayingController: systemNowPlayingController
+            )
         )
     }
 
@@ -96,7 +100,9 @@ struct AppRootView: View {
         }
         .onAppear {
             windowOwner.open()
+            windowOwner.markWindowActive()
         }
+        .background(AppWindowActivationObserver(onBecomeKey: windowOwner.markWindowActive))
         .task {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
@@ -299,6 +305,74 @@ struct AppRootView: View {
         browseModel.synchronizeAuthenticationSession(
             generation: processGeneration
         )
+    }
+}
+
+private struct AppWindowActivationObserver: NSViewRepresentable {
+    let onBecomeKey: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> AppWindowActivationNSView {
+        AppWindowActivationNSView(onBecomeKey: onBecomeKey)
+    }
+
+    func updateNSView(
+        _ nsView: AppWindowActivationNSView,
+        context: Context
+    ) {
+        nsView.onBecomeKey = onBecomeKey
+    }
+}
+
+@MainActor
+private final class AppWindowActivationNSView: NSView {
+    var onBecomeKey: @MainActor () -> Void
+    private let observerOwner = AppWindowActivationObserverOwner()
+
+    init(onBecomeKey: @escaping @MainActor () -> Void) {
+        self.onBecomeKey = onBecomeKey
+        super.init(frame: .zero)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observerOwner.remove()
+        guard let window else { return }
+        observerOwner.store(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.onBecomeKey() }
+            }
+        )
+        if window.isKeyWindow {
+            onBecomeKey()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
+
+private final class AppWindowActivationObserverOwner: @unchecked Sendable {
+    private var observer: NSObjectProtocol?
+
+    func store(_ observer: NSObjectProtocol) {
+        remove()
+        self.observer = observer
+    }
+
+    func remove() {
+        guard let observer else { return }
+        NotificationCenter.default.removeObserver(observer)
+        self.observer = nil
+    }
+
+    deinit {
+        remove()
     }
 }
 
