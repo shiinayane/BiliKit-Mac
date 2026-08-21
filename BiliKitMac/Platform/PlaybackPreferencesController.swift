@@ -239,4 +239,12 @@ final class PlaybackPreferencesController {
             store.savePreferredRate(preferredRate)
         }
     }
+
+    @discardableResult
+    func adjustVolume(by offset: Float) -> Float {
+        guard offset.isFinite else { return player.volume }
+        player.isMuted = false
+        player.volume = min(max(player.volume + offset, 0), 1)
+        return player.volume
+    }
 }

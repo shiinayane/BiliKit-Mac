@@ -6,6 +6,17 @@ import Testing
 @Suite
 struct DanmakuControlsViewModelTests {
     @Test
+    @MainActor
+    func toggleEnabledUsesExistingPresentationOwner() {
+        let presentation = RecordingDanmakuPresentation()
+        let model = DanmakuControlsViewModel(presentation: presentation)
+
+        #expect(!model.toggleEnabled())
+        #expect(model.toggleEnabled())
+        #expect(presentation.enabledValues.suffix(2) == [false, true])
+    }
+
+    @Test
     func selectionControlsAndResetReachApplicationPort() throws {
         let presentation = RecordingDanmakuPresentation()
         var savedSpeedLevels: [DanmakuSpeedLevel] = []

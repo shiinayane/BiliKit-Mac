@@ -298,7 +298,10 @@ struct AppEnvironment {
         )
     }
 
-    func makePlayerView(videoModel: GuestVideoViewModel) -> AnyView {
+    func makePlayerView(
+        videoModel: GuestVideoViewModel,
+        danmakuModel: DanmakuControlsViewModel
+    ) -> AnyView {
         AnyView(
             PlayerHostView(
                 player: playerEngine.player,
@@ -310,6 +313,21 @@ struct AppEnvironment {
                 },
                 endMomentaryPlaybackRate: { [playerEngine] sessionID in
                     playerEngine.endMomentaryPlaybackRate(sessionID: sessionID)
+                },
+                seekByTransportOffset: { [playerEngine] offset in
+                    playerEngine.seekByTransportOffset(offset)
+                },
+                adjustVolume: { [playbackPreferencesController] offset in
+                    playbackPreferencesController.adjustVolume(by: offset)
+                },
+                togglePlayback: { [playerEngine] in
+                    playerEngine.togglePlayback()
+                },
+                toggleDanmaku: { [danmakuModel] in
+                    danmakuModel.toggleEnabled()
+                },
+                toggleSubtitles: { [playerEngine] in
+                    await playerEngine.toggleNativeSubtitles()
                 }
             )
         )

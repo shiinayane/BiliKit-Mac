@@ -8,6 +8,24 @@ import Testing
 struct PlaybackPreferencesControllerTests {
     @Test
     @MainActor
+    func relativeVolumeClampsUnmutesAndUsesTheObservedPlayer() {
+        let player = AVPlayer()
+        player.volume = 0.98
+        player.isMuted = true
+        let controller = PlaybackPreferencesController(
+            player: player,
+            store: InMemoryPlaybackPreferencesStore()
+        )
+
+        #expect(controller.adjustVolume(by: 0.05) == 1)
+        #expect(player.volume == 1)
+        #expect(!player.isMuted)
+        #expect(controller.adjustVolume(by: -2) == 0)
+        #expect(player.volume == 0)
+    }
+
+    @Test
+    @MainActor
     func nativePlayerPreferencesPersistSynchronouslyAndRestore() {
         withIsolatedDefaults { defaults in
             let firstPlayer = AVPlayer()
@@ -133,4 +151,13 @@ struct PlaybackPreferencesControllerTests {
     private func load(from defaults: UserDefaults) -> PlaybackPreferences {
         UserDefaultsPlaybackPreferencesStore(defaults: defaults).load()
     }
+}
+
+private final class InMemoryPlaybackPreferencesStore:
+    PlaybackPreferencesStoring, @unchecked Sendable
+{
+    func load() -> PlaybackPreferences { .defaults }
+    func saveVolume(_ volume: Float) {}
+    func saveMuted(_ isMuted: Bool) {}
+    func savePreferredRate(_ rate: Float) {}
 }

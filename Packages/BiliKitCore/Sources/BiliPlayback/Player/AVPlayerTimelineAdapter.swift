@@ -176,6 +176,17 @@ final class PlaybackInteractionTracker: Sendable {
 /// 所有 callback 都同时核对当前 `AVPlayerItem` 与 item token；observer bag 在替换、失败和
 /// clear 时统一释放，避免旧 item 继续推进字幕或弹幕。
 final class AVPlayerTimelineAdapter {
+    private struct PendingSeek {
+        let operationID: UUID
+        let targetSeconds: Double
+        var observedLanding = false
+    }
+
+    private struct SeekLanding {
+        let operationID: UUID
+        let positionSeconds: Double
+    }
+
     private struct MomentaryRateSession {
         let id: UUID
         let item: AVPlayerItem
@@ -184,6 +195,7 @@ final class AVPlayerTimelineAdapter {
 
     var onEnded: (@MainActor () -> Void)?
     var onFailed: (@MainActor () -> Void)?
+    var onSeekSupersededByExternalJump: (@MainActor (UUID) -> Void)?
 
     var currentSnapshot: PlaybackTimelineSnapshot {
         store.currentSnapshot
@@ -203,7 +215,9 @@ final class AVPlayerTimelineAdapter {
     private var token: PlaybackTimelineItemToken?
     private var failedToken: PlaybackTimelineItemToken?
     private var momentaryRateSession: MomentaryRateSession?
-    private var pendingExplicitSeekPosition: Double?
+    private var pendingSeek: PendingSeek?
+    private var completedSeekLanding: SeekLanding?
+    private var staleSeekLandings: [SeekLanding] = []
     private var interactionTracker = PlaybackInteractionTracker()
 
     init(player: AVPlayer) {
@@ -219,7 +233,9 @@ final class AVPlayerTimelineAdapter {
     func begin(identity: PlaybackItemIdentity) {
         momentaryRateSession = nil
         observers.reset()
-        pendingExplicitSeekPosition = nil
+        pendingSeek = nil
+        completedSeekLanding = nil
+        staleSeekLandings.removeAll(keepingCapacity: true)
         interactionTracker = PlaybackInteractionTracker()
         token = store.beginItem(identity: identity)
         failedToken = nil
@@ -349,28 +365,11 @@ final class AVPlayerTimelineAdapter {
             object: item,
             queue: .main
         ) { [weak self, weak item] _ in
-            if let item,
-                let position = Self.seconds(from: item.currentTime())
-            {
-                interactionTracker.observeTimeJump(at: position)
-            }
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item,
-                    self.store.currentSnapshot.state != .loading,
                     let position = Self.seconds(from: item.currentTime())
                 else { return }
-
-                if let explicit = self.pendingExplicitSeekPosition,
-                    abs(explicit - position) <= 0.25
-                {
-                    self.pendingExplicitSeekPosition = nil
-                    return
-                }
-                self.pendingExplicitSeekPosition = nil
-                self.store.markDiscontinuity(
-                    token: token,
-                    positionSeconds: position
-                )
+                self.observeTimeJump(at: position)
             }
         }
 
@@ -494,52 +493,198 @@ final class AVPlayerTimelineAdapter {
         )
     }
 
-    func prepareExplicitSeek(to positionSeconds: Double) {
-        interactionTracker.markObserved()
-        pendingExplicitSeekPosition = positionSeconds
+    func prepareExplicitSeek(
+        operationID: UUID,
+        to positionSeconds: Double
+    ) {
+        prepareObservedSeek(operationID: operationID, to: positionSeconds)
     }
 
-    func prepareInitialSeek(to positionSeconds: Double) {
+    func prepareTransportSeek(
+        operationID: UUID,
+        to positionSeconds: Double
+    ) {
+        prepareObservedSeek(operationID: operationID, to: positionSeconds)
+    }
+
+    func transportSeekFailed(operationID: UUID) {
+        seekFailed(operationID: operationID)
+    }
+
+    func transportSeekCompleted(
+        operationID: UUID,
+        at positionSeconds: Double
+    ) {
+        seekCompleted(operationID: operationID, at: positionSeconds)
+    }
+
+    func prepareInitialSeek(operationID: UUID, to positionSeconds: Double) {
         interactionTracker.allowInternalSeek(to: positionSeconds)
-        pendingExplicitSeekPosition = positionSeconds
+        beginPendingSeek(operationID: operationID, to: positionSeconds)
     }
 
-    func prepareResumeRestart() {
+    func prepareResumeRestart(operationID: UUID) {
         interactionTracker.markObservedAllowingInternalSeek(to: 0)
-        pendingExplicitSeekPosition = 0
+        beginPendingSeek(operationID: operationID, to: 0)
     }
 
-    func resumeRestartFailed() {
-        pendingExplicitSeekPosition = nil
-        interactionTracker.cancelInternalSeek()
+    func resumeRestartFailed(operationID: UUID) {
+        seekFailed(operationID: operationID)
     }
 
-    func resumeRestartCompleted() {
-        interactionTracker.completeInternalSeek(at: 0)
-        explicitSeekCompleted(at: 0)
+    func resumeRestartCompleted(operationID: UUID) {
+        seekCompleted(operationID: operationID, at: 0)
     }
 
-    func initialSeekFailed() {
-        pendingExplicitSeekPosition = nil
-        interactionTracker.cancelInternalSeek()
+    func initialSeekFailed(operationID: UUID) {
+        seekFailed(operationID: operationID)
     }
 
-    func initialSeekCompleted(at positionSeconds: Double) {
-        guard let token else { return }
-        pendingExplicitSeekPosition = nil
-        interactionTracker.completeInternalSeek(at: positionSeconds)
+    func initialSeekCompleted(
+        operationID: UUID,
+        at positionSeconds: Double
+    ) {
+        seekCompleted(operationID: operationID, at: positionSeconds)
+    }
+
+    func explicitSeekFailed(operationID: UUID) {
+        seekFailed(operationID: operationID)
+    }
+
+    func explicitSeekCompleted(
+        operationID: UUID,
+        at positionSeconds: Double
+    ) {
+        seekCompleted(operationID: operationID, at: positionSeconds)
+    }
+
+    private func prepareObservedSeek(
+        operationID: UUID,
+        to positionSeconds: Double
+    ) {
+        interactionTracker.markObservedAllowingInternalSeek(to: positionSeconds)
+        beginPendingSeek(operationID: operationID, to: positionSeconds)
+    }
+
+    private func beginPendingSeek(
+        operationID: UUID,
+        to positionSeconds: Double
+    ) {
+        if let pendingSeek, !pendingSeek.observedLanding {
+            appendStaleSeekLanding(
+                operationID: pendingSeek.operationID,
+                positionSeconds: pendingSeek.targetSeconds
+            )
+        }
+        if let completedSeekLanding {
+            appendStaleSeekLanding(completedSeekLanding)
+        }
+        pendingSeek = PendingSeek(
+            operationID: operationID,
+            targetSeconds: positionSeconds
+        )
+        completedSeekLanding = nil
+    }
+
+    func observeTimeJump(at positionSeconds: Double) {
+        interactionTracker.observeTimeJump(at: positionSeconds)
+        guard store.currentSnapshot.state != .loading, let token else { return }
+        if var pendingSeek {
+            let currentDistance = abs(
+                pendingSeek.targetSeconds - positionSeconds
+            )
+            if consumeStaleSeekLanding(
+                at: positionSeconds,
+                closerThan: currentDistance
+            ) {
+                return
+            }
+            if currentDistance <= 0.5 {
+                discardEquivalentStaleSeekLandings(
+                    to: pendingSeek.targetSeconds
+                )
+                pendingSeek.observedLanding = true
+                self.pendingSeek = pendingSeek
+                return
+            }
+            appendStaleSeekLanding(
+                operationID: pendingSeek.operationID,
+                positionSeconds: pendingSeek.targetSeconds
+            )
+            self.pendingSeek = nil
+            completedSeekLanding = nil
+            interactionTracker.markObserved()
+            store.markDiscontinuity(
+                token: token,
+                positionSeconds: positionSeconds
+            )
+            onSeekSupersededByExternalJump?(pendingSeek.operationID)
+            return
+        }
+        let completedDistance =
+            completedSeekLanding.map {
+                abs($0.positionSeconds - positionSeconds)
+            } ?? .infinity
+        if consumeStaleSeekLanding(
+            at: positionSeconds,
+            closerThan: completedDistance
+        ) {
+            return
+        }
+        if completedDistance <= 0.5 {
+            if let completedSeekLanding {
+                discardEquivalentStaleSeekLandings(
+                    to: completedSeekLanding.positionSeconds
+                )
+            }
+            completedSeekLanding = nil
+            return
+        }
+        if let completedSeekLanding {
+            appendStaleSeekLanding(completedSeekLanding)
+        }
+        completedSeekLanding = nil
         store.markDiscontinuity(
             token: token,
             positionSeconds: positionSeconds
         )
     }
 
-    func explicitSeekFailed() {
-        pendingExplicitSeekPosition = nil
+    private func seekFailed(operationID: UUID) {
+        guard pendingSeek?.operationID == operationID else { return }
+        pendingSeek = nil
+        interactionTracker.cancelInternalSeek()
     }
 
-    func explicitSeekCompleted(at positionSeconds: Double) {
-        guard let token else { return }
+    func discardStaleSeekLanding(operationID: UUID) {
+        staleSeekLandings.removeAll {
+            $0.operationID == operationID
+        }
+    }
+
+    private func discardEquivalentStaleSeekLandings(to positionSeconds: Double) {
+        staleSeekLandings.removeAll {
+            abs($0.positionSeconds - positionSeconds) <= 0.000_001
+        }
+    }
+
+    private func seekCompleted(
+        operationID: UUID,
+        at positionSeconds: Double
+    ) {
+        guard let completedPendingSeek = pendingSeek,
+            completedPendingSeek.operationID == operationID,
+            let token
+        else { return }
+        pendingSeek = nil
+        completedSeekLanding =
+            completedPendingSeek.observedLanding
+            ? nil
+            : SeekLanding(
+                operationID: operationID,
+                positionSeconds: positionSeconds
+            )
+        interactionTracker.completeInternalSeek(at: positionSeconds)
         store.markDiscontinuity(
             token: token,
             positionSeconds: positionSeconds
@@ -549,10 +694,49 @@ final class AVPlayerTimelineAdapter {
     func clear() {
         momentaryRateSession = nil
         observers.reset()
-        pendingExplicitSeekPosition = nil
+        pendingSeek = nil
+        completedSeekLanding = nil
+        staleSeekLandings.removeAll(keepingCapacity: true)
         store.clear(token: token)
         token = nil
         failedToken = nil
+    }
+
+    private func appendStaleSeekLanding(
+        operationID: UUID,
+        positionSeconds: Double
+    ) {
+        appendStaleSeekLanding(
+            SeekLanding(
+                operationID: operationID,
+                positionSeconds: positionSeconds
+            )
+        )
+    }
+
+    private func appendStaleSeekLanding(_ landing: SeekLanding) {
+        staleSeekLandings.append(landing)
+        if staleSeekLandings.count > 16 {
+            staleSeekLandings.removeFirst()
+        }
+    }
+
+    private func consumeStaleSeekLanding(
+        at positionSeconds: Double,
+        closerThan competingDistance: Double
+    ) -> Bool {
+        guard
+            let candidate = staleSeekLandings.enumerated().min(
+                by: {
+                    abs($0.element.positionSeconds - positionSeconds)
+                        < abs($1.element.positionSeconds - positionSeconds)
+                }
+            )
+        else { return false }
+        let distance = abs(candidate.element.positionSeconds - positionSeconds)
+        guard distance <= 0.5, distance < competingDistance else { return false }
+        staleSeekLandings.remove(at: candidate.offset)
+        return true
     }
 
     private func fail(

@@ -75,6 +75,12 @@ public final class DanmakuControlsViewModel {
         presentation.setEnabled(enabled)
     }
 
+    @discardableResult
+    public func toggleEnabled() -> Bool {
+        setEnabled(!isEnabled)
+        return isEnabled
+    }
+
     public func setShowsScrolling(_ shows: Bool) {
         guard showsScrolling != shows else { return }
         showsScrolling = shows
