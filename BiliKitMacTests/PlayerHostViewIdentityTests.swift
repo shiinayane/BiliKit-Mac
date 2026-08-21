@@ -66,6 +66,10 @@ struct PlayerHostViewIdentityTests {
             endMomentaryPlaybackRate: nil
         )
 
+        view.setPlaybackPreparationBlocked(false)
+        #expect(view.controlsStyle == .floating)
+        #expect(!view.isAccessibilityHidden())
+
         view.setPlaybackPreparationBlocked(true)
         #expect(view.controlsStyle == .none)
         #expect(!view.acceptsFirstResponder)
@@ -73,7 +77,7 @@ struct PlayerHostViewIdentityTests {
         #expect(view.isAccessibilityHidden())
 
         view.setPlaybackPreparationBlocked(false)
-        #expect(view.controlsStyle == .default)
+        #expect(view.controlsStyle == .floating)
         #expect(!view.isAccessibilityHidden())
     }
 
@@ -191,9 +195,7 @@ struct PlayerHostViewIdentityTests {
 
     @Test
     @MainActor
-    func playerSurfaceCaptureRoutesVerticalWheelWithoutLocalMonitor()
-        throws
-    {
+    func playerSurfaceForwardsOnlyVerticalWheelToDetailScroll() throws {
         let scrollView = ScrollWheelRecordingScrollView(
             frame: NSRect(x: 0, y: 0, width: 800, height: 600)
         )
@@ -203,811 +205,211 @@ struct PlayerHostViewIdentityTests {
         let playerView = AVPlayerView(
             frame: NSRect(x: 0, y: 900, width: 800, height: 300)
         )
-        let scrollCaptureView = PlayerScrollWheelCaptureView(
-            frame: playerView.bounds
-        )
+        let capture = PlayerScrollWheelCaptureView(frame: playerView.bounds)
         scrollView.documentView = documentView
         documentView.addSubview(playerView)
-        playerView.addSubview(scrollCaptureView)
+        playerView.addSubview(capture)
 
-        let event = try makeScrollWheelEvent(deltaX: 0, deltaY: -80)
-        #expect(event.hasPreciseScrollingDeltas)
+        let vertical = try makeScrollWheelEvent(deltaX: 2, deltaY: -80)
+        let horizontal = try makeScrollWheelEvent(deltaX: -80, deltaY: 2)
+        capture.scrollWheel(with: vertical)
+        capture.scrollWheel(with: horizontal)
 
-        scrollCaptureView.scrollWheel(with: event)
-
-        #expect(scrollView.receivedScrollWheelEvents.count == 1)
-        #expect(scrollView.receivedScrollWheelEvents.first === event)
-
-        var shieldPlayerEvents: [NSEvent] = []
-        let shieldCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { shieldPlayerEvents.append($0) }
-        )
-        let horizontalEvent = try makeScrollWheelEvent(
-            deltaX: -80,
-            deltaY: 0
-        )
-        shieldCapture.handleScrollWheel(
-            horizontalEvent,
-            playerFallbackPolicy: .consume
-        )
-        #expect(shieldPlayerEvents.isEmpty)
-
-        var overlayPlayerEvents: [NSEvent] = []
-        let overlayCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { overlayPlayerEvents.append($0) }
-        )
-        overlayCapture.handleScrollWheel(horizontalEvent)
-        #expect(overlayPlayerEvents.count == 1)
-        #expect(overlayPlayerEvents.first === horizontalEvent)
-
-        var alternatingPlayerEvents: [NSEvent] = []
-        let alternatingCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { alternatingPlayerEvents.append($0) }
-        )
-        let pendingShieldEvent = try makeScrollWheelEvent(
-            deltaX: 1,
-            deltaY: 1,
-            phase: .began
-        )
-        let resolvingOverlayEvent = try makeScrollWheelEvent(
-            deltaX: -80,
-            deltaY: 0,
-            phase: .changed
-        )
-        alternatingCapture.handleScrollWheel(
-            pendingShieldEvent,
-            playerFallbackPolicy: .consume
-        )
-        alternatingCapture.handleScrollWheel(
-            resolvingOverlayEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        #expect(alternatingPlayerEvents.isEmpty)
-
-        var crossingPlayerEvents: [NSEvent] = []
-        let crossingCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { crossingPlayerEvents.append($0) }
-        )
-        let mayBeginShieldEvent = try makeScrollWheelEvent(
-            deltaX: -80,
-            deltaY: 0,
-            phase: .mayBegin
-        )
-        let beganOverlayEvent = try makeScrollWheelEvent(
-            deltaX: 1,
-            deltaY: 1,
-            phase: .began
-        )
-        let followingOverlayEvent = try makeScrollWheelEvent(
-            deltaX: -20,
-            deltaY: 0,
-            phase: .changed
-        )
-        crossingCapture.handleScrollWheel(
-            mayBeginShieldEvent,
-            playerFallbackPolicy: .consume
-        )
-        crossingCapture.handleScrollWheel(
-            beganOverlayEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        crossingCapture.handleScrollWheel(
-            resolvingOverlayEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        crossingCapture.handleScrollWheel(
-            followingOverlayEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        #expect(crossingPlayerEvents.isEmpty)
-
-        var reversePlayerEvents: [NSEvent] = []
-        let reverseCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { reversePlayerEvents.append($0) }
-        )
-        reverseCapture.handleScrollWheel(
-            pendingShieldEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        reverseCapture.handleScrollWheel(
-            resolvingOverlayEvent,
-            playerFallbackPolicy: .consume
-        )
-        #expect(reversePlayerEvents.count == 2)
-        #expect(reversePlayerEvents[0] === pendingShieldEvent)
-        #expect(reversePlayerEvents[1] === resolvingOverlayEvent)
-
-        var momentumPlayerEvents: [NSEvent] = []
-        let momentumCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: NSView(frame: .zero),
-            dispatchToPlayer: { momentumPlayerEvents.append($0) }
-        )
-        let overlayMomentumEvent = try makeScrollWheelEvent(
-            deltaX: -80,
-            deltaY: 0,
-            momentumPhase: .began
-        )
-        momentumCapture.handleScrollWheel(
-            pendingShieldEvent,
-            playerFallbackPolicy: .consume
-        )
-        momentumCapture.handleScrollWheel(
-            overlayMomentumEvent,
-            playerFallbackPolicy: .dispatchToPlayer
-        )
-        #expect(momentumPlayerEvents.isEmpty)
-
-        let pointerExitCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: scrollCaptureView
-        )
-        pointerExitCapture.handleScrollWheel(
-            pendingShieldEvent,
-            playerFallbackPolicy: .consume
-        )
-        pointerExitCapture.resetInputSessionForPointerExit()
-        let orphanedVerticalEvent = try makeScrollWheelEvent(
-            deltaX: 1,
-            deltaY: -12,
-            phase: .changed
-        )
-        pointerExitCapture.handleScrollWheel(
-            orphanedVerticalEvent,
-            playerFallbackPolicy: .consume
-        )
-        #expect(scrollView.receivedScrollWheelEvents.count == 2)
+        #expect(scrollView.receivedScrollWheelEvents == [vertical])
+        var routing = PlayerScrollWheelRouting()
         #expect(
-            scrollView.receivedScrollWheelEvents.last
-                === orphanedVerticalEvent
-        )
-
-        let quarantineCapture = PlayerScrollWheelSurfaceCapture(
-            anchorView: scrollCaptureView
-        )
-        quarantineCapture.cancelInputSession()
-        quarantineCapture.resetInputSessionForPointerExit()
-        quarantineCapture.handleScrollWheel(
-            orphanedVerticalEvent,
-            playerFallbackPolicy: .consume
-        )
-        #expect(scrollView.receivedScrollWheelEvents.count == 2)
-
-        let newVerticalGestureEvent = try makeScrollWheelEvent(
-            deltaX: 1,
-            deltaY: -12,
-            phase: .began
-        )
-        quarantineCapture.handleScrollWheel(
-            newVerticalGestureEvent,
-            playerFallbackPolicy: .consume
-        )
-        #expect(scrollView.receivedScrollWheelEvents.count == 3)
-        #expect(
-            scrollView.receivedScrollWheelEvents.last
-                === newVerticalGestureEvent
-        )
-    }
-
-    @Test
-    @MainActor
-    func contentOverlayCaptureOnlyParticipatesInScrollWheelHitTesting() throws {
-        #expect(
-            PlayerScrollWheelCaptureView.capturesEvent(
-                ofType: .scrollWheel
-            )
+            routing.route(
+                deltaX: -80,
+                deltaY: 2,
+                phase: [],
+                momentumPhase: []
+            ) == .ignore
         )
         #expect(
-            !PlayerScrollWheelCaptureView.capturesEvent(
-                ofType: .leftMouseDown
-            )
-        )
-        #expect(
-            !PlayerScrollWheelCaptureView.capturesEvent(
-                ofType: .magnify
-            )
-        )
-        #expect(!PlayerScrollWheelCaptureView.capturesEvent(ofType: nil))
-        #expect(
-            PlayerScrollWheelShieldView.capturesEvent(
-                ofType: .scrollWheel,
-                isPrecise: true
-            )
-        )
-        #expect(
-            !PlayerScrollWheelShieldView.capturesEvent(
-                ofType: .scrollWheel,
-                isPrecise: false
-            )
-        )
-        let shield = PlayerScrollWheelShieldView(frame: .zero)
-        var pointerExitCount = 0
-        shield.onPointerExited = { pointerExitCount += 1 }
-        shield.handlePointerExit()
-        #expect(pointerExitCount == 1)
-        #expect(
-            !PlayerScrollWheelShieldView.capturesEvent(
-                ofType: .leftMouseDown,
-                isPrecise: true
-            )
-        )
-        #expect(
-            !PlayerScrollWheelShieldView.capturesEvent(
-                ofType: .magnify,
-                isPrecise: true
-            )
-        )
-        #expect(
-            !PlayerScrollWheelShieldView.capturesEvent(
-                ofType: nil,
-                isPrecise: true
-            )
-        )
-        let mouseMoveEvent = NSEvent.mouseEvent(
-            with: .mouseMoved,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 0,
-            pressure: 0
-        )
-        #expect(
-            !PlayerScrollWheelShieldView.capturesEvent(
-                try #require(mouseMoveEvent)
-            )
-        )
-    }
-
-    @Test
-    @MainActor
-    func scrollWheelRouterLocksDominantAxisThroughMomentum() {
-        var verticalRouter = PlayerScrollWheelRouter()
-        #expect(
-            verticalRouter.route(
+            routing.route(
                 deltaX: 2,
-                deltaY: -12,
+                deltaY: -80,
+                phase: [],
+                momentumPhase: []
+            )
+                == .outerScroll
+        )
+    }
+
+    @Test
+    @MainActor
+    func verticalWheelSequencePreservesBeginningEndingAndMomentum() throws {
+        var routing = PlayerScrollWheelRouting()
+        let routes = [
+            routing.route(
+                deltaX: 0,
+                deltaY: 0,
                 phase: .began,
                 momentumPhase: []
-            ) == .outerScroll
-        )
-
-        var boundaryRouter = PlayerScrollWheelRouter()
-        #expect(
-            boundaryRouter.route(
+            ),
+            routing.route(
                 deltaX: 1,
                 deltaY: -12,
                 phase: .changed,
-                momentumPhase: [],
-                adoptsOrphanedVerticalGesture: true
-            ) == .outerScroll
-        )
-        #expect(
-            boundaryRouter.route(
-                deltaX: -20,
-                deltaY: -1,
-                phase: .changed,
-                momentumPhase: [],
-                adoptsOrphanedVerticalGesture: true
-            ) == .outerScroll
-        )
-        var orphanedHorizontalRouter = PlayerScrollWheelRouter()
-        #expect(
-            orphanedHorizontalRouter.route(
-                deltaX: -12,
-                deltaY: 1,
-                phase: .changed,
-                momentumPhase: [],
-                allowsMomentaryRate: true,
-                adoptsOrphanedVerticalGesture: true
-            ) == .player
-        )
-        var orphanedNoiseRouter = PlayerScrollWheelRouter()
-        #expect(
-            orphanedNoiseRouter.route(
-                deltaX: 0.1,
-                deltaY: 0.2,
-                phase: .changed,
-                momentumPhase: [],
-                adoptsOrphanedVerticalGesture: true
-            ) == .player
-        )
-        #expect(
-            orphanedNoiseRouter.route(
-                deltaX: 1,
-                deltaY: -12,
-                phase: .changed,
-                momentumPhase: [],
-                adoptsOrphanedVerticalGesture: true
-            ) == .outerScroll
-        )
-        #expect(
-            verticalRouter.route(
+                momentumPhase: []
+            ),
+            routing.route(
                 deltaX: -20,
                 deltaY: -1,
                 phase: .changed,
                 momentumPhase: []
-            ) == .outerScroll
-        )
-        #expect(
-            verticalRouter.route(
+            ),
+            routing.route(
                 deltaX: 0,
                 deltaY: 0,
                 phase: .ended,
                 momentumPhase: []
-            ) == .outerScroll
-        )
-        #expect(
-            verticalRouter.route(
+            ),
+            routing.route(
                 deltaX: -8,
                 deltaY: -1,
                 phase: [],
                 momentumPhase: .began
-            ) == .outerScroll
-        )
-        #expect(
-            verticalRouter.route(
+            ),
+            routing.route(
+                deltaX: 0,
+                deltaY: -6,
+                phase: [],
+                momentumPhase: .changed
+            ),
+            routing.route(
                 deltaX: 0,
                 deltaY: 0,
                 phase: [],
                 momentumPhase: .ended
-            ) == .outerScroll
+            ),
+        ]
+        #expect(
+            routes == [
+                .pending,
+                .outerScroll,
+                .outerScroll,
+                .outerScroll,
+                .outerScroll,
+                .outerScroll,
+                .outerScroll,
+            ]
         )
 
-        var horizontalRouter = PlayerScrollWheelRouter()
+        let scrollView = ScrollWheelRecordingScrollView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+        let documentView = NSView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 1_200)
+        )
+        let playerView = AVPlayerView(
+            frame: NSRect(x: 0, y: 900, width: 800, height: 300)
+        )
+        let capture = PlayerScrollWheelCaptureView(frame: playerView.bounds)
+        scrollView.documentView = documentView
+        documentView.addSubview(playerView)
+        playerView.addSubview(capture)
+
+        let events = try [
+            makeScrollWheelEvent(deltaX: 0, deltaY: 0, phase: .began),
+            makeScrollWheelEvent(deltaX: 1, deltaY: -12, phase: .changed),
+            makeScrollWheelEvent(deltaX: -20, deltaY: -1, phase: .changed),
+            makeScrollWheelEvent(deltaX: 0, deltaY: 0, phase: .ended),
+            makeScrollWheelEvent(
+                deltaX: -8,
+                deltaY: -1,
+                momentumPhase: .began
+            ),
+            makeScrollWheelEvent(
+                deltaX: 0,
+                deltaY: -6,
+                momentumPhase: .changed
+            ),
+        ]
+        let expectedForwardedCounts = [0, 2, 3, 4, 5, 6]
+        for (index, event) in events.enumerated() {
+            capture.scrollWheel(with: event)
+            #expect(
+                scrollView.receivedScrollWheelEvents.count
+                    == expectedForwardedCounts[index]
+            )
+        }
+
+        #expect(scrollView.receivedScrollWheelEvents == events)
+    }
+
+    @Test
+    @MainActor
+    func horizontalSequenceIsIgnoredAndOrphanedVerticalChangeResumesImmediately()
+        throws
+    {
+        var routing = PlayerScrollWheelRouting()
         #expect(
-            horizontalRouter.route(
-                deltaX: -12,
-                deltaY: -2,
+            routing.route(
+                deltaX: 0,
+                deltaY: 0,
                 phase: .began,
                 momentumPhase: []
-            ) == .player
+            ) == .pending
         )
         #expect(
-            horizontalRouter.route(
-                deltaX: -1,
-                deltaY: -20,
+            routing.route(
+                deltaX: -12,
+                deltaY: 1,
                 phase: .changed,
                 momentumPhase: []
-            ) == .player
+            ) == .ignore
         )
         #expect(
-            horizontalRouter.route(
+            routing.route(
                 deltaX: 0,
                 deltaY: 0,
                 phase: .ended,
                 momentumPhase: []
-            ) == .player
+            ) == .ignore
         )
         #expect(
-            horizontalRouter.route(
-                deltaX: -1,
+            routing.route(
+                deltaX: 0,
+                deltaY: -10,
+                phase: [],
+                momentumPhase: .changed
+            ) == .ignore
+        )
+
+        var orphanedRouting = PlayerScrollWheelRouting()
+        #expect(
+            orphanedRouting.route(
+                deltaX: 1,
+                deltaY: -12,
+                phase: .changed,
+                momentumPhase: []
+            ) == .outerScroll
+        )
+        orphanedRouting.cancel()
+        #expect(
+            orphanedRouting.route(
+                deltaX: 0,
                 deltaY: -8,
                 phase: [],
-                momentumPhase: .ended
-            ) == .player
+                momentumPhase: .changed
+            ) == .ignore
         )
     }
 
     @Test
     @MainActor
-    func scrollWheelRouterWaitsPastInitialNoiseBeforeLockingAxis() {
-        var verticalRouter = PlayerScrollWheelRouter()
+    func scrollShieldAndOverlayCaptureOnlyWheelEvents() throws {
+        #expect(PlayerScrollWheelCaptureView.capturesEvent(ofType: .scrollWheel))
+        #expect(!PlayerScrollWheelCaptureView.capturesEvent(ofType: .leftMouseDown))
         #expect(
-            verticalRouter.route(
-                deltaX: 0.2,
-                deltaY: 0.1,
-                phase: .began,
-                momentumPhase: []
-            ) == .pending
+            PlayerScrollWheelShieldView.capturesEvent(ofType: .scrollWheel)
         )
         #expect(
-            verticalRouter.route(
-                deltaX: 0.2,
-                deltaY: 12,
-                phase: .changed,
-                momentumPhase: []
-            ) == .outerScroll
+            !PlayerScrollWheelShieldView.capturesEvent(ofType: .leftMouseDown)
         )
-
-        var horizontalRouter = PlayerScrollWheelRouter()
-        #expect(
-            horizontalRouter.route(
-                deltaX: 0.1,
-                deltaY: 0.2,
-                phase: .mayBegin,
-                momentumPhase: []
-            ) == .pending
-        )
-        #expect(
-            horizontalRouter.route(
-                deltaX: 12,
-                deltaY: 0.2,
-                phase: .changed,
-                momentumPhase: []
-            ) == .player
-        )
-
-        var ambiguousRouter = PlayerScrollWheelRouter()
-        #expect(
-            ambiguousRouter.route(
-                deltaX: 1,
-                deltaY: 1,
-                phase: .began,
-                momentumPhase: []
-            ) == .pending
-        )
-        #expect(
-            ambiguousRouter.route(
-                deltaX: 0,
-                deltaY: 0,
-                phase: .cancelled,
-                momentumPhase: []
-            ) == .player
-        )
-    }
-
-    @Test
-    @MainActor
-    func unphasedScrollWheelUsesStrictDominantAxis() {
-        var router = PlayerScrollWheelRouter()
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: -1,
-                phase: [],
-                momentumPhase: []
-            ) == .outerScroll
-        )
-        #expect(
-            router.route(
-                deltaX: -4,
-                deltaY: -9,
-                phase: [],
-                momentumPhase: []
-            ) == .outerScroll
-        )
-        #expect(
-            router.route(
-                deltaX: -9,
-                deltaY: -4,
-                phase: [],
-                momentumPhase: []
-            ) == .player
-        )
-        #expect(
-            router.route(
-                deltaX: -5,
-                deltaY: -5,
-                phase: [],
-                momentumPhase: []
-            ) == .player
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: 0,
-                phase: [],
-                momentumPhase: []
-            ) == .player
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: -1,
-                phase: .began,
-                momentumPhase: [],
-                isPrecise: false
-            ) == .outerScroll
-        )
-        #expect(
-            router.route(
-                deltaX: -20,
-                deltaY: -1,
-                phase: .changed,
-                momentumPhase: [],
-                isPrecise: false
-            ) == .outerScroll
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: 0,
-                phase: .ended,
-                momentumPhase: [],
-                isPrecise: false
-            ) == .outerScroll
-        )
-        #expect(
-            router.route(
-                deltaX: -8,
-                deltaY: -1,
-                phase: [],
-                momentumPhase: .ended,
-                isPrecise: false
-            ) == .outerScroll
-        )
-    }
-
-    @Test
-    func momentaryRateBadgeUsesNativeSymbolsAndRequestedLabels() {
-        #expect(PlayerMomentaryRate.fast.label == "2X")
-        #expect(PlayerMomentaryRate.fast.symbolName == "forward.fill")
-        #expect(PlayerMomentaryRate.slow.label == "0.5X")
-        #expect(PlayerMomentaryRate.slow.symbolName == "backward.fill")
-    }
-
-    @Test
-    func ordinaryBufferingDoesNotCancelTheScrollInputSession() {
-        #expect(
-            !PlayerMomentaryRateSessionPolicy.shouldCancel(
-                hasActiveSession: false,
-                timeControlStatus: .paused
-            )
-        )
-        #expect(
-            PlayerMomentaryRateSessionPolicy.shouldCancel(
-                hasActiveSession: true,
-                timeControlStatus: .paused
-            )
-        )
-        #expect(
-            !PlayerMomentaryRateSessionPolicy.shouldCancel(
-                hasActiveSession: true,
-                timeControlStatus: .waitingToPlayAtSpecifiedRate
-            )
-        )
-        #expect(
-            !PlayerMomentaryRateSessionPolicy.shouldCancel(
-                hasActiveSession: true,
-                timeControlStatus: .playing
-            )
-        )
-    }
-
-    @Test
-    @MainActor
-    func preciseHorizontalGestureCanReserveWholeSequenceForMomentaryRate() {
-        var router = PlayerScrollWheelRouter()
-        #expect(
-            router.route(
-                deltaX: 0.2,
-                deltaY: 0.1,
-                phase: .began,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .pending
-        )
-        #expect(
-            router.route(
-                deltaX: 8,
-                deltaY: 0.2,
-                phase: .changed,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: -30,
-                phase: .changed,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: 0,
-                phase: .ended,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-        #expect(
-            router.route(
-                deltaX: 12,
-                deltaY: 0,
-                phase: [],
-                momentumPhase: .began,
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: 0,
-                phase: [],
-                momentumPhase: .ended,
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-    }
-
-    @Test
-    @MainActor
-    func unphasedAndNonPreciseHorizontalWheelRemainNative() {
-        var unphasedRouter = PlayerScrollWheelRouter()
-        #expect(
-            unphasedRouter.route(
-                deltaX: 40,
-                deltaY: 0,
-                phase: [],
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .player
-        )
-
-        var nonPreciseRouter = PlayerScrollWheelRouter()
-        #expect(
-            nonPreciseRouter.route(
-                deltaX: 40,
-                deltaY: 0,
-                phase: .began,
-                momentumPhase: [],
-                isPrecise: false,
-                allowsMomentaryRate: true
-            ) == .player
-        )
-    }
-
-    @Test
-    @MainActor
-    func horizontalRateGestureActivatesAfterThresholdAndEndsBeforeMomentum() {
-        var gesture = PlayerHorizontalRateGestureState()
-        #expect(
-            gesture.handle(
-                deltaX: -1,
-                phase: .began,
-                momentumPhase: []
-            ) == .none
-        )
-        #expect(
-            gesture.handle(
-                deltaX: -20,
-                phase: .changed,
-                momentumPhase: []
-            ) == .none
-        )
-        #expect(
-            gesture.handle(
-                deltaX: -10,
-                phase: .changed,
-                momentumPhase: []
-            ) == .begin(.fast)
-        )
-        #expect(
-            gesture.handle(
-                deltaX: 12,
-                phase: .changed,
-                momentumPhase: []
-            ) == .none
-        )
-        #expect(
-            gesture.handle(
-                deltaX: 0,
-                phase: .ended,
-                momentumPhase: []
-            ) == .end
-        )
-        #expect(
-            gesture.handle(
-                deltaX: 18,
-                phase: [],
-                momentumPhase: .began
-            ) == .none
-        )
-    }
-
-    @Test
-    @MainActor
-    func horizontalRateGestureUsesOppositeDirectionForSlowRate() {
-        var gesture = PlayerHorizontalRateGestureState()
-        _ = gesture.handle(
-            deltaX: 4,
-            phase: .began,
-            momentumPhase: []
-        )
-        #expect(
-            gesture.handle(
-                deltaX: 26,
-                phase: .changed,
-                momentumPhase: []
-            ) == .begin(.slow)
-        )
-        #expect(gesture.cancel() == .end)
-    }
-
-    @Test
-    @MainActor
-    func deviceRelativeHorizontalDeltaIgnoresNaturalScrollingPreference() {
-        #expect(
-            PlayerScrollWheelSurfaceCapture.deviceRelativeDeltaX(
-                20,
-                isDirectionInverted: true
-            ) == -20
-        )
-        #expect(
-            PlayerScrollWheelSurfaceCapture.deviceRelativeDeltaX(
-                -20,
-                isDirectionInverted: false
-            ) == -20
-        )
-    }
-
-    @Test
-    @MainActor
-    func horizontalRateGestureEndsWhenMomentumArrivesWithoutDirectEnd() {
-        var gesture = PlayerHorizontalRateGestureState()
-        _ = gesture.handle(
-            deltaX: -30,
-            phase: .began,
-            momentumPhase: []
-        )
-        _ = gesture.handle(
-            deltaX: -1,
-            phase: .changed,
-            momentumPhase: []
-        )
-
-        #expect(
-            gesture.handle(
-                deltaX: -12,
-                phase: [],
-                momentumPhase: .began
-            ) == .end
-        )
-    }
-
-    @Test
-    @MainActor
-    func scrollWheelRouterQuarantinesCancelledGestureRemainder() {
-        var router = PlayerScrollWheelRouter()
-        #expect(
-            router.route(
-                deltaX: -12,
-                deltaY: 0,
-                phase: .began,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .momentaryRate
-        )
-
-        router.cancelInputSession()
-
-        #expect(
-            router.route(
-                deltaX: -40,
-                deltaY: 0,
-                phase: .changed,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .discard
-        )
-        #expect(
-            router.route(
-                deltaX: -30,
-                deltaY: 0,
-                phase: [],
-                momentumPhase: .began,
-                allowsMomentaryRate: true
-            ) == .discard
-        )
-        #expect(
-            router.route(
-                deltaX: 0,
-                deltaY: 8,
-                phase: .began,
-                momentumPhase: [],
-                allowsMomentaryRate: true
-            ) == .outerScroll
-        )
+        let shield = PlayerScrollWheelShieldView(frame: .zero)
+        #expect(!shield.isAccessibilityElement())
     }
 
     @Test(.timeLimit(.minutes(1)))

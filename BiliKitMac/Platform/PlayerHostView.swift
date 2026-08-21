@@ -2,6 +2,7 @@ import AVKit
 import BiliApplication
 import BiliBrowseFeature
 import BiliDanmaku
+import BiliPlayback
 import BiliUI
 import SwiftUI
 
@@ -16,6 +17,11 @@ struct PlayerHostView: View {
     let videoModel: GuestVideoViewModel?
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
+    let seekByTransportOffset: ((Double) -> Bool)?
+    let adjustVolume: ((Float) -> Float)?
+    let togglePlayback: (() -> Bool?)?
+    let toggleDanmaku: (() -> Bool)?
+    let toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
 
     init(
         player: AVPlayer,
@@ -23,7 +29,12 @@ struct PlayerHostView: View {
         danmakuController: DanmakuPresentationController,
         videoModel: GuestVideoViewModel? = nil,
         beginMomentaryPlaybackRate: ((Float) -> UUID?)? = nil,
-        endMomentaryPlaybackRate: ((UUID) -> Void)? = nil
+        endMomentaryPlaybackRate: ((UUID) -> Void)? = nil,
+        seekByTransportOffset: ((Double) -> Bool)? = nil,
+        adjustVolume: ((Float) -> Float)? = nil,
+        togglePlayback: (() -> Bool?)? = nil,
+        toggleDanmaku: (() -> Bool)? = nil,
+        toggleSubtitles: (() async -> NativeSubtitleToggleResult)? = nil
     ) {
         self.player = player
         self.danmakuRenderer = danmakuRenderer
@@ -31,6 +42,11 @@ struct PlayerHostView: View {
         self.videoModel = videoModel
         self.beginMomentaryPlaybackRate = beginMomentaryPlaybackRate
         self.endMomentaryPlaybackRate = endMomentaryPlaybackRate
+        self.seekByTransportOffset = seekByTransportOffset
+        self.adjustVolume = adjustVolume
+        self.togglePlayback = togglePlayback
+        self.toggleDanmaku = toggleDanmaku
+        self.toggleSubtitles = toggleSubtitles
     }
 
     var body: some View {
@@ -42,7 +58,13 @@ struct PlayerHostView: View {
             resumeNotice: videoModel?.resumeNotice,
             restartFromBeginning: { videoModel?.restartFromBeginning() },
             beginMomentaryPlaybackRate: beginMomentaryPlaybackRate,
-            endMomentaryPlaybackRate: endMomentaryPlaybackRate
+            endMomentaryPlaybackRate: endMomentaryPlaybackRate,
+            seekByTransportOffset: seekByTransportOffset,
+            adjustVolume: adjustVolume,
+            togglePlayback: togglePlayback,
+            toggleDanmaku: toggleDanmaku,
+            toggleSubtitles: toggleSubtitles,
+            focusIdentity: videoModel?.presentedBVID
         )
     }
 
@@ -66,13 +88,24 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let restartFromBeginning: () -> Void
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
+    let seekByTransportOffset: ((Double) -> Bool)?
+    let adjustVolume: ((Float) -> Float)?
+    let togglePlayback: (() -> Bool?)?
+    let toggleDanmaku: (() -> Bool)?
+    let toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
+    let focusIdentity: String?
 
     func makeNSView(context: Context) -> DanmakuPlayerView {
         let view = DanmakuPlayerView(
             renderer: renderer,
             controller: controller,
             beginMomentaryPlaybackRate: beginMomentaryPlaybackRate,
-            endMomentaryPlaybackRate: endMomentaryPlaybackRate
+            endMomentaryPlaybackRate: endMomentaryPlaybackRate,
+            seekByTransportOffset: seekByTransportOffset,
+            adjustVolume: adjustVolume,
+            togglePlayback: togglePlayback,
+            toggleDanmaku: toggleDanmaku,
+            toggleSubtitles: toggleSubtitles
         )
         view.player = player
         view.startObservingPlayerItemChanges()
@@ -84,6 +117,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
             resumeNotice,
             restartFromBeginning: restartFromBeginning
         )
+        view.requestInitialKeyboardFocus(for: focusIdentity)
         return view
     }
 
@@ -92,10 +126,16 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         view.setPlaybackPreparationBlocked(blocksNativePlaybackInteraction)
         view.requestMomentaryPlaybackRate = beginMomentaryPlaybackRate
         view.finishMomentaryPlaybackRate = endMomentaryPlaybackRate
+        view.seekByTransportOffset = seekByTransportOffset
+        view.adjustVolume = adjustVolume
+        view.togglePlayback = togglePlayback
+        view.toggleDanmaku = toggleDanmaku
+        view.toggleSubtitles = toggleSubtitles
         view.setResumeNotice(
             resumeNotice,
             restartFromBeginning: restartFromBeginning
         )
+        view.requestInitialKeyboardFocus(for: focusIdentity)
         if view.player !== player {
             view.cancelMomentaryPlaybackRate()
             view.player = player
@@ -112,6 +152,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         view.danmakuOverlay.detachSurface()
         view.stopObservingFocusLoss()
         view.stopObservingPlayerItemChanges()
+        view.stopKeyboardMonitoring()
         view.cancelMomentaryPlaybackRate()
         view.player = nil
     }
@@ -143,30 +184,90 @@ enum PlayerMomentaryRate: Float, Equatable, Sendable {
     }
 }
 
-enum PlayerMomentaryRateSessionPolicy {
-    static func shouldCancel(
-        hasActiveSession: Bool,
-        timeControlStatus: AVPlayer.TimeControlStatus
-    ) -> Bool {
-        hasActiveSession && timeControlStatus == .paused
+enum PlayerShortcutFeedback: Equatable {
+    case momentaryRate(PlayerMomentaryRate)
+    case relativeSeek(Int)
+    case volume(Int)
+    case playback(Bool)
+    case danmaku(Bool)
+    case subtitles(NativeSubtitleToggleResult)
+
+    var label: String {
+        switch self {
+        case .momentaryRate(let rate): rate.label
+        case .relativeSeek(let seconds):
+            seconds < 0 ? "后退 \(-seconds) 秒" : "前进 \(seconds) 秒"
+        case .volume(let percent): "\(percent)%"
+        case .playback(let isPlaying): isPlaying ? "播放" : "暂停"
+        case .danmaku(let enabled): enabled ? "弹幕 开" : "弹幕 关"
+        case .subtitles(.enabled(let label)): "字幕 \(label)"
+        case .subtitles(.disabled): "字幕 关"
+        case .subtitles(.unavailable): "无可用字幕"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .momentaryRate(let rate): rate.symbolName
+        case .relativeSeek(let seconds):
+            seconds < 0 ? "gobackward.5" : "goforward.5"
+        case .volume(let percent):
+            percent == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill"
+        case .playback(let isPlaying):
+            isPlaying ? "play.fill" : "pause.fill"
+        case .danmaku(let enabled):
+            enabled ? "text.bubble.fill" : "text.bubble"
+        case .subtitles(.enabled): "captions.bubble.fill"
+        case .subtitles(.disabled), .subtitles(.unavailable):
+            "captions.bubble"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .momentaryRate(let rate): rate.accessibilityLabel
+        case .relativeSeek(let seconds):
+            seconds < 0 ? "已后退 \(-seconds) 秒" : "已前进 \(seconds) 秒"
+        case .volume(let percent): "播放器音量 \(percent)%"
+        case .playback(let isPlaying):
+            isPlaying ? "已开始播放" : "已暂停播放"
+        case .danmaku(let enabled): enabled ? "弹幕已开启" : "弹幕已关闭"
+        case .subtitles(.enabled(let label)): "字幕已开启，\(label)"
+        case .subtitles(.disabled): "字幕已关闭"
+        case .subtitles(.unavailable): "当前视频没有可用字幕"
+        }
     }
 }
 
-private struct PlayerMomentaryRateBadge: View {
-    let rate: PlayerMomentaryRate
+enum PlayerShortcutFeedbackDismissalPolicy {
+    static let delay: Duration = .milliseconds(800)
+    static let fadeDuration: TimeInterval = 0.16
+
+    static func shouldDismiss(displayedID: UUID?, scheduledID: UUID) -> Bool {
+        displayedID == scheduledID
+    }
+
+    static func shouldAnimate(reduceMotion: Bool) -> Bool {
+        !reduceMotion
+    }
+}
+
+private struct PlayerShortcutFeedbackBadge: View {
+    let feedback: PlayerShortcutFeedback
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: rate.symbolName)
-            Text(rate.label)
+            Image(systemName: feedback.symbolName)
+            Text(feedback.label)
                 .monospacedDigit()
+                .lineLimit(1)
         }
         .font(.title3.weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .modifier(PlayerGlassCapsuleBackground())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(rate.accessibilityLabel)
+        .accessibilityLabel(feedback.accessibilityLabel)
     }
 }
 
@@ -215,7 +316,7 @@ enum PlayerPlaybackPreparationPolicy {
     static func controlsStyle(
         blocksNativePlaybackInteraction: Bool
     ) -> AVPlayerViewControlsStyle {
-        blocksNativePlaybackInteraction ? .none : .default
+        blocksNativePlaybackInteraction ? .none : .floating
     }
 }
 
@@ -257,8 +358,8 @@ private struct PlayerResumeButtonStyle: ViewModifier {
 }
 
 @MainActor
-private final class PlayerMomentaryRateBadgeHostingView:
-    NSHostingView<PlayerMomentaryRateBadge>
+private final class PlayerShortcutFeedbackBadgeHostingView:
+    NSHostingView<PlayerShortcutFeedbackBadge>
 {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -273,7 +374,7 @@ final class DanmakuPlayerView: AVPlayerView {
     private var installedDanmakuOverlay = false
     private var installedWindowScrollWheelShield = false
     private var momentaryRateSessionID: UUID?
-    private var momentaryRateItemIdentity: ObjectIdentifier?
+    private var momentaryRatePressID: UUID?
     private weak var observedPlayer: AVPlayer?
     private var playerItemObservation: NSKeyValueObservation?
     private var playerTimeControlObservation: NSKeyValueObservation?
@@ -284,16 +385,28 @@ final class DanmakuPlayerView: AVPlayerView {
     private var resumeRestartAction: (() -> Void)?
     private var resumeNoticeDismissTask: Task<Void, Never>?
     private var blocksNativePlaybackInteraction = false
+    private var lastInitialFocusIdentity: String?
+    private var pendingInitialFocusIdentity: String?
     private var appResignObserver: NSObjectProtocol?
     private var windowResignObserver: NSObjectProtocol?
     var requestMomentaryPlaybackRate: ((Float) -> UUID?)?
     var finishMomentaryPlaybackRate: ((UUID) -> Void)?
+    var seekByTransportOffset: ((Double) -> Bool)?
+    var adjustVolume: ((Float) -> Float)?
+    var togglePlayback: (() -> Bool?)?
+    var toggleDanmaku: (() -> Bool)?
+    var toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
 
     init(
         renderer: CoreAnimationDanmakuRenderer,
         controller: DanmakuPresentationController,
         beginMomentaryPlaybackRate: ((Float) -> UUID?)?,
-        endMomentaryPlaybackRate: ((UUID) -> Void)?
+        endMomentaryPlaybackRate: ((UUID) -> Void)?,
+        seekByTransportOffset: ((Double) -> Bool)? = nil,
+        adjustVolume: ((Float) -> Float)? = nil,
+        togglePlayback: (() -> Bool?)? = nil,
+        toggleDanmaku: (() -> Bool)? = nil,
+        toggleSubtitles: (() async -> NativeSubtitleToggleResult)? = nil
     ) {
         danmakuOverlay = DanmakuOverlayView(
             renderer: renderer,
@@ -301,22 +414,45 @@ final class DanmakuPlayerView: AVPlayerView {
         )
         requestMomentaryPlaybackRate = beginMomentaryPlaybackRate
         finishMomentaryPlaybackRate = endMomentaryPlaybackRate
+        self.seekByTransportOffset = seekByTransportOffset
+        self.adjustVolume = adjustVolume
+        self.togglePlayback = togglePlayback
+        self.toggleDanmaku = toggleDanmaku
+        self.toggleSubtitles = toggleSubtitles
         super.init(frame: .zero)
         updatesNowPlayingInfoCenter = false
-        scrollWheelCaptureView.isMomentaryRateAvailable = { [weak self] in
-            self?.canBeginMomentaryPlaybackRate == true
+        scrollWheelCaptureView.onKeyboardMomentaryRateBegan = {
+            [weak self] rate, pressID in
+            self?.beginMomentaryPlaybackRate(rate, pressID: pressID)
         }
-        scrollWheelCaptureView.onMomentaryRateBegan = { [weak self] rate in
-            self?.beginMomentaryPlaybackRate(rate)
+        scrollWheelCaptureView.onKeyboardMomentaryRateEnded = {
+            [weak self] pressID in
+            self?.endMomentaryPlaybackRate(ifPressID: pressID)
         }
-        scrollWheelCaptureView.onMomentaryRateEnded = { [weak self] in
-            self?.endMomentaryPlaybackRate()
+        scrollWheelCaptureView.onRelativeSeek = { [weak self] offset in
+            self?.seekByTransportOffset?(offset) ?? false
+        }
+        scrollWheelCaptureView.onVolumeStep = { [weak self] offset in
+            self?.adjustVolume?(offset)
+        }
+        scrollWheelCaptureView.onTogglePlayback = { [weak self] in
+            guard let togglePlayback = self?.togglePlayback else { return nil }
+            return togglePlayback()
+        }
+        scrollWheelCaptureView.onToggleDanmaku = { [weak self] in
+            self?.toggleDanmaku?()
+        }
+        scrollWheelCaptureView.onToggleSubtitles = { [weak self] in
+            guard let toggleSubtitles = self?.toggleSubtitles else {
+                return .unavailable
+            }
+            return await toggleSubtitles()
         }
         installDanmakuOverlayIfNeeded()
     }
 
     override var acceptsFirstResponder: Bool {
-        !blocksNativePlaybackInteraction && super.acceptsFirstResponder
+        !blocksNativePlaybackInteraction
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -325,12 +461,25 @@ final class DanmakuPlayerView: AVPlayerView {
     }
 
     func setPlaybackPreparationBlocked(_ blocked: Bool) {
-        guard blocksNativePlaybackInteraction != blocked else { return }
+        let stateChanged = blocksNativePlaybackInteraction != blocked
         blocksNativePlaybackInteraction = blocked
         controlsStyle = PlayerPlaybackPreparationPolicy.controlsStyle(
             blocksNativePlaybackInteraction: blocked
         )
         setAccessibilityHidden(blocked)
+        scrollWheelCaptureView.setKeyboardInputEnabled(!blocked)
+        guard stateChanged else {
+            if !blocked {
+                applyPendingInitialKeyboardFocus()
+            }
+            return
+        }
+        if blocked {
+            cancelMomentaryPlaybackRate()
+        }
+        if !blocked {
+            applyPendingInitialKeyboardFocus()
+        }
         guard blocked,
             let window,
             let responderView = window.firstResponder as? NSView,
@@ -379,6 +528,7 @@ final class DanmakuPlayerView: AVPlayerView {
         installDanmakuOverlayIfNeeded()
         installWindowScrollWheelShield()
         startObservingFocusLoss()
+        applyPendingInitialKeyboardFocus()
         if let displayedResumeNotice,
             resumeButtonHostingView == nil,
             let resumeRestartAction
@@ -395,6 +545,22 @@ final class DanmakuPlayerView: AVPlayerView {
         installWindowScrollWheelShield()
     }
 
+    func requestInitialKeyboardFocus(for identity: String?) {
+        guard let identity, identity != lastInitialFocusIdentity else { return }
+        pendingInitialFocusIdentity = identity
+        applyPendingInitialKeyboardFocus()
+    }
+
+    private func applyPendingInitialKeyboardFocus() {
+        guard !blocksNativePlaybackInteraction,
+            let identity = pendingInitialFocusIdentity,
+            let window
+        else { return }
+        pendingInitialFocusIdentity = nil
+        lastInitialFocusIdentity = identity
+        window.makeFirstResponder(self)
+    }
+
     func cancelMomentaryPlaybackRate() {
         scrollWheelCaptureView.cancelInputSession()
         if momentaryRateSessionID != nil {
@@ -403,10 +569,7 @@ final class DanmakuPlayerView: AVPlayerView {
     }
 
     func handleWindowSurfaceScrollWheel(_ event: NSEvent) {
-        scrollWheelCaptureView.handleScrollWheel(
-            event,
-            playerFallbackPolicy: .consume
-        )
+        scrollWheelCaptureView.handleScrollWheel(event)
     }
 
     func installWindowScrollWheelShield() {
@@ -416,9 +579,6 @@ final class DanmakuPlayerView: AVPlayerView {
             windowScrollWheelShieldView.autoresizingMask = [.width, .height]
             windowScrollWheelShieldView.onScrollWheel = { [weak self] event in
                 self?.handleWindowSurfaceScrollWheel(event)
-            }
-            windowScrollWheelShieldView.onPointerExited = { [weak self] in
-                self?.resetScrollInputSessionForPointerExit()
             }
         }
         if windowScrollWheelShieldView.frame != bounds {
@@ -438,23 +598,6 @@ final class DanmakuPlayerView: AVPlayerView {
         )
     }
 
-    private func resetScrollInputSessionForPointerExit() {
-        scrollWheelCaptureView.resetInputSessionForPointerExit()
-        if momentaryRateSessionID != nil {
-            endMomentaryPlaybackRate()
-        }
-    }
-
-    func cancelMomentaryPlaybackRateIfItemChanged() {
-        guard let momentaryRateItemIdentity else { return }
-        guard let currentItem = player?.currentItem,
-            ObjectIdentifier(currentItem) == momentaryRateItemIdentity
-        else {
-            cancelMomentaryPlaybackRate()
-            return
-        }
-    }
-
     func startObservingPlayerItemChanges() {
         guard observedPlayer !== player else { return }
         stopObservingPlayerItemChanges()
@@ -463,7 +606,7 @@ final class DanmakuPlayerView: AVPlayerView {
         playerItemObservation = player.observe(\.currentItem, options: [.new]) {
             [weak self] _, _ in
             Task { @MainActor in
-                self?.cancelMomentaryPlaybackRateIfItemChanged()
+                self?.cancelMomentaryPlaybackRate()
                 self?.clearResumeNotice(markDismissed: true)
                 self?.startObservingCurrentItemTimeJumps()
             }
@@ -475,16 +618,7 @@ final class DanmakuPlayerView: AVPlayerView {
             [weak self] _, change in
             guard change.newValue == .paused else { return }
             Task { @MainActor in
-                guard let self,
-                    PlayerMomentaryRateSessionPolicy.shouldCancel(
-                        hasActiveSession: self.momentaryRateSessionID != nil,
-                        timeControlStatus: self.player?.timeControlStatus
-                            ?? .paused
-                    )
-                else {
-                    return
-                }
-                self.cancelMomentaryPlaybackRate()
+                self?.cancelMomentaryPlaybackRate()
             }
         }
         startObservingCurrentItemTimeJumps()
@@ -661,18 +795,13 @@ final class DanmakuPlayerView: AVPlayerView {
         resumeButtonHostingView = nil
     }
 
-    private var canBeginMomentaryPlaybackRate: Bool {
-        guard requestMomentaryPlaybackRate != nil,
-            finishMomentaryPlaybackRate != nil,
-            let player,
-            let item = player.currentItem
-        else {
-            return false
+    private func beginMomentaryPlaybackRate(
+        _ rate: PlayerMomentaryRate,
+        pressID: UUID
+    ) {
+        if momentaryRatePressID != pressID {
+            endMomentaryPlaybackRate()
         }
-        return item.status == .readyToPlay && player.rate > 0
-    }
-
-    private func beginMomentaryPlaybackRate(_ rate: PlayerMomentaryRate) {
         guard let player,
             let item = player.currentItem,
             item.status == .readyToPlay,
@@ -683,8 +812,13 @@ final class DanmakuPlayerView: AVPlayerView {
             return
         }
         momentaryRateSessionID = sessionID
-        momentaryRateItemIdentity = ObjectIdentifier(item)
+        momentaryRatePressID = pressID
         scrollWheelCaptureView.showMomentaryRateBadge(rate)
+    }
+
+    private func endMomentaryPlaybackRate(ifPressID pressID: UUID) {
+        guard momentaryRatePressID == pressID else { return }
+        endMomentaryPlaybackRate()
     }
 
     private func endMomentaryPlaybackRate() {
@@ -696,7 +830,7 @@ final class DanmakuPlayerView: AVPlayerView {
 
     private func clearMomentaryPlaybackRate() {
         momentaryRateSessionID = nil
-        momentaryRateItemIdentity = nil
+        momentaryRatePressID = nil
         scrollWheelCaptureView.clearMomentaryRateBadge()
     }
 
@@ -740,6 +874,10 @@ final class DanmakuPlayerView: AVPlayerView {
         }
     }
 
+    func stopKeyboardMonitoring() {
+        scrollWheelCaptureView.stopKeyboardMonitoring()
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
@@ -748,13 +886,11 @@ final class DanmakuPlayerView: AVPlayerView {
 
 /// 普通窗口中位于 AVPlayerView 原生子视图上方的 scroll-only direct child。
 ///
-/// 该视图没有自己的 router 或播放状态；它只把 precise scroll-wheel 转交给
+/// 该视图没有自己的 router 或播放状态；它只把 scroll-wheel 转交给
 /// `contentOverlayView` capture 持有的唯一 surface coordinator。其他输入穿透给 AVKit。
 @MainActor
 final class PlayerScrollWheelShieldView: NSView {
     var onScrollWheel: (NSEvent) -> Void = { _ in }
-    var onPointerExited: () -> Void = {}
-    private var pointerTrackingArea: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -762,15 +898,13 @@ final class PlayerScrollWheelShieldView: NSView {
     }
 
     static func capturesEvent(
-        ofType type: NSEvent.EventType?,
-        isPrecise: Bool
+        ofType type: NSEvent.EventType?
     ) -> Bool {
-        type == .scrollWheel && isPrecise
+        type == .scrollWheel
     }
 
     static func capturesEvent(_ event: NSEvent) -> Bool {
-        guard event.type == .scrollWheel else { return false }
-        return event.hasPreciseScrollingDeltas
+        capturesEvent(ofType: event.type)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -782,32 +916,6 @@ final class PlayerScrollWheelShieldView: NSView {
         onScrollWheel(event)
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let pointerTrackingArea {
-            removeTrackingArea(pointerTrackingArea)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [
-                .mouseEnteredAndExited,
-                .activeInKeyWindow,
-                .inVisibleRect,
-            ],
-            owner: self
-        )
-        addTrackingArea(trackingArea)
-        pointerTrackingArea = trackingArea
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        handlePointerExit()
-    }
-
-    func handlePointerExit() {
-        onPointerExited()
-    }
-
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
@@ -817,31 +925,48 @@ final class PlayerScrollWheelShieldView: NSView {
 /// 安装在 AVKit 公开 content overlay 中、位于原生控制条下方的透明滚轮命中层。
 ///
 /// 只对 scroll-wheel 事件参与 hit testing；点击、拖动、magnify、键盘与辅助功能继续穿透。
-/// AVKit detached 全屏会携带 content overlay，因此同一 capture 可继续处理全屏横向倍速。
+/// AVKit detached 全屏会携带 content overlay；横向 wheel 在所有 surface 都不产生播放器动作。
 @MainActor
 final class PlayerScrollWheelCaptureView: NSView {
-    private lazy var surfaceCapture = PlayerScrollWheelSurfaceCapture(
-        anchorView: self,
-        dispatchToPlayer: { [weak self] event in
-            self?.dispatchScrollWheelToResponderChain(event)
-        }
-    )
+    private enum KeyboardKey: Sendable {
+        case direction(PlayerKeyboardDirection)
+        case shortcut(PlayerKeyboardShortcut)
+    }
+
+    private struct KeyboardEventSnapshot: Sendable {
+        let type: NSEvent.EventType
+        let key: KeyboardKey
+        let hasDisallowedModifier: Bool
+        let isRepeat: Bool
+        let timestamp: TimeInterval
+        let windowNumber: Int
+    }
+
     private var windowResignObserver: NSObjectProtocol?
-    private var momentaryRateBadge: NSView?
-
-    var isMomentaryRateAvailable: () -> Bool {
-        get { surfaceCapture.isMomentaryRateAvailable }
-        set { surfaceCapture.isMomentaryRateAvailable = newValue }
+    private var keyboardMonitor: Any?
+    private var keyboardInputEnabled = true
+    private var keyboardState = PlayerKeyboardInputState()
+    private var scrollWheelRouting = PlayerScrollWheelRouting()
+    private var pendingScrollWheelEvents: [NSEvent] = []
+    private var keyboardLongPressTask: Task<Void, Never>?
+    private var keyboardLongPressID: UUID?
+    private var subtitleToggleTask: Task<Void, Never>?
+    private var feedbackBadge: NSView?
+    private var displayedFeedback: PlayerShortcutFeedback?
+    private var feedbackDismissTask: Task<Void, Never>?
+    private var feedbackFadeTask: Task<Void, Never>?
+    private var feedbackID: UUID?
+    var onKeyboardMomentaryRateBegan: (PlayerMomentaryRate, UUID) -> Void = {
+        _,
+        _ in
     }
-
-    var onMomentaryRateBegan: (PlayerMomentaryRate) -> Void {
-        get { surfaceCapture.onMomentaryRateBegan }
-        set { surfaceCapture.onMomentaryRateBegan = newValue }
-    }
-
-    var onMomentaryRateEnded: () -> Void {
-        get { surfaceCapture.onMomentaryRateEnded }
-        set { surfaceCapture.onMomentaryRateEnded = newValue }
+    var onKeyboardMomentaryRateEnded: (UUID) -> Void = { _ in }
+    var onRelativeSeek: (Double) -> Bool = { _ in false }
+    var onVolumeStep: (Float) -> Float? = { _ in nil }
+    var onTogglePlayback: () -> Bool? = { nil }
+    var onToggleDanmaku: () -> Bool? = { nil }
+    var onToggleSubtitles: () async -> NativeSubtitleToggleResult = {
+        .unavailable
     }
 
     override init(frame frameRect: NSRect) {
@@ -858,17 +983,32 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        handleScrollWheel(event, playerFallbackPolicy: .dispatchToPlayer)
+        handleScrollWheel(event)
     }
 
-    func handleScrollWheel(
-        _ event: NSEvent,
-        playerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy
-    ) {
-        surfaceCapture.handleScrollWheel(
-            event,
-            playerFallbackPolicy: playerFallbackPolicy
+    func handleScrollWheel(_ event: NSEvent) {
+        let route = scrollWheelRouting.route(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            phase: event.phase,
+            momentumPhase: event.momentumPhase
         )
+        switch route {
+        case .pending:
+            pendingScrollWheelEvents.append(event)
+        case .ignore:
+            pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+        case .outerScroll:
+            guard let scrollView = detailScrollViewAncestor else {
+                pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+                return
+            }
+            for pendingEvent in pendingScrollWheelEvents {
+                scrollView.scrollWheel(with: pendingEvent)
+            }
+            pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+            scrollView.scrollWheel(with: event)
+        }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -881,7 +1021,9 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, windowResignObserver == nil else { return }
+        guard let window else { return }
+        startKeyboardMonitoring()
+        guard windowResignObserver == nil else { return }
         windowResignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
             object: window,
@@ -894,34 +1036,348 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     func cancelInputSession() {
-        surfaceCapture.cancelInputSession()
+        scrollWheelRouting.cancel()
+        pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+        cancelKeyboardInputSession()
     }
 
-    func resetInputSessionForPointerExit() {
-        surfaceCapture.resetInputSessionForPointerExit()
+    func setKeyboardInputEnabled(_ enabled: Bool) {
+        guard keyboardInputEnabled != enabled else { return }
+        keyboardInputEnabled = enabled
+        if !enabled {
+            cancelKeyboardInputSession()
+        }
+    }
+
+    private func cancelKeyboardInputSession() {
+        applyKeyboardActions(keyboardState.cancel())
+        keyboardLongPressTask?.cancel()
+        keyboardLongPressTask = nil
+        keyboardLongPressID = nil
+        subtitleToggleTask?.cancel()
+        subtitleToggleTask = nil
+        clearFeedback()
     }
 
     func showMomentaryRateBadge(_ rate: PlayerMomentaryRate) {
-        clearMomentaryRateBadge()
-        let badge = PlayerMomentaryRateBadgeHostingView(
-            rootView: PlayerMomentaryRateBadge(rate: rate)
+        feedbackDismissTask?.cancel()
+        feedbackDismissTask = nil
+        feedbackID = nil
+        showFeedback(.momentaryRate(rate))
+    }
+
+    func clearMomentaryRateBadge() {
+        guard case .momentaryRate = displayedFeedback else { return }
+        dismissFeedbackAnimated()
+    }
+
+    func startKeyboardMonitoring() {
+        guard keyboardMonitor == nil else { return }
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .keyUp, .leftMouseDown]
+        ) { [weak self] event in
+            if event.type == .leftMouseDown {
+                DispatchQueue.main.async { @MainActor [weak self] in
+                    self?.cancelIfEditableResponder()
+                }
+                return event
+            }
+            guard let snapshot = Self.keyboardSnapshot(from: event) else {
+                DispatchQueue.main.async { @MainActor [weak self] in
+                    self?.cancelIfEditableResponder()
+                }
+                return event
+            }
+            let consumed = MainActor.assumeIsolated {
+                self?.handleKeyboardEvent(snapshot) == true
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    func stopKeyboardMonitoring() {
+        cancelInputSession()
+        if let keyboardMonitor {
+            NSEvent.removeMonitor(keyboardMonitor)
+            self.keyboardMonitor = nil
+        }
+        stopObservingWindowFocusLoss()
+    }
+
+    private func handleKeyboardEvent(_ event: KeyboardEventSnapshot) -> Bool {
+        guard let captureWindow = window else { return false }
+        let isEditable = Self.isEditable(captureWindow.firstResponder)
+        guard
+            PlayerKeyboardEventScope.captures(
+                isEnabled: keyboardInputEnabled,
+                isSupportedKey: true,
+                hasDisallowedModifier: event.hasDisallowedModifier,
+                eventMatchesCaptureWindow:
+                    event.windowNumber == captureWindow.windowNumber,
+                isEditableResponder: isEditable
+            )
+        else {
+            if !keyboardInputEnabled
+                || event.hasDisallowedModifier
+                || isEditable
+            {
+                cancelKeyboardInputSession()
+            }
+            return false
+        }
+
+        let actions: [PlayerKeyboardInputState.Action]
+        switch (event.type, event.key) {
+        case (.keyDown, .direction(let direction)):
+            actions = keyboardState.keyDown(
+                direction,
+                isRepeat: event.isRepeat,
+                timestamp: event.timestamp
+            )
+        case (.keyUp, .direction(let direction)):
+            actions = keyboardState.keyUp(direction)
+        case (.keyDown, .shortcut(let shortcut)):
+            actions = keyboardState.shortcutKeyDown(
+                shortcut,
+                isRepeat: event.isRepeat
+            )
+        case (.keyUp, .shortcut(let shortcut)):
+            actions = keyboardState.shortcutKeyUp(shortcut)
+        default:
+            return false
+        }
+        applyKeyboardActions(actions)
+        return true
+    }
+
+    private func applyKeyboardActions(
+        _ actions: [PlayerKeyboardInputState.Action]
+    ) {
+        for action in actions {
+            switch action {
+            case .scheduleLongPress(let pressID):
+                keyboardLongPressTask?.cancel()
+                keyboardLongPressID = pressID
+                keyboardLongPressTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(
+                            for: .seconds(
+                                PlayerKeyboardInputState.longPressDelay
+                            )
+                        )
+                    } catch {
+                        return
+                    }
+                    guard let self, self.keyboardLongPressID == pressID else {
+                        return
+                    }
+                    self.keyboardLongPressTask = nil
+                    self.keyboardLongPressID = nil
+                    self.applyKeyboardActions(
+                        self.keyboardState.deadlineReached(pressID: pressID)
+                    )
+                }
+            case .cancelLongPress(let pressID):
+                guard keyboardLongPressID == pressID else { break }
+                keyboardLongPressTask?.cancel()
+                keyboardLongPressTask = nil
+                keyboardLongPressID = nil
+            case .beginMomentaryRate(let rate, let pressID):
+                onKeyboardMomentaryRateBegan(rate, pressID)
+            case .endMomentaryRate(let pressID):
+                onKeyboardMomentaryRateEnded(pressID)
+            case .seekBy(let seconds):
+                if onRelativeSeek(seconds) {
+                    showTransientFeedback(
+                        .relativeSeek(Int(seconds.rounded()))
+                    )
+                }
+            case .adjustVolume(let offset):
+                if let volume = onVolumeStep(offset) {
+                    showTransientFeedback(
+                        .volume(Int((volume * 100).rounded()))
+                    )
+                }
+            case .togglePlayback:
+                if let isPlaying = onTogglePlayback() {
+                    showTransientFeedback(.playback(isPlaying))
+                }
+            case .toggleDanmaku:
+                if let enabled = onToggleDanmaku() {
+                    showTransientFeedback(.danmaku(enabled))
+                }
+            case .toggleSubtitles:
+                subtitleToggleTask?.cancel()
+                subtitleToggleTask = Task { [weak self] in
+                    guard let self else { return }
+                    let result = await self.onToggleSubtitles()
+                    guard !Task.isCancelled else { return }
+                    self.subtitleToggleTask = nil
+                    self.showTransientFeedback(.subtitles(result))
+                }
+            }
+        }
+    }
+
+    private func showTransientFeedback(_ feedback: PlayerShortcutFeedback) {
+        feedbackDismissTask?.cancel()
+        let identity = UUID()
+        feedbackID = identity
+        showFeedback(feedback)
+        feedbackDismissTask = Task { [weak self] in
+            do {
+                try await Task.sleep(
+                    for: PlayerShortcutFeedbackDismissalPolicy.delay
+                )
+            } catch {
+                return
+            }
+            guard let self,
+                PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
+                    displayedID: self.feedbackID,
+                    scheduledID: identity
+                )
+            else { return }
+            self.dismissFeedbackAnimated()
+        }
+    }
+
+    private func showFeedback(_ feedback: PlayerShortcutFeedback) {
+        feedbackFadeTask?.cancel()
+        feedbackFadeTask = nil
+        feedbackBadge?.removeFromSuperview()
+        let badge = PlayerShortcutFeedbackBadgeHostingView(
+            rootView: PlayerShortcutFeedbackBadge(feedback: feedback)
         )
+        badge.alphaValue = 1
         badge.translatesAutoresizingMaskIntoConstraints = false
         addSubview(badge)
         NSLayoutConstraint.activate([
             badge.centerXAnchor.constraint(equalTo: centerXAnchor),
             badge.topAnchor.constraint(equalTo: topAnchor, constant: 20),
         ])
-        momentaryRateBadge = badge
+        feedbackBadge = badge
+        displayedFeedback = feedback
     }
 
-    func clearMomentaryRateBadge() {
-        momentaryRateBadge?.removeFromSuperview()
-        momentaryRateBadge = nil
+    private func dismissFeedbackAnimated() {
+        feedbackDismissTask?.cancel()
+        feedbackDismissTask = nil
+        feedbackID = nil
+        feedbackFadeTask?.cancel()
+        feedbackFadeTask = nil
+        guard let badge = feedbackBadge else {
+            displayedFeedback = nil
+            return
+        }
+        guard
+            PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
+                reduceMotion: NSWorkspace.shared
+                    .accessibilityDisplayShouldReduceMotion
+            )
+        else {
+            clearFeedback()
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = PlayerShortcutFeedbackDismissalPolicy.fadeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            badge.animator().alphaValue = 0
+        }
+        feedbackFadeTask = Task { [weak self, weak badge] in
+            do {
+                try await Task.sleep(
+                    for: .seconds(
+                        PlayerShortcutFeedbackDismissalPolicy.fadeDuration
+                    )
+                )
+            } catch {
+                return
+            }
+            guard let self, let badge, self.feedbackBadge === badge else {
+                return
+            }
+            self.feedbackFadeTask = nil
+            badge.removeFromSuperview()
+            self.feedbackBadge = nil
+            self.displayedFeedback = nil
+        }
     }
 
-    private func dispatchScrollWheelToResponderChain(_ event: NSEvent) {
-        super.scrollWheel(with: event)
+    private func clearFeedback() {
+        feedbackDismissTask?.cancel()
+        feedbackDismissTask = nil
+        feedbackFadeTask?.cancel()
+        feedbackFadeTask = nil
+        feedbackID = nil
+        feedbackBadge?.removeFromSuperview()
+        feedbackBadge = nil
+        displayedFeedback = nil
+    }
+
+    private func cancelIfEditableResponder() {
+        guard let window, Self.isEditable(window.firstResponder) else { return }
+        cancelKeyboardInputSession()
+    }
+
+    private static func isEditable(_ responder: NSResponder?) -> Bool {
+        switch responder {
+        case let textView as NSTextView:
+            textView.isEditable
+        case let textField as NSTextField:
+            textField.isEditable
+        default:
+            false
+        }
+    }
+
+    private nonisolated static func keyboardSnapshot(
+        from event: NSEvent
+    ) -> KeyboardEventSnapshot? {
+        let key: KeyboardKey
+        switch event.specialKey {
+        case .leftArrow: key = .direction(.left)
+        case .rightArrow: key = .direction(.right)
+        case .upArrow: key = .direction(.up)
+        case .downArrow: key = .direction(.down)
+        default:
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case " ": key = .shortcut(.playback)
+            case "d": key = .shortcut(.danmaku)
+            case "c": key = .shortcut(.subtitles)
+            default: return nil
+            }
+        }
+        let disallowedModifiers: NSEvent.ModifierFlags = [
+            .command, .control, .option, .shift,
+        ]
+        return KeyboardEventSnapshot(
+            type: event.type,
+            key: key,
+            hasDisallowedModifier:
+                !event.modifierFlags.intersection(disallowedModifiers).isEmpty,
+            isRepeat: event.isARepeat,
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber
+        )
+    }
+
+    /// 忽略 AVPlayerView 内部可能存在的滚动视图，只找播放器之外的详情容器。
+    private var detailScrollViewAncestor: NSScrollView? {
+        var ancestor = superview
+        var passedPlayerView = false
+        while let current = ancestor {
+            if current is AVPlayerView {
+                passedPlayerView = true
+            } else if passedPlayerView,
+                let scrollView = current as? NSScrollView
+            {
+                return scrollView
+            }
+            ancestor = current.superview
+        }
+        return nil
     }
 
     private func stopObservingWindowFocusLoss() {
@@ -937,492 +1393,123 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 }
 
-/// 由唯一 AVPlayerView content overlay surface 拥有的滚轮序列处理器。
-///
-/// 本类型不安装 event monitor，也不向 AVKit 私有子视图重放事件。
-@MainActor
-final class PlayerScrollWheelSurfaceCapture {
-    private weak var anchorView: NSView?
-    private let dispatchToPlayer: (NSEvent) -> Void
-    private var scrollWheelRouter = PlayerScrollWheelRouter()
-    private var horizontalRateGesture = PlayerHorizontalRateGestureState()
-    private var pendingScrollWheelEvents: [NSEvent] = []
-    private var pendingPlayerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy?
-    private var activePlayerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy?
-    private var previousEventPhase: NSEvent.Phase = []
-    var isMomentaryRateAvailable: () -> Bool = { false }
-    var onMomentaryRateBegan: (PlayerMomentaryRate) -> Void = { _ in }
-    var onMomentaryRateEnded: () -> Void = {}
-
-    init(
-        anchorView: NSView,
-        dispatchToPlayer: @escaping (NSEvent) -> Void = { _ in }
-    ) {
-        self.anchorView = anchorView
-        self.dispatchToPlayer = dispatchToPlayer
-    }
-
-    var hasDetailScrollViewAncestor: Bool {
-        detailScrollViewAncestor != nil
-    }
-
-    /// 纵向滚动交给详情页；播放中的精确横向手势用于临时倍速。
-    func handleScrollWheel(
-        _ event: NSEvent,
-        playerFallbackPolicy: PlayerScrollWheelPlayerFallbackPolicy =
-            .dispatchToPlayer
-    ) {
-        defer { previousEventPhase = event.phase }
-        cancelAbandonedMomentaryRate(before: event)
-        flushAbandonedPendingEvents(before: event)
-        let sequenceFallbackPolicy = fallbackPolicy(
-            for: event,
-            requested: playerFallbackPolicy
-        )
-        let route = scrollWheelRouter.route(
-            deltaX: event.scrollingDeltaX,
-            deltaY: event.scrollingDeltaY,
-            phase: event.phase,
-            momentumPhase: event.momentumPhase,
-            isPrecise: event.hasPreciseScrollingDeltas,
-            allowsMomentaryRate: isMomentaryRateAvailable(),
-            adoptsOrphanedVerticalGesture:
-                sequenceFallbackPolicy == .consume
-        )
-        if route == .pending {
-            if pendingPlayerFallbackPolicy == nil {
-                pendingPlayerFallbackPolicy = sequenceFallbackPolicy
-            }
-            pendingScrollWheelEvents.append(event)
-            return
-        }
-
-        let events = pendingScrollWheelEvents + [event]
-        pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-        let resolvedFallbackPolicy =
-            pendingPlayerFallbackPolicy ?? sequenceFallbackPolicy
-        pendingPlayerFallbackPolicy = nil
-        switch route {
-        case .outerScroll:
-            guard let scrollView = detailScrollViewAncestor else {
-                handlePlayerFallback(
-                    events,
-                    policy: resolvedFallbackPolicy
-                )
-                finishFallbackPolicyIfNeeded(after: event)
-                return
-            }
-            for event in events {
-                scrollView.scrollWheel(with: event)
-            }
-        case .player:
-            handlePlayerFallback(events, policy: resolvedFallbackPolicy)
-        case .momentaryRate:
-            for event in events {
-                applyHorizontalRateAction(
-                    horizontalRateGesture.handle(
-                        deltaX: Self.deviceRelativeDeltaX(
-                            event.scrollingDeltaX,
-                            isDirectionInverted:
-                                event.isDirectionInvertedFromDevice
-                        ),
-                        phase: event.phase,
-                        momentumPhase: event.momentumPhase
-                    )
-                )
-            }
-        case .discard:
-            break
-        case .pending:
-            assertionFailure("Pending scroll events must return before dispatch")
-        }
-        finishFallbackPolicyIfNeeded(after: event)
-    }
-
-    func cancelInputSession() {
-        resetInputSession(quarantinesRemainder: true)
-    }
-
-    func resetInputSessionForPointerExit() {
-        resetInputSession(quarantinesRemainder: false)
-    }
-
-    private func resetInputSession(quarantinesRemainder: Bool) {
-        let action = horizontalRateGesture.cancel()
-        pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-        pendingPlayerFallbackPolicy = nil
-        activePlayerFallbackPolicy = nil
-        if quarantinesRemainder {
-            scrollWheelRouter.cancelInputSession()
-        } else {
-            scrollWheelRouter.resetPreservingCancellationQuarantine()
-        }
-        previousEventPhase = []
-        applyHorizontalRateAction(action)
-    }
-
-    static func deviceRelativeDeltaX(
-        _ deltaX: CGFloat,
-        isDirectionInverted: Bool
-    ) -> CGFloat {
-        isDirectionInverted ? -deltaX : deltaX
-    }
-
-    private func applyHorizontalRateAction(
-        _ action: PlayerHorizontalRateGestureState.Action
-    ) {
-        switch action {
-        case .none:
-            return
-        case .begin(let rate):
-            onMomentaryRateBegan(rate)
-        case .end:
-            onMomentaryRateEnded()
-        }
-    }
-
-    /// 忽略 AVPlayerView 内部可能存在的滚动视图，只找播放器之外的详情容器。
-    private var detailScrollViewAncestor: NSScrollView? {
-        var ancestor = anchorView?.superview
-        var passedPlayerView = false
-        while let current = ancestor {
-            if current is AVPlayerView {
-                passedPlayerView = true
-            } else if passedPlayerView,
-                let scrollView = current as? NSScrollView
-            {
-                return scrollView
-            }
-            ancestor = current.superview
-        }
-        return nil
-    }
-
-    private func dispatchToAVKit<Events: Sequence>(_ events: Events)
-    where Events.Element == NSEvent {
-        for event in events {
-            dispatchToPlayer(event)
-        }
-    }
-
-    private func handlePlayerFallback<Events: Sequence>(
-        _ events: Events,
-        policy: PlayerScrollWheelPlayerFallbackPolicy
-    ) where Events.Element == NSEvent {
-        guard policy == .dispatchToPlayer else { return }
-        dispatchToAVKit(events)
-    }
-
-    private func flushAbandonedPendingEvents(
-        before event: NSEvent
-    ) {
-        guard !pendingScrollWheelEvents.isEmpty else { return }
-        let leavesDirectGesture =
-            event.phase.isEmpty && event.momentumPhase.isEmpty
-        guard startsNewDirectGesture(event) || leavesDirectGesture else {
-            return
-        }
-        handlePlayerFallback(
-            pendingScrollWheelEvents,
-            policy: pendingPlayerFallbackPolicy ?? .dispatchToPlayer
-        )
-        pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-        pendingPlayerFallbackPolicy = nil
-        activePlayerFallbackPolicy = nil
-        applyHorizontalRateAction(horizontalRateGesture.cancel())
-        scrollWheelRouter.reset()
-        previousEventPhase = []
-    }
-
-    private func fallbackPolicy(
-        for event: NSEvent,
-        requested: PlayerScrollWheelPlayerFallbackPolicy
-    ) -> PlayerScrollWheelPlayerFallbackPolicy {
-        let startsUnphasedInput =
-            event.phase.isEmpty && event.momentumPhase.isEmpty
-        if startsNewDirectGesture(event) || startsUnphasedInput {
-            activePlayerFallbackPolicy = requested
-        } else if activePlayerFallbackPolicy == nil {
-            activePlayerFallbackPolicy = requested
-        }
-        return activePlayerFallbackPolicy ?? requested
-    }
-
-    private func finishFallbackPolicyIfNeeded(after event: NSEvent) {
-        if event.phase.contains(.cancelled)
-            || event.momentumPhase.contains(.ended)
-            || event.momentumPhase.contains(.cancelled)
-            || (event.phase.isEmpty && event.momentumPhase.isEmpty)
-        {
-            activePlayerFallbackPolicy = nil
-        }
-    }
-
-    private func cancelAbandonedMomentaryRate(before event: NSEvent) {
-        let startsUnphasedInput =
-            event.phase.isEmpty && event.momentumPhase.isEmpty
-        guard startsNewDirectGesture(event) || startsUnphasedInput else {
-            return
-        }
-        applyHorizontalRateAction(horizontalRateGesture.cancel())
-    }
-
-    private func startsNewDirectGesture(_ event: NSEvent) -> Bool {
-        event.phase.contains(.mayBegin)
-            || (event.phase.contains(.began)
-                && !previousEventPhase.contains(.mayBegin))
-    }
-}
-
-enum PlayerScrollWheelPlayerFallbackPolicy: Equatable {
-    case dispatchToPlayer
-    case consume
-}
-
-struct PlayerHorizontalRateGestureState {
-    enum Action: Equatable {
-        case none
-        case begin(PlayerMomentaryRate)
-        case end
-    }
-
-    static let activationThreshold: CGFloat = 30
-
-    private var accumulatedDeltaX: CGFloat = 0
-    private var activeRate: PlayerMomentaryRate?
-
-    mutating func handle(
-        deltaX: CGFloat,
-        phase: NSEvent.Phase,
-        momentumPhase: NSEvent.Phase
-    ) -> Action {
-        if phase.contains(.ended) || phase.contains(.cancelled) {
-            return cancel()
-        }
-
-        if !momentumPhase.isEmpty {
-            return cancel()
-        }
-
-        if phase.contains(.mayBegin) || phase.contains(.began) {
-            let action = cancel()
-            accumulatedDeltaX = deltaX
-            return action
-        }
-
-        accumulatedDeltaX += deltaX
-        guard activeRate == nil,
-            abs(accumulatedDeltaX) >= Self.activationThreshold
-        else {
-            return .none
-        }
-
-        let rate: PlayerMomentaryRate =
-            accumulatedDeltaX < 0 ? .fast : .slow
-        activeRate = rate
-        return .begin(rate)
-    }
-
-    mutating func cancel() -> Action {
-        let action: Action = activeRate == nil ? .none : .end
-        accumulatedDeltaX = 0
-        activeRate = nil
-        return action
-    }
-}
-
-struct PlayerScrollWheelRouter {
+struct PlayerScrollWheelRouting {
     enum Route: Equatable {
-        case outerScroll
-        case player
-        case momentaryRate
-        case discard
         case pending
+        case outerScroll
+        case ignore
     }
 
-    private static let minimumAxisTravel: CGFloat = 4
-    private static let minimumAxisLead: CGFloat = 2
-    private static let maximumPendingSampleCount = 16
+    private static let minimumAxisTravel: CGFloat = 1
+    private static let minimumAxisLead: CGFloat = 0.5
 
-    private var gestureRoute: Route?
-    private var completedGestureRoute: Route?
+    private var directRoute: Route?
+    private var completedRoute: Route?
     private var accumulatedDeltaX: CGFloat = 0
     private var accumulatedDeltaY: CGFloat = 0
-    private var pendingSampleCount = 0
-    private var directGestureHasBegun = false
-    private var discardsCancelledGestureRemainder = false
+    private var directGestureIsActive = false
+    private var discardsCancelledRemainder = false
 
     mutating func route(
         deltaX: CGFloat,
         deltaY: CGFloat,
         phase: NSEvent.Phase,
-        momentumPhase: NSEvent.Phase,
-        isPrecise: Bool = true,
-        allowsMomentaryRate: Bool = false,
-        adoptsOrphanedVerticalGesture: Bool = false
+        momentumPhase: NSEvent.Phase
     ) -> Route {
-        if discardsCancelledGestureRemainder {
-            let startsNewDirectGesture =
-                phase.contains(.mayBegin) || phase.contains(.began)
-            let startsUnphasedInput = phase.isEmpty && momentumPhase.isEmpty
-            guard startsNewDirectGesture || startsUnphasedInput else {
-                return .discard
+        let startsDirectGesture =
+            phase.contains(.mayBegin) || phase.contains(.began)
+        let isUnphasedInput = phase.isEmpty && momentumPhase.isEmpty
+
+        if discardsCancelledRemainder {
+            guard startsDirectGesture || isUnphasedInput else {
+                return .ignore
             }
-            discardsCancelledGestureRemainder = false
+            discardsCancelledRemainder = false
         }
 
         if !momentumPhase.isEmpty {
             let route =
-                gestureRoute
-                ?? completedGestureRoute
+                directRoute
+                ?? completedRoute
                 ?? dominantRoute(deltaX: deltaX, deltaY: deltaY)
             if momentumPhase.contains(.ended)
                 || momentumPhase.contains(.cancelled)
             {
-                gestureRoute = nil
-                completedGestureRoute = nil
+                reset()
             }
             return route
         }
 
         if phase.isEmpty {
+            completedRoute = nil
             return dominantRoute(deltaX: deltaX, deltaY: deltaY)
         }
 
-        if phase.contains(.began) || phase.contains(.mayBegin) {
+        if startsDirectGesture {
             reset()
-            directGestureHasBegun = true
-        } else if !directGestureHasBegun {
-            guard adoptsOrphanedVerticalGesture,
-                isPrecise,
-                phase.contains(.changed),
-                isClearlyVertical(deltaX: deltaX, deltaY: deltaY)
-            else {
-                return .player
-            }
-            reset()
-            directGestureHasBegun = true
-            gestureRoute = .outerScroll
+            directGestureIsActive = true
+        } else if !directGestureIsActive {
+            guard phase.contains(.changed) else { return .ignore }
+            directGestureIsActive = true
+            directRoute = dominantRoute(deltaX: deltaX, deltaY: deltaY)
         }
 
-        if !isPrecise {
-            if gestureRoute == nil {
-                gestureRoute = unambiguousRoute(
-                    deltaX: deltaX,
-                    deltaY: deltaY
-                )
-            }
-            if gestureRoute == nil,
-                phase.contains(.ended) || phase.contains(.cancelled)
-            {
-                gestureRoute = .player
-            }
-            let route = gestureRoute ?? .pending
-            if phase.contains(.ended) {
-                completedGestureRoute = route
-                resetDirectGesture()
-            } else if phase.contains(.cancelled) {
-                completedGestureRoute = nil
-                resetDirectGesture()
-            }
-            return route
-        }
-
-        if gestureRoute == nil {
+        if directRoute == nil {
             accumulatedDeltaX += deltaX
             accumulatedDeltaY += deltaY
-            pendingSampleCount += 1
-            gestureRoute = accumulatedRoute(
-                allowsMomentaryRate: allowsMomentaryRate
-            )
-            if gestureRoute == nil,
-                phase.contains(.ended)
-                    || phase.contains(.cancelled)
-                    || pendingSampleCount >= Self.maximumPendingSampleCount
-            {
-                gestureRoute = .player
+            directRoute = accumulatedRoute()
+        }
+
+        let resolvedRoute: Route
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            resolvedRoute =
+                directRoute
+                ?? dominantRoute(
+                    deltaX: accumulatedDeltaX,
+                    deltaY: accumulatedDeltaY
+                )
+            if phase.contains(.ended) {
+                completedRoute = resolvedRoute
+                resetDirectGesture()
+            } else {
+                reset()
             }
+        } else {
+            resolvedRoute = directRoute ?? .pending
         }
-
-        let route = gestureRoute ?? .pending
-        if phase.contains(.ended) {
-            completedGestureRoute = gestureRoute
-            resetDirectGesture()
-        } else if phase.contains(.cancelled) {
-            completedGestureRoute = nil
-            resetDirectGesture()
-        }
-        return route
+        return resolvedRoute
     }
 
-    mutating func reset() {
-        gestureRoute = nil
-        completedGestureRoute = nil
-        resetDirectGesture()
-    }
-
-    private mutating func resetDirectGesture() {
-        gestureRoute = nil
-        accumulatedDeltaX = 0
-        accumulatedDeltaY = 0
-        pendingSampleCount = 0
-        directGestureHasBegun = false
-        discardsCancelledGestureRemainder = false
-    }
-
-    mutating func cancelInputSession() {
+    mutating func cancel() {
         reset()
-        discardsCancelledGestureRemainder = true
+        discardsCancelledRemainder = true
     }
 
-    mutating func resetPreservingCancellationQuarantine() {
-        let preservesCancellationQuarantine =
-            discardsCancelledGestureRemainder
-        reset()
-        discardsCancelledGestureRemainder =
-            preservesCancellationQuarantine
-    }
-
-    private func accumulatedRoute(
-        allowsMomentaryRate: Bool
-    ) -> Route? {
+    private func accumulatedRoute() -> Route? {
         let horizontalMagnitude = abs(accumulatedDeltaX)
         let verticalMagnitude = abs(accumulatedDeltaY)
-        let dominantMagnitude = max(horizontalMagnitude, verticalMagnitude)
-        let axisLead = abs(horizontalMagnitude - verticalMagnitude)
-        guard dominantMagnitude >= Self.minimumAxisTravel,
-            axisLead >= Self.minimumAxisLead
-        else {
-            return nil
-        }
-        if verticalMagnitude > horizontalMagnitude {
-            return .outerScroll
-        }
-        return allowsMomentaryRate ? .momentaryRate : .player
+        guard
+            max(horizontalMagnitude, verticalMagnitude)
+                >= Self.minimumAxisTravel,
+            abs(verticalMagnitude - horizontalMagnitude)
+                >= Self.minimumAxisLead
+        else { return nil }
+        return verticalMagnitude > horizontalMagnitude ? .outerScroll : .ignore
     }
 
     private func dominantRoute(deltaX: CGFloat, deltaY: CGFloat) -> Route {
-        unambiguousRoute(deltaX: deltaX, deltaY: deltaY) ?? .player
+        abs(deltaY) > abs(deltaX) ? .outerScroll : .ignore
     }
 
-    private func unambiguousRoute(
-        deltaX: CGFloat,
-        deltaY: CGFloat
-    ) -> Route? {
-        let horizontalMagnitude = abs(deltaX)
-        let verticalMagnitude = abs(deltaY)
-        guard horizontalMagnitude != verticalMagnitude else { return nil }
-        return verticalMagnitude > horizontalMagnitude ? .outerScroll : .player
+    private mutating func resetDirectGesture() {
+        directRoute = nil
+        accumulatedDeltaX = 0
+        accumulatedDeltaY = 0
+        directGestureIsActive = false
     }
 
-    private func isClearlyVertical(
-        deltaX: CGFloat,
-        deltaY: CGFloat
-    ) -> Bool {
-        let horizontalMagnitude = abs(deltaX)
-        let verticalMagnitude = abs(deltaY)
-        return verticalMagnitude >= Self.minimumAxisTravel
-            && verticalMagnitude - horizontalMagnitude
-                >= Self.minimumAxisLead
+    private mutating func reset() {
+        resetDirectGesture()
+        completedRoute = nil
     }
 }

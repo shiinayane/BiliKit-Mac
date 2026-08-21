@@ -57,7 +57,10 @@ final class AppWindowOwner {
             danmakuModel: danmakuModel,
             authenticationModel: environment.makeAuthenticationViewModel(),
             historyModel: environment.makeWatchHistoryViewModel(),
-            playerContent: environment.makePlayerView(videoModel: videoModel),
+            playerContent: environment.makePlayerView(
+                videoModel: videoModel,
+                danmakuModel: danmakuModel
+            ),
             commentAssetURLResolver: environment.commentAssetURLResolver,
             commentVideoLinkResolver: environment.commentVideoLinkResolver,
             commentLinkURLResolver: environment.commentLinkURLResolver,

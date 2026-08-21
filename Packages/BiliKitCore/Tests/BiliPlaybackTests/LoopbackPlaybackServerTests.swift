@@ -2719,6 +2719,16 @@ struct LoopbackPlaybackServerTests {
         )
         #expect(await subtitleRepository.cueRequestCount == 0)
 
+        let enabledResult = await engine.toggleNativeSubtitles()
+        let selectedByShortcut = try #require(
+            item.currentMediaSelection.selectedMediaOption(in: group)
+        )
+        #expect(enabledResult == .enabled(label: selectedByShortcut.displayName))
+        #expect(await engine.toggleNativeSubtitles() == .disabled)
+        #expect(
+            item.currentMediaSelection.selectedMediaOption(in: group) == nil
+        )
+
         item.select(authoredSubtitle, in: group)
         engine.play()
         try await waitUntilAsync {
