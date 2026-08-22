@@ -191,6 +191,7 @@ public final class AVPlayerEngine:
             }
     ) {
         self.player = player
+        player.preventsDisplaySleepDuringVideoPlayback = true
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
         self.sourcePreferenceProvider = sourcePreferenceProvider
