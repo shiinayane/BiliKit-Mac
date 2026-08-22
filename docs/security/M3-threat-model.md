@@ -110,6 +110,11 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - Cookie 在各 API 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、字幕正文
   与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
   当前 item 上热换授权结果。
+- 用户显式线路测速复用同一精确 playurl GET 授权边界，但缺少凭据时必须失败，且不请求 AI 音轨。
+  Cookie 在 playurl 映射边界终止；后续 SIDX/媒体 Range 由无 credential、无 Cookie、拒绝 redirect
+  的专用 ephemeral client 读取。原始 bilivideo 只由独立 client 建立结构基准，19 条测量路线共享另一
+  client 并严格串行；任何路线都必须通过自身的 SIDX 与长度校验，不采信另一 host 的响应。取消、
+  Settings 关闭、登出和 owner 销毁必须停止后续请求。
 - 同一已授权 playurl 响应中的 `last_play_cid` 与 `last_play_time` 只映射为当前进程内存中的
   断点候选；匿名 provenance 必须丢弃这两个字段。候选只能匹配已解析的正 CID，位置按毫秒
   转换并由分 P 时长裁剪；不写入本地存储，不因此增加写请求，也不向媒体链路传播账户信息。

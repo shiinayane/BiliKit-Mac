@@ -23,17 +23,23 @@ enum HistoryRouteOwnership {
 struct AppRootView: View {
     @State private var windowOwner: AppWindowOwner
     private let accountSessionCoordinator: AccountSessionCoordinator
+    private let appSettingsModel: AppSettingsModel?
     @State private var isAuthenticationPresented = false
     @State private var submittedSearchQuery: String?
     init(
         environment: AppEnvironment? = nil,
         accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator(),
-        systemNowPlayingController: SystemNowPlayingController? = nil
+        systemNowPlayingController: SystemNowPlayingController? = nil,
+        appSettingsModel: AppSettingsModel? = nil
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
+        self.appSettingsModel = appSettingsModel
         let environment =
             environment
-            ?? .live(accountSessionCoordinator: accountSessionCoordinator)
+            ?? .live(
+                accountSessionCoordinator: accountSessionCoordinator,
+                appSettingsModel: appSettingsModel
+            )
         _windowOwner = State(
             initialValue: AppWindowOwner(
                 environment: environment,
@@ -57,6 +63,7 @@ struct AppRootView: View {
         accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
+        appSettingsModel = nil
         _windowOwner = State(
             initialValue: AppWindowOwner(
                 navigationCoordinator: navigationCoordinator,
@@ -106,6 +113,13 @@ struct AppRootView: View {
         .task {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
+            synchronizeBenchmarkAuthentication()
+        }
+        .onChange(of: authenticationModel.sessionPhase) { _, _ in
+            synchronizeBenchmarkAuthentication()
+        }
+        .onChange(of: authenticationModel.state) { _, _ in
+            synchronizeBenchmarkAuthentication()
         }
         .onChange(of: historyAccountScope) { previousScope, scope in
             guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
@@ -177,6 +191,9 @@ struct AppRootView: View {
             submittedSearchQuery = nil
         }
         .onDisappear {
+            appSettingsModel?.removeAuthenticationOwner(
+                windowOwner.benchmarkAuthenticationOwnerID
+            )
             navigationCoordinator.resetForWindowClosure()
             browseModel.reset()
             authenticationModel.cancelTransientWork()
@@ -220,6 +237,28 @@ struct AppRootView: View {
 
     private var playerContent: AnyView {
         windowOwner.playerContent
+    }
+
+    private func synchronizeBenchmarkAuthentication() {
+        appSettingsModel?.synchronizeAuthentication(
+            Self.benchmarkAccess(
+                sessionPhase: authenticationModel.sessionPhase,
+                isSigningOut: authenticationModel.isSigningOut
+            ),
+            ownerID: windowOwner.benchmarkAuthenticationOwnerID
+        )
+    }
+
+    static func benchmarkAccess(
+        sessionPhase: AccountSessionPhase,
+        isSigningOut: Bool
+    ) -> PlaybackRouteBenchmarkAccess {
+        if isSigningOut { return .signedOut }
+        return switch sessionPhase {
+        case .unresolved: .resolving
+        case .signedOut: .signedOut
+        case .signedIn: .signedIn
+        }
     }
 
     private var commentActivationAID: Int64? {

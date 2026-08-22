@@ -21,6 +21,8 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 切换视频/分 P、关闭详情或替换播放项目时，以 identity/generation 取消旧请求并清空呈现状态；
 - 登出时取消已授权请求并清除所有由登录态取得的内存字幕/弹幕数据；
 - UserDefaults 只允许保存字号、透明度、密度、屏蔽开关、播放器音量、静音和首选倍速等非内容偏好，不保存 BVID、CID、播放位置、正文、字幕选择或远端 URL；
+- 播放线路偏好只保存版本化的稳定 route identifier；不保存完整 URL、query、BVID/CID、标题、作者、
+  IP、Referer、测速结果或原始指标。未知 schema/route 必须回退服务端默认；
 - 日志、崩溃诊断和探针只输出阶段、状态、Content-Type、字节数、字段名、计数和非内容
   的枚举分类。AI 音轨语言目录、语义轨和系统选择结果只存在于当前播放会话内存。
 
@@ -76,6 +78,11 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
   `BiliAPI` 私有 builder 限制精确 path/query、由 `BiliAuth` 独立复核 API origin 与 GET。语言目录、语言标题、所选媒体 URL
   和原始响应不持久化；多音轨只进入当前 `PlaybackManifest`、loopback routes 与同一个
   `AVPlayerItem`。系统 media selection 是当前唯一选择 UI，自定义音轨 UI 尚未加入。
+- 显式线路测速的近期投稿发现保持匿名且有界；不同分区、投稿者与当前设置窗口已测稿件的去重集合只
+  存在于 discoverer 内存，并在关闭 Settings 或账户退出时清除。只有精确 playurl GET 可通过现有
+  authorizer 得到 Cookie；该 capability 只映射视频候选，不读取音频或断点字段。原始 bilivideo 基准与
+  测量连接池使用相互独立的 ephemeral client；二者均无 Cookie/credential/cache 并拒绝 redirect。
+  Settings 关闭、取消、登出或 owner 销毁时取消，结果、样本 identity 与去重集合均不得持久化或进入日志。
 - 播放侧栏 UP 主签名只允许账户读取 `GET https://api.bilibili.com/x/web-interface/card`；query
   只能包含正 `mid` 与固定 `photo=false`。响应 `data.card.mid` 必须与请求值一致，redirect、
   HTTP／业务失败、解码失败与空白签名均只隐藏签名行。仅本地明确无凭据时匿名；凭据故障

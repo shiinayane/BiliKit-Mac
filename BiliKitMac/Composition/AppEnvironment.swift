@@ -352,7 +352,8 @@ struct AppEnvironment {
     /// playurl 与 WBI 弹幕分段在明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的
     /// ephemeral transport，使旧认证会话中的在途请求失效。
     static func live(
-        accountSessionCoordinator: AccountSessionCoordinator? = nil
+        accountSessionCoordinator: AccountSessionCoordinator? = nil,
+        appSettingsModel: AppSettingsModel? = nil
     ) -> AppEnvironment {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
         let transportFactory: @Sendable () -> any HTTPTransport = {
@@ -372,6 +373,7 @@ struct AppEnvironment {
             requestAuthorizer: requestAuthorizer,
             transportFactory: transportFactory
         )
+        appSettingsModel?.configureBenchmark(client: api)
         let sessionRegistration = accountSessionCoordinator.map {
             AppEnvironmentSessionRegistration(
                 coordinator: $0,
@@ -394,7 +396,10 @@ struct AppEnvironment {
         let subtitleRepository = BiliSubtitleRepository(client: api)
         let playerEngine = AVPlayerEngine(
             player: player,
-            subtitleUseCase: SubtitleUseCase(repository: subtitleRepository)
+            subtitleUseCase: SubtitleUseCase(repository: subtitleRepository),
+            sourcePreferenceProvider: {
+                appSettingsModel?.playbackSourcePreference ?? .serverDefault
+            }
         )
         let guestRepository = BiliGuestRepository(client: api)
         let commentAssetResolver = BiliCommentAssetResolver()

@@ -36,6 +36,9 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 10. 同一 HLS AUDIO rendition group 以默认原声的 SIDX 起始时间为 canonical；按各自 timescale
     归一化后起点不一致的可选 AI 音轨在注册 route 与生成 master 前丢弃，不能把仅有菜单项
     当作同内容、可无缝切换的证明。
+11. 用户线路偏好只在新播放进入 SIDX 准备前读取一次，并只调整视频候选。实验 bilivideo 候选
+    只能由 playurl 原始 bilivideo URL 替换已核实 host 生成；一旦 SIDX 成功，记录的
+    `sourceURL` 继续作为该 representation 的 init、media 与 loopback 唯一远端来源。
 
 不使用非公开的 AVFoundation header 注入选项。若未来 Apple 提供正式、可验证的替代 API，再通过新 ADR 调整。
 

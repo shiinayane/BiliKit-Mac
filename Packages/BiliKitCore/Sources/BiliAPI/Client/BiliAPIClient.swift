@@ -129,6 +129,49 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
+    /// 显式线路测速专用的匿名近期投稿读取；只读取固定日期窗口中的有界元数据。
+    func recentSubmissions(
+        regionID: Int,
+        pageSize: Int,
+        dateFrom: String,
+        dateTo: String
+    ) async throws -> [RecentRankSubmissionPayload] {
+        guard regionID > 0, (1...5).contains(pageSize),
+            dateFrom.count == 8, dateFrom.allSatisfy(\.isNumber),
+            dateTo.count == 8, dateTo.allSatisfy(\.isNumber),
+            dateFrom <= dateTo
+        else { throw BiliAPIError.invalidRequest }
+        let payload: RecentRankPayload = try await get(
+            path: "/x/web-interface/newlist_rank",
+            queryItems: [
+                URLQueryItem(name: "main_ver", value: "v3"),
+                URLQueryItem(name: "search_type", value: "video"),
+                URLQueryItem(name: "view_type", value: "hot_rank"),
+                URLQueryItem(name: "copy_right", value: "-1"),
+                URLQueryItem(name: "new_web_tag", value: "1"),
+                URLQueryItem(name: "order", value: "pubdate"),
+                URLQueryItem(name: "cate_id", value: String(regionID)),
+                URLQueryItem(name: "page", value: "1"),
+                URLQueryItem(name: "pagesize", value: String(pageSize)),
+                URLQueryItem(name: "time_from", value: dateFrom),
+                URLQueryItem(name: "time_to", value: dateTo),
+            ],
+            referer: "https://www.bilibili.com/"
+        )
+        return Array((payload.result ?? []).prefix(pageSize))
+    }
+
+    func recentSubmissionDetail(
+        for bvid: String
+    ) async throws -> RecentSubmissionDetailPayload {
+        guard Self.isValidBVID(bvid) else { throw BiliAPIError.invalidRequest }
+        return try await get(
+            path: "/x/web-interface/view",
+            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            referer: Self.videoReferer(bvid)
+        )
+    }
+
     public func recommendations(
         after continuation: RecommendationContinuation? = nil
     ) async throws -> RecommendationPage {
@@ -341,6 +384,65 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         cid: Int64,
         quality: Int = 120
     ) async throws -> VideoPlayback {
+        try await playback(
+            for: bvid,
+            cid: cid,
+            quality: quality,
+            missingCredential: .useAnonymousRequest,
+            includesMachineGeneratedAudio: true
+        )
+    }
+
+    /// 测速样本必须来自当前账户可消费的 playurl；没有凭据时失败而不匿名降级。
+    func authenticatedPlaybackForCDNBenchmark(
+        for bvid: String,
+        cid: Int64,
+        quality: Int = 120
+    ) async throws -> CDNBenchmarkPlayback {
+        guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
+            throw BiliAPIError.invalidRequest
+        }
+        let playbackSessionEpoch = authenticatedSessionEpoch
+        let referer = Self.videoReferer(bvid)
+        let resolved: AuthorizedResponse<CDNBenchmarkPlayURLPayload> =
+            try await getWithAuthorizationProvenance(
+                path: "/x/player/playurl",
+                queryItems: [
+                    URLQueryItem(name: "bvid", value: bvid),
+                    URLQueryItem(name: "cid", value: String(cid)),
+                    URLQueryItem(name: "qn", value: String(quality)),
+                    URLQueryItem(name: "fnval", value: "976"),
+                    URLQueryItem(name: "fnver", value: "0"),
+                    URLQueryItem(name: "fourk", value: "1"),
+                ],
+                referer: referer,
+                access: .accountRead(
+                    missingCredential: .fail,
+                    mapsAuthenticationInvalidation: true
+                )
+            )
+        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        let video = try resolved.payload.dash.video
+            .filter(\.isAVCVideo)
+            .map { try $0.model(kind: .video) }
+        guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
+        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        return CDNBenchmarkPlayback(
+            videoRepresentations: video,
+            mediaHeaders: [
+                "Referer": referer,
+                "User-Agent": userAgent,
+            ]
+        )
+    }
+
+    private func playback(
+        for bvid: String,
+        cid: Int64,
+        quality: Int,
+        missingCredential: MissingCredentialBehavior,
+        includesMachineGeneratedAudio: Bool
+    ) async throws -> VideoPlayback {
         guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
             throw BiliAPIError.invalidRequest
         }
@@ -354,24 +456,16 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             URLQueryItem(name: "fnver", value: "0"),
             URLQueryItem(name: "fourk", value: "1"),
         ]
-        let resolved: AuthorizedResponse<PlayURLPayload>
-        if requestAuthorizer != nil {
-            resolved = try await getWithAuthorizationProvenance(
+        let resolved: AuthorizedResponse<PlayURLPayload> =
+            try await getWithAuthorizationProvenance(
                 path: "/x/player/playurl",
                 queryItems: queryItems,
                 referer: referer,
                 access: .accountRead(
-                    missingCredential: .useAnonymousRequest,
+                    missingCredential: missingCredential,
                     mapsAuthenticationInvalidation: true
                 )
             )
-        } else {
-            resolved = try await getWithAuthorizationProvenance(
-                path: "/x/player/playurl",
-                queryItems: queryItems,
-                referer: referer
-            )
-        }
         let payload = resolved.payload
 
         let video = try payload.dash.video
@@ -395,15 +489,17 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         ]
         if resolved.authorizationProvenance == .authenticated {
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
-            audioTracks += try await machineGeneratedAudioTracks(
-                catalog: payload.languageCatalog,
-                originalAudio: audio,
-                bvid: bvid,
-                cid: cid,
-                quality: quality,
-                referer: referer,
-                sessionEpoch: playbackSessionEpoch
-            )
+            if includesMachineGeneratedAudio {
+                audioTracks += try await machineGeneratedAudioTracks(
+                    catalog: payload.languageCatalog,
+                    originalAudio: audio,
+                    bvid: bvid,
+                    cid: cid,
+                    quality: quality,
+                    referer: referer,
+                    sessionEpoch: playbackSessionEpoch
+                )
+            }
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
         }
 
