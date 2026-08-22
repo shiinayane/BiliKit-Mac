@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 更新时间：2026-08-09。本文只描述本分支合并后 `main` 的产品基线、产品大方向和唯一已选择的
+> 更新时间：2026-08-22。本文只描述本分支合并后 `main` 的产品基线、产品大方向和唯一已选择的
 > 后续阶段。
 > 完成状态以当前代码、自动测试和必要的真实行为证据共同判断；旧计划、分支、worktree、
 > checkpoint、测试数量和 CI run ID 不构成现行契约。
@@ -33,8 +33,10 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - 播放链路包含 DASH 到本机 loopback HLS bridge、单一 AVPlayer host、统一播放时间线、
   语义音轨、系统原生字幕与弹幕；HLS master 会保守发布已解析的音视频格式、语言、角色、
   closed-captions、independent-segments 与按需 I-frame metadata。
+- macOS 26 可在设置中为之后新播放显式开启实验性静态响度均一化；默认关闭，macOS 15 保持无 tap
+  的 unity 路径。该能力依赖未文档化 HLS Processing Tap 行为，边界见 ADR 0012。
 
-模块与依赖的持久约束见 ADR 0001–0009。当前 target、product 和 entitlement 必须以
+模块与依赖的持久约束见 ADR 0001–0012。当前 target、product 和 entitlement 必须以
 `Packages/BiliKitCore/Package.swift` 与 Xcode 工程为准。
 
 ## 3. 工程能力状态

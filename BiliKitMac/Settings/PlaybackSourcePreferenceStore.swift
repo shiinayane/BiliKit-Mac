@@ -1,4 +1,5 @@
 import BiliPlayback
+import CoreFoundation
 import Foundation
 
 enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identifiable {
@@ -40,8 +41,17 @@ enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identif
 }
 
 struct PlaybackSourcePreferenceRecord: Sendable, Equatable {
-    static let defaults = Self(selection: .serverDefault)
+    static let defaults = Self(selection: .serverDefault, loudnessNormalizationEnabled: false)
     let selection: PlaybackSourceSelection
+    let loudnessNormalizationEnabled: Bool
+
+    init(
+        selection: PlaybackSourceSelection,
+        loudnessNormalizationEnabled: Bool = false
+    ) {
+        self.selection = selection
+        self.loudnessNormalizationEnabled = loudnessNormalizationEnabled
+    }
 }
 
 protocol PlaybackSourcePreferenceStoring: AnyObject, Sendable {
@@ -55,6 +65,7 @@ final class UserDefaultsPlaybackSourcePreferenceStore:
     private enum Key {
         static let schema = "playbackSourcePreference.schema"
         static let selection = "playbackSourcePreference.selection"
+        static let loudnessNormalizationEnabled = "playback.loudnessNormalization.enabled"
     }
     private static let schemaVersion = 1
     private let defaults: UserDefaults
@@ -66,11 +77,29 @@ final class UserDefaultsPlaybackSourcePreferenceStore:
             let raw = defaults.string(forKey: Key.selection),
             let selection = PlaybackSourceSelection(rawValue: raw)
         else { return .defaults }
-        return PlaybackSourcePreferenceRecord(selection: selection)
+        let storedEnabled = defaults.object(
+            forKey: Key.loudnessNormalizationEnabled
+        )
+        let enabled =
+            if let number = storedEnabled as? NSNumber,
+                CFGetTypeID(number) == CFBooleanGetTypeID()
+            {
+                number.boolValue
+            } else {
+                false
+            }
+        return PlaybackSourcePreferenceRecord(
+            selection: selection,
+            loudnessNormalizationEnabled: enabled
+        )
     }
 
     func save(_ record: PlaybackSourcePreferenceRecord) {
         defaults.set(Self.schemaVersion, forKey: Key.schema)
         defaults.set(record.selection.rawValue, forKey: Key.selection)
+        defaults.set(
+            record.loudnessNormalizationEnabled,
+            forKey: Key.loudnessNormalizationEnabled
+        )
     }
 }

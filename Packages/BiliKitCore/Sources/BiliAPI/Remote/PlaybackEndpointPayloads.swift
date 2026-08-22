@@ -4,6 +4,7 @@ import Foundation
 
 struct PlayURLPayload: Decodable, Sendable {
     let dash: DASHPayload
+    let volume: PlaybackVolumePayload?
     let currentLanguage: String?
     let currentProductionType: Int?
     let languageCatalog: AudioLanguageCatalogPayload?
@@ -12,6 +13,7 @@ struct PlayURLPayload: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case dash
+        case volume
         case currentLanguage = "cur_language"
         case currentProductionType = "cur_production_type"
         case languageCatalog = "language"
@@ -22,6 +24,7 @@ struct PlayURLPayload: Decodable, Sendable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         dash = try container.decode(DASHPayload.self, forKey: .dash)
+        volume = try? container.decode(PlaybackVolumePayload.self, forKey: .volume)
         currentLanguage = try? container.decode(
             String.self,
             forKey: .currentLanguage
@@ -44,6 +47,47 @@ struct PlayURLPayload: Decodable, Sendable {
             lastPlayedCID: lastPlayCID,
             positionMilliseconds: lastPlayTime
         )
+    }
+}
+
+struct PlaybackVolumePayload: Decodable, Sendable {
+    let measuredIntegrated: Double
+    let measuredLoudnessRange: Double
+    let measuredTruePeak: Double
+    let measuredThreshold: Double
+    let targetIntegrated: Double
+    let targetTruePeak: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case measuredIntegrated = "measured_i"
+        case measuredLoudnessRange = "measured_lra"
+        case measuredTruePeak = "measured_tp"
+        case measuredThreshold = "measured_threshold"
+        case targetIntegrated = "target_i"
+        case targetTruePeak = "target_tp"
+    }
+
+    var model: PlaybackLoudnessMetadata? {
+        guard Self.valid(measuredIntegrated, in: -100...0),
+            Self.valid(measuredLoudnessRange, in: 0...100),
+            Self.valid(measuredTruePeak, in: -100...20),
+            Self.valid(measuredThreshold, in: -100...0),
+            Self.valid(targetIntegrated, in: -70 ... -5),
+            Self.valid(targetTruePeak, in: -20...0),
+            measuredThreshold <= measuredIntegrated
+        else { return nil }
+        return PlaybackLoudnessMetadata(
+            measuredIntegratedLUFS: measuredIntegrated,
+            measuredLoudnessRangeLU: measuredLoudnessRange,
+            measuredTruePeakDBTP: measuredTruePeak,
+            measuredThresholdLUFS: measuredThreshold,
+            targetIntegratedLUFS: targetIntegrated,
+            targetTruePeakDBTP: targetTruePeak
+        )
+    }
+
+    private static func valid(_ value: Double, in range: ClosedRange<Double>) -> Bool {
+        value.isFinite && range.contains(value)
     }
 }
 

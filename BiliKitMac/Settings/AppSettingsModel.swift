@@ -145,7 +145,22 @@ final class AppSettingsModel {
     var selection: PlaybackSourceSelection {
         get { record.selection }
         set {
-            let updated = PlaybackSourcePreferenceRecord(selection: newValue)
+            let updated = PlaybackSourcePreferenceRecord(
+                selection: newValue,
+                loudnessNormalizationEnabled: record.loudnessNormalizationEnabled
+            )
+            record = updated
+            store.save(updated)
+        }
+    }
+
+    var loudnessNormalizationEnabled: Bool {
+        get { record.loudnessNormalizationEnabled }
+        set {
+            let updated = PlaybackSourcePreferenceRecord(
+                selection: record.selection,
+                loudnessNormalizationEnabled: newValue
+            )
             record = updated
             store.save(updated)
         }

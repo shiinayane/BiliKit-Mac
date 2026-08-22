@@ -35,6 +35,44 @@ struct PlaybackSourceSettingsTests {
     }
 
     @Test @MainActor
+    func loudnessSettingDefaultsOffPersistsAndFallsBackOffWhenDamaged() {
+        withIsolatedDefaults { defaults in
+            let store = UserDefaultsPlaybackSourcePreferenceStore(
+                defaults: defaults
+            )
+            store.save(.defaults)
+            #expect(!store.load().loudnessNormalizationEnabled)
+
+            store.save(
+                PlaybackSourcePreferenceRecord(
+                    selection: .serverAkamai,
+                    loudnessNormalizationEnabled: true
+                )
+            )
+            #expect(store.load().loudnessNormalizationEnabled)
+            defaults.set(
+                "damaged",
+                forKey: "playback.loudnessNormalization.enabled"
+            )
+            #expect(!store.load().loudnessNormalizationEnabled)
+            #expect(store.load().selection == .serverAkamai)
+        }
+    }
+
+    @Test @MainActor
+    func loudnessSettingDoesNotRewriteCurrentPreferenceSnapshot() {
+        let store = MemoryPlaybackSourcePreferenceStore()
+        let model = makeModel(store: store)
+        let oldSnapshot = model.loudnessNormalizationEnabled
+
+        model.loudnessNormalizationEnabled = true
+
+        #expect(!oldSnapshot)
+        #expect(model.loudnessNormalizationEnabled)
+        #expect(store.load().loudnessNormalizationEnabled)
+    }
+
+    @Test @MainActor
     func trafficLimitIsDerivedFromNineteenBoundedSerialTargets() {
         let mebibyte: UInt64 = 1_024 * 1_024
         #expect(

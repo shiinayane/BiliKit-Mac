@@ -7,6 +7,21 @@ struct PlaybackSourceSettingsView: View {
 
     var body: some View {
         Form {
+            if #available(macOS 26.0, *) {
+                Section("音频") {
+                    Toggle(
+                        "响度均一化",
+                        isOn: loudnessNormalizationEnabled
+                    )
+                    Text("实验性功能，仅适用于 macOS 26。只影响下一次新播放，当前播放不会改变或重建。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("此功能依赖系统未文档化的 HLS 音频处理行为，可能随系统更新失效；失效或缺少安全元数据时保持原始响度。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("播放线路") {
                 Picker("新播放优先线路", selection: selection) {
                     ForEach(PlaybackSourceSelection.allCases) { item in
@@ -80,6 +95,13 @@ struct PlaybackSourceSettingsView: View {
 
     private var selection: Binding<PlaybackSourceSelection> {
         Binding(get: { model.selection }, set: { model.selection = $0 })
+    }
+
+    private var loudnessNormalizationEnabled: Binding<Bool> {
+        Binding(
+            get: { model.loudnessNormalizationEnabled },
+            set: { model.loudnessNormalizationEnabled = $0 }
+        )
     }
 
     private var benchmarkSampleCount: Binding<Int> {
