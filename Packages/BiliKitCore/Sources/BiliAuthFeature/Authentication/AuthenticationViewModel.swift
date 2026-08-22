@@ -93,6 +93,9 @@ public final class AuthenticationViewModel {
         }
     }
 
+    /// 供 App composition 在登出意图开始时立即停止账户相关临时工作。
+    public var isSigningOut: Bool { state == .signingOut }
+
     public var accountPresentationState: AccountPresentationState {
         switch sessionState {
         case .unresolved:

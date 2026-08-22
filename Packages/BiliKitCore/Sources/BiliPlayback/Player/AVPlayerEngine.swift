@@ -134,6 +134,7 @@ public final class AVPlayerEngine:
 
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase?
+    private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
     private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
     private let failureEvents: AsyncStream<PlaybackFailureEvent>
     private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
@@ -155,11 +156,16 @@ public final class AVPlayerEngine:
     public init(
         player: AVPlayer = AVPlayer(),
         bridge: DASHToHLSBridge = DASHToHLSBridge(),
-        subtitleUseCase: SubtitleUseCase? = nil
+        subtitleUseCase: SubtitleUseCase? = nil,
+        sourcePreferenceProvider:
+            @escaping @MainActor @Sendable () -> PlaybackSourcePreference = {
+                .serverDefault
+            }
     ) {
         self.player = player
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
+        self.sourcePreferenceProvider = sourcePreferenceProvider
         if subtitleUseCase != nil {
             player.appliesMediaSelectionCriteriaAutomatically = false
         }
@@ -325,7 +331,11 @@ public final class AVPlayerEngine:
         intent: PlaybackLoadIntent,
         generation: UUID
     ) async throws {
-        let videos = try selectedVideos(for: request)
+        // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
+        let sourcePreference = sourcePreferenceProvider()
+        let videos = try selectedVideos(for: request).map {
+            PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+        }
         let audioTracks = try selectedAudioTracks(for: request)
         try Task.checkCancellation()
 

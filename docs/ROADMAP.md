@@ -144,11 +144,27 @@ BiliKit 是 macOS-first 的原生第三方 B 站浏览与播放客户端。v1 �
 - [`validation/semantic-audio-hls-stage7-2026-08-09.md`](./validation/semantic-audio-hls-stage7-2026-08-09.md)
 - [`adr/0002-loopback-http-playback-bridge.md`](./adr/0002-loopback-http-playback-bridge.md)
 
+### 已实现、用户批准的真实大流量验收待完成：手动播放线路与测速参考
+
+- 原生设置默认保持服务端候选顺序；用户可为之后的新播放手动选择原始 Akamai、原始 bilivideo 或
+  18 条明确标注的实验 bilivideo 路线。当前 item、音频/AI 音轨、时间线、字幕、弹幕与 Now Playing
+  不受设置变化影响。
+- 实验候选只由服务端原始 bilivideo URL 替换固定 host 生成，SIDX 成功后继续沿用同一 `sourceURL`；
+  不从 Akamai 派生、不跨 CDN 拼接 Range，也不把实验线路变成播放依赖。
+- 已登录用户可显式选择 1–3 个不同分区与投稿者的匿名样本，并对 19 路严格串行测速；原始 bilivideo
+  建立独立基准，测量路线共享无凭据连接池并轮换起点。单路每样本 SIDX 上限为 256 KiB，init 与分散的
+  完整媒体片段合计最多 10 MiB，总硬上限为 195/390/585 MiB。结果按完整样本成功率、调和平均吞吐和
+  最低吞吐排序，并临时显示中位数、匿名分布及成功数；不保存、不推荐、不自动改选。
+- 自动契约与 App build 关闭后，仍需用户另行批准一次真实 19 路验收，并真人检查完成态视觉、
+  VoiceOver/FKA 与不同网络/时间/内容温度；在此之前不声称所有实验线路现场可用。
+
+决策见 [`adr/0011-explicit-playback-route-preference-and-benchmark.md`](./adr/0011-explicit-playback-route-preference-and-benchmark.md)。
+
 ## 4. 唯一当前阶段：原生播放侧栏与只读评论
 
 当前阶段在已经生产化的原生播放侧栏和真实选择链上接入只读评论。评论读取使用与其他公开
 Browse 一致的登录增强语义：本地有凭据时携带短生命周期 Cookie 取得属地等增强字段，明确
-无凭据时仍匿名读取。旧 spike 只提供性能与交互边界；生产视觉、数据状态和生命周期按当前
+无凭据时仍匿名读取。旧原型只提供性能与交互边界；生产视觉、数据状态和生命周期按当前
 AppKit 架构重写。
 
 ### 用户结果

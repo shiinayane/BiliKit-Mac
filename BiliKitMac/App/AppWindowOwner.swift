@@ -9,6 +9,7 @@ import SwiftUI
 /// 尤其是视频、弹幕模型与 `playerContent` 必须共享 `AppEnvironment` 中同一个
 /// `AVPlayerEngine`；分别重建会造成画面、时间线与弹幕指向不同播放项目。
 final class AppWindowOwner {
+    let benchmarkAuthenticationOwnerID = UUID()
     let navigationCoordinator: AppNavigationCoordinator
     let browseModel: GuestBrowseViewModel
     let videoModel: GuestVideoViewModel
