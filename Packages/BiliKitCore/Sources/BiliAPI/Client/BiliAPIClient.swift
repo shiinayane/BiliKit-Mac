@@ -455,6 +455,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             URLQueryItem(name: "fnval", value: "976"),
             URLQueryItem(name: "fnver", value: "0"),
             URLQueryItem(name: "fourk", value: "1"),
+            URLQueryItem(name: "voice_balance", value: "1"),
         ]
         let resolved: AuthorizedResponse<PlayURLPayload> =
             try await getWithAuthorizationProvenance(
@@ -484,6 +485,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 role: .original,
                 isDefault: true,
                 isAutoselect: true,
+                loudnessMetadata: payload.volume?.model,
                 representations: audio
             )
         ]
@@ -551,6 +553,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     URLQueryItem(name: "fnver", value: "0"),
                     URLQueryItem(name: "fourk", value: "1"),
                     URLQueryItem(name: "cur_language", value: languageTag),
+                    URLQueryItem(name: "voice_balance", value: "1"),
                 ],
                 referer: referer,
                 access: .accountRead(
@@ -588,6 +591,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     role: .machineGenerated,
                     isDefault: false,
                     isAutoselect: true,
+                    loudnessMetadata: payload.volume?.model,
                     representations: representations
                 )
             )

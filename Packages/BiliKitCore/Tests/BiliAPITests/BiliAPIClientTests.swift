@@ -1,9 +1,10 @@
-import BiliAPI
 import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
 import Testing
+
+@testable import BiliAPI
 
 struct BiliAPIClientTests {
     @Test
@@ -870,6 +871,103 @@ struct BiliAPIClientTests {
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
+        #expect(
+            queryItems?.contains(
+                URLQueryItem(name: "voice_balance", value: "1")
+            ) == true
+        )
+    }
+
+    @Test
+    func playURLBindsLoudnessMetadataToEachSemanticTrackResponse() async throws {
+        let originalVolume = loudnessVolume(measuredI: -20, measuredTP: -4)
+        let aiVolume = loudnessVolume(measuredI: -11, measuredTP: -0.5)
+        let transport = RecordingTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: "original-audio.m4s",
+                    languageCatalog: [
+                        "support": true,
+                        "items": [
+                            [
+                                "lang": "en",
+                                "title": "English（AI）",
+                                "production_type": 2,
+                            ],
+                            [
+                                "lang": "ja",
+                                "title": "日本語（AI）",
+                                "production_type": 2,
+                            ],
+                        ],
+                    ],
+                    volume: originalVolume
+                ),
+                try semanticAudioResponse(
+                    audioPath: "ai-en-audio.m4s",
+                    currentLanguage: "en",
+                    currentProductionType: 2,
+                    volume: aiVolume
+                ),
+                try semanticAudioResponse(
+                    audioPath: "ai-ja-audio.m4s",
+                    currentLanguage: "ja",
+                    currentProductionType: 2
+                ),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.manifest.audioTracks.count == 3)
+        let original = playback.manifest.audioTracks[0]
+        let englishAI = playback.manifest.audioTracks[1]
+        let japaneseAI = playback.manifest.audioTracks[2]
+        #expect(original.loudnessMetadata?.measuredIntegratedLUFS == -20)
+        #expect(englishAI.loudnessMetadata?.measuredIntegratedLUFS == -11)
+        #expect(japaneseAI.loudnessMetadata == nil)
+        #expect(original.loudnessMetadata != englishAI.loudnessMetadata)
+        let requests = await transport.capturedRequests()
+        #expect(
+            requests.allSatisfy { request in
+                URLComponents(
+                    url: request.url,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems?.contains(
+                    URLQueryItem(name: "voice_balance", value: "1")
+                ) == true
+            }
+        )
+    }
+
+    @Test(arguments: [
+        #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+        #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14}"#,
+        #"{"measured_i":null,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+        #"{"measured_i":"bad","measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+        #"{"measured_i":-200,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+        #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+    ])
+    func loudnessPayloadRequiresACompleteFiniteBoundedGroup(_ source: String) {
+        let payload = try? JSONDecoder().decode(
+            PlaybackVolumePayload.self,
+            from: Data(source.utf8)
+        )
+
+        if source.hasPrefix(#"{"measured_i":-20,"#)
+            && source.contains(#""target_tp":-1"#)
+        {
+            #expect(payload?.model?.measuredIntegratedLUFS == -20)
+        } else {
+            #expect(payload?.model == nil)
+        }
     }
 
     @Test
@@ -1768,7 +1866,8 @@ struct BiliAPIClientTests {
         audioPath: String,
         languageCatalog: [String: Any]? = nil,
         currentLanguage: String? = nil,
-        currentProductionType: Int? = nil
+        currentProductionType: Int? = nil,
+        volume: [String: Any]? = nil
     ) throws -> HTTPResponse {
         var data: [String: Any] = [
             "dash": [
@@ -1817,6 +1916,9 @@ struct BiliAPIClientTests {
         if let currentProductionType {
             data["cur_production_type"] = currentProductionType
         }
+        if let volume {
+            data["volume"] = volume
+        }
         return HTTPResponse(
             statusCode: 200,
             headers: ["Content-Type": "application/json"],
@@ -1825,6 +1927,22 @@ struct BiliAPIClientTests {
                 options: [.sortedKeys]
             )
         )
+    }
+
+    private func loudnessVolume(
+        measuredI: Double,
+        measuredTP: Double
+    ) -> [String: Any] {
+        [
+            "measured_i": measuredI,
+            "measured_lra": 3,
+            "measured_tp": measuredTP,
+            "measured_threshold": measuredI - 10,
+            "target_i": -14,
+            "target_tp": -1,
+            "target_offset": 99,
+            "multi_scene_args": "ignored",
+        ]
     }
 }
 

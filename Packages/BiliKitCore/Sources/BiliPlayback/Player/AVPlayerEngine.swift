@@ -120,6 +120,24 @@ struct TransportSeekOperationState: Sendable {
     }
 }
 
+struct AudioSelectionOperationState: Sendable {
+    private(set) var currentID: UUID?
+
+    mutating func begin(makeID: () -> UUID = UUID.init) -> UUID {
+        let id = makeID()
+        currentID = id
+        return id
+    }
+
+    func matches(_ id: UUID) -> Bool {
+        currentID == id
+    }
+
+    mutating func invalidate() {
+        currentID = nil
+    }
+}
+
 @MainActor
 /// AVPlayer、DASH→HLS 会话与统一播放时间线的唯一资源 owner。
 ///
@@ -135,6 +153,7 @@ public final class AVPlayerEngine:
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase?
     private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
+    private let loudnessNormalizationEnabledProvider: @MainActor @Sendable () -> Bool
     private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
     private let failureEvents: AsyncStream<PlaybackFailureEvent>
     private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
@@ -152,6 +171,11 @@ public final class AVPlayerEngine:
     private var subtitleToggleOperationID: UUID?
     private var lastSubtitleSelection: NativeSubtitleSelectionPreference?
     private var transportSeek = TransportSeekOperationState()
+    private var loudnessTap: LoudnessProcessingTap?
+    private var loudnessAudioTracks: [PlaybackAudioTrack] = []
+    private var audioSelectionObserver: (any NSObjectProtocol)?
+    private var audioSelectionTask: Task<Void, Never>?
+    private var audioSelectionOperation = AudioSelectionOperationState()
 
     public init(
         player: AVPlayer = AVPlayer(),
@@ -160,12 +184,17 @@ public final class AVPlayerEngine:
         sourcePreferenceProvider:
             @escaping @MainActor @Sendable () -> PlaybackSourcePreference = {
                 .serverDefault
+            },
+        loudnessNormalizationEnabledProvider:
+            @escaping @MainActor @Sendable () -> Bool = {
+                false
             }
     ) {
         self.player = player
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
         self.sourcePreferenceProvider = sourcePreferenceProvider
+        self.loudnessNormalizationEnabledProvider = loudnessNormalizationEnabledProvider
         if subtitleUseCase != nil {
             player.appliesMediaSelectionCriteriaAutomatically = false
         }
@@ -193,6 +222,10 @@ public final class AVPlayerEngine:
     deinit {
         loadTask?.cancel()
         readinessTask?.cancel()
+        audioSelectionTask?.cancel()
+        if let audioSelectionObserver {
+            NotificationCenter.default.removeObserver(audioSelectionObserver)
+        }
         preparedAsset?.stop()
         if let subtitleUseCase, let subtitleIdentity {
             let previousReset = subtitleResetTask
@@ -333,6 +366,8 @@ public final class AVPlayerEngine:
     ) async throws {
         // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
         let sourcePreference = sourcePreferenceProvider()
+        let loudnessNormalizationEnabled =
+            loudnessNormalizationEnabledProvider()
         let videos = try selectedVideos(for: request).map {
             PlaybackSourceOrdering.applying(sourcePreference, to: $0)
         }
@@ -350,6 +385,7 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
+        clearLoudnessNormalization()
         preparedAsset?.stop()
         preparedAsset = nil
         player.pause()
@@ -390,6 +426,25 @@ public final class AVPlayerEngine:
             loadTask = nil
             preparedAsset = prepared
             let item = AVPlayerItem(url: prepared.url)
+            if LoudnessNormalizationRuntimePolicy.shouldInstall(
+                enabled: loudnessNormalizationEnabled,
+                hasMetadata: audioTracks.contains {
+                    $0.track.loudnessMetadata != nil
+                }
+            ),
+                let defaultTrack = audioTracks.first(where: {
+                    $0.track.isDefault
+                }),
+                let tap = LoudnessProcessingTap.make(
+                    initialGain: LoudnessNormalizationPolicy().linearGain(
+                        for: defaultTrack.track.loudnessMetadata
+                    )
+                )
+            {
+                loudnessTap = tap
+                loudnessAudioTracks = audioTracks.map(\.track)
+                item.audioMix = tap.makeAudioMix()
+            }
             player.replaceCurrentItem(with: item)
             timeline.installObservers(for: item)
             let readinessTask = Task {
@@ -403,11 +458,19 @@ public final class AVPlayerEngine:
             }
             self.readinessTask = nil
             timeline.markReady(duration: item.duration)
+            beginObservingAudioSelection(for: item, generation: generation)
+            let audioSelectionOperationID = audioSelectionOperation.begin()
+            await updateSelectedAudioGain(
+                for: item,
+                generation: generation,
+                operationID: audioSelectionOperationID
+            )
             emit(.stateChanged(.ready))
         } catch is CancellationError {
             if loadGeneration == generation {
                 loadTask = nil
                 readinessTask = nil
+                clearLoudnessNormalization()
                 activeSeekOperationID = nil
                 preparedAsset?.stop()
                 preparedAsset = nil
@@ -421,6 +484,7 @@ public final class AVPlayerEngine:
             if loadGeneration == generation {
                 loadTask = nil
                 readinessTask = nil
+                clearLoudnessNormalization()
                 activeSeekOperationID = nil
                 preparedAsset?.stop()
                 preparedAsset = nil
@@ -450,6 +514,7 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
+        clearLoudnessNormalization()
         preparedAsset?.stop()
         preparedAsset = nil
         player.replaceCurrentItem(with: nil)
@@ -846,6 +911,7 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
+        clearLoudnessNormalization()
         player.pause()
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
@@ -1029,6 +1095,7 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
+        clearLoudnessNormalization()
         player.pause()
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
@@ -1038,6 +1105,137 @@ public final class AVPlayerEngine:
             PlaybackFailureEvent(identity: identity, intent: intent)
         )
         emit(.failed(message: "PlaybackItemFailed"))
+    }
+
+    private func beginObservingAudioSelection(
+        for item: AVPlayerItem,
+        generation: UUID
+    ) {
+        guard loudnessTap != nil else { return }
+        audioSelectionObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+            object: item,
+            queue: .main
+        ) { [weak self, weak item] _ in
+            guard let item else { return }
+            Task { @MainActor [weak self, weak item] in
+                guard let self, let item,
+                    self.loadGeneration == generation,
+                    self.player.currentItem === item
+                else { return }
+                self.audioSelectionTask?.cancel()
+                let operationID = self.audioSelectionOperation.begin()
+                let task = Task { @MainActor [weak self, weak item] in
+                    guard let self, let item else { return }
+                    await self.updateSelectedAudioGain(
+                        for: item,
+                        generation: generation,
+                        operationID: operationID
+                    )
+                }
+                self.audioSelectionTask = task
+            }
+        }
+    }
+
+    private func updateSelectedAudioGain(
+        for item: AVPlayerItem,
+        generation: UUID,
+        operationID: UUID
+    ) async {
+        guard let loudnessTap,
+            isCurrentAudioSelectionOperation(
+                operationID,
+                generation: generation,
+                item: item,
+                tap: loudnessTap
+            )
+        else { return }
+
+        let group: AVMediaSelectionGroup?
+        do {
+            group = try await item.asset.loadMediaSelectionGroup(for: .audible)
+        } catch {
+            guard
+                isCurrentAudioSelectionOperation(
+                    operationID,
+                    generation: generation,
+                    item: item,
+                    tap: loudnessTap
+                )
+            else { return }
+            loudnessTap.setTargetGain(1)
+            return
+        }
+
+        guard
+            isCurrentAudioSelectionOperation(
+                operationID,
+                generation: generation,
+                item: item,
+                tap: loudnessTap
+            )
+        else { return }
+
+        let metadata: PlaybackLoudnessMetadata?
+        if let group,
+            let option = item.currentMediaSelection.selectedMediaOption(in: group)
+        {
+            let matches = loudnessAudioTracks.filter {
+                Self.matches($0, option: option)
+            }
+            metadata = matches.count == 1 ? matches[0].loudnessMetadata : nil
+        } else {
+            metadata = nil
+        }
+        loudnessTap.setTargetGain(
+            LoudnessNormalizationPolicy().linearGain(for: metadata)
+        )
+    }
+
+    private func isCurrentAudioSelectionOperation(
+        _ operationID: UUID,
+        generation: UUID,
+        item: AVPlayerItem,
+        tap: LoudnessProcessingTap
+    ) -> Bool {
+        !Task.isCancelled
+            && audioSelectionOperation.matches(operationID)
+            && loadGeneration == generation
+            && player.currentItem === item
+            && loudnessTap === tap
+    }
+
+    private static func matches(
+        _ track: PlaybackAudioTrack,
+        option: AVMediaSelectionOption
+    ) -> Bool {
+        let expectedLanguage = (track.languageTag ?? "und")
+            .replacingOccurrences(of: "_", with: "-")
+            .lowercased()
+        let actualLanguage = (option.locale?.identifier ?? "und")
+            .replacingOccurrences(of: "_", with: "-")
+            .lowercased()
+        let characteristic = AVMediaCharacteristic(
+            rawValue:
+                track.role == .original
+                ? "public.original-content" : "public.machine-generated"
+        )
+        return option.displayName == track.displayName
+            && actualLanguage == expectedLanguage
+            && option.hasMediaCharacteristic(characteristic)
+    }
+
+    private func clearLoudnessNormalization() {
+        audioSelectionTask?.cancel()
+        audioSelectionTask = nil
+        audioSelectionOperation.invalidate()
+        if let audioSelectionObserver {
+            NotificationCenter.default.removeObserver(audioSelectionObserver)
+        }
+        audioSelectionObserver = nil
+        loudnessAudioTracks = []
+        loudnessTap = nil
     }
 
     private func invalidateTransportSeek() {

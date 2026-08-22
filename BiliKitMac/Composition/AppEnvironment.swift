@@ -399,6 +399,13 @@ struct AppEnvironment {
             subtitleUseCase: SubtitleUseCase(repository: subtitleRepository),
             sourcePreferenceProvider: {
                 appSettingsModel?.playbackSourcePreference ?? .serverDefault
+            },
+            loudnessNormalizationEnabledProvider: {
+                if #available(macOS 26.0, *) {
+                    appSettingsModel?.loudnessNormalizationEnabled ?? false
+                } else {
+                    false
+                }
             }
         )
         let guestRepository = BiliGuestRepository(client: api)

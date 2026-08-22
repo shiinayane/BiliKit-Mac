@@ -119,6 +119,23 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
+    func audioSelectionOperationRejectsCancelledOrReplacedWork() {
+        var state = AudioSelectionOperationState()
+        let firstID = UUID()
+        let replacementID = UUID()
+
+        let first = state.begin { firstID }
+        #expect(state.matches(first))
+
+        let replacement = state.begin { replacementID }
+        #expect(!state.matches(first))
+        #expect(state.matches(replacement))
+
+        state.invalidate()
+        #expect(!state.matches(replacement))
+    }
+
+    @Test
     @MainActor
     func completedTransportSeekAdvancesDiscontinuityWithoutResuming() {
         let player = AVPlayer()

@@ -40,6 +40,34 @@ public enum MediaKind: String, Sendable, Equatable {
     case audio
 }
 
+/// 服务端对一条语义音轨给出的静态 BS.1770 响度测量与目标。
+///
+/// 这里不保存 endpoint 专属的 offset 或场景参数；所有值仍会在播放策略边界再次校验。
+public struct PlaybackLoudnessMetadata: Sendable, Equatable {
+    public let measuredIntegratedLUFS: Double
+    public let measuredLoudnessRangeLU: Double
+    public let measuredTruePeakDBTP: Double
+    public let measuredThresholdLUFS: Double
+    public let targetIntegratedLUFS: Double
+    public let targetTruePeakDBTP: Double
+
+    public init(
+        measuredIntegratedLUFS: Double,
+        measuredLoudnessRangeLU: Double,
+        measuredTruePeakDBTP: Double,
+        measuredThresholdLUFS: Double,
+        targetIntegratedLUFS: Double,
+        targetTruePeakDBTP: Double
+    ) {
+        self.measuredIntegratedLUFS = measuredIntegratedLUFS
+        self.measuredLoudnessRangeLU = measuredLoudnessRangeLU
+        self.measuredTruePeakDBTP = measuredTruePeakDBTP
+        self.measuredThresholdLUFS = measuredThresholdLUFS
+        self.targetIntegratedLUFS = targetIntegratedLUFS
+        self.targetTruePeakDBTP = targetTruePeakDBTP
+    }
+}
+
 public struct VideoRepresentationAttributes: Sendable, Equatable {
     public let width: Int
     public let height: Int
@@ -123,6 +151,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     public let role: Role
     public let isDefault: Bool
     public let isAutoselect: Bool
+    public let loudnessMetadata: PlaybackLoudnessMetadata?
     public let representations: [MediaRepresentation]
 
     public init(
@@ -132,6 +161,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         role: Role,
         isDefault: Bool,
         isAutoselect: Bool,
+        loudnessMetadata: PlaybackLoudnessMetadata? = nil,
         representations: [MediaRepresentation]
     ) {
         self.id = id
@@ -140,6 +170,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         self.role = role
         self.isDefault = isDefault
         self.isAutoselect = isAutoselect
+        self.loudnessMetadata = loudnessMetadata
         self.representations = representations
     }
 }
