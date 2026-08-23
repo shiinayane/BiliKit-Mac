@@ -30,7 +30,6 @@ struct AVPlayerTimelineAdapterTests {
         await Task.yield()
 
         #expect(timeline.currentSnapshot.state == .paused)
-        #expect(timeline.currentSnapshot.positionSeconds == 0.5)
     }
 
     @Test

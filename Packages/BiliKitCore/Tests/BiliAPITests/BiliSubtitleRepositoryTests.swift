@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct BiliSubtitleRepositoryTests {
     private let identity = PlaybackItemIdentity(
         bvid: "BV1SubtitleFixture",
@@ -464,12 +464,9 @@ struct BiliSubtitleRepositoryTests {
     private func waitUntil(
         _ condition: () async -> Bool
     ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !(await condition()), clock.now < deadline {
+        while !(await condition()) {
             try await Task.sleep(for: .milliseconds(1))
         }
-        #expect(await condition())
     }
 }
 

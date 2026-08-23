@@ -3,7 +3,7 @@ import Testing
 
 @testable import BiliApplication
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct PlaybackTimelineStoreTests {
     @Test
@@ -164,9 +164,7 @@ struct PlaybackTimelineStoreTests {
         consumer.cancel()
         await consumer.value
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while store.subscriberCount != 0, clock.now < deadline {
+        while store.subscriberCount != 0 {
             try await Task.sleep(for: .milliseconds(1))
         }
         #expect(store.subscriberCount == 0)

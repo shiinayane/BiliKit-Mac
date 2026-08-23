@@ -5,7 +5,7 @@ import Testing
 
 @testable import BiliKit
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct SystemNowPlayingControllerTests {
     @Test
@@ -220,11 +220,13 @@ struct SystemNowPlayingControllerTests {
             )
         )
 
+        let publication = OneShotTestEvent()
         await confirmation("only the current artwork is published") { confirmation in
             center.onPublish = { info in
                 guard info[MPMediaItemPropertyArtwork] != nil else { return }
                 #expect(info[MPMediaItemPropertyTitle] as? String == "B")
                 confirmation()
+                Task { await publication.signal() }
             }
             await loader.complete(
                 URL(string: "https://example.invalid/a")!,
@@ -234,7 +236,7 @@ struct SystemNowPlayingControllerTests {
                 URL(string: "https://example.invalid/b")!,
                 image: Self.image()
             )
-            await Task.yield()
+            await publication.wait()
         }
     }
 
@@ -434,6 +436,29 @@ struct SystemNowPlayingControllerTests {
             preconditionFailure("Unable to create the artwork test image")
         }
         return image
+    }
+}
+
+private actor OneShotTestEvent {
+    private var isSignaled = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if isSignaled { return }
+        await withCheckedContinuation { continuation in
+            if isSignaled {
+                continuation.resume()
+            } else {
+                waiter = continuation
+            }
+        }
+    }
+
+    func signal() {
+        guard !isSignaled else { return }
+        isSignaled = true
+        waiter?.resume()
+        waiter = nil
     }
 }
 

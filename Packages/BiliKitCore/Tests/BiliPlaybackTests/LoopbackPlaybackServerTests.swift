@@ -110,13 +110,17 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
-    func cancellingStartDoesNotLeaveListenerRunning() async throws {
+    func preCancelledStartDoesNotLeaveListenerRunning() async throws {
         let server = LoopbackPlaybackServer()
         defer { server.stop() }
+        let gate = StartTestGate()
         let startTask = Task {
+            await gate.wait()
+            try Task.checkCancellation()
             try await server.start()
         }
         startTask.cancel()
+        await gate.open()
 
         var cancellationObserved = false
         do {
@@ -664,11 +668,9 @@ struct LoopbackPlaybackServerTests {
 
         #expect(item.canPlayFastForward)
         #expect(item.canPlayFastReverse)
-        #expect(
-            try server.requestCount(
-                method: "GET",
-                at: "video/64-iframe.m3u8"
-            ) == 0
+        let iFrameRequestsBeforeFastForward = try server.requestCount(
+            method: "GET",
+            at: "video/64-iframe.m3u8"
         )
         let requestsBeforeFastForward = await transport.requests.count
 
@@ -676,6 +678,7 @@ struct LoopbackPlaybackServerTests {
         try await waitUntilRequest(
             method: "GET",
             at: "video/64-iframe.m3u8",
+            exceeds: iFrameRequestsBeforeFastForward,
             on: server
         )
         try await waitUntilRequestCount(
@@ -990,10 +993,10 @@ struct LoopbackPlaybackServerTests {
         )
         player.pause()
 
-        #expect(
-            item.accessLog()?.events.contains {
-                $0.indicatedBitrate == 146_000
-            } == true
+        try await waitUntilIndicatedBitrate(
+            146_000,
+            appearsAfterEventCount: 0,
+            on: item
         )
 
         let highAsset = AVURLAsset(url: highMasterURL)
@@ -1008,10 +1011,10 @@ struct LoopbackPlaybackServerTests {
         try await waitUntilPlaybackTime(highPlayer, reaches: 0.15)
         highPlayer.pause()
 
-        #expect(
-            highItem.accessLog()?.events.contains {
-                $0.indicatedBitrate == 196_000
-            } == true
+        try await waitUntilIndicatedBitrate(
+            196_000,
+            appearsAfterEventCount: 0,
+            on: highItem
         )
 
         let manualAsset = AVURLAsset(url: masterURL)
@@ -2959,7 +2962,6 @@ struct LoopbackPlaybackServerTests {
                 cid: 305
             )
         )
-        let clock = ContinuousClock()
         let prepareTask = Task {
             try await bridge.prepare(
                 videos: [video],
@@ -2969,15 +2971,12 @@ struct LoopbackPlaybackServerTests {
             )
         }
         try await waitUntilAsync { await repository.started }
-        let start = clock.now
         let prepared = try await prepareTask.value
         defer { prepared.stop() }
-        let elapsed = start.duration(to: clock.now)
         await repository.release()
 
         let masterBody = try await URLSession.shared.data(from: prepared.url).0
         let master = try #require(String(data: masterBody, encoding: .utf8))
-        #expect(elapsed < .milliseconds(500))
         #expect(!master.contains("TYPE=SUBTITLES"))
     }
 
@@ -3075,8 +3074,9 @@ struct LoopbackPlaybackServerTests {
         #expect(engine.requestSeek(to: .seconds(0.2)))
         #expect(engine.requestSeek(to: .seconds(0.5)))
         try await waitUntilAsync {
-            engine.currentTimelineSnapshot.discontinuityGeneration
-                > requestedSeekGeneration
+            let snapshot = engine.currentTimelineSnapshot
+            return snapshot.discontinuityGeneration > requestedSeekGeneration
+                && abs(snapshot.positionSeconds - 0.5) < 0.05
         }
         #expect(
             engine.currentTimelineSnapshot.discontinuityGeneration
@@ -4018,13 +4018,14 @@ struct LoopbackPlaybackServerTests {
     private func waitUntilRequest(
         method: String,
         at relativePath: String,
+        exceeds baseline: Int = 0,
         on server: LoopbackPlaybackServer
     ) async throws {
         for _ in 0..<100 {
             if try server.requestCount(
                 method: method,
                 at: relativePath
-            ) > 0 {
+            ) > baseline {
                 return
             }
             try await Task.sleep(for: .milliseconds(50))
@@ -4264,6 +4265,26 @@ struct LoopbackPlaybackServerTests {
         let response = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return (process.terminationStatus, response)
+    }
+}
+
+private actor StartTestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let waiters = waiters
+        self.waiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 }
 

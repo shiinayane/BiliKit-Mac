@@ -174,7 +174,7 @@ struct HTTPRangeStreamingClientTests {
             delay: 5
         )
         let task = Task { try await streamFourBytes() }
-        try await Task.sleep(for: .milliseconds(10))
+        await RangeStreamURLProtocol.state.waitUntilStarted()
         task.cancel()
         await #expect(throws: (any Error).self) { try await task.value }
         try await waitUntil { RangeStreamURLProtocol.state.wasStopped }
@@ -275,6 +275,7 @@ private final class RangeStreamURLProtocolState: @unchecked Sendable {
     private var stopped = false
     private var delivered = 0
     private var capturedRequest: URLRequest?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     var wasStopped: Bool { lock.withLock { stopped } }
     var deliveredBodyBytes: Int { lock.withLock { delivered } }
@@ -300,9 +301,24 @@ private final class RangeStreamURLProtocolState: @unchecked Sendable {
     }
 
     func begin(request: URLRequest) -> RangeStreamConfiguration {
-        lock.withLock {
+        let result = lock.withLock {
             capturedRequest = request
-            return configuration
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            return (configuration, waiters)
+        }
+        for waiter in result.1 { waiter.resume() }
+        return result.0
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation { continuation in
+            let isStarted = lock.withLock {
+                guard capturedRequest == nil else { return true }
+                startWaiters.append(continuation)
+                return false
+            }
+            if isStarted { continuation.resume() }
         }
     }
 
