@@ -565,7 +565,6 @@ struct PopularNativeGridTests {
 
     @Test @MainActor
     func popularMappingKeepsStableBVIDAndCurrentSlots() throws {
-        let locale = Locale(identifier: "zh-Hans")
         let video = PopularVideo(
             bvid: "BV-stable",
             title: "原生卡片",
@@ -584,21 +583,22 @@ struct PopularNativeGridTests {
             publishedAt: Date(timeIntervalSince1970: 0)
         )
 
+        let featurePresentation = PopularVideoCardPresentation(video: video)
         let content = try #require(
-            PopularNativeGridView.makePresentations([video], locale: locale).first
+            PopularNativeGridView.makePresentations([video]).first
         )
         #expect(content.id == "BV-stable")
         #expect(content.title == "原生卡片")
         #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
         #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(content.coverMetrics.map(\.text) == ["1.2万", "67"])
-        #expect(content.coverTrailingText == "2:05")
-        #expect(content.showsAvatar)
         #expect(
-            content.accessibilityLabel.contains(
-                AppStrings.localized("时长 \("2:05")", locale: locale)
-            )
+            content.coverMetrics.map(\.text)
+                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
         )
+        #expect(content.coverTrailingText == featurePresentation.durationText)
+        #expect(content.showsAvatar)
+        #expect(content.accessibilityLabel.contains(featurePresentation.viewCountText))
+        #expect(content.accessibilityLabel.contains(featurePresentation.durationText))
     }
 
     @Test @MainActor
@@ -645,7 +645,6 @@ struct PopularNativeGridTests {
 
     @Test @MainActor
     func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
-        let locale = Locale(identifier: "zh-Hans")
         let video = SearchVideo(
             bvid: "BV-search-stable",
             title: "搜索原生卡片",
@@ -664,21 +663,20 @@ struct PopularNativeGridTests {
             publishedAt: Date(timeIntervalSince1970: 0)
         )
 
-        let featurePresentation = SearchVideoCardPresentation(video: video, locale: locale)
+        let featurePresentation = SearchVideoCardPresentation(video: video)
         let content = SearchNativeGridView.makePresentation(featurePresentation)
 
         #expect(content.id == "BV-search-stable")
         #expect(content.title == "搜索原生卡片")
         #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
         #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(content.coverMetrics.map(\.text) == ["2.3万", "89"])
-        #expect(content.coverTrailingText == "3:05")
-        #expect(content.footerLeadingText.contains("搜索作者"))
         #expect(
-            content.accessibilityLabel.contains(
-                AppStrings.localized("时长 \("3:05")", locale: locale)
-            )
+            content.coverMetrics.map(\.text)
+                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
         )
+        #expect(content.coverTrailingText == featurePresentation.durationText)
+        #expect(content.footerLeadingText.contains("搜索作者"))
+        #expect(content.accessibilityLabel == featurePresentation.accessibilityLabel)
     }
 
     @Test @MainActor
