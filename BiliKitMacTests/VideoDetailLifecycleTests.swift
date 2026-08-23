@@ -12,7 +12,7 @@ import Testing
 
 @testable import BiliKit
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct VideoDetailLifecycleTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
@@ -568,13 +568,33 @@ struct VideoDetailLifecycleTests {
     ) async {
         while !condition() {
             await withCheckedContinuation { continuation in
-                withObservationTracking {
-                    _ = condition()
+                let gate = ObservationContinuationGate(continuation)
+                let isAlreadySatisfied = withObservationTracking {
+                    condition()
                 } onChange: {
-                    continuation.resume()
+                    gate.resume()
                 }
+                if isAlreadySatisfied { gate.resume() }
             }
         }
+    }
+}
+
+private final class ObservationContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume() {
+        let continuation = lock.withLock {
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume()
     }
 }
 

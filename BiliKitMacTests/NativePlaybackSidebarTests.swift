@@ -707,7 +707,16 @@ struct NativePlaybackSidebarTests {
         )
         let original = presentation(bvid: "BVCurrent", comments: comments)
         controller.update(presentation: original, actions: actions)
-        for _ in 0..<4 { await Task.yield() }
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                guard
+                    let collectionView = controller.rootView.scrollView.documentView
+                        as? NSCollectionView
+                else { return false }
+                return collectionView.numberOfSections == 4
+                    && collectionView.numberOfItems(inSection: 3) == 42
+            }
+        )
 
         let content = try #require(original.content)
         let episode = collectionEpisode(
@@ -737,7 +746,19 @@ struct NativePlaybackSidebarTests {
             overlay: .none
         )
         controller.update(presentation: updated, actions: actions)
-        for _ in 0..<6 { await Task.yield() }
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                guard
+                    let collectionView = controller.rootView.scrollView.documentView
+                        as? NSCollectionView
+                else { return false }
+                controller.rootView.layoutSubtreeIfNeeded()
+                return collectionView.numberOfSections == 4
+                    && collectionView.numberOfItems(inSection: 3) == 42
+                    && (collectionView.collectionViewLayout?.collectionViewContentSize.height
+                        ?? 0) > 600
+            }
+        )
 
         let collectionView = try #require(
             controller.rootView.scrollView.documentView as? NSCollectionView
@@ -2423,7 +2444,19 @@ struct NativePlaybackSidebarTests {
             presentation: presentation(bvid: "BVFirst", comments: loaded),
             actions: testActions
         )
-        for _ in 0..<4 { await Task.yield() }
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                guard
+                    let collectionView = controller.rootView.scrollView.documentView
+                        as? NSCollectionView
+                else { return false }
+                controller.rootView.layoutSubtreeIfNeeded()
+                return collectionView.numberOfSections == 4
+                    && collectionView.numberOfItems(inSection: 3) == 42
+                    && (collectionView.collectionViewLayout?.collectionViewContentSize.height
+                        ?? 0) > 600
+            }
+        )
 
         #expect(controller.rootView.scrollView.documentVisibleRect.minY <= 1)
         #expect(nextPageRequests == 0)
