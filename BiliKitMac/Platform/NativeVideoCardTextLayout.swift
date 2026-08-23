@@ -3,25 +3,16 @@ import CoreText
 import QuartzCore
 
 enum NativeVideoCardTextLayout {
-    static let typesettingLanguage = "zh-Hans"
     static let recommendationCapsuleHeight: CGFloat = 16
     static let recommendationCapsuleHorizontalPadding: CGFloat = 10
     static let recommendationCapsuleSpacing: CGFloat = 5
     static let recommendationCapsuleVerticalAdjustment: CGFloat = -1
     static let recommendationCapsuleTextVerticalAdjustment: CGFloat = -1
-    static let languageDescriptorAttribute: String = {
-        #if compiler(>=6.3)
-            kCTFontDescriptorLanguageAttribute as String
-        #else
-            "CTFontDescriptorLanguageAttribute"
-        #endif
-    }()
-
     static func singleLineWidth(
         _ text: String,
         font: NSFont
     ) -> CGFloat {
-        singleLineWidth(text, font: languageAwareCTFont(font))
+        singleLineWidth(text, font: ctFont(font))
     }
 
     static func singleLineWidth(
@@ -40,15 +31,9 @@ enum NativeVideoCardTextLayout {
         return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
     }
 
-    static func languageAwareCTFont(_ font: NSFont) -> CTFont {
-        let descriptor = CTFontDescriptorCreateCopyWithAttributes(
+    static func ctFont(_ font: NSFont) -> CTFont {
+        CTFontCreateWithFontDescriptor(
             font.fontDescriptor as CTFontDescriptor,
-            [
-                languageDescriptorAttribute: typesettingLanguage
-            ] as CFDictionary
-        )
-        return CTFontCreateWithFontDescriptor(
-            descriptor,
             font.pointSize,
             nil
         )
@@ -253,7 +238,7 @@ final class NativeVideoCardTextRenderer {
         if let cachedTitleFont, cachedTitleFont.source == font {
             return cachedTitleFont.resolved
         }
-        let resolved = NativeVideoCardTextLayout.languageAwareCTFont(font)
+        let resolved = NativeVideoCardTextLayout.ctFont(font)
         cachedTitleFont = (font, resolved)
         return resolved
     }
@@ -262,7 +247,7 @@ final class NativeVideoCardTextRenderer {
         if let cachedFooterFont, cachedFooterFont.source == font {
             return cachedFooterFont.resolved
         }
-        let resolved = NativeVideoCardTextLayout.languageAwareCTFont(font)
+        let resolved = NativeVideoCardTextLayout.ctFont(font)
         cachedFooterFont = (font, resolved)
         footerTrailingWidthCache.reset()
         return resolved
@@ -276,7 +261,7 @@ final class NativeVideoCardTextRenderer {
             ofSize: min(11, max(9, footerFont.pointSize - 2)),
             weight: .medium
         )
-        let resolved = NativeVideoCardTextLayout.languageAwareCTFont(source)
+        let resolved = NativeVideoCardTextLayout.ctFont(source)
         cachedCapsuleFont = (footerFont, resolved)
         footerTrailingWidthCache.reset()
         return resolved

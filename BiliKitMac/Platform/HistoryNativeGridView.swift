@@ -16,7 +16,7 @@ struct HistoryNativeGridView: View {
         NativeVideoGridView(
             items: presentations.map(Self.makePresentation),
             scrollOffsetY: $scrollOffsetY,
-            accessibilityLabel: "观看历史视频",
+            accessibilityLabel: AppStrings.localized("观看历史视频"),
             tailState: NativeVideoGridTailState(
                 canLoadMore: canLoadMore,
                 tailIdentity: tailIdentity,

@@ -35,26 +35,26 @@ public struct RelatedVideoCardPresentation: Identifiable, Equatable, Sendable {
         self.accessibilityLabel = accessibilityLabel
     }
 
-    init(video: RelatedVideo) {
+    init(video: RelatedVideo, locale: Locale = .current) {
         bvid = video.bvid
         title = video.title
         coverURL = video.coverURL
         ownerName = video.ownerName
-        viewCountText = VideoMetadataFormatting.compactCount(video.viewCount)
-        danmakuCountText = VideoMetadataFormatting.compactCount(video.danmakuCount)
+        viewCountText = VideoMetadataFormatting.compactCount(video.viewCount, locale: locale)
+        danmakuCountText = VideoMetadataFormatting.compactCount(video.danmakuCount, locale: locale)
         durationText = video.durationSeconds.map {
             VideoDurationFormatting.string(seconds: $0)
         }
         var components = [
             video.title,
             video.ownerName,
-            "\(viewCountText)播放",
-            "\(danmakuCountText)弹幕",
+            BrowseFeatureStrings.localized("\(viewCountText)播放", locale: locale),
+            BrowseFeatureStrings.localized("\(danmakuCountText)弹幕", locale: locale),
         ]
         if let durationText {
-            components.append("时长\(durationText)")
+            components.append(BrowseFeatureStrings.localized("时长\(durationText)", locale: locale))
         }
-        accessibilityLabel = components.joined(separator: "，")
+        accessibilityLabel = ListFormatter.localizedString(byJoining: components)
     }
 }
 
@@ -138,10 +138,10 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("相关推荐")
+            Text(BrowseFeatureStrings.localized("相关推荐"))
                 .font(.title3.weight(.semibold))
 
-            Text("继续观看")
+            Text(BrowseFeatureStrings.localized("继续观看"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
@@ -194,14 +194,17 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
         .clipped()
         .frame(height: shelfHeight, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("正在加载相关推荐")
+        .accessibilityLabel(BrowseFeatureStrings.localized("正在加载相关推荐"))
     }
 
     private var failureShelf: some View {
         VStack(spacing: 10) {
-            Label("相关推荐加载失败", systemImage: "exclamationmark.triangle")
-                .font(.headline)
-            Button("重试", action: onRetry)
+            Label(
+                BrowseFeatureStrings.localized("相关推荐加载失败"),
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.headline)
+            Button(BrowseFeatureStrings.localized("重试"), action: onRetry)
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, minHeight: 180)
@@ -209,7 +212,7 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
 
     private var unavailableShelf: some View {
         ContentUnavailableView(
-            "暂无相关推荐",
+            BrowseFeatureStrings.localized("暂无相关推荐"),
             systemImage: "rectangle.stack"
         )
         .frame(maxWidth: .infinity, minHeight: 180)

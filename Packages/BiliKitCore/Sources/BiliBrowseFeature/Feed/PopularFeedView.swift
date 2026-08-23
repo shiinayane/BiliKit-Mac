@@ -66,7 +66,7 @@ public struct PopularFeedView<LoadedContent: View>: View {
                         pageSize: pageSize
                     )
                 } label: {
-                    Label("刷新热门视频", systemImage: "arrow.clockwise")
+                    Label(BrowseFeatureStrings.localized("刷新热门视频"), systemImage: "arrow.clockwise")
                 }
                 .disabled(isRefreshDisabled(presentation))
             }
@@ -77,7 +77,7 @@ public struct PopularFeedView<LoadedContent: View>: View {
     private func content(for presentation: GuestFeedPresentation) -> some View {
         switch presentation.state {
         case .idle, .loading:
-            VideoCardGridSkeleton(loadingLabel: "正在加载热门视频")
+            VideoCardGridSkeleton(loadingLabel: BrowseFeatureStrings.localized("正在加载热门视频"))
         case .loaded(.popular(let page)) where page.videos.isEmpty:
             emptyResults(presentation: presentation)
         case .loaded(.popular(let page)):
@@ -89,7 +89,7 @@ public struct PopularFeedView<LoadedContent: View>: View {
                 retry: { model.retry(request) }
             )
         default:
-            VideoCardGridSkeleton(loadingLabel: "正在切换到热门视频")
+            VideoCardGridSkeleton(loadingLabel: BrowseFeatureStrings.localized("正在切换到热门视频"))
         }
     }
 
@@ -97,9 +97,9 @@ public struct PopularFeedView<LoadedContent: View>: View {
         presentation: GuestFeedPresentation
     ) -> some View {
         ContentUnavailableView(
-            "暂无热门视频",
+            BrowseFeatureStrings.localized("暂无热门视频"),
             systemImage: "rectangle.stack",
-            description: Text("稍后重试或检查网络连接。")
+            description: Text(BrowseFeatureStrings.localized("稍后重试或检查网络连接。"))
         )
         .overlay(alignment: .top) {
             ZStack {
@@ -141,12 +141,12 @@ public struct PopularFeedView<LoadedContent: View>: View {
                     .controlSize(.small)
                     .padding(8)
                     .background(.regularMaterial, in: Capsule())
-                    .accessibilityLabel("正在加载更多热门视频")
+                    .accessibilityLabel(BrowseFeatureStrings.localized("正在加载更多热门视频"))
             } else if let error = pagination.loadMoreError {
                 HStack(spacing: 8) {
                     Text(error.guestMessage)
                         .lineLimit(2)
-                    Button("重试") {
+                    Button(BrowseFeatureStrings.localized("重试")) {
                         model.retryPopularLoadMore()
                     }
                 }
@@ -166,7 +166,7 @@ public struct PopularFeedView<LoadedContent: View>: View {
                 .controlSize(.small)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
-                .accessibilityLabel("正在刷新热门视频")
+                .accessibilityLabel(BrowseFeatureStrings.localized("正在刷新热门视频"))
                 .transition(.opacity)
         } else if let error = presentation.refreshError {
             Text(error.guestMessage)

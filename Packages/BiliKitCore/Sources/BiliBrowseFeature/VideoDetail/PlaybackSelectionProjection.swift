@@ -131,7 +131,7 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
                             id: episode.id,
                             sectionID: section.id,
                             title: episode.title.isEmpty
-                                ? "无法识别的选集" : episode.title,
+                                ? BrowseFeatureStrings.localized("无法识别的选集") : episode.title,
                             bvid: episode.bvid,
                             preferredCID: episode.defaultCID,
                             isEnabled: episode.isIdentityConsistent
@@ -166,7 +166,7 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
         }
         episodePlaceholder =
             collection == nil || selectedEpisode != nil
-            ? nil : "当前视频不在合集目录中"
+            ? nil : BrowseFeatureStrings.localized("当前视频不在合集目录中")
 
         let resolvedPages: [VideoPage]?
         if collection == nil || selectedEpisode?.bvid == context.detail.bvid {

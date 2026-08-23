@@ -6,23 +6,9 @@ import Testing
 
 struct NativeVideoCardTextLayoutTests {
     @Test
-    func languageAwareFontCopiesSourceDescriptorAndAddsSimplifiedChineseLanguage() {
+    func cardFontCopiesSourceDescriptorWithoutForcingLanguage() {
         let source = NSFont.systemFont(ofSize: 15, weight: .medium)
-        let font = NativeVideoCardTextLayout.languageAwareCTFont(source)
-        let descriptor = CTFontCopyFontDescriptor(font)
-        let language =
-            CTFontDescriptorCopyAttribute(
-                descriptor,
-                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
-            ) as? String
-
-        #expect(language == NativeVideoCardTextLayout.typesettingLanguage)
-        #if compiler(>=6.3)
-            #expect(
-                NativeVideoCardTextLayout.languageDescriptorAttribute
-                    == kCTFontDescriptorLanguageAttribute as String
-            )
-        #endif
+        let font = NativeVideoCardTextLayout.ctFont(source)
         #expect(CTFontGetSize(font) == source.pointSize)
         let sourceCTFont = CTFontCreateWithFontDescriptor(
             source.fontDescriptor as CTFontDescriptor,
@@ -77,14 +63,7 @@ struct NativeVideoCardTextLayoutTests {
         #expect(renderer.footerLeadingLayer.truncationMode == .end)
         #expect(renderer.footerTrailingLayer.alignmentMode == .right)
         #expect(renderer.titleLayer.contentsScale == 2)
-        let titleFont = renderer.titleLayer.font as! CTFont
         let footerFont = renderer.footerTrailingLayer.font as! CTFont
-        #expect(
-            CTFontDescriptorCopyAttribute(
-                CTFontCopyFontDescriptor(titleFont),
-                NativeVideoCardTextLayout.languageDescriptorAttribute as CFString
-            ) as? String == NativeVideoCardTextLayout.typesettingLanguage
-        )
         #expect(
             renderer.trailingWidth(font: .preferredFont(forTextStyle: .body))
                 == NativeVideoCardTextLayout.singleLineWidth("昨天", font: footerFont)

@@ -7,6 +7,7 @@ import Testing
 struct RelatedVideoShelfTests {
     @Test
     func presentationMapsStableBVIDAndEveryVisibleSlot() {
+        let locale = Locale(identifier: "zh-Hans")
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1Related",
@@ -16,7 +17,8 @@ struct RelatedVideoShelfTests {
                 viewCount: 123_456,
                 danmakuCount: 7_890,
                 durationSeconds: 754
-            )
+            ),
+            locale: locale
         )
 
         #expect(presentation.id == "BV1Related")
@@ -28,13 +30,22 @@ struct RelatedVideoShelfTests {
         #expect(presentation.durationText == "12:34")
         #expect(
             presentation.accessibilityLabel
-                == "示例推荐，示例 UP 主，12.3万播放，7890弹幕，时长12:34"
+                == ListFormatter.localizedString(
+                    byJoining: [
+                        "示例推荐",
+                        "示例 UP 主",
+                        BrowseFeatureStrings.localized("\("12.3万")播放", locale: locale),
+                        BrowseFeatureStrings.localized("\("7890")弹幕", locale: locale),
+                        BrowseFeatureStrings.localized("时长\("12:34")", locale: locale),
+                    ]
+                )
         )
         #expect(RelatedVideoShelfState.loaded([presentation]).itemCount == 1)
     }
 
     @Test
     func presentationHidesMissingDurationWithoutInventingATrailingSlot() {
+        let locale = Locale(identifier: "zh-Hans")
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1NoDuration",
@@ -44,11 +55,12 @@ struct RelatedVideoShelfTests {
                 viewCount: 1,
                 danmakuCount: 0,
                 durationSeconds: nil
-            )
+            ),
+            locale: locale
         )
 
         #expect(presentation.durationText == nil)
-        #expect(!presentation.accessibilityLabel.contains("，时长"))
+        #expect(!presentation.accessibilityLabel.contains("12:34"))
     }
 
     @Test

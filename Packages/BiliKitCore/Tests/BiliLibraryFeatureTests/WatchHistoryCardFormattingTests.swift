@@ -195,7 +195,7 @@ struct WatchHistoryCardFormattingTests {
     }
 
     @Test
-    func viewedAtUsesRelativeDaysAndDomesticMonthDayTime() throws {
+    func viewedAtFollowsInjectedLocale() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(
             TimeZone(identifier: "Asia/Tokyo")
@@ -248,22 +248,25 @@ struct WatchHistoryCardFormattingTests {
             WatchHistoryCardFormatting.viewedAt(
                 today,
                 now: now,
-                calendar: calendar
-            ) == "今天 09:05"
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
+            ) == "今天 9:05"
         )
         #expect(
             WatchHistoryCardFormatting.viewedAt(
                 yesterday,
                 now: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "昨天 22:07"
         )
         #expect(
             WatchHistoryCardFormatting.viewedAt(
                 older,
                 now: now,
-                calendar: calendar
-            ) == "7月20日 08:03"
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
+            ) == "7月20日 8:03"
         )
     }
 }

@@ -305,7 +305,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         self.signatureExpanded = signatureExpanded
         self.onToggleSignature = onToggleSignature
         nameLabel.stringValue = content.name
-        nameLabel.setAccessibilityLabel("UP 主，\(content.name)")
+        nameLabel.setAccessibilityLabel(AppStrings.localized("UP 主，\(content.name)"))
 
         switch content.signature {
         case .loading:
@@ -313,7 +313,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
             signatureLoadingBar.isHidden = false
             signatureButton.isHidden = true
             signatureLoadingBar.setAccessibilityElement(true)
-            signatureLoadingBar.setAccessibilityLabel("签名正在加载")
+            signatureLoadingBar.setAccessibilityLabel(AppStrings.localized("签名正在加载"))
         case .hidden:
             signatureText.isHidden = true
             signatureLoadingBar.isHidden = true
@@ -428,10 +428,14 @@ private final class NativePlaybackSidebarUploaderView: NSView {
             > availableWidth
         let maximumLines = overflows && !signatureExpanded ? 1 : nil
         signatureButton.isHidden = !overflows
-        signatureButton.title = signatureExpanded ? "收起" : "展开"
-        signatureButton.setAccessibilityLabel("UP 主签名")
+        signatureButton.title =
+            signatureExpanded
+            ? AppStrings.localized("收起") : AppStrings.localized("展开")
+        signatureButton.setAccessibilityLabel(AppStrings.localized("UP 主签名"))
         signatureButton.setAccessibilityValue(
-            signatureExpanded ? "已展开，\(signature)" : "已收起，\(signature)"
+            signatureExpanded
+                ? AppStrings.localized("已展开，\(signature)")
+                : AppStrings.localized("已收起，\(signature)")
         )
         guard
             !hasConfiguredSignatureText
@@ -486,7 +490,7 @@ final class NativePlaybackSidebarSummaryItem: NSCollectionViewItem {
 private final class NativePlaybackSidebarSummaryView: NSView {
     override var isFlipped: Bool { true }
 
-    private let titleLabel = NSTextField(labelWithString: "简介")
+    private let titleLabel = NSTextField(labelWithString: AppStrings.localized("简介"))
     private let separator = NSBox()
     private let textView = NativePlaybackSidebarReadOnlyTextView(
         font: .preferredFont(forTextStyle: .callout),
@@ -577,9 +581,15 @@ private final class NativePlaybackSidebarSummaryView: NSView {
             height: textHeight
         )
         toggleButton.isHidden = !overflows
-        toggleButton.title = expanded ? "收起" : "展开"
-        toggleButton.setAccessibilityLabel(expanded ? "收起简介" : "展开简介")
-        toggleButton.setAccessibilityValue(expanded ? "已展开" : "已折叠为五行")
+        toggleButton.title =
+            expanded
+            ? AppStrings.localized("收起") : AppStrings.localized("展开")
+        toggleButton.setAccessibilityLabel(
+            expanded ? AppStrings.localized("收起简介") : AppStrings.localized("展开简介")
+        )
+        toggleButton.setAccessibilityValue(
+            expanded ? AppStrings.localized("已展开") : AppStrings.localized("已折叠为五行")
+        )
         toggleButton.frame = NSRect(
             x: 0,
             y: textView.frame.maxY + 4,
@@ -665,16 +675,16 @@ private final class NativePlaybackSidebarSelectionView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let separator = NSBox()
     private let positionLabel = NSTextField(labelWithString: "")
-    private let sectionLabel = NSTextField(labelWithString: "分区")
+    private let sectionLabel = NSTextField(labelWithString: AppStrings.localized("分区"))
     private let sectionPopUp = NSPopUpButton()
-    private let episodeLabel = NSTextField(labelWithString: "选集")
+    private let episodeLabel = NSTextField(labelWithString: AppStrings.localized("选集"))
     private let episodePopUp = NSPopUpButton()
     private let placeholderLabel = NSTextField(wrappingLabelWithString: "")
-    private let pageLabel = NSTextField(labelWithString: "分 P")
+    private let pageLabel = NSTextField(labelWithString: AppStrings.localized("分 P"))
     private let pagePopUp = NSPopUpButton()
     private let pageStatusLabel = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
-    private let retryButton = NSButton(title: "重试", target: nil, action: nil)
+    private let retryButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
     private var projection: PlaybackSelectionProjection?
     private var browsedSectionID: VideoCollectionSectionIdentity?
     private var onSelectSection: ((VideoCollectionSectionIdentity) -> Void)?
@@ -883,11 +893,12 @@ private final class NativePlaybackSidebarSelectionView: NSView {
             return
         }
 
-        let menu = NSMenu(title: "分区")
+        let menu = NSMenu(title: AppStrings.localized("分区"))
         var selectedItem: NSMenuItem?
         for (index, section) in projection.episodeSections.enumerated() {
             let item = NSMenuItem(
-                title: section.title.isEmpty ? "分区 \(index + 1)" : section.title,
+                title: section.title.isEmpty
+                    ? AppStrings.localized("分区 \(index + 1)") : section.title,
                 action: #selector(selectSection(_:)),
                 keyEquivalent: ""
             )
@@ -903,7 +914,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         if let selectedItem {
             sectionPopUp.select(selectedItem)
         }
-        sectionPopUp.setAccessibilityLabel("分区")
+        sectionPopUp.setAccessibilityLabel(AppStrings.localized("分区"))
     }
 
     private func configureEpisode(_ projection: PlaybackSelectionProjection) {
@@ -912,7 +923,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         episodePopUp.isHidden = !projection.showsEpisodePicker
         guard projection.showsEpisodePicker else { return }
 
-        let menu = NSMenu(title: "选集")
+        let menu = NSMenu(title: AppStrings.localized("选集"))
         var selectedItem: NSMenuItem?
         let displayedSection = projection.episodeSections.first {
             $0.id == browsedSectionID
@@ -935,7 +946,8 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         if selectedItem == nil {
             let fallback = NSMenuItem(
                 title: projection.selectedEpisodeID == nil
-                    ? "当前视频不在合集目录中" : "请选择选集",
+                    ? AppStrings.localized("当前视频不在合集目录中")
+                    : AppStrings.localized("请选择选集"),
                 action: nil,
                 keyEquivalent: ""
             )
@@ -947,7 +959,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         if let selectedItem {
             episodePopUp.select(selectedItem)
         }
-        episodePopUp.setAccessibilityLabel("选集")
+        episodePopUp.setAccessibilityLabel(AppStrings.localized("选集"))
     }
 
     @objc private func selectSection(_ sender: NSMenuItem) {
@@ -985,7 +997,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         case .ready(let pages) where pages.count > 1:
             pageLabel.isHidden = false
             pagePopUp.isHidden = false
-            let menu = NSMenu(title: "分 P")
+            let menu = NSMenu(title: AppStrings.localized("分 P"))
             var selectedItem: NSMenuItem?
             for page in pages {
                 let title =
@@ -1005,7 +1017,11 @@ private final class NativePlaybackSidebarSelectionView: NSView {
                 menu.addItem(item)
             }
             if selectedItem == nil {
-                let fallback = NSMenuItem(title: "请选择分 P", action: nil, keyEquivalent: "")
+                let fallback = NSMenuItem(
+                    title: AppStrings.localized("请选择分 P"),
+                    action: nil,
+                    keyEquivalent: ""
+                )
                 fallback.isEnabled = false
                 menu.insertItem(fallback, at: 0)
                 selectedItem = fallback
@@ -1014,18 +1030,18 @@ private final class NativePlaybackSidebarSelectionView: NSView {
             if let selectedItem {
                 pagePopUp.select(selectedItem)
             }
-            pagePopUp.setAccessibilityLabel("分 P")
+            pagePopUp.setAccessibilityLabel(AppStrings.localized("分 P"))
         case .loading:
             pageLabel.isHidden = false
             pageStatusLabel.isHidden = false
             progress.isHidden = false
             progress.startAnimation(nil)
-            pageStatusLabel.stringValue = "正在加载所选视频的分 P"
+            pageStatusLabel.stringValue = AppStrings.localized("正在加载所选视频的分 P")
         case .failed:
             pageLabel.isHidden = false
             pageStatusLabel.isHidden = false
             retryButton.isHidden = false
-            pageStatusLabel.stringValue = "无法加载所选视频的分 P"
+            pageStatusLabel.stringValue = AppStrings.localized("无法加载所选视频的分 P")
         case .ready, .empty:
             break
         }
@@ -1054,9 +1070,9 @@ final class NativePlaybackSidebarUnavailableItem: NSCollectionViewItem {
         "NativePlaybackSidebarUnavailableItem"
     )
 
-    private let titleLabel = NSTextField(labelWithString: "评论尚未接入")
+    private let titleLabel = NSTextField(labelWithString: AppStrings.localized("评论尚未接入"))
     private let messageLabel = NSTextField(
-        wrappingLabelWithString: "当前版本不会伪造评论内容。"
+        wrappingLabelWithString: AppStrings.localized("当前版本不会伪造评论内容。")
     )
     private let separator = NSBox()
 

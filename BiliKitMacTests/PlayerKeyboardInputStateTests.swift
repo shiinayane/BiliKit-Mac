@@ -138,26 +138,36 @@ struct PlayerKeyboardInputStateTests {
             )
         )
         #expect(PlayerShortcutFeedback.volume(55).label == "55%")
-        #expect(PlayerShortcutFeedback.relativeSeek(-5).label == "后退 5 秒")
-        #expect(PlayerShortcutFeedback.relativeSeek(5).label == "前进 5 秒")
+        #expect(
+            PlayerShortcutFeedback.relativeSeek(-5).label
+                == AppStrings.localized("后退 \(5) 秒")
+        )
+        #expect(
+            PlayerShortcutFeedback.relativeSeek(5).label
+                == AppStrings.localized("前进 \(5) 秒")
+        )
         #expect(
             PlayerShortcutFeedback.relativeSeek(-5).symbolName
                 == "gobackward.5"
         )
         #expect(
             PlayerShortcutFeedback.relativeSeek(5).accessibilityLabel
-                == "已前进 5 秒"
+                == AppStrings.localized("已前进 \(5) 秒")
         )
-        #expect(PlayerShortcutFeedback.playback(true).label == "播放")
-        #expect(PlayerShortcutFeedback.playback(false).label == "暂停")
+        #expect(PlayerShortcutFeedback.playback(true).label == AppStrings.localized("播放"))
+        #expect(PlayerShortcutFeedback.playback(false).label == AppStrings.localized("暂停"))
         #expect(PlayerShortcutFeedback.playback(true).symbolName == "play.fill")
         #expect(
             PlayerShortcutFeedback.playback(false).accessibilityLabel
-                == "已暂停播放"
+                == AppStrings.localized("已暂停播放")
         )
-        #expect(PlayerShortcutFeedback.danmaku(false).label == "弹幕 关")
         #expect(
-            PlayerShortcutFeedback.subtitles(.unavailable).label == "无可用字幕"
+            PlayerShortcutFeedback.danmaku(false).label
+                == AppStrings.localized("弹幕 关")
+        )
+        #expect(
+            PlayerShortcutFeedback.subtitles(.unavailable).label
+                == AppStrings.localized("无可用字幕")
         )
     }
 }

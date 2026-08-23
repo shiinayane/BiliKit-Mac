@@ -1,9 +1,11 @@
 import BiliBrowseFeature
 import BiliModels
+import Foundation
 import SwiftUI
 
 struct PopularNativeGridView: View {
     @State private var imageOwner = NativeVideoImagePipelineOwner()
+    @Environment(\.locale) private var locale
     let videos: [PopularVideo]
     @Binding var scrollOffsetY: CGFloat
     let canLoadMore: Bool
@@ -15,9 +17,9 @@ struct PopularNativeGridView: View {
 
     var body: some View {
         NativeVideoGridView(
-            items: Self.makePresentations(videos),
+            items: Self.makePresentations(videos, locale: locale),
             scrollOffsetY: $scrollOffsetY,
-            accessibilityLabel: "热门视频",
+            accessibilityLabel: AppStrings.localized("热门视频", locale: locale),
             tailState: NativeVideoGridTailState(
                 canLoadMore: canLoadMore,
                 tailIdentity: tailIdentity,
@@ -31,12 +33,13 @@ struct PopularNativeGridView: View {
     }
 
     static func makePresentations(
-        _ videos: [PopularVideo]
+        _ videos: [PopularVideo],
+        locale: Locale = .current
     ) -> [NativeVideoCardPresentation] {
         var seenBVIDs: Set<String> = []
         return videos.compactMap { video in
             guard seenBVIDs.insert(video.bvid).inserted else { return nil }
-            let presentation = PopularVideoCardPresentation(video: video)
+            let presentation = PopularVideoCardPresentation(video: video, locale: locale)
             return NativeVideoCardPresentation(
                 id: presentation.bvid,
                 title: presentation.title,
@@ -55,13 +58,15 @@ struct PopularNativeGridView: View {
                 ],
                 coverTrailingText: presentation.durationText,
                 footerLeadingText: presentation.footerText,
-                accessibilityLabel: [
-                    presentation.title,
-                    presentation.ownerName,
-                    "播放 \(presentation.viewCountText)",
-                    "弹幕 \(presentation.danmakuCountText)",
-                    "时长 \(presentation.durationText)",
-                ].joined(separator: "，")
+                accessibilityLabel: ListFormatter.localizedString(
+                    byJoining: [
+                        presentation.title,
+                        presentation.ownerName,
+                        AppStrings.localized("播放 \(presentation.viewCountText)", locale: locale),
+                        AppStrings.localized("弹幕 \(presentation.danmakuCountText)", locale: locale),
+                        AppStrings.localized("时长 \(presentation.durationText)", locale: locale),
+                    ]
+                )
             )
         }
     }

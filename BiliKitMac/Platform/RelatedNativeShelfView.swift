@@ -40,7 +40,7 @@ struct RelatedNativeShelfView: View {
                 coverTrailingText: presentation.durationText,
                 footerLeadingText: presentation.ownerName,
                 accessibilityLabel: presentation.accessibilityLabel,
-                accessibilityHelp: "播放并替换当前视频"
+                accessibilityHelp: AppStrings.localized("播放并替换当前视频")
             )
         }
     }

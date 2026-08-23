@@ -4,17 +4,20 @@ public enum CommentTimeFormatter {
     public static func string(
         for date: Date,
         relativeTo referenceDate: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        locale: Locale = .current
     ) -> String {
         let elapsed = max(0, referenceDate.timeIntervalSince(date))
         if elapsed < 60 {
-            return "刚刚"
+            return BrowseFeatureStrings.localized("刚刚", locale: locale)
         }
         if elapsed < 3_600 {
-            return "\(Int(elapsed / 60))分钟前"
+            let minutes = Int(elapsed / 60)
+            return BrowseFeatureStrings.localized("\(minutes)分钟前", locale: locale)
         }
         if elapsed < 86_400 {
-            return "\(Int(elapsed / 3_600))小时前"
+            let hours = Int(elapsed / 3_600)
+            return BrowseFeatureStrings.localized("\(hours)小时前", locale: locale)
         }
 
         let referenceDay = calendar.startOfDay(for: referenceDate)
@@ -26,31 +29,45 @@ public enum CommentTimeFormatter {
                 to: referenceDay
             ).day ?? 0
         if dayDifference == 1 {
-            return "昨天\(formatted(date, format: "HH:mm", calendar: calendar))"
+            let time = formatted(
+                date,
+                date: .omitted,
+                time: .shortened,
+                calendar: calendar,
+                locale: locale
+            )
+            return BrowseFeatureStrings.localized("昨天\(time)", locale: locale)
         }
         if dayDifference == 2 || dayDifference == 3 {
-            return "\(dayDifference)天前"
+            return BrowseFeatureStrings.localized("\(dayDifference)天前", locale: locale)
         }
         let sameYear =
             calendar.component(.year, from: date)
             == calendar.component(.year, from: referenceDate)
+        if sameYear {
+            let month = calendar.component(.month, from: date)
+            let day = calendar.component(.day, from: date)
+            return BrowseFeatureStrings.localized("\(month)月\(day)日", locale: locale)
+        }
         return formatted(
             date,
-            format: sameYear ? "M月d日" : "yyyy年M月d日",
-            calendar: calendar
+            date: .long,
+            time: .omitted,
+            calendar: calendar,
+            locale: locale
         )
     }
 
     private static func formatted(
-        _ date: Date,
-        format: String,
-        calendar: Calendar
+        _ dateValue: Date,
+        date dateStyle: Date.FormatStyle.DateStyle,
+        time timeStyle: Date.FormatStyle.TimeStyle,
+        calendar: Calendar,
+        locale: Locale
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = format
-        return formatter.string(from: date)
+        var style = Date.FormatStyle(date: dateStyle, time: timeStyle)
+            .locale(locale)
+        style.timeZone = calendar.timeZone
+        return dateValue.formatted(style)
     }
 }

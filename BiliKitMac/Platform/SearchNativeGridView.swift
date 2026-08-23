@@ -16,7 +16,7 @@ struct SearchNativeGridView: View {
         NativeVideoGridView(
             items: presentations.map(Self.makePresentation),
             scrollOffsetY: $scrollOffsetY,
-            accessibilityLabel: "搜索结果视频",
+            accessibilityLabel: AppStrings.localized("搜索结果视频"),
             tailState: NativeVideoGridTailState(
                 canLoadMore: canLoadMore,
                 tailIdentity: tailIdentity,

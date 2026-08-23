@@ -2433,7 +2433,9 @@ struct LoopbackPlaybackServerTests {
                 #"DATA-ID="_hls.localized-rendition-names""#
             )
         )
-        #expect(localizedNames.isEmpty)
+        #expect(localizedNames["原声"]?["en"] == "Original audio")
+        #expect(localizedNames["原声"]?["ja"] == "オリジナル音声")
+        #expect(localizedNames["原声"]?["zh-Hant"] == "原聲")
         #expect(
             Set(
                 variants.compactMap {
@@ -2709,6 +2711,7 @@ struct LoopbackPlaybackServerTests {
         #expect(localizedNames["中文"]?["zh"] == "中文")
         #expect(localizedNames["中文（AI）"]?["zh"] == "中文")
         #expect(localizedNames["English（AI）"]?["en"] == "English")
+        #expect(localizedNames["原声"]?["en"] == "Original audio")
         #expect(
             group.options.allSatisfy {
                 !$0.hasMediaCharacteristic(.isOriginalContent)
@@ -2909,7 +2912,7 @@ struct LoopbackPlaybackServerTests {
                 as? [String: [String: String]]
         )
         #expect(!master.contains("TYPE=SUBTITLES"))
-        #expect(localizedNames.isEmpty)
+        #expect(localizedNames["原声"]?["en"] == "Original audio")
         #expect(item.status == .readyToPlay)
         engine.stop()
     }

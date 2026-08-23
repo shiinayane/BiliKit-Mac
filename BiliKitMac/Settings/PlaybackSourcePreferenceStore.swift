@@ -15,10 +15,10 @@ enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identif
 
     var displayName: String {
         switch self {
-        case .serverDefault: "B 站服务端默认"
-        case .serverAkamai: "Akamai（服务端原始）"
-        case .serverBilivideo: "bilivideo（服务端原始）"
-        default: route?.displayName ?? rawValue
+        case .serverDefault: AppStrings.localized("B 站服务端默认")
+        case .serverAkamai: AppStrings.localized("Akamai（服务端原始）")
+        case .serverBilivideo: AppStrings.localized("bilivideo（服务端原始）")
+        default: route?.appDisplayName ?? rawValue
         }
     }
 
@@ -37,6 +37,58 @@ enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identif
 
     private var route: BilivideoRoute? {
         BilivideoRoute(rawValue: rawValue)
+    }
+}
+
+extension PlaybackRouteTarget {
+    var appDisplayName: String {
+        switch self {
+        case .serverAkamai: AppStrings.localized("Akamai（服务端原始）")
+        case .bilivideo(let route): route.appDisplayName
+        }
+    }
+}
+
+extension BilivideoRoute {
+    fileprivate var appDisplayName: String {
+        switch self {
+        case .tencentOverseas:
+            "\(AppStrings.localized("腾讯海外")) COSOV"
+        case .alibabaOverseas:
+            "\(AppStrings.localized("阿里海外")) ALIOV"
+        case .alibabaMainland:
+            "\(AppStrings.localized("阿里")) ALI"
+        case .alibabaMainlandB:
+            "\(AppStrings.localized("阿里")) ALIB"
+        case .alibabaMainlandO1:
+            "\(AppStrings.localized("阿里")) ALIO1"
+        case .tencentMainland:
+            "\(AppStrings.localized("腾讯")) COS"
+        case .tencentMainlandB:
+            "\(AppStrings.localized("腾讯")) COSB"
+        case .tencentMainlandO1:
+            "\(AppStrings.localized("腾讯")) COSO1"
+        case .huaweiMainland:
+            "\(AppStrings.localized("华为")) HW"
+        case .huaweiMainlandB:
+            "\(AppStrings.localized("华为")) HWB"
+        case .huaweiMainlandO1:
+            "\(AppStrings.localized("华为")) HWO1"
+        case .huawei08C:
+            "\(AppStrings.localized("华为")) 08C"
+        case .huawei08H:
+            "\(AppStrings.localized("华为")) 08H"
+        case .huawei08CT:
+            "\(AppStrings.localized("华为")) 08CT"
+        case .huaweiAll:
+            AppStrings.localized("华为 TF 全域")
+        case .tencentAll:
+            AppStrings.localized("腾讯 TX 全域")
+        case .baiduMainland:
+            "\(AppStrings.localized("百度")) BOS"
+        case .bda2Mainland:
+            AppStrings.localized("UPCDN BDA2（大陆）")
+        }
     }
 }
 

@@ -372,7 +372,7 @@ final class NativeVideoCardView: NSView {
         )
         setAccessibilityLabel(presentation.accessibilityLabel)
         setAccessibilityHelp(presentation.accessibilityHelp)
-        setAccessibilityValue(selected ? "已选择" : nil)
+        setAccessibilityValue(selected ? AppStrings.localized("已选择") : nil)
         needsLayout = true
     }
 
@@ -386,7 +386,7 @@ final class NativeVideoCardView: NSView {
 
     func setSelected(_ selected: Bool) {
         self.selected = selected
-        setAccessibilityValue(selected ? "已选择" : nil)
+        setAccessibilityValue(selected ? AppStrings.localized("已选择") : nil)
         updateInteractionAppearance()
     }
 
@@ -971,7 +971,7 @@ private final class NativeVideoMergedCoverView: NSView {
         alignmentMode: CATextLayerAlignmentMode = .left
     ) -> CATextLayer {
         let textLayer = CATextLayer()
-        textLayer.font = NativeVideoCardTextLayout.languageAwareCTFont(font)
+        textLayer.font = NativeVideoCardTextLayout.ctFont(font)
         textLayer.fontSize = font.pointSize
         textLayer.foregroundColor = NSColor.white.cgColor
         textLayer.alignmentMode = alignmentMode

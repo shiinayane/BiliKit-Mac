@@ -14,12 +14,13 @@ public struct WatchHistoryCardPresentation: Sendable, Equatable {
     public let footerTrailingText: String
     public let accessibilityLabel: String
 
-    public init(item: WatchHistoryItem) {
+    public init(item: WatchHistoryItem, locale: Locale = .current) {
         let progress = WatchHistoryCardFormatting.progress(
             progressSeconds: item.progressSeconds,
-            durationSeconds: item.durationSeconds
+            durationSeconds: item.durationSeconds,
+            locale: locale
         )
-        let viewedAt = WatchHistoryCardFormatting.viewedAt(item.viewedAt)
+        let viewedAt = WatchHistoryCardFormatting.viewedAt(item.viewedAt, locale: locale)
         bvid = item.bvid
         title = item.title
         coverURL = optimizedHistoryImageURL(
@@ -36,12 +37,14 @@ public struct WatchHistoryCardPresentation: Sendable, Equatable {
         progressText = progress
         footerLeadingText = item.owner.name
         footerTrailingText = viewedAt
-        accessibilityLabel = [
-            item.title,
-            item.owner.name,
-            "观看进度 \(progress)",
-            viewedAt,
-        ].joined(separator: "，")
+        accessibilityLabel = ListFormatter.localizedString(
+            byJoining: [
+                item.title,
+                item.owner.name,
+                LibraryFeatureStrings.localized("观看进度 \(progress)", locale: locale),
+                viewedAt,
+            ]
+        )
     }
 }
 
@@ -70,12 +73,13 @@ private func optimizedHistoryImageURL(
 enum WatchHistoryCardFormatting {
     static func progress(
         progressSeconds: Int,
-        durationSeconds: Int
+        durationSeconds: Int,
+        locale: Locale = .current
     ) -> String {
         let duration = max(0, durationSeconds)
         let progress = min(max(0, progressSeconds), duration)
         if duration > 0, progress >= duration {
-            return "已看完"
+            return LibraryFeatureStrings.localized("已看完", locale: locale)
         }
         return "\(VideoDurationFormatting.string(seconds: progress))/"
             + VideoDurationFormatting.string(seconds: duration)
@@ -84,29 +88,45 @@ enum WatchHistoryCardFormatting {
     static func viewedAt(
         _ date: Date,
         now: Date = .now,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        locale: Locale = .current
     ) -> String {
-        let hour = calendar.component(.hour, from: date)
-        let minute = calendar.component(.minute, from: date)
+        let time = formatted(
+            date,
+            date: .omitted,
+            time: .shortened,
+            calendar: calendar,
+            locale: locale
+        )
         if calendar.isDate(date, inSameDayAs: now) {
-            return String(format: "今天 %02d:%02d", hour, minute)
+            return LibraryFeatureStrings.localized("今天 \(time)", locale: locale)
         }
         if let yesterday = calendar.date(
             byAdding: .day,
             value: -1,
             to: now
         ), calendar.isDate(date, inSameDayAs: yesterday) {
-            return String(format: "昨天 %02d:%02d", hour, minute)
+            return LibraryFeatureStrings.localized("昨天 \(time)", locale: locale)
         }
 
         let month = calendar.component(.month, from: date)
         let day = calendar.component(.day, from: date)
-        return String(
-            format: "%d月%d日 %02d:%02d",
-            month,
-            day,
-            hour,
-            minute
+        return LibraryFeatureStrings.localized(
+            "\(month)月\(day)日 \(time)",
+            locale: locale
         )
+    }
+
+    private static func formatted(
+        _ dateValue: Date,
+        date dateStyle: Date.FormatStyle.DateStyle,
+        time timeStyle: Date.FormatStyle.TimeStyle,
+        calendar: Calendar,
+        locale: Locale
+    ) -> String {
+        var style = Date.FormatStyle(date: dateStyle, time: timeStyle)
+            .locale(locale)
+        style.timeZone = calendar.timeZone
+        return dateValue.formatted(style)
     }
 }

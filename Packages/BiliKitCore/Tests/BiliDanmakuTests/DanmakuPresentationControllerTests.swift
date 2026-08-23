@@ -1103,7 +1103,7 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
-    func coreAnimationTextCarriesSimplifiedChineseLanguage() throws {
+    func coreAnimationTextDoesNotForceContentLanguage() throws {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         renderer.updateSurfaceSize(width: 800, height: 200)
         let fixture = DanmakuEvent(
@@ -1126,19 +1126,14 @@ struct DanmakuPresentationControllerTests {
 
         let layer = try #require(renderer.textLayer(forEventID: fixture.id))
         let attributed = try #require(layer.string as? NSAttributedString)
-        var languageRange = NSRange()
         let language =
             attributed.attribute(
                 NSAttributedString.Key(kCTLanguageAttributeName as String),
                 at: 0,
-                effectiveRange: &languageRange
+                effectiveRange: nil
             ) as? String
 
-        #expect(language == "zh-Hans")
-        #expect(
-            languageRange
-                == NSRange(location: 0, length: attributed.length)
-        )
+        #expect(language == nil)
     }
 
     @Test

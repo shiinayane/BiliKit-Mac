@@ -179,6 +179,7 @@ struct PlaybackSourceSettingsTests {
 
     @Test @MainActor
     func throughputTextKeepsOneFractionDigit() {
+        let locale = Locale(identifier: "en_US_POSIX")
         let result = PlaybackRouteMeasurement(
             target: .serverAkamai,
             effectiveBitsPerSecond: 12_345_678,
@@ -189,13 +190,18 @@ struct PlaybackSourceSettingsTests {
         #expect(
             PlaybackSourceSettingsView.resultText(
                 result,
-                locale: Locale(identifier: "en_US_POSIX")
-            ) == "综合 12.3 Mbps · 最低 12.3 Mbps · 中位 12.3 Mbps · 3/3 个样本成功"
+                locale: locale
+            )
+                == AppStrings.localized(
+                    "综合 \("12.3 Mbps") · 最低 \("12.3 Mbps") · 中位 \("12.3 Mbps") · \(3)/\(3) 个样本成功",
+                    locale: locale
+                )
         )
     }
 
     @Test @MainActor
     func singleSampleResultStillShowsSuccessCount() {
+        let locale = Locale(identifier: "en_US_POSIX")
         let result = PlaybackRouteMeasurement(
             target: .serverAkamai,
             effectiveBitsPerSecond: 12_345_678,
@@ -206,8 +212,12 @@ struct PlaybackSourceSettingsTests {
         #expect(
             PlaybackSourceSettingsView.resultText(
                 result,
-                locale: Locale(identifier: "en_US_POSIX")
-            ) == "最慢片段吞吐 12.3 Mbps · 1/1 个样本成功"
+                locale: locale
+            )
+                == AppStrings.localized(
+                    "最慢片段吞吐 \("12.3 Mbps") · \(1)/\(1) 个样本成功",
+                    locale: locale
+                )
         )
     }
 

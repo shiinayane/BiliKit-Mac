@@ -25,8 +25,12 @@ struct PlaybackSourceSettingsView: View {
             Section("播放线路") {
                 Picker("新播放优先线路", selection: selection) {
                     ForEach(PlaybackSourceSelection.allCases) { item in
-                        Text(item.displayName + (item.isExperimental ? "（实验）" : ""))
-                            .tag(item)
+                        Text(
+                            item.isExperimental
+                                ? AppStrings.localized("\(item.displayName)（实验）")
+                                : item.displayName
+                        )
+                        .tag(item)
                     }
                 }
                 Text("默认使用 B 站服务端顺序。改选只影响之后新开始的播放，当前播放不会切源或重建。")
@@ -60,7 +64,7 @@ struct PlaybackSourceSettingsView: View {
 
                 ForEach(model.measurements, id: \.target) { result in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(result.target.displayName)
+                        Text(result.target.appDisplayName)
                         Text(Self.resultText(result))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -75,7 +79,11 @@ struct PlaybackSourceSettingsView: View {
                 if model.state.isRunning {
                     Button("取消测速", role: .cancel) { model.cancelBenchmark() }
                 } else {
-                    Button(model.measurements.isEmpty ? "开始测速" : "重新测速") {
+                    Button(
+                        model.measurements.isEmpty
+                            ? AppStrings.localized("开始测速")
+                            : AppStrings.localized("重新测速")
+                    ) {
                         model.startBenchmark()
                     }
                     .disabled(!model.benchmarkAccess.allowsBenchmark)
@@ -119,17 +127,29 @@ struct PlaybackSourceSettingsView: View {
     }
 
     private var statusText: String {
-        if model.benchmarkAccess == .resolving { return "正在确认登录状态…" }
-        if model.benchmarkAccess == .signedOut { return "请先在主窗口登录。" }
+        if model.benchmarkAccess == .resolving {
+            return AppStrings.localized("正在确认登录状态…")
+        }
+        if model.benchmarkAccess == .signedOut {
+            return AppStrings.localized("请先在主窗口登录。")
+        }
         switch model.state {
-        case .notTested: return "尚未测速。开始后会从不同分区寻找近期、低播放量且足够长的公开视频样本。"
-        case .findingSample: return "正在寻找 \(model.benchmarkSampleCount) 个合格样本…"
-        case .testing: return "正在串行测试…"
-        case .completed: return "测速完成；请根据结果自行选择线路。"
-        case .cancelled: return "测速已取消，线路选择未改变。"
-        case .sampleUnavailable: return "暂时找不到合格样本，请稍后重试。"
-        case .authenticationFailure: return "登录状态已失效或暂时不可用，请重新登录后再试。"
-        case .networkOrProtocolFailure: return "网络或远端协议未能完成测速，未暴露样本或网络详情。"
+        case .notTested:
+            return AppStrings.localized("尚未测速。开始后会从不同分区寻找近期、低播放量且足够长的公开视频样本。")
+        case .findingSample:
+            return AppStrings.localized("正在寻找 \(model.benchmarkSampleCount) 个合格样本…")
+        case .testing:
+            return AppStrings.localized("正在串行测试…")
+        case .completed:
+            return AppStrings.localized("测速完成；请根据结果自行选择线路。")
+        case .cancelled:
+            return AppStrings.localized("测速已取消，线路选择未改变。")
+        case .sampleUnavailable:
+            return AppStrings.localized("暂时找不到合格样本，请稍后重试。")
+        case .authenticationFailure:
+            return AppStrings.localized("登录状态已失效或暂时不可用，请重新登录后再试。")
+        case .networkOrProtocolFailure:
+            return AppStrings.localized("网络或远端协议未能完成测速，未暴露样本或网络详情。")
         }
     }
 
@@ -138,7 +158,10 @@ struct PlaybackSourceSettingsView: View {
         locale: Locale = .current
     ) -> String {
         guard let bits = result.effectiveBitsPerSecond, bits.isFinite, bits >= 0 else {
-            return "不可用 · 0/\(result.totalRuns) 个样本成功"
+            return AppStrings.localized(
+                "不可用 · 0/\(result.totalRuns) 个样本成功",
+                locale: locale
+            )
         }
         if result.totalRuns > 1 {
             let minimum =
@@ -149,11 +172,17 @@ struct PlaybackSourceSettingsView: View {
                 result.medianBitsPerSecond.map {
                     speedText($0, locale: locale)
                 } ?? "—"
-            return "综合 \(speedText(bits, locale: locale)) · 最低 \(minimum) · 中位 \(median)"
-                + " · \(result.successfulRuns)/\(result.totalRuns) 个样本成功"
+            let effective = speedText(bits, locale: locale)
+            return AppStrings.localized(
+                "综合 \(effective) · 最低 \(minimum) · 中位 \(median) · \(result.successfulRuns)/\(result.totalRuns) 个样本成功",
+                locale: locale
+            )
         }
-        return "最慢片段吞吐 \(speedText(bits, locale: locale))"
-            + " · \(result.successfulRuns)/\(result.totalRuns) 个样本成功"
+        let effective = speedText(bits, locale: locale)
+        return AppStrings.localized(
+            "最慢片段吞吐 \(effective) · \(result.successfulRuns)/\(result.totalRuns) 个样本成功",
+            locale: locale
+        )
     }
 
     static func sampleDistributionText(
@@ -163,9 +192,10 @@ struct PlaybackSourceSettingsView: View {
         guard result.totalRuns > 1, !result.sampleBitsPerSecond.isEmpty else {
             return nil
         }
-        return "匿名样本："
-            + result.sampleBitsPerSecond.map { speedText($0, locale: locale) }
+        let samples = result.sampleBitsPerSecond
+            .map { speedText($0, locale: locale) }
             .joined(separator: " / ")
+        return AppStrings.localized("匿名样本：\(samples)", locale: locale)
     }
 
     private static func speedText(_ bits: Double, locale: Locale) -> String {

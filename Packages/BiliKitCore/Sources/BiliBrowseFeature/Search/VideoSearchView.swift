@@ -5,6 +5,7 @@ import SwiftUI
 
 public struct VideoSearchView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     private let model: GuestBrowseViewModel
     private let submittedSearchCriteria: VideoSearchCriteria?
     private let hasActiveFilters: Bool
@@ -102,7 +103,10 @@ public struct VideoSearchView<LoadedContent: View>: View {
             VStack(spacing: 12) {
                 ContentUnavailableView.search(text: query)
                 if hasActiveFilters {
-                    Button("清除筛选", action: onClearFilters)
+                    Button(
+                        BrowseFeatureStrings.localized("清除筛选", locale: locale),
+                        action: onClearFilters
+                    )
                 }
             }
         case .loaded(.search(_, let page)):
@@ -113,7 +117,12 @@ public struct VideoSearchView<LoadedContent: View>: View {
                             .controlSize(.small)
                             .padding(8)
                             .background(.regularMaterial, in: Capsule())
-                            .accessibilityLabel("正在刷新搜索结果")
+                            .accessibilityLabel(
+                                BrowseFeatureStrings.localized(
+                                    "正在刷新搜索结果",
+                                    locale: locale
+                                )
+                            )
                     } else if let error = presentation.refreshError {
                         Text(error.guestMessage)
                             .font(.caption)
@@ -145,7 +154,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
                 loadMoreError: nil
             )
         return makeLoadedContent(
-            page.videos.map(SearchVideoCardPresentation.init),
+            page.videos.map { SearchVideoCardPresentation(video: $0, locale: locale) },
             $scrollOffsetY,
             pagination.canLoadMore,
             pagination.tailIdentity,
@@ -159,12 +168,14 @@ public struct VideoSearchView<LoadedContent: View>: View {
                     .controlSize(.small)
                     .padding(8)
                     .background(.regularMaterial, in: Capsule())
-                    .accessibilityLabel("正在加载更多搜索结果")
+                    .accessibilityLabel(
+                        BrowseFeatureStrings.localized("正在加载更多搜索结果", locale: locale)
+                    )
             } else if let error = pagination.loadMoreError {
                 HStack(spacing: 8) {
                     Text(error.guestMessage)
                         .lineLimit(2)
-                    Button("重试") {
+                    Button(BrowseFeatureStrings.localized("重试", locale: locale)) {
                         model.retrySearchLoadMore()
                     }
                 }
@@ -177,9 +188,11 @@ public struct VideoSearchView<LoadedContent: View>: View {
 
     private var searchPrompt: some View {
         ContentUnavailableView(
-            "搜索视频",
+            BrowseFeatureStrings.localized("搜索视频", locale: locale),
             systemImage: "magnifyingglass",
-            description: Text("输入关键词后按下 Return 或点击搜索。")
+            description: Text(
+                BrowseFeatureStrings.localized("输入关键词后按下 Return 或点击搜索。", locale: locale)
+            )
         )
     }
 }
@@ -188,7 +201,9 @@ private struct SearchResultsSkeleton: View {
     let query: String
 
     var body: some View {
-        VideoCardGridSkeleton(loadingLabel: "正在搜索“\(query)”")
+        VideoCardGridSkeleton(
+            loadingLabel: BrowseFeatureStrings.localized("正在搜索“\(query)”")
+        )
     }
 }
 

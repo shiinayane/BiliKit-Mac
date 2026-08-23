@@ -255,7 +255,10 @@ struct NativeVideoShelfTests {
         #expect(native?.footerLeadingText == "作者")
         #expect(native?.footerTrailingText == nil)
         #expect(native?.accessibilityLabel == related.accessibilityLabel)
-        #expect(native?.accessibilityHelp == "播放并替换当前视频")
+        #expect(
+            native?.accessibilityHelp
+                == AppStrings.localized("播放并替换当前视频")
+        )
     }
 
     @Test

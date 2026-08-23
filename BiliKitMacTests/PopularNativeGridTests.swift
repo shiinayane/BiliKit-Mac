@@ -583,6 +583,7 @@ struct PopularNativeGridTests {
             publishedAt: Date(timeIntervalSince1970: 0)
         )
 
+        let featurePresentation = PopularVideoCardPresentation(video: video)
         let content = try #require(
             PopularNativeGridView.makePresentations([video]).first
         )
@@ -590,10 +591,14 @@ struct PopularNativeGridTests {
         #expect(content.title == "原生卡片")
         #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
         #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(content.coverMetrics.map(\.text) == ["1.2万", "67"])
-        #expect(content.coverTrailingText == "2:05")
+        #expect(
+            content.coverMetrics.map(\.text)
+                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
+        )
+        #expect(content.coverTrailingText == featurePresentation.durationText)
         #expect(content.showsAvatar)
-        #expect(content.accessibilityLabel.contains("时长 2:05"))
+        #expect(content.accessibilityLabel.contains(featurePresentation.viewCountText))
+        #expect(content.accessibilityLabel.contains(featurePresentation.durationText))
     }
 
     @Test @MainActor
@@ -615,7 +620,11 @@ struct PopularNativeGridTests {
         #expect(RecommendedNativeGridView.makePresentations([video, video]).count == 1)
         #expect(content.footerTrailingText == "正在流行")
         #expect(content.footerTrailingStyle == .brandOutlinedCapsule)
-        #expect(content.accessibilityLabel.contains("推荐理由 正在流行"))
+        #expect(
+            content.accessibilityLabel.contains(
+                AppStrings.localized("推荐理由 \("正在流行")")
+            )
+        )
 
         let withoutReason = RecommendedVideo(
             bvid: "BV-rcmd-plain",
@@ -661,10 +670,13 @@ struct PopularNativeGridTests {
         #expect(content.title == "搜索原生卡片")
         #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
         #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(content.coverMetrics.map(\.text) == ["2.3万", "89"])
-        #expect(content.coverTrailingText == "3:05")
+        #expect(
+            content.coverMetrics.map(\.text)
+                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
+        )
+        #expect(content.coverTrailingText == featurePresentation.durationText)
         #expect(content.footerLeadingText.contains("搜索作者"))
-        #expect(content.accessibilityLabel.contains("时长 3:05"))
+        #expect(content.accessibilityLabel == featurePresentation.accessibilityLabel)
     }
 
     @Test @MainActor

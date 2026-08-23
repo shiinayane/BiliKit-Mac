@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import BiliBrowseFeature
@@ -5,11 +6,16 @@ import Testing
 struct CommentPresentationFormattingTests {
     @Test
     func commentCountsReuseDomesticCompactUnits() {
-        #expect(CommentPresentationFormatting.compactCount(9_999) == "9999")
-        #expect(CommentPresentationFormatting.compactCount(12_345) == "1.2万")
-        #expect(CommentPresentationFormatting.compactCount(Int64(12_843)) == "1.2万")
+        let locale = Locale(identifier: "zh-Hans")
+
+        #expect(CommentPresentationFormatting.compactCount(9_999, locale: locale) == "9999")
+        #expect(CommentPresentationFormatting.compactCount(12_345, locale: locale) == "1.2万")
         #expect(
-            CommentPresentationFormatting.compactCount(123_456_789)
+            CommentPresentationFormatting.compactCount(Int64(12_843), locale: locale)
+                == "1.2万"
+        )
+        #expect(
+            CommentPresentationFormatting.compactCount(123_456_789, locale: locale)
                 == "1.2亿"
         )
     }
