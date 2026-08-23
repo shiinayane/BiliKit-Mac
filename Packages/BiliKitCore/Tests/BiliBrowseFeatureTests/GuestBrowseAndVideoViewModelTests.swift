@@ -409,8 +409,17 @@ struct GuestBrowseAndVideoViewModelTests {
         let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
+        let criteria = VideoSearchCriteria(
+            query: "Swift",
+            order: .mostFavorited,
+            duration: .thirtyToSixtyMinutes,
+            publicationRange: VideoPublicationTimeRange(
+                beginTimestamp: 100,
+                endTimestamp: 200
+            )
+        )
 
-        model.search("Swift")
+        model.search(criteria)
         await model.waitForCurrentTask()
         let loadedState = model.state
 
@@ -418,11 +427,11 @@ struct GuestBrowseAndVideoViewModelTests {
         await model.waitForCurrentTask()
         #expect(model.state == loadedState)
         #expect(
-            model.searchPagination(for: "Swift").loadMoreError
+            model.searchPagination(for: criteria).loadMoreError
                 == .transportFailure
         )
-        #expect(!model.searchPagination(for: "Swift").canLoadMore)
-        #expect(model.searchPagination(for: "Swift").tailIdentity == nil)
+        #expect(!model.searchPagination(for: criteria).canLoadMore)
+        #expect(model.searchPagination(for: criteria).tailIdentity == nil)
 
         model.retrySearchLoadMore()
         await model.waitForCurrentTask()
@@ -432,6 +441,14 @@ struct GuestBrowseAndVideoViewModelTests {
         }
         #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
         #expect(await repository.searchCallCount == 3)
+        #expect(
+            await repository.searchRequests
+                == [
+                    VideoSearchRequest(criteria: criteria, page: 1),
+                    VideoSearchRequest(criteria: criteria, page: 2),
+                    VideoSearchRequest(criteria: criteria, page: 2),
+                ]
+        )
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -462,6 +479,49 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(query == "新查询")
         #expect(page.videos.map(\.bvid) == [fresh.bvid])
         #expect(page.pageNumber == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func criteriaChangeCancelsAppendAndStartsANewPageOneWorkset() async throws {
+        let old = GuestFixtures(bvid: "BV1SearchCriteriaOld", title: "旧条件")
+        let fresh = GuestFixtures(bvid: "BV1SearchCriteriaNew", title: "新条件")
+        let repository = BlockingSearchAppendRepositoryStub(old: old, fresh: fresh)
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+        let oldCriteria = VideoSearchCriteria(query: "macOS")
+        let newCriteria = VideoSearchCriteria(
+            query: "macOS",
+            order: .mostPlayed,
+            duration: .underTenMinutes
+        )
+
+        model.search(oldCriteria)
+        await model.waitForCurrentTask()
+        model.loadMoreSearch()
+        try await repository.waitForOldAppendStart()
+        let oldAppendTask = try #require(model.taskSnapshotForTesting())
+
+        model.search(newCriteria)
+        await model.waitForCurrentTask()
+        await repository.releaseOldAppend()
+        await oldAppendTask.value
+
+        guard case .loaded(.search(let query, let page)) = model.state else {
+            Issue.record("新条件应保持 loaded")
+            return
+        }
+        #expect(query == "macOS")
+        #expect(page.pageNumber == 1)
+        #expect(page.videos.map(\.bvid) == [fresh.bvid])
+        #expect(
+            model.activeRequestIdentity
+                == .search(
+                    VideoSearchRequest(criteria: newCriteria, page: 1)
+                )
+        )
+        #expect(model.searchPagination(for: newCriteria).loadMoreError == nil)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -2725,6 +2785,7 @@ private actor SearchPaginationRepositoryStub: GuestContentRepository {
     let second: GuestFixtures
     let failFirstSecondPage: Bool
     private(set) var searchCallCount = 0
+    private(set) var searchRequests: [VideoSearchRequest] = []
     private var secondPageAttempts = 0
 
     init(
@@ -2742,8 +2803,18 @@ private actor SearchPaginationRepositoryStub: GuestContentRepository {
     }
 
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
+        try await searchVideos(
+            request: VideoSearchRequest(
+                criteria: VideoSearchCriteria(query: keyword),
+                page: page
+            )
+        )
+    }
+
+    func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        searchRequests.append(request)
         searchCallCount += 1
-        switch page {
+        switch request.page {
         case 1:
             return SearchPage(
                 videos: [first.searchVideo, first.searchVideo],
@@ -2960,7 +3031,21 @@ private actor BlockingSearchAppendRepositoryStub: GuestContentRepository {
     }
 
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        if keyword == "旧查询", page == 2 {
+        try await searchVideos(
+            request: VideoSearchRequest(
+                criteria: VideoSearchCriteria(query: keyword),
+                page: page
+            )
+        )
+    }
+
+    func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        let keyword = request.criteria.query
+        let page = request.page
+        let isOldCriteria = request.criteria.order == .relevance
+        if keyword == "旧查询" || keyword == "macOS", page == 2,
+            isOldCriteria
+        {
             await oldAppendEvents.signal()
             await withCheckedContinuation { continuation in
                 if oldAppendReleased {
@@ -2977,13 +3062,14 @@ private actor BlockingSearchAppendRepositoryStub: GuestContentRepository {
                 totalPages: 2
             )
         }
-        let fixture = keyword == "旧查询" ? old : fresh
+        let usesOldResult = keyword == "旧查询" || (keyword == "macOS" && isOldCriteria)
+        let fixture = usesOldResult ? old : fresh
         return SearchPage(
             videos: [fixture.searchVideo],
             pageNumber: 1,
             pageSize: 20,
-            totalResults: keyword == "旧查询" ? 2 : 1,
-            totalPages: keyword == "旧查询" ? 2 : 1
+            totalResults: usesOldResult ? 2 : 1,
+            totalPages: usesOldResult ? 2 : 1
         )
     }
 

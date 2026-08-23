@@ -92,9 +92,14 @@ public final class GuestBrowseViewModel {
     }
 
     public func activateSearch(_ query: String) {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
-        guard isValidSearch(normalizedQuery) else {
+        activateSearch(VideoSearchCriteria(query: query))
+    }
+
+    public func activateSearch(_ criteria: VideoSearchCriteria) {
+        let request = GuestFeedRequest.search(
+            VideoSearchRequest(criteria: criteria, page: 1)
+        )
+        guard isValidSearch(criteria) else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -196,9 +201,14 @@ public final class GuestBrowseViewModel {
     }
 
     public func search(_ query: String) {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
-        guard isValidSearch(normalizedQuery) else {
+        search(VideoSearchCriteria(query: query))
+    }
+
+    public func search(_ criteria: VideoSearchCriteria) {
+        let request = GuestFeedRequest.search(
+            VideoSearchRequest(criteria: criteria, page: 1)
+        )
+        guard isValidSearch(criteria) else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -210,9 +220,10 @@ public final class GuestBrowseViewModel {
 
     public func loadMoreSearch() {
         guard
-            case .search(let query, 1) = activeRequestIdentity,
+            case .search(let baseSearchRequest) = activeRequestIdentity,
+            baseSearchRequest.page == 1,
             case .loaded(.search(let loadedQuery, let page)) = state,
-            loadedQuery == query,
+            loadedQuery == baseSearchRequest.criteria.query,
             page.pageNumber < page.totalPages,
             !isRefreshing,
             !searchWorkset.isLoadingMore,
@@ -221,10 +232,12 @@ public final class GuestBrowseViewModel {
             return
         }
 
-        let baseRequest = GuestFeedRequest.search(query: query, page: 1)
+        let baseRequest = GuestFeedRequest.search(baseSearchRequest)
         let nextRequest = GuestFeedRequest.search(
-            query: query,
-            page: page.pageNumber + 1
+            VideoSearchRequest(
+                criteria: baseSearchRequest.criteria,
+                page: page.pageNumber + 1
+            )
         )
         generation += 1
         let currentGeneration = generation
@@ -266,8 +279,8 @@ public final class GuestBrowseViewModel {
             activateRecommendation()
         case .popular(let page, let pageSize):
             activatePopular(page: page, pageSize: pageSize)
-        case .search(let query, _):
-            activateSearch(query)
+        case .search(let request):
+            activateSearch(request.criteria)
         case nil:
             break
         }
@@ -385,12 +398,19 @@ public final class GuestBrowseViewModel {
     func searchPagination(
         for query: String
     ) -> SearchPaginationPresentation {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = GuestFeedRequest.search(query: normalizedQuery, page: 1)
+        searchPagination(for: VideoSearchCriteria(query: query))
+    }
+
+    func searchPagination(
+        for criteria: VideoSearchCriteria
+    ) -> SearchPaginationPresentation {
+        let request = GuestFeedRequest.search(
+            VideoSearchRequest(criteria: criteria, page: 1)
+        )
         guard
             searchWorkset.request == request,
             case .loaded(.search(let loadedQuery, let page)) = searchWorkset.state,
-            loadedQuery == normalizedQuery
+            loadedQuery == criteria.query
         else {
             return SearchPaginationPresentation(
                 canLoadMore: false,
@@ -403,7 +423,7 @@ public final class GuestBrowseViewModel {
             searchWorkset.loadMoreError == nil
             && page.pageNumber < page.totalPages
         let tailIdentity = page.videos.last.map {
-            "\(normalizedQuery)|\(page.pageNumber)|\($0.bvid)"
+            "\(criteria.identityComponent)|\(page.pageNumber)|\($0.bvid)"
         }
         return SearchPaginationPresentation(
             canLoadMore: canLoadMore,
@@ -546,13 +566,14 @@ public final class GuestBrowseViewModel {
             guard
                 generation == currentGeneration,
                 activeRequestIdentity == baseRequest,
-                case .search(let requestedQuery, let requestedPage) = request,
+                case .search(let requestedRequest) = request,
                 case .search(let responseQuery, let responsePage) = content,
-                requestedQuery == responseQuery,
-                requestedPage == responsePage.pageNumber,
+                requestedRequest.criteria.query == responseQuery,
+                requestedRequest.page == responsePage.pageNumber,
+                requestedRequest.criteria.pageSize == responsePage.pageSize,
                 responsePage.pageNumber <= responsePage.totalPages,
                 case .loaded(.search(let loadedQuery, let loadedPage)) = state,
-                loadedQuery == requestedQuery,
+                loadedQuery == requestedRequest.criteria.query,
                 loadedPage.pageNumber + 1 == responsePage.pageNumber
             else {
                 throw GuestApplicationError.invalidResponse
@@ -562,15 +583,19 @@ public final class GuestBrowseViewModel {
             let appended = responsePage.videos.filter {
                 seen.insert($0.bvid).inserted
             }
+            let totalPages =
+                appended.isEmpty
+                ? responsePage.pageNumber
+                : responsePage.totalPages
             state = .loaded(
                 .search(
-                    query: requestedQuery,
+                    query: requestedRequest.criteria.query,
                     page: SearchPage(
                         videos: loadedPage.videos + appended,
                         pageNumber: responsePage.pageNumber,
                         pageSize: responsePage.pageSize,
                         totalResults: responsePage.totalResults,
-                        totalPages: responsePage.totalPages
+                        totalPages: totalPages
                     )
                 )
             )
@@ -765,12 +790,12 @@ public final class GuestBrowseViewModel {
         case (.popular(let requestedPage, let requestedSize), .popular(let page)):
             page.pageNumber == requestedPage && page.pageSize == requestedSize
         case (
-            .search(let requestedQuery, let requestedPage),
+            .search(let requestedRequest),
             .search(let responseQuery, let page)
         ):
-            responseQuery == requestedQuery
-                && page.pageNumber == requestedPage
-                && page.pageSize > 0
+            responseQuery == requestedRequest.criteria.query
+                && page.pageNumber == requestedRequest.page
+                && page.pageSize == requestedRequest.criteria.pageSize
                 && page.totalResults >= 0
                 && (page.totalPages >= page.pageNumber
                     || (page.totalPages == 0 && page.videos.isEmpty))
@@ -913,8 +938,24 @@ public final class GuestBrowseViewModel {
         }
     }
 
-    private func isValidSearch(_ query: String) -> Bool {
-        !query.isEmpty && query.count <= 100
+    private func isValidSearch(_ criteria: VideoSearchCriteria) -> Bool {
+        guard !criteria.query.isEmpty,
+            criteria.query.count <= 100,
+            criteria.pageSize == VideoSearchCriteria.pageSize
+        else { return false }
+        guard let range = criteria.publicationRange else { return true }
+        return range.beginTimestamp >= 0
+            && range.beginTimestamp <= range.endTimestamp
+    }
+}
+
+extension VideoSearchCriteria {
+    fileprivate var identityComponent: String {
+        let range =
+            publicationRange.map {
+                "\($0.beginTimestamp)-\($0.endTimestamp)"
+            } ?? "all"
+        return "\(query)|\(order.rawValue)|\(duration.rawValue)|\(range)|\(pageSize)"
     }
 }
 

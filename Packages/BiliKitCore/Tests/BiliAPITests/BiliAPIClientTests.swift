@@ -533,6 +533,78 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func searchEncodesAllTypedCriteriaAndFixedPagination() async throws {
+        let searchResponse = try fixtureResponse("search")
+        let transport = RecordingTransport(
+            responses: [try fixtureResponse("nav")]
+                + Array(repeating: searchResponse, count: 11)
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        for order in VideoSearchOrder.allCases {
+            _ = try await client.searchVideos(
+                request: VideoSearchRequest(
+                    criteria: VideoSearchCriteria(query: "macOS", order: order),
+                    page: 1
+                )
+            )
+        }
+        for duration in VideoDurationFilter.allCases {
+            _ = try await client.searchVideos(
+                request: VideoSearchRequest(
+                    criteria: VideoSearchCriteria(query: "macOS", duration: duration),
+                    page: 1
+                )
+            )
+        }
+        _ = try await client.searchVideos(
+            request: VideoSearchRequest(
+                criteria: VideoSearchCriteria(
+                    query: "macOS",
+                    publicationRange: VideoPublicationTimeRange(
+                        beginTimestamp: 1_700_000_000,
+                        endTimestamp: 1_700_086_399
+                    )
+                ),
+                page: 2
+            )
+        )
+
+        let searchRequests = await transport.capturedRequests().dropFirst()
+        #expect(searchRequests.count == 11)
+        let queries = searchRequests.map { request in
+            Dictionary(
+                uniqueKeysWithValues: (URLComponents(
+                    url: request.url,
+                    resolvingAgainstBaseURL: false
+                )?.queryItems ?? []).compactMap { item in
+                    item.value.map { (item.name, $0) }
+                }
+            )
+        }
+        #expect(
+            queries.prefix(5).map { $0["order"] } == [
+                "totalrank", "click", "pubdate", "dm", "stow",
+            ]
+        )
+        #expect(
+            queries.dropFirst(5).prefix(5).map { $0["duration"] } == [
+                "0", "1", "2", "3", "4",
+            ]
+        )
+        #expect(queries.allSatisfy { $0["search_type"] == "video" })
+        #expect(queries.allSatisfy { $0["page_size"] == "20" })
+        #expect(queries.last?["page"] == "2")
+        #expect(queries.last?["pubtime_begin_s"] == "1700000000")
+        #expect(queries.last?["pubtime_end_s"] == "1700086399")
+        #expect(queries.allSatisfy { $0["wts"] == "1700000000" })
+        #expect(queries.allSatisfy { $0["w_rid"]?.count == 32 })
+    }
+
+    @Test
     func searchUsesAccountReadWhileWBIKeyStaysAnonymous() async throws {
         let authorizer = RecordingRequestAuthorizer()
         let transport = RecordingTransport(

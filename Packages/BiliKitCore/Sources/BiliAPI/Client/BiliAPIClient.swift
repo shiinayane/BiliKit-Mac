@@ -205,19 +205,43 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         keyword: String,
         page: Int = 1
     ) async throws -> SearchPage {
+        try await searchVideos(
+            request: VideoSearchRequest(
+                criteria: VideoSearchCriteria(query: keyword),
+                page: page
+            )
+        )
+    }
+
+    public func searchVideos(
+        request: VideoSearchRequest
+    ) async throws -> SearchPage {
         let searchSessionEpoch = authenticatedSessionEpoch
-        let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedKeyword.isEmpty,
-            normalizedKeyword.count <= 100,
-            page > 0
+        let criteria = request.criteria
+        let hasValidPublicationRange =
+            criteria.publicationRange.map {
+                $0.beginTimestamp >= 0 && $0.beginTimestamp <= $0.endTimestamp
+            } ?? true
+        guard !criteria.query.isEmpty,
+            criteria.query.count <= 100,
+            criteria.pageSize == VideoSearchCriteria.pageSize,
+            request.page > 0,
+            hasValidPublicationRange
         else {
             throw BiliAPIError.invalidRequest
         }
-        let parameters = [
-            "keyword": normalizedKeyword,
-            "page": String(page),
+        var parameters = [
+            "keyword": criteria.query,
+            "page": String(request.page),
+            "page_size": String(criteria.pageSize),
             "search_type": "video",
+            "order": criteria.order.apiValue,
+            "duration": criteria.duration.apiValue,
         ]
+        if let range = criteria.publicationRange {
+            parameters["pubtime_begin_s"] = String(range.beginTimestamp)
+            parameters["pubtime_end_s"] = String(range.endTimestamp)
+        }
         do {
             return try await signedSearch(
                 parameters: parameters,

@@ -22,8 +22,12 @@ struct AppShellView: View {
     let commentLinkURLResolver: CommentLinkURLResolver
     let commentImagePipeline: NativeVideoImagePipeline
     @Binding var isAuthenticationPresented: Bool
-    let submittedSearchQuery: String?
+    @Binding var searchFilterSelection: SearchFilterSelection
+    let submittedSearchCriteria: VideoSearchCriteria?
     let onSubmitSearch: () -> Void
+    let onSelectSearchOrder: (VideoSearchOrder) -> Void
+    let onApplySearchFilters: (SearchFilterSelection) -> Void
+    let onClearSearchFilters: () -> Void
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var homeScrollOffsetY: CGFloat = 0
     @State private var popularScrollOffsetY: CGFloat = 0
@@ -99,8 +103,8 @@ struct AppShellView: View {
         .sheet(isPresented: $isAuthenticationPresented) {
             AuthenticationView(model: authenticationModel)
         }
-        .onChange(of: submittedSearchQuery) { previousQuery, query in
-            guard previousQuery != query else { return }
+        .onChange(of: submittedSearchCriteria) { previousCriteria, criteria in
+            guard previousCriteria != criteria else { return }
             searchScrollOffsetY = 0
             searchScrollReset.request()
         }
@@ -139,6 +143,8 @@ struct AppShellView: View {
             }
             homeScrollOffsetY = 0
             homeScrollReset.request()
+            searchScrollOffsetY = 0
+            searchScrollReset.request()
             historyScrollOffsetY = 0
             historyScrollReset.request()
         }
@@ -261,16 +267,20 @@ struct AppShellView: View {
             )
         case .search:
             SearchTabRoot(
+                filterSelection: $searchFilterSelection,
                 model: browseModel,
                 searchDraft: Binding(
                     get: { navigationCoordinator.searchDraft },
                     set: { navigationCoordinator.searchDraft = $0 }
                 ),
-                submittedSearchQuery: submittedSearchQuery,
+                submittedSearchCriteria: submittedSearchCriteria,
                 scrollOffsetY: $searchScrollOffsetY,
                 scrollReset: $searchScrollReset,
                 onSelect: navigationCoordinator.openPlayback,
-                onSubmit: onSubmitSearch
+                onSubmit: onSubmitSearch,
+                onSelectOrder: onSelectSearchOrder,
+                onApplyFilters: onApplySearchFilters,
+                onClearFilters: onClearSearchFilters
             )
         case .popular:
             PopularTabRoot(

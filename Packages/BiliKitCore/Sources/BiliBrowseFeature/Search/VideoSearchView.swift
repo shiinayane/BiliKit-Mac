@@ -6,7 +6,8 @@ import SwiftUI
 public struct VideoSearchView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestBrowseViewModel
-    private let submittedSearchQuery: String?
+    private let submittedSearchCriteria: VideoSearchCriteria?
+    private let hasActiveFilters: Bool
     @Binding private var scrollOffsetY: CGFloat
     private let makeLoadedContent:
         (
@@ -19,10 +20,12 @@ public struct VideoSearchView<LoadedContent: View>: View {
             @escaping (String) -> Void
         ) -> LoadedContent
     private let onSelect: (String) -> Void
+    private let onClearFilters: () -> Void
 
     public init(
         model: GuestBrowseViewModel,
-        submittedSearchQuery: String?,
+        submittedSearchCriteria: VideoSearchCriteria?,
+        hasActiveFilters: Bool,
         scrollOffsetY: Binding<CGFloat>,
         makeLoadedContent:
             @escaping (
@@ -34,13 +37,16 @@ public struct VideoSearchView<LoadedContent: View>: View {
                 @escaping () -> Void,
                 @escaping (String) -> Void
             ) -> LoadedContent,
-        onSelect: @escaping (String) -> Void
+        onSelect: @escaping (String) -> Void,
+        onClearFilters: @escaping () -> Void
     ) {
         self.model = model
-        self.submittedSearchQuery = submittedSearchQuery
+        self.submittedSearchCriteria = submittedSearchCriteria
+        self.hasActiveFilters = hasActiveFilters
         _scrollOffsetY = scrollOffsetY
         self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
+        self.onClearFilters = onClearFilters
     }
 
     public var body: some View {
@@ -55,10 +61,9 @@ public struct VideoSearchView<LoadedContent: View>: View {
     }
 
     private var visualPhase: LoadingVisualPhase {
-        guard let submittedSearchQuery else { return .idle }
+        guard let submittedSearchCriteria else { return .idle }
         let request = GuestFeedRequest.search(
-            query: submittedSearchQuery,
-            page: 1
+            VideoSearchRequest(criteria: submittedSearchCriteria, page: 1)
         )
         switch model.presentation(for: request).state {
         case .idle, .loading:
@@ -67,7 +72,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
             return .empty
         case .loaded(.search(_, _)):
             return .content
-        case .failed(request: .search(_, _), error: _):
+        case .failed(request: .search, error: _):
             return .failure
         default:
             return .transitioning
@@ -76,10 +81,9 @@ public struct VideoSearchView<LoadedContent: View>: View {
 
     @ViewBuilder
     private var results: some View {
-        if let submittedSearchQuery {
+        if let submittedSearchCriteria {
             let request = GuestFeedRequest.search(
-                query: submittedSearchQuery,
-                page: 1
+                VideoSearchRequest(criteria: submittedSearchCriteria, page: 1)
             )
             searchResults(for: request)
         } else {
@@ -95,44 +99,29 @@ public struct VideoSearchView<LoadedContent: View>: View {
             let query = request.searchQuery ?? ""
             SearchResultsSkeleton(query: query)
         case .loaded(.search(let query, let page)) where page.videos.isEmpty:
-            ContentUnavailableView.search(text: query)
-        case .loaded(.search(let query, let page)):
-            VStack(spacing: 0) {
-                HStack {
-                    Text("“\(query)”")
-                    Spacer()
-                    Text("约 \(page.totalResults.formatted()) 条结果")
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 12) {
+                ContentUnavailableView.search(text: query)
+                if hasActiveFilters {
+                    Button("清除筛选", action: onClearFilters)
+                }
+            }
+        case .loaded(.search(_, let page)):
+            loadedResults(criteria: request.searchCriteria, page: page)
+                .overlay(alignment: .top) {
                     if presentation.isRefreshing {
                         ProgressView()
                             .controlSize(.small)
+                            .padding(8)
+                            .background(.regularMaterial, in: Capsule())
                             .accessibilityLabel("正在刷新搜索结果")
-                    } else {
-                        Button {
-                            model.search(query)
-                        } label: {
-                            Label("刷新搜索结果", systemImage: "arrow.clockwise")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityHint("从第 1 页重新加载当前搜索")
+                    } else if let error = presentation.refreshError {
+                        Text(error.guestMessage)
+                            .font(.caption)
+                            .padding(8)
+                            .background(.regularMaterial, in: Capsule())
                     }
                 }
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                loadedResults(query: query, page: page)
-            }
-            .overlay(alignment: .top) {
-                if let error = presentation.refreshError {
-                    Text(error.guestMessage)
-                        .font(.caption)
-                        .padding(8)
-                        .background(.regularMaterial, in: Capsule())
-                }
-            }
-        case .failed(request: .search(_, _), let error):
+        case .failed(request: .search, let error):
             BrowseFailureView(
                 title: error.guestTitle,
                 message: error.guestMessage,
@@ -144,10 +133,17 @@ public struct VideoSearchView<LoadedContent: View>: View {
     }
 
     private func loadedResults(
-        query: String,
+        criteria: VideoSearchCriteria?,
         page: SearchPage
     ) -> some View {
-        let pagination = model.searchPagination(for: query)
+        let pagination =
+            criteria.map(model.searchPagination(for:))
+            ?? SearchPaginationPresentation(
+                canLoadMore: false,
+                tailIdentity: nil,
+                isLoadingMore: false,
+                loadMoreError: nil
+            )
         return makeLoadedContent(
             page.videos.map(SearchVideoCardPresentation.init),
             $scrollOffsetY,
@@ -192,27 +188,17 @@ private struct SearchResultsSkeleton: View {
     let query: String
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("“\(query)”")
-                Spacer()
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(.quinary)
-                    .frame(width: 96, height: 12)
-                    .accessibilityHidden(true)
-            }
-            .font(.caption)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            VideoCardGridSkeleton(loadingLabel: "正在搜索“\(query)”")
-        }
+        VideoCardGridSkeleton(loadingLabel: "正在搜索“\(query)”")
     }
 }
 
 extension GuestFeedRequest {
     fileprivate var searchQuery: String? {
-        guard case .search(let query, _) = self else { return nil }
-        return query
+        searchCriteria?.query
+    }
+
+    fileprivate var searchCriteria: VideoSearchCriteria? {
+        guard case .search(let request) = self else { return nil }
+        return request.criteria
     }
 }

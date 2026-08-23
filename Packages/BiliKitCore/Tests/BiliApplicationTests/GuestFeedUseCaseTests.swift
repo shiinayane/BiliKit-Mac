@@ -39,10 +39,48 @@ struct GuestFeedUseCaseTests {
         }
         #expect(await repository.searchQueries().isEmpty)
     }
+
+    @Test
+    func forwardsCompleteSearchCriteriaAndRejectsInvalidRange() async throws {
+        let repository = FeedRepositoryStub()
+        let useCase = GuestFeedUseCase(repository: repository)
+        let criteria = VideoSearchCriteria(
+            query: "  macOS  ",
+            order: .mostDanmaku,
+            duration: .tenToThirtyMinutes,
+            publicationRange: VideoPublicationTimeRange(
+                beginTimestamp: 100,
+                endTimestamp: 200
+            )
+        )
+
+        _ = try await useCase.execute(
+            .search(VideoSearchRequest(criteria: criteria, page: 2))
+        )
+        #expect(
+            await repository.searchRequests()
+                == [VideoSearchRequest(criteria: criteria, page: 2)]
+        )
+
+        let invalid = VideoSearchCriteria(
+            query: "macOS",
+            publicationRange: VideoPublicationTimeRange(
+                beginTimestamp: 201,
+                endTimestamp: 200
+            )
+        )
+        await #expect(throws: GuestApplicationError.invalidRequest) {
+            try await useCase.execute(
+                .search(VideoSearchRequest(criteria: invalid, page: 1))
+            )
+        }
+        #expect(await repository.searchRequests().count == 1)
+    }
 }
 
 private actor FeedRepositoryStub: GuestContentRepository {
     private var observedSearchQueries: [String] = []
+    private var observedSearchRequests: [VideoSearchRequest] = []
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
         PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
@@ -54,6 +92,18 @@ private actor FeedRepositoryStub: GuestContentRepository {
             videos: [],
             pageNumber: page,
             pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+
+    func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        observedSearchRequests.append(request)
+        observedSearchQueries.append(request.criteria.query)
+        return SearchPage(
+            videos: [],
+            pageNumber: request.page,
+            pageSize: request.criteria.pageSize,
             totalResults: 0,
             totalPages: 0
         )
@@ -76,5 +126,9 @@ private actor FeedRepositoryStub: GuestContentRepository {
 
     func searchQueries() -> [String] {
         observedSearchQueries
+    }
+
+    func searchRequests() -> [VideoSearchRequest] {
+        observedSearchRequests
     }
 }

@@ -25,7 +25,9 @@ struct AppRootView: View {
     private let accountSessionCoordinator: AccountSessionCoordinator
     private let appSettingsModel: AppSettingsModel?
     @State private var isAuthenticationPresented = false
-    @State private var submittedSearchQuery: String?
+    @State private var searchFilterSelection = SearchFilterSelection()
+    @State private var appliedSearchFilters = AppliedVideoSearchFilters()
+    @State private var submittedSearchCriteria: VideoSearchCriteria?
     init(
         environment: AppEnvironment? = nil,
         accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator(),
@@ -96,8 +98,12 @@ struct AppRootView: View {
             commentLinkURLResolver: windowOwner.commentLinkURLResolver,
             commentImagePipeline: windowOwner.commentImagePipeline,
             isAuthenticationPresented: $isAuthenticationPresented,
-            submittedSearchQuery: submittedSearchQuery,
-            onSubmitSearch: performSearch
+            searchFilterSelection: $searchFilterSelection,
+            submittedSearchCriteria: submittedSearchCriteria,
+            onSubmitSearch: performSearch,
+            onSelectSearchOrder: selectSearchOrder,
+            onApplySearchFilters: applySearchFilters,
+            onClearSearchFilters: clearSearchFilters
         )
         .task(id: browseActivation) {
             await applyBrowseActivation(for: browseActivation)
@@ -188,7 +194,7 @@ struct AppRootView: View {
             else {
                 return
             }
-            submittedSearchQuery = nil
+            submittedSearchCriteria = nil
         }
         .onDisappear {
             appSettingsModel?.removeAuthenticationOwner(
@@ -282,8 +288,37 @@ struct AppRootView: View {
     private func performSearch() {
         guard !normalizedSearchDraft.isEmpty else { return }
         navigationCoordinator.searchDraft = normalizedSearchDraft
-        submittedSearchQuery = normalizedSearchDraft
-        browseModel.search(normalizedSearchDraft)
+        let criteria = appliedSearchFilters.criteria(query: normalizedSearchDraft)
+        if submittedSearchCriteria == criteria {
+            browseModel.search(criteria)
+        } else {
+            submittedSearchCriteria = criteria
+        }
+    }
+
+    private func selectSearchOrder(_ order: VideoSearchOrder) {
+        appliedSearchFilters.order = order
+        updateSubmittedSearchCriteriaIfNeeded()
+    }
+
+    private func applySearchFilters(_ selection: SearchFilterSelection) {
+        guard let filters = try? selection.resolvedFilters() else { return }
+        appliedSearchFilters = filters
+        updateSubmittedSearchCriteriaIfNeeded()
+    }
+
+    private func clearSearchFilters() {
+        searchFilterSelection.resetFilters()
+        appliedSearchFilters.duration = .all
+        appliedSearchFilters.publicationRange = nil
+        updateSubmittedSearchCriteriaIfNeeded()
+    }
+
+    private func updateSubmittedSearchCriteriaIfNeeded() {
+        guard let submittedSearchCriteria else { return }
+        self.submittedSearchCriteria = appliedSearchFilters.criteria(
+            query: submittedSearchCriteria.query
+        )
     }
 
     private var browseActivation: BrowseActivation {
@@ -293,7 +328,7 @@ struct AppRootView: View {
         case .popular:
             return .popular
         case .search:
-            return .search(query: submittedSearchQuery)
+            return .search(criteria: submittedSearchCriteria)
         case .history:
             return .inactive
         }
@@ -312,8 +347,8 @@ struct AppRootView: View {
             await browseModel.waitForCurrentTask()
         case .search(nil), .inactive:
             browseModel.deactivateRoute()
-        case .search(.some(let query)):
-            browseModel.activateSearch(query)
+        case .search(.some(let criteria)):
+            browseModel.activateSearch(criteria)
             await browseModel.waitForCurrentTask()
         }
     }
@@ -418,7 +453,7 @@ private final class AppWindowActivationObserverOwner: @unchecked Sendable {
 private enum BrowseActivation: Hashable {
     case recommendation
     case popular
-    case search(query: String?)
+    case search(criteria: VideoSearchCriteria?)
     case inactive
 }
 

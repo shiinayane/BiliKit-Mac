@@ -19,6 +19,7 @@ public protocol GuestContentRepository: Sendable {
     ) async throws -> RecommendationPage
     func popular(page: Int, pageSize: Int) async throws -> PopularPage
     func searchVideos(keyword: String, page: Int) async throws -> SearchPage
+    func searchVideos(request: VideoSearchRequest) async throws -> SearchPage
     func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
@@ -29,6 +30,13 @@ extension GuestContentRepository {
         after continuation: RecommendationContinuation?
     ) async throws -> RecommendationPage {
         throw GuestApplicationError.unavailable
+    }
+
+    public func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        try await searchVideos(
+            keyword: request.criteria.query,
+            page: request.page
+        )
     }
 }
 
