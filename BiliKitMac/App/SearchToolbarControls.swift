@@ -1,4 +1,5 @@
 import BiliBrowseFeature
+import Foundation
 import SwiftUI
 
 struct AppliedVideoSearchFilters: Hashable {
@@ -49,15 +50,18 @@ struct SearchFilterSelection: Hashable {
         )
     }
 
-    var summary: String {
-        [
-            publication == .all ? nil : publication.localizedTitle,
-            duration == .all ? nil : duration.localizedTitle,
-        ].compactMap { $0 }.joined(separator: "，")
+    func summary(locale: Locale) -> String {
+        ListFormatter.localizedString(
+            byJoining: [
+                publication == .all ? nil : publication.localizedTitle(locale: locale),
+                duration == .all ? nil : duration.localizedTitle(locale: locale),
+            ].compactMap { $0 }
+        )
     }
 }
 
 struct SearchToolbarControls: View {
+    @Environment(\.locale) private var locale
     @Binding var selection: SearchFilterSelection
     @State private var draft = SearchFilterSelection()
     @State private var isFilterPopoverPresented = false
@@ -79,20 +83,21 @@ struct SearchToolbarControls: View {
                             }
                         )
                     ) {
-                        Text(order.title)
+                        Text(order.localizedTitle(locale: locale))
                     }
                 }
             } label: {
                 Label {
-                    Text(selection.order.title)
+                    Text(selection.order.localizedTitle(locale: locale))
                 } icon: {
                     Image(systemName: "arrow.up.arrow.down")
                 }
                 .labelStyle(.titleAndIcon)
             }
             .help(
-                String(
-                    localized: "搜索结果排序：\(selection.order.localizedTitle)"
+                AppStrings.localized(
+                    "搜索结果排序：\(selection.order.localizedTitle(locale: locale))",
+                    locale: locale
                 )
             )
 
@@ -108,7 +113,12 @@ struct SearchToolbarControls: View {
                 .labelStyle(.titleAndIcon)
             }
             .accessibilityValue(
-                Text("已启用 \(selection.activeFilterCount) 项")
+                Text(
+                    AppStrings.localized(
+                        "已启用 \(selection.activeFilterCount) 项",
+                        locale: locale
+                    )
+                )
             )
             .help(filterButtonHelp)
             .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .bottom) {
@@ -126,11 +136,14 @@ struct SearchToolbarControls: View {
         }
     }
 
-    private var filterButtonTitle: LocalizedStringResource {
+    private var filterButtonTitle: String {
         if selection.activeFilterCount == 0 {
-            "筛选"
+            AppStrings.localized("筛选", locale: locale)
         } else {
-            "筛选 \(selection.activeFilterCount)"
+            AppStrings.localized(
+                "筛选 \(selection.activeFilterCount)",
+                locale: locale
+            )
         }
     }
 
@@ -141,9 +154,10 @@ struct SearchToolbarControls: View {
     }
 
     private var filterButtonHelp: String {
-        selection.summary.isEmpty
-            ? String(localized: "筛选搜索结果")
-            : String(localized: "筛选搜索结果：\(selection.summary)")
+        let summary = selection.summary(locale: locale)
+        return summary.isEmpty
+            ? AppStrings.localized("筛选搜索结果", locale: locale)
+            : AppStrings.localized("筛选搜索结果：\(summary)", locale: locale)
     }
 
     private func cancelDraft() {
@@ -159,19 +173,21 @@ struct SearchToolbarControls: View {
 }
 
 private struct SearchFilterPopover: View {
+    @Environment(\.locale) private var locale
     @Binding var draft: SearchFilterSelection
     let onCancel: () -> Void
     let onApply: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("筛选搜索结果")
+            Text(AppStrings.localized("筛选搜索结果", locale: locale))
                 .font(.headline)
 
-            LabeledContent("发布日期") {
-                Picker("发布日期", selection: $draft.publication) {
+            LabeledContent(AppStrings.localized("发布日期", locale: locale)) {
+                Picker(AppStrings.localized("发布日期", locale: locale), selection: $draft.publication)
+                {
                     ForEach(VideoPublicationFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
+                        Text(filter.localizedTitle(locale: locale)).tag(filter)
                     }
                 }
                 .labelsHidden()
@@ -181,13 +197,13 @@ private struct SearchFilterPopover: View {
             if draft.publication == .custom {
                 VStack(alignment: .leading, spacing: 10) {
                     DatePicker(
-                        "开始日期",
+                        AppStrings.localized("开始日期", locale: locale),
                         selection: $draft.customStart,
                         in: ...Date(),
                         displayedComponents: .date
                     )
                     DatePicker(
-                        "结束日期",
+                        AppStrings.localized("结束日期", locale: locale),
                         selection: $draft.customEnd,
                         in: ...Date(),
                         displayedComponents: .date
@@ -205,10 +221,10 @@ private struct SearchFilterPopover: View {
                 .padding(.leading, 12)
             }
 
-            LabeledContent("视频时长") {
-                Picker("视频时长", selection: $draft.duration) {
+            LabeledContent(AppStrings.localized("视频时长", locale: locale)) {
+                Picker(AppStrings.localized("视频时长", locale: locale), selection: $draft.duration) {
                     ForEach(VideoDurationFilter.allCases) { duration in
-                        Text(duration.title).tag(duration)
+                        Text(duration.localizedTitle(locale: locale)).tag(duration)
                     }
                 }
                 .labelsHidden()
@@ -218,14 +234,14 @@ private struct SearchFilterPopover: View {
             Divider()
 
             HStack {
-                Button("恢复默认") {
+                Button(AppStrings.localized("恢复默认", locale: locale)) {
                     draft.resetFilters()
                 }
                 .disabled(draft.activeFilterCount == 0)
                 Spacer()
-                Button("取消", action: onCancel)
+                Button(AppStrings.localized("取消", locale: locale), action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                Button("应用", action: onApply)
+                Button(AppStrings.localized("应用", locale: locale), action: onApply)
                     .keyboardShortcut(.defaultAction)
                     .disabled(validationMessage != nil)
             }
@@ -234,7 +250,7 @@ private struct SearchFilterPopover: View {
         .frame(width: 350)
     }
 
-    private var validationMessage: LocalizedStringResource? {
+    private var validationMessage: String? {
         guard draft.publication == .custom else { return nil }
         do {
             _ = try draft.resolvedFilters()
@@ -242,56 +258,50 @@ private struct SearchFilterPopover: View {
         } catch let error as VideoPublicationRangeError {
             switch error {
             case .startAfterEnd:
-                return "开始日期不能晚于结束日期"
+                return AppStrings.localized("开始日期不能晚于结束日期", locale: locale)
             case .futureDate:
-                return "结束日期不能超过今天"
+                return AppStrings.localized("结束日期不能超过今天", locale: locale)
             case .invalidCalendarRange:
-                return "无法使用这个日期范围"
+                return AppStrings.localized("无法使用这个日期范围", locale: locale)
             }
         } catch {
-            return "无法使用这个日期范围"
+            return AppStrings.localized("无法使用这个日期范围", locale: locale)
         }
     }
 }
 
 extension VideoSearchOrder {
-    var title: LocalizedStringResource {
+    func localizedTitle(locale: Locale = .current) -> String {
         switch self {
-        case .relevance: "综合排序"
-        case .mostPlayed: "最多播放"
-        case .newest: "最新发布"
-        case .mostDanmaku: "最多弹幕"
-        case .mostFavorited: "最多收藏"
+        case .relevance: AppStrings.localized("综合排序", locale: locale)
+        case .mostPlayed: AppStrings.localized("最多播放", locale: locale)
+        case .newest: AppStrings.localized("最新发布", locale: locale)
+        case .mostDanmaku: AppStrings.localized("最多弹幕", locale: locale)
+        case .mostFavorited: AppStrings.localized("最多收藏", locale: locale)
         }
     }
-
-    var localizedTitle: String { String(localized: title) }
 }
 
 extension VideoDurationFilter {
-    var title: LocalizedStringResource {
+    func localizedTitle(locale: Locale = .current) -> String {
         switch self {
-        case .all: "全部时长"
-        case .underTenMinutes: "10 分钟以下"
-        case .tenToThirtyMinutes: "10–30 分钟"
-        case .thirtyToSixtyMinutes: "30–60 分钟"
-        case .overSixtyMinutes: "60 分钟以上"
+        case .all: AppStrings.localized("全部时长", locale: locale)
+        case .underTenMinutes: AppStrings.localized("10 分钟以下", locale: locale)
+        case .tenToThirtyMinutes: AppStrings.localized("10–30 分钟", locale: locale)
+        case .thirtyToSixtyMinutes: AppStrings.localized("30–60 分钟", locale: locale)
+        case .overSixtyMinutes: AppStrings.localized("60 分钟以上", locale: locale)
         }
     }
-
-    var localizedTitle: String { String(localized: title) }
 }
 
 extension VideoPublicationFilter {
-    var title: LocalizedStringResource {
+    func localizedTitle(locale: Locale = .current) -> String {
         switch self {
-        case .all: "全部日期"
-        case .today: "最近一天"
-        case .lastSevenDays: "最近一周"
-        case .last180Days: "最近半年"
-        case .custom: "自定义日期"
+        case .all: AppStrings.localized("全部日期", locale: locale)
+        case .today: AppStrings.localized("今天", locale: locale)
+        case .lastSevenDays: AppStrings.localized("最近一周", locale: locale)
+        case .last180Days: AppStrings.localized("最近半年", locale: locale)
+        case .custom: AppStrings.localized("自定义日期", locale: locale)
         }
     }
-
-    var localizedTitle: String { String(localized: title) }
 }

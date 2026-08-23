@@ -23,7 +23,7 @@ public struct VideoUploaderHeaderContent: Equatable, Sendable {
         signatureState: VideoUploaderSignatureState? = nil
     ) {
         let normalizedName = Self.normalized(owner.name)
-        name = normalizedName ?? "未知 UP 主"
+        name = normalizedName ?? BrowseFeatureStrings.localized("未知 UP 主")
         avatarURL = owner.avatarURL
         switch signatureState ?? .loaded(owner.signature) {
         case .loading:

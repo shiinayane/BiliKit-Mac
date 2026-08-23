@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "BiliKitCore",
+    defaultLocalization: "zh-Hans",
     platforms: [
         .macOS(.v15)
     ],
@@ -56,15 +57,18 @@ let package = Package(
         ),
         .target(
             name: "BiliBrowseFeature",
-            dependencies: ["BiliApplication", "BiliModels", "BiliUI"]
+            dependencies: ["BiliApplication", "BiliModels", "BiliUI"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "BiliAuthFeature",
-            dependencies: ["BiliApplication", "BiliModels"]
+            dependencies: ["BiliApplication", "BiliModels"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "BiliLibraryFeature",
-            dependencies: ["BiliApplication", "BiliModels", "BiliUI"]
+            dependencies: ["BiliApplication", "BiliModels", "BiliUI"],
+            resources: [.process("Resources")]
         ),
         .target(name: "BiliUI"),
         .testTarget(

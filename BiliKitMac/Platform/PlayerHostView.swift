@@ -178,8 +178,8 @@ enum PlayerMomentaryRate: Float, Equatable, Sendable {
 
     var accessibilityLabel: String {
         switch self {
-        case .slow: "临时播放速度 0.5 倍"
-        case .fast: "临时播放速度 2 倍"
+        case .slow: AppStrings.localized("临时播放速度 0.5 倍")
+        case .fast: AppStrings.localized("临时播放速度 2 倍")
         }
     }
 }
@@ -196,13 +196,17 @@ enum PlayerShortcutFeedback: Equatable {
         switch self {
         case .momentaryRate(let rate): rate.label
         case .relativeSeek(let seconds):
-            seconds < 0 ? "后退 \(-seconds) 秒" : "前进 \(seconds) 秒"
+            seconds < 0
+                ? AppStrings.localized("后退 \(-seconds) 秒")
+                : AppStrings.localized("前进 \(seconds) 秒")
         case .volume(let percent): "\(percent)%"
-        case .playback(let isPlaying): isPlaying ? "播放" : "暂停"
-        case .danmaku(let enabled): enabled ? "弹幕 开" : "弹幕 关"
-        case .subtitles(.enabled(let label)): "字幕 \(label)"
-        case .subtitles(.disabled): "字幕 关"
-        case .subtitles(.unavailable): "无可用字幕"
+        case .playback(let isPlaying):
+            isPlaying ? AppStrings.localized("播放") : AppStrings.localized("暂停")
+        case .danmaku(let enabled):
+            enabled ? AppStrings.localized("弹幕 开") : AppStrings.localized("弹幕 关")
+        case .subtitles(.enabled(let label)): AppStrings.localized("字幕 \(label)")
+        case .subtitles(.disabled): AppStrings.localized("字幕 关")
+        case .subtitles(.unavailable): AppStrings.localized("无可用字幕")
         }
     }
 
@@ -227,14 +231,17 @@ enum PlayerShortcutFeedback: Equatable {
         switch self {
         case .momentaryRate(let rate): rate.accessibilityLabel
         case .relativeSeek(let seconds):
-            seconds < 0 ? "已后退 \(-seconds) 秒" : "已前进 \(seconds) 秒"
-        case .volume(let percent): "播放器音量 \(percent)%"
+            seconds < 0
+                ? AppStrings.localized("已后退 \(-seconds) 秒")
+                : AppStrings.localized("已前进 \(seconds) 秒")
+        case .volume(let percent): AppStrings.localized("播放器音量 \(percent)%")
         case .playback(let isPlaying):
-            isPlaying ? "已开始播放" : "已暂停播放"
-        case .danmaku(let enabled): enabled ? "弹幕已开启" : "弹幕已关闭"
-        case .subtitles(.enabled(let label)): "字幕已开启，\(label)"
-        case .subtitles(.disabled): "字幕已关闭"
-        case .subtitles(.unavailable): "当前视频没有可用字幕"
+            isPlaying ? AppStrings.localized("已开始播放") : AppStrings.localized("已暂停播放")
+        case .danmaku(let enabled):
+            enabled ? AppStrings.localized("弹幕已开启") : AppStrings.localized("弹幕已关闭")
+        case .subtitles(.enabled(let label)): AppStrings.localized("字幕已开启，\(label)")
+        case .subtitles(.disabled): AppStrings.localized("字幕已关闭")
+        case .subtitles(.unavailable): AppStrings.localized("当前视频没有可用字幕")
         }
     }
 }
@@ -297,7 +304,7 @@ struct PlayerResumeNoticeLayout {
 }
 
 enum PlayerResumeNoticePresentation {
-    static let title = "从头播放"
+    static var title: String { AppStrings.localized("从头播放") }
 }
 
 enum PlayerResumeNoticeDismissalPolicy {
@@ -335,7 +342,7 @@ private struct PlayerResumeButton: View {
         }
         .modifier(PlayerResumeButtonStyle())
         .accessibilityLabel(PlayerResumeNoticePresentation.title)
-        .accessibilityHint("将当前视频定位到开头并继续播放")
+        .accessibilityHint(AppStrings.localized("将当前视频定位到开头并继续播放"))
     }
 }
 

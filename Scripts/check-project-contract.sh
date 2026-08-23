@@ -53,8 +53,13 @@ expect_count 6 'DEVELOPMENT_TEAM = 2B3LZ256AG;' "$project" "Project 与 target �
 expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;' "$project" "App Bundle Identifier 不一致"
 expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
-expect_count 1 '.typesettingLanguage(' "$app" "App 根必须设置排版语言"
-expect_count 1 '.explicit(Locale.Language(identifier: "zh-Hans"))' "$app" "App 排版语言必须为简体中文"
+expect_count 0 '.typesettingLanguage(' "$app" "App 根不得强制内容排版语言"
+expect_count 0 '.environment(\.locale' "$app" "App 根不得强制界面 locale"
+if rg -n --glob '*.swift' \
+    '\.typesettingLanguage\(|\.environment\(\s*\\\.locale|kCTLanguageAttributeName|kCTFontDescriptorLanguageAttribute' \
+    BiliKitMac Packages/BiliKitCore/Sources >/dev/null; then
+    fail "生产源码不得强制 UI、内容或字体语言"
+fi
 
 deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/) bad += 1 } END { print total + 0, bad + 0 }' "$project")
 set -- $deployment

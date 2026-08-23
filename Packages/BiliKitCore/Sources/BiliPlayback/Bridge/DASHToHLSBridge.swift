@@ -377,6 +377,7 @@ public struct DASHToHLSBridge: Sendable {
                 LoopbackRouteRegistration(
                     relativePath: "metadata/localized-rendition-names.json",
                     resource: try localizedRenditionNamesResource(
+                        audioTracks: audioRenditions.map(\.selectedTrack.track),
                         subtitleCatalog: localizedSubtitleCatalog
                     )
                 )
@@ -483,9 +484,19 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     private func localizedRenditionNamesResource(
+        audioTracks: [PlaybackAudioTrack],
         subtitleCatalog: [NativeSubtitleCatalogEntry]
     ) throws -> LoopbackPlaybackResource {
         var localizedNames: [String: [String: String]] = [:]
+        for track in audioTracks where track.role == .original {
+            localizedNames[track.displayName] = [
+                "en": "Original audio",
+                "ja": "オリジナル音声",
+                "zh": "原声",
+                "zh-Hans": "原声",
+                "zh-Hant": "原聲",
+            ]
+        }
         let subtitleLanguageGroups = Dictionary(
             grouping: subtitleCatalog,
             by: { primaryLanguageSubtag($0.languageTag) }

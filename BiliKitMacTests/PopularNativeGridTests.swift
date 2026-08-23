@@ -593,7 +593,11 @@ struct PopularNativeGridTests {
         #expect(content.coverMetrics.map(\.text) == ["1.2万", "67"])
         #expect(content.coverTrailingText == "2:05")
         #expect(content.showsAvatar)
-        #expect(content.accessibilityLabel.contains("时长 2:05"))
+        #expect(
+            content.accessibilityLabel.contains(
+                AppStrings.localized("时长 \("2:05")")
+            )
+        )
     }
 
     @Test @MainActor
@@ -615,7 +619,11 @@ struct PopularNativeGridTests {
         #expect(RecommendedNativeGridView.makePresentations([video, video]).count == 1)
         #expect(content.footerTrailingText == "正在流行")
         #expect(content.footerTrailingStyle == .brandOutlinedCapsule)
-        #expect(content.accessibilityLabel.contains("推荐理由 正在流行"))
+        #expect(
+            content.accessibilityLabel.contains(
+                AppStrings.localized("推荐理由 \("正在流行")")
+            )
+        )
 
         let withoutReason = RecommendedVideo(
             bvid: "BV-rcmd-plain",
@@ -664,7 +672,11 @@ struct PopularNativeGridTests {
         #expect(content.coverMetrics.map(\.text) == ["2.3万", "89"])
         #expect(content.coverTrailingText == "3:05")
         #expect(content.footerLeadingText.contains("搜索作者"))
-        #expect(content.accessibilityLabel.contains("时长 3:05"))
+        #expect(
+            content.accessibilityLabel.contains(
+                AppStrings.localized("时长 \("3:05")")
+            )
+        )
     }
 
     @Test @MainActor

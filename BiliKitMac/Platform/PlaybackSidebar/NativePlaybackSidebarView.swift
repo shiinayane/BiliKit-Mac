@@ -207,8 +207,8 @@ final class NativePlaybackSidebarRootView: NSView {
         } else {
             commentsTopButton.bezelStyle = .circular
         }
-        commentsTopButton.setAccessibilityLabel("返回评论区顶部")
-        commentsTopButton.toolTip = "返回评论区顶部"
+        commentsTopButton.setAccessibilityLabel(AppStrings.localized("返回评论区顶部"))
+        commentsTopButton.toolTip = AppStrings.localized("返回评论区顶部")
         commentsTopButton.isHidden = true
         scrollView.addSubview(commentsTopButton)
     }
@@ -231,7 +231,7 @@ final class NativePlaybackSidebarScrollView: NSScrollView {
     let commentsTopButton = NSButton(
         image: NSImage(
             systemSymbolName: "arrow.up",
-            accessibilityDescription: "返回评论区顶部"
+            accessibilityDescription: AppStrings.localized("返回评论区顶部")
         ) ?? NSImage(),
         target: nil,
         action: nil
@@ -363,7 +363,10 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         >?
     private var presentation = NativePlaybackSidebarPresentation(
         content: nil,
-        overlay: .unavailable(title: "没有播放上下文", message: "返回来源页并重新选择视频。")
+        overlay: .unavailable(
+            title: AppStrings.localized("没有播放上下文"),
+            message: AppStrings.localized("返回来源页并重新选择视频。")
+        )
     )
     private var actions = NativePlaybackSidebarActions(
         retry: {},
@@ -1479,7 +1482,7 @@ final class NativePlaybackSidebarOverlayView: NSView {
     private let titleLabel = NSTextField(wrappingLabelWithString: "")
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private let progress = NSProgressIndicator()
-    private let retryButton = NSButton(title: "重试", target: nil, action: nil)
+    private let retryButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
     private var retry: (() -> Void)?
     private var showsSkeleton = false
 

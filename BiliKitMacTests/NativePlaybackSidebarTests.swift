@@ -53,7 +53,7 @@ struct NativePlaybackSidebarTests {
         #expect(controller.rootView.scrollView.automaticallyAdjustsContentInsets)
         #expect(
             controller.rootView.commentsTopButton.accessibilityLabel()
-                == "返回评论区顶部"
+                == AppStrings.localized("返回评论区顶部")
         )
         #expect(controller.rootView.commentsTopButton.action != nil)
 
@@ -147,17 +147,25 @@ struct NativePlaybackSidebarTests {
         let views = descendants(of: item.view)
         let body = try #require(views.compactMap { $0 as? NSTextView }.first)
         let expandButton = try #require(
-            views.compactMap { $0 as? NSButton }.first { $0.title == "展开" }
+            views.compactMap { $0 as? NSButton }.first {
+                $0.title == AppStrings.localized("展开")
+            }
         )
         let title = try #require(
-            views.compactMap { $0 as? NSTextField }.first { $0.stringValue == "简介" }
+            views.compactMap { $0 as? NSTextField }.first {
+                $0.stringValue == AppStrings.localized("简介")
+            }
         )
 
         #expect(expandedHeight > collapsedHeight)
         #expect(body.textContainer?.maximumNumberOfLines == 5)
         #expect(body.textContainer?.lineBreakMode == .byTruncatingTail)
         #expect(title.isEnabled)
-        #expect(views.compactMap { $0 as? NSButton }.allSatisfy { $0.title != "简介" })
+        #expect(
+            views.compactMap { $0 as? NSButton }.allSatisfy {
+                $0.title != AppStrings.localized("简介")
+            }
+        )
         expandButton.performClick(nil)
         #expect(toggled)
 
@@ -460,7 +468,9 @@ struct NativePlaybackSidebarTests {
         let signatureText = try #require(views.compactMap { $0 as? NSTextView }.first)
         let toggle = try #require(
             views.compactMap { $0 as? NSButton }
-                .first { $0.accessibilityLabel() == "UP 主签名" }
+                .first {
+                    $0.accessibilityLabel() == AppStrings.localized("UP 主签名")
+                }
         )
 
         #expect(toggle.isHidden)
@@ -471,7 +481,7 @@ struct NativePlaybackSidebarTests {
         item.view.layoutSubtreeIfNeeded()
 
         #expect(!toggle.isHidden)
-        #expect(toggle.title == "展开")
+        #expect(toggle.title == AppStrings.localized("展开"))
         #expect(signatureText.textContainer?.maximumNumberOfLines == 1)
         #expect(signatureText.selectedRange() == NSRange(location: 2, length: 4))
 
@@ -556,13 +566,13 @@ struct NativePlaybackSidebarTests {
 
         let popUps = descendants(of: item.view).compactMap { $0 as? NSPopUpButton }
         let sectionPopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == "分区" }
+            popUps.first { $0.accessibilityLabel() == AppStrings.localized("分区") }
         )
         let episodePopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == "选集" }
+            popUps.first { $0.accessibilityLabel() == AppStrings.localized("选集") }
         )
         let pagePopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == "分 P" }
+            popUps.first { $0.accessibilityLabel() == AppStrings.localized("分 P") }
         )
         #expect(sectionPopUp.menu?.items.map(\.title) == ["正片", "花絮"])
         #expect(episodePopUp.menu?.items.map(\.title) == ["第一集"])
@@ -577,7 +587,10 @@ struct NativePlaybackSidebarTests {
 
         #expect(sent == true)
         #expect(browsedSectionID == collection.sections[1].id)
-        #expect(episodePopUp.menu?.items.map(\.title) == ["请选择选集", "幕后花絮"])
+        #expect(
+            episodePopUp.menu?.items.map(\.title)
+                == [AppStrings.localized("请选择选集"), "幕后花絮"]
+        )
         #expect(pagePopUp.isHidden)
         #expect(pagePopUp.menu == nil)
         #expect(selectedCID == nil)
@@ -1096,7 +1109,10 @@ struct NativePlaybackSidebarTests {
             )
             item.view.layoutSubtreeIfNeeded()
 
-            let statusText = failure ? "回复加载失败" : "回复加载中…"
+            let statusText =
+                failure
+                ? AppStrings.localized("回复加载失败")
+                : AppStrings.localized("回复加载中…")
             let status = try #require(
                 descendants(of: item.view).compactMap { $0 as? NSTextField }
                     .first { $0.stringValue == statusText }
@@ -1126,9 +1142,15 @@ struct NativePlaybackSidebarTests {
         )
         let header = NativePlaybackCommentsHeaderItem()
         header.configure(presentation: loaded, onSelectSort: { _ in })
+        let loadedCount = CommentPresentationFormatting.compactCount(
+            loaded.totalCount
+        )
         let countLabel = try #require(
             descendants(of: header.view).compactMap { $0 as? NSTextField }
-                .first { $0.accessibilityLabel()?.hasPrefix("共 ") == true }
+                .first {
+                    $0.accessibilityLabel()
+                        == AppStrings.localized("共 \(loadedCount) 条评论")
+                }
         )
         header.configure(presentation: loading, onSelectSort: { _ in })
         #expect(countLabel.stringValue.isEmpty)
@@ -1139,7 +1161,10 @@ struct NativePlaybackSidebarTests {
         footer.configure(footer: .loading, onRetry: {}, onLoadMore: {})
         #expect(footer.view.isAccessibilityElement())
         #expect(footer.view.accessibilityRole() == .staticText)
-        #expect(footer.view.accessibilityLabel() == "后续评论加载中")
+        #expect(
+            footer.view.accessibilityLabel()
+                == AppStrings.localized("后续评论加载中")
+        )
         footer.configure(footer: .retry, onRetry: {}, onLoadMore: {})
         #expect(!footer.view.isAccessibilityElement())
         var loadMoreCount = 0
@@ -1150,7 +1175,9 @@ struct NativePlaybackSidebarTests {
         )
         let loadMoreButton = try #require(
             descendants(of: footer.view).compactMap { $0 as? NSButton }
-                .first { !$0.isHidden && $0.title == "加载更多" }
+                .first {
+                    !$0.isHidden && $0.title == AppStrings.localized("加载更多")
+                }
         )
         loadMoreButton.performClick(nil)
         #expect(loadMoreCount == 1)
@@ -1190,8 +1217,16 @@ struct NativePlaybackSidebarTests {
         let footer = NativePlaybackCommentsFooterItem()
         footer.configure(footer: stopped.footer, onRetry: {}, onLoadMore: {})
         let statusLabels = descendants(of: footer.view).compactMap { $0 as? NSTextField }
-        #expect(statusLabels.contains { $0.stringValue == "后续评论暂不可用" })
-        #expect(!statusLabels.contains { $0.stringValue == "已显示全部评论" })
+        #expect(
+            statusLabels.contains {
+                $0.stringValue == AppStrings.localized("后续评论暂不可用")
+            }
+        )
+        #expect(
+            !statusLabels.contains {
+                $0.stringValue == AppStrings.localized("已显示全部评论")
+            }
+        )
     }
 
     @Test
@@ -1307,12 +1342,12 @@ struct NativePlaybackSidebarTests {
         #expect(likeLabel.frame.width >= ceil(likeLabel.intrinsicContentSize.width) + 2)
         #expect(labels.allSatisfy { !$0.stringValue.contains("👍") })
         let likeImage = views.compactMap { $0 as? NSImageView }.first {
-            $0.image?.accessibilityDescription == "点赞"
+            $0.image?.accessibilityDescription == AppStrings.localized("点赞")
         }
         #expect(likeImage != nil)
         #expect(
             views.compactMap { $0 as? NSButton }.contains {
-                $0.title == "共 1 条回复"
+                $0.title == AppStrings.localized("共 \(1) 条回复")
             }
         )
     }
@@ -1437,7 +1472,10 @@ struct NativePlaybackSidebarTests {
 
         let views = descendants(of: item.view)
         let pictureGroup = try #require(
-            views.first { $0.accessibilityLabel() == "评论图片，共 3 张" }
+            views.first {
+                $0.accessibilityLabel()
+                    == AppStrings.localized("评论图片，共 \(3) 张")
+            }
         )
         let pictureImageViews = descendants(of: pictureGroup).compactMap {
             $0 as? NSImageView
@@ -1457,7 +1495,8 @@ struct NativePlaybackSidebarTests {
         )
         let thirdPictureButton = try #require(
             views.compactMap { $0 as? NSButton }.first {
-                $0.accessibilityLabel() == "查看第 3 张评论图片"
+                $0.accessibilityLabel()
+                    == AppStrings.localized("查看第 \(3) 张评论图片")
             }
         )
         thirdPictureButton.performClick(nil)
@@ -1567,13 +1606,19 @@ struct NativePlaybackSidebarTests {
         let views = descendants(of: preview)
         let buttons = views.compactMap { $0 as? NSButton }
         let previous = try #require(
-            buttons.first { $0.accessibilityLabel() == "上一张图片" }
+            buttons.first {
+                $0.accessibilityLabel() == AppStrings.localized("上一张图片")
+            }
         )
         let next = try #require(
-            buttons.first { $0.accessibilityLabel() == "下一张图片" }
+            buttons.first {
+                $0.accessibilityLabel() == AppStrings.localized("下一张图片")
+            }
         )
         let close = try #require(
-            buttons.first { $0.accessibilityLabel() == "关闭图片预览" }
+            buttons.first {
+                $0.accessibilityLabel() == AppStrings.localized("关闭图片预览")
+            }
         )
         let counter = try #require(
             views.compactMap { $0 as? NSTextField }.first {
@@ -1584,7 +1629,9 @@ struct NativePlaybackSidebarTests {
         #expect(preview.accessibilityRole() == .group)
         #expect(preview.accessibilitySubrole() == .dialog)
         #expect(preview.isAccessibilityModal())
-        #expect(preview.accessibilityLabel() == "评论图片预览")
+        #expect(
+            preview.accessibilityLabel() == AppStrings.localized("评论图片预览")
+        )
         #expect(!views.contains { $0 is NSScrollView })
         #expect(counter.stringValue == "2 / 2")
         #expect(previous.isEnabled)
@@ -1881,7 +1928,9 @@ struct NativePlaybackSidebarTests {
             item.view.layoutSubtreeIfNeeded()
 
             let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
-                .first { $0.title == "共 \(replyCount) 条回复" }
+                .first {
+                    $0.title == AppStrings.localized("共 \(replyCount) 条回复")
+                }
             #expect(summary != nil)
         }
     }
@@ -1950,8 +1999,22 @@ struct NativePlaybackSidebarTests {
         #expect(!authorBadges.isHidden)
         #expect(authorBadges.displayedTexts.contains("LV6⚡︎"))
         #expect(!authorBadges.displayedTexts.contains("硬核"))
-        #expect(statusBadges.displayedTexts == ["置顶", "UP 主觉得很赞"])
-        #expect(statusBadges.accessibilityLabel() == "置顶，UP 主觉得很赞")
+        #expect(
+            statusBadges.displayedTexts
+                == [
+                    AppStrings.localized("置顶"),
+                    AppStrings.localized("UP 主觉得很赞"),
+                ]
+        )
+        #expect(
+            statusBadges.accessibilityLabel()
+                == ListFormatter.localizedString(
+                    byJoining: [
+                        AppStrings.localized("置顶"),
+                        AppStrings.localized("UP 主觉得很赞"),
+                    ]
+                )
+        )
     }
 
     @Test
@@ -2033,9 +2096,13 @@ struct NativePlaybackSidebarTests {
         header.view.layoutSubtreeIfNeeded()
 
         let views = descendants(of: header.view)
+        let count = CommentPresentationFormatting.compactCount(
+            presentation.totalCount
+        )
         let countLabel = try #require(
             views.compactMap { $0 as? NSTextField }.first {
-                $0.accessibilityLabel()?.hasPrefix("共 ") == true
+                $0.accessibilityLabel()
+                    == AppStrings.localized("共 \(count) 条评论")
             }
         )
         let sortControl = try #require(

@@ -56,7 +56,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                 Button {
                     model.refreshRecommendation()
                 } label: {
-                    Label("刷新首页推荐", systemImage: "arrow.clockwise")
+                    Label(BrowseFeatureStrings.localized("刷新首页推荐"), systemImage: "arrow.clockwise")
                 }
                 .disabled(isRefreshDisabled(presentation))
             }
@@ -67,7 +67,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     private func content(for presentation: GuestFeedPresentation) -> some View {
         switch presentation.state {
         case .idle, .loading:
-            VideoCardGridSkeleton(loadingLabel: "正在加载首页推荐")
+            VideoCardGridSkeleton(loadingLabel: BrowseFeatureStrings.localized("正在加载首页推荐"))
         case .loaded(.recommendation(let page)) where page.videos.isEmpty:
             emptyResults(presentation: presentation)
         case .loaded(.recommendation(let page)):
@@ -79,7 +79,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                 retry: { model.retry(request) }
             )
         default:
-            VideoCardGridSkeleton(loadingLabel: "正在切换到首页推荐")
+            VideoCardGridSkeleton(loadingLabel: BrowseFeatureStrings.localized("正在切换到首页推荐"))
         }
     }
 
@@ -87,9 +87,9 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
         presentation: GuestFeedPresentation
     ) -> some View {
         ContentUnavailableView(
-            "暂无首页推荐",
+            BrowseFeatureStrings.localized("暂无首页推荐"),
             systemImage: "house",
-            description: Text("稍后重试或检查网络连接。")
+            description: Text(BrowseFeatureStrings.localized("稍后重试或检查网络连接。"))
         )
         .overlay(alignment: .top) {
             refreshStatus(presentation)
@@ -119,12 +119,12 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                     .controlSize(.small)
                     .padding(8)
                     .background(.regularMaterial, in: Capsule())
-                    .accessibilityLabel("正在加载更多首页推荐")
+                    .accessibilityLabel(BrowseFeatureStrings.localized("正在加载更多首页推荐"))
             } else if let error = pagination.loadMoreError {
                 HStack(spacing: 8) {
                     Text(error.guestMessage)
                         .lineLimit(2)
-                    Button("重试") {
+                    Button(BrowseFeatureStrings.localized("重试")) {
                         model.retryRecommendationLoadMore()
                     }
                 }
@@ -144,7 +144,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                 .controlSize(.small)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
-                .accessibilityLabel("正在刷新首页推荐")
+                .accessibilityLabel(BrowseFeatureStrings.localized("正在刷新首页推荐"))
         } else if let error = presentation.refreshError {
             Text(error.guestMessage)
                 .font(.caption)

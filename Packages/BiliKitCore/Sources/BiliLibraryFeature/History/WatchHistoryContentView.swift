@@ -33,6 +33,7 @@ struct WatchHistoryLoadedSurface: Equatable {
 
 struct WatchHistoryContentView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     let model: WatchHistoryViewModel
     let makeLoadedContent:
         (
@@ -72,7 +73,12 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
         } else {
             switch model.state {
             case .idle, .loading:
-                VideoCardGridSkeleton(loadingLabel: "正在加载观看历史")
+                VideoCardGridSkeleton(
+                    loadingLabel: LibraryFeatureStrings.localized(
+                        "正在加载观看历史",
+                        locale: locale
+                    )
+                )
             case .loaded(_, let continuation, let loadMoreError):
                 emptyHistory(
                     canLoadMore: continuation != nil,
@@ -104,18 +110,21 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
         loadMoreError: WatchHistoryError?
     ) -> some View {
         ContentUnavailableView {
-            Label("暂无可显示的观看历史", systemImage: "clock.arrow.circlepath")
+            Label(
+                LibraryFeatureStrings.localized("暂无可显示的观看历史", locale: locale),
+                systemImage: "clock.arrow.circlepath"
+            )
         } description: {
             if let loadMoreError {
                 Text(message(for: loadMoreError))
             } else if canLoadMore {
-                Text("当前页没有普通视频记录，可以继续检查更早的历史。")
+                Text(LibraryFeatureStrings.localized("当前页没有普通视频记录，可以继续检查更早的历史。", locale: locale))
             } else {
-                Text("在哔哩哔哩观看过的普通视频会显示在这里。")
+                Text(LibraryFeatureStrings.localized("在哔哩哔哩观看过的普通视频会显示在这里。", locale: locale))
             }
         } actions: {
             if canLoadMore {
-                Button("加载更早的记录") {
+                Button(LibraryFeatureStrings.localized("加载更早的记录", locale: locale)) {
                     model.loadMore()
                 }
                 .buttonStyle(.borderedProminent)
@@ -132,7 +141,7 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
     ) -> some View {
         ZStack(alignment: .bottom) {
             makeLoadedContent(
-                items.map(WatchHistoryCardPresentation.init),
+                items.map { WatchHistoryCardPresentation(item: $0, locale: locale) },
                 canLoadMore && !requiresManualLoadMore,
                 model.paginationTailIdentity,
                 isLoadingMore,
@@ -141,7 +150,7 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
             )
 
             if isLoadingMore {
-                ProgressView("正在加载更早的记录…")
+                ProgressView(LibraryFeatureStrings.localized("正在加载更早的记录…", locale: locale))
                     .controlSize(.small)
                     .padding(8)
                     .background(.regularMaterial, in: Capsule())
@@ -153,8 +162,11 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     if canLoadMore {
-                        Button("重试", action: model.loadMore)
-                            .buttonStyle(.borderedProminent)
+                        Button(
+                            LibraryFeatureStrings.localized("重试", locale: locale),
+                            action: model.loadMore
+                        )
+                        .buttonStyle(.borderedProminent)
                     }
                 }
                 .padding(10)
@@ -163,11 +175,14 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
                 .padding(.bottom, 8)
                 .transition(.opacity)
             } else if requiresManualLoadMore {
-                Button("加载更早的记录", action: model.loadMore)
-                    .buttonStyle(.borderedProminent)
-                    .padding(10)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 8)
+                Button(
+                    LibraryFeatureStrings.localized("加载更早的记录", locale: locale),
+                    action: model.loadMore
+                )
+                .buttonStyle(.borderedProminent)
+                .padding(10)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.bottom, 8)
             }
         }
     }
@@ -179,7 +194,7 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
             Text(message(for: error))
         } actions: {
             if error != .authenticationRequired {
-                Button("重试") {
+                Button(LibraryFeatureStrings.localized("重试", locale: locale)) {
                     model.reload()
                 }
                 .buttonStyle(.borderedProminent)
@@ -190,26 +205,26 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
     private func title(for error: WatchHistoryError) -> String {
         switch error {
         case .authenticationRequired:
-            "登录状态已失效"
+            LibraryFeatureStrings.localized("登录状态已失效", locale: locale)
         case .requestRestricted:
-            "请求受到限制"
+            LibraryFeatureStrings.localized("请求受到限制", locale: locale)
         default:
-            "无法加载观看历史"
+            LibraryFeatureStrings.localized("无法加载观看历史", locale: locale)
         }
     }
 
     private func message(for error: WatchHistoryError) -> String {
         switch error {
         case .authenticationRequired:
-            "请重新扫码登录后再试。"
+            LibraryFeatureStrings.localized("请重新扫码登录后再试。", locale: locale)
         case .requestRestricted:
-            "服务暂时拒绝了请求，请降低频率后重试。"
+            LibraryFeatureStrings.localized("服务暂时拒绝了请求，请降低频率后重试。", locale: locale)
         case .serviceRejected(let code):
-            "服务暂时无法完成请求（代码 \(code)）。"
+            LibraryFeatureStrings.localized("服务暂时无法完成请求（代码 \(code)）。", locale: locale)
         case .transportFailure:
-            "请检查网络连接后重试。"
+            LibraryFeatureStrings.localized("请检查网络连接后重试。", locale: locale)
         case .invalidResponse:
-            "接口数据与当前客户端预期不一致。"
+            LibraryFeatureStrings.localized("接口数据与当前客户端预期不一致。", locale: locale)
         }
     }
 }

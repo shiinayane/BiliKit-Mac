@@ -16,7 +16,7 @@ struct PlayerHostViewIdentityTests {
         let scheduledToken = PlaybackResumeToken()
         let replacementToken = PlaybackResumeToken()
 
-        #expect(PlayerResumeNoticePresentation.title == "从头播放")
+        #expect(PlayerResumeNoticePresentation.title == AppStrings.localized("从头播放"))
         #expect(PlayerResumeNoticeDismissalPolicy.delay == .seconds(5))
         #expect(PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds == 0.2)
         #expect(

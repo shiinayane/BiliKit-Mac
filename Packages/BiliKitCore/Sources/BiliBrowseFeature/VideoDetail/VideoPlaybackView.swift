@@ -125,9 +125,9 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
 
     private var initialLoadingLabel: String {
         if case .loadingPage = model.state {
-            return "正在加载所选分 P"
+            return BrowseFeatureStrings.localized("正在加载所选分 P")
         }
-        return "正在加载视频详情"
+        return BrowseFeatureStrings.localized("正在加载视频详情")
     }
 
     private var currentContext: GuestVideoContext? {
@@ -181,9 +181,9 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
         switch model.state {
         case .idle:
             ContentUnavailableView(
-                "选择一个视频",
+                BrowseFeatureStrings.localized("选择一个视频"),
                 systemImage: "play.rectangle",
-                description: Text("从热门或搜索结果中选择视频后，这里会显示详情与播放器。")
+                description: Text(BrowseFeatureStrings.localized("从热门或搜索结果中选择视频后，这里会显示详情与播放器。"))
             )
         case .loading:
             EmptyView()
@@ -205,7 +205,7 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
         HStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
-            Text("正在加载所选视频")
+            Text(BrowseFeatureStrings.localized("正在加载所选视频"))
                 .font(.callout.weight(.medium))
         }
         .padding(.horizontal, 16)
@@ -214,7 +214,7 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
         .padding(.top, 24)
         .frame(maxWidth: .infinity, alignment: .top)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("正在加载所选视频")
+        .accessibilityLabel(BrowseFeatureStrings.localized("正在加载所选视频"))
     }
 
     @ViewBuilder

@@ -102,7 +102,11 @@ final class NativeCommentImagePreviewRootView: NSView {
     private let counterLabel = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let retryButton = NSButton(title: "重试", target: nil, action: nil)
+    private let retryButton = NSButton(
+        title: AppStrings.localized("重试"),
+        target: nil,
+        action: nil
+    )
     private var requestID: UUID?
     private var references: [CommentAssetReference] = []
     private var selection = NativeCommentImagePreviewSelection(
@@ -134,17 +138,17 @@ final class NativeCommentImagePreviewRootView: NSView {
         configureButton(
             closeButton,
             symbol: "xmark",
-            accessibilityLabel: "关闭图片预览"
+            accessibilityLabel: AppStrings.localized("关闭图片预览")
         )
         configureButton(
             previousButton,
             symbol: "chevron.left",
-            accessibilityLabel: "上一张图片"
+            accessibilityLabel: AppStrings.localized("上一张图片")
         )
         configureButton(
             nextButton,
             symbol: "chevron.right",
-            accessibilityLabel: "下一张图片"
+            accessibilityLabel: AppStrings.localized("下一张图片")
         )
         closeButton.target = self
         closeButton.action = #selector(dismissPreview)
@@ -155,13 +159,13 @@ final class NativeCommentImagePreviewRootView: NSView {
         retryButton.target = self
         retryButton.action = #selector(retry)
         retryButton.bezelStyle = .rounded
-        retryButton.setAccessibilityLabel("重新加载评论图片")
+        retryButton.setAccessibilityLabel(AppStrings.localized("重新加载评论图片"))
         counterLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         counterLabel.textColor = .white
         counterLabel.alignment = .center
         progress.style = .spinning
         progress.controlSize = .regular
-        progress.setAccessibilityLabel("评论图片加载中")
+        progress.setAccessibilityLabel(AppStrings.localized("评论图片加载中"))
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textColor = .white
         statusLabel.alignment = .center
@@ -184,7 +188,7 @@ final class NativeCommentImagePreviewRootView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilitySubrole(.dialog)
-        setAccessibilityLabel("评论图片预览")
+        setAccessibilityLabel(AppStrings.localized("评论图片预览"))
         setAccessibilityModal(true)
     }
 
@@ -341,8 +345,8 @@ final class NativeCommentImagePreviewRootView: NSView {
             : ""
         imageView.setAccessibilityLabel(
             selection.count > 0
-                ? "评论图片，第 \(selection.index + 1) 张，共 \(selection.count) 张"
-                : "评论图片"
+                ? AppStrings.localized("评论图片，第 \(selection.index + 1) 张，共 \(selection.count) 张")
+                : AppStrings.localized("评论图片")
         )
     }
 
@@ -427,7 +431,7 @@ final class NativeCommentImagePreviewRootView: NSView {
         progress.isHidden = true
         imageView.image = nil
         imageView.isHidden = true
-        statusLabel.stringValue = "图片加载失败"
+        statusLabel.stringValue = AppStrings.localized("图片加载失败")
         statusLabel.isHidden = false
         retryButton.isHidden = false
     }

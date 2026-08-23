@@ -28,7 +28,15 @@ struct RelatedVideoShelfTests {
         #expect(presentation.durationText == "12:34")
         #expect(
             presentation.accessibilityLabel
-                == "示例推荐，示例 UP 主，12.3万播放，7890弹幕，时长12:34"
+                == ListFormatter.localizedString(
+                    byJoining: [
+                        "示例推荐",
+                        "示例 UP 主",
+                        BrowseFeatureStrings.localized("\("12.3万")播放"),
+                        BrowseFeatureStrings.localized("\("7890")弹幕"),
+                        BrowseFeatureStrings.localized("时长\("12:34")"),
+                    ]
+                )
         )
         #expect(RelatedVideoShelfState.loaded([presentation]).itemCount == 1)
     }
@@ -48,7 +56,7 @@ struct RelatedVideoShelfTests {
         )
 
         #expect(presentation.durationText == nil)
-        #expect(!presentation.accessibilityLabel.contains("，时长"))
+        #expect(!presentation.accessibilityLabel.contains("12:34"))
     }
 
     @Test

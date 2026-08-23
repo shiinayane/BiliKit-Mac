@@ -6,21 +6,28 @@ import Testing
 struct VideoMetadataFormattingTests {
     @Test
     func compactCountsUseOnlyDomesticUnits() {
-        #expect(VideoMetadataFormatting.compactCount(-1) == "0")
-        #expect(VideoMetadataFormatting.compactCount(9_999) == "9999")
-        #expect(VideoMetadataFormatting.compactCount(10_000) == "1万")
-        #expect(VideoMetadataFormatting.compactCount(12_345) == "1.2万")
+        let locale = Locale(identifier: "zh-Hans")
+        #expect(VideoMetadataFormatting.compactCount(-1, locale: locale) == "0")
+        #expect(VideoMetadataFormatting.compactCount(9_999, locale: locale) == "9999")
+        #expect(VideoMetadataFormatting.compactCount(10_000, locale: locale) == "1万")
+        #expect(VideoMetadataFormatting.compactCount(12_345, locale: locale) == "1.2万")
         #expect(
-            VideoMetadataFormatting.compactCount(99_999_999)
+            VideoMetadataFormatting.compactCount(99_999_999, locale: locale)
                 == "9999.9万"
         )
         #expect(
-            VideoMetadataFormatting.compactCount(100_000_000)
+            VideoMetadataFormatting.compactCount(100_000_000, locale: locale)
                 == "1亿"
         )
         #expect(
-            VideoMetadataFormatting.compactCount(123_456_789)
+            VideoMetadataFormatting.compactCount(123_456_789, locale: locale)
                 == "1.2亿"
+        )
+        #expect(
+            VideoMetadataFormatting.compactCount(
+                12_345,
+                locale: Locale(identifier: "en")
+            ) == "12.3K"
         )
     }
 
@@ -46,14 +53,16 @@ struct VideoMetadataFormattingTests {
             VideoMetadataFormatting.publishedDate(
                 now.addingTimeInterval(-30 * 60),
                 relativeTo: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "1小时前"
         )
         #expect(
             VideoMetadataFormatting.publishedDate(
                 now.addingTimeInterval(-2 * 60 * 60),
                 relativeTo: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "2小时前"
         )
         #expect(
@@ -65,7 +74,8 @@ struct VideoMetadataFormattingTests {
                     calendar: calendar
                 ),
                 relativeTo: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "昨天"
         )
         #expect(
@@ -77,7 +87,8 @@ struct VideoMetadataFormattingTests {
                     calendar: calendar
                 ),
                 relativeTo: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "7月1日"
         )
         #expect(
@@ -89,7 +100,8 @@ struct VideoMetadataFormattingTests {
                     calendar: calendar
                 ),
                 relativeTo: now,
-                calendar: calendar
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
             ) == "2025年12月31日"
         )
     }
@@ -116,8 +128,9 @@ struct VideoMetadataFormattingTests {
         #expect(
             VideoMetadataFormatting.fullPublishedDate(
                 date,
-                calendar: calendar
-            ) == "2026年07月24日 22:51:03"
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
+            ) == "2026年7月24日 22:51:03"
         )
     }
 

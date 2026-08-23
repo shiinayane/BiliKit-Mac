@@ -5,6 +5,7 @@ import SwiftUI
 
 struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     let context: GuestVideoContext
     let isPreparingPlayback: Bool
     let danmakuModel: DanmakuControlsViewModel
@@ -48,7 +49,7 @@ struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
             .loading
         case .loaded(let bvid, let videos) where bvid == context.detail.bvid:
             .loaded(
-                videos.map(RelatedVideoCardPresentation.init)
+                videos.map { RelatedVideoCardPresentation(video: $0, locale: locale) }
             )
         case .empty(let bvid) where bvid == context.detail.bvid:
             .empty
@@ -68,13 +69,16 @@ struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
             VideoDetailMetadataView(
                 content: VideoDetailMetadataContent(
                     viewCount: VideoMetadataFormatting.compactCount(
-                        context.detail.statistics.viewCount
+                        context.detail.statistics.viewCount,
+                        locale: locale
                     ),
                     danmakuCount: VideoMetadataFormatting.compactCount(
-                        context.detail.statistics.danmakuCount
+                        context.detail.statistics.danmakuCount,
+                        locale: locale
                     ),
                     publishedAt: VideoMetadataFormatting.fullPublishedDate(
-                        context.detail.publishedAt
+                        context.detail.publishedAt,
+                        locale: locale
                     )
                 )
             )
@@ -94,13 +98,13 @@ struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
                             .progressViewStyle(.circular)
                             .controlSize(.large)
                             .tint(.white)
-                        Text("正在准备播放…")
+                        Text(BrowseFeatureStrings.localized("正在准备播放…", locale: locale))
                             .font(.title3)
                             .foregroundStyle(.white)
                     }
                     .environment(\.colorScheme, .dark)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("正在准备播放")
+                    .accessibilityLabel(BrowseFeatureStrings.localized("正在准备播放", locale: locale))
                 }
                 .transition(
                     .asymmetric(

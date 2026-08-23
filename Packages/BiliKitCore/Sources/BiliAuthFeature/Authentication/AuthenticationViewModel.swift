@@ -115,7 +115,9 @@ public final class AuthenticationViewModel {
     }
 
     public var retryButtonTitle: String {
-        retryAction == .logout ? "重试退出" : "重试"
+        retryAction == .logout
+            ? AuthFeatureStrings.localized("重试退出")
+            : AuthFeatureStrings.localized("重试")
     }
 
     public var canClearLocalCredentials: Bool {

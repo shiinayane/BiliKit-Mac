@@ -243,10 +243,10 @@ final class NativePlaybackCommentsHeaderItem: NSCollectionViewItem {
 @MainActor
 private final class NativePlaybackCommentsHeaderView: NSView {
     override var isFlipped: Bool { true }
-    private let titleLabel = NSTextField(labelWithString: "评论")
+    private let titleLabel = NSTextField(labelWithString: AppStrings.localized("评论"))
     private let countLabel = NSTextField(labelWithString: "")
     private let sortControl = NSSegmentedControl(
-        labels: ["热门", "最新"],
+        labels: [AppStrings.localized("热门"), AppStrings.localized("最新")],
         trackingMode: .selectOne,
         target: nil,
         action: nil
@@ -267,7 +267,7 @@ private final class NativePlaybackCommentsHeaderView: NSView {
         sortControl.controlSize = .regular
         sortControl.target = self
         sortControl.action = #selector(selectSort)
-        sortControl.setAccessibilityLabel("评论排序")
+        sortControl.setAccessibilityLabel(AppStrings.localized("评论排序"))
         addSubview(titleLabel)
         addSubview(countLabel)
         addSubview(sortControl)
@@ -290,7 +290,7 @@ private final class NativePlaybackCommentsHeaderView: NSView {
                 presentation.totalCount
             )
             countLabel.stringValue = count
-            countLabel.setAccessibilityLabel("共 \(count) 条评论")
+            countLabel.setAccessibilityLabel(AppStrings.localized("共 \(count) 条评论"))
             countLabel.setAccessibilityElement(true)
         case .idle, .loading, .failed:
             countLabel.stringValue = ""
@@ -372,7 +372,7 @@ private final class NativePlaybackCommentsStateView: NSView {
     override var isOpaque: Bool { false }
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
-    private let retryButton = NSButton(title: "重试", target: nil, action: nil)
+    private let retryButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
     private var kind: NativePlaybackCommentsStateKind = .idle
     private var onRetry: (() -> Void)?
 
@@ -406,22 +406,22 @@ private final class NativePlaybackCommentsStateView: NSView {
         retryButton.isHidden = true
         switch kind {
         case .idle:
-            titleLabel.stringValue = "评论暂不可用"
-            detailLabel.stringValue = "当前视频缺少可用的评论标识。"
-            setAccessibilityLabel("评论暂不可用，当前视频缺少可用的评论标识")
+            titleLabel.stringValue = AppStrings.localized("评论暂不可用")
+            detailLabel.stringValue = AppStrings.localized("当前视频缺少可用的评论标识。")
+            setAccessibilityLabel(AppStrings.localized("评论暂不可用，当前视频缺少可用的评论标识"))
         case .loading:
             titleLabel.stringValue = ""
             detailLabel.stringValue = ""
-            setAccessibilityLabel("评论加载中")
+            setAccessibilityLabel(AppStrings.localized("评论加载中"))
         case .empty:
-            titleLabel.stringValue = "暂无评论"
-            detailLabel.stringValue = "这个视频还没有公开评论。"
-            setAccessibilityLabel("暂无评论，这个视频还没有公开评论")
+            titleLabel.stringValue = AppStrings.localized("暂无评论")
+            detailLabel.stringValue = AppStrings.localized("这个视频还没有公开评论。")
+            setAccessibilityLabel(AppStrings.localized("暂无评论，这个视频还没有公开评论"))
         case .failed:
-            titleLabel.stringValue = "评论加载失败"
+            titleLabel.stringValue = AppStrings.localized("评论加载失败")
             detailLabel.stringValue = ""
             retryButton.isHidden = false
-            setAccessibilityLabel("评论加载失败")
+            setAccessibilityLabel(AppStrings.localized("评论加载失败"))
         }
         setAccessibilityElement(true)
         needsLayout = true
@@ -520,7 +520,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     private let label = NSTextField(labelWithString: "")
-    private let actionButton = NSButton(title: "重试", target: nil, action: nil)
+    private let actionButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
     private var footer: NativePlaybackCommentsFooter = .loadMore
     private var onRetry: (() -> Void)?
     private var onLoadMore: (() -> Void)?
@@ -554,30 +554,30 @@ private final class NativePlaybackCommentsFooterView: NSView {
             label.stringValue = ""
             setAccessibilityElement(true)
             setAccessibilityRole(.staticText)
-            setAccessibilityLabel("后续评论加载中")
+            setAccessibilityLabel(AppStrings.localized("后续评论加载中"))
             setAccessibilityValue(nil)
         case .retry:
-            label.stringValue = "后续评论加载失败"
-            actionButton.title = "重试"
+            label.stringValue = AppStrings.localized("后续评论加载失败")
+            actionButton.title = AppStrings.localized("重试")
             actionButton.isHidden = false
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
         case .stopped:
-            label.stringValue = "后续评论暂不可用"
-            actionButton.title = "重试"
+            label.stringValue = AppStrings.localized("后续评论暂不可用")
+            actionButton.title = AppStrings.localized("重试")
             actionButton.isHidden = false
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
         case .end(let memoryLimited):
             label.stringValue =
                 memoryLimited
-                ? "已显示本次上限 1,000 条评论"
-                : "已显示全部评论"
+                ? AppStrings.localized("已显示本次上限 1,000 条评论")
+                : AppStrings.localized("已显示全部评论")
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
         case .loadMore:
             label.stringValue = ""
-            actionButton.title = "加载更多"
+            actionButton.title = AppStrings.localized("加载更多")
             actionButton.isHidden = false
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
@@ -861,7 +861,7 @@ private final class NativePlaybackCommentRowView: NSView {
         metadataLabel.lineBreakMode = .byTruncatingTail
         likeImage.image = NSImage(
             systemSymbolName: "hand.thumbsup",
-            accessibilityDescription: "点赞"
+            accessibilityDescription: AppStrings.localized("点赞")
         )
         likeImage.symbolConfiguration = NSImage.SymbolConfiguration(
             pointSize: 12,
@@ -1132,37 +1132,38 @@ private final class NativePlaybackCommentRowView: NSView {
         let time = CommentTimeFormatter.string(for: details.createdAt)
         let likes = CommentPresentationFormatting.compactCount(details.likeCount)
         let location = details.location.flatMap { $0.isEmpty ? nil : $0 }
-            .map { "IP属地：\($0)" }
-        return [time, location, "获赞 \(likes)"]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: "，")
+            .map { AppStrings.localized("IP属地：\($0)") }
+        return ListFormatter.localizedString(
+            byJoining: [time, location, AppStrings.localized("获赞 \(likes)")]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+        )
     }
 
     private static func authorAccessibility(_ author: CommentAuthor) -> String {
-        var values = ["评论者，\(author.name)"]
+        var values = [AppStrings.localized("评论者，\(author.name)")]
         switch author.sex {
-        case .male: values.append("男性")
-        case .female: values.append("女性")
+        case .male: values.append(AppStrings.localized("男性"))
+        case .female: values.append(AppStrings.localized("女性"))
         case .unspecified: break
         }
-        if let level = author.level { values.append("等级 \(level)") }
-        if author.isHardcoreMember { values.append("硬核会员") }
-        if author.isVIP { values.append("大会员") }
-        if author.isUploader { values.append("UP 主") }
+        if let level = author.level { values.append(AppStrings.localized("等级 \(level)")) }
+        if author.isHardcoreMember { values.append(AppStrings.localized("硬核会员")) }
+        if author.isVIP { values.append(AppStrings.localized("大会员")) }
+        if author.isUploader { values.append(AppStrings.localized("UP 主")) }
         switch author.verification {
-        case .personal: values.append("个人认证")
-        case .organization: values.append("机构认证")
+        case .personal: values.append(AppStrings.localized("个人认证"))
+        case .organization: values.append(AppStrings.localized("机构认证"))
         case nil: break
         }
-        return values.joined(separator: "，")
+        return ListFormatter.localizedString(byJoining: values)
     }
 
     private static func unavailableText(_ reason: CommentUnavailableReason) -> String {
         switch reason {
-        case .deleted: "该评论已删除"
-        case .folded: "该评论已折叠"
-        case .unavailable, .unknown: "该评论暂不可见"
+        case .deleted: AppStrings.localized("该评论已删除")
+        case .folded: AppStrings.localized("该评论已折叠")
+        case .unavailable, .unknown: AppStrings.localized("该评论暂不可见")
         }
     }
 }
@@ -1409,12 +1410,12 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
         weight: .semibold
     )
     private static let pinnedSegment = RenderedSegment(
-        text: "置顶",
+        text: AppStrings.localized("置顶"),
         foreground: .systemPink,
         background: NSColor.systemPink.withAlphaComponent(0.14)
     )
     private static let uploaderLikedSegment = RenderedSegment(
-        text: "UP 主觉得很赞",
+        text: AppStrings.localized("UP 主觉得很赞"),
         foreground: .secondaryLabelColor,
         background: NSColor.secondaryLabelColor.withAlphaComponent(0.12)
     )
@@ -1435,7 +1436,8 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
         setAccessibilityElement(!result.isEmpty)
         setAccessibilityRole(.staticText)
         setAccessibilityLabel(
-            result.isEmpty ? nil : displayedTexts.joined(separator: "，")
+            result.isEmpty
+                ? nil : ListFormatter.localizedString(byJoining: displayedTexts)
         )
         needsDisplay = true
     }
@@ -2018,7 +2020,7 @@ private final class NativePlaybackCommentPicturesView: NSView {
         }
         setAccessibilityElement(!slots.isEmpty)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("评论图片，共 \(slots.count) 张")
+        setAccessibilityLabel(AppStrings.localized("评论图片，共 \(slots.count) 张"))
         needsLayout = true
     }
 
@@ -2080,7 +2082,7 @@ private final class NativePlaybackCommentPicturesView: NSView {
 private final class NativePlaybackCommentPictureTileView: NSButton {
     override var isFlipped: Bool { true }
     private let imageView = NSImageView()
-    private let placeholderLabel = NSTextField(labelWithString: "图片")
+    private let placeholderLabel = NSTextField(labelWithString: AppStrings.localized("图片"))
     private var reference: CommentAssetReference?
     private var imageGeneration: UInt64 = 0
     private var imageTask: Task<Void, Never>?
@@ -2151,7 +2153,8 @@ private final class NativePlaybackCommentPictureTileView: NSButton {
         setAccessibilityElement(reference != nil)
         setAccessibilityRole(.button)
         setAccessibilityLabel(
-            reference == nil ? nil : "查看第 \(position + 1) 张评论图片"
+            reference == nil
+                ? nil : AppStrings.localized("查看第 \(position + 1) 张评论图片")
         )
         imageView.image = nil
         imageView.isHidden = true
@@ -2263,11 +2266,19 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
     private let headerLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let expandButton = NSButton(title: "", target: nil, action: nil)
-    private let collapseButton = NSButton(title: "收起", target: nil, action: nil)
-    private let retryButton = NSButton(title: "重试", target: nil, action: nil)
-    private let previousButton = NSButton(title: "上一页", target: nil, action: nil)
+    private let collapseButton = NSButton(
+        title: AppStrings.localized("收起"),
+        target: nil,
+        action: nil
+    )
+    private let retryButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
+    private let previousButton = NSButton(
+        title: AppStrings.localized("上一页"),
+        target: nil,
+        action: nil
+    )
     private let pageLabel = NSTextField(labelWithString: "")
-    private let nextButton = NSButton(title: "下一页", target: nil, action: nil)
+    private let nextButton = NSButton(title: AppStrings.localized("下一页"), target: nil, action: nil)
     private var replyRows: [NativePlaybackCommentRowView] = []
     private var thread: CommentThread?
     private var replyState: PlaybackCommentReplyState?
@@ -2308,7 +2319,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
         expandButton.alignment = .left
         expandButton.image = NSImage(
             systemSymbolName: "chevron.down",
-            accessibilityDescription: "展开"
+            accessibilityDescription: AppStrings.localized("展开")
         )
         expandButton.imagePosition = .imageLeading
         expandButton.imageScaling = .scaleProportionallyDown
@@ -2414,12 +2425,14 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
         if expanded {
             let total = replyState?.totalCount ?? 0
             headerLabel.stringValue =
-                "共 \(CommentPresentationFormatting.compactCount(total > 0 ? total : details.replyCount)) 条回复"
+                AppStrings.localized(
+                    "共 \(CommentPresentationFormatting.compactCount(total > 0 ? total : details.replyCount)) 条回复"
+                )
             if replyState?.isLoading == true {
-                statusLabel.stringValue = "回复加载中…"
+                statusLabel.stringValue = AppStrings.localized("回复加载中…")
                 statusLabel.isHidden = false
             } else if replyState?.error != nil {
-                statusLabel.stringValue = "回复加载失败"
+                statusLabel.stringValue = AppStrings.localized("回复加载失败")
                 statusLabel.isHidden = false
                 retryButton.isHidden = false
             } else if let replyState {
@@ -2435,7 +2448,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
                 )
                 pageLabel.stringValue = "\(replyState.pageNumber) / \(pageCount)"
                 pageLabel.setAccessibilityLabel(
-                    "第 \(replyState.pageNumber) 页，共 \(pageCount) 页"
+                    AppStrings.localized("第 \(replyState.pageNumber) 页，共 \(pageCount) 页")
                 )
             }
         } else {
@@ -2444,8 +2457,8 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
                 expandButton.setAccessibilityHelp(nil)
             } else {
                 let count = CommentPresentationFormatting.compactCount(details.replyCount)
-                expandButton.title = "共 \(count) 条回复"
-                expandButton.setAccessibilityHelp("展开楼中楼，每页显示十条回复")
+                expandButton.title = AppStrings.localized("共 \(count) 条回复")
+                expandButton.setAccessibilityHelp(AppStrings.localized("展开楼中楼，每页显示十条回复"))
             }
         }
         needsLayout = true

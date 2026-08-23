@@ -20,9 +20,6 @@ struct BiliKitMacApp: App {
                 systemNowPlayingController: systemNowPlayingController,
                 appSettingsModel: appSettingsModel
             )
-            .typesettingLanguage(
-                .explicit(Locale.Language(identifier: "zh-Hans"))
-            )
         }
         .defaultSize(width: 1_320, height: 820)
 

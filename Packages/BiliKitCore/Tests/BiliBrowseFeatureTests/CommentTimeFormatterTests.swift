@@ -35,10 +35,11 @@ struct CommentTimeFormatterTests {
     func calendarBoundariesDistinguishYesterdayRecentDaysAndYears() throws {
         let reference = try date(2026, 8, 11, 12)
 
-        #expect(format(try date(2026, 8, 10, 9, 5), reference) == "昨天09:05")
+        #expect(format(try date(2026, 8, 10, 9, 5), reference) == "昨天9:05")
         #expect(format(try date(2026, 8, 9, 12), reference) == "2天前")
         #expect(format(try date(2026, 8, 8, 12), reference) == "3天前")
-        #expect(format(try date(2026, 7, 1, 12), reference) == "7月1日")
+        let sameYear = try date(2026, 7, 1, 12)
+        #expect(format(sameYear, reference) == "7月1日")
         #expect(format(try date(2025, 12, 31, 12), reference) == "2025年12月31日")
     }
 
@@ -46,7 +47,8 @@ struct CommentTimeFormatterTests {
         CommentTimeFormatter.string(
             for: date,
             relativeTo: reference,
-            calendar: calendar
+            calendar: calendar,
+            locale: Locale(identifier: "zh-Hans")
         )
     }
 

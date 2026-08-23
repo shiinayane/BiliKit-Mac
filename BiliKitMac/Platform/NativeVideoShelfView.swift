@@ -198,7 +198,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 NativeVideoCollectionItem.self,
                 forItemWithIdentifier: .nativeVideoCard
             )
-            collectionView.setAccessibilityLabel("横向相关推荐")
+            collectionView.setAccessibilityLabel(AppStrings.localized("横向相关推荐"))
 
             dataSource = NSCollectionViewDiffableDataSource<Int, String>(
                 collectionView: collectionView
@@ -651,8 +651,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         for (button, symbol, label) in [
-            (backwardButton, "chevron.left", "上一排相关推荐"),
-            (forwardButton, "chevron.right", "下一排相关推荐"),
+            (backwardButton, "chevron.left", AppStrings.localized("上一排相关推荐")),
+            (forwardButton, "chevron.right", AppStrings.localized("下一排相关推荐")),
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             button.imagePosition = .imageOnly

@@ -29,7 +29,7 @@ extension NativePlaybackSidebarOverlay {
         if hasPresentedContent {
             switch state {
             case .loading:
-                return .loading(label: "正在加载所选视频上下文")
+                return .loading(label: AppStrings.localized("正在加载所选视频上下文"))
             case .failed(_, let failure):
                 return .failure(title: failure.title, message: failure.message)
             case .idle, .loadingPage, .preparingPlayback, .ready, .failedPage:
@@ -39,13 +39,13 @@ extension NativePlaybackSidebarOverlay {
 
         switch state {
         case .loading, .loadingPage, .preparingPlayback:
-            return .loading(label: "正在加载视频上下文")
+            return .loading(label: AppStrings.localized("正在加载视频上下文"))
         case .failed(_, let failure), .failedPage(_, _, let failure):
             return .failure(title: failure.title, message: failure.message)
         case .idle:
             return .unavailable(
-                title: "没有播放上下文",
-                message: "返回来源页并重新选择视频。"
+                title: AppStrings.localized("没有播放上下文"),
+                message: AppStrings.localized("返回来源页并重新选择视频。")
             )
         case .ready:
             return .none

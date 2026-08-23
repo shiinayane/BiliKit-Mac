@@ -69,24 +69,24 @@ struct AppNavigationSidebar: View {
     private var accountTitle: String {
         switch accountState {
         case .resolving, .unavailable:
-            "账号"
+            AppStrings.localized("账号")
         case .signedOut:
-            "登录"
+            AppStrings.localized("登录")
         case .signedIn:
-            accountState.displayName ?? "账号"
+            accountState.displayName ?? AppStrings.localized("账号")
         }
     }
 
     private var accountAccessibilityHint: String {
         switch accountState {
         case .resolving:
-            "正在检查本机登录状态"
+            AppStrings.localized("正在检查本机登录状态")
         case .unavailable:
-            "打开账号以重试恢复"
+            AppStrings.localized("打开账号以重试恢复")
         case .signedOut:
-            "打开扫码登录"
+            AppStrings.localized("打开扫码登录")
         case .signedIn:
-            "打开账号管理"
+            AppStrings.localized("打开账号管理")
         }
     }
 
