@@ -30,6 +30,12 @@ public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepositor
         }
     }
 
+    public func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        try await mapError {
+            try await client.searchVideos(request: request)
+        }
+    }
+
     public func videoDetail(for bvid: String) async throws -> VideoDetail {
         try await mapError {
             try await client.videoDetail(for: bvid)

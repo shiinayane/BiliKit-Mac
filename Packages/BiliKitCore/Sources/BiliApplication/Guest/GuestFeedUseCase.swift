@@ -4,7 +4,16 @@ import Foundation
 public enum GuestFeedRequest: Sendable, Equatable {
     case recommendation(continuation: RecommendationContinuation?)
     case popular(page: Int, pageSize: Int)
-    case search(query: String, page: Int)
+    case search(VideoSearchRequest)
+
+    public static func search(query: String, page: Int) -> Self {
+        .search(
+            VideoSearchRequest(
+                criteria: VideoSearchCriteria(query: query),
+                page: page
+            )
+        )
+    }
 }
 
 public enum GuestFeedContent: Sendable, Equatable {
@@ -38,21 +47,26 @@ public struct GuestFeedUseCase: Sendable {
             return .popular(
                 try await repository.popular(page: page, pageSize: pageSize)
             )
-        case .search(let query, let page):
-            let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalizedQuery.isEmpty,
-                normalizedQuery.count <= 100,
-                page > 0
+        case .search(let request):
+            let criteria = request.criteria
+            guard !criteria.query.isEmpty,
+                criteria.query.count <= 100,
+                criteria.pageSize == VideoSearchCriteria.pageSize,
+                request.page > 0,
+                Self.isValid(criteria.publicationRange)
             else {
                 throw GuestApplicationError.invalidRequest
             }
             return .search(
-                query: normalizedQuery,
-                page: try await repository.searchVideos(
-                    keyword: normalizedQuery,
-                    page: page
-                )
+                query: criteria.query,
+                page: try await repository.searchVideos(request: request)
             )
         }
+    }
+
+    private static func isValid(_ range: VideoPublicationTimeRange?) -> Bool {
+        guard let range else { return true }
+        return range.beginTimestamp >= 0
+            && range.beginTimestamp <= range.endTimestamp
     }
 }

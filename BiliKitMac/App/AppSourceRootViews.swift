@@ -76,18 +76,23 @@ struct PopularTabRoot: View {
 }
 
 struct SearchTabRoot: View {
+    @Binding var filterSelection: SearchFilterSelection
     let model: GuestBrowseViewModel
     @Binding var searchDraft: String
-    let submittedSearchQuery: String?
+    let submittedSearchCriteria: VideoSearchCriteria?
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
+    let onSelectOrder: (VideoSearchOrder) -> Void
+    let onApplyFilters: (SearchFilterSelection) -> Void
+    let onClearFilters: () -> Void
 
     var body: some View {
         VideoSearchView(
             model: model,
-            submittedSearchQuery: submittedSearchQuery,
+            submittedSearchCriteria: submittedSearchCriteria,
+            hasActiveFilters: filterSelection.activeFilterCount > 0,
             scrollOffsetY: $scrollOffsetY,
             makeLoadedContent: {
                 presentations,
@@ -109,11 +114,11 @@ struct SearchTabRoot: View {
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
-            onSelect: onSelect
+            onSelect: onSelect,
+            onClearFilters: onClearFilters
         )
         .navigationTitle("搜索")
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .searchable(
             text: $searchDraft,
             placement: searchFieldPlacement,
@@ -121,6 +126,15 @@ struct SearchTabRoot: View {
         )
         .onSubmit(of: .search) {
             onSubmit()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                SearchToolbarControls(
+                    selection: $filterSelection,
+                    onSelectOrder: onSelectOrder,
+                    onApplyFilters: onApplyFilters
+                )
+            }
         }
     }
 
