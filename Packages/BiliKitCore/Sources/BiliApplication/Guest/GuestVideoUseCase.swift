@@ -8,6 +8,25 @@ public struct GuestVideoContext: Sendable, Equatable {
     public let playback: VideoPlayback
     public let resumePositionSeconds: Double?
 
+    public var accessNotice: PlaybackAccessNotice? {
+        guard detail.access.isUPowerExclusive == true else { return nil }
+        let fullDuration = Int64(selectedPage.durationSeconds)
+            .multipliedReportingOverflow(by: 1_000)
+        if detail.access.isUPowerPreviewAvailable == true,
+            case .progressive(let source) = playback.media,
+            source.durationMilliseconds > 0,
+            selectedPage.durationSeconds > 0,
+            !fullDuration.overflow,
+            source.durationMilliseconds < fullDuration.partialValue
+        {
+            return .upowerPreview(
+                previewDurationSeconds: Int(source.durationMilliseconds / 1_000),
+                fullDurationSeconds: selectedPage.durationSeconds
+            )
+        }
+        return .upowerExclusive
+    }
+
     public init(
         detail: VideoDetail,
         pages: [VideoPage],
@@ -21,6 +40,14 @@ public struct GuestVideoContext: Sendable, Equatable {
         self.playback = playback
         self.resumePositionSeconds = resumePositionSeconds
     }
+}
+
+public enum PlaybackAccessNotice: Sendable, Equatable {
+    case upowerExclusive
+    case upowerPreview(
+        previewDurationSeconds: Int,
+        fullDurationSeconds: Int
+    )
 }
 
 /// 优先使用详情响应自带的分 P；旧响应缺失时才回退到独立分 P endpoint。
@@ -61,8 +88,9 @@ public struct GuestVideoUseCase: Sendable {
             else {
                 throw GuestApplicationError.invalidRequest
             }
-            let playback = try await repository.playback(
-                for: bvid,
+            let playback = try await playback(
+                detail: resolvedDetail,
+                bvid: bvid,
                 cid: selectedPage.cid
             )
             try Task.checkCancellation()
@@ -74,8 +102,9 @@ public struct GuestVideoUseCase: Sendable {
             )
         }
 
-        let provisionalPlayback = try await repository.playback(
-            for: bvid,
+        let provisionalPlayback = try await playback(
+            detail: resolvedDetail,
+            bvid: bvid,
             cid: firstPage.cid
         )
         try Task.checkCancellation()
@@ -88,8 +117,9 @@ public struct GuestVideoUseCase: Sendable {
         if selectedPage.cid == firstPage.cid {
             playback = provisionalPlayback
         } else {
-            playback = try await repository.playback(
-                for: bvid,
+            playback = try await self.playback(
+                detail: resolvedDetail,
+                bvid: bvid,
                 cid: selectedPage.cid
             )
             try Task.checkCancellation()
@@ -131,8 +161,9 @@ public struct GuestVideoUseCase: Sendable {
         else {
             throw GuestApplicationError.invalidRequest
         }
-        let playback = try await repository.playback(
-            for: context.detail.bvid,
+        let playback = try await playback(
+            detail: context.detail,
+            bvid: context.detail.bvid,
             cid: selectedPage.cid
         )
         try Task.checkCancellation()
@@ -143,6 +174,23 @@ public struct GuestVideoUseCase: Sendable {
             selectedPage: selectedPage,
             playback: playback
         )
+    }
+
+    private func playback(
+        detail: VideoDetail,
+        bvid: String,
+        cid: Int64
+    ) async throws -> VideoPlayback {
+        do {
+            return try await repository.playback(for: bvid, cid: cid)
+        } catch GuestApplicationError.serviceRejected(code: _)
+            where detail.access.isUPowerExclusive == true
+            && detail.access.isUPowerPlayable == false
+            && detail.access.isUPowerPreviewAvailable == false
+        {
+            // 只有详情权益三态和 playurl 业务拒绝同时明确时才收窄为权益语义。
+            throw GuestApplicationError.fullViewingEntitlementRequired
+        }
     }
 
     static func resumePosition(

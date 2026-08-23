@@ -51,6 +51,12 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 账户读取 Cookie 必须在各 API 响应前终止；映射后的 playback manifest 与媒体 headers
   不保留 Cookie。DASH SIDX/媒体 Range、图片与 loopback 请求继续使用
   各自无认证 transport，不能从播放信息请求继承授权状态。
+- 单段 progressive `durl` 只保留当前 item 需要的候选 URL、总字节数、服务端时长与
+  MP4 容器事实；不持久化、不进入 Feature 错误文案或日志。同一 item 首个通过严格
+  206/Range/总长度/类型验证的完整 URL 会固定给后续 Range，不跨候选拼字节。
+- progressive 正文在响应头验证后逐 chunk 写入同一 loopback connection，每个 chunk 等待
+  下游 send completion 后才恢复上游；不先收集完整 `Data`，不用固定 64 MiB 上限，也不把
+  开放末尾 Range 改写为 2 MiB。过短、过长、断流与总长度变化全部失败关闭。
 - 评论头像、自定义表情与正文图片只消费当前评论 `member.avatar`／`content.emote`／
   `content.pictures` 返回的资源，不下载或维护全量头像、表情包或图片索引。
   映射层把接口历史遗留的 HTTP／协议相对地址升级为 HTTPS；实际加载前由具体 adapter 再次限制

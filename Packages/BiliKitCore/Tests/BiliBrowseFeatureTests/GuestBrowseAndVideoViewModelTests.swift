@@ -3268,7 +3268,7 @@ private actor ResumeRepositoryStub: GuestContentRepository {
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
         playbackCIDs.append(cid)
         return VideoPlayback(
-            manifest: fixtures.playback.manifest,
+            media: fixtures.playback.media,
             mediaHeaders: fixtures.playback.mediaHeaders,
             resumeMetadata: metadata
         )

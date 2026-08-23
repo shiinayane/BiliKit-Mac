@@ -337,7 +337,7 @@ public final class AVPlayerEngine:
     ) async throws {
         try await load(
             PlaybackRequest(
-                manifest: playback.manifest,
+                media: playback.media,
                 mediaHeaders: playback.mediaHeaders
             ),
             identity: identity
@@ -351,7 +351,7 @@ public final class AVPlayerEngine:
     ) async throws {
         try await load(
             PlaybackRequest(
-                manifest: playback.manifest,
+                media: playback.media,
                 mediaHeaders: playback.mediaHeaders
             ),
             identity: identity,
@@ -369,10 +369,27 @@ public final class AVPlayerEngine:
         let sourcePreference = sourcePreferenceProvider()
         let loudnessNormalizationEnabled =
             loudnessNormalizationEnabledProvider()
-        let videos = try selectedVideos(for: request).map {
-            PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+        let progressiveSource: ProgressivePlaybackSource?
+        let videos: [MediaRepresentation]
+        let audioTracks: [SelectedPlaybackAudioTrack]
+        switch request.media {
+        case .dash(let manifest):
+            progressiveSource = nil
+            videos = try selectedVideos(
+                in: manifest,
+                request: request
+            ).map {
+                PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+            }
+            audioTracks = try selectedAudioTracks(
+                in: manifest,
+                request: request
+            )
+        case .progressive(let source):
+            progressiveSource = source
+            videos = []
+            audioTracks = []
         }
-        let audioTracks = try selectedAudioTracks(for: request)
         try Task.checkCancellation()
 
         loadGeneration = generation
@@ -400,19 +417,28 @@ public final class AVPlayerEngine:
         guard loadGeneration == generation else {
             throw CancellationError()
         }
-        let subtitleSource = subtitleUseCase.map {
-            NativeSubtitleSource(useCase: $0, identity: identity)
-        }
+        let subtitleSource =
+            progressiveSource == nil
+            ? subtitleUseCase.map {
+                NativeSubtitleSource(useCase: $0, identity: identity)
+            } : nil
         if subtitleSource != nil {
             subtitleIdentity = identity
         }
         let task = Task {
-            try await bridge.prepare(
-                videos: videos,
-                audioTracks: audioTracks,
-                headers: request.mediaHeaders,
-                subtitleSource: subtitleSource
-            )
+            if let progressiveSource {
+                try await bridge.prepare(
+                    progressive: progressiveSource,
+                    headers: request.mediaHeaders
+                )
+            } else {
+                try await bridge.prepare(
+                    videos: videos,
+                    audioTracks: audioTracks,
+                    headers: request.mediaHeaders,
+                    subtitleSource: subtitleSource
+                )
+            }
         }
         loadTask = task
 
@@ -453,6 +479,17 @@ public final class AVPlayerEngine:
             }
             self.readinessTask = readinessTask
             try await readinessTask.value
+            try Task.checkCancellation()
+            guard loadGeneration == generation else {
+                throw CancellationError()
+            }
+            if progressiveSource != nil,
+                let endTime = try await Self.lastPresentableMediaEndTime(
+                    in: item.asset
+                )
+            {
+                item.forwardPlaybackEndTime = endTime
+            }
             try Task.checkCancellation()
             guard loadGeneration == generation else {
                 throw CancellationError()
@@ -928,6 +965,27 @@ public final class AVPlayerEngine:
         return seconds
     }
 
+    /// Progressive MP4 使用音视频轨道实际 timeRange 的最晚样本边界，不用服务端 length 减固定 tolerance。
+    ///
+    /// 空轨、无效时间或零时长保持系统默认结束语义。
+    package static func lastPresentableMediaEndTime(
+        in asset: AVAsset
+    ) async throws -> CMTime? {
+        let tracks = try await asset.load(.tracks).filter {
+            $0.mediaType == .video || $0.mediaType == .audio
+        }
+        var latest: CMTime?
+        for track in tracks {
+            let timeRange = try await track.load(.timeRange)
+            let end = CMTimeRangeGetEnd(timeRange)
+            guard let seconds = validSeconds(end), seconds > 0 else { continue }
+            if latest.map({ CMTimeCompare(end, $0) > 0 }) ?? true {
+                latest = end
+            }
+        }
+        return latest
+    }
+
     private static func subtitlePreference(
         for option: AVMediaSelectionOption
     ) -> NativeSubtitleSelectionPreference {
@@ -996,11 +1054,12 @@ public final class AVPlayerEngine:
     }
 
     private func selectedVideos(
-        for request: PlaybackRequest
+        in manifest: PlaybackManifest,
+        request: PlaybackRequest
     ) throws -> [MediaRepresentation] {
         if let preferredID = request.preferredVideoRepresentationID {
             guard
-                let representation = request.manifest.videoRepresentations.first(
+                let representation = manifest.videoRepresentations.first(
                     where: { $0.id == preferredID }
                 )
             else {
@@ -1010,20 +1069,21 @@ public final class AVPlayerEngine:
             }
             return [representation]
         }
-        guard !request.manifest.videoRepresentations.isEmpty else {
+        guard !manifest.videoRepresentations.isEmpty else {
             throw AVPlayerEngineError.missingVideoRepresentation
         }
-        return request.manifest.videoRepresentations
+        return manifest.videoRepresentations
     }
 
     func selectedAudioTracks(
-        for request: PlaybackRequest
+        in manifest: PlaybackManifest,
+        request: PlaybackRequest
     ) throws -> [SelectedPlaybackAudioTrack] {
-        guard !request.manifest.audioTracks.isEmpty else {
+        guard !manifest.audioTracks.isEmpty else {
             throw AVPlayerEngineError.missingAudioRepresentation
         }
         var trackIDs = Set<String>()
-        for track in request.manifest.audioTracks {
+        for track in manifest.audioTracks {
             guard trackIDs.insert(track.id).inserted else {
                 throw AVPlayerEngineError.duplicateAudioTrackID(track.id)
             }
@@ -1032,14 +1092,14 @@ public final class AVPlayerEngine:
         where !trackIDs.contains(trackID) {
             throw AVPlayerEngineError.preferredAudioTrackNotFound(trackID)
         }
-        let defaultTracks = request.manifest.audioTracks.filter(\.isDefault)
+        let defaultTracks = manifest.audioTracks.filter(\.isDefault)
         guard defaultTracks.count == 1 else {
             throw AVPlayerEngineError.invalidDefaultAudioTrackCount(
                 defaultTracks.count
             )
         }
 
-        return try request.manifest.audioTracks.map { track in
+        return try manifest.audioTracks.map { track in
             for representation in track.representations
             where representation.kind != .audio {
                 throw AVPlayerEngineError.invalidAudioTrackRepresentation(
@@ -1077,6 +1137,15 @@ public final class AVPlayerEngine:
                 representation: representation
             )
         }
+    }
+
+    func selectedAudioTracks(
+        for request: PlaybackRequest
+    ) throws -> [SelectedPlaybackAudioTrack] {
+        guard case .dash(let manifest) = request.media else {
+            throw AVPlayerEngineError.missingAudioRepresentation
+        }
+        return try selectedAudioTracks(in: manifest, request: request)
     }
 
     private func emit(_ event: PlayerEvent) {

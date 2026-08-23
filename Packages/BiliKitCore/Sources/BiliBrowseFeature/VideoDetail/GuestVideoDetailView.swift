@@ -79,9 +79,41 @@ struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
                     publishedAt: VideoMetadataFormatting.fullPublishedDate(
                         context.detail.publishedAt,
                         locale: locale
-                    )
+                    ),
+                    accessNotice: metadataAccessNotice
                 )
             )
+        }
+    }
+
+    private var metadataAccessNotice: String? {
+        switch context.accessNotice {
+        case .none:
+            return nil
+        case .upowerExclusive:
+            return BrowseFeatureStrings.localized("充电专属", locale: locale)
+        case .upowerPreview(let previewDurationSeconds, let fullDurationSeconds):
+            let preview = VideoDurationFormatting.string(
+                seconds: previewDurationSeconds,
+                locale: locale
+            )
+            let full = VideoDurationFormatting.string(
+                seconds: fullDurationSeconds,
+                locale: locale
+            )
+            let durationNotice = String(
+                format: BrowseFeatureStrings.localized(
+                    "可试看至 %@ / 完整视频 %@",
+                    locale: locale
+                ),
+                locale: locale,
+                preview,
+                full
+            )
+            return [
+                BrowseFeatureStrings.localized("充电专属", locale: locale),
+                durationNotice,
+            ].joined(separator: " · ")
         }
     }
 
@@ -131,11 +163,13 @@ struct VideoDetailMetadataContent {
     let viewCount: String
     let danmakuCount: String
     let publishedAt: String
+    let accessNotice: String?
 
     static let placeholder = VideoDetailMetadataContent(
         viewCount: "888.8 万",
         danmakuCount: "888.8 万",
-        publishedAt: "8888年88月88日 88:88:88"
+        publishedAt: "8888年88月88日 88:88:88",
+        accessNotice: "充电专属 · 可试看至 88:88 / 完整视频 88:88"
     )
 
     var items: [VideoDetailMetadataItem] {
@@ -144,7 +178,7 @@ struct VideoDetailMetadataContent {
         }
     }
 
-    private func text(for slot: VideoDetailMetadataSlot) -> String {
+    private func text(for slot: VideoDetailMetadataSlot) -> String? {
         switch slot {
         case .viewCount:
             viewCount
@@ -152,19 +186,22 @@ struct VideoDetailMetadataContent {
             danmakuCount
         case .publishedAt:
             publishedAt
+        case .accessNotice:
+            accessNotice
         }
     }
 }
 
 struct VideoDetailMetadataItem: Equatable {
     let slot: VideoDetailMetadataSlot
-    let text: String
+    let text: String?
 }
 
 enum VideoDetailMetadataSlot: CaseIterable, Hashable {
     case viewCount
     case danmakuCount
     case publishedAt
+    case accessNotice
 
     var systemImage: String {
         switch self {
@@ -174,6 +211,8 @@ enum VideoDetailMetadataSlot: CaseIterable, Hashable {
             "text.bubble"
         case .publishedAt:
             "calendar"
+        case .accessNotice:
+            "bolt.heart"
         }
     }
 }
@@ -200,7 +239,13 @@ struct VideoDetailMetadataView: View {
     @ViewBuilder
     private var metadataItems: some View {
         ForEach(content.items, id: \.slot) { item in
-            Label(item.text, systemImage: item.slot.systemImage)
+            if let text = item.text {
+                Label(text, systemImage: item.slot.systemImage)
+                    .foregroundStyle(
+                        item.slot == .accessNotice && !isPlaceholder
+                            ? Color.pink : Color.secondary
+                    )
+            }
         }
     }
 }

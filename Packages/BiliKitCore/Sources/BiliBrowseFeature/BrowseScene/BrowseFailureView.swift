@@ -49,6 +49,8 @@ extension GuestApplicationError {
             BrowseFeatureStrings.localized("请求受到限制")
         case .unsupportedMedia:
             BrowseFeatureStrings.localized("没有可播放的游客轨道")
+        case .fullViewingEntitlementRequired:
+            BrowseFeatureStrings.localized("当前账户没有完整观看权益")
         default:
             BrowseFeatureStrings.localized("无法加载内容")
         }
@@ -70,6 +72,10 @@ extension GuestApplicationError {
             BrowseFeatureStrings.localized("请检查网络连接后重试。")
         case .unsupportedMedia:
             BrowseFeatureStrings.localized("该视频在当前服务授权范围内没有 AVPlayer 可用的 AVC/AAC 轨道。")
+        case .fullViewingEntitlementRequired:
+            BrowseFeatureStrings.localized("当前账户没有完整观看权益。")
+        case .playbackUnavailable:
+            BrowseFeatureStrings.localized("服务没有返回可播放媒体，请稍后重试。")
         case .invalidResponse:
             BrowseFeatureStrings.localized("接口数据与当前客户端预期不一致，请稍后重试。")
         case .unavailable:

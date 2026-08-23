@@ -6,6 +6,34 @@ import Testing
 
 struct AVPlayerTimelineAdapterTests {
     @Test
+    @MainActor
+    func sameItemSeekCannotBeOverwrittenByQueuedEndNotification() async throws {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "video-avc",
+                withExtension: "mp4",
+                subdirectory: "Fixtures"
+            )
+        )
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        let timeline = AVPlayerTimelineAdapter(player: player)
+        timeline.begin(identity: PlaybackItemIdentity(bvid: "BVEndRace", cid: 1))
+        timeline.markReady(duration: CMTime(seconds: 1, preferredTimescale: 600))
+        timeline.installObservers(for: item)
+
+        NotificationCenter.default.post(
+            name: AVPlayerItem.didPlayToEndTimeNotification,
+            object: item
+        )
+        timeline.observeTimeJump(at: 0.5)
+        await Task.yield()
+
+        #expect(timeline.currentSnapshot.state == .paused)
+        #expect(timeline.currentSnapshot.positionSeconds == 0.5)
+    }
+
+    @Test
     func playbackTogglePausesUnlessPlayerIsPaused() {
         #expect(
             PlaybackToggleAction(

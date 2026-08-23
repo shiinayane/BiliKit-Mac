@@ -251,13 +251,18 @@ package final class PlaybackTimelineStore {
         positionSeconds: Double
     ) {
         guard token == currentToken else { return }
+        // ended 只描述当前终点；seek/replay 一旦形成新时间段就不再是 ended。
+        let state =
+            currentSnapshot.state == .ended
+            ? PlaybackTimelineState.paused
+            : currentSnapshot.state
         publish(
             PlaybackTimelineSnapshot(
                 identity: currentSnapshot.identity,
                 positionSeconds: positionSeconds,
                 durationSeconds: currentSnapshot.durationSeconds,
                 rate: currentSnapshot.rate,
-                state: currentSnapshot.state,
+                state: state,
                 discontinuityGeneration: nextGeneration()
             )
         )

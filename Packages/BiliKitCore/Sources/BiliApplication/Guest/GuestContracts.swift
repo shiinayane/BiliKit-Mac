@@ -8,6 +8,8 @@ public enum GuestApplicationError: Error, Sendable, Equatable {
     case serviceRejected(code: Int)
     case transportFailure
     case unsupportedMedia
+    case playbackUnavailable
+    case fullViewingEntitlementRequired
     case invalidResponse
     case unavailable
 }

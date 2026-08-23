@@ -191,7 +191,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         case .httpStatus, .apiRejected:
             .unavailable
         case .invalidWBIKey, .signingFailed, .invalidMediaData,
-            .noAVCVideo, .noAACAudio:
+            .noAVCVideo, .noAACAudio, .unsupportedProgressiveMedia,
+            .noPlayableMedia:
             .invalidResponse
         }
     }

@@ -493,10 +493,65 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             )
         let payload = resolved.payload
 
-        let video = try payload.dash.video
+        if let dash = payload.dash {
+            return try await dashPlayback(
+                payload: payload,
+                dash: dash,
+                authorizationProvenance: resolved.authorizationProvenance,
+                playbackSessionEpoch: playbackSessionEpoch,
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                referer: referer,
+                includesMachineGeneratedAudio: includesMachineGeneratedAudio
+            )
+        }
+
+        guard let durl = payload.durl else {
+            throw BiliAPIError.noPlayableMedia
+        }
+        let segment: DURLPayload
+        switch durl {
+        case .empty:
+            throw BiliAPIError.unsupportedProgressiveMedia(.empty)
+        case .multiple:
+            throw BiliAPIError.unsupportedProgressiveMedia(.multipleSegments)
+        case .single(let payload):
+            segment = payload
+        }
+        guard payload.format?.lowercased() == "mp4" else {
+            throw BiliAPIError.unsupportedProgressiveMedia(.unsupportedContainer)
+        }
+        if resolved.authorizationProvenance == .authenticated {
+            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        }
+        return VideoPlayback(
+            media: .progressive(try segment.model()),
+            mediaHeaders: [
+                "Referer": referer,
+                "User-Agent": userAgent,
+            ],
+            resumeMetadata:
+                resolved.authorizationProvenance == .authenticated
+                ? payload.resumeMetadata : nil
+        )
+    }
+
+    private func dashPlayback(
+        payload: PlayURLPayload,
+        dash: DASHPayload,
+        authorizationProvenance: AuthorizationProvenance,
+        playbackSessionEpoch: UInt64,
+        bvid: String,
+        cid: Int64,
+        quality: Int,
+        referer: String,
+        includesMachineGeneratedAudio: Bool
+    ) async throws -> VideoPlayback {
+        let video = try dash.video
             .filter(\.isAVCVideo)
             .map { try $0.model(kind: .video) }
-        let audio = try payload.dash.audio
+        let audio = try dash.audio
             .filter(\.isAACAudio)
             .map { try $0.model(kind: .audio) }
         guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
@@ -513,7 +568,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 representations: audio
             )
         ]
-        if resolved.authorizationProvenance == .authenticated {
+        if authorizationProvenance == .authenticated {
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
             if includesMachineGeneratedAudio {
                 audioTracks += try await machineGeneratedAudioTracks(
@@ -530,16 +585,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
 
         return VideoPlayback(
-            manifest: PlaybackManifest(
-                videoRepresentations: video,
-                audioTracks: audioTracks
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: video,
+                    audioTracks: audioTracks
+                )
             ),
             mediaHeaders: [
                 "Referer": referer,
                 "User-Agent": userAgent,
             ],
             resumeMetadata:
-                resolved.authorizationProvenance == .authenticated
+                authorizationProvenance == .authenticated
                 ? payload.resumeMetadata : nil
         )
     }
@@ -586,14 +643,15 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 )
             )
             try requireAuthenticatedSessionEpoch(sessionEpoch)
-            guard payload.currentLanguage == languageTag,
+            guard let dash = payload.dash,
+                payload.currentLanguage == languageTag,
                 payload.currentProductionType == item.productionType
             else {
                 continue
             }
             let representations: [MediaRepresentation]
             do {
-                representations = try payload.dash.audio
+                representations = try dash.audio
                     .filter(\.isAACAudio)
                     .map { try $0.model(kind: .audio) }
             } catch {

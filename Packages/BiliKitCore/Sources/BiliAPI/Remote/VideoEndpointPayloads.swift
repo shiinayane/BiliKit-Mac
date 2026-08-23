@@ -150,10 +150,16 @@ struct VideoDetailPayload: Decodable, Sendable {
     let dimension: DimensionPayload?
     let pages: [PagePayload]?
     let ugcSeason: UGCSeasonPayload?
+    let isUPowerExclusive: Bool?
+    let isUPowerPreviewAvailable: Bool?
+    let isUPowerPlayable: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case aid, bvid, title, desc, pic, owner, stat, duration, pubdate, dimension, pages
         case ugcSeason = "ugc_season"
+        case isUPowerExclusive = "is_upower_exclusive"
+        case isUPowerPreviewAvailable = "is_upower_preview"
+        case isUPowerPlayable = "is_upower_play"
     }
 
     func model() throws -> VideoDetail {
@@ -178,7 +184,12 @@ struct VideoDetailPayload: Decodable, Sendable {
             dimension: dimension?.model(),
             aid: aid,
             pages: resolvedPages,
-            collection: ugcSeason?.model()
+            collection: ugcSeason?.model(),
+            access: VideoAccess(
+                isUPowerExclusive: isUPowerExclusive,
+                isUPowerPreviewAvailable: isUPowerPreviewAvailable,
+                isUPowerPlayable: isUPowerPlayable
+            )
         )
     }
 }
