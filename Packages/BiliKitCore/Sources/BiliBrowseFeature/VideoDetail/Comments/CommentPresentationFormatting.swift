@@ -1,10 +1,18 @@
+import Foundation
+
 public enum CommentPresentationFormatting {
-    public static func compactCount(_ count: Int64) -> String {
-        VideoMetadataFormatting.compactCount(count)
+    public static func compactCount(
+        _ count: Int64,
+        locale: Locale = .current
+    ) -> String {
+        VideoMetadataFormatting.compactCount(count, locale: locale)
     }
 
-    public static func compactCount(_ count: Int) -> String {
-        VideoMetadataFormatting.compactCount(Int64(clamping: count))
+    public static func compactCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        VideoMetadataFormatting.compactCount(Int64(clamping: count), locale: locale)
     }
 
     public static func pageCount(totalCount: Int, pageSize: Int) -> Int {

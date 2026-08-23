@@ -7,6 +7,7 @@ import Testing
 struct RelatedVideoShelfTests {
     @Test
     func presentationMapsStableBVIDAndEveryVisibleSlot() {
+        let locale = Locale(identifier: "zh-Hans")
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1Related",
@@ -16,7 +17,8 @@ struct RelatedVideoShelfTests {
                 viewCount: 123_456,
                 danmakuCount: 7_890,
                 durationSeconds: 754
-            )
+            ),
+            locale: locale
         )
 
         #expect(presentation.id == "BV1Related")
@@ -32,9 +34,9 @@ struct RelatedVideoShelfTests {
                     byJoining: [
                         "示例推荐",
                         "示例 UP 主",
-                        BrowseFeatureStrings.localized("\("12.3万")播放"),
-                        BrowseFeatureStrings.localized("\("7890")弹幕"),
-                        BrowseFeatureStrings.localized("时长\("12:34")"),
+                        BrowseFeatureStrings.localized("\("12.3万")播放", locale: locale),
+                        BrowseFeatureStrings.localized("\("7890")弹幕", locale: locale),
+                        BrowseFeatureStrings.localized("时长\("12:34")", locale: locale),
                     ]
                 )
         )
@@ -43,6 +45,7 @@ struct RelatedVideoShelfTests {
 
     @Test
     func presentationHidesMissingDurationWithoutInventingATrailingSlot() {
+        let locale = Locale(identifier: "zh-Hans")
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1NoDuration",
@@ -52,7 +55,8 @@ struct RelatedVideoShelfTests {
                 viewCount: 1,
                 danmakuCount: 0,
                 durationSeconds: nil
-            )
+            ),
+            locale: locale
         )
 
         #expect(presentation.durationText == nil)

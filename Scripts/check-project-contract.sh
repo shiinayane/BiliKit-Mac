@@ -55,9 +55,10 @@ expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
 expect_count 0 '.typesettingLanguage(' "$app" "App 根不得强制内容排版语言"
 expect_count 0 '.environment(\.locale' "$app" "App 根不得强制界面 locale"
-if rg -n --glob '*.swift' \
-    '\.typesettingLanguage\(|\.environment\(\s*\\\.locale|kCTLanguageAttributeName|kCTFontDescriptorLanguageAttribute' \
-    BiliKitMac Packages/BiliKitCore/Sources >/dev/null; then
+if find BiliKitMac Packages/BiliKitCore/Sources -type f -name '*.swift' \
+    -exec grep -En \
+    '\.typesettingLanguage\(|\.environment\([[:space:]]*\\\.locale|kCTLanguageAttributeName|kCTFontDescriptorLanguageAttribute' \
+    {} + >/dev/null; then
     fail "生产源码不得强制 UI、内容或字体语言"
 fi
 
