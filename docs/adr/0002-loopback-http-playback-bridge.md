@@ -1,4 +1,4 @@
-# ADR 0002：使用 loopback HTTP bridge 向 AVPlayer 提供 HLS 媒体
+# ADR 0002：使用 loopback HTTP bridge 向 AVPlayer 提供 HLS 与渐进媒体
 
 - 状态：已接受
 - 日期：2026-07-21
@@ -39,6 +39,18 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 11. 用户线路偏好只在新播放进入 SIDX 准备前读取一次，并只调整视频候选。实验 bilivideo 候选
     只能由 playurl 原始 bilivideo URL 替换已核实 host 生成；一旦 SIDX 成功，记录的
     `sourceURL` 继续作为该 representation 的 init、media 与 loopback 唯一远端来源。
+12. playurl 没有 DASH 但返回安全的单段 `durl` 时，同一 server owner 可注册一条
+    progressive MP4 route。媒体模型用 `dash` / `progressive` 互斥 case；响应同时存在时仍优先 DASH，
+    不支持多段 `durl` 拼接。
+13. progressive route 原样保留 AVPlayer 的单一 Range 语义。上游必须返回与请求精确一致的
+    `206`、`Content-Range`、已确认总长度、`Content-Length` 和允许的视频类型。正文验证后按
+    URLSession chunk 串行写入 loopback connection，不在 `Data` 中累积整段。
+14. progressive 候选在 DTO 映射和实际连接前都通过媒体 CDN allowlist。远端 session 为无
+    Cookie、无 credential、无 cache、拒绝 redirect 的 ephemeral session；本地 route 也会剥离
+    `Cookie` / `Authorization`。首个通过响应头验证的完整 URL 会固定给该 item 后续 Range，
+    不跨 CDN 拼字节。
+15. `AVPlayerEngine` 仍只创建一个 `AVPlayerItem`。progressive MP4 的结束边界使用 asset 中音视频
+    track 可观察的最后 `timeRange` 结束时间，不使用 `durl.length - 250 ms` 魔法数。
 
 不使用非公开的 AVFoundation header 注入选项。若未来 Apple 提供正式、可验证的替代 API，再通过新 ADR 调整。
 
@@ -52,6 +64,8 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 - loopback 层也能提供清晰的请求生命周期和最小诊断边界。
 - I-frame rendition 复用既有媒体 route，因此 master 加载不会产生额外媒体请求；只有
   AVPlayer 进入 trick play 后才按需请求对应 fragment Range。
+- 约 50.9 MB 的试看文件不再被先整段读入内存；内存背压边界是单个上游 chunk 与单个
+  正在等待的 loopback send completion。
 
 ### 负面影响
 
@@ -71,6 +85,8 @@ M1 的 DASH→HLS bridge 使用进程内 loopback HTTP server，而不是用 Res
 - 播放时间实际前进，暂停、向前 seek、向后 seek 和恢复播放通过。
 - 首选 CDN 返回 403 后，SIDX 使用备用线路；后续 AVPlayer media Range 继续优先使用成功线路。
 - 合法 `206/Content-Range` 但不可解析的错误页 body 会被拒绝并切换备用线路。
+- progressive 合约覆盖原始开放末尾 Range、严格 206/范围/长度/类型、短流与过长流、
+  redirect/200 拒绝、逐 chunk 转发、取消、Cookie 隔离与成功 `sourceURL` stickiness。
 - 快速替换播放项目会取消旧媒体 Range，新项目仍可进入 `readyToPlay`。
 - 自制 type-1 SAP fixture 的 master 会发布 I-frame rendition；加载完成前没有 I-frame
   playlist 请求，4 倍速播放后才出现 playlist 与上游 fragment Range，且请求不含认证头。

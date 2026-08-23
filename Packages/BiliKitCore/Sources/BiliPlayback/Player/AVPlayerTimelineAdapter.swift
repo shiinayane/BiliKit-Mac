@@ -321,7 +321,7 @@ final class AVPlayerTimelineAdapter {
             object: item,
             queue: .main
         ) { [weak self, weak item] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 guard let self, let item, self.player.currentItem === item else {
                     return
                 }

@@ -49,7 +49,8 @@ public struct BiliDanmakuRepository: DanmakuSegmentRepository, Sendable {
         case .authorizationRequired, .authorizationUnavailable,
             .nonJSONResponse, .invalidWBIKey,
             .signingFailed, .invalidMediaData, .invalidSubtitleData,
-            .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio:
+            .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio,
+            .unsupportedProgressiveMedia, .noPlayableMedia:
             .invalidResponse
         }
     }

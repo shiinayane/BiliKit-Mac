@@ -911,11 +911,12 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        let video = try #require(playback.manifest.videoRepresentations.first)
-        let audioTrack = try #require(playback.manifest.audioTracks.first)
+        let manifest = try #require(playback.dashManifest)
+        let video = try #require(manifest.videoRepresentations.first)
+        let audioTrack = try #require(manifest.audioTracks.first)
         let audio = try #require(audioTrack.representations.first)
-        #expect(playback.manifest.videoRepresentations.count == 1)
-        #expect(playback.manifest.audioTracks.count == 1)
+        #expect(manifest.videoRepresentations.count == 1)
+        #expect(manifest.audioTracks.count == 1)
         #expect(audioTrack.id == "original")
         #expect(audioTrack.displayName == "原声")
         #expect(audioTrack.languageTag == nil)
@@ -948,6 +949,173 @@ struct BiliAPIClientTests {
                 URLQueryItem(name: "voice_balance", value: "1")
             ) == true
         )
+    }
+
+    @Test
+    func playURLMapsSingleSafeDURLAsProgressiveMedia() async throws {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try progressivePlayURLResponse()]
+            )
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        guard case .progressive(let source) = playback.media else {
+            Issue.record("Expected progressive media")
+            return
+        }
+        #expect(source.contentLength == 50_000_000)
+        #expect(source.durationMilliseconds == 884_983)
+        #expect(source.container == .mp4)
+        #expect(source.urlCandidates.count == 2)
+        #expect(playback.mediaHeaders["Cookie"] == nil)
+    }
+
+    @Test
+    func playURLPrefersDASHWhenDURLIsAlsoPresent() async throws {
+        let client = BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [try playURLFixtureByAddingDURL()]
+            )
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        #expect(playback.dashManifest != nil)
+    }
+
+    @Test
+    func playURLRejectsUnsupportedProgressiveShapesWithStableErrors() async throws {
+        let missingURLDURL: [[String: Any]] = [
+            [
+                "length": 884_983,
+                "size": 50_000_000,
+                "backup_url": [],
+            ]
+        ]
+        await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(.empty)) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [try progressivePlayURLResponse(durl: [])]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.multipleSegments)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [
+                        try progressivePlayURLResponse(
+                            durl: [progressiveDURL(), progressiveDURL(path: "part-2.mp4")]
+                        )
+                    ]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.multipleSegments)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [
+                        try progressivePlayURLResponse(
+                            durl: [progressiveDURL(), ["unexpected": true]]
+                        )
+                    ]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.invalidDuration)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [try progressivePlayURLResponse(length: 0)]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.invalidSize)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [try progressivePlayURLResponse(size: 0)]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.noSafeURL)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [
+                        try progressivePlayURLResponse(
+                            primaryURL: "http://127.0.0.1/media.mp4",
+                            backupURLs: []
+                        )
+                    ]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.unsupportedContainer)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [try progressivePlayURLResponse(format: "flv")]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await #expect(
+            throws: BiliAPIError.unsupportedProgressiveMedia(.noSafeURL)
+        ) {
+            try await BiliAPIClient(
+                transport: RecordingTransport(
+                    responses: [try progressivePlayURLResponse(durl: missingURLDURL)]
+                )
+            ).playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+    }
+
+    @Test
+    func videoDetailPreservesUPowerTrueFalseAndMissing() async throws {
+        let explicit = try await BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [
+                    try viewFixtureWithUPower(exclusive: true, preview: false, playable: true)
+                ]
+            )
+        ).videoDetail(for: "BV1FixtureA1")
+        let missing = try await BiliAPIClient(
+            transport: RecordingTransport(responses: [try fixtureResponse("view")])
+        ).videoDetail(for: "BV1FixtureA1")
+        let inverse = try await BiliAPIClient(
+            transport: RecordingTransport(
+                responses: [
+                    try viewFixtureWithUPower(
+                        exclusive: false,
+                        preview: true,
+                        playable: false
+                    )
+                ]
+            )
+        ).videoDetail(for: "BV1FixtureA1")
+
+        #expect(explicit.access.isUPowerExclusive == true)
+        #expect(explicit.access.isUPowerPreviewAvailable == false)
+        #expect(explicit.access.isUPowerPlayable == true)
+        #expect(inverse.access.isUPowerExclusive == false)
+        #expect(inverse.access.isUPowerPreviewAvailable == true)
+        #expect(inverse.access.isUPowerPlayable == false)
+        #expect(missing.access == VideoAccess())
     }
 
     @Test
@@ -998,10 +1166,11 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.count == 3)
-        let original = playback.manifest.audioTracks[0]
-        let englishAI = playback.manifest.audioTracks[1]
-        let japaneseAI = playback.manifest.audioTracks[2]
+        let manifest = try #require(playback.dashManifest)
+        #expect(manifest.audioTracks.count == 3)
+        let original = manifest.audioTracks[0]
+        let englishAI = manifest.audioTracks[1]
+        let japaneseAI = manifest.audioTracks[2]
         #expect(original.loudnessMetadata?.measuredIntegratedLUFS == -20)
         #expect(englishAI.loudnessMetadata?.measuredIntegratedLUFS == -11)
         #expect(japaneseAI.loudnessMetadata == nil)
@@ -1076,9 +1245,10 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.count == 2)
-        let original = playback.manifest.audioTracks[0]
-        let ai = playback.manifest.audioTracks[1]
+        let manifest = try #require(playback.dashManifest)
+        #expect(manifest.audioTracks.count == 2)
+        let original = manifest.audioTracks[0]
+        let ai = manifest.audioTracks[1]
         #expect(original.role == .original)
         #expect(original.isDefault)
         #expect(ai.id == "machine-generated:en")
@@ -1128,7 +1298,7 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.map(\.role) == [.original])
+        #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
         #expect(await transport.capturedRequests().count == 2)
     }
 
@@ -1249,8 +1419,8 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.count == 1)
-        #expect(playback.manifest.audioTracks[0].role == .original)
+        #expect(playback.dashManifest?.audioTracks.count == 1)
+        #expect(playback.dashManifest?.audioTracks[0].role == .original)
         #expect(await transport.capturedRequests().count == 1)
     }
 
@@ -1277,7 +1447,7 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.map(\.role) == [.original])
+        #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
         #expect(await authorizer.authorizationCount() == 1)
         #expect(await transport.capturedRequests().count == 1)
     }
@@ -1407,7 +1577,7 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(playback.manifest.audioTracks.count == 1)
+        #expect(playback.dashManifest?.audioTracks.count == 1)
         #expect(await transport.capturedRequests().count == 1)
     }
 
@@ -1659,7 +1829,7 @@ struct BiliAPIClientTests {
             quality: 32
         )
 
-        let video = try #require(playback.manifest.videoRepresentations.first)
+        let video = try #require(playback.dashManifest?.videoRepresentations.first)
         #expect(video.id == 32)
         #expect(video.videoAttributes?.frameRate == nil)
     }
@@ -1890,6 +2060,89 @@ struct BiliAPIClientTests {
             statusCode: 200,
             headers: ["Content-Type": "application/json; charset=utf-8"],
             body: try Data(contentsOf: url)
+        )
+    }
+
+    private func progressiveDURL(
+        path: String = "preview.mp4",
+        length: Int64 = 884_983,
+        size: Int64 = 50_000_000,
+        primaryURL: String? = nil,
+        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
+    ) -> [String: Any] {
+        [
+            "length": length,
+            "size": size,
+            "url": primaryURL ?? "https://media.example.invalid/\(path)",
+            "backup_url": backupURLs,
+        ]
+    }
+
+    private func progressivePlayURLResponse(
+        durl: [[String: Any]]? = nil,
+        format: String = "mp4",
+        length: Int64 = 884_983,
+        size: Int64 = 50_000_000,
+        primaryURL: String? = nil,
+        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
+    ) throws -> HTTPResponse {
+        let resolvedDURL =
+            durl ?? [
+                progressiveDURL(
+                    length: length,
+                    size: size,
+                    primaryURL: primaryURL,
+                    backupURLs: backupURLs
+                )
+            ]
+        let body = try JSONSerialization.data(
+            withJSONObject: [
+                "code": 0,
+                "message": "OK",
+                "data": ["durl": resolvedDURL, "format": format],
+            ]
+        )
+        return HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: body
+        )
+    }
+
+    private func playURLFixtureByAddingDURL() throws -> HTTPResponse {
+        let fixture = try fixtureResponse("playurl")
+        var root = try #require(
+            JSONSerialization.jsonObject(with: fixture.body) as? [String: Any]
+        )
+        var data = try #require(root["data"] as? [String: Any])
+        // DASH 优先级还必须防止未消费的漂移 durl 破坏旧路径。
+        data["durl"] = [["unexpected": true]]
+        root["data"] = data
+        return HTTPResponse(
+            statusCode: 200,
+            headers: fixture.headers,
+            body: try JSONSerialization.data(withJSONObject: root)
+        )
+    }
+
+    private func viewFixtureWithUPower(
+        exclusive: Bool,
+        preview: Bool,
+        playable: Bool
+    ) throws -> HTTPResponse {
+        let fixture = try fixtureResponse("view")
+        var root = try #require(
+            JSONSerialization.jsonObject(with: fixture.body) as? [String: Any]
+        )
+        var data = try #require(root["data"] as? [String: Any])
+        data["is_upower_exclusive"] = exclusive
+        data["is_upower_preview"] = preview
+        data["is_upower_play"] = playable
+        root["data"] = data
+        return HTTPResponse(
+            statusCode: 200,
+            headers: fixture.headers,
+            body: try JSONSerialization.data(withJSONObject: root)
         )
     }
 

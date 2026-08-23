@@ -183,6 +183,7 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
     /// 当前 BVID 自身的分 P；与所属合集同时存在，不表达合集 episode。
     public let pages: [VideoPage]
     public let collection: VideoCollection?
+    public let access: VideoAccess
 
     public init(
         bvid: String,
@@ -196,7 +197,8 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
         dimension: VideoDimension? = nil,
         aid: Int64? = nil,
         pages: [VideoPage] = [],
-        collection: VideoCollection? = nil
+        collection: VideoCollection? = nil,
+        access: VideoAccess = VideoAccess()
     ) {
         self.aid = aid
         self.bvid = bvid
@@ -210,6 +212,24 @@ public struct VideoDetail: Identifiable, Sendable, Equatable {
         self.dimension = dimension
         self.pages = pages
         self.collection = collection
+        self.access = access
+    }
+}
+
+/// `nil` 表示 endpoint 未提供该事实；不能把未知折叠成明确 false。
+public struct VideoAccess: Sendable, Equatable {
+    public let isUPowerExclusive: Bool?
+    public let isUPowerPreviewAvailable: Bool?
+    public let isUPowerPlayable: Bool?
+
+    public init(
+        isUPowerExclusive: Bool? = nil,
+        isUPowerPreviewAvailable: Bool? = nil,
+        isUPowerPlayable: Bool? = nil
+    ) {
+        self.isUPowerExclusive = isUPowerExclusive
+        self.isUPowerPreviewAvailable = isUPowerPreviewAvailable
+        self.isUPowerPlayable = isUPowerPlayable
     }
 }
 
@@ -382,19 +402,36 @@ public struct VideoCollectionEpisode: Identifiable, Sendable, Equatable {
 }
 
 public struct VideoPlayback: Sendable, Equatable {
-    public let manifest: PlaybackManifest
+    public let media: PlaybackMedia
     public let mediaHeaders: [String: String]
     /// 已认证 playurl 返回的账户级断点；匿名响应与异常字段保持为 nil。
     public let resumeMetadata: PlaybackResumeMetadata?
+
+    public var dashManifest: PlaybackManifest? {
+        guard case .dash(let manifest) = media else { return nil }
+        return manifest
+    }
+
+    public init(
+        media: PlaybackMedia,
+        mediaHeaders: [String: String],
+        resumeMetadata: PlaybackResumeMetadata? = nil
+    ) {
+        self.media = media
+        self.mediaHeaders = mediaHeaders
+        self.resumeMetadata = resumeMetadata
+    }
 
     public init(
         manifest: PlaybackManifest,
         mediaHeaders: [String: String],
         resumeMetadata: PlaybackResumeMetadata? = nil
     ) {
-        self.manifest = manifest
-        self.mediaHeaders = mediaHeaders
-        self.resumeMetadata = resumeMetadata
+        self.init(
+            media: .dash(manifest),
+            mediaHeaders: mediaHeaders,
+            resumeMetadata: resumeMetadata
+        )
     }
 }
 

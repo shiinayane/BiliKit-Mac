@@ -1,10 +1,27 @@
 import BiliModels
 
 public struct PlaybackRequest: Sendable, Equatable {
-    public let manifest: PlaybackManifest
+    public let media: PlaybackMedia
     public let preferredVideoRepresentationID: Int?
     public let preferredAudioRepresentationIDs: [String: Int]
     public let mediaHeaders: [String: String]
+
+    public var dashManifest: PlaybackManifest? {
+        guard case .dash(let manifest) = media else { return nil }
+        return manifest
+    }
+
+    public init(
+        media: PlaybackMedia,
+        preferredVideoRepresentationID: Int? = nil,
+        preferredAudioRepresentationIDs: [String: Int] = [:],
+        mediaHeaders: [String: String] = [:]
+    ) {
+        self.media = media
+        self.preferredVideoRepresentationID = preferredVideoRepresentationID
+        self.preferredAudioRepresentationIDs = preferredAudioRepresentationIDs
+        self.mediaHeaders = mediaHeaders
+    }
 
     public init(
         manifest: PlaybackManifest,
@@ -12,10 +29,12 @@ public struct PlaybackRequest: Sendable, Equatable {
         preferredAudioRepresentationIDs: [String: Int] = [:],
         mediaHeaders: [String: String] = [:]
     ) {
-        self.manifest = manifest
-        self.preferredVideoRepresentationID = preferredVideoRepresentationID
-        self.preferredAudioRepresentationIDs = preferredAudioRepresentationIDs
-        self.mediaHeaders = mediaHeaders
+        self.init(
+            media: .dash(manifest),
+            preferredVideoRepresentationID: preferredVideoRepresentationID,
+            preferredAudioRepresentationIDs: preferredAudioRepresentationIDs,
+            mediaHeaders: mediaHeaders
+        )
     }
 }
 

@@ -208,3 +208,45 @@ public struct PlaybackManifest: Sendable, Equatable {
             ]
     }
 }
+
+public enum ProgressiveMediaContainer: String, Sendable, Equatable {
+    case mp4
+}
+
+/// 服务端返回的单文件渐进媒体。
+///
+/// 候选仍是不可信远端输入，连接前必须再次通过媒体 URL policy。
+public struct ProgressivePlaybackSource: Sendable, Equatable {
+    public let primaryURL: URL
+    public let backupURLs: [URL]
+    public let contentLength: Int64
+    public let durationMilliseconds: Int64
+    public let contentType: String
+    public let container: ProgressiveMediaContainer
+
+    public init(
+        primaryURL: URL,
+        backupURLs: [URL] = [],
+        contentLength: Int64,
+        durationMilliseconds: Int64,
+        contentType: String,
+        container: ProgressiveMediaContainer
+    ) {
+        self.primaryURL = primaryURL
+        self.backupURLs = backupURLs
+        self.contentLength = contentLength
+        self.durationMilliseconds = durationMilliseconds
+        self.contentType = contentType
+        self.container = container
+    }
+
+    public var urlCandidates: [URL] {
+        [primaryURL] + backupURLs
+    }
+}
+
+/// 一次播放只可能持有一种合法媒体，避免空 DASH、双来源或无来源状态。
+public enum PlaybackMedia: Sendable, Equatable {
+    case dash(PlaybackManifest)
+    case progressive(ProgressivePlaybackSource)
+}

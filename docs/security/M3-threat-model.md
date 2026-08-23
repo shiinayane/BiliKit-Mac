@@ -93,7 +93,8 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 ### 4.3 登录态播放信息
 
 - 登录态播放信息只允许精确 `GET https://api.bilibili.com:443/x/player/playurl`。基础 query
-  必须且只能包含合法 `bvid`、正 `cid`、正 `qn`、`fnval=976`、`fnver=0`、`fourk=1`；
+  必须且只能包含合法 `bvid`、正 `cid`、正 `qn`、`fnval=976`、`fnver=0`、`fourk=1`、
+  `voice_balance=1`；
   登录态 AI 音轨验证另允许唯一一个 `cur_language`，其值必须是 2–35 字符、由受限
   BCP 47 形态的 ASCII 字母数字 subtag 组成。空值、重复键、路径字符和任何其他参数均
   失败关闭。生产播放只有在本次基础请求确实完成授权，且该响应给出 1–8 项完整、受限、
@@ -110,6 +111,13 @@ Apple 将 Keychain 定位为替 App 安全存储小块秘密数据的加密数�
 - Cookie 在各 API 响应边界终止。`VideoPlayback.mediaHeaders`、媒体 CDN、图片、字幕正文
   与 loopback Range server 不得得到 Cookie；登录状态变化继续关闭当前播放，不在
   当前 item 上热换授权结果。
+- 同一精确 playurl 响应可以映射 DASH 或安全的单段 progressive `durl`，同时存在时优先
+  DASH。`durl` 不扩大 account-read Cookie allowlist，不新增 WBI playurl，也不把远端签名 URL
+  传给 Feature 或日志。
+- progressive 候选在映射与实际连接前双重通过媒体 CDN allowlist。上游只能是 HTTPS，
+  媒体 session 无 Cookie/credential/cache 并拒绝 redirect；loopback 还会再次剥离 Cookie、
+  Authorization 与静态媒体 headers 中的 Range，只转发本次经解析验证的 AVPlayer 单一
+  Range。当前 item 停止、替换、关窗或登出时必须取消上下游；日志不记录 host/query/签名 URL。
 - 用户显式线路测速复用同一精确 playurl GET 授权边界，但缺少凭据时必须失败，且不请求 AI 音轨。
   Cookie 在 playurl 映射边界终止；后续 SIDX/媒体 Range 由无 credential、无 Cookie、拒绝 redirect
   的专用 ephemeral client 读取。原始 bilivideo 只由独立 client 建立结构基准，19 条测量路线共享另一

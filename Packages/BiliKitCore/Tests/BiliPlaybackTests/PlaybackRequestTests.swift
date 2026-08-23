@@ -38,7 +38,7 @@ struct PlaybackRequestTests {
             preferredAudioRepresentationIDs: ["original": audio.id]
         )
 
-        #expect(request.manifest == manifest)
+        #expect(request.dashManifest == manifest)
         #expect(request.preferredVideoRepresentationID == 80)
         #expect(request.preferredAudioRepresentationIDs == ["original": 30280])
         #expect(request.mediaHeaders.isEmpty)

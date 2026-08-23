@@ -328,6 +328,9 @@ struct AppEnvironment {
                 },
                 toggleSubtitles: { [playerEngine] in
                     await playerEngine.toggleNativeSubtitles()
+                },
+                timelineUpdates: { [playerEngine] in
+                    playerEngine.timelineUpdates()
                 }
             )
         )

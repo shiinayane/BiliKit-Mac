@@ -74,6 +74,29 @@ struct PlaybackTimelineStoreTests {
     }
 
     @Test
+    func seekOrReplayClearsEndedStateOnTheSameItem() {
+        let store = PlaybackTimelineStore()
+        let token = store.beginItem(
+            identity: PlaybackItemIdentity(
+                bvid: "BV1EndedTimeline",
+                cid: 900_001
+            )
+        )
+        store.markReady(token: token, durationSeconds: 120)
+        store.update(
+            token: token,
+            positionSeconds: 120,
+            rate: 0,
+            state: .ended
+        )
+
+        store.markDiscontinuity(token: token, positionSeconds: 20)
+
+        #expect(store.currentSnapshot.state == .paused)
+        #expect(store.currentSnapshot.positionSeconds == 20)
+    }
+
+    @Test
     func replacementRejectsOldItemUpdatesAndClear() {
         let store = PlaybackTimelineStore()
         let oldIdentity = PlaybackItemIdentity(

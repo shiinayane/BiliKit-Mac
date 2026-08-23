@@ -14,7 +14,7 @@ struct GuestVideoUseCaseTests {
         #expect(context.detail.bvid == "BV1FixtureA1")
         #expect(context.pages.map(\.index) == [1, 2])
         #expect(context.selectedPage.index == 1)
-        #expect(context.playback.manifest.videoRepresentations.first?.id == 32)
+        #expect(context.playback.dashManifest?.videoRepresentations.first?.id == 32)
         #expect(await repository.playbackCIDs() == [900_001])
     }
 
@@ -134,6 +134,161 @@ struct GuestVideoUseCaseTests {
         }
         #expect(await repository.playbackRequestCount() == 0)
     }
+
+    @Test
+    func ordinaryProgressiveMediaIsNotMisclassifiedAsUPowerPreview() throws {
+        let context = try progressiveContext(access: VideoAccess())
+
+        #expect(context.accessNotice == nil)
+    }
+
+    @Test
+    func shortUPowerProgressiveMediaProducesPreviewAccessNotice() throws {
+        let context = try progressiveContext(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: true,
+                isUPowerPlayable: false
+            )
+        )
+
+        #expect(
+            context.accessNotice
+                == .upowerPreview(
+                    previewDurationSeconds: 884,
+                    fullDurationSeconds: 2_255
+                )
+        )
+    }
+
+    @Test
+    func extremePageDurationDoesNotOverflowPreviewClassification() throws {
+        let base = try progressiveContext(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: true,
+                isUPowerPlayable: false
+            )
+        )
+        let page = VideoPage(
+            cid: base.selectedPage.cid,
+            index: base.selectedPage.index,
+            title: base.selectedPage.title,
+            durationSeconds: .max
+        )
+        let context = GuestVideoContext(
+            detail: base.detail,
+            pages: [page],
+            selectedPage: page,
+            playback: base.playback
+        )
+
+        #expect(context.accessNotice == .upowerExclusive)
+    }
+
+    @Test
+    func fullDASHKeepsOnlyUPowerExclusiveNotice() throws {
+        let repository = GuestRepositoryStub()
+        let playback = try repository.fixturePlaybackForTesting()
+        let detail = makeAccessDetail(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: true,
+                isUPowerPlayable: true
+            )
+        )
+        let page = VideoPage(
+            cid: 900_001,
+            index: 1,
+            title: "P1",
+            durationSeconds: 2_255
+        )
+        let context = GuestVideoContext(
+            detail: detail,
+            pages: [page],
+            selectedPage: page,
+            playback: playback
+        )
+
+        #expect(context.accessNotice == .upowerExclusive)
+    }
+
+    @Test
+    func explicitNoRightsAndBusinessRejectionUsesEntitlementMessage() async {
+        let repository = GuestRepositoryStub(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: false,
+                isUPowerPlayable: false
+            ),
+            playbackFailure: .serviceRejected(code: -10403)
+        )
+
+        await #expect(throws: GuestApplicationError.fullViewingEntitlementRequired) {
+            try await GuestVideoUseCase(repository: repository).prepareVideo(
+                bvid: "BV1FixtureA1"
+            )
+        }
+    }
+
+    @Test
+    func explicitNoRightsWithoutBusinessRejectionKeepsPlaybackFailure() async {
+        let repository = GuestRepositoryStub(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: false,
+                isUPowerPlayable: false
+            ),
+            playbackFailure: .playbackUnavailable
+        )
+
+        await #expect(throws: GuestApplicationError.playbackUnavailable) {
+            try await GuestVideoUseCase(repository: repository).prepareVideo(
+                bvid: "BV1FixtureA1"
+            )
+        }
+    }
+
+    private func progressiveContext(access: VideoAccess) throws -> GuestVideoContext {
+        let page = VideoPage(
+            cid: 900_001,
+            index: 1,
+            title: "P1",
+            durationSeconds: 2_255
+        )
+        let source = ProgressivePlaybackSource(
+            primaryURL: try #require(
+                URL(string: "https://media.example.invalid/preview.mp4")
+            ),
+            contentLength: 50_000_000,
+            durationMilliseconds: 884_983,
+            contentType: "video/mp4",
+            container: .mp4
+        )
+        return GuestVideoContext(
+            detail: makeAccessDetail(access: access),
+            pages: [page],
+            selectedPage: page,
+            playback: VideoPlayback(
+                media: .progressive(source),
+                mediaHeaders: [:]
+            )
+        )
+    }
+
+    private func makeAccessDetail(access: VideoAccess) -> VideoDetail {
+        VideoDetail(
+            bvid: "BV1FixtureA1",
+            title: "详情",
+            summary: "说明",
+            coverURL: nil,
+            owner: VideoOwner(id: 1, name: "作者"),
+            statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
+            durationSeconds: 2_255,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            access: access
+        )
+    }
 }
 
 private actor FallbackCancellationRepository: GuestContentRepository {
@@ -217,17 +372,23 @@ private actor GuestRepositoryStub: GuestContentRepository {
     private let hasPages: Bool
     private let detailHasPages: Bool
     private let resumeMetadata: PlaybackResumeMetadata?
+    private let access: VideoAccess
+    private let playbackFailure: GuestApplicationError?
     private var observedPlaybackCIDs: [Int64] = []
     private var observedPageRequestCount = 0
 
     init(
         hasPages: Bool = true,
         detailHasPages: Bool = false,
-        resumeMetadata: PlaybackResumeMetadata? = nil
+        resumeMetadata: PlaybackResumeMetadata? = nil,
+        access: VideoAccess = VideoAccess(),
+        playbackFailure: GuestApplicationError? = nil
     ) {
         self.hasPages = hasPages
         self.detailHasPages = detailHasPages
         self.resumeMetadata = resumeMetadata
+        self.access = access
+        self.playbackFailure = playbackFailure
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
@@ -280,6 +441,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
         cid: Int64
     ) async throws -> VideoPlayback {
         observedPlaybackCIDs.append(cid)
+        if let playbackFailure { throw playbackFailure }
         return try makePlayback()
     }
 
@@ -301,7 +463,8 @@ private actor GuestRepositoryStub: GuestContentRepository {
             ),
             durationSeconds: 360,
             publishedAt: Date(timeIntervalSince1970: 1_720_000_000),
-            pages: detailHasPages ? fixturePages : []
+            pages: detailHasPages ? fixturePages : [],
+            access: access
         )
     }
 
@@ -343,4 +506,45 @@ private actor GuestRepositoryStub: GuestContentRepository {
             resumeMetadata: resumeMetadata
         )
     }
+
+    nonisolated func fixturePlaybackForTesting() throws -> VideoPlayback {
+        try makeFixturePlayback(resumeMetadata: nil)
+    }
+}
+
+private func makeFixturePlayback(
+    resumeMetadata: PlaybackResumeMetadata?
+) throws -> VideoPlayback {
+    let segmentBase = SegmentBase(
+        initialization: try MediaByteRange(start: 0, endInclusive: 999),
+        index: try MediaByteRange(start: 1_000, endInclusive: 1_999)
+    )
+    let videoURL = try #require(URL(string: "https://media.example.invalid/video.m4s"))
+    let audioURL = try #require(URL(string: "https://media.example.invalid/audio.m4s"))
+    return VideoPlayback(
+        manifest: PlaybackManifest(
+            videoRepresentations: [
+                MediaRepresentation(
+                    id: 32,
+                    kind: .video,
+                    codecs: "avc1.64001f",
+                    mimeType: "video/mp4",
+                    primaryURL: videoURL,
+                    segmentBase: segmentBase
+                )
+            ],
+            originalAudioRepresentations: [
+                MediaRepresentation(
+                    id: 30216,
+                    kind: .audio,
+                    codecs: "mp4a.40.2",
+                    mimeType: "audio/mp4",
+                    primaryURL: audioURL,
+                    segmentBase: segmentBase
+                )
+            ]
+        ),
+        mediaHeaders: [:],
+        resumeMetadata: resumeMetadata
+    )
 }

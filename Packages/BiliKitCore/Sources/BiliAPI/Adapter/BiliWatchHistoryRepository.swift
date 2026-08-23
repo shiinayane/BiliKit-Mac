@@ -44,7 +44,8 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
             .missingData, .invalidWBIKey, .signingFailed,
             .invalidMediaData, .invalidSubtitleData,
             .untrustedSubtitleOrigin, .nonProtobufResponse,
-            .invalidDanmakuData, .noAVCVideo, .noAACAudio:
+            .invalidDanmakuData, .noAVCVideo, .noAACAudio,
+            .unsupportedProgressiveMedia, .noPlayableMedia:
             .invalidResponse
         }
     }

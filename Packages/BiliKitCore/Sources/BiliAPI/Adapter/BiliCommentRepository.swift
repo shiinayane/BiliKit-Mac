@@ -114,7 +114,8 @@ public actor BiliCommentRepository: CommentRepository {
             return CommentReadError.authenticationInvalid
         case .httpStatus, .authorizationUnavailable, .nonProtobufResponse,
             .invalidMediaData, .invalidSubtitleData, .untrustedSubtitleOrigin,
-            .invalidDanmakuData, .noAVCVideo, .noAACAudio:
+            .invalidDanmakuData, .noAVCVideo, .noAACAudio,
+            .unsupportedProgressiveMedia, .noPlayableMedia:
             return CommentReadError.unavailable
         }
     }

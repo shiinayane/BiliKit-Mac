@@ -3,7 +3,9 @@ import BiliModels
 import Foundation
 
 struct PlayURLPayload: Decodable, Sendable {
-    let dash: DASHPayload
+    let dash: DASHPayload?
+    let durl: DURLPayloadSelection?
+    let format: String?
     let volume: PlaybackVolumePayload?
     let currentLanguage: String?
     let currentProductionType: Int?
@@ -13,6 +15,8 @@ struct PlayURLPayload: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case dash
+        case durl
+        case format
         case volume
         case currentLanguage = "cur_language"
         case currentProductionType = "cur_production_type"
@@ -23,7 +27,16 @@ struct PlayURLPayload: Decodable, Sendable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        dash = try container.decode(DASHPayload.self, forKey: .dash)
+        dash = try container.decodeIfPresent(DASHPayload.self, forKey: .dash)
+        // 有 DASH 时完全保持既有路径，不让未使用的 durl 漂移阻断正常播放。
+        durl =
+            dash == nil
+            ? try container.decodeIfPresent(DURLPayloadSelection.self, forKey: .durl)
+            : nil
+        format =
+            dash == nil
+            ? try container.decodeIfPresent(String.self, forKey: .format)
+            : nil
         volume = try? container.decode(PlaybackVolumePayload.self, forKey: .volume)
         currentLanguage = try? container.decode(
             String.self,
@@ -46,6 +59,88 @@ struct PlayURLPayload: Decodable, Sendable {
         return PlaybackResumeMetadata(
             lastPlayedCID: lastPlayCID,
             positionMilliseconds: lastPlayTime
+        )
+    }
+}
+
+enum DURLPayloadSelection: Decodable, Sendable {
+    case empty
+    case single(DURLPayload)
+    case multiple
+
+    init(from decoder: any Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        if let count = container.count {
+            switch count {
+            case 0:
+                self = .empty
+            case 1:
+                self = .single(try container.decode(DURLPayload.self))
+            default:
+                // 多段本轮明确不支持；不要再解码未使用分段，让其中的字段漂移改写稳定错误语义。
+                self = .multiple
+            }
+            return
+        }
+
+        guard !container.isAtEnd else {
+            self = .empty
+            return
+        }
+        let first = try container.decode(DURLPayload.self)
+        self = container.isAtEnd ? .single(first) : .multiple
+    }
+}
+
+struct DURLPayload: Decodable, Sendable {
+    let length: Int64
+    let size: Int64
+    let url: String?
+    let backupURLs: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case length, size, url
+        case backupURLs = "backup_url"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        length = try container.decode(Int64.self, forKey: .length)
+        size = try container.decode(Int64.self, forKey: .size)
+        url = try container.decodeIfPresent(String.self, forKey: .url)
+        backupURLs =
+            try container.decodeIfPresent(
+                [String].self,
+                forKey: .backupURLs
+            ) ?? []
+    }
+
+    func model() throws -> ProgressivePlaybackSource {
+        guard length > 0 else {
+            throw BiliAPIError.unsupportedProgressiveMedia(.invalidDuration)
+        }
+        guard size > 0 else {
+            throw BiliAPIError.unsupportedProgressiveMedia(.invalidSize)
+        }
+        var seen = Set<URL>()
+        let candidates = ([url].compactMap { $0 } + backupURLs).compactMap {
+            raw -> URL? in
+            guard let candidate = URL(string: raw),
+                BiliMediaURLPolicy().allows(candidate),
+                seen.insert(candidate).inserted
+            else { return nil }
+            return candidate
+        }
+        guard let primaryURL = candidates.first else {
+            throw BiliAPIError.unsupportedProgressiveMedia(.noSafeURL)
+        }
+        return ProgressivePlaybackSource(
+            primaryURL: primaryURL,
+            backupURLs: Array(candidates.dropFirst()),
+            contentLength: size,
+            durationMilliseconds: length,
+            contentType: "video/mp4",
+            container: .mp4
         )
     }
 }

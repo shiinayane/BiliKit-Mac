@@ -2,6 +2,7 @@ import AVKit
 import BiliApplication
 import BiliBrowseFeature
 import BiliDanmaku
+import BiliModels
 import BiliPlayback
 import BiliUI
 import SwiftUI
@@ -11,6 +12,7 @@ import SwiftUI
 /// 响应式页面可以重排这个 View，但不应创建第二个 player host；AppKit host 的销毁会
 /// 主动断开 player 并释放弹幕 surface ownership。
 struct PlayerHostView: View {
+    @State private var previewEndedNotice: String?
     let player: AVPlayer
     let danmakuRenderer: CoreAnimationDanmakuRenderer
     let danmakuController: DanmakuPresentationController
@@ -22,6 +24,7 @@ struct PlayerHostView: View {
     let togglePlayback: (() -> Bool?)?
     let toggleDanmaku: (() -> Bool)?
     let toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
+    let timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)?
 
     init(
         player: AVPlayer,
@@ -34,7 +37,8 @@ struct PlayerHostView: View {
         adjustVolume: ((Float) -> Float)? = nil,
         togglePlayback: (() -> Bool?)? = nil,
         toggleDanmaku: (() -> Bool)? = nil,
-        toggleSubtitles: (() async -> NativeSubtitleToggleResult)? = nil
+        toggleSubtitles: (() async -> NativeSubtitleToggleResult)? = nil,
+        timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)? = nil
     ) {
         self.player = player
         self.danmakuRenderer = danmakuRenderer
@@ -47,6 +51,7 @@ struct PlayerHostView: View {
         self.togglePlayback = togglePlayback
         self.toggleDanmaku = toggleDanmaku
         self.toggleSubtitles = toggleSubtitles
+        self.timelineUpdates = timelineUpdates
     }
 
     var body: some View {
@@ -56,6 +61,7 @@ struct PlayerHostView: View {
             controller: danmakuController,
             blocksNativePlaybackInteraction: blocksNativePlaybackInteraction,
             resumeNotice: videoModel?.resumeNotice,
+            previewEndedNotice: previewEndedNotice,
             restartFromBeginning: { videoModel?.restartFromBeginning() },
             beginMomentaryPlaybackRate: beginMomentaryPlaybackRate,
             endMomentaryPlaybackRate: endMomentaryPlaybackRate,
@@ -66,6 +72,28 @@ struct PlayerHostView: View {
             toggleSubtitles: toggleSubtitles,
             focusIdentity: videoModel?.presentedBVID
         )
+        .task(id: previewProjectionIdentity) {
+            previewEndedNotice = nil
+            guard let timelineUpdates,
+                let context = videoModel?.presentedContext
+            else { return }
+            let identity = PlaybackItemIdentity(
+                bvid: context.detail.bvid,
+                cid: context.selectedPage.cid
+            )
+            for await snapshot in timelineUpdates() {
+                guard !Task.isCancelled else { return }
+                previewEndedNotice =
+                    PlaybackPreviewEndPolicy.shouldPresentNotice(
+                        accessNotice: context.accessNotice,
+                        expectedIdentity: identity,
+                        timeline: snapshot
+                    )
+                    ? AppStrings.localized(
+                        "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。"
+                    ) : nil
+            }
+        }
     }
 
     private var blocksNativePlaybackInteraction: Bool {
@@ -77,6 +105,12 @@ struct PlayerHostView: View {
             false
         }
     }
+
+    private var previewProjectionIdentity: String? {
+        guard let context = videoModel?.presentedContext else { return nil }
+        return
+            "\(context.detail.bvid):\(context.selectedPage.cid):\(String(describing: context.accessNotice))"
+    }
 }
 
 private struct AVPlayerContainerView: NSViewRepresentable {
@@ -85,6 +119,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let controller: DanmakuPresentationController
     let blocksNativePlaybackInteraction: Bool
     let resumeNotice: PlaybackResumeNotice?
+    let previewEndedNotice: String?
     let restartFromBeginning: () -> Void
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
@@ -117,6 +152,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
             resumeNotice,
             restartFromBeginning: restartFromBeginning
         )
+        view.setPreviewEndedNotice(previewEndedNotice)
         view.requestInitialKeyboardFocus(for: focusIdentity)
         return view
     }
@@ -135,6 +171,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
             resumeNotice,
             restartFromBeginning: restartFromBeginning
         )
+        view.setPreviewEndedNotice(previewEndedNotice)
         view.requestInitialKeyboardFocus(for: focusIdentity)
         if view.player !== player {
             view.cancelMomentaryPlaybackRate()
@@ -149,6 +186,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         coordinator: ()
     ) {
         view.setResumeNotice(nil, restartFromBeginning: {})
+        view.setPreviewEndedNotice(nil)
         view.danmakuOverlay.detachSurface()
         view.stopObservingFocusLoss()
         view.stopObservingPlayerItemChanges()
@@ -364,6 +402,29 @@ private struct PlayerResumeButtonStyle: ViewModifier {
     }
 }
 
+private struct PlayerPreviewEndedBadge: View {
+    let message: String
+
+    var body: some View {
+        Label(message, systemImage: "hourglass.bottomhalf.filled")
+            .font(.body.weight(.semibold))
+            .multilineTextAlignment(.leading)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .modifier(PlayerGlassCapsuleBackground())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(message)
+    }
+}
+
+@MainActor
+private final class PlayerPreviewEndedBadgeHostingView:
+    NSHostingView<PlayerPreviewEndedBadge>
+{
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 @MainActor
 private final class PlayerShortcutFeedbackBadgeHostingView:
     NSHostingView<PlayerShortcutFeedbackBadge>
@@ -387,6 +448,8 @@ final class DanmakuPlayerView: AVPlayerView {
     private var playerTimeControlObservation: NSKeyValueObservation?
     private var playerItemTimeJumpObserver: NSObjectProtocol?
     private var resumeButtonHostingView: NSHostingView<PlayerResumeButton>?
+    private var previewEndedHostingView: PlayerPreviewEndedBadgeHostingView?
+    private var displayedPreviewEndedNotice: String?
     private var displayedResumeNotice: PlaybackResumeNotice?
     private var dismissedResumeToken: PlaybackResumeToken?
     private var resumeRestartAction: (() -> Void)?
@@ -522,6 +585,41 @@ final class DanmakuPlayerView: AVPlayerView {
         )
     }
 
+    func setPreviewEndedNotice(_ message: String?) {
+        displayedPreviewEndedNotice = message
+        guard let message else {
+            previewEndedHostingView?.removeFromSuperview()
+            previewEndedHostingView = nil
+            return
+        }
+        if let previewEndedHostingView {
+            previewEndedHostingView.rootView = PlayerPreviewEndedBadge(message: message)
+            return
+        }
+        guard let contentOverlayView else { return }
+        let hostingView = PlayerPreviewEndedBadgeHostingView(
+            rootView: PlayerPreviewEndedBadge(message: message)
+        )
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        contentOverlayView.addSubview(hostingView, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            hostingView.centerXAnchor.constraint(equalTo: contentOverlayView.centerXAnchor),
+            hostingView.bottomAnchor.constraint(
+                equalTo: contentOverlayView.bottomAnchor,
+                constant: -64
+            ),
+            hostingView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: contentOverlayView.leadingAnchor,
+                constant: 20
+            ),
+            hostingView.trailingAnchor.constraint(
+                lessThanOrEqualTo: contentOverlayView.trailingAnchor,
+                constant: -20
+            ),
+        ])
+        previewEndedHostingView = hostingView
+    }
+
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if window !== newWindow {
             stopObservingFocusLoss()
@@ -544,6 +642,11 @@ final class DanmakuPlayerView: AVPlayerView {
                 notice: displayedResumeNotice,
                 restartFromBeginning: resumeRestartAction
             )
+        }
+        if previewEndedHostingView == nil,
+            let message = displayedPreviewEndedNotice
+        {
+            setPreviewEndedNotice(message)
         }
     }
 

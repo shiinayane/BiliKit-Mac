@@ -14,7 +14,7 @@ public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
     case inconsistentSubtitleTimeline
 }
 
-/// 一次已启动的 loopback HLS 会话；其生命周期就是底层 server 的生命周期。
+/// 一次已启动的 loopback 播放会话；其生命周期就是底层 server 的生命周期。
 ///
 /// owner 必须在替换播放项或失败时调用 `stop`；`deinit` 只是最后一道幂等清理保障。
 public final class PreparedPlaybackAsset: @unchecked Sendable {
@@ -38,7 +38,7 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
     }
 }
 
-/// 把 DASH representation 的 SIDX/Range 语义转换为 AVPlayer 可消费的本机 HLS 会话。
+/// 把 DASH 或单文件 progressive Range 语义转换为 AVPlayer 可消费的本机播放会话。
 ///
 /// Bridge 只构造内存 playlist 与按需代理，不下载完整媒体；任一步失败都会停止已启动 server。
 public struct DASHToHLSBridge: Sendable {
@@ -96,6 +96,37 @@ public struct DASHToHLSBridge: Sendable {
             headers: headers,
             subtitleSource: nil
         )
+    }
+
+    /// 在同一个 loopback owner 中登记 progressive MP4；正文由 server 按 AVPlayer 的单 Range
+    /// 逐块转发，不在 bridge 或 server 中缓存完整媒体。
+    public func prepare(
+        progressive source: ProgressivePlaybackSource,
+        headers: [String: String] = [:]
+    ) async throws -> PreparedPlaybackAsset {
+        let server = serverFactory(rangeClient)
+        do {
+            try await server.start()
+            let resource = try LoopbackProgressiveResource(
+                candidateURLs: source.urlCandidates,
+                contentLength: source.contentLength,
+                contentType: source.contentType,
+                allowsOctetStreamWithContainerEvidence:
+                    source.container == .mp4
+                    && source.urlCandidates.allSatisfy {
+                        $0.pathExtension.lowercased() == "mp4"
+                    },
+                headers: headers
+            )
+            let localURL = try server.register(
+                .progressive(resource),
+                at: "progressive/media.mp4"
+            )
+            return PreparedPlaybackAsset(url: localURL, server: server)
+        } catch {
+            server.stop()
+            throw error
+        }
     }
 
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。

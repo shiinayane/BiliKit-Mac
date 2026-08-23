@@ -14,6 +14,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case invalidWBIKey
     case signingFailed
     case invalidMediaData
+    case unsupportedProgressiveMedia(ProgressiveMediaFailure)
+    case noPlayableMedia
     case invalidSubtitleData
     case untrustedSubtitleOrigin
     case invalidDanmakuData
@@ -52,6 +54,10 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "signing-failed"
         case .invalidMediaData:
             "invalid-media-data"
+        case .unsupportedProgressiveMedia(let failure):
+            "unsupported-progressive-media-\(failure.rawValue)"
+        case .noPlayableMedia:
+            "no-playable-media"
         case .invalidSubtitleData:
             "invalid-subtitle-data"
         case .untrustedSubtitleOrigin:
@@ -64,4 +70,13 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "no-aac-audio"
         }
     }
+}
+
+public enum ProgressiveMediaFailure: String, Sendable, Equatable {
+    case empty
+    case multipleSegments
+    case invalidDuration
+    case invalidSize
+    case noSafeURL
+    case unsupportedContainer
 }

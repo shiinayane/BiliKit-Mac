@@ -117,8 +117,11 @@ extension BiliAPIError {
             .serviceRejected(code: code)
         case .noAVCVideo, .noAACAudio:
             .unsupportedMedia
+        case .noPlayableMedia:
+            .playbackUnavailable
         case .responseTooLarge, .decodingFailed, .missingData,
             .invalidWBIKey, .signingFailed, .invalidMediaData,
+            .unsupportedProgressiveMedia,
             .invalidSubtitleData, .untrustedSubtitleOrigin,
             .nonProtobufResponse, .invalidDanmakuData:
             .invalidResponse
