@@ -565,6 +565,7 @@ struct PopularNativeGridTests {
 
     @Test @MainActor
     func popularMappingKeepsStableBVIDAndCurrentSlots() throws {
+        let locale = Locale(identifier: "zh-Hans")
         let video = PopularVideo(
             bvid: "BV-stable",
             title: "原生卡片",
@@ -584,7 +585,7 @@ struct PopularNativeGridTests {
         )
 
         let content = try #require(
-            PopularNativeGridView.makePresentations([video]).first
+            PopularNativeGridView.makePresentations([video], locale: locale).first
         )
         #expect(content.id == "BV-stable")
         #expect(content.title == "原生卡片")
@@ -595,7 +596,7 @@ struct PopularNativeGridTests {
         #expect(content.showsAvatar)
         #expect(
             content.accessibilityLabel.contains(
-                AppStrings.localized("时长 \("2:05")")
+                AppStrings.localized("时长 \("2:05")", locale: locale)
             )
         )
     }
@@ -644,6 +645,7 @@ struct PopularNativeGridTests {
 
     @Test @MainActor
     func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
+        let locale = Locale(identifier: "zh-Hans")
         let video = SearchVideo(
             bvid: "BV-search-stable",
             title: "搜索原生卡片",
@@ -662,7 +664,7 @@ struct PopularNativeGridTests {
             publishedAt: Date(timeIntervalSince1970: 0)
         )
 
-        let featurePresentation = SearchVideoCardPresentation(video: video)
+        let featurePresentation = SearchVideoCardPresentation(video: video, locale: locale)
         let content = SearchNativeGridView.makePresentation(featurePresentation)
 
         #expect(content.id == "BV-search-stable")
@@ -674,7 +676,7 @@ struct PopularNativeGridTests {
         #expect(content.footerLeadingText.contains("搜索作者"))
         #expect(
             content.accessibilityLabel.contains(
-                AppStrings.localized("时长 \("3:05")")
+                AppStrings.localized("时长 \("3:05")", locale: locale)
             )
         )
     }
