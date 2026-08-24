@@ -6,7 +6,11 @@
 >
 > 范围：Web QR 获取与轮询、登录结果确认、Keychain 持久化、已登录请求授权和本地登出。
 
-本文先定义需要保护的资产、信任边界和失败方式，再允许实现认证。它不是对 Bilibili 未公开 Web 接口稳定性的承诺；当前现场观察见 [`../validation/M3-auth-contract-research-2026-07-21.md`](../validation/M3-auth-contract-research-2026-07-21.md)，架构决策见 [`../adr/0005-web-qr-authentication-boundary.md`](../adr/0005-web-qr-authentication-boundary.md)。
+本文先定义需要保护的资产、信任边界和失败方式，再允许实现认证。它不是对 Bilibili 未公开
+Web 接口稳定性的承诺；架构决策见
+[`../adr/0005-web-qr-authentication-boundary.md`](../adr/0005-web-qr-authentication-boundary.md)，
+保留的签名 Keychain 与授权证据见
+[`../validation/M3-keychain-authorization-2026-07-21.md`](../validation/M3-keychain-authorization-2026-07-21.md)。
 
 ## 1. 保护目标
 

@@ -1,7 +1,11 @@
 # M3 Keychain 与请求授权验证（2026-07-21）
 
 > 结论：M3 的 Data Protection Keychain、请求授权、认证 Feature 与完整本地登出均已
-> 通过自动化；签名 App 完成真实 Keychain 往返。端到端账号链路见同日观看历史记录。
+> 通过自动化；签名 App 完成真实 Keychain 往返。
+>
+> 历史边界：本记录使用当时的 `com.shiinayane.BiliKitMac` identity。当前候选已经改为
+> `com.shiinayane.BiliKit`，因此这份记录只证明机制可行，不能替代当前 Developer ID 候选的
+> entitlement、Keychain、升级和重装验证。
 
 ## 1. 实现范围
 

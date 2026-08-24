@@ -1,38 +1,41 @@
 # 项目文档
 
-这里保存仍会影响当前开发判断的现行文档，以及具有长期复查价值的带日期证据。历史
-阶段契约和审计记录用于解释当时事实，不再决定当前顺序；Git 历史承担已经失去复查价值
-的临时计划归档。
+这里仅保留会影响当前开发判断的现行文档，以及无法被代码和自动测试替代的带日期证据。
+临时计划、逐轮审计稿和已完成阶段的重复状态表由 Git 历史归档，不继续占用当前入口。
 
-## 当前入口
+## 从这里开始
 
-- [`ROADMAP.md`](./ROADMAP.md)：当前能力、大体方向和唯一已选择的后续阶段。
-- [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)：v1 产品结果与范围。
-- [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：长期界面与交互方向。
-- [`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)：已接受但未排期的
-  无顺序候选；不表示实施授权。
-- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：自动检查和真实行为验证入口。
-- [`development/M5.0-daily-client-state-retention-decision.md`](./development/M5.0-daily-client-state-retention-decision.md)：
-  M5.0 的问题、用户结果、资源边界与完成摘要。
-- [`development/M5.0.1-external-facts-audit-contract.md`](./development/M5.0.1-external-facts-audit-contract.md)：
-  已完成的 M5.0.1 审计执行契约；只解释历史取证边界。
-- [`audits/M5.0.1/`](./audits/M5.0.1/)：M5.0.1 带日期的发现、证据与用户裁决，不决定
-  当前实施顺序。
+- [`ROADMAP.md`](./ROADMAP.md)：当前能力、唯一进行中的阶段和后续候选。
+- [`product/PRODUCT-VISION.md`](./product/PRODUCT-VISION.md)：V1 产品结果与范围。
+- [`product/UIUX-VISION.md`](./product/UIUX-VISION.md)：界面与交互原则。
+- [`product/PRODUCT-CANDIDATES.md`](./product/PRODUCT-CANDIDATES.md)：已记录但未排期的候选；不表示实施授权。
+- [`development/QUALITY-GATES.md`](./development/QUALITY-GATES.md)：静态、Package 和 App 验证入口。
 
-## 持久约束
+## V1 分发
 
-- [`adr/`](./adr/)：已接受的架构决策。旧 ADR 保留当时背景，由明确写明“取代”的新 ADR
-  更新当前决策。
-- [`security/`](./security/)：认证、凭据、媒体来源和本地数据边界。
-- [`validation/`](./validation/)：仍值得复查的真实设备、网络、性能、安全和兼容性证据。
+- [`release/README.md`](./release/README.md)：Developer ID、签名、公证、DMG、Gatekeeper、Intel、
+  Sparkle 与 Cloudflare 的当前决策和严格实施顺序。
+- [`release/CHECKLIST.md`](./release/CHECKLIST.md)：发布候选逐项 Gate。
+- [`release/MANIFEST.md`](./release/MANIFEST.md)：每个不可变发布候选的版本、工具链、签名、公证
+  和最终分发物证据模板。
+- [`adr/0013-v1-universal-developer-id-distribution.md`](./adr/0013-v1-universal-developer-id-distribution.md)：
+  V1 Developer ID 成品采用 `arm64 + x86_64` Universal，并保留真实 Intel 发布 Gate。
 
-验证与审计记录是带日期的证据，不是当前测试数量、工具链、实现状态或排期的权威来源。
-当前事实应先核对代码、`Package.swift`、Xcode 工程和质量 Gate；未实施候选以产品候选
-登记为索引，再回到原始审计证据复核。
+当前 App ID `com.shiinayane.BiliKit` 的 Apple 后台归属问题仍在等待支持工单处理；在同一正式
+Team 下无法稳定注册和生成 profile 前，不制作正式发布候选。详见分发文档，不从历史验证稿
+推断已经具备公证资格。
 
-## 研究材料
+## 长期约束
 
-[`RESEARCH-native-macos-client.md`](./RESEARCH-native-macos-client.md) 是立项期的竞品、技术、
-许可和分发研究。它可以解释历史选择，但不定义当前模块名、路线图、工程结构或 AI 工作
-流程。第三方 checkout 只允许放在被 Git 忽略的 `references/`，不得成为产品依赖、测试
-fixture 或可复制源码。
+- [`adr/`](./adr/)：已接受的架构决策。旧 ADR 只由明确写明“取代”的新 ADR 更新。
+- [`security/`](./security/)：认证、凭据、媒体来源、本地服务和数据隐私边界。
+- [`evidence/`](./evidence/)：仍值得复查的审计摘要与核心能力证据索引。
+- [`validation/`](./validation/)：索引所引用的少量详细真实验证记录。
+
+## 阅读规则
+
+1. 当前事实先核对代码、`Package.swift`、Xcode 工程和质量 Gate。
+2. 排期只看 `ROADMAP.md`；候选清单不等于授权。
+3. 发布只看 `release/`；旧阶段验证不等于当前 Release、签名或公证通过。
+4. 带日期证据只证明所列环境和样本。工具链、服务端、签名身份或代码改变后应重新验证。
+5. 需要追溯已删除的过程稿时使用 Git 历史，不把历史任务表恢复成现行规范。
