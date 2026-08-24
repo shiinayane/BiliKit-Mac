@@ -120,8 +120,8 @@ M3 第 5 步已经按本决策接入真实 App：
 
 自动化、未登录/二维码/取消 UI smoke、认证 Feature 与完整本地登出证据已合并到
 [`../validation/M3-keychain-authorization-2026-07-21.md`](../validation/M3-keychain-authorization-2026-07-21.md)。
-观看历史 endpoint 已按同一授权边界接入；真实扫码、重启恢复、个性化读取与界面登出证据见
-[`../validation/M3-watch-history-2026-07-21.md`](../validation/M3-watch-history-2026-07-21.md)。
+观看历史 endpoint 已按同一授权边界接入。历史现场验证属于带日期证据；认证协议或授权边界
+改变时必须按当前代码重新验证，不能从旧结果推断服务端仍保持相同行为。
 
 ## 账户读取能力修订
 

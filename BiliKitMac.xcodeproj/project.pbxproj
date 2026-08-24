@@ -63,19 +63,9 @@
 			path = Design;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000029 /* Packages */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Packages;
-			sourceTree = "<group>";
-		};
 		A1000000000000000000002A /* Scripts */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Scripts;
-			sourceTree = "<group>";
-		};
-		A1000000000000000000002B /* Tools */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Tools;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -122,9 +112,7 @@
 				8DFA9003300F375500DF3E1D /* BiliKitMac */,
 				8DFA9011300F375600DF3E1D /* BiliKitMacTests */,
 				A10000000000000000000028 /* Design */,
-				A10000000000000000000029 /* Packages */,
 				A1000000000000000000002A /* Scripts */,
-				A1000000000000000000002B /* Tools */,
 				8DFA902B300F37DA00DF3E1D /* docs */,
 				8DFA9002300F375500DF3E1D /* Products */,
 			);
@@ -421,13 +409,14 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;
 				PRODUCT_NAME = BiliKit;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -442,6 +431,10 @@
 		8DFA9024300F375600DF3E1D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					arm64,
+					x86_64,
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;
@@ -453,13 +446,15 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
+				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;
 				PRODUCT_NAME = BiliKit;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

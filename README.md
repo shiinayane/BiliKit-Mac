@@ -79,6 +79,13 @@ BiliKit 正在完成 v1 的日常观看闭环。首页个性推荐、热门、�
 
 目前没有公开安装包。首个可分发版本准备完成后，本节会提供下载方式、系统要求和校验信息。
 
+V1 已冻结为 Universal App：最低支持 macOS 15，同时包含 Apple Silicon（`arm64`）和 Intel
+（`x86_64`）架构。真实 Intel Mac 的发布候选运行验证仍是正式发布 Gate；在该证据完成前，
+本说明不代表已经提供可下载成品。
+
+未来公开分发的安装、验签、卸载和故障恢复边界见[分发说明](DISTRIBUTION.md)，数据与凭据处理见
+[隐私说明](PRIVACY.md)。最终下载 URL、DMG 文件名和 SHA-256 只会在不可变发布资产生成后填写。
+
 <details>
 <summary><strong>从源码构建</strong></summary>
 
@@ -87,7 +94,9 @@ BiliKit 正在完成 v1 的日常观看闭环。首页个性推荐、热门、�
 - macOS 15 或更高版本
 - 支持 Swift 6 的完整版 Xcode
 
-使用 Xcode 打开 `BiliKitMac.xcodeproj`，选择 `BiliKitMac` scheme 和 “My Mac” 运行目标。
+使用 Xcode 打开 `BiliKitMac.xcworkspace`：日常开发选择 `BiliKitMac` scheme 和 “My Mac”
+运行目标；弹幕实验与性能校准选择独立的 `DanmakuLab` scheme。`DanmakuLab` 不进入正式
+App target、归档或分发物。
 
 仓库完整质量检查：
 
@@ -128,6 +137,9 @@ v1 聚焦浏览、搜索、登录、观看历史和连续播放。以下能力�
 - [UI/UX 产品蓝图](docs/product/UIUX-VISION.md)
 - [路线图](docs/ROADMAP.md)
 - [质量检查与验证边界](docs/development/QUALITY-GATES.md)
+- [分发说明](DISTRIBUTION.md)
+- [隐私说明](PRIVACY.md)
+- [安全问题报告](SECURITY.md)
 - [架构决策](docs/adr/)
 - [安全边界](docs/security/)
 - [真实行为验证记录](docs/validation/)
