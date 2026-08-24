@@ -1,4 +1,3 @@
-import BiliAPI
 import BiliPlayback
 import Foundation
 import Observation
@@ -26,16 +25,19 @@ enum PlaybackRouteBenchmarkAccess: Sendable, Equatable {
     var allowsBenchmark: Bool { self == .signedIn }
 }
 
+enum PlaybackRouteBenchmarkOperationError: Error {
+    case authenticationFailure
+}
+
 @MainActor
 @Observable
 final class AppSettingsModel {
-    static let supportedBenchmarkSampleCounts =
-        CDNBenchmarkSampleDiscoverer.supportedSampleCounts
-    typealias Discover = @Sendable (Int) async throws -> [CDNBenchmarkDiscoveredSample]
+    static let supportedBenchmarkSampleCounts = 1...3
+    typealias Discover = @Sendable (Int) async throws -> [PlaybackRouteBenchmarkSample]
     typealias ResetDiscovery = @Sendable () async -> Void
     typealias Run =
         @Sendable (
-            [CDNBenchmarkDiscoveredSample],
+            [PlaybackRouteBenchmarkSample],
             @escaping @Sendable (Int, Int) async -> Void
         ) async throws -> [PlaybackRouteMeasurement]
 
@@ -51,7 +53,6 @@ final class AppSettingsModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var discoveryResetTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private var isConfigured = false
     @ObservationIgnored private var authenticationAccessByOwner:
         [UUID: PlaybackRouteBenchmarkAccess] = [:]
 
@@ -70,38 +71,9 @@ final class AppSettingsModel {
         record = store.load()
     }
 
-    static func live() -> AppSettingsModel {
-        AppSettingsModel(
-            store: UserDefaultsPlaybackSourcePreferenceStore(),
-            benchmarkAccess: .resolving,
-            discover: { _ in throw BiliAPIError.authorizationRequired },
-            run: { _, _ in throw BiliAPIError.authorizationRequired }
-        )
-    }
-
     deinit {
         task?.cancel()
         discoveryResetTask?.cancel()
-    }
-
-    func configureBenchmark(client: BiliAPIClient) {
-        guard !isConfigured else { return }
-        isConfigured = true
-        let discoverer = CDNBenchmarkSampleDiscoverer(client: client)
-        let benchmark = BilivideoRouteBenchmark()
-        discover = { try await discoverer.discover(targetCount: $0) }
-        resetDiscovery = { await discoverer.resetSeenSamples() }
-        run = { samples, progress in
-            try await benchmark.benchmarkUnifiedPool(
-                samples: samples.map {
-                    PlaybackRouteBenchmarkSample(
-                        template: $0.videoRepresentation,
-                        headers: $0.mediaHeaders
-                    )
-                },
-                progress: progress
-            )
-        }
     }
 
     func synchronizeAuthentication(_ access: PlaybackRouteBenchmarkAccess) {
@@ -227,16 +199,11 @@ final class AppSettingsModel {
                 self?.applyResult(result, generation: currentGeneration)
             } catch is CancellationError {
                 self?.applyCancellation(generation: currentGeneration)
-            } catch let error as BiliAPIError {
-                let failure: PlaybackRouteBenchmarkState =
-                    switch error {
-                    case .authorizationRequired, .authenticationInvalid,
-                        .authorizationUnavailable:
-                        .authenticationFailure
-                    default:
-                        .networkOrProtocolFailure
-                    }
-                self?.applyFailure(failure, generation: currentGeneration)
+            } catch PlaybackRouteBenchmarkOperationError.authenticationFailure {
+                self?.applyFailure(
+                    .authenticationFailure,
+                    generation: currentGeneration
+                )
             } catch {
                 self?.applyFailure(
                     .networkOrProtocolFailure,

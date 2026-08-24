@@ -9,9 +9,19 @@ import SwiftUI
 
 @main
 struct BiliKitMacApp: App {
-    @State private var accountSessionCoordinator = AccountSessionCoordinator()
+    @State private var accountSessionCoordinator: AccountSessionCoordinator
     @State private var systemNowPlayingController = SystemNowPlayingController()
-    @State private var appSettingsModel = AppSettingsModel.live()
+    @State private var appSettingsModel: AppSettingsModel
+
+    init() {
+        let accountSessionCoordinator = AccountSessionCoordinator()
+        _accountSessionCoordinator = State(initialValue: accountSessionCoordinator)
+        _appSettingsModel = State(
+            initialValue: AppEnvironment.liveAppSettingsModel(
+                accountSessionCoordinator: accountSessionCoordinator
+            )
+        )
+    }
 
     var body: some Scene {
         WindowGroup {

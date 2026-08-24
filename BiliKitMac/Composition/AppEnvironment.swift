@@ -349,6 +349,44 @@ struct AppEnvironment {
         )
     }
 
+    static func liveAppSettingsModel(
+        accountSessionCoordinator: AccountSessionCoordinator
+    ) -> AppSettingsModel {
+        let api = makeLiveAPIClient()
+        _ = accountSessionCoordinator.registerSessionInvalidator(api)
+        let discoverer = CDNBenchmarkSampleDiscoverer(client: api)
+        let benchmark = BilivideoRouteBenchmark()
+        return AppSettingsModel(
+            store: UserDefaultsPlaybackSourcePreferenceStore(),
+            benchmarkAccess: .resolving,
+            discover: { targetCount in
+                do {
+                    return try await discoverer.discover(targetCount: targetCount).map {
+                        PlaybackRouteBenchmarkSample(
+                            template: $0.videoRepresentation,
+                            headers: $0.mediaHeaders
+                        )
+                    }
+                } catch let error as BiliAPIError {
+                    switch error {
+                    case .authorizationRequired, .authenticationInvalid,
+                        .authorizationUnavailable:
+                        throw PlaybackRouteBenchmarkOperationError.authenticationFailure
+                    default:
+                        throw error
+                    }
+                }
+            },
+            resetDiscovery: { await discoverer.resetSeenSamples() },
+            run: { samples, progress in
+                try await benchmark.benchmarkUnifiedPool(
+                    samples: samples,
+                    progress: progress
+                )
+            }
+        )
+    }
+
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
     /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；公开 Browse、Search、评论、
@@ -358,25 +396,7 @@ struct AppEnvironment {
         accountSessionCoordinator: AccountSessionCoordinator? = nil,
         appSettingsModel: AppSettingsModel? = nil
     ) -> AppEnvironment {
-        let requestAuthorizer = BiliCredentialRequestAuthorizer()
-        let transportFactory: @Sendable () -> any HTTPTransport = {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.httpShouldSetCookies = false
-            configuration.httpCookieStorage = nil
-            configuration.urlCache = nil
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.timeoutIntervalForRequest = 15
-            configuration.timeoutIntervalForResource = 30
-            return URLSessionTransport(
-                configuration: configuration,
-                redirectPolicy: .reject
-            )
-        }
-        let api = BiliAPIClient(
-            requestAuthorizer: requestAuthorizer,
-            transportFactory: transportFactory
-        )
-        appSettingsModel?.configureBenchmark(client: api)
+        let api = makeLiveAPIClient()
         let sessionRegistration = accountSessionCoordinator.map {
             AppEnvironmentSessionRegistration(
                 coordinator: $0,
@@ -442,6 +462,27 @@ struct AppEnvironment {
         surfaceWidth: 0,
         surfaceHeight: 0
     )
+
+    private static func makeLiveAPIClient() -> BiliAPIClient {
+        let requestAuthorizer = BiliCredentialRequestAuthorizer()
+        let transportFactory: @Sendable () -> any HTTPTransport = {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpShouldSetCookies = false
+            configuration.httpCookieStorage = nil
+            configuration.urlCache = nil
+            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+            configuration.timeoutIntervalForRequest = 15
+            configuration.timeoutIntervalForResource = 30
+            return URLSessionTransport(
+                configuration: configuration,
+                redirectPolicy: .reject
+            )
+        }
+        return BiliAPIClient(
+            requestAuthorizer: requestAuthorizer,
+            transportFactory: transportFactory
+        )
+    }
 }
 
 @MainActor
