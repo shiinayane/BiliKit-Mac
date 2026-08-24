@@ -71,5 +71,6 @@ expect_count 0 '#if compiler(>=6.2)' "$app_source_roots" "搜索栏不得为旧 
 expect_count 0 '#if compiler(>=6.2)' "$player_host" "播放器提示不得为旧 SDK 保留编译期回退"
 
 sh -n Scripts/run-quality-gates.sh || fail "质量 Gate 脚本语法无效"
+sh -n Scripts/run-targeted-tests.sh || fail "定向测试脚本语法无效"
 
 echo "工程、安全能力与最低系统版本静态契约检查通过"

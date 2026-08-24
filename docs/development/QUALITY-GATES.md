@@ -18,6 +18,25 @@ Gate 每次使用私有临时目录保存 SwiftPM 与 Xcode 产物，退出时�
 临时运行时诊断时需注明证据边界。CI 使用同一入口，并在 macOS 15/26
 宿主上显式选择同一套新 Xcode/SDK；这个矩阵不承诺旧 SDK 编译兼容。
 
+Gate 是交付闭包，不是迭代命令。定向测试可在同一任务内复用一份私有缓存；临时根必须由
+当前任务唯一创建，不能跨 worktree 或任务复用，并在任务结束时整体删除：
+
+```sh
+task_artifact_root=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-targeted.XXXXXX")
+cleanup() { rm -rf -- "$task_artifact_root"; }
+trap cleanup EXIT
+
+sh Scripts/run-targeted-tests.sh \
+    "$task_artifact_root" package 'GuestVideoViewModelTests'
+sh Scripts/run-targeted-tests.sh \
+    "$task_artifact_root" app 'BiliKitMacTests/PlaybackSourceSettingsTests'
+```
+
+重复调用同一模式会复用该任务根内的 SwiftPM scratch 或 Xcode DerivedData；`--filter` 和
+`-only-testing` 只缩小测试执行集合，首次调用仍可能编译对应 test product 的完整依赖图。
+脚本会在空任务根写入当前 canonical worktree 的 owner marker；非空但无 marker 或 owner 不匹配
+时拒绝复用。最终验证仍使用上面的 Gate，由 Gate 创建并清理新的 fresh closure。
+
 仅在明确的性能裁决中运行 Instruments/`xctrace`；事前限定问题、时长、次数和产物目录。
 摘要完成后默认删除 raw trace，并退出 Instruments、确认没有开放 trace、清理临时产物。
 

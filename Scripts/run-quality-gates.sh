@@ -24,6 +24,9 @@ fi
 export DEVELOPER_DIR="$developer_dir"
 
 artifact_root=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-quality-gate.XXXXXX")
+task_tmp="$artifact_root/tmp"
+module_cache="$artifact_root/ModuleCache.noindex"
+mkdir -p "$task_tmp" "$module_cache"
 cleanup() {
     status=$?
     if ! rm -rf -- "$artifact_root" 2>/dev/null; then
@@ -54,6 +57,9 @@ echo "[Gate] package"
 HOME="$swiftpm_home" \
 CFFIXED_USER_HOME="$swiftpm_home" \
 XDG_CACHE_HOME="$swiftpm_home/.cache" \
+TMPDIR="$task_tmp" \
+CLANG_MODULE_CACHE_PATH="$module_cache" \
+SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
 xcrun swift test \
     --quiet \
     --package-path Packages/BiliKitCore \
@@ -76,6 +82,9 @@ echo "[Gate] app build-for-testing"
 HOME="$xcode_home" \
 CFFIXED_USER_HOME="$xcode_home" \
 XDG_CACHE_HOME="$xcode_home/.cache" \
+TMPDIR="$task_tmp" \
+CLANG_MODULE_CACHE_PATH="$module_cache" \
+SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
 xcodebuild \
     -quiet \
     -project BiliKitMac.xcodeproj \
@@ -92,6 +101,9 @@ echo "[Gate] app tests"
 HOME="$xcode_home" \
 CFFIXED_USER_HOME="$xcode_home" \
 XDG_CACHE_HOME="$xcode_home/.cache" \
+TMPDIR="$task_tmp" \
+CLANG_MODULE_CACHE_PATH="$module_cache" \
+SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
 xcodebuild \
     -quiet \
     -project BiliKitMac.xcodeproj \
