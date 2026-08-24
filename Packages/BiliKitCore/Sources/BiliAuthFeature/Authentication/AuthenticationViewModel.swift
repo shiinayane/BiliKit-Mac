@@ -262,14 +262,13 @@ public final class AuthenticationViewModel {
     /// Sheet 关闭时只取消由该登录界面发起的挑战，不接管窗口级启动恢复。
     public func cancelPresentedLoginWork() {
         switch state {
-        case .requestingQRCode, .awaitingScan, .awaitingConfirmation,
-            .finalizing, .expired:
+        case .requestingQRCode, .awaitingScan, .awaitingConfirmation, .expired:
             cancelLogin()
         case .failed:
             if retryAction == .login {
                 cancelLogin()
             }
-        case .signedOut, .restoring, .signedIn, .signingOut:
+        case .signedOut, .restoring, .finalizing, .signedIn, .signingOut:
             break
         }
     }

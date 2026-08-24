@@ -2,6 +2,7 @@ import BiliApplication
 import SwiftUI
 
 public struct AuthenticationView: View {
+    @Environment(\.dismiss) private var dismiss
     private let model: AuthenticationViewModel
 
     public init(model: AuthenticationViewModel) {
@@ -9,13 +10,31 @@ public struct AuthenticationView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 20) {
-            Text(AuthFeatureStrings.localized("账号"))
-                .font(.title2.weight(.semibold))
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(AuthFeatureStrings.localized("账号"))
+                    .font(.title2.weight(.semibold))
 
-            content
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(28)
+
+            HStack {
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text(AuthFeatureStrings.localized("完成"))
+                }
+                .modifier(AuthenticationCompletionButtonStyle())
+                .keyboardShortcut(.cancelAction)
+                .accessibilityHint(dismissalHint)
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 56)
         }
-        .padding(28)
         .frame(width: 420)
         .frame(minHeight: 420)
         .task {
@@ -24,6 +43,19 @@ public struct AuthenticationView: View {
         }
         .onDisappear {
             model.cancelPresentedLoginWork()
+        }
+    }
+
+    private var dismissalHint: String {
+        switch model.state {
+        case .requestingQRCode, .awaitingScan, .awaitingConfirmation:
+            AuthFeatureStrings.localized("关闭并取消本次登录。")
+        case .restoring, .finalizing, .signingOut:
+            AuthFeatureStrings.localized("关闭后，此操作仍会在后台继续。")
+        case .failed where model.canCancelFailure:
+            AuthFeatureStrings.localized("关闭并取消本次登录。")
+        case .signedOut, .signedIn, .expired, .failed:
+            AuthFeatureStrings.localized("关闭账号窗口。")
         }
     }
 
@@ -162,6 +194,17 @@ public struct AuthenticationView: View {
             AuthFeatureStrings.localized("登录协议返回了无法安全处理的数据。")
         case .credentialUnavailable:
             AuthFeatureStrings.localized("无法访问本机 Keychain；请解锁 Mac 后重试。")
+        }
+    }
+}
+
+private struct AuthenticationCompletionButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glassProminent)
+        } else {
+            content.buttonStyle(.borderedProminent)
         }
     }
 }

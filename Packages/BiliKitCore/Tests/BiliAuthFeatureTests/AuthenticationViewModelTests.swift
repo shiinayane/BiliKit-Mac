@@ -205,6 +205,96 @@ struct AuthenticationViewModelTests {
 
     @Test
     @MainActor
+    func dismissingAuthenticationSheetCancelsPresentedQRCodeWork() async throws {
+        let service = AuthenticationServiceStub(
+            requestStates: [.awaitingScan],
+            suspendedFirstImageCompletion: .image
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.startLogin()
+        try await service.waitForFirstImageStart()
+        let presentedTask = try #require(model.taskSnapshotForTesting())
+        model.cancelPresentedLoginWork()
+        await model.waitForCurrentTask()
+        await service.releaseFirstImage()
+        await presentedTask.value
+
+        #expect(model.state == .signedOut)
+        #expect(model.qrCodeImage == nil)
+        #expect(await service.observedCalls() == ["request", "image", "cancel"])
+    }
+
+    @Test
+    @MainActor
+    func dismissingAuthenticationSheetLetsFinalizationFinishInBackground() async throws {
+        let service = AuthenticationServiceStub(
+            requestStates: [.awaitingScan],
+            pollStates: [.finalizing],
+            finalizeState: .signedIn(nil),
+            suspendsFirstFinalize: true
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.startLogin()
+        try await service.waitForFirstFinalizeStart()
+        model.cancelPresentedLoginWork()
+        #expect(
+            await service.observedCalls()
+                == ["request", "image", "poll", "finalize"]
+        )
+        #expect(model.state == .finalizing)
+        #expect(model.sessionState == .unresolved)
+
+        await service.releaseFirstFinalize()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedIn(nil))
+        #expect(model.sessionState == .signedIn(nil))
+        #expect(await service.observedCalls() == ["request", "image", "poll", "finalize"])
+    }
+
+    @Test
+    @MainActor
+    func dismissingAuthenticationSheetLetsSignOutFinishInBackground() async throws {
+        let service = AuthenticationServiceStub(
+            restoreState: .signedIn(nil),
+            logoutState: .signedOut,
+            suspendsFirstLogout: true
+        )
+        let model = AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            pollInterval: .zero
+        )
+
+        model.restoreIfNeeded()
+        await model.waitForCurrentTask()
+        model.logout()
+        try await service.waitForFirstLogoutStart()
+        model.cancelPresentedLoginWork()
+
+        #expect(model.state == .signingOut)
+        #expect(await service.observedCalls() == ["restore", "logout"])
+
+        await service.releaseFirstLogout()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .signedOut)
+        #expect(model.sessionState == .signedOut)
+        #expect(await service.observedCalls() == ["restore", "logout"])
+    }
+
+    @Test
+    @MainActor
     func restoreFailureRetriesRestoreInsteadOfStartingLogin() async {
         let service = AuthenticationServiceStub(
             restoreState: .failed(.network)
@@ -393,6 +483,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private let logoutState: AuthenticationState
     private let suspendedFirstImageCompletion: StaleQRCodeCompletion?
     private let suspendsFirstRestore: Bool
+    private let suspendsFirstFinalize: Bool
     private let suspendsFirstLogout: Bool
     private var imageCount = 0
     private var restoreCount = 0
@@ -401,9 +492,12 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private var firstRestoreReleased = false
     private let firstImageEvents = TestEventCounter()
     private let firstRestoreEvents = TestEventCounter()
+    private let firstFinalizeEvents = TestEventCounter()
     private let firstLogoutEvents = TestEventCounter()
     private var imageReleaseWaiters: [CheckedContinuation<Void, Never>] = []
     private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var finalizeReleased = false
+    private var finalizeReleaseWaiters: [CheckedContinuation<Void, Never>] = []
     private var logoutReleased = false
     private var logoutReleaseWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -416,6 +510,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         logoutState: AuthenticationState = .signedOut,
         suspendedFirstImageCompletion: StaleQRCodeCompletion? = nil,
         suspendsFirstRestore: Bool = false,
+        suspendsFirstFinalize: Bool = false,
         suspendsFirstLogout: Bool = false
     ) {
         self.requestStates = requestStates
@@ -426,6 +521,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         self.logoutState = logoutState
         self.suspendedFirstImageCompletion = suspendedFirstImageCompletion
         self.suspendsFirstRestore = suspendsFirstRestore
+        self.suspendsFirstFinalize = suspendsFirstFinalize
         self.suspendsFirstLogout = suspendsFirstLogout
     }
 
@@ -462,8 +558,18 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
         return pollStates.removeFirst()
     }
 
-    func finalizeLogin() -> AuthenticationState {
+    func finalizeLogin() async -> AuthenticationState {
         calls.append("finalize")
+        if suspendsFirstFinalize {
+            await firstFinalizeEvents.signal()
+            await withCheckedContinuation { continuation in
+                if finalizeReleased {
+                    continuation.resume()
+                } else {
+                    finalizeReleaseWaiters.append(continuation)
+                }
+            }
+        }
         return finalizeState
     }
 
@@ -539,6 +645,20 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     func releaseFirstRestore() {
         firstRestoreReleased = true
         resume(&restoreReleaseWaiters)
+    }
+
+    func waitForFirstFinalizeStart() async throws {
+        do {
+            try await firstFinalizeEvents.wait(until: 1)
+        } catch {
+            releaseFirstFinalize()
+            throw error
+        }
+    }
+
+    func releaseFirstFinalize() {
+        finalizeReleased = true
+        resume(&finalizeReleaseWaiters)
     }
 
     func waitForFirstLogoutStart() async throws {
