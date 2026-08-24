@@ -1,4 +1,3 @@
-import BiliAPI
 import BiliAuthFeature
 import BiliModels
 import BiliPlayback
@@ -281,10 +280,26 @@ struct PlaybackSourceSettingsTests {
         let model = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             discover: { _ in [try Self.sample()] },
-            run: { _, _ in throw BiliAPIError.transportFailure }
+            run: { _, _ in throw BenchmarkTestError.transportFailure }
         )
         model.startBenchmark()
         try await waitUntil { model.state == .networkOrProtocolFailure }
+
+        #expect(model.measurements.isEmpty)
+        #expect(model.selection == .serverDefault)
+    }
+
+    @Test @MainActor
+    func authenticationFailureKeepsItsDedicatedPresentationState() async throws {
+        let model = AppSettingsModel(
+            store: MemoryPlaybackSourcePreferenceStore(),
+            discover: { _ in
+                throw PlaybackRouteBenchmarkOperationError.authenticationFailure
+            },
+            run: { _, _ in [] }
+        )
+        model.startBenchmark()
+        try await waitUntil { model.state == .authenticationFailure }
 
         #expect(model.measurements.isEmpty)
         #expect(model.selection == .serverDefault)
@@ -387,15 +402,15 @@ struct PlaybackSourceSettingsTests {
         AppSettingsModel(store: store, discover: { _ in [] }, run: { _, _ in [] })
     }
 
-    private static func sample() throws -> CDNBenchmarkDiscoveredSample {
+    private static func sample() throws -> PlaybackRouteBenchmarkSample {
         let primaryURL = try #require(
             URL(string: "https://a.bilivideo.com/v.m4s?t=1")
         )
         let backupURL = try #require(
             URL(string: "https://a.akamaized.net/v.m4s?h=1")
         )
-        return CDNBenchmarkDiscoveredSample(
-            videoRepresentation: MediaRepresentation(
+        return PlaybackRouteBenchmarkSample(
+            template: MediaRepresentation(
                 id: 80,
                 kind: .video,
                 codecs: "avc1.640028",
@@ -409,7 +424,7 @@ struct PlaybackSourceSettingsTests {
                     index: try MediaByteRange(start: 10, endInclusive: 19)
                 )
             ),
-            mediaHeaders: [:]
+            headers: [:]
         )
     }
 
@@ -428,6 +443,10 @@ struct PlaybackSourceSettingsTests {
             try await Task.sleep(for: .milliseconds(1))
         }
     }
+}
+
+private enum BenchmarkTestError: Error {
+    case transportFailure
 }
 
 private final class MemoryPlaybackSourcePreferenceStore: PlaybackSourcePreferenceStoring,
