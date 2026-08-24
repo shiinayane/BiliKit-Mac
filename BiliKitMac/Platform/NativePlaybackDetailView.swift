@@ -191,7 +191,8 @@ final class NativePlaybackDetailRootView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
 
-        scrollView.drawsBackground = false
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .windowBackgroundColor
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.hasHorizontalScroller = false

@@ -36,6 +36,22 @@ struct NativePlaybackDetailTests {
 
     @Test
     @MainActor
+    func outerDetailDrawsAnOpaqueSystemBackgroundOverItsNavigationSource() {
+        let hostingController = NSHostingController(
+            rootView: Color.clear.frame(height: 1)
+        )
+        let root = NativePlaybackDetailRootView(
+            hostingController: hostingController
+        )
+
+        #expect(root.scrollView.drawsBackground)
+        #expect(root.scrollView.backgroundColor == .windowBackgroundColor)
+
+        root.reset()
+    }
+
+    @Test
+    @MainActor
     func outerDetailOwnsOnlyVerticalScrollingWithoutHorizontalElasticity() {
         let hostingController = NSHostingController(
             rootView: Color.clear.frame(height: 1)
