@@ -1,6 +1,7 @@
 import AppKit
 import BiliBrowseFeature
 import BiliModels
+import CoreText
 
 @MainActor
 enum NativePlaybackCommentsItemMeasurement {
@@ -709,7 +710,7 @@ final class NativePlaybackCommentThreadItem: NSCollectionViewItem {
 
 @MainActor
 private final class NativePlaybackCommentThreadView: NSView {
-    override var isFlipped: Bool { true }
+    nonisolated override var isFlipped: Bool { true }
     private let rootRow = NativePlaybackCommentRowView()
     private let repliesPanel = NativePlaybackCommentRepliesPanelView()
     private let separator = NSBox()
@@ -832,7 +833,7 @@ private final class NativePlaybackCommentThreadView: NSView {
 
 @MainActor
 private final class NativePlaybackCommentRowView: NSView {
-    override var isFlipped: Bool { true }
+    nonisolated override var isFlipped: Bool { true }
     private let avatar = NativePlaybackCommentAvatarView()
     private let authorLabel = NSTextField(labelWithString: "")
     private let authorBadges = NativePlaybackCommentAuthorBadgesView()
@@ -1185,22 +1186,27 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
         let text: String
         let background: NSColor?
         let stroke: NSColor?
-        let attributedText: NSAttributedString
+        let textLine: CTLine
         let textSize: NSSize
+        let baselineFromTop: CGFloat
         let width: CGFloat
 
         init(_ segment: Segment, font: NSFont) {
             text = segment.text
             background = segment.background
             stroke = segment.stroke
-            attributedText = NSAttributedString(
+            let attributedText = NSAttributedString(
                 string: segment.text,
                 attributes: [
                     .font: font,
                     .foregroundColor: segment.foreground,
                 ]
             )
+            textLine = CTLineCreateWithAttributedString(attributedText)
             textSize = attributedText.size()
+            var ascent: CGFloat = 0
+            CTLineGetTypographicBounds(textLine, &ascent, nil, nil)
+            baselineFromTop = ascent
             width = ceil(textSize.width + segment.horizontalPadding * 2)
         }
     }
@@ -1332,12 +1338,17 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
                 NSBezierPath(roundedRect: strokeRect, xRadius: 2, yRadius: 2)
                     .stroke()
             }
-            segment.attributedText.draw(
-                at: NSPoint(
+            if let context = NSGraphicsContext.current?.cgContext {
+                context.saveGState()
+                context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+                context.textPosition = NSPoint(
                     x: rect.midX - segment.textSize.width / 2,
                     y: rect.midY - segment.textSize.height / 2
+                        + segment.baselineFromTop
                 )
-            )
+                CTLineDraw(segment.textLine, context)
+                context.restoreGState()
+            }
             x += segment.width + 5
         }
     }
@@ -1976,7 +1987,7 @@ struct NativePlaybackCommentPictureGallery {
 
 @MainActor
 private final class NativePlaybackCommentPicturesView: NSView {
-    override var isFlipped: Bool { true }
+    nonisolated override var isFlipped: Bool { true }
     private let tiles = (0..<9).map { _ in NativePlaybackCommentPictureTileView() }
     private var slots: [NativePlaybackCommentPictureSlot] = []
     private var onOpen: ((NativePlaybackCommentPictureGallery) -> Void)?
@@ -2080,7 +2091,7 @@ private final class NativePlaybackCommentPicturesView: NSView {
 
 @MainActor
 private final class NativePlaybackCommentPictureTileView: NSButton {
-    override var isFlipped: Bool { true }
+    nonisolated override var isFlipped: Bool { true }
     private let imageView = NSImageView()
     private let placeholderLabel = NSTextField(labelWithString: AppStrings.localized("图片"))
     private var reference: CommentAssetReference?
@@ -2262,7 +2273,7 @@ private final class NativePlaybackCommentPictureTileView: NSButton {
 
 @MainActor
 private final class NativePlaybackCommentRepliesPanelView: NSView {
-    override var isFlipped: Bool { true }
+    nonisolated override var isFlipped: Bool { true }
     private let headerLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let expandButton = NSButton(title: "", target: nil, action: nil)
