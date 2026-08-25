@@ -77,6 +77,8 @@ public enum PlaybackTimelineState: Sendable, Equatable {
 /// `discontinuityGeneration` 在换项、seek 或时间跳变时前进，消费者不能只比较秒数来判断连续性。
 public struct PlaybackTimelineSnapshot: Sendable, Equatable {
     public let identity: PlaybackItemIdentity?
+    /// 当前播放器 item 的不可复用加载意图；用于拒绝相同 identity 的 ABA 迟到结果。
+    public let loadIntent: PlaybackLoadIntent?
     public let positionSeconds: Double
     public let durationSeconds: Double?
     public let rate: Double
@@ -89,9 +91,11 @@ public struct PlaybackTimelineSnapshot: Sendable, Equatable {
         durationSeconds: Double?,
         rate: Double,
         state: PlaybackTimelineState,
-        discontinuityGeneration: UInt64
+        discontinuityGeneration: UInt64,
+        loadIntent: PlaybackLoadIntent? = nil
     ) {
         self.identity = identity
+        self.loadIntent = loadIntent
         self.positionSeconds = Self.nonnegativeFinite(positionSeconds) ?? 0
         self.durationSeconds = durationSeconds.flatMap(Self.nonnegativeFinite)
         self.rate = Self.nonnegativeFinite(rate) ?? 0
@@ -105,7 +109,8 @@ public struct PlaybackTimelineSnapshot: Sendable, Equatable {
         durationSeconds: nil,
         rate: 0,
         state: .idle,
-        discontinuityGeneration: 0
+        discontinuityGeneration: 0,
+        loadIntent: nil
     )
 
     private static func nonnegativeFinite(_ value: Double) -> Double? {
@@ -119,6 +124,10 @@ public struct PlaybackTimelineSnapshot: Sendable, Equatable {
 public protocol PlaybackTimelineProviding: AnyObject {
     var currentTimelineSnapshot: PlaybackTimelineSnapshot { get }
     func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot>
+    /// 边界敏感消费者在发布者的 MainActor 回合内同步接收每个快照；返回值负责取消观察。
+    func observeTimeline(
+        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
+    ) -> @MainActor @Sendable () -> Void
 }
 
 @MainActor
@@ -156,9 +165,11 @@ package struct PlaybackTimelineItemToken: Sendable, Equatable {
 package final class PlaybackTimelineStore {
     package private(set) var currentSnapshot = PlaybackTimelineSnapshot.idle
     package var subscriberCount: Int { continuations.count }
+    package var observerCount: Int { observers.count }
 
     private var currentToken: PlaybackTimelineItemToken?
     private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
+    private var observers: [UUID: @MainActor (PlaybackTimelineSnapshot) -> Void] = [:]
 
     package init() {}
 
@@ -184,9 +195,22 @@ package final class PlaybackTimelineStore {
         return stream.stream
     }
 
+    /// heartbeat 等边界敏感消费者不经过只保留最新值的 AsyncStream 缓冲。
+    package func observe(
+        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
+    ) -> @MainActor @Sendable () -> Void {
+        let observationID = UUID()
+        observers[observationID] = observer
+        observer(currentSnapshot)
+        return { [weak self] in
+            self?.observers[observationID] = nil
+        }
+    }
+
     @discardableResult
     package func beginItem(
-        identity: PlaybackItemIdentity
+        identity: PlaybackItemIdentity,
+        loadIntent: PlaybackLoadIntent? = nil
     ) -> PlaybackTimelineItemToken {
         let token = PlaybackTimelineItemToken(value: UUID())
         currentToken = token
@@ -197,7 +221,8 @@ package final class PlaybackTimelineStore {
                 durationSeconds: nil,
                 rate: 0,
                 state: .loading,
-                discontinuityGeneration: nextGeneration()
+                discontinuityGeneration: nextGeneration(),
+                loadIntent: loadIntent
             )
         )
         return token
@@ -220,7 +245,8 @@ package final class PlaybackTimelineStore {
                 rate: currentSnapshot.rate,
                 state: state,
                 discontinuityGeneration:
-                    currentSnapshot.discontinuityGeneration
+                    currentSnapshot.discontinuityGeneration,
+                loadIntent: currentSnapshot.loadIntent
             )
         )
     }
@@ -241,7 +267,8 @@ package final class PlaybackTimelineStore {
                 rate: rate ?? currentSnapshot.rate,
                 state: state ?? currentSnapshot.state,
                 discontinuityGeneration:
-                    currentSnapshot.discontinuityGeneration
+                    currentSnapshot.discontinuityGeneration,
+                loadIntent: currentSnapshot.loadIntent
             )
         )
     }
@@ -263,7 +290,8 @@ package final class PlaybackTimelineStore {
                 durationSeconds: currentSnapshot.durationSeconds,
                 rate: currentSnapshot.rate,
                 state: state,
-                discontinuityGeneration: nextGeneration()
+                discontinuityGeneration: nextGeneration(),
+                loadIntent: currentSnapshot.loadIntent
             )
         )
     }
@@ -285,7 +313,8 @@ package final class PlaybackTimelineStore {
                 durationSeconds: nil,
                 rate: 0,
                 state: .idle,
-                discontinuityGeneration: nextGeneration()
+                discontinuityGeneration: nextGeneration(),
+                loadIntent: nil
             )
         )
     }
@@ -297,6 +326,10 @@ package final class PlaybackTimelineStore {
     private func publish(_ snapshot: PlaybackTimelineSnapshot) {
         guard snapshot != currentSnapshot else { return }
         currentSnapshot = snapshot
+        let currentObservers = Array(observers.values)
+        for observer in currentObservers {
+            observer(snapshot)
+        }
         for continuation in continuations.values {
             continuation.yield(snapshot)
         }

@@ -129,6 +129,7 @@ struct VideoDetailLifecycleTests {
     @MainActor
     func onlyResolvedAuthenticationBoundaryClosesPlayback() async throws {
         let fixture = VideoDetailLifecycleFixture()
+        let watchProgressProbe = WatchProgressConnectionProbe()
         let repository = VideoDetailLifecycleRepository(fixture: fixture)
         let playback = RecordingLifecyclePlayback()
         let browseModel = GuestBrowseViewModel(
@@ -174,7 +175,8 @@ struct VideoDetailLifecycleTests {
                 danmakuModel: danmakuModel,
                 authenticationModel: authenticationModel,
                 historyModel: historyModel,
-                playerContent: AnyView(EmptyView())
+                playerContent: AnyView(EmptyView()),
+                watchProgressConnection: watchProgressProbe.connection
             )
         )
         let window = NSWindow(
@@ -187,6 +189,8 @@ struct VideoDetailLifecycleTests {
         window.layoutIfNeeded()
         try await authenticationService.waitForFirstRestoreStart()
         #expect(authenticationModel.sessionState == .unresolved)
+        #expect(watchProgressProbe.startCount == 1)
+        #expect(watchProgressProbe.accessValues == [false])
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
@@ -201,6 +205,7 @@ struct VideoDetailLifecycleTests {
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
         #expect(playback.loadedIdentities.count == loadCountBeforeRestore)
         #expect(playback.stopCallCount == stopCountBeforeRestore)
+        #expect(watchProgressProbe.accessValues.last == true)
 
         let identity = AccountIdentity(
             id: 42,
@@ -229,6 +234,7 @@ struct VideoDetailLifecycleTests {
         #expect(videoModel.state == .idle)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(playback.stopCallCount == stopCountBeforeLogout + 1)
+        #expect(watchProgressProbe.accessValues.last == false)
 
         coordinator.openPlayback(fixture.bvid)
         await videoModel.waitForCurrentTask()
@@ -252,8 +258,10 @@ struct VideoDetailLifecycleTests {
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(playback.loadedIdentities.count == loadCountBeforeSignIn)
         #expect(playback.stopCallCount == stopCountBeforeSignIn + 1)
+        #expect(watchProgressProbe.accessValues.last == true)
 
         window.contentView = NSView()
+        #expect(watchProgressProbe.stopCount == 1)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -1218,6 +1226,21 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     func finalizeLogin() async -> AuthenticationState { .signedOut }
     func cancelLogin() async -> AuthenticationState { .signedOut }
     func logout() async -> AuthenticationState { .signedOut }
+}
+
+@MainActor
+private final class WatchProgressConnectionProbe {
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    private(set) var accessValues: [Bool] = []
+
+    var connection: WatchProgressWindowConnection {
+        WatchProgressWindowConnection(
+            start: { [weak self] in self?.startCount += 1 },
+            stop: { [weak self] in self?.stopCount += 1 },
+            setReportingAccess: { [weak self] in self?.accessValues.append($0) }
+        )
+    }
 }
 
 private struct LifecycleQRCodeProvider: AuthenticationQRCodeProviding {

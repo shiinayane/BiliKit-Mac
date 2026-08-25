@@ -25,6 +25,8 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
   IP、Referer、测速结果或原始指标。未知 schema/route 必须回退服务端默认；
 - 日志、崩溃诊断和探针只输出阶段、状态、Content-Type、字节数、字段名、计数和非内容
   的枚举分类。AI 音轨语言目录、语义轨和系统选择结果只存在于当前播放会话内存。
+- 登录播放的服务端进度写入默认存在且无设置项，但上报目标、位置、待发送请求和结果只存在于当前
+  进程内存；不建立离线队列，不写入 UserDefaults、SwiftData、文件或崩溃恢复状态。
 
 ## 3. 首个持久化切片的准入规则
 
@@ -74,7 +76,15 @@ Cookie、token、二维码 key 和 refresh token 继续只由 `BiliAuth` 管理�
 - 登录态 playurl 可把同一响应中的服务端分 P 与毫秒位置映射为一次性的首次定位候选；匿名
   响应不消费该账户字段。播放器在首次 `play` 前完成受 identity、load intent、item generation
   与用户交互 revision 保护的 seek，切视频、切 P、暂停、拖动或 teardown 都能否决迟到提交。
-  该位置不落盘；本阶段不发送 heartbeat 或任何观看历史写请求。
+  该位置不落盘。登录播放只通过精确
+  `POST https://api.bilibili.com:443/x/click-interface/web/heartbeat` 上报当前 Web heartbeat 协议要求的
+  普通投稿目标、会话/事件和整数秒时间事实；不发送播放量或其他写请求。
+- heartbeat owner 消费同一平台无关时间线；进程内单并发，每窗口周期合并且最终退出边界优先，
+  以账户 epoch、load intent、播放 identity、session generation 和 sequence 隔离。buffering 不形成
+  边界且不累计实际播放时长；睡眠冻结 timer，唤醒只重启一个 timer。
+- 游客不创建写意图。写授权器只允许精确 HTTPS origin/path/POST、固定 WBI query/form schema 与
+  视频 Referer，拒绝 redirect、预置秘密和额外字段；只发送 `SESSDATA`，CSRF 只在 `BiliAuth` 内注入。
+  HTTP 403/412、认证、网络、解析和业务失败只停止报告，不改变 AVPlayer，也不重放旧会话。
 - 账户变化会由 App 级 owner 推进所有存活窗口 API transport 的 authentication epoch；各窗口
   的旧 Popular/Search 分页、视频详情、Related、UP 主签名、分 P、播放信息、字幕目录与弹幕
   响应不得越过该 epoch 写回。

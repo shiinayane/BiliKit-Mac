@@ -25,6 +25,7 @@ final class AppWindowOwner {
     private let commentImagePipelineOwner: NativeVideoImagePipelineOwner
     private let playbackPreferencesController: PlaybackPreferencesController?
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator?
+    private let watchProgressConnection: WatchProgressWindowConnection?
     private let openEnvironment: (@MainActor @Sendable () -> Void)?
     private let closeEnvironment: (@MainActor @Sendable () -> Void)?
     private var isOpen = false
@@ -38,6 +39,9 @@ final class AppWindowOwner {
         let videoModel = environment.makeVideoViewModel()
         let commentsModel = environment.makeCommentsViewModel()
         let danmakuModel = environment.makeDanmakuViewModel()
+        let watchProgressConnection = environment.makeWatchProgressConnection(
+            videoModel: videoModel
+        )
         let navigationCoordinator = AppNavigationCoordinator(
             startPlayback: { intent in
                 AppWindowOwner.handlePlaybackSelection(
@@ -69,6 +73,7 @@ final class AppWindowOwner {
             systemNowPlayingController: systemNowPlayingController,
             systemNowPlayingConnection:
                 environment.makeSystemNowPlayingPlaybackConnection(),
+            watchProgressConnection: watchProgressConnection,
             openEnvironment: environment.open,
             closeEnvironment: environment.close
         )
@@ -111,6 +116,7 @@ final class AppWindowOwner {
         playbackPreferencesController: PlaybackPreferencesController? = nil,
         systemNowPlayingController: SystemNowPlayingController? = nil,
         systemNowPlayingConnection: SystemNowPlayingPlaybackConnection? = nil,
+        watchProgressConnection: WatchProgressWindowConnection? = nil,
         openEnvironment: (@MainActor @Sendable () -> Void)? = nil,
         closeEnvironment: (@MainActor @Sendable () -> Void)? = nil
     ) {
@@ -137,6 +143,7 @@ final class AppWindowOwner {
         } else {
             systemNowPlayingCoordinator = nil
         }
+        self.watchProgressConnection = watchProgressConnection
         self.openEnvironment = openEnvironment
         self.closeEnvironment = closeEnvironment
     }
@@ -145,12 +152,14 @@ final class AppWindowOwner {
         guard !isOpen, !isClosed else { return }
         isOpen = true
         openEnvironment?()
+        watchProgressConnection?.start()
         systemNowPlayingCoordinator?.start()
     }
 
     func close() {
         guard !isClosed else { return }
         isClosed = true
+        watchProgressConnection?.stop()
         systemNowPlayingCoordinator?.close()
         commentImagePipelineOwner.shutdown()
         if isOpen {
@@ -160,5 +169,15 @@ final class AppWindowOwner {
 
     func markWindowActive() {
         systemNowPlayingCoordinator?.markWindowActive()
+    }
+
+    func synchronizeWatchProgressAccess(_ scope: AccountSessionScope) {
+        let isSignedIn: Bool
+        if case .signedIn = scope {
+            isSignedIn = true
+        } else {
+            isSignedIn = false
+        }
+        watchProgressConnection?.setReportingAccess(isSignedIn)
     }
 }

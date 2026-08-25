@@ -29,7 +29,8 @@ Bilibili 隐私政策将 Cookie 用于识别注册用户、登录简化、历史
 ### 1.2 安全目标
 
 1. 未经用户在 Bilibili 客户端确认，App 不能进入已登录状态。
-2. 认证材料只能发往精确 HTTPS API 主机，并且请求必须由 `BiliAPI` 私有 builder 明确选择账户读取能力。
+2. 认证材料只能发往精确 HTTPS API 主机；请求必须由 `BiliAPI` 私有 builder 明确选择账户读取，
+   或 V1 唯一获批的观看进度写能力。
 3. 一次旧二维码、已取消轮询或旧任务的结果不能覆盖更新的登录意图。
 4. 只有在登录结果结构有效、凭据通过登录态 endpoint 校验后，才允许原子写入 Keychain。
 5. 登出必须在离线情况下也能清除本地会话；服务端登出不能成为本地清理的前置条件。
@@ -52,7 +53,10 @@ api.bilibili.com ◀── 账户读取能力授权器 ─────┘
 
 - 二维码请求只允许连接 `https://passport.bilibili.com`。
 - 生成结果中待显示的二维码 URL 当前观察为 `https://account.bilibili.com/...`；实现采用精确 scheme/host 校验，变化时失败关闭并重新审计。
-- Cookie 只允许注入精确 `https://api.bilibili.com:443` 上由 `BiliAPI` 私有 builder 标记为账户读取的 GET。不能使用 `*.bilibili.com` 通配，也不能发往图片、视频 CDN、loopback playback bridge 或重定向后的其他主机。
+- Cookie 只允许注入精确 `https://api.bilibili.com:443` 上由 `BiliAPI` 私有 builder 标记的账户读取
+  GET，或精确 `POST /x/click-interface/web/heartbeat`。后者使用独立授权器，只发送 `SESSDATA`，
+  在 Auth 内注入 CSRF，并复核固定 WBI query、表单和 Referer。不能使用 `*.bilibili.com` 通配，
+  也不能发往图片、视频 CDN、loopback playback bridge 或重定向后的其他主机。
 - QR 返回 URL 只封装为不可直接读取的 `WebQRCode` 并在内存生成图像；App 不在 WebView/浏览器中自动导航，也不跟随其中的目标。
 
 ## 3. 威胁与控制
@@ -74,6 +78,10 @@ api.bilibili.com ◀── 账户读取能力授权器 ─────┘
 | 服务端登出失败导致本地无法退出 | 用户无法撤销本机访问 | 本地清理不依赖网络；若未来加入服务端登出，只作为尽力而为的前置请求 |
 | 真实 Cookie 被录入 fixture、CI artifact 或 issue | 长期公开泄露 | fixture 只能手写假值；现场采集工具只输出字段名、类型、长度与状态，不输出值；CI 增加已知秘密键值模式扫描 |
 | 未公开接口字段或风控策略漂移 | 登录循环、误判或意外 HTML | endpoint 独立 DTO、Content-Type/JSON envelope 校验、单次重试边界、现场探针与脱敏 contract fixture |
+| 播放时间线高频事件直接产生写请求 | 远端滥用、乱序或进度倒退 | 窗口 owner 有界合并，进程 writer 单并发；identity、load intent、session、generation、sequence 与账户 epoch 共同隔离 |
+| 通用 POST 授权扩散 Cookie／CSRF | 账号被执行未批准操作 | 独立写授权器只允许 heartbeat 的精确 origin/path/method/schema，并交叉核对 WBI query 与 body 镜像值 |
+| heartbeat 失败进入共享认证重校验 | 当前播放被无关写失败关闭 | 403/412、认证与其他报告失败只停止匹配报告会话；只有用户登出/换号继续执行既有全局播放器清理 |
+| 日志或诊断关联观看身份与位置 | 观看行为和凭据被长期关联 | 不记录内容身份组合、标题、位置、Referer、query/body、Cookie、CSRF、账号标识或响应正文 |
 
 ## 4. 持久化与请求授权基线
 

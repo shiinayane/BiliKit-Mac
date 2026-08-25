@@ -230,14 +230,23 @@ final class AVPlayerTimelineAdapter {
         store.updates()
     }
 
-    func begin(identity: PlaybackItemIdentity) {
+    func observe(
+        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
+    ) -> @MainActor @Sendable () -> Void {
+        store.observe(observer)
+    }
+
+    func begin(
+        identity: PlaybackItemIdentity,
+        loadIntent: PlaybackLoadIntent = PlaybackLoadIntent()
+    ) {
         momentaryRateSession = nil
         observers.reset()
         pendingSeek = nil
         completedSeekLanding = nil
         staleSeekLandings.removeAll(keepingCapacity: true)
         interactionTracker = PlaybackInteractionTracker()
-        token = store.beginItem(identity: identity)
+        token = store.beginItem(identity: identity, loadIntent: loadIntent)
         failedToken = nil
     }
 

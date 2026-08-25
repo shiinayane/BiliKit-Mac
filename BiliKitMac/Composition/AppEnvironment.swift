@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import BiliAPI
 import BiliApplication
 import BiliAuth
@@ -16,6 +17,32 @@ import SwiftUI
 typealias CommentAssetURLResolver = @Sendable (CommentAssetReference) -> URL?
 typealias CommentVideoLinkResolver = @Sendable (CommentLinkTarget) -> String?
 typealias CommentLinkURLResolver = @Sendable (CommentLinkTarget) -> URL?
+
+@MainActor
+struct WatchProgressWindowConnection {
+    let start: () -> Void
+    let stop: () -> Void
+    let setReportingAccess: (Bool) -> Void
+}
+
+enum WatchProgressTargetResolution {
+    static func resolve(
+        aid: Int64?,
+        bvid: String,
+        cid: Int64,
+        identity: PlaybackItemIdentity,
+        loadIntent: PlaybackLoadIntent
+    ) -> WatchProgressTarget? {
+        guard bvid == identity.bvid, cid == identity.cid, let aid else {
+            return nil
+        }
+        return WatchProgressTarget(
+            aid: aid,
+            identity: identity,
+            loadIntent: loadIntent
+        )
+    }
+}
 
 enum SystemNowPlayingSeekTarget {
     static func relative(
@@ -40,6 +67,13 @@ final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
     private(set) var scope = AccountSessionScope.unresolved
     @ObservationIgnored
     private var sessionInvalidators: [UUID: any AuthenticatedSessionInvalidating] = [:]
+    @ObservationIgnored
+    /// 由 `BiliKitMacApp` 持有的 coordinator 拥有整个进程生命周期；注册项随进程一起释放。
+    private var processWatchProgressRepository: (any WatchProgressRepository)?
+
+    var watchProgressRepository: (any WatchProgressRepository)? {
+        processWatchProgressRepository
+    }
 
     func publish(_ scope: AccountSessionScope) {
         guard scope != .unresolved, scope != self.scope else { return }
@@ -57,6 +91,23 @@ final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
 
     func unregisterSessionInvalidator(_ registrationID: UUID) {
         sessionInvalidators[registrationID] = nil
+    }
+
+    func resolveWatchProgressRepository(
+        make: () -> (
+            any WatchProgressRepository,
+            any AuthenticatedSessionInvalidating
+        )
+    ) -> any WatchProgressRepository {
+        if let processWatchProgressRepository {
+            return processWatchProgressRepository
+        }
+        let (base, transportInvalidator) = make()
+        let writer = SerializedWatchProgressRepository(base: base)
+        processWatchProgressRepository = writer
+        _ = registerSessionInvalidator(writer)
+        _ = registerSessionInvalidator(transportInvalidator)
+        return writer
     }
 
     func invalidateAuthenticatedSession() async {
@@ -87,6 +138,7 @@ struct AppEnvironment {
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
     private let historyRepository: any WatchHistoryRepository
+    private let watchProgressRepository: (any WatchProgressRepository)?
     private let danmakuSession: DanmakuSession
     private let danmakuController: DanmakuPresentationController
     private let danmakuRenderer: CoreAnimationDanmakuRenderer
@@ -108,6 +160,7 @@ struct AppEnvironment {
         },
         commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
         historyRepository: any WatchHistoryRepository,
+        watchProgressRepository: (any WatchProgressRepository)? = nil,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
@@ -130,6 +183,7 @@ struct AppEnvironment {
         self.commentVideoLinkResolver = commentVideoLinkResolver
         self.commentLinkURLResolver = commentLinkURLResolver
         self.historyRepository = historyRepository
+        self.watchProgressRepository = watchProgressRepository
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
         self.danmakuPreferencesStore = danmakuPreferencesStore
@@ -349,6 +403,41 @@ struct AppEnvironment {
         )
     }
 
+    func makeWatchProgressConnection(
+        videoModel: GuestVideoViewModel
+    ) -> WatchProgressWindowConnection? {
+        guard let watchProgressRepository else { return nil }
+        let session = WatchProgressSession(
+            useCase: WatchProgressUseCase(repository: watchProgressRepository),
+            timeline: playerEngine,
+            resolveTarget: { [weak videoModel] identity, loadIntent in
+                guard let context = videoModel?.presentedContext else { return nil }
+                return WatchProgressTargetResolution.resolve(
+                    aid: context.detail.aid,
+                    bvid: context.detail.bvid,
+                    cid: context.selectedPage.cid,
+                    identity: identity,
+                    loadIntent: loadIntent
+                )
+            }
+        )
+        let sleepObservation = WatchProgressSleepObservation(
+            suspend: { session.suspend() },
+            resume: { session.resumeAfterSuspension() }
+        )
+        return WatchProgressWindowConnection(
+            start: {
+                session.start()
+                sleepObservation.start()
+            },
+            stop: {
+                sleepObservation.stop()
+                session.stop()
+            },
+            setReportingAccess: { session.setReportingAccess(signedIn: $0) }
+        )
+    }
+
     static func liveAppSettingsModel(
         accountSessionCoordinator: AccountSessionCoordinator
     ) -> AppSettingsModel {
@@ -387,6 +476,19 @@ struct AppEnvironment {
         )
     }
 
+    /// 在 App Composition 初始化期间安装唯一进程 writer；窗口 View 构造只读取结果。
+    static func prepareLiveWatchProgressRepository(
+        accountSessionCoordinator: AccountSessionCoordinator
+    ) {
+        _ = accountSessionCoordinator.resolveWatchProgressRepository {
+            let writeAPI = makeLiveAPIClient(historyWriteEnabled: true)
+            return (
+                BiliWatchProgressRepository(client: writeAPI),
+                writeAPI
+            )
+        }
+    }
+
     /// 创建生产对象图，并保持游客、媒体与字幕正文请求不自动继承登录 Cookie。
     ///
     /// 只有 BiliAPI 私有标记的账户读取才经过 authorizer；公开 Browse、Search、评论、
@@ -409,8 +511,20 @@ struct AppEnvironment {
         } else {
             sessionInvalidator = api
         }
+        let watchProgressRepository: (any WatchProgressRepository)?
+        var standaloneWriteInvalidators: [any AuthenticatedSessionInvalidating] = []
+        if let accountSessionCoordinator {
+            watchProgressRepository = accountSessionCoordinator.watchProgressRepository
+        } else {
+            let writeAPI = makeLiveAPIClient(historyWriteEnabled: true)
+            let writer = SerializedWatchProgressRepository(
+                base: BiliWatchProgressRepository(client: writeAPI)
+            )
+            watchProgressRepository = writer
+            standaloneWriteInvalidators = [writer, writeAPI]
+        }
         let authenticationService = BiliAuthenticationService(
-            additionalSessionInvalidators: [sessionInvalidator]
+            additionalSessionInvalidators: [sessionInvalidator] + standaloneWriteInvalidators
         )
         let player = AVPlayer()
         let playbackPreferencesController = PlaybackPreferencesController(
@@ -446,6 +560,7 @@ struct AppEnvironment {
                 commentLinkResolver.externalURL(for: target)
             },
             historyRepository: BiliWatchHistoryRepository(client: api),
+            watchProgressRepository: watchProgressRepository,
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,
             playbackPreferencesController: playbackPreferencesController,
@@ -463,8 +578,12 @@ struct AppEnvironment {
         surfaceHeight: 0
     )
 
-    private static func makeLiveAPIClient() -> BiliAPIClient {
+    private static func makeLiveAPIClient(
+        historyWriteEnabled: Bool = false
+    ) -> BiliAPIClient {
         let requestAuthorizer = BiliCredentialRequestAuthorizer()
+        let historyWriteAuthorizer: (any HTTPRequestAuthorizing)? =
+            historyWriteEnabled ? BiliPlaybackHeartbeatRequestAuthorizer() : nil
         let transportFactory: @Sendable () -> any HTTPTransport = {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.httpShouldSetCookies = false
@@ -480,8 +599,50 @@ struct AppEnvironment {
         }
         return BiliAPIClient(
             requestAuthorizer: requestAuthorizer,
+            historyWriteAuthorizer: historyWriteAuthorizer,
             transportFactory: transportFactory
         )
+    }
+}
+
+@MainActor
+private final class WatchProgressSleepObservation {
+    private let suspend: () -> Void
+    private let resume: () -> Void
+    private var observers: [NSObjectProtocol] = []
+
+    init(suspend: @escaping () -> Void, resume: @escaping () -> Void) {
+        self.suspend = suspend
+        self.resume = resume
+    }
+
+    func start() {
+        guard observers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        observers = [
+            center.addObserver(
+                forName: NSWorkspace.willSleepNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.suspend() }
+            },
+            center.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.resume() }
+            },
+        ]
+    }
+
+    func stop() {
+        let center = NSWorkspace.shared.notificationCenter
+        for observer in observers {
+            center.removeObserver(observer)
+        }
+        observers.removeAll(keepingCapacity: false)
     }
 }
 

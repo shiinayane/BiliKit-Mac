@@ -50,6 +50,10 @@ struct WebCredential: Sendable, Equatable,
             .joined(separator: "; ")
     }
 
+    func value(for name: WebCredentialCookieName) -> String? {
+        cookies.first(where: { $0.name == name })?.value
+    }
+
     func isExpired(at date: Date = .now) -> Bool {
         cookies.contains { $0.expiresAt <= date }
     }

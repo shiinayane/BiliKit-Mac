@@ -15,6 +15,9 @@ struct BiliKitMacApp: App {
 
     init() {
         let accountSessionCoordinator = AccountSessionCoordinator()
+        AppEnvironment.prepareLiveWatchProgressRepository(
+            accountSessionCoordinator: accountSessionCoordinator
+        )
         _accountSessionCoordinator = State(initialValue: accountSessionCoordinator)
         _appSettingsModel = State(
             initialValue: AppEnvironment.liveAppSettingsModel(
