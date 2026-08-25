@@ -92,7 +92,9 @@ let package = Package(
         ),
         .testTarget(
             name: "BiliAPITests",
-            dependencies: ["BiliAPI", "BiliModels", "BiliNetworking"],
+            dependencies: [
+                "BiliAPI", "BiliApplication", "BiliModels", "BiliNetworking",
+            ],
             resources: [
                 .copy("Fixtures")
             ]

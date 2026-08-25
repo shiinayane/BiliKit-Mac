@@ -62,7 +62,8 @@ struct AppRootView: View {
         commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
         commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
         commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
-        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator()
+        accountSessionCoordinator: AccountSessionCoordinator = AccountSessionCoordinator(),
+        watchProgressConnection: WatchProgressWindowConnection? = nil
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
         appSettingsModel = nil
@@ -78,7 +79,8 @@ struct AppRootView: View {
                 playerContent: playerContent,
                 commentAssetURLResolver: commentAssetURLResolver,
                 commentVideoLinkResolver: commentVideoLinkResolver,
-                commentLinkURLResolver: commentLinkURLResolver
+                commentLinkURLResolver: commentLinkURLResolver,
+                watchProgressConnection: watchProgressConnection
             )
         )
     }
@@ -112,6 +114,7 @@ struct AppRootView: View {
             await applyCommentActivation(aid: commentActivationAID)
         }
         .onAppear {
+            windowOwner.synchronizeWatchProgressAccess(historyAccountScope)
             windowOwner.open()
             windowOwner.markWindowActive()
         }
@@ -128,6 +131,7 @@ struct AppRootView: View {
             synchronizeBenchmarkAuthentication()
         }
         .onChange(of: historyAccountScope) { previousScope, scope in
+            windowOwner.synchronizeWatchProgressAccess(scope)
             guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
             else {
                 return

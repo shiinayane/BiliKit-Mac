@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-07-21
+- 修订：2026-08-25，批准 V1 唯一认证写能力
 - 关联：ADR 0004、[`../security/M3-threat-model.md`](../security/M3-threat-model.md)
 
 ## 背景
@@ -40,6 +41,26 @@ BiliAPI ──→ BiliNetworking.HTTPRequestAuthorizing（可选注入）
 - QR key、Cookie 和以后可能支持的 refresh token 都是 `BiliAuth` 内部类型，不进入 `BiliModels` 公共实体。完整 QR URL 只封装在 `BiliAuth.WebQRCode` 的不可公开字段中；Presentation/开发探针只能请求在内存生成图像，不能直接读取 URL。
 - 状态机只在最新 generation 的成功结果通过登录态验证后提交 Keychain；取消、过期、协议错误和身份校验失败都会清除临时秘密。
 - M3 首版不实现自动 refresh，也不保存 `refresh_token`。需要刷新时新增证据、测试并修订本 ADR。
+
+### 唯一账户写能力
+
+- V1 只批准观看进度上报，不开放通用账户写能力；精确边界是
+  `POST https://api.bilibili.com:443/x/click-interface/web/heartbeat`。不得 redirect，不得扩展
+  origin、path、method、query、body 或 header。
+- `BiliAPI` 私有 builder 只构造当前普通投稿播放目标、整数秒时间线事实、固定 Web 客户端字段和
+  经批准的 WBI 镜像字段；不伪造 quality、playlist、statistics 或其他未知字段。
+- `BiliAuth` 使用独立于账户读取的写授权器，再次复核精确请求、query/body 键和值、Referer 和
+  调用方未预置 Cookie、CSRF、Authorization；只从同一 Keychain credential 取 `SESSDATA`，并把
+  `bili_jct` 作为 `csrf` 注入正文。API、Application、Feature 与 Playback 看不到秘密。
+- 游客与 unresolved scope 不创建报告，因此不会为写入额外访问 WBI nav 或 Keychain。已登录请求的
+  WBI nav 仍为匿名读取，只有最终 heartbeat 使用独立写授权器。
+- 播放会话默认启用且无设置项。进程 writer 单并发；每窗口最多一个提交调用和 8 个待处理事件，
+  周期只保留最新，边界先淘汰周期，饱和时暂停/恢复合并为最新状态，最终 ended 总能入队并可淘汰
+  更旧非终态边界。identity、load intent、session、generation 与 sequence 隔离迟到结果。
+- HTTP 403/412、认证、签名、网络、解析或业务失败只关闭匹配的报告会话，不触发共享认证重校验，
+  不暂停、停止、替换或关闭 AVPlayer；登出和换号仍按既有账户 epoch 清理播放器与全部报告 owner。
+- 不建立离线队列、不持久化位置、不崩溃恢复写入。日志、错误、fixture 和验证记录不保存内容身份
+  组合、位置、Referer、query/body、凭据或响应正文。
 
 ### Networking 与 API adapter
 
@@ -132,4 +153,5 @@ M3 第 5 步已经按本决策接入真实 App：
 - WBI nav、图片、媒体 CDN、字幕正文与 loopback 保持物理匿名。
 - Popular、Search、视频详情、Related、UP 主签名、分 P 列表、基础 playurl 与弹幕分段均为“登录增强但可匿名”的账户读取：只有本地明确没有凭据时匿名；损坏、过期、Keychain 不可用和服务端风控失败均不匿名重试。
 - App 级账户 session coordinator 在窗口真正出现后注册其 API transport，不能在 SwiftUI View 构造或 `body` 求值期间修改共享状态。任一窗口触发登出、换号或凭据失效时，先全局推进全部窗口的认证 epoch；其他窗口通过认证 port 的“外部会话变化复核”意图重新验证 Keychain，但该具体 restore 操作不重复传播同一失效。用户主动登出、登出失败后的重试和本窗口凭据失效仍每次执行全局失效。各窗口复核完成后按进程 generation 重启依赖账户身份的 Popular 或 Search；窗口关闭时注销其 transport。
-- 这项修订不开放写能力。未来写操作仍须另行批准，并增加精确 endpoint、method、CSRF 与 body/query schema。
+- 这项修订只开放上述观看进度写能力。任何其他写操作仍须另行批准，并新增自身的用户结果、精确
+  endpoint、method、CSRF、body/query schema 与真实验证 Gate。

@@ -21,10 +21,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             missingCredential: MissingCredentialBehavior,
             mapsAuthenticationInvalidation: Bool
         )
+        case historyWrite
 
         var requiresAuthentication: Bool {
-            if case .accountRead = self { return true }
-            return false
+            switch self {
+            case .anonymous: false
+            case .accountRead, .historyWrite: true
+            }
         }
 
         var permitsMissingCredentialFallback: Bool {
@@ -33,10 +36,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
 
         var mapsAuthenticationInvalidation: Bool {
-            guard case .accountRead(_, let mapsInvalidation) = self else {
-                return false
+            switch self {
+            case .accountRead(_, let mapsInvalidation): mapsInvalidation
+            case .anonymous, .historyWrite: false
             }
-            return mapsInvalidation
         }
     }
 
@@ -71,6 +74,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private var transport: any HTTPTransport
     private let transportFactory: (@Sendable () -> any HTTPTransport)?
     private let requestAuthorizer: (any HTTPRequestAuthorizing)?
+    private let historyWriteAuthorizer: (any HTTPRequestAuthorizing)?
     private let baseURL: URL
     private let userAgent: String
     private let decoder: JSONDecoder
@@ -82,6 +86,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     public init(
         transport: any HTTPTransport = URLSessionTransport(),
         requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
+        historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         transportFactory: (@Sendable () -> any HTTPTransport)? = nil,
         baseURL: URL = BiliAPIClient.productionBaseURL,
         userAgent: String =
@@ -95,6 +100,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         httpClient = HTTPClient(transport: activeTransport)
         self.transportFactory = transportFactory
         self.requestAuthorizer = requestAuthorizer
+        self.historyWriteAuthorizer = historyWriteAuthorizer
         self.baseURL = baseURL
         self.userAgent = userAgent
         self.timestampProvider = timestampProvider
@@ -788,6 +794,117 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return try payload.model(pageSize: pageSize)
     }
 
+    /// V1 唯一认证写请求；endpoint、WBI、form 与响应在 API adapter 内收口。
+    public func reportWatchProgress(_ report: WatchProgressReport) async throws {
+        guard historyWriteAuthorizer != nil else {
+            throw BiliAPIError.authorizationRequired
+        }
+        guard report.target.aid > 0,
+            report.target.identity.cid > 0,
+            Self.isValidBVID(report.target.identity.bvid),
+            report.positionSeconds >= 0,
+            report.maximumPositionSeconds >= report.positionSeconds
+        else {
+            throw BiliAPIError.invalidRequest
+        }
+        let playedTime = report.completed ? -1 : report.positionSeconds
+        var signedFacts = [
+            "w_start_ts": String(report.sessionStartTimestamp),
+            "w_aid": String(report.target.aid),
+            "w_dt": "2",
+            "w_realtime": String(report.elapsedSeconds),
+            "w_played_time": String(playedTime),
+            "w_real_played_time": String(report.playedSeconds),
+            "w_last_play_progress_time": String(report.positionSeconds),
+            "web_location": "1315873",
+        ]
+        if let duration = report.durationSeconds {
+            signedFacts["w_video_duration"] = String(duration)
+        }
+        // WBI nav 保持匿名；只有最终 heartbeat 才交给独立写授权器。
+        let keys = try await wbiKey(forceRefresh: false)
+        let query = try wbiSigner.sign(
+            parameters: signedFacts,
+            keys: keys,
+            timestamp: timestampProvider()
+        )
+        let url = try endpoint(
+            path: "/x/click-interface/web/heartbeat",
+            percentEncodedQuery: query
+        )
+        let referer = Self.videoReferer(report.target.identity.bvid)
+        var bodyFields: [(String, String)] = [
+            ("start_ts", String(report.sessionStartTimestamp)),
+            ("aid", String(report.target.aid)),
+            ("cid", String(report.target.identity.cid)),
+            ("type", "3"),
+            ("sub_type", "0"),
+            ("dt", "2"),
+            ("play_type", String(report.event.rawValue)),
+            ("realtime", String(report.elapsedSeconds)),
+            ("played_time", String(playedTime)),
+            ("real_played_time", String(report.playedSeconds)),
+            ("refer_url", referer),
+        ]
+        if let duration = report.durationSeconds {
+            bodyFields.append(("video_duration", String(duration)))
+        }
+        bodyFields.append(contentsOf: [
+            ("last_play_progress_time", String(report.positionSeconds)),
+            ("max_play_progress_time", String(report.maximumPositionSeconds)),
+            ("outer", "0"),
+            ("mobi_app", "web"),
+            ("device", "web"),
+            ("platform", "web"),
+            ("session", report.sessionID),
+        ])
+        let authorizedResponse = try await response(
+            baseRequest: HTTPRequest(
+                url: url,
+                method: .post,
+                headers: [
+                    "Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": referer,
+                    "User-Agent": userAgent,
+                ],
+                body: try Self.formBody(bodyFields)
+            ),
+            access: .historyWrite,
+            maximumResponseSize: 16 * 1_024
+        )
+        guard Self.looksLikeJSON(authorizedResponse.response) else {
+            throw BiliAPIError.nonJSONResponse
+        }
+        let status: APIStatusEnvelope
+        do {
+            status = try decoder.decode(
+                APIStatusEnvelope.self,
+                from: authorizedResponse.response.body
+            )
+        } catch {
+            throw BiliAPIError.decodingFailed
+        }
+        if status.code == -101 || status.code == -111 {
+            throw BiliAPIError.authenticationInvalid
+        }
+        guard status.code == 0 else {
+            throw BiliAPIError.apiRejected(
+                code: status.code,
+                message: status.message ?? ""
+            )
+        }
+    }
+
+    private static func formBody(_ fields: [(String, String)]) throws -> Data {
+        var components = URLComponents()
+        components.queryItems = fields.map(URLQueryItem.init(name:value:))
+        guard let encoded = components.percentEncodedQuery else {
+            throw BiliAPIError.invalidRequest
+        }
+        return Data(encoded.utf8)
+    }
+
     /// 认证会话失效时取消旧 transport 请求、换入干净 session，并丢弃关联 WBI key。
     public func invalidateAuthenticatedSession() {
         authenticatedSessionEpoch &+= 1
@@ -951,9 +1068,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             access.requiresAuthentication ? authenticatedSessionEpoch : nil
         let request: HTTPRequest
         let authorizationProvenance: AuthorizationProvenance
-        if access.requiresAuthentication, let requestAuthorizer {
+        let activeAuthorizer: (any HTTPRequestAuthorizing)? =
+            switch access {
+            case .historyWrite:
+                historyWriteAuthorizer
+            case .accountRead:
+                requestAuthorizer
+            case .anonymous:
+                nil
+            }
+        if access.requiresAuthentication, let activeAuthorizer {
             do {
-                request = try await requestAuthorizer.authorize(baseRequest)
+                request = try await activeAuthorizer.authorize(baseRequest)
                 authorizationProvenance = .authenticated
             } catch is CancellationError {
                 throw CancellationError()

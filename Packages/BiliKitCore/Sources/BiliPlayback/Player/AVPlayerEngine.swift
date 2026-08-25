@@ -305,6 +305,12 @@ public final class AVPlayerEngine:
         timeline.updates()
     }
 
+    public func observeTimeline(
+        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
+    ) -> @MainActor @Sendable () -> Void {
+        timeline.observe(observer)
+    }
+
     public func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
         failureEvents
     }
@@ -409,7 +415,7 @@ public final class AVPlayerEngine:
         player.pause()
         player.replaceCurrentItem(with: nil)
         let pendingSubtitleReset = enqueueSubtitleReset()
-        timeline.begin(identity: identity)
+        timeline.begin(identity: identity, loadIntent: intent)
         emit(.stateChanged(.loading))
 
         await pendingSubtitleReset?.value

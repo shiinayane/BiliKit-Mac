@@ -401,6 +401,7 @@ private final class SessionPresentationSink: DanmakuPresentationSink {
 private final class SessionTimeline: PlaybackTimelineProviding {
     private var snapshot = PlaybackTimelineSnapshot.idle
     private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
+    private var observers: [UUID: @MainActor (PlaybackTimelineSnapshot) -> Void] = [:]
     private var subscriberCountWaiters:
         [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
@@ -421,8 +422,20 @@ private final class SessionTimeline: PlaybackTimelineProviding {
         return stream.stream
     }
 
+    func observeTimeline(
+        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
+    ) -> @MainActor @Sendable () -> Void {
+        let id = UUID()
+        observers[id] = observer
+        observer(snapshot)
+        return { [weak self] in self?.observers[id] = nil }
+    }
+
     func publish(_ snapshot: PlaybackTimelineSnapshot) {
         self.snapshot = snapshot
+        for observer in Array(observers.values) {
+            observer(snapshot)
+        }
         for continuation in continuations.values {
             continuation.yield(snapshot)
         }
