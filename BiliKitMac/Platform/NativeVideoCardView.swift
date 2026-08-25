@@ -658,29 +658,121 @@ final class NativeVideoCardView: NSView {
     }
 }
 
+struct NativeVideoCardSymbolRaster {
+    let image: CGImage
+    let size: NSSize
+}
+
 @MainActor
-private final class NativeVideoMergedCoverView: NSView {
-    private struct SymbolRasterKey: Hashable {
+enum NativeVideoCardSymbolRasterizer {
+    private struct Key: Hashable {
         let name: String
         let pointSize: CGFloat
         let weight: CGFloat
         let scale: CGFloat
         let appearanceName: String
-        let tintName: String
     }
 
+    private static let maximumRasterCount = 32
+    private static var rasters: [Key: NativeVideoCardSymbolRaster] = [:]
+
+    static func raster(
+        named name: String,
+        pointSize: CGFloat,
+        weight: NSFont.Weight,
+        scale requestedScale: CGFloat,
+        appearance: NSAppearance
+    ) -> NativeVideoCardSymbolRaster? {
+        let scale = max(1, requestedScale)
+        let key = Key(
+            name: name,
+            pointSize: pointSize,
+            weight: weight.rawValue,
+            scale: scale,
+            appearanceName: appearance.name.rawValue
+        )
+        if let cached = rasters[key] { return cached }
+
+        var raster: NativeVideoCardSymbolRaster?
+        appearance.performAsCurrentDrawingAppearance {
+            let pointConfiguration = NSImage.SymbolConfiguration(
+                pointSize: pointSize,
+                weight: weight
+            )
+            let paletteColors: [NSColor] =
+                name == "text.bubble.fill" ? [.black, .white] : [.white]
+            let colorConfiguration = NSImage.SymbolConfiguration(
+                paletteColors: paletteColors
+            )
+            guard
+                let image = NSImage(
+                    systemSymbolName: name,
+                    accessibilityDescription: nil
+                )?.withSymbolConfiguration(pointConfiguration.applying(colorConfiguration)),
+                image.size.width > 0,
+                image.size.height > 0
+            else { return }
+
+            let pixelWidth = max(1, Int(ceil(image.size.width * scale)))
+            let pixelHeight = max(1, Int(ceil(image.size.height * scale)))
+            guard
+                let representation = NSBitmapImageRep(
+                    bitmapDataPlanes: nil,
+                    pixelsWide: pixelWidth,
+                    pixelsHigh: pixelHeight,
+                    bitsPerSample: 8,
+                    samplesPerPixel: 4,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: .deviceRGB,
+                    bytesPerRow: 0,
+                    bitsPerPixel: 0
+                )
+            else { return }
+            representation.size = image.size
+            guard let graphicsContext = NSGraphicsContext(bitmapImageRep: representation) else {
+                return
+            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphicsContext
+            graphicsContext.cgContext.clear(
+                NSRect(origin: .zero, size: image.size)
+            )
+            image.draw(
+                in: NSRect(origin: .zero, size: image.size),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: false,
+                hints: [.interpolation: NSImageInterpolation.high]
+            )
+            graphicsContext.flushGraphics()
+            NSGraphicsContext.restoreGraphicsState()
+            guard let cgImage = representation.cgImage else { return }
+            raster = NativeVideoCardSymbolRaster(image: cgImage, size: image.size)
+        }
+        guard let raster else { return nil }
+
+        if rasters.count >= maximumRasterCount,
+            let evictedKey = rasters.keys.first
+        {
+            rasters.removeValue(forKey: evictedKey)
+        }
+        rasters[key] = raster
+        return raster
+    }
+}
+
+@MainActor
+private final class NativeVideoMergedCoverView: NSView {
     private static let overlayHeight: CGFloat = 35
     private static let metricBottomOffset: CGFloat = 22
     private static let leadingInset: CGFloat = 9
-    private static let iconSize: CGFloat = 12
     private static let symbolPointSize: CGFloat = 11
     private static let symbolWeight = NSFont.Weight.medium
     private static let iconTextSpacing: CGFloat = 4
     private static let metricSpacing: CGFloat = 10
     private static let trailingInset: CGFloat = 9
-    private static let maximumSymbolRasterCount = 32
-    private static var symbolRasters: [SymbolRasterKey: CGImage] = [:]
-
     private let placeholderLayer = CALayer()
     private let imageLayer = CALayer()
     private let gradientLayer = CAGradientLayer()
@@ -702,6 +794,7 @@ private final class NativeVideoMergedCoverView: NSView {
         ),
     ]
     private var metricIconNames: [String?] = [nil, nil]
+    private var metricIconSizes: [NSSize] = [.zero, .zero]
     private var metricSizes: [NSSize] = [.zero, .zero]
     private var metricCount = 0
     private let trailingCell = NativeVideoMergedCoverView.makeLabelCell(
@@ -765,6 +858,7 @@ private final class NativeVideoMergedCoverView: NSView {
             guard index < metricCount else {
                 metricCells[index].stringValue = ""
                 metricIconNames[index] = nil
+                metricIconSizes[index] = .zero
                 metricSizes[index] = .zero
                 metricIconLayers[index].contents = nil
                 metricIconLayers[index].isHidden = true
@@ -792,6 +886,7 @@ private final class NativeVideoMergedCoverView: NSView {
         for index in metricCells.indices {
             metricCells[index].stringValue = ""
             metricIconNames[index] = nil
+            metricIconSizes[index] = .zero
             metricSizes[index] = .zero
             metricIconLayers[index].contents = nil
             metricIconLayers[index].isHidden = true
@@ -876,14 +971,15 @@ private final class NativeVideoMergedCoverView: NSView {
         let metricY = bounds.height - Self.metricBottomOffset
         var nextX = Self.leadingInset
         for index in 0..<metricCount {
+            let iconSize = metricIconSizes[index]
+            let cellSize = metricSizes[index]
             let iconFrame = NSRect(
                 x: nextX,
-                y: metricY + 2,
-                width: Self.iconSize,
-                height: Self.iconSize
+                y: metricY + floor((cellSize.height - iconSize.height) / 2),
+                width: iconSize.width,
+                height: iconSize.height
             )
             metricIconLayers[index].frame = iconFrame
-            let cellSize = metricSizes[index]
             let cellFrame = NSRect(
                 x: iconFrame.maxX + Self.iconTextSpacing,
                 y: metricY,
@@ -920,14 +1016,17 @@ private final class NativeVideoMergedCoverView: NSView {
                 metricIconLayers[index].isHidden = true
                 continue
             }
-            let icon = Self.symbolRaster(
+            let raster = NativeVideoCardSymbolRasterizer.raster(
                 named: name,
+                pointSize: Self.symbolPointSize,
+                weight: Self.symbolWeight,
                 scale: scale,
                 appearance: appearance
             )
-            metricIconLayers[index].contents = icon
+            metricIconLayers[index].contents = raster?.image
             metricIconLayers[index].contentsScale = scale
-            metricIconLayers[index].isHidden = icon == nil
+            metricIconLayers[index].isHidden = raster == nil
+            metricIconSizes[index] = raster?.size ?? .zero
         }
         needsLayout = true
     }
@@ -996,83 +1095,6 @@ private final class NativeVideoMergedCoverView: NSView {
         "opacity": NSNull(),
         "position": NSNull(),
     ]
-
-    private static func symbolRaster(
-        named name: String,
-        scale: CGFloat,
-        appearance: NSAppearance
-    ) -> CGImage? {
-        let key = SymbolRasterKey(
-            name: name,
-            pointSize: symbolPointSize,
-            weight: symbolWeight.rawValue,
-            scale: scale,
-            appearanceName: appearance.name.rawValue,
-            tintName: "white"
-        )
-        if let cached = symbolRasters[key] { return cached }
-
-        var raster: CGImage?
-        appearance.performAsCurrentDrawingAppearance {
-            let pointConfiguration = NSImage.SymbolConfiguration(
-                pointSize: symbolPointSize,
-                weight: symbolWeight
-            )
-            let colorConfiguration = NSImage.SymbolConfiguration(paletteColors: [.white])
-            guard
-                let image = NSImage(
-                    systemSymbolName: name,
-                    accessibilityDescription: nil
-                )?.withSymbolConfiguration(pointConfiguration.applying(colorConfiguration))
-            else { return }
-
-            let pixelWidth = max(1, Int(ceil(iconSize * scale)))
-            let pixelHeight = max(1, Int(ceil(iconSize * scale)))
-            guard
-                let representation = NSBitmapImageRep(
-                    bitmapDataPlanes: nil,
-                    pixelsWide: pixelWidth,
-                    pixelsHigh: pixelHeight,
-                    bitsPerSample: 8,
-                    samplesPerPixel: 4,
-                    hasAlpha: true,
-                    isPlanar: false,
-                    colorSpaceName: .deviceRGB,
-                    bytesPerRow: 0,
-                    bitsPerPixel: 0
-                )
-            else { return }
-            representation.size = NSSize(width: iconSize, height: iconSize)
-            guard let graphicsContext = NSGraphicsContext(bitmapImageRep: representation) else {
-                return
-            }
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = graphicsContext
-            graphicsContext.cgContext.clear(
-                NSRect(x: 0, y: 0, width: iconSize, height: iconSize)
-            )
-            image.draw(
-                in: NSRect(x: 0, y: 0, width: iconSize, height: iconSize),
-                from: .zero,
-                operation: .sourceOver,
-                fraction: 1,
-                respectFlipped: false,
-                hints: [.interpolation: NSImageInterpolation.high]
-            )
-            graphicsContext.flushGraphics()
-            NSGraphicsContext.restoreGraphicsState()
-            raster = representation.cgImage
-        }
-        guard let raster else { return nil }
-
-        if symbolRasters.count >= maximumSymbolRasterCount,
-            let oldestKey = symbolRasters.keys.first
-        {
-            symbolRasters.removeValue(forKey: oldestKey)
-        }
-        symbolRasters[key] = raster
-        return raster
-    }
 
     private static var backgroundColor: CGColor {
         NSColor.secondaryLabelColor.withAlphaComponent(0.12).cgColor
