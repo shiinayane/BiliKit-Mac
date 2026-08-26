@@ -21,6 +21,7 @@ struct DanmakuSchedulerTests {
                 index: 1,
                 events: [
                     event(id: "a", time: 1.0),
+                    event(id: "during-pause", time: 1.3),
                     event(id: "b", time: 2.0),
                     event(id: "boundary", time: 360.1),
                 ]
@@ -276,6 +277,77 @@ struct DanmakuSchedulerTests {
         )
         let resumed = try #require(resumedValue)
         #expect(resumed.events.map(\.id) == ["after-enabled"])
+    }
+
+    @Test
+    func replacingCurrentSegmentReanchorsCursorWithoutBackfill() throws {
+        var scheduler = DanmakuScheduler()
+        scheduler.begin(for: identity)
+        scheduler.store(
+            DanmakuSegment(
+                index: 1,
+                events: [
+                    event(id: "initial", time: 1),
+                    event(id: "old-future", time: 4),
+                ]
+            ),
+            for: identity
+        )
+
+        _ = scheduler.consume(snapshot(position: 0, rate: 1, generation: 1))
+        let initialValue = scheduler.consume(
+            snapshot(position: 2, rate: 1, generation: 1)
+        )
+        let initial = try #require(initialValue)
+        #expect(initial.events.map(\.id) == ["initial"])
+
+        scheduler.store(
+            DanmakuSegment(
+                index: 1,
+                events: [
+                    event(id: "late-past", time: 1.5),
+                    event(id: "new-window", time: 2.5),
+                    event(id: "old-future", time: 4),
+                ]
+            ),
+            for: identity
+        )
+
+        let replacementValue = scheduler.consume(
+            snapshot(position: 3, rate: 1, generation: 1)
+        )
+        let replacement = try #require(replacementValue)
+        #expect(replacement.events.map(\.id) == ["new-window"])
+
+        let futureValue = scheduler.consume(
+            snapshot(position: 5, rate: 1, generation: 1)
+        )
+        let future = try #require(futureValue)
+        #expect(future.events.map(\.id) == ["old-future"])
+    }
+
+    @Test
+    func prefetchedSegmentDoesNotBackfillEventsOlderThanPlaybackWindow() throws {
+        var scheduler = DanmakuScheduler()
+        scheduler.begin(for: identity)
+        _ = scheduler.consume(snapshot(position: 0, rate: 1, generation: 1))
+        scheduler.store(
+            DanmakuSegment(
+                index: 2,
+                events: [
+                    event(id: "stale-prefetch", time: 2),
+                    event(id: "current", time: 361),
+                ]
+            ),
+            for: identity
+        )
+
+        _ = scheduler.consume(snapshot(position: 300, rate: 1, generation: 1))
+        let crossingValue = scheduler.consume(
+            snapshot(position: 362, rate: 1, generation: 1)
+        )
+        let crossing = try #require(crossingValue)
+        #expect(crossing.events.map(\.id) == ["current"])
     }
 
     @Test
