@@ -78,6 +78,7 @@ public struct DanmakuScheduler: Sendable {
     private var filter = DanmakuFilter()
     private var isEnabled = true
     private var segments: [Int: [DanmakuEvent]] = [:]
+    private var nextEventIndexBySegment: [Int: Int] = [:]
     private var deliveredIDsBySegment: [Int: Set<String>] = [:]
     private var previousPositionSeconds: Double?
     private var discontinuityGeneration: UInt64?
@@ -95,6 +96,7 @@ public struct DanmakuScheduler: Sendable {
     public mutating func begin(for identity: PlaybackItemIdentity) {
         self.identity = identity
         segments.removeAll(keepingCapacity: false)
+        nextEventIndexBySegment.removeAll(keepingCapacity: false)
         deliveredIDsBySegment.removeAll(keepingCapacity: false)
         previousPositionSeconds = nil
         discontinuityGeneration = nil
@@ -103,6 +105,7 @@ public struct DanmakuScheduler: Sendable {
     public mutating func reset() {
         identity = nil
         segments.removeAll(keepingCapacity: false)
+        nextEventIndexBySegment.removeAll(keepingCapacity: false)
         deliveredIDsBySegment.removeAll(keepingCapacity: false)
         previousPositionSeconds = nil
         discontinuityGeneration = nil
@@ -111,6 +114,7 @@ public struct DanmakuScheduler: Sendable {
     public mutating func setEnabled(_ enabled: Bool) {
         guard isEnabled != enabled else { return }
         isEnabled = enabled
+        nextEventIndexBySegment.removeAll(keepingCapacity: true)
         deliveredIDsBySegment.removeAll(keepingCapacity: true)
         previousPositionSeconds = nil
     }
@@ -128,7 +132,12 @@ public struct DanmakuScheduler: Sendable {
         for identity: PlaybackItemIdentity
     ) {
         guard self.identity == identity, segment.index > 0 else { return }
-        segments[segment.index] = segment.events.sorted(by: Self.eventOrder)
+        let events = segment.events.sorted(by: Self.eventOrder)
+        segments[segment.index] = events
+        nextEventIndexBySegment[segment.index] = Self.firstEventIndex(
+            after: previousPositionSeconds ?? -.infinity,
+            in: events
+        )
         trimCache()
     }
 
@@ -158,6 +167,7 @@ public struct DanmakuScheduler: Sendable {
         if discontinuityGeneration != snapshot.discontinuityGeneration {
             discontinuityGeneration = snapshot.discontinuityGeneration
             previousPositionSeconds = snapshot.positionSeconds
+            nextEventIndexBySegment.removeAll(keepingCapacity: true)
             deliveredIDsBySegment.removeAll(keepingCapacity: true)
             return DanmakuBatch(
                 identity: identity,
@@ -172,6 +182,7 @@ public struct DanmakuScheduler: Sendable {
             snapshot.rate > 0
         else {
             previousPositionSeconds = snapshot.positionSeconds
+            nextEventIndexBySegment.removeAll(keepingCapacity: true)
             return nil
         }
         guard let previousPositionSeconds else {
@@ -180,6 +191,7 @@ public struct DanmakuScheduler: Sendable {
         }
         guard snapshot.positionSeconds >= previousPositionSeconds else {
             self.previousPositionSeconds = snapshot.positionSeconds
+            nextEventIndexBySegment.removeAll(keepingCapacity: true)
             deliveredIDsBySegment.removeAll(keepingCapacity: true)
             return DanmakuBatch(
                 identity: identity,
@@ -195,11 +207,28 @@ public struct DanmakuScheduler: Sendable {
         var emitted: [DanmakuEvent] = []
         if lowerIndex <= upperIndex {
             for index in lowerIndex...upperIndex {
-                for event in segments[index] ?? [] {
-                    guard event.timeSeconds > previousPositionSeconds,
-                        event.timeSeconds <= snapshot.positionSeconds,
-                        filter.allows(event)
-                    else { continue }
+                guard let events = segments[index] else { continue }
+                var nextEventIndex =
+                    nextEventIndexBySegment[index]
+                    ?? Self.firstEventIndex(
+                        after: previousPositionSeconds,
+                        in: events
+                    )
+                if nextEventIndex < events.count,
+                    events[nextEventIndex].timeSeconds <= previousPositionSeconds
+                {
+                    nextEventIndex = Self.firstEventIndex(
+                        after: previousPositionSeconds,
+                        in: events
+                    )
+                }
+                while nextEventIndex < events.count {
+                    let event = events[nextEventIndex]
+                    guard event.timeSeconds <= snapshot.positionSeconds else {
+                        break
+                    }
+                    nextEventIndex += 1
+                    guard filter.allows(event) else { continue }
 
                     let wasDelivered = hasDelivered(event.id)
                     deliveredIDsBySegment[index, default: []].insert(event.id)
@@ -207,6 +236,7 @@ public struct DanmakuScheduler: Sendable {
 
                     emitted.append(event)
                 }
+                nextEventIndexBySegment[index] = nextEventIndex
             }
         }
         trimDeliveredIDs(through: upperIndex)
@@ -233,6 +263,9 @@ public struct DanmakuScheduler: Sendable {
         }
         let keep = Set(ordered.prefix(Self.maximumCachedSegments))
         segments = segments.filter { keep.contains($0.key) }
+        nextEventIndexBySegment = nextEventIndexBySegment.filter {
+            keep.contains($0.key)
+        }
     }
 
     private func hasDelivered(_ id: String) -> Bool {
@@ -255,6 +288,23 @@ public struct DanmakuScheduler: Sendable {
             ? max(positionSeconds, 0)
             : 0
         return Int(normalized / segmentDurationSeconds) + 1
+    }
+
+    private static func firstEventIndex(
+        after positionSeconds: Double,
+        in events: [DanmakuEvent]
+    ) -> Int {
+        var lowerBound = 0
+        var upperBound = events.count
+        while lowerBound < upperBound {
+            let candidate = lowerBound + (upperBound - lowerBound) / 2
+            if events[candidate].timeSeconds <= positionSeconds {
+                lowerBound = candidate + 1
+            } else {
+                upperBound = candidate
+            }
+        }
+        return lowerBound
     }
 
     private static func eventOrder(
