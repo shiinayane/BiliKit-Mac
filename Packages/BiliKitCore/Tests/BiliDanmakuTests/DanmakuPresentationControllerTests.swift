@@ -17,7 +17,7 @@ struct DanmakuPresentationControllerTests {
                 == CoreAnimationDanmakuStyle(
                     fontScale: 1,
                     fontWeight: .semibold,
-                    shadowBlurRadius: 2.5
+                    shadowBlurRadius: 2
                 )
         )
 
@@ -40,7 +40,7 @@ struct DanmakuPresentationControllerTests {
         )
         #expect(nonfinite.fontScale == 1)
         #expect(nonfinite.fontWeight == .regular)
-        #expect(nonfinite.shadowBlurRadius == 2.5)
+        #expect(nonfinite.shadowBlurRadius == 2)
 
         let laneConfiguration = DanmakuLaneConfiguration.production(
             surfaceWidth: 1_280,
@@ -760,7 +760,7 @@ struct DanmakuPresentationControllerTests {
         )
 
         #expect(layer.shadowOpacity == 0)
-        #expect(shadow.shadowBlurRadius == 2.5)
+        #expect(shadow.shadowBlurRadius == 2)
         #expect(shadow.shadowOffset == .zero)
         #expect(renderer.activeLayerCount == 1)
     }

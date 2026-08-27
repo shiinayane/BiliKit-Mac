@@ -29,7 +29,7 @@ public struct CoreAnimationDanmakuStyle: Sendable, Equatable {
     public init(
         fontScale: Double = 1,
         fontWeight: CoreAnimationDanmakuFontWeight = .semibold,
-        shadowBlurRadius: Double = 2.5
+        shadowBlurRadius: Double = 2
     ) {
         self.fontScale = Self.normalized(
             fontScale,
@@ -39,7 +39,7 @@ public struct CoreAnimationDanmakuStyle: Sendable, Equatable {
         self.fontWeight = fontWeight
         self.shadowBlurRadius = Self.normalized(
             shadowBlurRadius,
-            fallback: 2.5,
+            fallback: 2,
             range: Self.shadowBlurRadiusRange
         )
     }
