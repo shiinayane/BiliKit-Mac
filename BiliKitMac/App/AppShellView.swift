@@ -220,11 +220,11 @@ struct AppShellView: View {
     }
 
     private var sidebarMinimumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 440
+        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 480
     }
 
     private var sidebarIdealWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 440
+        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 480
     }
 
     private var sidebarMaximumWidth: CGFloat {
