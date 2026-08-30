@@ -28,8 +28,8 @@ public enum BiliRequestAuthorizationError:
 
 /// 从 Keychain 按需读取 Cookie，并只授权 Bilibili API 的只读账户请求。
 ///
-/// 调用方声明账户读取能力后，scheme、host、port、method、userinfo、fragment 与现有 Cookie
-/// header 仍会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
+/// 调用方声明账户读取能力后，scheme、host、port、method、exact path、userinfo、fragment 与
+/// 现有凭据 header 仍会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
     private static let maximumResponseSize = 256 * 1_024
     private static let navigationValidationURL: URL = {
@@ -46,16 +46,19 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     private let store: any WebCredentialStoring
     private let httpClient: HTTPClient
     private let transportInvalidator: (@Sendable () -> Void)?
+    private let allowedPaths: Set<String>
 
-    public init() {
+    public init(allowedPaths: Set<String>) {
         let transport = Self.makeProductionTransport()
         store = KeychainWebCredentialStore()
         httpClient = HTTPClient(transport: transport)
         transportInvalidator = { transport.invalidateAndCancel() }
+        self.allowedPaths = allowedPaths
     }
 
     init(
         store: any WebCredentialStoring,
+        allowedPaths: Set<String>,
         transport: any HTTPTransport = Self.makeProductionTransport()
     ) {
         self.store = store
@@ -65,18 +68,15 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         } else {
             transportInvalidator = nil
         }
+        self.allowedPaths = allowedPaths
     }
 
     /// 返回附带短生命周期 Cookie header 的新请求；原请求不会被原地共享或缓存。
     public func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
-        guard Self.isAllowed(request) else {
+        guard isAllowed(request) else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard
-            !request.headers.keys.contains(where: {
-                $0.caseInsensitiveCompare("Cookie") == .orderedSame
-            })
-        else {
+        guard !Self.containsCredentialHeader(request.headers) else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -169,7 +169,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         return .signedIn(identity)
     }
 
-    private static func isAllowed(_ request: HTTPRequest) -> Bool {
+    private func isAllowed(_ request: HTTPRequest) -> Bool {
         guard
             let components = URLComponents(
                 url: request.url,
@@ -183,8 +183,18 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             && (components.port == nil || components.port == 443)
             && components.user == nil
             && components.password == nil
+            && allowedPaths.contains(components.path)
+            && components.percentEncodedPath == components.path
             && components.fragment == nil
             && request.method == .get
+    }
+
+    private static func containsCredentialHeader(_ headers: [String: String]) -> Bool {
+        headers.keys.contains {
+            $0.caseInsensitiveCompare("Cookie") == .orderedSame
+                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
+                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
+        }
     }
 
     private func purgeStoredCredential() throws {

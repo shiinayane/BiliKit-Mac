@@ -441,7 +441,9 @@ struct AppEnvironment {
     static func liveAppSettingsModel(
         accountSessionCoordinator: AccountSessionCoordinator
     ) -> AppSettingsModel {
-        let api = makeLiveAPIClient()
+        let api = makeLiveAPIClient(
+            accountReadAllowedPaths: cdnBenchmarkAccountReadAllowedPaths
+        )
         _ = accountSessionCoordinator.registerSessionInvalidator(api)
         let discoverer = CDNBenchmarkSampleDiscoverer(client: api)
         let benchmark = BilivideoRouteBenchmark()
@@ -481,7 +483,10 @@ struct AppEnvironment {
         accountSessionCoordinator: AccountSessionCoordinator
     ) {
         _ = accountSessionCoordinator.resolveWatchProgressRepository {
-            let writeAPI = makeLiveAPIClient(historyWriteEnabled: true)
+            let writeAPI = makeLiveAPIClient(
+                accountReadAllowedPaths: watchProgressAccountReadAllowedPaths,
+                historyWriteEnabled: true
+            )
             return (
                 BiliWatchProgressRepository(client: writeAPI),
                 writeAPI
@@ -498,7 +503,9 @@ struct AppEnvironment {
         accountSessionCoordinator: AccountSessionCoordinator? = nil,
         appSettingsModel: AppSettingsModel? = nil
     ) -> AppEnvironment {
-        let api = makeLiveAPIClient()
+        let api = makeLiveAPIClient(
+            accountReadAllowedPaths: mainAccountReadAllowedPaths
+        )
         let sessionRegistration = accountSessionCoordinator.map {
             AppEnvironmentSessionRegistration(
                 coordinator: $0,
@@ -516,7 +523,10 @@ struct AppEnvironment {
         if let accountSessionCoordinator {
             watchProgressRepository = accountSessionCoordinator.watchProgressRepository
         } else {
-            let writeAPI = makeLiveAPIClient(historyWriteEnabled: true)
+            let writeAPI = makeLiveAPIClient(
+                accountReadAllowedPaths: watchProgressAccountReadAllowedPaths,
+                historyWriteEnabled: true
+            )
             let writer = SerializedWatchProgressRepository(
                 base: BiliWatchProgressRepository(client: writeAPI)
             )
@@ -524,6 +534,7 @@ struct AppEnvironment {
             standaloneWriteInvalidators = [writer, writeAPI]
         }
         let authenticationService = BiliAuthenticationService(
+            accountReadAllowedPaths: accountSessionValidationAllowedPaths,
             additionalSessionInvalidators: [sessionInvalidator] + standaloneWriteInvalidators
         )
         let player = AVPlayer()
@@ -578,10 +589,39 @@ struct AppEnvironment {
         surfaceHeight: 0
     )
 
+    static let accountSessionValidationAllowedPaths: Set<String> = [
+        "/x/web-interface/nav"
+    ]
+
+    static let mainAccountReadAllowedPaths: Set<String> = [
+        "/x/player/pagelist",
+        "/x/player/playurl",
+        "/x/player/wbi/v2",
+        "/x/v2/dm/wbi/web/seg.so",
+        "/x/v2/reply/reply",
+        "/x/v2/reply/wbi/main",
+        "/x/web-interface/archive/related",
+        "/x/web-interface/card",
+        "/x/web-interface/history/cursor",
+        "/x/web-interface/popular",
+        "/x/web-interface/view",
+        "/x/web-interface/wbi/index/top/feed/rcmd",
+        "/x/web-interface/wbi/search/type",
+    ]
+
+    static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [
+        "/x/player/playurl"
+    ]
+
+    static let watchProgressAccountReadAllowedPaths: Set<String>? = nil
+
     private static func makeLiveAPIClient(
+        accountReadAllowedPaths: Set<String>?,
         historyWriteEnabled: Bool = false
     ) -> BiliAPIClient {
-        let requestAuthorizer = BiliCredentialRequestAuthorizer()
+        let requestAuthorizer = accountReadAllowedPaths.map {
+            BiliCredentialRequestAuthorizer(allowedPaths: $0)
+        }
         let historyWriteAuthorizer: (any HTTPRequestAuthorizing)? =
             historyWriteEnabled ? BiliPlaybackHeartbeatRequestAuthorizer() : nil
         let transportFactory: @Sendable () -> any HTTPTransport = {

@@ -19,12 +19,19 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     private var requiresLogout = false
 
     public init(
+        accountReadAllowedPaths: Set<String>,
         additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
         loginSession = WebQRLoginSession()
-        authorizer = BiliCredentialRequestAuthorizer()
+        authorizer = BiliCredentialRequestAuthorizer(
+            allowedPaths: accountReadAllowedPaths
+        )
         loginSessionFactory = { WebQRLoginSession() }
-        authorizerFactory = { BiliCredentialRequestAuthorizer() }
+        authorizerFactory = {
+            BiliCredentialRequestAuthorizer(
+                allowedPaths: accountReadAllowedPaths
+            )
+        }
         self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 

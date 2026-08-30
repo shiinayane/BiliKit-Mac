@@ -6,6 +6,10 @@ import Testing
 
 @testable import BiliAuth
 
+private let accountSessionValidationAllowedPaths: Set<String> = [
+    "/x/web-interface/nav"
+]
+
 struct BiliAuthenticationServiceTests {
     @Test
     func mapsQRCodeFlowAndCommitsOnlyAfterFinalValidation() async throws {
@@ -35,6 +39,7 @@ struct BiliAuthenticationServiceTests {
             session: session,
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport()
             ),
             store: store
@@ -64,6 +69,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport(
                     responses: [
                         navigationResponse(
@@ -92,6 +98,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport(
                     responses: [
                         navigationResponse(isLogin: true),
@@ -108,6 +115,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -135,6 +143,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport()
             ),
             loginSessionFactory: {
@@ -146,6 +155,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -171,6 +181,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport(
                     responses: [navigationResponse(isLogin: false)]
                 )
@@ -184,6 +195,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -210,6 +222,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport(
                     responses: [navigationResponse(isLogin: false)]
                 )
@@ -223,6 +236,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -257,6 +271,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport()
             ),
             store: store
@@ -288,6 +303,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: RecordingAuthTransport(
                     responses: [navigationResponse(isLogin: true)]
                 )
@@ -301,6 +317,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -340,6 +357,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: validationTransport
             ),
             loginSessionFactory: {
@@ -351,6 +369,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -397,6 +416,7 @@ struct BiliAuthenticationServiceTests {
             ),
             authorizer: BiliCredentialRequestAuthorizer(
                 store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
                 transport: validationTransport
             ),
             loginSessionFactory: {
@@ -408,6 +428,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             },
@@ -448,6 +469,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 BiliCredentialRequestAuthorizer(
                     store: store,
+                    allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
             }
