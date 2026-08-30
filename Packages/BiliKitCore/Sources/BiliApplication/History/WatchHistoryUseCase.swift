@@ -19,7 +19,7 @@ public struct WatchHistoryUseCase: Sendable {
         after continuation: WatchHistoryContinuation? = nil,
         pageSize: Int = 20
     ) async throws -> WatchHistoryPage {
-        guard (1...50).contains(pageSize) else {
+        guard (1...30).contains(pageSize) else {
             throw WatchHistoryError.invalidResponse
         }
         var requestContinuation = continuation

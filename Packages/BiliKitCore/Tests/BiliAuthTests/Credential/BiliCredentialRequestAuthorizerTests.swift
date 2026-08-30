@@ -4,45 +4,103 @@ import Testing
 
 @testable import BiliAuth
 
+private let fixtureNavigationAllowedPaths: Set<String> = [
+    "/x/web-interface/nav"
+]
+
+private let fixturePlaybackAllowedPaths: Set<String> = [
+    "/x/player/playurl"
+]
+
 struct BiliCredentialRequestAuthorizerTests {
     @Test
-    func addsCredentialToExactAPIReadCapability() async throws {
+    func authorizesConfiguredPathsAndInjectsOnlyStoredCredential() async throws {
         let credential = try makeFixtureCredential()
-        let authorizer = BiliCredentialRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: credential)
-        )
-        let request = HTTPRequest(
-            url: try #require(
-                URL(
-                    string:
-                        "https://api.bilibili.com:443/x/web-interface/wbi/search/type?keyword=macOS&page=1"
+        for allowedPaths in [
+            fixtureNavigationAllowedPaths,
+            fixturePlaybackAllowedPaths,
+        ] {
+            let authorizer = BiliCredentialRequestAuthorizer(
+                store: MemoryWebCredentialStore(credential: credential),
+                allowedPaths: allowedPaths
+            )
+            for path in allowedPaths {
+                let request = HTTPRequest(
+                    url: try #require(
+                        URL(
+                            string: "https://api.bilibili.com:443\(path)?fixture=1"
+                        )
+                    ),
+                    headers: ["Accept": "application/json"]
                 )
-            ),
-            headers: ["Accept": "application/json"]
+
+                let authorized = try await authorizer.authorize(request)
+
+                #expect(authorized.headers["Accept"] == "application/json")
+                #expect(authorized.headers["Cookie"] == credential.cookieHeader)
+                #expect(authorized.headers["Authorization"] == nil)
+                #expect(authorized.headers["X-CSRF-Token"] == nil)
+                #expect(authorized.headers.count == 2)
+            }
+        }
+    }
+
+    @Test
+    func keepsConfiguredReadCapabilitiesDisjoint() async throws {
+        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let validationAuthorizer = BiliCredentialRequestAuthorizer(
+            store: store,
+            allowedPaths: fixtureNavigationAllowedPaths
+        )
+        let apiAuthorizer = BiliCredentialRequestAuthorizer(
+            store: store,
+            allowedPaths: fixturePlaybackAllowedPaths
+        )
+        let navigationRequest = HTTPRequest(
+            url: try #require(
+                URL(string: "https://api.bilibili.com/x/web-interface/nav")
+            )
+        )
+        let playbackRequest = HTTPRequest(
+            url: try #require(
+                URL(string: "https://api.bilibili.com/x/player/playurl")
+            )
         )
 
-        let authorized = try await authorizer.authorize(request)
-
-        #expect(authorized.headers["Accept"] == "application/json")
-        #expect(authorized.headers["Cookie"] == credential.cookieHeader)
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await validationAuthorizer.authorize(playbackRequest)
+        }
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await apiAuthorizer.authorize(navigationRequest)
+        }
     }
 
     @Test
     func rejectsNonAPIReadCapabilities() async throws {
         let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
-        let authorizer = BiliCredentialRequestAuthorizer(store: store)
+        let authorizer = BiliCredentialRequestAuthorizer(
+            store: store,
+            allowedPaths: fixturePlaybackAllowedPaths
+        )
         let cases: [(String, HTTPMethod)] = [
-            ("http://api.bilibili.com/x/web-interface/nav", .get),
-            ("https://api.bilibili.com.evil.invalid/x/web-interface/nav", .get),
-            ("https://i0.hdslb.com/x/web-interface/nav", .get),
-            ("http://127.0.0.1:8080/x/web-interface/nav", .get),
+            ("http://api.bilibili.com/x/player/playurl", .get),
+            ("https://api.bilibili.com.evil.invalid/x/player/playurl", .get),
+            ("https://i0.hdslb.com/x/player/playurl", .get),
+            ("http://127.0.0.1:8080/x/player/playurl", .get),
             (
-                "https://api.bilibili.com:444/x/web-interface/wbi/search/type",
+                "https://api.bilibili.com:444/x/player/playurl",
                 .get
             ),
-            ("https://api.bilibili.com/x/web-interface/nav", .post),
-            ("https://user@api.bilibili.com/x/web-interface/nav", .get),
-            ("https://api.bilibili.com/x/web-interface/nav#fragment", .get),
+            ("https://api.bilibili.com/x/player/playurl", .post),
+            ("https://user@api.bilibili.com/x/player/playurl", .get),
+            ("https://api.bilibili.com/x/player/playurl#fragment", .get),
+            ("https://api.bilibili.com/x/player/playurl/", .get),
+            ("https://api.bilibili.com/x/player/playurl/extra", .get),
+            ("https://api.bilibili.com/x/player/playurl-similar", .get),
+            ("https://api.bilibili.com/%78/player/playurl", .get),
+            ("https://api.bilibili.com/x/player/wbi/playurl", .get),
+            ("https://api.bilibili.com/x/v2/history/report", .get),
+            ("https://api.bilibili.com/x/web-interface/future", .get),
         ]
 
         for (urlString, method) in cases {
@@ -57,28 +115,32 @@ struct BiliCredentialRequestAuthorizerTests {
     }
 
     @Test
-    func rejectsPreexistingCredentialHeader() async throws {
+    func rejectsPreexistingCredentialHeadersCaseInsensitively() async throws {
         let authorizer = BiliCredentialRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
+            allowedPaths: fixtureNavigationAllowedPaths
         )
-        let request = HTTPRequest(
-            url: try #require(
-                URL(string: "https://api.bilibili.com/x/web-interface/nav")
-            ),
-            headers: ["cookie": "FIXTURE_PREEXISTING_VALUE"]
-        )
+        for header in ["cOoKiE", "aUtHoRiZaTiOn", "x-CsRf-ToKeN"] {
+            let request = HTTPRequest(
+                url: try #require(
+                    URL(string: "https://api.bilibili.com/x/web-interface/nav")
+                ),
+                headers: [header: "FIXTURE_PREEXISTING_VALUE"]
+            )
 
-        await #expect(
-            throws: BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
-        ) {
-            try await authorizer.authorize(request)
+            await #expect(
+                throws: BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
+            ) {
+                try await authorizer.authorize(request)
+            }
         }
     }
 
     @Test
     func missingCredentialFailsWithoutChangingRequest() async throws {
         let authorizer = BiliCredentialRequestAuthorizer(
-            store: MemoryWebCredentialStore()
+            store: MemoryWebCredentialStore(),
+            allowedPaths: fixtureNavigationAllowedPaths
         )
         let request = HTTPRequest(
             url: try #require(
@@ -115,7 +177,10 @@ struct BiliCredentialRequestAuthorizerTests {
         let expiredStore = MemoryWebCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast)
         )
-        let expiredAuthorizer = BiliCredentialRequestAuthorizer(store: expiredStore)
+        let expiredAuthorizer = BiliCredentialRequestAuthorizer(
+            store: expiredStore,
+            allowedPaths: fixtureNavigationAllowedPaths
+        )
 
         await #expect(throws: BiliRequestAuthorizationError.expiredCredential) {
             try await expiredAuthorizer.authorize(HTTPRequest(url: endpoint))
@@ -125,7 +190,10 @@ struct BiliCredentialRequestAuthorizerTests {
         let corruptStore = MemoryWebCredentialStore(
             loadError: WebCredentialStoreError.corruptCredential
         )
-        let corruptAuthorizer = BiliCredentialRequestAuthorizer(store: corruptStore)
+        let corruptAuthorizer = BiliCredentialRequestAuthorizer(
+            store: corruptStore,
+            allowedPaths: fixtureNavigationAllowedPaths
+        )
         await #expect(throws: BiliRequestAuthorizationError.invalidCredential) {
             try await corruptAuthorizer.authorize(HTTPRequest(url: endpoint))
         }
@@ -136,7 +204,8 @@ struct BiliCredentialRequestAuthorizerTests {
             deleteError: FixtureValidationError.offline
         )
         let deletionFailureAuthorizer = BiliCredentialRequestAuthorizer(
-            store: deletionFailure
+            store: deletionFailure,
+            allowedPaths: fixtureNavigationAllowedPaths
         )
         await #expect(
             throws: BiliRequestAuthorizationError.credentialStoreUnavailable
@@ -154,6 +223,7 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let authorizer = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
+            allowedPaths: fixtureNavigationAllowedPaths,
             transport: transport
         )
 
@@ -172,6 +242,7 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let missing = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(),
+            allowedPaths: fixtureNavigationAllowedPaths,
             transport: missingTransport
         )
         #expect(
@@ -185,6 +256,7 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         let invalid = BiliCredentialRequestAuthorizer(
             store: invalidStore,
+            allowedPaths: fixtureNavigationAllowedPaths,
             transport: CredentialValidationTransport(
                 response: navigationResponse(isLogin: false)
             )
@@ -200,6 +272,7 @@ struct BiliCredentialRequestAuthorizerTests {
                 credential: try makeFixtureCredential(),
                 deleteError: FixtureValidationError.offline
             ),
+            allowedPaths: fixtureNavigationAllowedPaths,
             transport: CredentialValidationTransport(
                 response: navigationResponse(isLogin: false)
             )
@@ -216,6 +289,7 @@ struct BiliCredentialRequestAuthorizerTests {
         let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
         let authorizer = BiliCredentialRequestAuthorizer(
             store: store,
+            allowedPaths: fixtureNavigationAllowedPaths,
             transport: CredentialValidationTransport(error: FixtureValidationError.offline)
         )
 

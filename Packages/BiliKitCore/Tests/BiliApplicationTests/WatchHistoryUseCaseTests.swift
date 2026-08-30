@@ -22,12 +22,28 @@ struct WatchHistoryUseCaseTests {
     }
 
     @Test
-    func rejectsInvalidPageSizeBeforeCallingRepository() async {
+    func defaultsToTwentyItems() async throws {
+        let repository = WatchHistoryRepositoryStub(
+            pages: [WatchHistoryPage(items: [], continuation: nil)]
+        )
+        let useCase = WatchHistoryUseCase(repository: repository)
+
+        _ = try await useCase.load()
+
+        #expect(
+            await repository.requests() == [
+                Request(continuation: nil, pageSize: 20)
+            ]
+        )
+    }
+
+    @Test(arguments: [31, 0, -1])
+    func rejectsInvalidPageSizeBeforeCallingRepository(pageSize: Int) async {
         let repository = WatchHistoryRepositoryStub(pages: [])
         let useCase = WatchHistoryUseCase(repository: repository)
 
         await #expect(throws: WatchHistoryError.invalidResponse) {
-            try await useCase.load(pageSize: 0)
+            try await useCase.load(pageSize: pageSize)
         }
         #expect(await repository.requests().isEmpty)
     }

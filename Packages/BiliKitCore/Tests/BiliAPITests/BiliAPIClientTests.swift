@@ -1921,6 +1921,45 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func historyAcceptsDefaultAndMaximumPageSizeAndRejectsOutOfRangeBeforeTransport()
+        async throws
+    {
+        let transport = RecordingTransport(
+            responses: [
+                try fixtureResponse("history"),
+                try fixtureResponse("history"),
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: RecordingRequestAuthorizer()
+        )
+
+        _ = try await client.watchHistory()
+        _ = try await client.watchHistory(pageSize: 30)
+
+        let validRequests = await transport.capturedRequests()
+        #expect(validRequests.count == 2)
+        let defaultQuery = URLComponents(
+            url: validRequests[0].url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        let maximumQuery = URLComponents(
+            url: validRequests[1].url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(defaultQuery?.contains(URLQueryItem(name: "ps", value: "20")) == true)
+        #expect(maximumQuery?.contains(URLQueryItem(name: "ps", value: "30")) == true)
+
+        for pageSize in [31, 0, -1] {
+            await #expect(throws: BiliAPIError.invalidRequest) {
+                try await client.watchHistory(pageSize: pageSize)
+            }
+        }
+        #expect(await transport.capturedRequests().count == 2)
+    }
+
+    @Test
     func popularVideoDetailAndPageListUseAccountRead()
         async throws
     {

@@ -768,7 +768,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         after continuation: WatchHistoryContinuation? = nil,
         pageSize: Int = 20
     ) async throws -> WatchHistoryPage {
-        guard (1...50).contains(pageSize) else {
+        guard (1...30).contains(pageSize) else {
             throw BiliAPIError.invalidRequest
         }
         let cursor: WatchHistoryCursorPayload
