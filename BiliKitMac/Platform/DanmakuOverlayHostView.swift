@@ -11,6 +11,7 @@ final class DanmakuOverlayView: NSView {
     private let controller: DanmakuPresentationController
     private let ownerID = UUID()
     private var previousSize: CGSize?
+    private var previousBackingScale: CGFloat?
     private var isSurfaceAttached = false
 
     init(
@@ -42,6 +43,11 @@ final class DanmakuOverlayView: NSView {
         updateSurfaceIfNeeded()
     }
 
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateSurfaceIfNeeded()
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
@@ -49,13 +55,24 @@ final class DanmakuOverlayView: NSView {
     /// 仅由当前 surface owner 发布布局尺寸；已有弹幕保留运动，新弹幕使用最新尺寸。
     func updateSurfaceIfNeeded() {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        guard bounds.size != previousSize else { return }
+        let backingScale =
+            window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        guard
+            bounds.size != previousSize
+                || backingScale != previousBackingScale
+        else {
+            return
+        }
         previousSize = bounds.size
+        previousBackingScale = backingScale
         let width = max(Double(bounds.width), 0)
         let height = max(Double(bounds.height), 0)
         controller.updateSurface(
             width: width,
             height: height,
+            backingScale: Double(backingScale),
             ownerID: ownerID
         )
     }
@@ -75,6 +92,7 @@ final class DanmakuOverlayView: NSView {
         controller.attachSurface(ownerID: ownerID)
         layer?.addSublayer(renderer.rootLayer)
         previousSize = nil
+        previousBackingScale = nil
         updateSurfaceIfNeeded()
     }
 }

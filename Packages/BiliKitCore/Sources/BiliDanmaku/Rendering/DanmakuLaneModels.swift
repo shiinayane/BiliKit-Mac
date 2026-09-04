@@ -12,7 +12,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             surfaceWidth: surfaceWidth,
             surfaceHeight: surfaceHeight,
             laneHeight: 36,
-            minimumHorizontalGap: 40,
+            minimumHorizontalGap: 64,
             maximumActiveCount: hardMaximumActiveCount,
             displayAreaFraction: 1
         )

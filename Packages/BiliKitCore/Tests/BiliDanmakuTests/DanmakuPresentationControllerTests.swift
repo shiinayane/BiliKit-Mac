@@ -7,6 +7,25 @@ import Testing
 
 @testable import BiliDanmaku
 
+private final class RasterizationStartProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let started = DispatchSemaphore(value: 0)
+    private var count = 0
+
+    func recordStart() {
+        lock.withLock { count += 1 }
+        started.signal()
+    }
+
+    func waitForStart(timeout: DispatchTime) -> DispatchTimeoutResult {
+        started.wait(timeout: timeout)
+    }
+
+    var startCount: Int {
+        lock.withLock { count }
+    }
+}
+
 @MainActor
 @Suite
 struct DanmakuPresentationControllerTests {
@@ -17,7 +36,7 @@ struct DanmakuPresentationControllerTests {
                 == CoreAnimationDanmakuStyle(
                     fontScale: 1,
                     fontWeight: .semibold,
-                    shadowBlurRadius: 2
+                    shadowBlurRadius: 1
                 )
         )
 
@@ -40,14 +59,14 @@ struct DanmakuPresentationControllerTests {
         )
         #expect(nonfinite.fontScale == 1)
         #expect(nonfinite.fontWeight == .regular)
-        #expect(nonfinite.shadowBlurRadius == 2)
+        #expect(nonfinite.shadowBlurRadius == 1)
 
         let laneConfiguration = DanmakuLaneConfiguration.production(
             surfaceWidth: 1_280,
             surfaceHeight: 720
         )
         #expect(laneConfiguration.laneHeight == 36)
-        #expect(laneConfiguration.minimumHorizontalGap == 40)
+        #expect(laneConfiguration.minimumHorizontalGap == 64)
         #expect(
             laneConfiguration.maximumActiveCount
                 == DanmakuLaneConfiguration.hardMaximumActiveCount
@@ -62,7 +81,7 @@ struct DanmakuPresentationControllerTests {
             DanmakuDensityAdmissionPolicy.init
         )
 
-        #expect(policies.map(\.minimumHorizontalGap) == [40, 20, 0])
+        #expect(policies.map(\.minimumHorizontalGap) == [64, 32, 0])
         #expect(policies.map(\.maximumOverlapDepth) == [1, 1, 3])
     }
 
@@ -471,6 +490,44 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
+    func pendingPreparationQueueIsGloballyBoundedAcrossBatches() {
+        let backend = RecordingRenderingBackend()
+        backend.delaysPreparation = true
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 640)
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1PendingBound", cid: 1)
+        let maximum = DanmakuLaneConfiguration.hardMaximumActiveCount
+
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: (0..<maximum).map {
+                    event(id: "first-\($0)", mode: .scrolling)
+                }
+            )
+        )
+        controller.apply(
+            update(
+                identity: identity,
+                position: 2,
+                generation: 1,
+                events: (0...maximum).map {
+                    event(id: "blocked-\($0)", mode: .scrolling)
+                }
+            )
+        )
+
+        #expect(backend.preparationIDs.count == maximum)
+        #expect(controller.statistics.droppedCapacity == maximum + 1)
+        controller.clearPresentation()
+        #expect(controller.statistics.active == 0)
+    }
+
+    @Test
     func pauseRateGenerationAndStopRemainSingleSequenceCommands() {
         let backend = RecordingRenderingBackend()
         let controller = DanmakuPresentationController(
@@ -632,28 +689,423 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
-    func rendererResizeKeepsScrollingAnimationAndRelayoutsFixedModes() throws {
+    func unionOuterRingDoesNotEnterFillAndMapsHalfPointAtOneAndTwoX() {
+        let alpha: [UInt8] = [
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 255, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ]
+        let oneX = DanmakuTextureRasterizer.outerRing(
+            alpha: alpha,
+            width: 5,
+            height: 5,
+            radiusPixels: 0.5
+        )
+        let twoX = DanmakuTextureRasterizer.outerRing(
+            alpha: alpha,
+            width: 5,
+            height: 5,
+            radiusPixels: 1
+        )
+
+        #expect(oneX[2 * 5 + 2] == 0)
+        #expect(twoX[2 * 5 + 2] == 0)
+        #expect(oneX[2 * 5 + 1] == 128)
+        #expect(twoX[2 * 5 + 1] == 255)
+        #expect(oneX[1 * 5 + 1] == 128)
+        #expect(twoX[1 * 5 + 1] == 255)
+
+        let adjacent: [UInt8] = [
+            0, 0, 0, 0, 0,
+            0, 255, 255, 255, 0,
+            0, 0, 0, 0, 0,
+        ]
+        let union = DanmakuTextureRasterizer.outerRing(
+            alpha: adjacent,
+            width: 5,
+            height: 3,
+            radiusPixels: 1
+        )
+        #expect(union[1 * 5 + 1] == 0)
+        #expect(union[1 * 5 + 2] == 0)
+        #expect(union[1 * 5 + 3] == 0)
+    }
+
+    @Test
+    func onePointTentShadowIsZeroOffsetAndSymmetricAtOneAndTwoX() {
+        let source: [UInt8] = [
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 255, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ]
+        let oneX = DanmakuTextureRasterizer.tentBlur(
+            alpha: source,
+            width: 5,
+            height: 5,
+            radius: 1
+        )
+        let twoX = DanmakuTextureRasterizer.tentBlur(
+            alpha: source,
+            width: 5,
+            height: 5,
+            radius: 2
+        )
+
+        #expect(oneX[2 * 5 + 1] == oneX[2 * 5 + 3])
+        #expect(oneX[1 * 5 + 2] == oneX[3 * 5 + 2])
+        #expect(twoX[2 * 5] == twoX[2 * 5 + 4])
+        #expect(twoX[2] == twoX[4 * 5 + 2])
+        #expect(twoX[2 * 5 + 2] > twoX[2 * 5 + 1])
+        #expect(twoX[2 * 5 + 1] > twoX[2 * 5])
+    }
+
+    @Test
+    func cacheKeyIncludesEveryVisualInputAndAdaptiveInkThreshold() throws {
+        let baseEvent = event(
+            id: "key",
+            mode: .top,
+            colorRGB: 0xFFFFFF,
+            fontSize: 25
+        )
+        let base = try #require(
+            DanmakuTextureRasterizer.key(
+                event: baseEvent,
+                style: .production,
+                backingScale: 2
+            )
+        )
+        let changedText = try #require(
+            DanmakuTextureRasterizer.key(
+                event: DanmakuEvent(
+                    id: "key-2",
+                    timeSeconds: 1,
+                    mode: .top,
+                    text: "different",
+                    fontSize: 25,
+                    colorRGB: 0xFFFFFF,
+                    weight: 1
+                ),
+                style: .production,
+                backingScale: 2
+            )
+        )
+        let changedStyle = try #require(
+            DanmakuTextureRasterizer.key(
+                event: baseEvent,
+                style: CoreAnimationDanmakuStyle(
+                    fontScale: 1.5,
+                    fontWeight: .bold,
+                    shadowBlurRadius: 4
+                ),
+                backingScale: 2
+            )
+        )
+        let changedScale = try #require(
+            DanmakuTextureRasterizer.key(
+                event: baseEvent,
+                style: .production,
+                backingScale: 1
+            )
+        )
+        let changedColor = try #require(
+            DanmakuTextureRasterizer.key(
+                event: event(
+                    id: "key-color",
+                    mode: .top,
+                    colorRGB: 0x204060,
+                    fontSize: 25
+                ),
+                style: .production,
+                backingScale: 2
+            )
+        )
+        let changedFontSize = try #require(
+            DanmakuTextureRasterizer.key(
+                event: event(
+                    id: "key-size",
+                    mode: .top,
+                    colorRGB: 0xFFFFFF,
+                    fontSize: 36
+                ),
+                style: .production,
+                backingScale: 2
+            )
+        )
+
+        #expect(base != changedText)
+        #expect(base != changedStyle)
+        #expect(base != changedScale)
+        #expect(base != changedColor)
+        #expect(base != changedFontSize)
+        #expect(base.fontDescriptor == "system-semibold")
+        #expect(base.fontWeight == .semibold)
+        #expect(base.fontScale == 1)
+        #expect(base.outlineWidthPoints == 0.5)
+        #expect(base.shadowRadiusPoints == 1)
+        #expect(base.algorithmVersion == 1)
+        #expect(DanmakuTextureRasterizer.decorationIsLight(colorRGB: 0x757575))
+        #expect(!DanmakuTextureRasterizer.decorationIsLight(colorRGB: 0x767676))
+    }
+
+    @Test
+    func rasterizerHandlesSupportedSizesScriptsAndColorGlyphInputs() throws {
+        let samples = [
+            "中文弹幕",
+            "Latin 123",
+            "e\u{301}",
+            "👨‍👩‍👧‍👦 🌈",
+        ]
+        for scale in [1.0, 2.0] {
+            for size in [18.0, 25.0, 36.0] {
+                for (index, text) in samples.enumerated() {
+                    let fixture = DanmakuEvent(
+                        id: "raster-" + String(index),
+                        timeSeconds: 1,
+                        mode: .scrolling,
+                        text: text,
+                        fontSize: size,
+                        colorRGB: index.isMultiple(of: 2)
+                            ? 0xFFFFFF : 0x204060,
+                        weight: 1
+                    )
+                    let key = try #require(
+                        DanmakuTextureRasterizer.key(
+                            event: fixture,
+                            style: .production,
+                            backingScale: scale
+                        )
+                    )
+                    let payload = try #require(
+                        DanmakuTextureRasterizer.rasterize(key: key)
+                    )
+                    #expect(payload.widthPixels > 0)
+                    #expect(payload.heightPixels > 0)
+                    #expect(payload.byteCost == payload.pixels.count)
+                    #expect(
+                        stride(
+                            from: 3,
+                            to: payload.pixels.count,
+                            by: 4
+                        ).contains { payload.pixels[$0] > 0 }
+                    )
+                }
+            }
+        }
+
+        let emojiEvent = DanmakuEvent(
+            id: "color-emoji",
+            timeSeconds: 1,
+            mode: .scrolling,
+            text: "🌈",
+            fontSize: 36,
+            colorRGB: 0xFFFFFF,
+            weight: 1
+        )
+        let emojiKey = try #require(
+            DanmakuTextureRasterizer.key(
+                event: emojiEvent,
+                style: .production,
+                backingScale: 2
+            )
+        )
+        let emoji = try #require(
+            DanmakuTextureRasterizer.rasterize(key: emojiKey)
+        )
+        let hasColoredGlyphPixel = stride(
+            from: 0,
+            to: emoji.pixels.count,
+            by: 4
+        ).contains { offset in
+            let red = emoji.pixels[offset]
+            let green = emoji.pixels[offset + 1]
+            let blue = emoji.pixels[offset + 2]
+            return emoji.pixels[offset + 3] > 0
+                && (red != green || green != blue)
+        }
+        #expect(hasColoredGlyphPixel)
+    }
+
+    @Test
+    func byteBoundedCacheUsesLRUAndRejectsOversizedItems() throws {
+        let limits = DanmakuTextureLRUCache.Limits(
+            maximumItemCost: 64,
+            maximumTotalCost: 96
+        )
+        let cache = DanmakuTextureLRUCache(limits: limits)
+        let first = textureKey(text: "first")
+        let second = textureKey(text: "second")
+        let third = textureKey(text: "third")
+        let payload = texturePayload(byteCost: 48)
+
+        let insertedFirst = cache.insert(payload, for: first)
+        let insertedSecond = cache.insert(payload, for: second)
+        let firstHit = cache.value(for: first)
+        let insertedThird = cache.insert(payload, for: third)
+        let evictedSecond = cache.value(for: second)
+        let retainedFirst = cache.value(for: first)
+        let retainedThird = cache.value(for: third)
+        #expect(insertedFirst)
+        #expect(insertedSecond)
+        #expect(firstHit == payload)
+        #expect(insertedThird)
+        #expect(evictedSecond == nil)
+        #expect(retainedFirst == payload)
+        #expect(retainedThird == payload)
+        #expect(cache.totalCost == 96)
+        #expect(cache.evictionCount == 1)
+        let insertedOversized = cache.insert(
+            texturePayload(byteCost: 68),
+            for: second
+        )
+        #expect(!insertedOversized)
+        #expect(cache.totalCost == 96)
+        cache.removeAll()
+        #expect(cache.count == 0)
+        #expect(cache.totalCost == 0)
+    }
+
+    @Test
+    func preparedRendererUsesOneOrdinaryLayerAndRootOpacity() async throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 240)
+        let fixture = event(
+            id: "one-layer",
+            mode: .scrolling,
+            colorRGB: 0xD0E0F0
+        )
+        let metrics = try await prepareAndRender(
+            renderer: renderer,
+            event: fixture,
+            preparationID: 1,
+            originY: 20
+        )
+        let layer = try #require(renderer.textLayer(forEventID: fixture.id))
+        let identity = try #require(
+            renderer.objectIdentity(forEventID: fixture.id)
+        )
+
+        #expect(metrics.width > 0)
+        #expect(metrics.height > 0)
+        #expect(!(layer is CATextLayer))
+        #expect(layer.contents != nil)
+        #expect(layer.sublayers == nil)
+        #expect(layer.shadowOpacity == 0)
+        #expect(renderer.rootLayer.sublayers?.count == 1)
+
+        let opacity = try #require(DanmakuOpacity(0.35))
+        renderer.setOpacity(opacity)
+        #expect(abs(Double(renderer.rootLayer.opacity) - 0.35) < 0.001)
+        #expect(layer.opacity == 1)
+        #expect(
+            renderer.objectIdentity(forEventID: fixture.id) == identity
+        )
+        #expect(renderer.activeTextureByteCost > 0)
+        #expect(
+            renderer.activeTextureByteCost
+                <= CoreAnimationDanmakuRenderer.maximumActiveTextureByteCost
+        )
+        renderer.remove(eventID: fixture.id)
+        #expect(renderer.activeTextureByteCost == 0)
+    }
+
+    @Test
+    func preparedRendererCachesByBytesAndClearsOnMemoryPressure() async throws {
+        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+        renderer.updateSurfaceSize(width: 800, height: 240)
+        let first = event(id: "cache-first", mode: .top)
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: first,
+            preparationID: 1,
+            originY: 0
+        )
+        renderer.remove(eventID: first.id)
+        let rasterizations = renderer.rasterizationCount
+        let repeated = DanmakuEvent(
+            id: "cache-second",
+            timeSeconds: first.timeSeconds,
+            mode: first.mode,
+            text: first.text,
+            fontSize: first.fontSize,
+            colorRGB: first.colorRGB,
+            weight: first.weight
+        )
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: repeated,
+            preparationID: 2,
+            originY: 0
+        )
+        #expect(renderer.rasterizationCount == rasterizations)
+        #expect(renderer.cacheHitCount >= 1)
+        #expect(renderer.cachedTextureCount == 1)
+        #expect(renderer.cachedTextureByteCost > 0)
+
+        renderer.remove(eventID: repeated.id)
+        renderer.handleMemoryPressureForTesting()
+        #expect(renderer.cachedTextureCount == 0)
+        #expect(renderer.cachedTextureByteCost == 0)
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: repeated,
+            preparationID: 3,
+            originY: 0
+        )
+        #expect(renderer.rasterizationCount == rasterizations + 1)
+
+        renderer.remove(eventID: repeated.id)
+        let prepared = await prepare(
+            renderer: renderer,
+            event: repeated,
+            preparationID: 4
+        )
+        guard case .ready(let metrics) = prepared else {
+            Issue.record("texture preparation was rejected")
+            return
+        }
+        #expect(renderer.outstandingPreparationCount == 1)
+        renderer.handleMemoryPressureForTesting()
+        #expect(renderer.outstandingPreparationCount == 0)
+        #expect(renderer.cachedTextureByteCost == 0)
+        #expect(
+            !renderer.renderPrepared(
+                placement(event: repeated, metrics: metrics, originY: 0),
+                preparationID: 4,
+                generation: 0
+            )
+        )
+    }
+
+    @Test
+    func rendererResizePreservesMotionAndRelayoutsFixedModes() async throws {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         renderer.updateSurfaceSize(width: 800, height: 300)
         let scrolling = event(id: "resize-scroll", mode: .scrolling)
         let top = event(id: "resize-top", mode: .top)
         let bottom = event(id: "resize-bottom", mode: .bottom)
 
-        for (fixture, originY) in [
-            (scrolling, 60.0),
-            (top, 0.0),
-            (bottom, 240.0),
-        ] {
-            let metrics = renderer.measure(fixture)
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics,
-                    originY: originY
-                )
-            )
-        }
-
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: scrolling,
+            preparationID: 1,
+            originY: 60
+        )
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: top,
+            preparationID: 2,
+            originY: 0
+        )
+        let bottomMetrics = try await prepareAndRender(
+            renderer: renderer,
+            event: bottom,
+            preparationID: 3,
+            originY: 240
+        )
         let scrollingLayer = try #require(
             renderer.textLayer(forEventID: scrolling.id)
         )
@@ -664,499 +1116,54 @@ struct DanmakuPresentationControllerTests {
         let scrollingPosition = scrollingLayer.position
         let topY = topLayer.position.y
         let bottomY = bottomLayer.position.y
+        let animation = try #require(
+            scrollingLayer.animation(forKey: "danmaku") as? CABasicAnimation
+        )
+        let from = animation.fromValue as? NSNumber
+        let to = animation.toValue as? NSNumber
         let epoch = renderer.renderEpoch
-        let scrollingAnimation = try #require(
-            scrollingLayer.animation(forKey: "danmaku") as? CABasicAnimation
-        )
-        let scrollingFrom = try #require(
-            scrollingAnimation.fromValue as? NSNumber
-        )
-        let scrollingTo = try #require(
-            scrollingAnimation.toValue as? NSNumber
-        )
-        let scrollingDuration = scrollingAnimation.duration
-        let rootTiming = (
-            beginTime: renderer.rootLayer.beginTime,
-            timeOffset: renderer.rootLayer.timeOffset,
-            speed: renderer.rootLayer.speed
-        )
 
         renderer.updateSurfaceSize(width: 1_200, height: 500)
 
+        #expect(bottomMetrics.height > 0)
         #expect(renderer.renderEpoch == epoch)
         #expect(renderer.activeLayerCount == 3)
         #expect(scrollingLayer.position == scrollingPosition)
-        let resizedAnimation = try #require(
+        let resized = try #require(
             scrollingLayer.animation(forKey: "danmaku") as? CABasicAnimation
         )
-        #expect((resizedAnimation.fromValue as? NSNumber) == scrollingFrom)
-        #expect((resizedAnimation.toValue as? NSNumber) == scrollingTo)
-        #expect(resizedAnimation.duration == scrollingDuration)
-        #expect(renderer.rootLayer.beginTime == rootTiming.beginTime)
-        #expect(renderer.rootLayer.timeOffset == rootTiming.timeOffset)
-        #expect(renderer.rootLayer.speed == rootTiming.speed)
-        #expect(topLayer.position == CGPoint(x: 600, y: topY))
-        #expect(bottomLayer.position == CGPoint(x: 600, y: bottomY + 200))
-
-        renderer.updateSurfaceSize(width: 0, height: 0)
-        renderer.updateSurfaceSize(width: 1_200, height: 500)
-
-        #expect(renderer.renderEpoch == epoch)
-        #expect(renderer.activeLayerCount == 3)
-        #expect(scrollingLayer.position == scrollingPosition)
+        #expect((resized.fromValue as? NSNumber) == from)
+        #expect((resized.toValue as? NSNumber) == to)
         #expect(topLayer.position == CGPoint(x: 600, y: topY))
         #expect(bottomLayer.position == CGPoint(x: 600, y: bottomY + 200))
     }
 
     @Test
-    func receivedLegacyLargeBottomStaysAnchoredAcrossResize() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 300)
-        let fixture = event(
-            id: "large-bottom-resize",
-            mode: .bottom,
-            fontSize: 36
-        )
-        let metrics = renderer.measure(fixture)
-        renderer.render(
-            placement(
-                event: fixture,
-                metrics: metrics,
-                originY: 300 - metrics.height
-            )
-        )
-        let layer = try #require(
-            renderer.textLayer(forEventID: fixture.id)
-        )
-
-        #expect(layer.frame.maxY == 300)
-        renderer.updateSurfaceSize(width: 1_200, height: 500)
-        #expect(layer.frame.maxY == 500)
-        #expect(layer.position.x == 600)
-    }
-
-    @Test
-    func coreAnimationStyleUsesHeavyInkWithoutCompositorShadow() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let fixture = event(id: "style", mode: .scrolling)
-        let metrics = renderer.measure(fixture)
-        renderer.render(
-            placement(
-                event: fixture,
-                metrics: metrics,
-                originY: 20
-            )
-        )
-
-        let layer = try #require(renderer.textLayer(forEventID: fixture.id))
-        let attributed = try #require(layer.string as? NSAttributedString)
-        let shadow = try #require(
-            attributed.attribute(
-                .shadow,
-                at: 0,
-                effectiveRange: nil
-            ) as? NSShadow
-        )
-
-        #expect(layer.shadowOpacity == 0)
-        #expect(shadow.shadowBlurRadius == 2)
-        #expect(shadow.shadowOffset == .zero)
-        #expect(renderer.activeLayerCount == 1)
-    }
-
-    @Test
-    func coreAnimationStyleMapsScaleWeightAndShadowIntoMeasurementAndLayer() throws {
-        let productionRenderer = CoreAnimationDanmakuRenderer(
-            style: .production,
-            contentsScale: 2
-        )
-        let customStyle = CoreAnimationDanmakuStyle(
-            fontScale: 1.5,
-            fontWeight: .bold,
-            shadowBlurRadius: 4
-        )
-        let customRenderer = CoreAnimationDanmakuRenderer(
-            style: customStyle,
-            contentsScale: 2
-        )
-        let fixture = event(id: "custom-style", mode: .top, fontSize: 25)
-        let productionMetrics = productionRenderer.measure(fixture)
-        let customMetrics = customRenderer.measure(fixture)
-
-        #expect(customRenderer.style == customStyle)
-        #expect(customMetrics.width > productionMetrics.width)
-        #expect(customMetrics.height > productionMetrics.height)
-
-        customRenderer.updateSurfaceSize(width: 800, height: 240)
-        customRenderer.render(
-            placement(
-                event: fixture,
-                metrics: customMetrics,
-                originY: 20
-            )
-        )
-        let layer = try #require(customRenderer.textLayer(forEventID: fixture.id))
-        let attributed = try #require(layer.string as? NSAttributedString)
-        let font = try #require(
-            attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-        )
-        let shadow = try #require(
-            attributed.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
-        )
-
-        #expect(Double(font.pointSize) == 37.5)
-        #expect(font.fontDescriptor.symbolicTraits.contains(.bold))
-        #expect(shadow.shadowBlurRadius == 4)
-        #expect(layer.shadowOpacity == 0)
-    }
-
-    @Test
-    func coreAnimationUsesReceivedFontSizeForMeasurementAndLayer() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 240)
-        let fixtures = [18.0, 25.0, 36.0].map { fontSize in
-            DanmakuEvent(
-                id: "font-\(fontSize)",
-                timeSeconds: 1,
-                mode: .top,
-                text: "同一条字号测试弹幕",
-                fontSize: fontSize,
-                colorRGB: 0xFFFFFF,
-                weight: 1
-            )
-        }
-        let metrics = fixtures.map(renderer.measure)
-
-        #expect(metrics[0].width < metrics[1].width)
-        #expect(metrics[1].width < metrics[2].width)
-        #expect(metrics[0].height < metrics[1].height)
-        #expect(metrics[1].height < metrics[2].height)
-
-        for (index, fixture) in fixtures.enumerated() {
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics[index],
-                    originY: Double(index) * 64
-                )
-            )
-            let layer = try #require(
-                renderer.textLayer(forEventID: fixture.id)
-            )
-            let attributed = try #require(
-                layer.string as? NSAttributedString
-            )
-            let font = try #require(
-                attributed.attribute(.font, at: 0, effectiveRange: nil)
-                    as? NSFont
-            )
-            #expect(Double(font.pointSize) == fixture.fontSize)
-            #expect(Double(layer.bounds.width) == metrics[index].width)
-            #expect(Double(layer.bounds.height) == metrics[index].height)
-        }
-    }
-
-    @Test
-    func presentationControllerAdmitsReceivedSizesWithoutVerticalOverlap()
-        throws
-    {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        let controller = DanmakuPresentationController(
-            backend: renderer,
-            configuration: DanmakuLaneConfiguration(
-                surfaceWidth: 800,
-                surfaceHeight: 240,
-                laneHeight: 36,
-                minimumHorizontalGap: 12,
-                maximumActiveCount: 20,
-                displayAreaFraction: 1
-            )
-        )
-        let identity = PlaybackItemIdentity(
-            bvid: "BV1FontSizeFixture",
-            cid: 1
-        )
-
-        controller.apply(
-            update(
-                identity: identity,
-                position: 1,
-                generation: 1,
-                events: [
-                    ("controller-font-18.0", 18.0),
-                    ("controller-font-25.0", 25.0),
-                    ("controller-font-36.0", 36.0),
-                    ("controller-after-large", 18.0),
-                ].map { id, fontSize in
-                    event(
-                        id: id,
-                        mode: .top,
-                        fontSize: fontSize
-                    )
-                }
-            )
-        )
-
-        #expect(controller.statistics.admitted == 4)
-        #expect(controller.statistics.active == 4)
-        #expect(controller.statistics.droppedNoLane == 0)
-        #expect(renderer.activeLayerCount == 4)
-
-        let smallLayer = try #require(
-            renderer.textLayer(forEventID: "controller-font-18.0")
-        )
-        let standardLayer = try #require(
-            renderer.textLayer(forEventID: "controller-font-25.0")
-        )
-        let legacyLargeLayer = try #require(
-            renderer.textLayer(forEventID: "controller-font-36.0")
-        )
-        let afterLargeLayer = try #require(
-            renderer.textLayer(forEventID: "controller-after-large")
-        )
-        #expect(legacyLargeLayer.bounds.height > 36)
-        #expect(smallLayer.frame.maxY <= standardLayer.frame.minY)
-        #expect(standardLayer.frame.maxY <= legacyLargeLayer.frame.minY)
-        #expect(legacyLargeLayer.frame.maxY <= afterLargeLayer.frame.minY)
-    }
-
-    @Test(arguments: [Double.nan, .infinity, -.infinity])
-    func nonfiniteReceivedFontSizeFailsClosed(fontSize: Double) {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let fixture = DanmakuEvent(
-            id: "invalid-font-size",
-            timeSeconds: 1,
-            mode: .scrolling,
-            text: "不会进入图层的测试弹幕",
-            fontSize: fontSize,
-            colorRGB: 0xFFFFFF,
-            weight: 1
-        )
-        let metrics = renderer.measure(fixture)
-
-        #expect(metrics == DanmakuTextMetrics(width: 0, height: 0))
-        renderer.render(
-            placement(event: fixture, metrics: metrics, originY: 0)
-        )
-        #expect(renderer.activeLayerCount == 0)
-    }
-
-    @Test(arguments: [12.0, 24.0, 45.0, 64.0])
-    func unknownFiniteFontSizeFallsBackToStandard(
-        fontSize: Double
-    )
-        throws
-    {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let fixture = event(
-            id: "font-fallback-\(fontSize)",
-            mode: .top,
-            fontSize: fontSize
-        )
-        let metrics = renderer.measure(fixture)
-
-        #expect(metrics.width > 0)
-        #expect(metrics.height > 0)
-        renderer.render(
-            placement(event: fixture, metrics: metrics, originY: 0)
-        )
-        let layer = try #require(
-            renderer.textLayer(forEventID: fixture.id)
-        )
-        let attributed = try #require(layer.string as? NSAttributedString)
-        let font = try #require(
-            attributed.attribute(.font, at: 0, effectiveRange: nil)
-                as? NSFont
-        )
-        #expect(Double(font.pointSize) == 25)
-    }
-
-    @Test
-    func coreAnimationUsesEventRGBAndAppliesOpacityWithoutReplacingLayers() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let colorful = event(
-            id: "colorful",
-            mode: .scrolling,
-            colorRGB: 0xAB_D0_E0_F0
-        )
-        let dark = event(id: "dark", mode: .top, colorRGB: 0x000000)
-
-        for (fixture, originY) in [(colorful, 20.0), (dark, 60.0)] {
-            let metrics = renderer.measure(fixture)
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics,
-                    originY: originY
-                )
-            )
-        }
-
-        let colorfulLayer = try #require(
-            renderer.textLayer(forEventID: colorful.id)
-        )
-        let colorfulIdentity = try #require(
-            renderer.objectIdentity(forEventID: colorful.id)
-        )
-        let colorfulText = try #require(
-            colorfulLayer.string as? NSAttributedString
-        )
-        let foreground = try #require(
-            colorfulText.attribute(
-                .foregroundColor,
-                at: 0,
-                effectiveRange: nil
-            ) as? NSColor
-        )
-        let sRGB = try #require(foreground.usingColorSpace(.sRGB))
-        let colorfulShadow = try #require(
-            colorfulText.attribute(.shadow, at: 0, effectiveRange: nil)
-                as? NSShadow
-        )
-        let colorfulShadowColor = try #require(
-            colorfulShadow.shadowColor?.usingColorSpace(.sRGB)
-        )
-
-        #expect(abs(sRGB.redComponent - 0xD0 / 255) < 0.001)
-        #expect(abs(sRGB.greenComponent - 0xE0 / 255) < 0.001)
-        #expect(abs(sRGB.blueComponent - 0xF0 / 255) < 0.001)
-        #expect(colorfulShadowColor.redComponent == 0)
-
-        let darkLayer = try #require(renderer.textLayer(forEventID: dark.id))
-        let darkText = try #require(darkLayer.string as? NSAttributedString)
-        let darkShadow = try #require(
-            darkText.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
-        )
-        let darkShadowColor = try #require(
-            darkShadow.shadowColor?.usingColorSpace(.sRGB)
-        )
-        #expect(darkShadowColor.redComponent == 1)
-
-        let opacity = try #require(DanmakuOpacity(0.45))
-        renderer.setOpacity(opacity)
-
-        #expect(abs(Double(renderer.rootLayer.opacity) - opacity.value) < 0.001)
-        #expect(renderer.activeLayerCount == 2)
-        #expect(
-            renderer.objectIdentity(forEventID: colorful.id)
-                == colorfulIdentity
-        )
-        #expect(renderer.textLayer(forEventID: colorful.id) === colorfulLayer)
-    }
-
-    @Test
-    func adaptiveHeavyInkUsesFixedRelativeLuminanceThreshold() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let belowThreshold = event(
-            id: "ink-below-threshold",
-            mode: .scrolling,
-            colorRGB: 0x757575
-        )
-        let aboveThreshold = event(
-            id: "ink-above-threshold",
-            mode: .top,
-            colorRGB: 0x767676
-        )
-
-        for (fixture, originY) in [
-            (belowThreshold, 20.0),
-            (aboveThreshold, 60.0),
-        ] {
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: renderer.measure(fixture),
-                    originY: originY
-                )
-            )
-        }
-
-        func attributes(for eventID: String) throws -> NSAttributedString {
-            let layer = try #require(renderer.textLayer(forEventID: eventID))
-            return try #require(layer.string as? NSAttributedString)
-        }
-
-        func shadowRedComponent(for eventID: String) throws -> CGFloat {
-            let text = try attributes(for: eventID)
-            let shadow = try #require(
-                text.attribute(.shadow, at: 0, effectiveRange: nil) as? NSShadow
-            )
-            let color = try #require(
-                shadow.shadowColor?.usingColorSpace(.sRGB)
-            )
-            #expect(
-                text.attribute(.strokeColor, at: 0, effectiveRange: nil) == nil
-            )
-            #expect(
-                text.attribute(.strokeWidth, at: 0, effectiveRange: nil) == nil
-            )
-            return color.redComponent
-        }
-
-        #expect(try shadowRedComponent(for: belowThreshold.id) == 1)
-        #expect(try shadowRedComponent(for: aboveThreshold.id) == 0)
-    }
-
-    @Test
-    func coreAnimationTextDoesNotForceContentLanguage() throws {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
-        renderer.updateSurfaceSize(width: 800, height: 200)
-        let fixture = DanmakuEvent(
-            id: "simplified-chinese-language",
-            timeSeconds: 1,
-            mode: .scrolling,
-            text: "弹幕字体/视频推荐/门骨直令",
-            fontSize: 24,
-            colorRGB: 0xFFFFFF,
-            weight: 1
-        )
-        let metrics = renderer.measure(fixture)
-        renderer.render(
-            placement(
-                event: fixture,
-                metrics: metrics,
-                originY: 20
-            )
-        )
-
-        let layer = try #require(renderer.textLayer(forEventID: fixture.id))
-        let attributed = try #require(layer.string as? NSAttributedString)
-        let language =
-            attributed.attribute(
-                NSAttributedString.Key(kCTLanguageAttributeName as String),
-                at: 0,
-                effectiveRange: nil
-            ) as? String
-
-        #expect(language == nil)
-    }
-
-    @Test
-    func staleCompletionCannotRemoveReplacementWithSameEventID() throws {
+    func staleAnimationCompletionCannotRemoveReplacement() async throws {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         let delegate = RecordingRendererDelegate()
         renderer.delegate = delegate
         renderer.updateSurfaceSize(width: 800, height: 200)
         let fixture = event(id: "reused", mode: .top)
-        let metrics = renderer.measure(fixture)
-        let fixturePlacement = placement(
+        _ = try await prepareAndRender(
+            renderer: renderer,
             event: fixture,
-            metrics: metrics,
+            preparationID: 1,
             originY: 10
         )
-        renderer.render(fixturePlacement)
         let oldIdentity = try #require(
             renderer.objectIdentity(forEventID: fixture.id)
         )
         let oldEpoch = renderer.renderEpoch
 
         renderer.clearAll()
-        renderer.render(fixturePlacement)
+        _ = try await prepareAndRender(
+            renderer: renderer,
+            event: fixture,
+            preparationID: 2,
+            generation: 1,
+            originY: 10
+        )
         let newIdentity = try #require(
             renderer.objectIdentity(forEventID: fixture.id)
         )
@@ -1180,43 +1187,217 @@ struct DanmakuPresentationControllerTests {
     }
 
     @Test
-    func concreteRendererCoversThreeModesRateAndLifecycleEpochs() throws {
+    func controllerWaitsForTextureAndPreservesPreparationOrder() {
+        let backend = RecordingRenderingBackend()
+        backend.delaysPreparation = true
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 4)
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1Prepared", cid: 1)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [
+                    event(id: "first", mode: .top),
+                    event(id: "second", mode: .top),
+                ]
+            )
+        )
+        let firstID = backend.preparationIDs[0]
+        let secondID = backend.preparationIDs[1]
+
+        #expect(controller.statistics.active == 0)
+        #expect(backend.renderedEventIDs.isEmpty)
+        backend.completePreparation(secondID)
+        #expect(backend.renderedEventIDs.isEmpty)
+        backend.completePreparation(firstID)
+        #expect(backend.renderedEventIDs == ["first", "second"])
+        #expect(controller.statistics.active == 2)
+    }
+
+    @Test
+    func identityReplacementRejectsLatePreparation() {
+        let backend = RecordingRenderingBackend()
+        backend.delaysPreparation = true
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 4)
+        )
+        let oldIdentity = PlaybackItemIdentity(bvid: "BV1OldIdentity", cid: 1)
+        let newIdentity = PlaybackItemIdentity(bvid: "BV1NewIdentity", cid: 2)
+
+        controller.apply(
+            update(
+                identity: oldIdentity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "old-identity", mode: .top)]
+            )
+        )
+        let oldPreparationID = backend.preparationIDs.last!
+        controller.apply(
+            update(
+                identity: newIdentity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "new-identity", mode: .top)]
+            )
+        )
+        let newPreparationID = backend.preparationIDs.last!
+
+        backend.completePreparation(oldPreparationID)
+        #expect(backend.renderedEventIDs.isEmpty)
+        backend.completePreparation(newPreparationID)
+        #expect(backend.renderedEventIDs == ["new-identity"])
+        #expect(controller.statistics.active == 1)
+    }
+
+    @Test
+    func generationStopAndBackingScaleInvalidateLatePreparation() {
+        let backend = RecordingRenderingBackend()
+        backend.delaysPreparation = true
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 4)
+        )
+        let owner = UUID()
+        controller.attachSurface(ownerID: owner)
+        controller.updateSurface(
+            width: 800,
+            height: 300,
+            backingScale: 2,
+            ownerID: owner
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1Late", cid: 1)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "old-generation", mode: .top)]
+            )
+        )
+        let oldGenerationID = backend.preparationIDs.last!
+        controller.apply(
+            update(
+                identity: identity,
+                position: 2,
+                generation: 2
+            )
+        )
+        backend.completePreparation(oldGenerationID)
+        #expect(backend.renderedEventIDs.isEmpty)
+
+        controller.apply(
+            update(
+                identity: identity,
+                position: 3,
+                generation: 2,
+                events: [event(id: "old-scale", mode: .top)]
+            )
+        )
+        let oldScaleID = backend.preparationIDs.last!
+        controller.updateSurface(
+            width: 800,
+            height: 300,
+            backingScale: 1,
+            ownerID: owner
+        )
+        backend.completePreparation(oldScaleID)
+        #expect(backend.renderedEventIDs.isEmpty)
+
+        controller.apply(
+            update(
+                identity: identity,
+                position: 3.5,
+                generation: 2,
+                events: [event(id: "cleared", mode: .top)]
+            )
+        )
+        let clearedID = backend.preparationIDs.last!
+        controller.clearPresentation()
+        backend.completePreparation(clearedID)
+        #expect(backend.renderedEventIDs.isEmpty)
+
+        controller.apply(
+            update(
+                identity: identity,
+                position: 4,
+                generation: 2,
+                events: [event(id: "stopped", mode: .top)]
+            )
+        )
+        let stoppedID = backend.preparationIDs.last!
+        controller.stopPresentation()
+        backend.completePreparation(stoppedID)
+        #expect(backend.renderedEventIDs.isEmpty)
+        #expect(controller.statistics.active == 0)
+        #expect(backend.cancelPreparationCount >= 3)
+    }
+
+    @Test
+    func sameScaleResizeKeepsPendingPreparationAndUsesNewSurface() {
+        let backend = RecordingRenderingBackend()
+        backend.delaysPreparation = true
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 4)
+        )
+        let owner = UUID()
+        controller.attachSurface(ownerID: owner)
+        let identity = PlaybackItemIdentity(bvid: "BV1ResizePending", cid: 1)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "pending-resize", mode: .top)]
+            )
+        )
+        let preparationID = backend.preparationIDs.last!
+        let cancelCount = backend.cancelPreparationCount
+        controller.updateSurface(
+            width: 1_200,
+            height: 500,
+            backingScale: 2,
+            ownerID: owner
+        )
+        #expect(backend.cancelPreparationCount == cancelCount)
+
+        backend.completePreparation(preparationID)
+        #expect(backend.renderedEventIDs == ["pending-resize"])
+        #expect(
+            backend.renderedPlacements.last?.surfaceWidthAtAdmission == 1_200
+        )
+    }
+
+    @Test
+    func rendererThreeModesRateAndLifecycleRemainBounded() async throws {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         renderer.updateSurfaceSize(width: 800, height: 300)
-        let scrolling = event(id: "scroll", mode: .scrolling)
-        let top = event(id: "top", mode: .top)
-        let bottom = event(id: "bottom", mode: .bottom)
-
-        for (fixture, originY) in [
-            (scrolling, 60.0),
-            (top, 0.0),
-            (bottom, 240.0),
-        ] {
-            let metrics = renderer.measure(fixture)
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics,
-                    originY: originY
-                )
+        let fixtures = [
+            event(id: "scroll", mode: .scrolling),
+            event(id: "top", mode: .top),
+            event(id: "bottom", mode: .bottom),
+        ]
+        for (index, fixture) in fixtures.enumerated() {
+            _ = try await prepareAndRender(
+                renderer: renderer,
+                event: fixture,
+                preparationID: UInt64(index + 1),
+                originY: Double(index) * 80
             )
         }
 
-        let scrollingAnimation = try #require(
-            renderer.textLayer(forEventID: scrolling.id)?
-                .animation(forKey: "danmaku") as? CABasicAnimation
+        #expect(
+            renderer.textLayer(forEventID: "scroll")?
+                .animation(forKey: "danmaku") is CABasicAnimation
         )
-        let topAnimation = try #require(
-            renderer.textLayer(forEventID: top.id)?
-                .animation(forKey: "danmaku") as? CABasicAnimation
-        )
-        let bottomAnimation = try #require(
-            renderer.textLayer(forEventID: bottom.id)?
-                .animation(forKey: "danmaku") as? CABasicAnimation
-        )
-        #expect(scrollingAnimation.keyPath == "position.x")
-        #expect(topAnimation.keyPath == "opacity")
-        #expect(bottomAnimation.keyPath == "opacity")
+        #expect(renderer.activeLayerCount == 3)
+        #expect(renderer.maximumConcurrentPreparationCount == 2)
 
         renderer.setPlaybackRate(0)
         #expect(renderer.rootLayer.speed == 0)
@@ -1225,111 +1406,280 @@ struct DanmakuPresentationControllerTests {
         renderer.setPlaybackRate(2)
         #expect(renderer.rootLayer.speed == 2)
 
-        let controller = DanmakuPresentationController(
-            backend: renderer,
-            configuration: configuration(maximumActiveCount: 640)
-        )
-        let surfaceOwner = UUID()
-        controller.attachSurface(ownerID: surfaceOwner)
-        let beforeDetach = renderer.renderEpoch
-        controller.detachSurface(ownerID: surfaceOwner)
-        #expect(renderer.renderEpoch == beforeDetach + 1)
-        #expect(renderer.activeLayerCount == 0)
-        #expect(renderer.rootLayer.sublayers?.isEmpty != false)
-
-        controller.attachSurface(ownerID: surfaceOwner)
         let beforeStop = renderer.renderEpoch
-        controller.stopPresentation()
-        controller.stopPresentation()
-        #expect(renderer.renderEpoch == beforeStop + 2)
+        renderer.stop()
+        #expect(renderer.renderEpoch == beforeStop + 1)
         #expect(renderer.activeLayerCount == 0)
+        #expect(renderer.outstandingPreparationCount == 0)
         #expect(renderer.rootLayer.speed == 0)
     }
 
     @Test
-    func oversizedTextFailsClosedBeforeLayerCreation() {
+    func preparationOwnerRejectsWorkBeyondItsHardOutstandingLimit() {
+        let renderer = CoreAnimationDanmakuRenderer(
+            style: .production,
+            contentsScale: 2,
+            preparationConfiguration: .init(
+                maximumConcurrentOperations: 1,
+                maximumOutstandingRequests: 1,
+                cacheLimits: .production
+            )
+        )
+        renderer.updateSurfaceSize(width: 800, height: 300)
+        var secondResult: DanmakuPreparationResult?
+        renderer.prepare(
+            event(id: "bounded-first", mode: .scrolling),
+            preparationID: 1,
+            generation: 0,
+            backingScale: 2
+        ) { _ in }
+        renderer.prepare(
+            event(id: "bounded-second", mode: .scrolling),
+            preparationID: 2,
+            generation: 0,
+            backingScale: 2
+        ) { result in
+            secondResult = result
+        }
+
+        #expect(secondResult == .rejected(.capacity))
+        #expect(renderer.outstandingPreparationCount == 1)
+        #expect(renderer.maximumConcurrentPreparationCount == 1)
+        renderer.stop()
+        #expect(renderer.outstandingPreparationCount == 0)
+    }
+
+    @Test
+    func completedPayloadHandoffKeepsOperationSlotOccupied() {
+        let probe = RasterizationStartProbe()
+        let owner = DanmakuTexturePreparationOwner(
+            configuration: .init(
+                maximumConcurrentOperations: 1,
+                maximumOutstandingRequests: 3,
+                cacheLimits: .production
+            ),
+            rasterize: { _ in
+                probe.recordStart()
+                return DanmakuTexturePayload(
+                    pixels: Data(repeating: 1, count: 4),
+                    widthPixels: 1,
+                    heightPixels: 1,
+                    bytesPerRow: 4,
+                    backingScale: 1
+                )
+            }
+        )
+        for index in 0..<3 {
+            owner.prepare(
+                event: event(id: "handoff-\(index)", mode: .scrolling),
+                style: .production,
+                backingScale: 2,
+                preparationID: UInt64(index + 1),
+                generation: 0
+            ) { _ in }
+        }
+
+        #expect(probe.waitForStart(timeout: .now() + 1) == .success)
+        #expect(
+            probe.waitForStart(timeout: .now() + .milliseconds(100))
+                == .timedOut
+        )
+        #expect(probe.startCount == 1)
+        owner.cancelAllPreparations()
+    }
+
+    @Test
+    func rendererRejectsTextureBeyondActiveByteBudget() async {
+        let renderer = CoreAnimationDanmakuRenderer(
+            style: .production,
+            contentsScale: 2,
+            preparationConfiguration: .production,
+            activeTextureByteLimit: 1
+        )
+        renderer.updateSurfaceSize(width: 800, height: 300)
+        let fixture = event(id: "active-byte-limit", mode: .top)
+        let prepared = await prepare(
+            renderer: renderer,
+            event: fixture,
+            preparationID: 1
+        )
+        guard case .ready(let metrics) = prepared else {
+            Issue.record("texture preparation was rejected")
+            return
+        }
+
+        #expect(
+            !renderer.renderPrepared(
+                placement(event: fixture, metrics: metrics, originY: 0),
+                preparationID: 1,
+                generation: 0
+            )
+        )
+        #expect(renderer.activeLayerCount == 0)
+        #expect(renderer.activeTextureByteCost == 0)
+        #expect(renderer.outstandingPreparationCount == 0)
+    }
+
+    @Test
+    func failedLayerInstallImmediatelyReleasesAdmittedLane() {
+        let backend = RecordingRenderingBackend()
+        backend.renderPreparedResult = false
+        let controller = DanmakuPresentationController(
+            backend: backend,
+            configuration: configuration(maximumActiveCount: 1)
+        )
+        let identity = PlaybackItemIdentity(bvid: "BV1Install", cid: 1)
+        controller.apply(
+            update(
+                identity: identity,
+                position: 1,
+                generation: 1,
+                events: [event(id: "failed", mode: .top)]
+            )
+        )
+        #expect(controller.statistics.active == 0)
+        #expect(controller.statistics.droppedCapacity == 1)
+
+        backend.renderPreparedResult = true
+        controller.apply(
+            update(
+                identity: identity,
+                position: 2,
+                generation: 1,
+                events: [event(id: "replacement", mode: .top)]
+            )
+        )
+        #expect(backend.renderedEventIDs == ["replacement"])
+        #expect(controller.statistics.active == 1)
+    }
+
+    @Test
+    func stoppedPreparationOwnerAndRendererAreReleased() async throws {
+        weak var weakRenderer: CoreAnimationDanmakuRenderer?
+        do {
+            let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
+            weakRenderer = renderer
+            renderer.updateSurfaceSize(width: 800, height: 300)
+            _ = try await prepareAndRender(
+                renderer: renderer,
+                event: event(id: "release", mode: .scrolling),
+                preparationID: 1,
+                originY: 20
+            )
+            renderer.stop()
+        }
+        #expect(weakRenderer == nil)
+    }
+
+    @Test
+    func invalidAndOversizedTextFailClosedBeforeLaneAdmission() async {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 2)
         renderer.updateSurfaceSize(width: 800, height: 300)
+        let invalid = DanmakuEvent(
+            id: "invalid",
+            timeSeconds: 1,
+            mode: .scrolling,
+            text: "invalid",
+            fontSize: .nan,
+            colorRGB: 0xFFFFFF,
+            weight: 1
+        )
         let oversized = DanmakuEvent(
             id: "oversized",
             timeSeconds: 1,
             mode: .scrolling,
-            text: String(repeating: "W", count: 4_096),
-            fontSize: 24,
+            text: String(repeating: "W", count: 512),
+            fontSize: 36,
             colorRGB: 0xFFFFFF,
             weight: 1
         )
 
-        let metrics = renderer.measure(oversized)
-
-        #expect(metrics == DanmakuTextMetrics(width: 0, height: 0))
-        #expect(renderer.activeLayerCount == 0)
-    }
-
-    @Test
-    func backendHardCapRejectsObjectSixHundredFortyOne() {
-        let renderer = CoreAnimationDanmakuRenderer(contentsScale: 1)
-        renderer.updateSurfaceSize(width: 800, height: 300)
-        let metrics = DanmakuTextMetrics(width: 40, height: 24)
-
-        for index in 0...DanmakuLaneConfiguration.hardMaximumActiveCount {
-            let fixture = DanmakuEvent(
-                id: "direct-\(index)",
-                timeSeconds: 1,
-                mode: .top,
-                text: "A",
-                fontSize: 24,
-                colorRGB: 0xFFFFFF,
-                weight: 1
-            )
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics,
-                    originY: 0
-                )
-            )
-        }
-
         #expect(
-            renderer.activeLayerCount
-                == DanmakuLaneConfiguration.hardMaximumActiveCount
+            await prepare(
+                renderer: renderer,
+                event: invalid,
+                preparationID: 1
+            ) == .rejected(.invalidInput)
         )
-        renderer.stop()
+        #expect(
+            await prepare(
+                renderer: renderer,
+                event: oversized,
+                preparationID: 2
+            ) == .rejected(.oversized)
+        )
         #expect(renderer.activeLayerCount == 0)
+        #expect(renderer.outstandingPreparationCount == 0)
     }
 
-    @Test
-    func stoppedOwnerAndRendererAreReleased() {
-        weak var weakRenderer: CoreAnimationDanmakuRenderer?
-        weak var weakController: DanmakuPresentationController?
-
-        do {
-            let renderer = CoreAnimationDanmakuRenderer(contentsScale: 1)
-            let controller = DanmakuPresentationController(
-                backend: renderer,
-                configuration: configuration(maximumActiveCount: 4)
-            )
-            weakRenderer = renderer
-            weakController = controller
-            let fixture = event(id: "active", mode: .scrolling)
-            let metrics = renderer.measure(fixture)
-            renderer.render(
-                placement(
-                    event: fixture,
-                    metrics: metrics,
-                    originY: 60
-                )
-            )
-            #expect(renderer.activeLayerCount == 1)
-            controller.stopPresentation()
-            #expect(renderer.activeLayerCount == 0)
+    private func prepareAndRender(
+        renderer: CoreAnimationDanmakuRenderer,
+        event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64 = 0,
+        originY: Double
+    ) async throws -> DanmakuTextMetrics {
+        let result = await prepare(
+            renderer: renderer,
+            event: event,
+            preparationID: preparationID,
+            generation: generation
+        )
+        guard case .ready(let metrics) = result else {
+            Issue.record("texture preparation was rejected")
+            return DanmakuTextMetrics(width: 0, height: 0)
         }
-
-        #expect(weakController == nil)
-        #expect(weakRenderer == nil)
+        let didRender = renderer.renderPrepared(
+            placement(event: event, metrics: metrics, originY: originY),
+            preparationID: preparationID,
+            generation: generation
+        )
+        #expect(didRender)
+        return metrics
     }
 
+    private func prepare(
+        renderer: CoreAnimationDanmakuRenderer,
+        event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64 = 0
+    ) async -> DanmakuPreparationResult {
+        await withCheckedContinuation { continuation in
+            renderer.prepare(
+                event,
+                preparationID: preparationID,
+                generation: generation,
+                backingScale: 2
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    private func textureKey(text: String) -> DanmakuTextureCacheKey {
+        DanmakuTextureCacheKey(
+            text: text,
+            fontSize: 25,
+            colorRGB: 0xFFFFFF,
+            fontDescriptor: "system-semibold",
+            fontWeight: .semibold,
+            fontScale: 1,
+            backingScale: 2,
+            outlineWidthPoints: 0.5,
+            shadowRadiusPoints: 1,
+            algorithmVersion: 1
+        )
+    }
+
+    private func texturePayload(byteCost: Int) -> DanmakuTexturePayload {
+        DanmakuTexturePayload(
+            pixels: Data(repeating: 1, count: byteCost),
+            widthPixels: byteCost / 4,
+            heightPixels: 1,
+            bytesPerRow: byteCost,
+            backingScale: 1
+        )
+    }
     private func configuration(
         maximumActiveCount: Int,
         surfaceHeight: Double = 300
@@ -1428,6 +1778,12 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
     private(set) var stopCount = 0
     private(set) var measureCount = 0
     private(set) var surfaceSizes: [DanmakuTextMetrics] = []
+    var delaysPreparation = false
+    var renderPreparedResult = true
+    private(set) var preparationIDs: [UInt64] = []
+    private(set) var cancelPreparationCount = 0
+    private var preparationCompletions:
+        [UInt64: @MainActor @Sendable (DanmakuPreparationResult) -> Void] = [:]
 
     func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
         measureCount += 1
@@ -1439,6 +1795,48 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
         operations.append(.render(eventID))
         renderedEventIDs.append(eventID)
         renderedPlacements.append(placement)
+    }
+
+    func prepare(
+        _ event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64,
+        backingScale: Double,
+        completion:
+            @escaping @MainActor @Sendable (
+                DanmakuPreparationResult
+            ) -> Void
+    ) {
+        preparationIDs.append(preparationID)
+        if delaysPreparation {
+            preparationCompletions[preparationID] = completion
+        } else {
+            completion(.ready(measure(event)))
+        }
+    }
+
+    @discardableResult
+    func renderPrepared(
+        _ placement: DanmakuLanePlacement,
+        preparationID: UInt64,
+        generation: UInt64
+    ) -> Bool {
+        guard renderPreparedResult else { return false }
+        render(placement)
+        return true
+    }
+
+    func completePreparation(
+        _ preparationID: UInt64,
+        result: DanmakuPreparationResult = .ready(
+            DanmakuTextMetrics(width: 120, height: 24)
+        )
+    ) {
+        preparationCompletions[preparationID]?(result)
+    }
+
+    func cancelPendingPreparations() {
+        cancelPreparationCount += 1
     }
 
     func remove(eventID: String) {

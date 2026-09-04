@@ -1,30 +1,27 @@
 import AppKit
 import BiliApplication
 import BiliModels
-import CoreText
 import Foundation
 import QuartzCore
 
 @MainActor
-/// 有硬上限的 Core Animation 弹幕 backend，负责 layer identity、动画时钟与最终回收。
+/// 有硬上限的 Core Animation 弹幕 backend，负责纹理准备、layer identity、动画时钟与回收。
 ///
-/// `renderEpoch + objectIdentity` 使旧动画 completion 无法删除同 ID 的新 layer；显式清屏
-/// 和 stop 会推进 epoch，resize 只更新 geometry 并保留活动对象。
+/// Core Text shaping、整行 union mask、vImage 阴影与 RGBA 合成都由有界 preparation owner
+/// 在后台完成。MainActor 只消费不可变像素并安装一个普通 `CALayer`；用户透明度统一落在
+/// `rootLayer.opacity`，活动 layer 不启用实时 shadow。
 public final class CoreAnimationDanmakuRenderer:
     DanmakuRenderingBackend
 {
-    private static let maximumTextWidthPixels: CGFloat = 8_192
-    private static let maximumTextHeightPixels: CGFloat = 512
-    private static let maximumTextUTF16Length = 512
-    private static let supportedFontSizes: Set<Double> = [18, 25, 36]
-    private static let lightInkRelativeLuminanceThreshold = 0.179
-
     private struct Entry {
-        let layer: CATextLayer
+        let layer: CALayer
         let placement: DanmakuLanePlacement
+        let textureByteCost: Int
         let objectIdentity: UInt64
         let relay: AnimationCompletionRelay
     }
+
+    static let maximumActiveTextureByteCost = 64 * 1_024 * 1_024
 
     public weak var delegate: (any DanmakuRenderingBackendDelegate)?
     public let rootLayer: CALayer
@@ -33,26 +30,39 @@ public final class CoreAnimationDanmakuRenderer:
     public private(set) var renderEpoch: UInt64 = 0
     public var activeLayerCount: Int { entries.count }
 
-    private let contentsScale: CGFloat
-    private let darkInkShadow: NSShadow
-    private let lightInkShadow: NSShadow
+    private var backingScale: Double
     private var entries: [String: Entry] = [:]
     private var nextObjectIdentity: UInt64 = 0
     private var surfaceSize = CGSize.zero
+    private let preparationOwner: DanmakuTexturePreparationOwner
+    private let activeTextureByteLimit: Int
+    private(set) var activeTextureByteCost = 0
 
-    public init(
+    public convenience init(
         style: CoreAnimationDanmakuStyle = .production,
         contentsScale: Double = 2
     ) {
-        self.style = style
-        self.contentsScale = max(CGFloat(contentsScale), 1)
-        darkInkShadow = Self.makeShadow(
-            color: .black,
-            blurRadius: style.shadowBlurRadius
+        self.init(
+            style: style,
+            contentsScale: contentsScale,
+            preparationConfiguration: .production,
+            activeTextureByteLimit: Self.maximumActiveTextureByteCost
         )
-        lightInkShadow = Self.makeShadow(
-            color: .white,
-            blurRadius: style.shadowBlurRadius
+    }
+
+    init(
+        style: CoreAnimationDanmakuStyle,
+        contentsScale: Double,
+        preparationConfiguration: DanmakuTexturePreparationOwner.Configuration,
+        activeTextureByteLimit: Int = CoreAnimationDanmakuRenderer
+            .maximumActiveTextureByteCost
+    ) {
+        precondition(activeTextureByteLimit > 0)
+        self.style = style
+        self.activeTextureByteLimit = activeTextureByteLimit
+        backingScale = Self.normalizedBackingScale(contentsScale)
+        preparationOwner = DanmakuTexturePreparationOwner(
+            configuration: preparationConfiguration
         )
         rootLayer = CALayer()
         rootLayer.anchorPoint = .zero
@@ -60,85 +70,112 @@ public final class CoreAnimationDanmakuRenderer:
         rootLayer.masksToBounds = true
     }
 
+    /// 同步接口只为旧 Lab backend 的协议兼容保留；生产 renderer 必须走 `prepare`。
     public func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
-        guard !event.text.isEmpty,
-            event.text.utf16.count <= Self.maximumTextUTF16Length
-        else {
-            return DanmakuTextMetrics(width: 0, height: 0)
+        DanmakuTextMetrics(width: 0, height: 0)
+    }
+
+    /// 同步接口在生产 renderer 中 fail closed，防止恢复 MainActor 栅格化路径。
+    public func render(_ placement: DanmakuLanePlacement) {}
+
+    public func prepare(
+        _ event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64,
+        backingScale: Double,
+        completion:
+            @escaping @MainActor @Sendable (
+                DanmakuPreparationResult
+            ) -> Void
+    ) {
+        let normalizedScale = Self.normalizedBackingScale(backingScale)
+        guard normalizedScale == self.backingScale else {
+            completion(.rejected(.cancelled))
+            return
         }
-        guard let attributed = attributedString(for: event) else {
-            return DanmakuTextMetrics(width: 0, height: 0)
-        }
-        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-        let measured = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            CFRange(location: 0, length: attributed.length),
-            nil,
-            CGSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            ),
-            nil
-        )
-        let widthPixels = ceil(measured.width * contentsScale) + 8
-        let heightPixels = ceil(measured.height * contentsScale) + 8
-        guard widthPixels.isFinite,
-            heightPixels.isFinite,
-            widthPixels > 0,
-            heightPixels > 0,
-            widthPixels <= Self.maximumTextWidthPixels,
-            heightPixels <= Self.maximumTextHeightPixels
-        else {
-            return DanmakuTextMetrics(width: 0, height: 0)
-        }
-        return DanmakuTextMetrics(
-            width: Double(widthPixels / contentsScale),
-            height: Double(heightPixels / contentsScale)
+        preparationOwner.prepare(
+            event: event,
+            style: style,
+            backingScale: normalizedScale,
+            preparationID: preparationID,
+            generation: generation,
+            completion: completion
         )
     }
 
-    public func render(_ placement: DanmakuLanePlacement) {
+    @discardableResult
+    public func renderPrepared(
+        _ placement: DanmakuLanePlacement,
+        preparationID: UInt64,
+        generation: UInt64
+    ) -> Bool {
         let event = placement.request.event
         guard entries[event.id] == nil,
             entries.count
                 < DanmakuLaneConfiguration.hardMaximumActiveCount,
             surfaceSize.width > 0,
-            surfaceSize.height > 0
+            surfaceSize.height > 0,
+            let key = DanmakuTextureRasterizer.key(
+                event: event,
+                style: style,
+                backingScale: backingScale
+            ),
+            let payload = preparationOwner.consume(
+                preparationID: preparationID,
+                generation: generation,
+                expectedKey: key
+            )
         else {
-            return
+            preparationOwner.discard(preparationID: preparationID)
+            return false
+        }
+        let remainingTextureBytes = max(
+            activeTextureByteLimit - activeTextureByteCost,
+            0
+        )
+        guard payload.byteCost <= remainingTextureBytes,
+            let image = Self.makeImage(payload)
+        else {
+            return false
         }
 
         nextObjectIdentity &+= 1
         let objectIdentity = nextObjectIdentity
-        guard let textLayer = makeTextLayer(for: placement) else {
-            return
-        }
+        let layer = makeLayer(for: placement, image: image, scale: backingScale)
         let relay = AnimationCompletionRelay(
             renderer: self,
             eventID: event.id,
             objectIdentity: objectIdentity,
             renderEpoch: renderEpoch
         )
-        let animation = makeAnimation(
-            for: placement,
-            layer: textLayer
-        )
+        let animation = makeAnimation(for: placement, layer: layer)
         animation.delegate = relay
         entries[event.id] = Entry(
-            layer: textLayer,
+            layer: layer,
             placement: placement,
+            textureByteCost: payload.byteCost,
             objectIdentity: objectIdentity,
             relay: relay
         )
+        activeTextureByteCost += payload.byteCost
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        rootLayer.addSublayer(textLayer)
+        rootLayer.addSublayer(layer)
         if event.mode == .scrolling {
-            textLayer.position.x = -textLayer.bounds.width / 2
+            layer.position.x = -layer.bounds.width / 2
         }
-        textLayer.add(animation, forKey: "danmaku")
+        layer.add(animation, forKey: "danmaku")
         CATransaction.commit()
+        return true
+    }
+
+    public func discardPreparation(preparationID: UInt64) {
+        preparationOwner.discard(preparationID: preparationID)
+    }
+
+    public func cancelPendingPreparations() {
+        preparationOwner.cancelAllPreparations()
     }
 
     public func remove(eventID: String) {
@@ -147,6 +184,7 @@ public final class CoreAnimationDanmakuRenderer:
 
     public func clearAll() {
         advanceEpoch()
+        preparationOwner.cancelAllPreparations()
         removeAllEntries()
     }
 
@@ -173,6 +211,23 @@ public final class CoreAnimationDanmakuRenderer:
     }
 
     public func updateSurfaceSize(width: Double, height: Double) {
+        updateSurfaceSize(
+            width: width,
+            height: height,
+            backingScale: backingScale
+        )
+    }
+
+    public func updateSurfaceSize(
+        width: Double,
+        height: Double,
+        backingScale: Double
+    ) {
+        let normalizedScale = Self.normalizedBackingScale(backingScale)
+        if normalizedScale != self.backingScale {
+            self.backingScale = normalizedScale
+            preparationOwner.cancelAllPreparations()
+        }
         let oldSurfaceSize = surfaceSize
         surfaceSize = CGSize(
             width: max(width.isFinite ? width : 0, 0),
@@ -192,16 +247,35 @@ public final class CoreAnimationDanmakuRenderer:
 
     public func stop() {
         advanceEpoch()
+        preparationOwner.cancelAllPreparations()
         removeAllEntries()
         setPlaybackRate(0)
     }
 
-    func textLayer(forEventID eventID: String) -> CATextLayer? {
+    func textLayer(forEventID eventID: String) -> CALayer? {
         entries[eventID]?.layer
     }
 
     func objectIdentity(forEventID eventID: String) -> UInt64? {
         entries[eventID]?.objectIdentity
+    }
+
+    var outstandingPreparationCount: Int {
+        preparationOwner.outstandingRequestCount
+    }
+
+    var cachedTextureCount: Int { preparationOwner.cachedTextureCount }
+    var cachedTextureByteCost: Int { preparationOwner.cachedByteCost }
+    var cacheHitCount: Int { preparationOwner.cacheHitCount }
+    var cacheMissCount: Int { preparationOwner.cacheMissCount }
+    var cacheEvictionCount: Int { preparationOwner.cacheEvictionCount }
+    var rasterizationCount: Int { preparationOwner.rasterizationCount }
+    var maximumConcurrentPreparationCount: Int {
+        preparationOwner.maximumConcurrentOperationCount
+    }
+
+    func handleMemoryPressureForTesting() {
+        preparationOwner.handleMemoryPressureForTesting()
     }
 
     func completeAnimation(
@@ -219,109 +293,17 @@ public final class CoreAnimationDanmakuRenderer:
         delegate?.rendererDidFinish(eventID: eventID)
     }
 
-    private func attributedString(
-        for event: DanmakuEvent
-    ) -> NSAttributedString? {
-        guard let font = font(for: event) else { return nil }
-        let components = rgbComponents(for: event.colorRGB)
-        var attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor(
-                srgbRed: components.red,
-                green: components.green,
-                blue: components.blue,
-                alpha: 1
-            ),
-        ]
-        attributes[.shadow] = adaptiveShadow(for: components)
-        return NSAttributedString(
-            string: event.text,
-            attributes: attributes
-        )
-    }
-
-    private func font(for event: DanmakuEvent) -> NSFont? {
-        guard event.fontSize.isFinite else {
-            return nil
-        }
-        let normalizedFontSize =
-            Self.supportedFontSizes.contains(event.fontSize)
-            ? event.fontSize : 25
-        return NSFont.systemFont(
-            ofSize: CGFloat(normalizedFontSize * style.fontScale),
-            weight: fontWeight
-        )
-    }
-
-    private var fontWeight: NSFont.Weight {
-        switch style.fontWeight {
-        case .regular: .regular
-        case .medium: .medium
-        case .semibold: .semibold
-        case .bold: .bold
-        }
-    }
-
-    private static func makeShadow(
-        color: NSColor,
-        blurRadius: Double
-    ) -> NSShadow {
-        let shadow = NSShadow()
-        shadow.shadowColor = color
-        shadow.shadowOffset = .zero
-        shadow.shadowBlurRadius = CGFloat(blurRadius)
-        return shadow
-    }
-
-    private func rgbComponents(
-        for colorRGB: UInt32
-    ) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
-        let baseRGB = colorRGB & 0x00FF_FFFF
-        return (
-            red: CGFloat((baseRGB >> 16) & 0xFF) / 255,
-            green: CGFloat((baseRGB >> 8) & 0xFF) / 255,
-            blue: CGFloat(baseRGB & 0xFF) / 255
-        )
-    }
-
-    private func adaptiveShadow(
-        for components: (red: CGFloat, green: CGFloat, blue: CGFloat)
-    ) -> NSShadow {
-        Double(relativeLuminance(for: components))
-            < Self.lightInkRelativeLuminanceThreshold
-            ? lightInkShadow
-            : darkInkShadow
-    }
-
-    private func relativeLuminance(
-        for components: (red: CGFloat, green: CGFloat, blue: CGFloat)
-    ) -> CGFloat {
-        0.2126 * linearized(components.red)
-            + 0.7152 * linearized(components.green)
-            + 0.0722 * linearized(components.blue)
-    }
-
-    private func linearized(_ component: CGFloat) -> CGFloat {
-        component <= 0.04045
-            ? component / 12.92
-            : pow((component + 0.055) / 1.055, 2.4)
-    }
-
-    private func makeTextLayer(
-        for placement: DanmakuLanePlacement
-    ) -> CATextLayer? {
-        let layer = CATextLayer()
-        guard
-            let attributed = attributedString(
-                for: placement.request.event
-            )
-        else {
-            return nil
-        }
-        layer.string = attributed
-        layer.alignmentMode = .left
-        layer.isWrapped = false
-        layer.contentsScale = contentsScale
+    private func makeLayer(
+        for placement: DanmakuLanePlacement,
+        image: CGImage,
+        scale: Double
+    ) -> CALayer {
+        let layer = CALayer()
+        layer.contents = image
+        layer.contentsScale = CGFloat(scale)
+        layer.contentsGravity = .resize
+        layer.magnificationFilter = .linear
+        layer.minificationFilter = .linear
         layer.bounds = CGRect(
             x: 0,
             y: 0,
@@ -341,7 +323,7 @@ public final class CoreAnimationDanmakuRenderer:
 
     private func makeAnimation(
         for placement: DanmakuLanePlacement,
-        layer: CATextLayer
+        layer: CALayer
     ) -> CABasicAnimation {
         let animation: CABasicAnimation
         switch placement.request.event.mode {
@@ -381,6 +363,7 @@ public final class CoreAnimationDanmakuRenderer:
     private func removeAllEntries() {
         let oldEntries = entries
         entries.removeAll(keepingCapacity: false)
+        activeTextureByteCost = 0
         for entry in oldEntries.values {
             entry.layer.removeAllAnimations()
             entry.layer.removeFromSuperlayer()
@@ -391,7 +374,42 @@ public final class CoreAnimationDanmakuRenderer:
         guard let entry = entries.removeValue(forKey: eventID) else {
             return
         }
+        activeTextureByteCost -= entry.textureByteCost
         entry.layer.removeAllAnimations()
         entry.layer.removeFromSuperlayer()
+    }
+
+    private static func normalizedBackingScale(_ scale: Double) -> Double {
+        scale.isFinite
+            ? min(max(scale, 1), DanmakuTextureRasterizer.maximumBackingScale)
+            : 2
+    }
+
+    private static func makeImage(
+        _ payload: DanmakuTexturePayload
+    ) -> CGImage? {
+        guard let provider = CGDataProvider(data: payload.pixels as CFData)
+        else {
+            return nil
+        }
+        let colorSpace =
+            CGColorSpace(name: CGColorSpace.sRGB)
+            ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(
+            rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
+        ).union(.byteOrder32Big)
+        return CGImage(
+            width: payload.widthPixels,
+            height: payload.heightPixels,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: payload.bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
     }
 }

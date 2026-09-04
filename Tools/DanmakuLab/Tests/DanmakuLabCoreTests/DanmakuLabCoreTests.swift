@@ -1051,9 +1051,103 @@ struct DanmakuLabCoreTests {
         #expect(owner.statistics == LabStatistics())
     }
 
+    @Test("run owner forwards backing scale through attach, resize, and performance reset")
+    @MainActor
+    func runOwnerForwardsBackingScale() {
+        let candidateID = LabRendererID(rawValue: "scale-candidate")
+        var createdBackend: TestDanmakuRenderingBackend?
+        let candidate = LabRendererDescriptor.candidate(
+            id: candidateID,
+            displayName: "Scale Candidate"
+        ) { _ in
+            let backend = TestDanmakuRenderingBackend()
+            createdBackend = backend
+            return LabRendererInstance(
+                backend: backend,
+                surfaceLayer: backend.surfaceLayer
+            )
+        }
+        let manifest = LabRunManifest(
+            scenario: .standard,
+            seed: 44,
+            eventRate: 24,
+            burstSize: 120,
+            filter: LabEventFilter(),
+            speedLevel: .three,
+            opacity: 0.9,
+            displayArea: .full,
+            density: .normal,
+            rendererID: candidateID,
+            startsPlaying: false
+        )
+        let preset = LabPerformancePreset(
+            id: LabPerformancePresetID(rawValue: "scale-forwarding"),
+            version: 1,
+            displayName: "Scale forwarding",
+            scenario: .standard,
+            seed: 44,
+            eventRate: 24,
+            burstSize: 120,
+            canvasSize: CGSize(width: 640, height: 360),
+            requiredBackingScale: 1,
+            warmupSeconds: 0.1,
+            measurementSeconds: 0.1,
+            repetitions: 1,
+            logicalTicksPerSecond: 60
+        )
+        let owner = LabRunOwner(
+            manifest: manifest,
+            rendererDescriptor: candidate
+        )
+        guard let backend = createdBackend else {
+            Issue.record("candidate backend was not created")
+            return
+        }
+        let ownerID = UUID()
+
+        #expect(
+            owner.attachSurface(
+                width: 640,
+                height: 360,
+                backingScale: 1,
+                ownerID: ownerID
+            )
+        )
+        #expect(backend.surfaceBackingScales.last == 1)
+        #expect(
+            owner.updateSurface(
+                width: 640,
+                height: 360,
+                backingScale: 2,
+                ownerID: ownerID
+            )
+        )
+        #expect(backend.surfaceBackingScales.last == 2)
+        #expect(
+            owner.updateSurface(
+                width: 640,
+                height: 360,
+                backingScale: 1,
+                ownerID: ownerID
+            )
+        )
+        #expect(backend.surfaceBackingScales.last == 1)
+        let scaleUpdateCount = backend.surfaceBackingScales.count
+
+        #expect(
+            owner.beginPerformanceMeasurement(
+                preset: preset,
+                attemptID: UUID()
+            )
+        )
+        #expect(backend.surfaceBackingScales.count == scaleUpdateCount + 2)
+        #expect(backend.surfaceBackingScales.last == 1)
+        owner.shutdown()
+    }
+
     @Test("production renderer handles play, pause, resize, discontinuity, and stop")
     @MainActor
-    func productionRendererLifecycleSmoke() {
+    func productionRendererLifecycleSmoke() async {
         let renderer = CoreAnimationDanmakuRenderer(contentsScale: 1)
         let controller = DanmakuPresentationController(
             backend: renderer,
@@ -1084,7 +1178,10 @@ struct DanmakuLabCoreTests {
                 )
             )
         )
-        #expect(renderer.activeLayerCount > 0)
+        let renderedFirstLayer = await waitUntil {
+            renderer.activeLayerCount > 0
+        }
+        #expect(renderedFirstLayer)
         #expect(
             renderer.activeLayerCount
                 <= DanmakuLaneConfiguration.hardMaximumActiveCount
@@ -1121,6 +1218,20 @@ struct DanmakuLabCoreTests {
         #expect(renderer.activeLayerCount == 0)
         #expect(renderer.rootLayer.speed == 0)
         #expect(controller.detachSurface(ownerID: ownerID))
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: Duration = .seconds(5),
+        condition: () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            await Task.yield()
+        }
+        return true
     }
 
     private func events(for scenario: LabScenario, count: Int) -> [DanmakuEvent] {
@@ -1192,6 +1303,7 @@ private final class TestDanmakuRenderingBackend: DanmakuRenderingBackend {
     weak var delegate: (any DanmakuRenderingBackendDelegate)?
     let surfaceLayer = CALayer()
     private(set) var stopCount = 0
+    private(set) var surfaceBackingScales: [Double] = []
 
     func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
         DanmakuTextMetrics(width: 100, height: 36)
@@ -1218,6 +1330,15 @@ private final class TestDanmakuRenderingBackend: DanmakuRenderingBackend {
             width: width,
             height: height
         )
+    }
+
+    func updateSurfaceSize(
+        width: Double,
+        height: Double,
+        backingScale: Double
+    ) {
+        surfaceBackingScales.append(backingScale)
+        updateSurfaceSize(width: width, height: height)
     }
 
     func stop() {
