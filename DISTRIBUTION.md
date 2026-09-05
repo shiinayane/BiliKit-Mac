@@ -1,7 +1,7 @@
 # BiliKit 分发说明
 
-> 状态：V1 发布前准备。当前没有公开安装包；下载 URL、DMG 文件名和 SHA-256 只能在最终不可变
-> 发布资产生成后填写。
+> 当前公开版本与测试标记以 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases) 为准。
+> 每个候选的实际验证和未覆盖边界均写入对应发布说明；测试版不等同于正式验收。
 
 ## 系统要求
 
@@ -13,12 +13,10 @@ BiliKit 是非官方第三方客户端，与哔哩哔哩不存在隶属、认可
 
 ## 获取与安装
 
-正式发布后，只信任本仓库的 GitHub Releases 页面提供的 Developer ID 签名、公证并 staple 的
-只读 DMG。V1 计划让 DMG 仅包含 `BiliKit.app`、`Applications` 快捷方式和必要声明。
-
-- 下载页面：`待发布`
-- DMG 文件名：`待发布`
-- 最终 SHA-256：`待发布`
+只信任本仓库 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases) 提供的
+Developer ID 签名、公证并 staple 的只读 DMG。镜像包含 `BiliKit.app`、`Applications`
+快捷方式和 Finder 显示元数据。下载同一版本的 `SHA256SUMS`；版本号、build 和最终哈希
+以该 Release 资产为准，不使用测试版或旧候选的校验和。
 
 下载后可在终端核对：
 
@@ -31,12 +29,17 @@ shasum -a 256 /path/to/BiliKit.dmg
 
 ## 更新与故障恢复
 
-首发是否同时启用应用内自动更新尚未裁决。在 Sparkle 完整签名更新链通过前，更新只通过不可变
-GitHub Release 人工下载。发现坏版本时优先发布更高 build number 的前向修复，不覆盖同名资产或
-静默把更新元数据指回旧 build。
+Sparkle 已接入。应用菜单提供“检查更新…”、自动检查和自动下载并安装设置。
+更新元数据与完整安装包分别验签，安装包同时经过 Developer ID 签名与 Apple 公证。
+旧 build 1 不含更新器，需手动下载安装。build 2/3 为历史测试版本。
 
-- 当前稳定下载：`待发布`
-- 人工恢复说明：`待发布`
+更新失败时先保留当前 App，从可信 GitHub Releases 下载更新版本，核对校验和后退出 App，
+再拖入“应用程序”覆盖安装。不要关闭 Gatekeeper、修改包内文件或清除 quarantine 绕过错误。
+签名或公证异常应停止安装并报告；无可信更高版本时保留当前可用版本。
+
+坏版本使用更高 build 前向修复，不覆盖公开同名资产、不移动旧 tag，也不自动降级。
+自动更新正常路径已完成 build 2→3 本机验证；异常恢复与跨系统矩阵的实际状态见
+[发布清单](docs/release/CHECKLIST.md)，不把历史结果当作新候选验收。
 
 ## 登出与卸载
 

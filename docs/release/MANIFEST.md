@@ -6,11 +6,11 @@
 ## 来源与版本
 
 - Marketing version：`1.0.0`
-- Build number：`1`
+- Build number：`从冻结工程读取`
 - Git commit／tree clean：`待填写`
 - Bundle ID：`com.shiinayane.BiliKit`
 - Team ID：`2B3LZ256AG`
-- AppIdentifierPrefix：`待 explicit App ID 解决后填写`
+- AppIdentifierPrefix：`待从最终签名成品读取`
 - Keychain access group：`待从签名成品读取`
 
 ## 工具链与依赖
@@ -48,3 +48,5 @@
 - 登录／Keychain／loopback／字幕／弹幕／退出清理：`待填写`
 - 未验证边界：`待填写`
 - Go／No-Go 与复核人：`待填写`
+
+自动化机器记录为候选目录中的 `release.json`、`app-verification.json`、`app-files.json`、公证日志和 `assets/SHA256SUMS`。公开发布裁决另以绑定 commit 与 DMG hash 的 `acceptance.json` 保存。

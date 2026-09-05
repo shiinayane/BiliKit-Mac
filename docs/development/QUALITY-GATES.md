@@ -8,7 +8,7 @@ sh Scripts/run-quality-gates.sh package
 sh Scripts/run-quality-gates.sh app
 ```
 
-- `static`：架构、秘密模式、工程配置、Swift 格式和 diff whitespace。
+- `static`：架构、秘密模式、工程配置、Swift 格式、diff whitespace，以及本机发布安全契约与 feed 验签测试（需要 Python 3 和 Node）。
 - `package`：包含 `static`，并构建、测试本地 Swift Package。
 - `app`：包含 `package`，并执行 App build-for-testing 与 App unit tests。
 

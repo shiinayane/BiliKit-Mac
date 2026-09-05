@@ -47,6 +47,10 @@ sh Scripts/check-swift-format.sh
 git diff --check
 git diff --cached --check
 
+echo "[Gate] release safety contracts"
+python3 -B -m unittest discover -s Scripts/release -p 'test_*.py'
+(cd Updates/cloudflare && python3 -B -m unittest discover -s tests)
+
 if [ "$mode" = "static" ]; then
     exit 0
 fi

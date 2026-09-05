@@ -21,9 +21,9 @@
 - [`adr/0013-v1-universal-developer-id-distribution.md`](./adr/0013-v1-universal-developer-id-distribution.md)：
   V1 Developer ID 成品采用 `arm64 + x86_64` Universal，并保留真实 Intel 发布 Gate。
 
-当前 App ID `com.shiinayane.BiliKit` 的 Apple 后台归属问题仍在等待支持工单处理；在同一正式
-Team 下无法稳定注册和生成 profile 前，不制作正式发布候选。详见分发文档，不从历史验证稿
-推断已经具备公证资格。
+无更新器 build 1 与 Sparkle build 2/3 已完成各自签名公证，本机正常升级由用户确认。
+正式候选仍从新干净提交构建并检查最终签名身份、profile 与 Keychain 范围；历史 Apple 工单
+状态不代替成品核验，旧候选验收也不代替当前版本的真实安装与跨系统 Gate。
 
 ## 长期约束
 

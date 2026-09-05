@@ -4,8 +4,8 @@
 账号信息、Developer ID／Sparkle 私钥、`.p12`、App 专用密码或 App Store Connect API key。
 
 涉及凭据泄露、认证绕过、恶意更新、签名、公证、重定向、loopback server 或可利用漏洞的问题，
-不得提交公开 issue。公开发布前必须启用并从普通报告者视角验证 GitHub Private Vulnerability
-Reporting，再把本段替换为实际可用的私密入口；当前仓库没有把尚未验证的外部渠道写成承诺。
+不得提交公开 issue。请使用 [GitHub 私密漏洞报告](https://github.com/shiinayane/BiliKit-Mac/security/advisories/new)
+（需要登录 GitHub）。仓库已启用 Private Vulnerability Reporting；不需要创建公开 issue。
 普通且不含敏感信息的功能错误可以使用[公开 Issues](https://github.com/shiinayane/BiliKit-Mac/issues)。
 
 报告中请尽量提供受影响版本、macOS 版本、硬件架构、最小复现步骤和已经脱敏的错误分类。不要附加
