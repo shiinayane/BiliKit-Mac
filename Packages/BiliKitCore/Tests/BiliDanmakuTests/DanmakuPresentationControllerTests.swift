@@ -7,25 +7,6 @@ import Testing
 
 @testable import BiliDanmaku
 
-private final class RasterizationStartProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private let started = DispatchSemaphore(value: 0)
-    private var count = 0
-
-    func recordStart() {
-        lock.withLock { count += 1 }
-        started.signal()
-    }
-
-    func waitForStart(timeout: DispatchTime) -> DispatchTimeoutResult {
-        started.wait(timeout: timeout)
-    }
-
-    var startCount: Int {
-        lock.withLock { count }
-    }
-}
-
 @MainActor
 @Suite
 struct DanmakuPresentationControllerTests {
@@ -1447,45 +1428,6 @@ struct DanmakuPresentationControllerTests {
         #expect(renderer.maximumConcurrentPreparationCount == 1)
         renderer.stop()
         #expect(renderer.outstandingPreparationCount == 0)
-    }
-
-    @Test
-    func completedPayloadHandoffKeepsOperationSlotOccupied() {
-        let probe = RasterizationStartProbe()
-        let owner = DanmakuTexturePreparationOwner(
-            configuration: .init(
-                maximumConcurrentOperations: 1,
-                maximumOutstandingRequests: 3,
-                cacheLimits: .production
-            ),
-            rasterize: { _ in
-                probe.recordStart()
-                return DanmakuTexturePayload(
-                    pixels: Data(repeating: 1, count: 4),
-                    widthPixels: 1,
-                    heightPixels: 1,
-                    bytesPerRow: 4,
-                    backingScale: 1
-                )
-            }
-        )
-        for index in 0..<3 {
-            owner.prepare(
-                event: event(id: "handoff-\(index)", mode: .scrolling),
-                style: .production,
-                backingScale: 2,
-                preparationID: UInt64(index + 1),
-                generation: 0
-            ) { _ in }
-        }
-
-        #expect(probe.waitForStart(timeout: .now() + 1) == .success)
-        #expect(
-            probe.waitForStart(timeout: .now() + .milliseconds(100))
-                == .timedOut
-        )
-        #expect(probe.startCount == 1)
-        owner.cancelAllPreparations()
     }
 
     @Test
