@@ -279,9 +279,26 @@ def prepare(out):
     step('appcast', appcast)
     state['assets'] = {p.name: {'sha256': digest(p), 'bytes': p.stat().st_size} for p in (dmg, staging / 'appcast.xml')}
     (staging / 'SHA256SUMS').write_text(''.join(f"{v['sha256']}  {k}\n" for k, v in state['assets'].items()))
+    validate_candidate_assets(out, state)
     state['prepared'] = True
     save(manifest, state)
     print('候选已准备：', out, flush=True)
+
+
+def validate_candidate_assets(out, state):
+    staging = out / 'assets'
+    data = (staging / 'appcast.xml').read_bytes()
+    feed.validate_feed(data, CONFIG, staging)
+    items = ET.fromstring(data).findall('channel/item')
+    require(len(items) == 1, '候选 feed 只能包含当前完整包')
+    item = items[0]
+    require(item.findtext('s:version', namespaces=feed.NS) == str(state['build']) and
+            item.findtext('s:shortVersionString', namespaces=feed.NS) == state['version'], 'feed 与冻结版本不一致')
+    filename = f"BiliKit-{state['version']}-{state['build']}-universal.dmg"
+    require(item.find('enclosure').get('url') == f"https://github.com/{REPO}/releases/download/{state['tag']}/{filename}",
+            '候选 feed 与 tag/DMG URL 不一致')
+    checksum = ''.join(f"{v['sha256']}  {k}\n" for k, v in state['assets'].items())
+    require((staging / 'SHA256SUMS').read_text() == checksum, 'SHA256SUMS 与冻结资产不一致')
 
 
 def load_prepared(out):
@@ -290,6 +307,7 @@ def load_prepared(out):
     ci(state['commit'])
     for name, value in state['assets'].items():
         require(digest(out / 'assets' / name) == value['sha256'], '冻结资产已改变')
+    validate_candidate_assets(out, state)
     return state
 
 
