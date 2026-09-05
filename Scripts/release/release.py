@@ -68,14 +68,18 @@ def source():
 
 
 def version():
-    project = (ROOT / 'BiliKitMac.xcodeproj/project.pbxproj').read_text()
-    versions = re.findall(r'MARKETING_VERSION = ([0-9.]+);', project)
-    builds = re.findall(r'CURRENT_PROJECT_VERSION = ([0-9]+);', project)
+    project = json.loads(run('plutil', '-convert', 'json', '-o', '-', ROOT / 'BiliKitMac.xcodeproj/project.pbxproj'))
+    objects = project['objects']
+    targets = [value for value in objects.values() if value.get('isa') == 'PBXNativeTarget' and value.get('name') == 'BiliKitMac']
+    require(len(targets) == 1, '需要唯一 BiliKitMac App target')
+    configurations = objects[targets[0]['buildConfigurationList']]['buildConfigurations']
+    settings = [objects[key]['buildSettings'] for key in configurations]
+    versions = [value['MARKETING_VERSION'] for value in settings]
+    builds = [str(value['CURRENT_PROJECT_VERSION']) for value in settings]
     require(len(versions) == 2 and len(set(versions)) == 1, 'App 版本配置不一致')
-    app_builds = [v for v in builds if v != '1']
-    require(len(app_builds) == 2 and len(set(app_builds)) == 1, 'App build 配置不一致')
+    require(len(set(builds)) == 1 and re.fullmatch(r'[1-9][0-9]*', builds[0]), 'App build 配置不一致')
     require(re.fullmatch(r'\d+\.\d+\.\d+', versions[0]), '需要三段版本')
-    return versions[0], int(app_builds[0])
+    return versions[0], int(builds[0])
 
 
 def ci(commit):
