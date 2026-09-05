@@ -5184,7 +5184,147 @@
     "最近一周": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Past week" } }, "ja": { "stringUnit": { "state": "translated", "value": "過去1週間" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近一周" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "最近一週" } } } },
     "最近半年": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Past six months" } }, "ja": { "stringUnit": { "state": "translated", "value": "過去6か月" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近半年" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "最近半年" } } } },
     "自定义日期": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Custom range" } }, "ja": { "stringUnit": { "state": "translated", "value": "期間を指定" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "自定义日期" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "自訂日期" } } } },
-    "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "The preview has ended. This is a supporter-only video, and BiliKit does not currently offer supporter payments." } }, "ja": { "stringUnit": { "state": "translated", "value": "プレビューは終了しました。この動画は充電メンバー限定です。BiliKitは現在、充電操作に対応していません。" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "試看已結束，此影片為充電專屬，BiliKit 目前不提供充電操作。" } } } }
+    "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。": { "localizations": { "en": { "stringUnit": { "state": "translated", "value": "The preview has ended. This is a supporter-only video, and BiliKit does not currently offer supporter payments." } }, "ja": { "stringUnit": { "state": "translated", "value": "プレビューは終了しました。この動画は充電メンバー限定です。BiliKitは現在、充電操作に対応していません。" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "試看已結束，此影片為充電專屬，BiliKit 目前不提供充電操作。" } } } },
+    "检查更新（尚未配置）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates (Not Configured)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認（未設定）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查更新（尚未配置）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查更新（尚未設定）"
+          }
+        }
+      }
+    },
+    "检查更新（暂不可用）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates (Unavailable)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認（利用不可）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查更新（暂不可用）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查更新（暫時無法使用）"
+          }
+        }
+      }
+    },
+    "检查更新…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for Updates…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを確認…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查更新…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查更新⋯"
+          }
+        }
+      }
+    },
+    "自动检查更新": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically Check for Updates"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを自動的に確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检查更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動檢查更新"
+          }
+        }
+      }
+    },
+    "自动下载并安装更新": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically Download and Install Updates"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを自動的にダウンロードしてインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动下载并安装更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動下載並安裝更新"
+          }
+        }
+      }
+    }
   },
   "version": "1.2"
 }

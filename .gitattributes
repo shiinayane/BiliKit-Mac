@@ -1,0 +1,2 @@
+# Preserve the upstream license verbatim, including its existing trailing space.
+BiliKitMac/Resources/Licenses/Sparkle-LICENSE.txt whitespace=-blank-at-eol

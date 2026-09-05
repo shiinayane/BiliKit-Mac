@@ -1,6 +1,6 @@
 # V1 Developer ID 发布准备
 
-状态：当前执行入口；explicit App ID 工单待 Apple Developer Support 处理
+状态：当前执行入口；无更新器基线已完成签名公证，Sparkle build 2→3 已完成本机正常升级与登录保留验收（用户报告），正式发布剩余 Gate 仍待完成。
 
 ## 已冻结事实
 
@@ -12,22 +12,22 @@
   network server、单一 Keychain access group；
 - 载体：只读 DMG；当前不需要 Developer ID Installer certificate；
 - 当前发布 Mac 已有有效 `Developer ID Application: YANKAI WANG (2B3LZ256AG)` identity；
-- `BiliKit-Notary` Keychain profile 已通过 Apple validation，公证历史为空；
-- 首个基线成品不含 Sparkle，不部署 Cloudflare Worker。
+- `BiliKit-Notary` 已用于无更新器基线与 Sparkle 测试 App 的公证提交；凭据可用性每次实际执行时核对；
+- 冻结的首个基线成品 `1.0.0 (1)` 不含 Sparkle。2026-09-05 已授权独立 worktree 接入
+  更新器并准备 Cloudflare 静态更新源；实现授权不豁免剩余安装 Gate 或授权公开部署。
 
 证书指纹、submission ID、机器路径和最终哈希只进入每次发布候选的
 [`MANIFEST.md`](./MANIFEST.md) 副本；私钥、`.p12` 密码、App 专用密码和 API key 永不进入仓库。
 
-## 当前阻塞
+## 身份证据与历史问题
 
-正式 Team 只有 wildcard App ID。手工注册 explicit App ID `com.shiinayane.BiliKit` 返回
-`not available`，App Store Connect 没有 App；Apple Developer Support 工单正在调查旧 Personal
-Team 或残留登记。在 Apple 明确归属前：
+早期 explicit App ID 注册曾返回 `not available`，因此当时停止正式归档与发布。
+2026-09-05 的基线导出成品已获得 Developer ID 公证；本次重新读取其 profile，确认 Team
+`2B3LZ256AG`、App ID `2B3LZ256AG.com.shiinayane.BiliKit` 及有效期。
+这以实际签名成品为依据，不表示 Apple 工单状态已另行查询。
 
-- 不修改稳定 Bundle ID；
-- 不把 wildcard development profile 当作正式身份；
-- 不生成最终 Release archive、公开 DMG、release 或 appcast；
-- 可以维护文档、备份现有证书、运行无签名 Release compile 和准备真实 Intel 环境。
+新候选继续逐项核对最终 entitlement、profile、Keychain group 与嵌套签名。
+未经提交的源码快照只能用于明确标注的内部测试，不能替代下述正式发布的 clean commit 冻结。
 
 ## 严格发布顺序
 
@@ -120,8 +120,9 @@ Rosetta、Intel CI、arm64 CI、build、截图和旧验证记录都不能替代�
 
 ## 更新器与 Cloudflare 边界
 
-无更新器的 Developer ID 基线成功后，更新器候选为 Sparkle 2，当时重新核对官方最新稳定版本、
-安全公告、最低系统与 license。若实施：
+2026-09-05 的更新器精确锁定 Sparkle 2.9.6，App build 已递增为 3；
+原 build 1 与已公证 DMG 保持冻结。更新器已启用，HTTPS feed 已授权上线，
+用户已确认 build 2→3 升级及登录保留；失败矩阵与跨系统安装验收仍待完成。实现遵循：
 
 - Sparkle 只进入 App target，由进程级唯一 owner 持有，不进入 `BiliApplication` 或 Feature；
 - 使用标准 UI、Installer XPC、Developer ID code signing 与 EdDSA，不自研下载替换器；
@@ -129,8 +130,9 @@ Rosetta、Intel CI、arm64 CI、build、截图和旧验证记录都不能替代�
 - 先用两个真实 Developer ID 测试版本完成完整包 v1→v2 和失败矩阵；V1 不以 delta 代替；
 - 更新失败不得影响现有 App 启动、认证、播放、设置或 Keychain。
 
-Cloudflare Worker 默认不部署。只有静态 HTTPS appcast 出现已证明的域名稳定性或故障隔离需求时才
-重新立项；届时重新读取官方 pricing/limits。它只能原样分发已签名 appcast，零用户凭据、零 EdDSA
-私钥、零大文件代理、零 B 站 API／媒体代理。
+用户已授权准备并部署独立 [Wrangler 更新源目录](../../Updates/cloudflare/README.md)，地址为
+`updates.shiinayane.com`。只原样分发已签名 appcast，零用户凭据、零 EdDSA 私钥、零大文件代理、
+零 B 站 API／媒体代理。build 2/3 为已授权公开的测试 prerelease；正式发布仍遵循当次授权与发布 Gate。
+配置、失钥恢复与失败边界见 [更新安全模型](../security/app-updates.md)。
 
 逐项执行以 [`CHECKLIST.md`](./CHECKLIST.md) 为准。

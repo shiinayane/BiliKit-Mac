@@ -64,4 +64,9 @@ if grep -R -n -E --include='*.swift' '^import SwiftProtobuf$' \
     exit 1
 fi
 
+check_forbidden_imports \
+    "Packages/BiliKitCore" \
+    '^import Sparkle$' \
+    "Sparkle 只能存在于 App target"
+
 echo "架构依赖边界检查通过"

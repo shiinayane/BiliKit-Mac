@@ -1,0 +1,5 @@
+/appcast.xml
+  Content-Type: application/rss+xml; charset=utf-8
+  Cache-Control: public, max-age=300, no-transform
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'none'

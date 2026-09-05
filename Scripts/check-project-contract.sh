@@ -51,7 +51,7 @@ top_level_key_count=$(
     /usr/bin/plutil -p "$entitlements" \
         | awk '/^  "/ { total += 1 } END { print total + 0 }'
 )
-[ "$top_level_key_count" -eq 3 ] \
+[ "$top_level_key_count" -eq 4 ] \
     || fail "entitlements 出现未审计的额外能力"
 
 expect_count 2 'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' "$project" "App 配置必须使用同一 entitlement"
@@ -59,7 +59,8 @@ expect_count 6 'DEVELOPMENT_TEAM = 2B3LZ256AG;' "$project" "Project 与 target �
 expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;' "$project" "App Bundle Identifier 不一致"
 expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
 expect_count 2 'MARKETING_VERSION = 1.0.0;' "$project" "V1 marketing version 必须使用三段版本号"
-expect_count 4 'CURRENT_PROJECT_VERSION = 1;' "$project" "V1 初始工程 build number 不一致"
+expect_count 2 'CURRENT_PROJECT_VERSION = 3;' "$project" "Sparkle 候选 App build 必须递增为 3"
+expect_count 2 'CURRENT_PROJECT_VERSION = 1;' "$project" "测试 target build number 不一致"
 expect_count 2 'INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";' "$project" "App 类别元数据不一致"
 expect_count 2 'INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";' "$project" "App 版权元数据不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
@@ -88,3 +89,14 @@ sh -n Scripts/run-quality-gates.sh || fail "质量 Gate 脚本语法无效"
 sh -n Scripts/run-targeted-tests.sh || fail "定向测试脚本语法无效"
 
 echo "工程、安全能力与最低系统版本静态契约检查通过"
+
+[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:0' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spks' ] || fail "Sparkle status mach lookup 不一致"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:1' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spki' ] || fail "Sparkle installer mach lookup 不一致"
+if /usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:2' "$entitlements" >/dev/null 2>&1; then
+    fail "Sparkle mach lookup 只能授权两个精确服务"
+fi
+
+expect_count 2 'Configuration/BiliKit-Info.plist' "$project" "App 必须合并受审计的 Sparkle 配置"
+expect_count 1 'version = 2.9.6;' "$project" "Sparkle 必须精确锁版"
+expect_count 1 'kind = exactVersion;' "$project" "Sparkle 禁止浮动版本约束"
+/usr/bin/plutil -lint Configuration/BiliKit-Info.plist >/dev/null || fail "Sparkle Info.plist 无效"

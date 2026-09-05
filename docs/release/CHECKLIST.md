@@ -47,19 +47,31 @@
 - [ ] 发布资产不可变；不覆盖同名文件，坏版本只用更高 build 前向修复。
 - [ ] 发布 workflow（若有）使用完整 action SHA、最小权限且不提前持有发布秘密。
 
-## E. Sparkle（只有 B–D 基线通过后）
+## E. Sparkle（已授权实现；正式发布仍须完成适用 B–D Gate）
+
+2026-09-05：原 build 1 保持冻结；用户已完成 build 2→3 升级，确认版本 1.0.0 (3) 与登录状态保留。
+本机正常路径通过不替代不同用户、真实 Intel/macOS 15、Translocation 或异常恢复验证。
+详细证据与来源限制见 [接入与验收记录](SPARKLE-INTEGRATION-2026-09-05.md)。
 
 - [ ] 实施当日重新核对 Sparkle 稳定版、安全公告、最低系统与 license 并精确锁定。
-- [ ] Sparkle 只进入 App target，进程级 updater owner 唯一。
-- [ ] 只启用 Installer XPC 和必需沙箱例外，不启用无需求的 Downloader XPC。
-- [ ] framework、XPC、Autoupdate 与 Updater 的双架构、签名、runtime 和 entitlement 通过。
+- [x] Sparkle 只进入 App target，进程级 updater owner 唯一。
+- [x] 只启用 Installer XPC 和必需沙箱例外，不启用无需求的 Downloader XPC。
+- [x] framework、XPC、Autoupdate 与 Updater 的双架构、签名、runtime 和 entitlement 通过。
 - [ ] EdDSA key 的 Keychain 保存、离线备份与恢复通过；私钥不进入仓库／CI／Cloudflare。
-- [ ] `SUPublicEDKey`、HTTPS feed 与签名要求正确，appcast 由官方工具生成。
-- [ ] 两个真实 Developer ID 版本完成完整包 v1→v2、损坏／错误签名／旧 build／错误架构失败矩阵。
+- [x] `SUPublicEDKey`、HTTPS feed 与签名要求正确，appcast 由官方工具生成。
+- [x] 用户确认两个真实 Developer ID 版本完成完整包 build 2→3 升级，版本正确且登录状态保留。
+- [ ] 损坏／错误签名／旧 build／错误架构失败矩阵通过。
 - [ ] 离线、超时、404/500、中断、磁盘不足、权限拒绝和重启清理不破坏现有 App。
 - [ ] 新依赖的 Privacy Manifest、第三方 notice、日志和诊断边界复核通过。
 
-## F. 可选 Cloudflare 停止条件
+## F. Cloudflare 更新源（2026-09-05 已授权测试部署）
 
-- [ ] 静态 appcast 存在已证明的域名稳定性或故障隔离缺口；没有则停止，不建 Worker。
-- [ ] 若立项，重新完成官方资料、成本、滥用、缓存、DNS、停用和零凭据设计审查。
+- [x] 用户授权独立 Wrangler 目录准备，域名 `shiinayane.com` 已托管。
+- [x] 最终 Worker、账户、子域名、公开资产与公钥已确认。
+- [x] 本地官方工具生成签名 feed，DMG 与 feed 公钥验证、dry-run 通过。
+- [x] 两个带更新器的签名公证版本正常升级通过（用户报告）。
+- [ ] 更新失败矩阵通过。
+- [x] 部署前重新确认成本、缓存、DNS、停用与零凭据边界，并取得实际部署授权。
+- [x] 部署后匿名 HTTPS、原始字节/hash、缓存头和 404 通过；强制验签配置下真实升级成功（用户报告）。
+
+正常升级与登录保留已由用户确认；组合项中的失败矩阵仍未完成，不据此勾选完整正式发布验收。
