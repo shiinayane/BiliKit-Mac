@@ -71,6 +71,9 @@ def validate_feed(data, config, archives=None):
         enclosures = item.findall("enclosure")
         require(len(enclosures) == 1, "每个更新项需要一个完整安装包")
         enclosure = enclosures[0]
+        # Sparkle prefers the legacy enclosure attribute over the item element.
+        require(enclosure.get(f"{{{SPARKLE}}}version", version) == version,
+                "enclosure 与 item 的 build 必须完全一致")
         url = urlsplit(enclosure.attrib["url"])
         require(url.scheme == "https" and url.netloc == "github.com" and not url.query and not url.fragment,
                 "安装包必须来自无凭据的 GitHub HTTPS 地址")

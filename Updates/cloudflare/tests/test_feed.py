@@ -9,14 +9,16 @@ from feed import validate_feed
 
 
 class FeedTests(unittest.TestCase):
-    def signed_feed(self, url=None, empty=False):
+    def signed_feed(self, url=None, empty=False, enclosure_version=None):
         # Test keys live only in this subprocess's memory. No production key or Keychain access.
         source = r'''
 const {generateKeyPairSync, sign} = require('node:crypto');
 const {publicKey, privateKey} = generateKeyPairSync('ed25519');
 const archive = Buffer.from('test archive bytes');
 const url = process.argv[1];
-let xml = Buffer.from(`<?xml version="1.0"?><rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item><sparkle:version>2</sparkle:version><sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion><enclosure url="${url}" length="${archive.length}" sparkle:edSignature="${sign(null, archive, privateKey).toString('base64')}" /></item></channel></rss>\n`);
+const enclosureVersion = JSON.parse(process.argv[3]);
+const versionAttribute = enclosureVersion === null ? '' : ` sparkle:version="${enclosureVersion}"`;
+let xml = Buffer.from(`<?xml version="1.0"?><rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item><sparkle:version>2</sparkle:version><sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion><enclosure${versionAttribute} url="${url}" length="${archive.length}" sparkle:edSignature="${sign(null, archive, privateKey).toString('base64')}" /></item></channel></rss>\n`);
 if (process.argv[2] === 'empty') xml = Buffer.from('<?xml version="1.0"?><rss version="2.0"><channel /></rss>\n');
 const envelope = `<!-- sparkle-signatures:\nedSignature: ${sign(null, xml, privateKey).toString('base64')}\nlength: ${xml.length}\n-->\n`;
 process.stdout.write(JSON.stringify({
@@ -28,6 +30,7 @@ process.stdout.write(JSON.stringify({
             "node", "-e", source,
             url or "https://github.com/shiinayane/BiliKit-Mac/releases/download/v1.0.0-build.2/BiliKit-2.dmg",
             "empty" if empty else "full",
+            json.dumps(enclosure_version),
         ], check=True, capture_output=True, text=True)
         fixture = json.loads(result.stdout)
         return base64.b64decode(fixture["feed"]), {
@@ -44,6 +47,17 @@ process.stdout.write(JSON.stringify({
             (path / "BiliKit-2.dmg").write_bytes(b"fake archive bytes")
             with self.assertRaises(ValueError):
                 validate_feed(data, config, path)
+
+    def test_signed_conflicting_enclosure_version_is_rejected(self):
+        for version in ["1", "3", "02", ""]:
+            with self.subTest(enclosure_version=version):
+                data, config = self.signed_feed(enclosure_version=version)
+                with self.assertRaisesRegex(ValueError, "enclosure.*build"):
+                    validate_feed(data, config)
+
+    def test_signed_matching_enclosure_version_is_accepted(self):
+        data, config = self.signed_feed(enclosure_version="2")
+        self.assertEqual(validate_feed(data, config), 1)
 
     def test_feed_tampering_is_rejected(self):
         data, config = self.signed_feed()
