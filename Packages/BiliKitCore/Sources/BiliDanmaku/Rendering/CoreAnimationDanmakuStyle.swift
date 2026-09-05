@@ -15,8 +15,9 @@ public enum CoreAnimationDanmakuFontWeight:
 
 /// Core Animation renderer 的有界视觉输入。
 ///
-/// 该类型只描述产品需要稳定复用的文本视觉语义，不暴露 `CATextLayer`、Core Text attribute
-/// 或动画实现细节。App 始终使用 `production`；开发工具可以为单轮 renderer 提供不同值。
+/// 该类型只描述产品需要稳定复用的文本视觉语义，不暴露 Core Text 或动画实现细节。
+/// `shadowBlurRadius` 是预烘焙 tent convolution 的 point 半径，不是旧 `NSShadow` 的数学
+/// 等价值。App 始终使用 `production`；开发工具可以为单轮 renderer 提供不同值。
 public struct CoreAnimationDanmakuStyle: Sendable, Equatable {
     public static let fontScaleRange = 0.5...1.5
     public static let shadowBlurRadiusRange = 0.0...4.0
@@ -29,7 +30,7 @@ public struct CoreAnimationDanmakuStyle: Sendable, Equatable {
     public init(
         fontScale: Double = 1,
         fontWeight: CoreAnimationDanmakuFontWeight = .semibold,
-        shadowBlurRadius: Double = 2
+        shadowBlurRadius: Double = 1
     ) {
         self.fontScale = Self.normalized(
             fontScale,
@@ -39,7 +40,7 @@ public struct CoreAnimationDanmakuStyle: Sendable, Equatable {
         self.fontWeight = fontWeight
         self.shadowBlurRadius = Self.normalized(
             shadowBlurRadius,
-            fallback: 2,
+            fallback: 1,
             range: Self.shadowBlurRadiusRange
         )
     }

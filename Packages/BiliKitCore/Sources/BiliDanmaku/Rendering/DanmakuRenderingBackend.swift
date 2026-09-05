@@ -12,6 +12,18 @@ public struct DanmakuTextMetrics: Sendable, Equatable {
     }
 }
 
+public enum DanmakuPreparationRejectionReason: Sendable, Equatable {
+    case capacity
+    case invalidInput
+    case oversized
+    case cancelled
+}
+
+public enum DanmakuPreparationResult: Sendable, Equatable {
+    case ready(DanmakuTextMetrics)
+    case rejected(DanmakuPreparationRejectionReason)
+}
+
 public struct DanmakuRendererDurations: Sendable, Equatable {
     public let scrollingSeconds: Double
     public let fixedSeconds: Double
@@ -153,4 +165,74 @@ public protocol DanmakuRenderingBackend: AnyObject {
     func setOpacity(_ opacity: DanmakuOpacity)
     func updateSurfaceSize(width: Double, height: Double)
     func stop()
+
+    /// 准备完成回调必须返回 MainActor；controller 只会在 `.ready` 后执行 lane 准入。
+    func prepare(
+        _ event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64,
+        backingScale: Double,
+        completion:
+            @escaping @MainActor @Sendable (
+                DanmakuPreparationResult
+            ) -> Void
+    )
+
+    @discardableResult
+    func renderPrepared(
+        _ placement: DanmakuLanePlacement,
+        preparationID: UInt64,
+        generation: UInt64
+    ) -> Bool
+    func discardPreparation(preparationID: UInt64)
+    func cancelPendingPreparations()
+    func updateSurfaceSize(
+        width: Double,
+        height: Double,
+        backingScale: Double
+    )
+}
+
+extension DanmakuRenderingBackend {
+    /// 旧 Lab/test backend 的同步兼容桥。
+    ///
+    /// 生产 renderer 覆盖此方法并在后台准备纹理。
+    public func prepare(
+        _ event: DanmakuEvent,
+        preparationID: UInt64,
+        generation: UInt64,
+        backingScale: Double,
+        completion:
+            @escaping @MainActor @Sendable (
+                DanmakuPreparationResult
+            ) -> Void
+    ) {
+        let metrics = measure(event)
+        completion(
+            metrics.width > 0 && metrics.height > 0
+                ? .ready(metrics) : .rejected(.invalidInput)
+        )
+    }
+
+    @discardableResult
+    public func renderPrepared(
+        _ placement: DanmakuLanePlacement,
+        preparationID: UInt64,
+        generation: UInt64
+    ) -> Bool {
+        render(placement)
+        return true
+    }
+
+    public func discardPreparation(preparationID: UInt64) {}
+
+    public func cancelPendingPreparations() {}
+
+    public func updateSurfaceSize(
+        width: Double,
+        height: Double,
+        backingScale: Double
+    ) {
+        updateSurfaceSize(width: width, height: height)
+    }
 }

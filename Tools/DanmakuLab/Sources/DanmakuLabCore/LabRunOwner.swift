@@ -119,6 +119,7 @@ public final class LabRunOwner {
             controller.updateSurface(
                 width: width,
                 height: height,
+                backingScale: backingScale,
                 ownerID: ownerID
             )
         else {
@@ -169,6 +170,7 @@ public final class LabRunOwner {
             controller.updateSurface(
                 width: width,
                 height: height,
+                backingScale: backingScale,
                 ownerID: ownerID
             )
         else {
@@ -236,6 +238,7 @@ public final class LabRunOwner {
             controller.updateSurface(
                 width: surfaceSize.width,
                 height: surfaceSize.height,
+                backingScale: surfaceBackingScale,
                 ownerID: surfaceOwnerID
             )
         else {

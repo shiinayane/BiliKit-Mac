@@ -83,7 +83,7 @@ struct PlayerHostViewIdentityTests {
 
     @Test
     @MainActor
-    func danmakuSurfaceSurvivesTemporaryWindowReparenting() throws {
+    func danmakuSurfaceSurvivesTemporaryWindowReparenting() async throws {
         let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(
             backend: renderer,
@@ -120,10 +120,14 @@ struct PlayerHostViewIdentityTests {
                 mode: .scrolling
             )
         )
+        #expect(
+            await waitUntil {
+                renderer.activeLayerCount == 1
+                    && controller.statistics.active == 1
+            }
+        )
         let firstLayer = try #require(renderer.rootLayer.sublayers?.first)
         let epoch = renderer.renderEpoch
-        #expect(renderer.activeLayerCount == 1)
-        #expect(controller.statistics.active == 1)
 
         overlay.removeFromSuperview()
         #expect(overlay.window == nil)
@@ -142,8 +146,12 @@ struct PlayerHostViewIdentityTests {
                 mode: .top
             )
         )
-        #expect(renderer.activeLayerCount == 2)
-        #expect(controller.statistics.active == 2)
+        #expect(
+            await waitUntil {
+                renderer.activeLayerCount == 2
+                    && controller.statistics.active == 2
+            }
+        )
 
         overlay.frame = secondWindow.contentView?.bounds ?? .zero
         secondWindow.contentView?.addSubview(overlay)
@@ -570,6 +578,20 @@ struct PlayerHostViewIdentityTests {
             guard clock.now < deadline else { return false }
             hostingView.layoutSubtreeIfNeeded()
             try? await Task.sleep(for: .milliseconds(5))
+        }
+        return true
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        _ condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            await Task.yield()
         }
         return true
     }

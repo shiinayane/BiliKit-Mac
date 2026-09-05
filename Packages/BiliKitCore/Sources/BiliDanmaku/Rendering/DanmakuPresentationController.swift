@@ -9,10 +9,10 @@ struct DanmakuDensityAdmissionPolicy: Sendable, Equatable {
     init(_ density: DanmakuDensity) {
         switch density {
         case .normal:
-            minimumHorizontalGap = 40
+            minimumHorizontalGap = 64
             maximumOverlapDepth = 1
         case .increased:
-            minimumHorizontalGap = 20
+            minimumHorizontalGap = 32
             maximumOverlapDepth = 1
         case .overlapping:
             minimumHorizontalGap = 0
@@ -40,6 +40,19 @@ public struct DanmakuRendererStatistics: Sendable, Equatable {
         droppedCapacity += max(count, 0)
     }
 
+    mutating func recordPreparationDrop(
+        _ reason: DanmakuPreparationRejectionReason
+    ) {
+        switch reason {
+        case .capacity:
+            droppedCapacity += 1
+        case .invalidInput, .oversized:
+            droppedNoLane += 1
+        case .cancelled:
+            break
+        }
+    }
+
     mutating func updateActive(_ count: Int) {
         active = count
         peakActive = max(peakActive, count)
@@ -55,6 +68,14 @@ public final class DanmakuPresentationController:
     DanmakuPresentationSink,
     DanmakuRenderingBackendDelegate
 {
+    private struct PendingPreparation {
+        let event: DanmakuEvent
+        let speedLevel: DanmakuSpeedLevel
+        let identity: PlaybackItemIdentity
+        let discontinuityGeneration: UInt64
+        let preparationGeneration: UInt64
+    }
+
     public private(set) var statistics = DanmakuRendererStatistics()
 
     private let backend: any DanmakuRenderingBackend
@@ -67,6 +88,13 @@ public final class DanmakuPresentationController:
     private var identity: PlaybackItemIdentity?
     private var discontinuityGeneration: UInt64?
     private var surfaceOwnerID: UUID?
+    private var backingScale = 2.0
+    private var preparationGeneration: UInt64 = 0
+    private var nextPreparationID: UInt64 = 0
+    private var pendingPreparations: [UInt64: PendingPreparation] = [:]
+    private var pendingOrder: [UInt64] = []
+    private var completedPreparations: [UInt64: DanmakuPreparationResult] = [:]
+    private var latestSnapshot: PlaybackTimelineSnapshot?
 
     public init(
         backend: any DanmakuRenderingBackend,
@@ -80,7 +108,8 @@ public final class DanmakuPresentationController:
         backend.delegate = self
         backend.updateSurfaceSize(
             width: configuration.surfaceWidth,
-            height: configuration.surfaceHeight
+            height: configuration.surfaceHeight,
+            backingScale: backingScale
         )
     }
 
@@ -123,6 +152,7 @@ public final class DanmakuPresentationController:
         identity = updateIdentity
         discontinuityGeneration =
             update.snapshot.discontinuityGeneration
+        latestSnapshot = update.snapshot
 
         let effectiveRate =
             update.snapshot.state == .playing
@@ -136,38 +166,23 @@ public final class DanmakuPresentationController:
             return
         }
 
-        let attemptedEvents = batch.events.prefix(
+        let availablePreparationSlots = max(
             DanmakuLaneConfiguration.hardMaximumActiveCount
+                - pendingPreparations.count,
+            0
         )
-        let requests = attemptedEvents.map { event in
-            let metrics = backend.measure(event)
-            return DanmakuLaneRequest(
-                event: event,
-                width: metrics.width,
-                height: metrics.height,
-                durationSeconds: motionPolicy.duration(
-                    for: event.mode,
-                    textWidth: metrics.width,
-                    surfaceWidth: configuration.surfaceWidth,
-                    speedLevel: speedLevel
-                )
-            )
-        }
+        let attemptedEvents = batch.events.prefix(availablePreparationSlots)
         statistics.recordCapacityDrops(
             batch.events.count - attemptedEvents.count
         )
-        let admission = allocator.admit(
-            requests,
-            at: update.snapshot.positionSeconds
-        )
-        for placement in admission.expired {
-            backend.remove(eventID: placement.request.event.id)
+        for event in attemptedEvents {
+            enqueuePreparation(
+                event,
+                identity: updateIdentity,
+                discontinuityGeneration:
+                    update.snapshot.discontinuityGeneration
+            )
         }
-        for placement in admission.admitted {
-            backend.render(placement)
-        }
-        statistics.record(admission)
-        statistics.updateActive(allocator.activeCount)
     }
 
     public func clearPresentation() {
@@ -193,17 +208,25 @@ public final class DanmakuPresentationController:
     }
 
     public func stopPresentation() {
+        cancelPendingPreparations()
         _ = allocator.clear()
         backend.stop()
         identity = nil
         discontinuityGeneration = nil
+        latestSnapshot = nil
         statistics.updateActive(0)
     }
 
     private func updateSurfaceSize(
         width: Double,
-        height: Double
+        height: Double,
+        backingScale: Double
     ) {
+        let normalizedScale = Self.normalizedBackingScale(backingScale)
+        if normalizedScale != self.backingScale {
+            self.backingScale = normalizedScale
+            cancelPendingPreparations()
+        }
         configuration = DanmakuLaneConfiguration(
             surfaceWidth: width,
             surfaceHeight: height,
@@ -216,7 +239,8 @@ public final class DanmakuPresentationController:
         allocator.updateConfiguration(configuration)
         backend.updateSurfaceSize(
             width: width,
-            height: height
+            height: height,
+            backingScale: normalizedScale
         )
     }
 
@@ -240,10 +264,15 @@ public final class DanmakuPresentationController:
     public func updateSurface(
         width: Double,
         height: Double,
+        backingScale: Double = 2,
         ownerID: UUID
     ) -> Bool {
         guard surfaceOwnerID == ownerID else { return false }
-        updateSurfaceSize(width: width, height: height)
+        updateSurfaceSize(
+            width: width,
+            height: height,
+            backingScale: backingScale
+        )
         return true
     }
 
@@ -253,9 +282,163 @@ public final class DanmakuPresentationController:
     }
 
     private func clearBackendAndAllocator() {
+        cancelPendingPreparations()
         _ = allocator.clear()
         backend.clearAll()
         statistics.updateActive(0)
+    }
+
+    private func enqueuePreparation(
+        _ event: DanmakuEvent,
+        identity: PlaybackItemIdentity,
+        discontinuityGeneration: UInt64
+    ) {
+        nextPreparationID &+= 1
+        let preparationID = nextPreparationID
+        let generation = preparationGeneration
+        pendingPreparations[preparationID] = PendingPreparation(
+            event: event,
+            speedLevel: speedLevel,
+            identity: identity,
+            discontinuityGeneration: discontinuityGeneration,
+            preparationGeneration: generation
+        )
+        pendingOrder.append(preparationID)
+        backend.prepare(
+            event,
+            preparationID: preparationID,
+            generation: generation,
+            backingScale: backingScale
+        ) { [weak self] result in
+            self?.completePreparation(
+                preparationID: preparationID,
+                generation: generation,
+                result: result
+            )
+        }
+    }
+
+    private func completePreparation(
+        preparationID: UInt64,
+        generation: UInt64,
+        result: DanmakuPreparationResult
+    ) {
+        guard generation == preparationGeneration,
+            pendingPreparations[preparationID]?.preparationGeneration
+                == generation
+        else {
+            backend.discardPreparation(preparationID: preparationID)
+            return
+        }
+        completedPreparations[preparationID] = result
+        drainCompletedPreparations()
+    }
+
+    private func drainCompletedPreparations() {
+        while let preparationID = pendingOrder.first,
+            let result = completedPreparations.removeValue(
+                forKey: preparationID
+            )
+        {
+            pendingOrder.removeFirst()
+            guard
+                let pending = pendingPreparations.removeValue(
+                    forKey: preparationID
+                )
+            else {
+                backend.discardPreparation(preparationID: preparationID)
+                continue
+            }
+            processPreparation(
+                result,
+                preparationID: preparationID,
+                pending: pending
+            )
+        }
+    }
+
+    private func processPreparation(
+        _ result: DanmakuPreparationResult,
+        preparationID: UInt64,
+        pending: PendingPreparation
+    ) {
+        guard pending.preparationGeneration == preparationGeneration,
+            identity == pending.identity,
+            discontinuityGeneration == pending.discontinuityGeneration,
+            let snapshot = latestSnapshot,
+            snapshot.identity == pending.identity,
+            snapshot.discontinuityGeneration
+                == pending.discontinuityGeneration
+        else {
+            backend.discardPreparation(preparationID: preparationID)
+            return
+        }
+        guard case .ready(let metrics) = result else {
+            if case .rejected(let reason) = result {
+                statistics.recordPreparationDrop(reason)
+            }
+            backend.discardPreparation(preparationID: preparationID)
+            return
+        }
+
+        let request = DanmakuLaneRequest(
+            event: pending.event,
+            width: metrics.width,
+            height: metrics.height,
+            durationSeconds: motionPolicy.duration(
+                for: pending.event.mode,
+                textWidth: metrics.width,
+                surfaceWidth: configuration.surfaceWidth,
+                speedLevel: pending.speedLevel
+            )
+        )
+        let admission = allocator.admit(
+            [request],
+            at: snapshot.positionSeconds
+        )
+        for expired in admission.expired {
+            backend.remove(eventID: expired.request.event.id)
+        }
+        var installed: [DanmakuLanePlacement] = []
+        for placement in admission.admitted {
+            if backend.renderPrepared(
+                placement,
+                preparationID: preparationID,
+                generation: preparationGeneration
+            ) {
+                installed.append(placement)
+            } else {
+                allocator.remove(eventID: placement.request.event.id)
+            }
+        }
+        if installed.isEmpty {
+            backend.discardPreparation(preparationID: preparationID)
+        }
+        statistics.recordCapacityDrops(
+            admission.admitted.count - installed.count
+        )
+        statistics.record(
+            DanmakuLaneAdmission(
+                expired: admission.expired,
+                admitted: installed,
+                dropCounts: admission.dropCounts
+            )
+        )
+        statistics.updateActive(allocator.activeCount)
+    }
+
+    private func cancelPendingPreparations() {
+        preparationGeneration &+= 1
+        pendingPreparations.removeAll(keepingCapacity: false)
+        pendingOrder.removeAll(keepingCapacity: false)
+        completedPreparations.removeAll(keepingCapacity: false)
+        backend.cancelPendingPreparations()
+    }
+
+    private static func normalizedBackingScale(_ scale: Double) -> Double {
+        scale.isFinite
+            ? min(max(scale, 1), DanmakuTextureRasterizer.maximumBackingScale)
+            : 2
     }
 
     private func updateAdmissionPolicy() {
