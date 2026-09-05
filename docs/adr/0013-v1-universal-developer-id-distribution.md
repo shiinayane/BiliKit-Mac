@@ -23,8 +23,8 @@ Privacy Manifest 也核对通过。
 - README、下载页、DMG 说明与未来 Sparkle appcast 必须一致声明 macOS 15+ 与 Universal。
 - 最终 Developer ID archive 必须重新枚举 App 与全部嵌套 Mach-O，逐项确认两个 slice；无签名
   build 不能替代签名成品证据。
-- 正式发布前必须在真实 Intel macOS 15 上完成启动、游客浏览、登录、Keychain、loopback 播放、
-  字幕／弹幕、退出与重启的最小关键路径。Intel CI 或 Rosetta 只能作为补充证据。
+- 2026-09-05 维护者修订发布政策：真实 Intel macOS 15 的最小关键路径属于验证记录，
+  不再作为发布门槛或公开支持限制。测试观察与维护者发布裁决分别记录，Intel CI 不冒充真人验证。
 
 ## 后果与变更条件
 
