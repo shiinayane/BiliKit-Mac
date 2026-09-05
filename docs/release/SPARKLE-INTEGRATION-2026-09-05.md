@@ -70,3 +70,11 @@ DanmakuLab 的 Xcode 锁文件旁支改动保留在提交之外；临时测试�
 - Developer ID 私钥备份恢复、发布与恢复责任人，以及面向用户的人工恢复说明等发布清单剩余项。
 
 步骤见 [更新源 README](../../Updates/cloudflare/README.md)，信任边界见 [更新安全模型](../security/app-updates.md)。
+
+## 推送前 agent 审核修复
+
+独立审核发现部署校验只读取 item build，而 Sparkle 优先读取 enclosure 版本属性。
+现要求该可选属性与已验证的 item build 完全一致；冲突、空值与前导零差异均拒绝。
+合法临时签名的回归测试在旧实现失败，修复后 8 项更新源测试、现有双版本 feed 验签及 static Gate 通过。
+原审核 agent 只读复核确认该 P2 关闭，未发现修复引入的新问题。
+改动仅涉及本地发布校验与测试；App、已发布 DMG 和签名 appcast 均未变化，无需重新公证或部署。
