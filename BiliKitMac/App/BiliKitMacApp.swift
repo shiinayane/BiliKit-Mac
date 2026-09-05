@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct BiliKitMacApp: App {
+    @StateObject private var updater = AppUpdater()
     @State private var accountSessionCoordinator: AccountSessionCoordinator
     @State private var systemNowPlayingController = SystemNowPlayingController()
     @State private var appSettingsModel: AppSettingsModel
@@ -35,6 +36,9 @@ struct BiliKitMacApp: App {
             )
         }
         .defaultSize(width: 1_320, height: 820)
+        .commands {
+            AppUpdateCommands(updater: updater)
+        }
 
         Settings {
             PlaybackSourceSettingsView(model: appSettingsModel)

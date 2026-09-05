@@ -1,0 +1,14 @@
+{
+  "name": "bilikit-update-feed",
+  "private": true,
+  "version": "1.0.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests",
+    "validate": "python3 feed.py validate",
+    "preview": "npm run validate && wrangler dev --local",
+    "dry-run": "npm run validate && wrangler deploy --dry-run",
+    "deploy": "npm run validate && wrangler deploy"
+  },
+  "devDependencies": { "wrangler": "4.129.0" }
+}

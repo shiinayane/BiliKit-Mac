@@ -17,6 +17,7 @@
 		A1000000000000000000000A /* BiliApplication in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000015 /* BiliApplication */; };
 		A1000000000000000000000B /* BiliLibraryFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000019 /* BiliLibraryFeature */; };
 		A1000000000000000000000C /* BiliDanmaku in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000001A /* BiliDanmaku */; };
+		A20000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +84,7 @@
 				A10000000000000000000004 /* BiliAPI in Frameworks */,
 				A10000000000000000000003 /* BiliPlayback in Frameworks */,
 				A1000000000000000000000C /* BiliDanmaku in Frameworks */,
+				A20000000000000000000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +157,7 @@
 				A10000000000000000000013 /* BiliPlayback */,
 				A10000000000000000000014 /* BiliAPI */,
 				A1000000000000000000001A /* BiliDanmaku */,
+				A20000000000000000000002 /* Sparkle */,
 			);
 			productName = BiliKitMac;
 			productReference = 8DFA9001300F375500DF3E1D /* BiliKit.app */;
@@ -217,6 +220,7 @@
 			mainGroup = 8DFA8FF8300F375500DF3E1D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -403,12 +407,13 @@
 				CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 2B3LZ256AG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Configuration/BiliKit-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = BiliKit;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";
@@ -441,12 +446,13 @@
 				CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 2B3LZ256AG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Configuration/BiliKit-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = BiliKit;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";
@@ -551,6 +557,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000013 /* BiliPlayback */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -591,6 +608,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000020 /* XCLocalSwiftPackageReference "Packages/BiliKitCore" */;
 			productName = BiliDanmaku;
+		};
+		A20000000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

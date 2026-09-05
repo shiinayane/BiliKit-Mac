@@ -1,6 +1,6 @@
 # 第三方声明
 
-项目当前不打包第三方视觉资产，并使用以下源码 Package：
+项目当前不打包第三方视觉资产，并使用以下第三方依赖：
 
 ## SwiftProtobuf
 
@@ -14,3 +14,13 @@
 
 本地 `references/` 中的第三方研究 checkout 仅作为参考。其代码、注释、fixture、图标及其他
 受版权保护的资产均不属于 BiliKit，也不得进入产品、测试 fixture 或发布物。
+
+## Sparkle
+
+- 版本：精确固定为 2.9.6（revision `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`）
+- 来源：https://github.com/sparkle-project/Sparkle/tree/2.9.6
+- 用途：仅 App target 的标准自动更新 UI、下载、验签及 Installer XPC 安装。
+- 许可证：MIT；分发包同时包含 bsdiff、sais-lite、Ed25519 与 SUSignatureVerifier 的附属许可。
+- 版权、全部许可条件与免责声明原文随 App 资源打包：
+  [`Sparkle-LICENSE.txt`](BiliKitMac/Resources/Licenses/Sparkle-LICENSE.txt)。发布时保留该文件与 framework 自带资源。
+- SwiftPM 二进制 checksum：`8d5fb41d960b43f4a68aa14126bf62b098544ec8d191cdcc73eb14e63a8e7606`。
