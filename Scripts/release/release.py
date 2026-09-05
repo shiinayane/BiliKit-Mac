@@ -319,7 +319,7 @@ def draft(out, notes):
     for page in releases():
         require(all(r['tag_name'] != state['tag'] for r in page), 'Release 已存在；核对后使用 publish，禁止覆盖')
     require(not run('git', 'ls-remote', 'origin', 'refs/tags/' + state['tag']), 'tag 已存在')
-    assets = [out / 'assets' / n for n in (*state['assets'], 'SHA256SUMS')]
+    assets = [out / 'assets' / n for n in state['assets'] if n.endswith('.dmg')]
     run('gh', 'release', 'create', state['tag'], *assets, '--repo', REPO, '--target', state['commit'],
         '--draft', '--title', f"BiliKit {state['version']}", '--notes-file', notes)
     print('已上传草稿；尚未公开或部署 feed。')
@@ -350,8 +350,7 @@ def publish(out, acceptance):
     validate_live_build(out, state)
     release = json.loads(run('gh', 'release', 'view', state['tag'], '--repo', REPO, '--json', 'isDraft,targetCommitish,assets'))
     require(release['targetCommitish'] == state['commit'], 'Release 目标提交错误')
-    expected = dict(state['assets'])
-    expected['SHA256SUMS'] = {'sha256': digest(out / 'assets/SHA256SUMS'), 'bytes': (out / 'assets/SHA256SUMS').stat().st_size}
+    expected = {name: value for name, value in state['assets'].items() if name.endswith('.dmg')}
     require({a['name'] for a in release['assets']} == set(expected), '远端资产集合错误')
     for asset in release['assets']:
         value = expected[asset['name']]
@@ -374,13 +373,13 @@ def publish(out, acceptance):
     deployment = out / 'deployment'
     if not deployment.exists():
         shutil.copytree(ROOT / 'Updates/cloudflare', deployment, ignore=shutil.ignore_patterns('node_modules', '.wrangler', 'appcast.xml'))
-    shutil.copyfile(downloads / 'appcast.xml', deployment / 'public/appcast.xml')
+    shutil.copyfile(out / 'assets/appcast.xml', deployment / 'public/appcast.xml')
     logged(out / 'cloudflare-npm.log', 'npm', 'ci', '--no-audit', '--no-fund', cwd=deployment)
     logged(out / 'cloudflare-dry-run.log', 'npm', 'run', 'dry-run', cwd=deployment)
     validate_live_build(out, state)
     logged(out / 'cloudflare-deploy.log', 'npm', 'run', 'deploy', cwd=deployment)
     download(FEED, downloads / 'live-appcast.xml')
-    require(digest(downloads / 'live-appcast.xml') == digest(downloads / 'appcast.xml'), '线上 feed 尚未与本次部署一致；检查缓存后复验')
+    require(digest(downloads / 'live-appcast.xml') == digest(out / 'assets/appcast.xml'), '线上 feed 尚未与本次部署一致；检查缓存后复验')
     feed.validate_feed((downloads / 'live-appcast.xml').read_bytes(), CONFIG, downloads)
     save(out / 'published.json', {'tag': state['tag'], 'commit': state['commit'], 'assets': expected, 'feed_sha256': digest(downloads / 'live-appcast.xml')})
     print(f"发布完成：https://github.com/{REPO}/releases/tag/{state['tag']}")

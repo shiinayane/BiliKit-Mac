@@ -45,7 +45,7 @@
 
 ## D. GitHub 发布
 
-- [ ] draft asset、tag、commit、版本、manifest、release notes 和 checksums 一致。
+- [ ] draft asset、tag、commit、版本、manifest、release notes 和本机 checksums 一致；公开资产仅 DMG。
 - [ ] 独立下载后重验 SHA-256、Apple 签名、公证、staple 与 Gatekeeper。
 - [ ] 发布资产不可变；不覆盖同名文件，坏版本只用更高 build 前向修复。
 - [ ] 发布 workflow（若有）使用完整 action SHA、最小权限且不提前持有发布秘密。
