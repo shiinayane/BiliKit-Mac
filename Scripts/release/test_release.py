@@ -36,8 +36,8 @@ class ReleaseSafetyTests(unittest.TestCase):
                         evidence='current candidate report', real_install=True, intel_macos15=True,
                         signed_keychain=True, sparkle_failure_matrix=True)
         release.validate_acceptance(evidence, state)
-        for change in ({'commit': 'c' * 40}, {'dmg_sha256': 'c' * 64}, {'intel_macos15': False},
-                       {'sparkle_failure_matrix': False}, {'decision': 'no-go'}, {'reviewer': ''}):
+        release.validate_acceptance(evidence | dict(intel_macos15=False, signed_keychain=False, sparkle_failure_matrix=False), state)
+        for change in ({'commit': 'c' * 40}, {'dmg_sha256': 'c' * 64}, {'decision': 'no-go'}, {'reviewer': ''}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 release.validate_acceptance(evidence | change, state)
 

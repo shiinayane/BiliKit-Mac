@@ -27,7 +27,7 @@
 <p align="center">
   <img alt="平台 macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-195CFF?style=flat">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-FF607A?style=flat">
-  <img alt="开发状态 v1 发布候选" src="https://img.shields.io/badge/状态-v1_发布候选-FF607A?style=flat">
+  <img alt="版本 1.0.0" src="https://img.shields.io/badge/版本-1.0.0-FF607A?style=flat">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/许可证-MIT-4A5568?style=flat"></a>
 </p>
 
@@ -69,23 +69,22 @@ BiliKit 希望成为一个适合日常观看的原生 Mac 客户端：浏览内�
 
 ## 当前状态
 
-BiliKit 正在完成 v1 的日常观看闭环。首页个性推荐、热门、搜索、二维码登录、观看历史、
+BiliKit 1.0.0 已正式发布。首页个性推荐、热门、搜索、二维码登录、观看历史、
 视频播放、字幕、弹幕、分 P、只读评论和相关推荐连续观看已经接入，应用内更新使用 Sparkle。
-正式候选的签名、公证、安装与跨系统验证状态见[发布清单](docs/release/CHECKLIST.md)。
+安装包已完成 Developer ID 签名与 Apple 公证。
 
 具体完成证据、当前阶段和未覆盖边界以[路线图](docs/ROADMAP.md)为准。路线图中的候选能力
 不代表已经实现或承诺进入某个版本。
 
 ## 获取 BiliKit
 
-1. 从 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases) 下载 BiliKit 的 DMG。
+1. 从 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases/latest) 下载 BiliKit 的 DMG。
 2. 打开 DMG，将 BiliKit 拖入“应用程序”。
 3. 从“应用程序”启动 BiliKit。
 
 标有 Pre-release 的版本用于测试。
 
 需要 macOS 15 或更高版本，安装包包含 Apple Silicon（`arm64`）和 Intel（`x86_64`）架构。
-双架构构建与实际运行验证是不同证据；尚未完成的系统验证以发布说明为准。
 
 应用菜单提供“检查更新…”，也可设置自动检查及自动下载并安装。无更新器的旧 build 1 需要
 手动下载安装新版。更新失败时可从发布页下载新版，退出 BiliKit 后重新拖入“应用程序”安装。

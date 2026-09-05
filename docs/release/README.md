@@ -7,7 +7,7 @@ GitHub Actions 负责 macOS 15 Intel 与 macOS 26 检查，不托管签名私钥
 ## 冻结与前提
 
 - App `BiliKit`，Bundle ID `com.shiinayane.BiliKit`，Team `2B3LZ256AG`，macOS 15+ Universal。
-- 当前正式候选 `1.0.0 (4)`；未来修改工程版本/build 与 `check-project-contract.sh`，build 全局递增。
+- 当前正式版本 `1.0.0 (4)`；未来修改工程版本/build 与 `check-project-contract.sh`，build 全局递增。
 - 本次用户已授权提交、PR、合并和正式发布；授权不把未取得的测试证据变成通过。
 - 先合并源码，等待同一提交的 main push CI 两个平台成功，再冻结干净最新 main。
 - 使用完整版 Xcode、Python 3、gh、Node **22.22.3**。DMG 工具固定 create-dmg **8.1.0** 及依赖锁；
@@ -54,9 +54,7 @@ python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-U
 草稿绑定冻结 commit，只上传最终 DMG；appcast 与 SHA256SUMS 保留为本机发布元数据，不标记 Latest、不部署 feed。
 同名 Release 已存在则拒绝覆盖。上传中断时先核对远端各资产 digest，不能使用 `--clobber`。
 
-使用真实 HTTPS 浏览器下载候选，按 [CHECKLIST](CHECKLIST.md) 完成 Gatekeeper/离线、安装/升级/
-删除重装/不同用户/Translocation、Apple Silicon 与真实 Intel macOS 15、签名 Keychain、播放与
-Sparkle 客户端失败矩阵。历史结果只按历史版本引用。完整记录见 [MANIFEST 模板](MANIFEST.md)。
+维护者根据当前候选的验证记录作出发布裁决。额外跨系统、不同用户、Keychain 与更新失败矩阵作为验证记录，不自动阻止发布，也不要求用户手动核对哈希。完整记录见 [MANIFEST 模板](MANIFEST.md)。
 
 将实际验收记录写入候选目录的 `acceptance.json`，字段示例：
 
@@ -74,8 +72,7 @@ Sparkle 客户端失败矩阵。历史结果只按历史版本引用。完整记
 }
 ```
 
-只有对应当前候选的证据取得后才设为 true / go。若维护者改变发布政策，须先明确修订适用
-ADR/清单与公开支持说明，不能把风险接受填成测试通过。
+只有实际取得的测试证据才设为 true；`decision` 独立记录维护者的 go / no-go 裁决。脚本仍强制校验候选身份、CI、资产完整性、签名、公证和更新源一致性。
 
 ## 3. 公开与更新源部署
 

@@ -22,8 +22,7 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 ## 当前产品与工程基线
 
 - Swift 6、SwiftUI、AppKit 与 AVPlayer-first，最低 macOS 15。
-- V1 Developer ID 成品冻结为 `arm64 + x86_64` Universal App；无签名 Release 双 slice 已验证，
-  真实 Intel macOS 15 关键路径仍是发布 Gate。
+- V1 Developer ID 成品为 `arm64 + x86_64` Universal App，签名与公证已完成。
 - 首页个性推荐、热门、搜索、二维码登录、观看历史和各自窗口内工作集已经接入；普通切换和从播放页
   返回不会把已成功内容退回首次加载。
 - 视频页保持单一 player host，支持分 P、自动画质、seek、倍速、系统字幕、弹幕、语义音轨、
@@ -40,10 +39,9 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 当前 target、product、依赖和 entitlement 以 `Packages/BiliKitCore/Package.swift`、Xcode 工程与
 质量 Gate 为准；本文不复制易漂移的源码行号或测试数量。持久架构与安全决策见 ADR 0001–0013。
 
-## 唯一当前阶段：V1 观看历史闭环与 Developer ID 发布准备
+## 当前阶段：V1 正式分发与维护
 
-当前只新增登录播放的服务端观看进度同步，然后把完整 V1 闭环变成可验证、可安装和可恢复的站外
-分发成品。该能力是 V1 唯一认证写操作，不借机增加其他写 endpoint 或通用写入基础设施。
+V1 已包含登录播放的服务端观看进度同步，并已完成 Developer ID 站外分发。该能力是 V1 唯一认证写操作，不借机增加其他写 endpoint 或通用写入基础设施。
 
 观看历史写入基线：
 
@@ -59,7 +57,7 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 已完成：
 
 - 稳定产品标识候选为 `com.shiinayane.BiliKit`，Team 为 `2B3LZ256AG`；
-- `1.0.0 (4)` 正式候选、版权、类别、Privacy Manifest 与 Universal Release 配置已进入工程；
+- `1.0.0 (4)` 正式版本、版权、类别、Privacy Manifest 与 Universal Release 配置已进入工程；
 - 当前发布 Mac 已有有效 Developer ID Application identity；
 - `BiliKit-Notary` 公证凭据已通过 Apple 服务端 validation；
 - 公开分发、隐私、安全报告草案和发布 manifest 模板已经建立。
@@ -71,8 +69,8 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 - Sparkle 2.9.6 与 Cloudflare 静态签名源已接入；build 2→3 正常升级与登录保留由用户确认。
 - 第一版正式候选使用更高 build，从最新干净 main 冻结提交生成；本机自动化入口为
   `Scripts/release/release.py`。发布私钥继续留在本机 Keychain。
-- 正式候选真实安装、真实 Intel macOS 15、不同用户、Translocation、签名 Keychain 与
-  Sparkle 失败矩阵仍须逐项取得证据，不能用旧 build 或 CI 替代。
+- `1.0.0 (4)` 已正式公开，用户确认安装、启动、播放与登录保留正常；对应签名更新源已部署。
+- 额外验证矩阵按实际观察记录，由维护者独立作出发布裁决，不再作为发布限制。
 
 执行顺序和停止条件见 [`release/README.md`](./release/README.md) 与
 [`release/CHECKLIST.md`](./release/CHECKLIST.md)。

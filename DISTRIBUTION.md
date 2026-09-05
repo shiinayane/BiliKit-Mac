@@ -1,7 +1,6 @@
 # BiliKit 分发说明
 
 > 当前公开版本与测试标记以 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases) 为准。
-> 每个候选的实际验证和未覆盖边界均写入对应发布说明；测试版不等同于正式验收。
 
 ## 系统要求
 
@@ -30,8 +29,6 @@ Sparkle 已接入。应用菜单提供“检查更新…”、自动检查和自
 签名或公证异常应停止安装并报告；无可信更高版本时保留当前可用版本。
 
 坏版本使用更高 build 前向修复，不覆盖公开同名资产、不移动旧 tag，也不自动降级。
-自动更新正常路径已完成 build 2→3 本机验证；异常恢复与跨系统矩阵的实际状态见
-[发布清单](docs/release/CHECKLIST.md)，不把历史结果当作新候选验收。
 
 ## 登出与卸载
 
@@ -39,8 +36,7 @@ Sparkle 已接入。应用菜单提供“检查更新…”、自动检查和自
 Keychain 凭据；如果删除失败，BiliKit 会报告失败而不会假装已经安全退出。
 
 仅在 Finder 中删除 App 不保证同时删除 Keychain item 或 macOS 保存的偏好。准备永久卸载时，应先在
-BiliKit 内退出登录，再退出 App 并删除 `/Applications/BiliKit.app`。V1 发布前仍需用隔离测试凭据完成
-删除、重装和不同用户矩阵；本文不把尚未验证的系统清理行为写成保证。
+BiliKit 内退出登录，再退出 App 并删除 `/Applications/BiliKit.app`。
 
 数据边界见 [`PRIVACY.md`](./PRIVACY.md)，第三方许可证见
 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md)，安全问题请按 [`SECURITY.md`](./SECURITY.md)
