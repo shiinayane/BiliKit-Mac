@@ -56,7 +56,8 @@ def digest(path):
 
 def download(url, path):
     require(url.startswith('https://'), '只允许 HTTPS')
-    with urllib.request.urlopen(url, timeout=60) as response:
+    request = urllib.request.Request(url, headers={'User-Agent': 'BiliKit-Release-Automation/1.0'})
+    with urllib.request.urlopen(request, timeout=60) as response:
         require(response.url.startswith('https://'), '拒绝 HTTP 重定向')
         path.write_bytes(response.read())
 
