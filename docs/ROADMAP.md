@@ -1,6 +1,6 @@
 # BiliKit macOS 路线图
 
-> 更新时间：2026-08-25。本文只记录当前产品基线、唯一正在推进的阶段和非目标。历史阶段过程由
+> 更新时间：2026-09-05。本文只记录当前产品基线、唯一正在推进的阶段和非目标。历史阶段过程由
 > Git 历史和 `evidence/` 中的带日期摘要承担，不再在路线图中逐阶段复述。
 
 ## 产品目标
@@ -59,28 +59,20 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 已完成：
 
 - 稳定产品标识候选为 `com.shiinayane.BiliKit`，Team 为 `2B3LZ256AG`；
-- `1.0.0 (1)`、版权、类别、Privacy Manifest 与 Universal Release 配置已进入工程；
+- `1.0.0 (4)` 正式候选、版权、类别、Privacy Manifest 与 Universal Release 配置已进入工程；
 - 当前发布 Mac 已有有效 Developer ID Application identity；
 - `BiliKit-Notary` 公证凭据已通过 Apple 服务端 validation；
 - 公开分发、隐私、安全报告草案和发布 manifest 模板已经建立。
 
-当前硬阻塞：
+当前发布状态：
 
-- explicit App ID `com.shiinayane.BiliKit` 在 Apple 服务端不可用；当前 Team 只有 wildcard App ID，
-  Apple Developer Support 工单正在调查旧 Personal Team／残留登记。不得以改 Bundle ID 或 wildcard
-  profile 绕过稳定身份裁决。
-
-工单解决后的发布 Gate：
-
-1. 注册并核对 explicit App ID、AppIdentifierPrefix、capabilities 与最终 Keychain access group；
-2. 从干净 commit 生成 Release archive，使用 Developer ID Application 导出并逐项检查双架构、
-   签名、Hardened Runtime、secure timestamp、entitlements 和嵌套代码；
-3. 公证并 staple App，制作只含已验 App 与 Applications 快捷方式的只读 DMG；
-4. 签名、公证、staple 和 validate 最终 DMG，记录最终 SHA-256；
-5. 从真实 HTTPS 浏览器下载，在 Apple Silicon 与真实 Intel macOS 15 上验证 Gatekeeper、登录、
-   Keychain、loopback 播放、字幕／弹幕、升级、删除与重装；
-6. 完成不含更新器的 Developer ID 基线后，再裁决是否在同一 V1 接入 Sparkle。Cloudflare Worker
-   默认不部署，只有静态 appcast 的域名稳定性或故障隔离出现真实需求时才重新立项。
+- 无更新器 build 1 已签名公证并完成本机部分安装验证；旧 Apple 身份阻塞以最终签名成品复核替代，
+  不据此推断 Apple 支持工单已关闭。
+- Sparkle 2.9.6 与 Cloudflare 静态签名源已接入；build 2→3 正常升级与登录保留由用户确认。
+- 第一版正式候选使用更高 build，从最新干净 main 冻结提交生成；本机自动化入口为
+  `Scripts/release/release.py`。发布私钥继续留在本机 Keychain。
+- 正式候选真实安装、真实 Intel macOS 15、不同用户、Translocation、签名 Keychain 与
+  Sparkle 失败矩阵仍须逐项取得证据，不能用旧 build 或 CI 替代。
 
 执行顺序和停止条件见 [`release/README.md`](./release/README.md) 与
 [`release/CHECKLIST.md`](./release/CHECKLIST.md)。

@@ -86,3 +86,5 @@ Cloudflare 静态资产请求当前免费且不计动态 Worker 请求，单文�
 [费用](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)、
 [上限](https://developers.cloudflare.com/workers/platform/limits/)、
 [Sparkle 发布](https://sparkle-project.org/documentation/)。
+
+正式候选的 archive、公证、草稿上传、匿名复验与部署编排见[本机发布流水线](../../docs/release/README.md)。该流程在独立部署副本工作，不改写源码 checkout 或旧公开资产。

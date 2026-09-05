@@ -27,13 +27,13 @@
 <p align="center">
   <img alt="平台 macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-195CFF?style=flat">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-FF607A?style=flat">
-  <img alt="开发状态 v1 开发中" src="https://img.shields.io/badge/状态-v1_开发中-FF607A?style=flat">
+  <img alt="开发状态 v1 发布候选" src="https://img.shields.io/badge/状态-v1_发布候选-FF607A?style=flat">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/许可证-MIT-4A5568?style=flat"></a>
 </p>
 
 > [!IMPORTANT]
-> BiliKit 是第三方开源项目，与哔哩哔哩不存在隶属、认可或赞助关系。项目仍在开发中，
-> 目前没有公开安装包。
+> BiliKit 是第三方开源项目，与哔哩哔哩不存在隶属、认可或赞助关系。下载仅通过本仓库 GitHub Releases 提供，
+> 标有 Pre-release 的版本用于测试。
 
 ## 界面预览
 
@@ -64,27 +64,34 @@ BiliKit 希望成为一个适合日常观看的原生 Mac 客户端：浏览内�
 - **连续浏览与观看**：从首页、热门、搜索或观看历史进入同窗口视频页，返回时恢复来源上下文。
 - **可靠播放**：基于 AVPlayer 的自动画质、seek、倍速和播放生命周期管理。
 - **字幕与弹幕**：通过系统字幕菜单选择字幕，并在统一时间轴上渲染弹幕。
-- **登录与历史**：支持二维码登录，凭据保存在 Keychain，并提供只读观看历史。
+- **登录与历史**：支持二维码登录，凭据保存在 Keychain；登录播放时自动同步服务端观看进度。
 - **播放上下文**：在稳定播放器周围组织简介、分 P、UP 主信息与只读评论。
 
 ## 当前状态
 
 BiliKit 正在完成 v1 的日常观看闭环。首页个性推荐、热门、搜索、二维码登录、观看历史、
-视频播放、字幕、弹幕、分 P 和只读评论已经接入；相关推荐连续观看和可分发版本仍在推进。
+视频播放、字幕、弹幕、分 P、只读评论和相关推荐连续观看已经接入，应用内更新使用 Sparkle。
+正式候选的签名、公证、安装与跨系统验证状态见[发布清单](docs/release/CHECKLIST.md)。
 
 具体完成证据、当前阶段和未覆盖边界以[路线图](docs/ROADMAP.md)为准。路线图中的候选能力
 不代表已经实现或承诺进入某个版本。
 
 ## 获取 BiliKit
 
-目前没有公开安装包。首个可分发版本准备完成后，本节会提供下载方式、系统要求和校验信息。
+1. 打开 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases)，选择正式版本的 Universal DMG；
+   如只有 Pre-release，则当前仅提供测试版。
+2. 下载 DMG 与同一版本的 `SHA256SUMS`，按[分发说明](DISTRIBUTION.md)核对校验和。
+3. 打开 DMG，将 BiliKit 拖入“应用程序”，从“应用程序”启动。
 
-V1 已冻结为 Universal App：最低支持 macOS 15，同时包含 Apple Silicon（`arm64`）和 Intel
-（`x86_64`）架构。真实 Intel Mac 的发布候选运行验证仍是正式发布 Gate；在该证据完成前，
-本说明不代表已经提供可下载成品。
+需要 macOS 15 或更高版本，安装包包含 Apple Silicon（`arm64`）和 Intel（`x86_64`）架构。
+双架构构建与实际运行验证是不同证据；尚未完成的系统验证以发布说明为准。
 
-未来公开分发的安装、验签、卸载和故障恢复边界见[分发说明](DISTRIBUTION.md)，数据与凭据处理见
-[隐私说明](PRIVACY.md)。最终下载 URL、DMG 文件名和 SHA-256 只会在不可变发布资产生成后填写。
+应用菜单提供“检查更新…”，也可设置自动检查及自动下载并安装。无更新器的旧 build 1 需要
+手动下载安装新版。更新失败时可从同一可信发布页手动安装更高 build 的签名公证版本；
+不要关闭 Gatekeeper 或移除 quarantine 来绕过校验。
+
+下载安装、卸载和恢复见[分发说明](DISTRIBUTION.md)，观看进度、凭据与更新网络请求见
+[隐私说明](PRIVACY.md)。
 
 <details>
 <summary><strong>从源码构建</strong></summary>
@@ -155,7 +162,7 @@ Packages/BiliKitCore/       核心模型、Application、Feature 与 adapter 模
 BiliKitMacTests/            App composition 集成测试
 Design/                     可追踪的品牌与设计源文件
 docs/                       产品、路线图、ADR、安全与验证记录
-Scripts/                    架构、秘密、格式与质量检查
+Scripts/                    架构、秘密、格式、质量检查与本机发布流水线
 Tools/                      不进入产品的独立开发工具
 ```
 

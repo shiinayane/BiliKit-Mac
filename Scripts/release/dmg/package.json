@@ -1,0 +1,7 @@
+{
+  "name": "bilikit-dmg-tool",
+  "private": true,
+  "dependencies": {
+    "create-dmg": "8.1.0"
+  }
+}
