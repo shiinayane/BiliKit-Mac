@@ -1,5 +1,6 @@
 """Release safety contracts; no Keychain, signing, network or external mutation."""
 import importlib.util
+import json
 import sys
 sys.dont_write_bytecode = True
 from pathlib import Path
@@ -13,6 +14,22 @@ spec.loader.exec_module(release)
 
 
 class ReleaseSafetyTests(unittest.TestCase):
+    def test_version_ignores_test_target_version(self):
+        project = {'objects': {
+            'app': {'isa': 'PBXNativeTarget', 'name': 'BiliKitMac', 'buildConfigurationList': 'appList'},
+            'tests': {'isa': 'PBXNativeTarget', 'name': 'BiliKitMacTests', 'buildConfigurationList': 'testList'},
+            'appList': {'buildConfigurations': ['debug', 'release']},
+            'testList': {'buildConfigurations': ['test']},
+            'debug': {'buildSettings': {'MARKETING_VERSION': '2.0.0', 'CURRENT_PROJECT_VERSION': '9'}},
+            'release': {'buildSettings': {'MARKETING_VERSION': '2.0.0', 'CURRENT_PROJECT_VERSION': '9'}},
+            'test': {'buildSettings': {'MARKETING_VERSION': '1.0', 'CURRENT_PROJECT_VERSION': '1'}},
+        }}
+        with patch.object(release, 'run', return_value=json.dumps(project)):
+            self.assertEqual(release.version(), ('2.0.0', 9))
+        project['objects']['release']['buildSettings']['CURRENT_PROJECT_VERSION'] = '10'
+        with patch.object(release, 'run', return_value=json.dumps(project)), self.assertRaises(ValueError):
+            release.version()
+
     def test_acceptance_must_bind_exact_candidate(self):
         state = {'commit': 'a' * 40, 'assets': {'app.dmg': {'sha256': 'b' * 64}}}
         evidence = dict(commit=state['commit'], dmg_sha256='b' * 64, decision='go', reviewer='maintainer',
