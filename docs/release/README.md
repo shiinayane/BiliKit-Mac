@@ -51,7 +51,7 @@ python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-U
   --notes /path/to/release-notes.md
 ```
 
-草稿绑定冻结 commit，上传最终 DMG、appcast 与 SHA256SUMS，不标记 Latest、不部署 feed。
+草稿绑定冻结 commit，只上传最终 DMG；appcast 与 SHA256SUMS 保留为本机发布元数据，不标记 Latest、不部署 feed。
 同名 Release 已存在则拒绝覆盖。上传中断时先核对远端各资产 digest，不能使用 `--clobber`。
 
 使用真实 HTTPS 浏览器下载候选，按 [CHECKLIST](CHECKLIST.md) 完成 Gatekeeper/离线、安装/升级/
@@ -85,7 +85,7 @@ python3 Scripts/release/release.py publish --output /private/tmp/bilikit-release
 ```
 
 脚本校验当前提交、main CI、绑定候选的验收裁决、草稿目标及所有远端资产 digest 后公开 Release。
-随后匿名重新下载、重验 hash/签名/公证/DMG 内 App，才在独立部署副本执行 npm ci、dry-run 和 deploy。
+随后匿名重新下载 DMG、重验 hash/签名/公证/DMG 内 App，才将本机签名 appcast 放入独立部署副本执行 npm ci、dry-run 和 deploy。
 最后验证线上 appcast 字节与公钥签名。顺序保证 feed 不指向不可访问的草稿资产。
 
 Wrangler 会发布到已有 `bilikit-updates` / `updates.shiinayane.com`；费用、缓存、DNS 与停止边界见

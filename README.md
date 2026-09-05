@@ -78,17 +78,17 @@ BiliKit 正在完成 v1 的日常观看闭环。首页个性推荐、热门、�
 
 ## 获取 BiliKit
 
-1. 打开 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases)，选择正式版本的 Universal DMG；
-   如只有 Pre-release，则当前仅提供测试版。
-2. 下载 DMG 与同一版本的 `SHA256SUMS`，按[分发说明](DISTRIBUTION.md)核对校验和。
-3. 打开 DMG，将 BiliKit 拖入“应用程序”，从“应用程序”启动。
+1. 从 [GitHub Releases](https://github.com/shiinayane/BiliKit-Mac/releases) 下载 BiliKit 的 DMG。
+2. 打开 DMG，将 BiliKit 拖入“应用程序”。
+3. 从“应用程序”启动 BiliKit。
+
+标有 Pre-release 的版本用于测试。
 
 需要 macOS 15 或更高版本，安装包包含 Apple Silicon（`arm64`）和 Intel（`x86_64`）架构。
 双架构构建与实际运行验证是不同证据；尚未完成的系统验证以发布说明为准。
 
 应用菜单提供“检查更新…”，也可设置自动检查及自动下载并安装。无更新器的旧 build 1 需要
-手动下载安装新版。更新失败时可从同一可信发布页手动安装更高 build 的签名公证版本；
-不要关闭 Gatekeeper 或移除 quarantine 来绕过校验。
+手动下载安装新版。更新失败时可从发布页下载新版，退出 BiliKit 后重新拖入“应用程序”安装。
 
 下载安装、卸载和恢复见[分发说明](DISTRIBUTION.md)，观看进度、凭据与更新网络请求见
 [隐私说明](PRIVACY.md)。
