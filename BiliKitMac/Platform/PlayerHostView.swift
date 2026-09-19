@@ -361,7 +361,7 @@ enum PlayerPlaybackPreparationPolicy {
     static func controlsStyle(
         blocksNativePlaybackInteraction: Bool
     ) -> AVPlayerViewControlsStyle {
-        blocksNativePlaybackInteraction ? .none : .floating
+        blocksNativePlaybackInteraction ? .none : .default
     }
 }
 

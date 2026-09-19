@@ -67,7 +67,7 @@ struct PlayerHostViewIdentityTests {
         )
 
         view.setPlaybackPreparationBlocked(false)
-        #expect(view.controlsStyle == .floating)
+        #expect(view.controlsStyle == .default)
         #expect(!view.isAccessibilityHidden())
 
         view.setPlaybackPreparationBlocked(true)
@@ -77,7 +77,7 @@ struct PlayerHostViewIdentityTests {
         #expect(view.isAccessibilityHidden())
 
         view.setPlaybackPreparationBlocked(false)
-        #expect(view.controlsStyle == .floating)
+        #expect(view.controlsStyle == .default)
         #expect(!view.isAccessibilityHidden())
     }
 
