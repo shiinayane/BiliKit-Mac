@@ -858,7 +858,7 @@ private final class NativePlaybackCommentRowView: NSView {
         authorLabel.maximumNumberOfLines = 1
         authorLabel.lineBreakMode = .byTruncatingTail
         metadataLabel.font = .preferredFont(forTextStyle: .callout)
-        metadataLabel.textColor = .tertiaryLabelColor
+        metadataLabel.textColor = .secondaryLabelColor
         metadataLabel.lineBreakMode = .byTruncatingTail
         likeImage.image = NSImage(
             systemSymbolName: "hand.thumbsup",
@@ -868,11 +868,11 @@ private final class NativePlaybackCommentRowView: NSView {
             pointSize: 12,
             weight: .regular
         )
-        likeImage.contentTintColor = .tertiaryLabelColor
+        likeImage.contentTintColor = .secondaryLabelColor
         likeImage.imageScaling = .scaleProportionallyDown
         likeImage.setAccessibilityElement(false)
         likeLabel.font = .preferredFont(forTextStyle: .callout)
-        likeLabel.textColor = .tertiaryLabelColor
+        likeLabel.textColor = .secondaryLabelColor
         likeLabel.alignment = .right
         likeLabel.setAccessibilityElement(false)
         unavailableLabel.font = .preferredFont(forTextStyle: .body)
