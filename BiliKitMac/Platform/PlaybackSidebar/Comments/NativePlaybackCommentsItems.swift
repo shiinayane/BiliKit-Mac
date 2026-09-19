@@ -467,7 +467,7 @@ private final class NativePlaybackCommentsStateView: NSView {
                 xRadius: 4,
                 yRadius: 4
             ).fill()
-            NSColor.quinaryLabel.setFill()
+            NSColor.quinaryLabelColor.setFill()
             NSBezierPath(
                 roundedRect: NSRect(x: 42, y: y + 20, width: contentWidth, height: 30),
                 xRadius: 4,
@@ -626,7 +626,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
                 xRadius: 4,
                 yRadius: 4
             ).fill()
-            NSColor.quinaryLabel.setFill()
+            NSColor.quinaryLabelColor.setFill()
             NSBezierPath(
                 roundedRect: NSRect(x: 42, y: y + 20, width: contentWidth, height: 30),
                 xRadius: 4,
