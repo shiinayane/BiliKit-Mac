@@ -87,7 +87,7 @@ def ci(commit):
     require(runs and runs[0]['head_branch'] == 'main' and runs[0]['conclusion'] == 'success', '冻结提交必须具有通过的 main push CI')
     jobs = json.loads(run('gh', 'api', runs[0]['jobs_url']))['jobs']
     require(all(any(j['name'] == f'Build and test ({osname})' and j['conclusion'] == 'success' for j in jobs)
-                for osname in ('macos-15-intel', 'macos-26')), '缺少双平台 CI 成功证据')
+                for osname in ('macos-15', 'macos-26', 'macos-27')), '缺少三个 macOS 环境的 CI 成功证据')
     return runs[0]['html_url']
 
 
@@ -125,6 +125,13 @@ def files(app):
             for p in sorted(app.rglob('*')) if p.is_symlink() or p.is_file()}
 
 
+def verify_architectures(architectures, *, is_app):
+    actual = set(architectures)
+    # Keep official Sparkle binaries intact; the App executable defines hardware support.
+    require(actual == {'arm64'} if is_app else actual in ({'arm64'}, {'arm64', 'x86_64'}),
+            'App 必须仅含 arm64；嵌套组件必须支持 arm64 且不得包含未知架构')
+
+
 def verify_app(app, state, notarized=True):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], int(info['CFBundleVersion']), info['LSMinimumSystemVersion']) ==
@@ -137,7 +144,7 @@ def verify_app(app, state, notarized=True):
     for path in sorted(app.rglob('*')):
         if path.is_symlink() or not path.is_file() or 'Mach-O' not in run('file', '-b', path):
             continue
-        require(set(run('lipo', '-archs', path).split()) == {'arm64', 'x86_64'}, '缺少 Universal slice')
+        verify_architectures(run('lipo', '-archs', path).split(), is_app=path == app / 'Contents/MacOS/BiliKit')
         signature = run('codesign', '-dvv', path)
         require('TeamIdentifier=' + TEAM in signature and 'Authority=' + IDENTITY in signature
                 and 'runtime' in signature and 'Timestamp=' in signature, '嵌套签名/runtime/timestamp 错误')
@@ -262,7 +269,7 @@ def prepare(out):
     save(out / 'app-files.json', files(app))
     staging = out / 'assets'
     staging.mkdir(exist_ok=True)
-    dmg = staging / f"BiliKit-{state['version']}-{state['build']}-universal.dmg"
+    dmg = staging / f"BiliKit-{state['version']}-{state['build']}-arm64.dmg"
     def make_dmg():
         require(not dmg.exists(), '拒绝覆盖 DMG')
         tool = scratch / 'dmg-tool'
@@ -299,7 +306,7 @@ def validate_candidate_assets(out, state):
     item = items[0]
     require(item.findtext('s:version', namespaces=feed.NS) == str(state['build']) and
             item.findtext('s:shortVersionString', namespaces=feed.NS) == state['version'], 'feed 与冻结版本不一致')
-    filename = f"BiliKit-{state['version']}-{state['build']}-universal.dmg"
+    filename = f"BiliKit-{state['version']}-{state['build']}-arm64.dmg"
     require(item.find('enclosure').get('url') == f"https://github.com/{REPO}/releases/download/{state['tag']}/{filename}",
             '候选 feed 与 tag/DMG URL 不一致')
     checksum = ''.join(f"{v['sha256']}  {k}\n" for k, v in state['assets'].items())

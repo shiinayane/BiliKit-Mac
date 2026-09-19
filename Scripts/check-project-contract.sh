@@ -58,15 +58,20 @@ expect_count 2 'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' "$
 expect_count 6 'DEVELOPMENT_TEAM = 2B3LZ256AG;' "$project" "Project 与 target 必须使用正式开发团队"
 expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;' "$project" "App Bundle Identifier 不一致"
 expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
-expect_count 2 'MARKETING_VERSION = 1.0.0;' "$project" "V1 marketing version 必须使用三段版本号"
-expect_count 2 'CURRENT_PROJECT_VERSION = 4;' "$project" "正式候选 App build 必须递增为 4"
+expect_count 2 'MARKETING_VERSION = 1.0.1;' "$project" "V1 marketing version 必须使用三段版本号"
+expect_count 2 'CURRENT_PROJECT_VERSION = 5;' "$project" "正式候选 App build 必须递增为 5"
 expect_count 2 'CURRENT_PROJECT_VERSION = 1;' "$project" "测试 target build number 不一致"
 expect_count 2 'INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";' "$project" "App 类别元数据不一致"
 expect_count 2 'INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";' "$project" "App 版权元数据不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
-expect_count 1 'ARCHS = (' "$project" "Release 必须显式声明架构列表"
-expect_count 1 'arm64,' "$project" "Release 架构列表必须包含 arm64"
-expect_count 1 'x86_64,' "$project" "Release 架构列表必须包含 x86_64"
+/usr/bin/plutil -convert json -o - "$project" | python3 -c '
+import json, sys
+objects = json.load(sys.stdin)["objects"].values()
+configs = [obj for obj in objects if "ARCHS" in obj.get("buildSettings", {})]
+valid = (len(configs) == 1 and configs[0].get("name") == "Release"
+         and configs[0]["buildSettings"]["ARCHS"] in ("arm64", ["arm64"]))
+sys.exit(0 if valid else 1)
+' || fail "Release 必须显式且仅指定 arm64 架构"
 expect_count 1 'ONLY_ACTIVE_ARCH = NO;' "$project" "Release 不得只构建当前机器架构"
 expect_count 0 '.typesettingLanguage(' "$app" "App 根不得强制内容排版语言"
 expect_count 0 '.environment(\.locale' "$app" "App 根不得强制界面 locale"
@@ -81,7 +86,7 @@ deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/
 set -- $deployment
 [ "$1" -gt 0 ] && [ "$2" -eq 0 ] || fail "Xcode target 必须统一支持 macOS 15"
 expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
-expect_count 1 'DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer' "$ci_workflow" "CI 必须显式使用统一的新 Xcode"
+expect_count 1 'DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer' "$ci_workflow" "CI 必须按矩阵选择 Xcode"
 expect_count 0 '#if compiler(>=6.2)' "$app_source_roots" "搜索栏不得为旧 SDK 保留编译期回退"
 expect_count 0 '#if compiler(>=6.2)' "$player_host" "播放器提示不得为旧 SDK 保留编译期回退"
 

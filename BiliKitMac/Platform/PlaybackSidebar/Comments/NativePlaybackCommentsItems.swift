@@ -467,7 +467,7 @@ private final class NativePlaybackCommentsStateView: NSView {
                 xRadius: 4,
                 yRadius: 4
             ).fill()
-            NSColor.quinaryLabel.setFill()
+            NativePlaybackSkeletonColor.detailFill.setFill()
             NSBezierPath(
                 roundedRect: NSRect(x: 42, y: y + 20, width: contentWidth, height: 30),
                 xRadius: 4,
@@ -626,7 +626,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
                 xRadius: 4,
                 yRadius: 4
             ).fill()
-            NSColor.quinaryLabel.setFill()
+            NativePlaybackSkeletonColor.detailFill.setFill()
             NSBezierPath(
                 roundedRect: NSRect(x: 42, y: y + 20, width: contentWidth, height: 30),
                 xRadius: 4,
@@ -858,7 +858,7 @@ private final class NativePlaybackCommentRowView: NSView {
         authorLabel.maximumNumberOfLines = 1
         authorLabel.lineBreakMode = .byTruncatingTail
         metadataLabel.font = .preferredFont(forTextStyle: .callout)
-        metadataLabel.textColor = .tertiaryLabelColor
+        metadataLabel.textColor = .secondaryLabelColor
         metadataLabel.lineBreakMode = .byTruncatingTail
         likeImage.image = NSImage(
             systemSymbolName: "hand.thumbsup",
@@ -868,11 +868,11 @@ private final class NativePlaybackCommentRowView: NSView {
             pointSize: 12,
             weight: .regular
         )
-        likeImage.contentTintColor = .tertiaryLabelColor
+        likeImage.contentTintColor = .secondaryLabelColor
         likeImage.imageScaling = .scaleProportionallyDown
         likeImage.setAccessibilityElement(false)
         likeLabel.font = .preferredFont(forTextStyle: .callout)
-        likeLabel.textColor = .tertiaryLabelColor
+        likeLabel.textColor = .secondaryLabelColor
         likeLabel.alignment = .right
         likeLabel.setAccessibilityElement(false)
         unavailableLabel.font = .preferredFont(forTextStyle: .body)

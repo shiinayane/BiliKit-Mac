@@ -36,7 +36,7 @@
 
 固定包未提供独立 `PrivacyInfo.xcprivacy`；App 现有声明包含本 App 偏好使用的 UserDefaults
 理由。当前禁用 Sparkle profiling，未引入分析 SDK。最终 Archive 的隐私报告、嵌套签名、
-两种架构和实际网络元数据仍需复核，不能由源码或无签名测试替代。
+目标架构（1.0.1 起 App 仅 arm64，官方嵌套组件需包含 arm64）和实际网络元数据仍需复核，不能由源码或无签名测试替代。
 
 官方依据：
 [Sparkle 2.9.6](https://github.com/sparkle-project/Sparkle/releases/tag/2.9.6)、

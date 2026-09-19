@@ -5,7 +5,7 @@
 
 ## 来源与版本
 
-- Marketing version：`1.0.0`
+- Marketing version：`1.0.1`
 - Build number：`从冻结工程读取`
 - Git commit／tree clean：`待填写`
 - Bundle ID：`com.shiinayane.BiliKit`
@@ -25,7 +25,7 @@
 
 - Archive UUID／受控存档位置：`待填写`
 - Configuration：`Release`
-- App／全部嵌套 Mach-O：`arm64 + x86_64；待从成品读取`
+- App／全部嵌套 Mach-O：`App 仅 arm64；嵌套组件包含 arm64（允许官方双架构）；待从成品读取`
 - Developer ID certificate SHA-256／serial／到期：`待填写；禁止记录私钥`
 - Hardened Runtime／secure timestamp：`待验证`
 - 有效 entitlements／designated requirement：`待验证`
@@ -44,7 +44,7 @@
 
 - HTTPS quarantine／Gatekeeper／离线 ticket：`待填写`
 - fresh／upgrade／duplicate／different-user／删除重装：`待填写`
-- Apple Silicon／真实 Intel macOS 15：`待填写`
+- Apple Silicon macOS 15／当前 macOS：`待填写`
 - 登录／Keychain／loopback／字幕／弹幕／退出清理：`待填写`
 - 未验证边界：`待填写`
 - Go／No-Go 与复核人：`待填写`

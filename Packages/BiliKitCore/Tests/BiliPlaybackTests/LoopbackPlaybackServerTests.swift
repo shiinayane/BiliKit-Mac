@@ -2702,15 +2702,15 @@ struct LoopbackPlaybackServerTests {
         }
         let authoredSubtitle = try #require(
             group.options.first {
-                !$0.hasMediaCharacteristic(machineGenerated)
+                $0.extendedLanguageTag == "zh"
+                    && !$0.hasMediaCharacteristic(machineGenerated)
             }
         )
-        // AVFoundation may localize or collapse display names differently
-        // across OS releases; exact HLS names stay covered at the builder and
-        // localized metadata boundaries.
-        #expect(group.options.count == 3)
+        // System-generated translations may add options beyond the source catalog.
+        // Source rendition counts and attributes stay strict in HLS builder tests.
+        #expect(automaticSubtitles.contains { $0.extendedLanguageTag == "zh" })
+        #expect(automaticSubtitles.contains { $0.extendedLanguageTag == "en" })
         #expect(group.options.allSatisfy { !$0.displayName.isEmpty })
-        #expect(automaticSubtitles.count == 2)
         #expect(localizedNames["中文"]?["zh"] == "中文")
         #expect(localizedNames["中文（AI）"]?["zh"] == "中文")
         #expect(localizedNames["English（AI）"]?["en"] == "English")

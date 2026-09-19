@@ -133,7 +133,7 @@ final class DanmakuTexturePreparationOwner {
 
         let rasterize = rasterize
         let operation = BlockOperation()
-        operation.addExecutionBlock { [weak operation] in
+        operation.addExecutionBlock { [weak operation, weak self] in
             guard operation?.isCancelled == false else { return }
             let payload = rasterize(key)
             guard operation?.isCancelled == false else { return }

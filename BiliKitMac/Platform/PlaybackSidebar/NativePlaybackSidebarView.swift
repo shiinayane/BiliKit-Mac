@@ -1607,7 +1607,7 @@ final class NativePlaybackSidebarOverlayView: NSView {
             NSRect(x: 16, y: 250, width: availableWidth, height: 26),
         ]
         for (index, rect) in rects.enumerated() {
-            (index < 2 ? NSColor.quaternaryLabelColor : NSColor.quinaryLabel)
+            (index < 2 ? NSColor.quaternaryLabelColor : NativePlaybackSkeletonColor.detailFill)
                 .setFill()
             NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
         }

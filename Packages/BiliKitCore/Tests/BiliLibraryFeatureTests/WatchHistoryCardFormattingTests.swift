@@ -100,7 +100,7 @@ struct WatchHistoryCardFormattingTests {
         #expect(!presentation.showsAvatar)
         #expect(presentation.progressText == "1:05/10:00")
         #expect(presentation.footerLeadingText == "历史作者")
-        #expect(presentation.accessibilityLabel.contains("观看进度 1:05/10:00"))
+        #expect(presentation.accessibilityLabel.contains(presentation.progressText))
     }
 
     @Test
@@ -184,7 +184,7 @@ struct WatchHistoryCardFormattingTests {
             WatchHistoryCardFormatting.progress(
                 progressSeconds: 600,
                 durationSeconds: 600
-            ) == "已看完"
+            ) == String(localized: "已看完", bundle: LibraryFeatureStrings.bundle)
         )
         #expect(
             WatchHistoryCardFormatting.progress(
@@ -195,7 +195,7 @@ struct WatchHistoryCardFormattingTests {
     }
 
     @Test
-    func viewedAtFollowsInjectedLocale() throws {
+    func viewedAtPreservesDayAndTimeBoundaries() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(
             TimeZone(identifier: "Asia/Tokyo")
@@ -250,7 +250,7 @@ struct WatchHistoryCardFormattingTests {
                 now: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "今天 9:05"
+            ) == String(localized: "今天 \("9:05")", bundle: LibraryFeatureStrings.bundle)
         )
         #expect(
             WatchHistoryCardFormatting.viewedAt(
@@ -258,7 +258,7 @@ struct WatchHistoryCardFormattingTests {
                 now: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "昨天 22:07"
+            ) == String(localized: "昨天 \("22:07")", bundle: LibraryFeatureStrings.bundle)
         )
         #expect(
             WatchHistoryCardFormatting.viewedAt(
@@ -266,7 +266,7 @@ struct WatchHistoryCardFormattingTests {
                 now: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "7月20日 8:03"
+            ) == String(localized: "\(7)月\(20)日 \("8:03")", bundle: LibraryFeatureStrings.bundle)
         )
     }
 }

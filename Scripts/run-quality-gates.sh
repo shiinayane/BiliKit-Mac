@@ -81,25 +81,38 @@ derived_data="$artifact_root/DerivedData"
 packages="$artifact_root/SourcePackages"
 mkdir -p "$xcode_home"
 
-echo "[Gate] app build-for-testing"
-# Xcode 26 misdiagnoses explicit local-package edges during build-for-testing.
-HOME="$xcode_home" \
-CFFIXED_USER_HOME="$xcode_home" \
-XDG_CACHE_HOME="$xcode_home/.cache" \
-TMPDIR="$task_tmp" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
-SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-xcodebuild \
-    -quiet \
-    -project BiliKitMac.xcodeproj \
-    -scheme BiliKitMac \
-    -configuration Debug \
-    -destination 'platform=macOS' \
-    -derivedDataPath "$derived_data" \
-    -clonedSourcePackagesDirPath "$packages" \
-    CODE_SIGNING_ALLOWED=NO \
-    SWIFT_ENABLE_EXPLICIT_MODULES=NO \
-    build-for-testing
+if [ -n "${BILIKIT_TEST_PRODUCTS_INPUT:-}" ]; then
+    echo "[Gate] import app test products"
+    mkdir -p "$derived_data/Build/Products"
+    tar -xf "$BILIKIT_TEST_PRODUCTS_INPUT" -C "$derived_data/Build/Products"
+else
+    echo "[Gate] app build-for-testing"
+    # Xcode 26 misdiagnoses explicit local-package edges during build-for-testing.
+    HOME="$xcode_home" \
+    CFFIXED_USER_HOME="$xcode_home" \
+    XDG_CACHE_HOME="$xcode_home/.cache" \
+    TMPDIR="$task_tmp" \
+    CLANG_MODULE_CACHE_PATH="$module_cache" \
+    SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
+    xcodebuild \
+        -quiet \
+        -project BiliKitMac.xcodeproj \
+        -scheme BiliKitMac \
+        -configuration Debug \
+        -destination 'platform=macOS' \
+        -derivedDataPath "$derived_data" \
+        -clonedSourcePackagesDirPath "$packages" \
+        CODE_SIGNING_ALLOWED=NO \
+        SWIFT_ENABLE_EXPLICIT_MODULES=NO \
+        build-for-testing
+fi
+
+set -- "$derived_data"/Build/Products/*.xctestrun
+[ "$#" -eq 1 ] && [ -f "$1" ] || {
+    echo "需要唯一的 App 测试运行配置" >&2
+    exit 1
+}
+test_run="$1"
 
 echo "[Gate] app tests"
 HOME="$xcode_home" \
@@ -110,15 +123,14 @@ CLANG_MODULE_CACHE_PATH="$module_cache" \
 SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
 xcodebuild \
     -quiet \
-    -project BiliKitMac.xcodeproj \
-    -scheme BiliKitMac \
-    -configuration Debug \
+    -xctestrun "$test_run" \
     -destination 'platform=macOS' \
     -derivedDataPath "$derived_data" \
-    -clonedSourcePackagesDirPath "$packages" \
-    CODE_SIGNING_ALLOWED=NO \
-    SWIFT_ENABLE_EXPLICIT_MODULES=NO \
     test-without-building \
     -only-testing:BiliKitMacTests
+
+if [ -n "${BILIKIT_TEST_PRODUCTS_OUTPUT:-}" ]; then
+    tar -cf "$BILIKIT_TEST_PRODUCTS_OUTPUT" -C "$derived_data/Build/Products" .
+fi
 
 echo "[Gate] app passed"

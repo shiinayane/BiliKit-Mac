@@ -19,16 +19,22 @@ concurrency:
 jobs:
   build-and-test:
     name: Build and test (${{ matrix.os }})
+    outputs:
+      gate-mode: ${{ steps.quality-gate.outputs.mode }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-15-intel
-          - macos-26
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: macos-26
+            runner: macos-26
+            xcode: '26.3'
+          - os: macos-27
+            runner: xcode-27
+            xcode: '27.0'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
 
     steps:
       - name: Check out repository
@@ -70,4 +76,46 @@ jobs:
           echo "Selected quality gate: ${mode}"
 
       - name: Run selected quality gate (includes strict Swift format lint)
+        env:
+          BILIKIT_TEST_PRODUCTS_OUTPUT: ${{ matrix.os == 'macos-26' && format('{0}/app-tests.tar', runner.temp) || '' }}
         run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"
+
+      - name: Share app test products for macOS 15
+        if: matrix.os == 'macos-26' && steps.quality-gate.outputs.mode == 'app'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: app-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/app-tests.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  test-macos-15:
+    name: Build and test (macos-15)
+    needs: build-and-test
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Retrieve app test products from this workflow
+        if: needs.build-and-test.outputs.gate-mode == 'app'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: app-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/app-tests
+
+      # Compile Package tests locally; run the same App binaries built on macOS 26.
+      # Icon Composer's asset compiler crashes on the macOS 15 ARM runner.
+      - name: Run quality gate with prebuilt app tests
+        env:
+          BILIKIT_TEST_PRODUCTS_INPUT: ${{ runner.temp }}/app-tests/app-tests.tar
+        run: sh Scripts/run-quality-gates.sh "${{ needs.build-and-test.outputs.gate-mode }}"

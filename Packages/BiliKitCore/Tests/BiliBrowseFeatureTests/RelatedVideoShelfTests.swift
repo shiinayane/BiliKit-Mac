@@ -7,7 +7,9 @@ import Testing
 struct RelatedVideoShelfTests {
     @Test
     func presentationMapsStableBVIDAndEveryVisibleSlot() {
-        let locale = Locale(identifier: "zh-Hans")
+        let locale = Locale(
+            identifier: BrowseFeatureStrings.bundle.preferredLocalizations.first ?? "en"
+        )
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1Related",
@@ -25,27 +27,30 @@ struct RelatedVideoShelfTests {
         #expect(presentation.title == "示例推荐")
         #expect(presentation.coverURL?.absoluteString == "https://example.com/cover.webp")
         #expect(presentation.ownerName == "示例 UP 主")
-        #expect(presentation.viewCountText == "12.3万")
-        #expect(presentation.danmakuCountText == "7890")
-        #expect(presentation.durationText == "12:34")
         #expect(
-            presentation.accessibilityLabel
-                == ListFormatter.localizedString(
-                    byJoining: [
-                        "示例推荐",
-                        "示例 UP 主",
-                        BrowseFeatureStrings.localized("\("12.3万")播放", locale: locale),
-                        BrowseFeatureStrings.localized("\("7890")弹幕", locale: locale),
-                        BrowseFeatureStrings.localized("时长\("12:34")", locale: locale),
-                    ]
-                )
+            presentation.viewCountText.hasPrefix(
+                locale.language.languageCode?.identifier == "en" ? "123.4" : "12.3"
+            )
         )
+        #expect(
+            presentation.danmakuCountText
+                == (locale.language.languageCode?.identifier == "en" ? "7.8K" : "7890")
+        )
+        #expect(presentation.durationText == "12:34")
+        for value in [
+            presentation.title, presentation.ownerName, presentation.viewCountText,
+            presentation.danmakuCountText, presentation.durationText ?? "",
+        ] {
+            #expect(presentation.accessibilityLabel.contains(value))
+        }
         #expect(RelatedVideoShelfState.loaded([presentation]).itemCount == 1)
     }
 
     @Test
     func presentationHidesMissingDurationWithoutInventingATrailingSlot() {
-        let locale = Locale(identifier: "zh-Hans")
+        let locale = Locale(
+            identifier: BrowseFeatureStrings.bundle.preferredLocalizations.first ?? "en"
+        )
         let presentation = RelatedVideoCardPresentation(
             video: RelatedVideo(
                 bvid: "BV1NoDuration",

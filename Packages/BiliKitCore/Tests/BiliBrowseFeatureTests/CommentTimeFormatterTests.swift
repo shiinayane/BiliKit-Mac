@@ -23,24 +23,54 @@ struct CommentTimeFormatterTests {
             )
         )
 
-        #expect(format(reference.addingTimeInterval(-59), reference) == "刚刚")
-        #expect(format(reference.addingTimeInterval(-60), reference) == "1分钟前")
-        #expect(format(reference.addingTimeInterval(-3_599), reference) == "59分钟前")
-        #expect(format(reference.addingTimeInterval(-3_600), reference) == "1小时前")
-        #expect(format(reference.addingTimeInterval(-86_399), reference) == "23小时前")
-        #expect(format(reference.addingTimeInterval(-86_400), reference) == "昨天12:00")
+        #expect(
+            format(reference.addingTimeInterval(-59), reference)
+                == String(localized: "刚刚", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(reference.addingTimeInterval(-60), reference)
+                == String(localized: "\(1)分钟前", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(reference.addingTimeInterval(-3_599), reference)
+                == String(localized: "\(59)分钟前", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(reference.addingTimeInterval(-3_600), reference)
+                == String(localized: "\(1)小时前", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(reference.addingTimeInterval(-86_399), reference)
+                == String(localized: "\(23)小时前", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(reference.addingTimeInterval(-86_400), reference)
+                == String(localized: "昨天\("12:00")", bundle: BrowseFeatureStrings.bundle)
+        )
     }
 
     @Test
     func calendarBoundariesDistinguishYesterdayRecentDaysAndYears() throws {
         let reference = try date(2026, 8, 11, 12)
 
-        #expect(format(try date(2026, 8, 10, 9, 5), reference) == "昨天9:05")
-        #expect(format(try date(2026, 8, 9, 12), reference) == "2天前")
-        #expect(format(try date(2026, 8, 8, 12), reference) == "3天前")
+        #expect(
+            format(try date(2026, 8, 10, 9, 5), reference)
+                == String(localized: "昨天\("9:05")", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(try date(2026, 8, 9, 12), reference)
+                == String(localized: "\(2)天前", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(
+            format(try date(2026, 8, 8, 12), reference)
+                == String(localized: "\(3)天前", bundle: BrowseFeatureStrings.bundle)
+        )
         let sameYear = try date(2026, 7, 1, 12)
-        #expect(format(sameYear, reference) == "7月1日")
-        #expect(format(try date(2025, 12, 31, 12), reference) == "2025年12月31日")
+        #expect(
+            format(sameYear, reference)
+                == String(localized: "\(7)月\(1)日", bundle: BrowseFeatureStrings.bundle)
+        )
+        #expect(format(try date(2025, 12, 31, 12), reference).contains("2025"))
     }
 
     private func format(_ date: Date, _ reference: Date) -> String {

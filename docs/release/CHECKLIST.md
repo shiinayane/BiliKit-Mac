@@ -18,12 +18,12 @@
 - [ ] 冻结发布复核、账号恢复、证书泄漏和坏版本前向修复 owner。
 - [ ] 冻结下载页、许可、卸载、隐私和人工恢复说明。
 
-## B. 当前正式发布候选（含 Sparkle）
+## B. 当前正式发布候选 1.0.1 (5)（仅 Apple Silicon，含 Sparkle）
 
 - [ ] 从 clean commit 运行 App Gate 并复制 manifest。
 - [ ] 记录 Xcode、SDK、Swift、依赖锁、版本、build 与 commit。
 - [ ] Release archive 是 macOS App Archive，Products 只有预期 App。
-- [ ] App 与全部嵌套 Mach-O 都包含 `arm64 + x86_64`。
+- [ ] App 主程序仅含 `arm64`；全部嵌套 Mach-O 包含 `arm64`，允许官方 Sparkle 双架构组件。
 - [ ] Developer ID identity、Hardened Runtime、secure timestamp 与嵌套签名正确。
 - [ ] 有效 entitlement 与 profile（若有）只授权精确 App ID、Keychain 和当前最小能力。
 - [ ] 不存在 `get-task-allow`、多余文件权限、App Group 或 Hardened Runtime exception。
@@ -40,7 +40,7 @@
 - [ ] 浏览器 HTTPS 下载产生真实 quarantine，Gatekeeper 首启和二次启动通过。
 - [ ] fresh、upgrade、duplicate、different-user、DMG 内启动、移动后启动和离线 ticket 通过。
 - [ ] Apple Silicon macOS 15／当前 macOS 的最小产品路径通过。
-- [ ] 真实 Intel macOS 15 的同一最小产品路径通过。
+- 1.0.0 为最后一个 Universal；1.0.1 不再验证 Intel 安装或新增旧用户更新隔离（ADR 0014）。
 - [ ] 隔离凭据下登录、Keychain 恢复、登出、Finder 删除、重装和覆盖升级通过。
 - [ ] loopback 播放、seek、字幕、弹幕、媒体替换和退出清理通过。
 

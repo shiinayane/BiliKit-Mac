@@ -84,7 +84,7 @@ BiliKit 1.0.0 已正式发布。首页个性推荐、热门、搜索、二维码
 
 标有 Pre-release 的版本用于测试。
 
-需要 macOS 15 或更高版本，安装包包含 Apple Silicon（`arm64`）和 Intel（`x86_64`）架构。
+需要 macOS 15 或更高版本。当前已发布的 1.0.0 是最后一个 Universal 版本，支持 Apple Silicon 与 Intel；下一版本 1.0.1 起仅支持 Apple Silicon（`arm64`），不再支持 Intel Mac。
 
 应用菜单提供“检查更新…”，也可设置自动检查及自动下载并安装。无更新器的旧 build 1 需要
 手动下载安装新版。更新失败时可从发布页下载新版，退出 BiliKit 后重新拖入“应用程序”安装。
