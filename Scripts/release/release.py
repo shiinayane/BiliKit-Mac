@@ -87,7 +87,7 @@ def ci(commit):
     require(runs and runs[0]['head_branch'] == 'main' and runs[0]['conclusion'] == 'success', '冻结提交必须具有通过的 main push CI')
     jobs = json.loads(run('gh', 'api', runs[0]['jobs_url']))['jobs']
     require(all(any(j['name'] == f'Build and test ({osname})' and j['conclusion'] == 'success' for j in jobs)
-                for osname in ('macos-15', 'macos-26', 'xcode-27')), '缺少三个 macOS 环境的 CI 成功证据')
+                for osname in ('macos-15', 'macos-26', 'macos-27')), '缺少三个 macOS 环境的 CI 成功证据')
     return runs[0]['html_url']
 
 

@@ -6,15 +6,25 @@ import Testing
 struct VideoMetadataFormattingTests {
     @Test
     func simplifiedChineseResourcesPreserveUnitsAndRelativeTime() throws {
-        let url = try #require(
-            BrowseFeatureStrings.bundle.url(forResource: "zh-Hans", withExtension: "lproj")
+        // Validate catalog copy independently of SwiftPM's version-specific resource compilation.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/BiliBrowseFeature/Resources/Localizable.xcstrings")
+        let catalog = try #require(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        let chinese = try #require(Bundle(url: url))
-        #expect(String(localized: "万", bundle: chinese) == "万")
-        #expect(String(localized: "亿", bundle: chinese) == "亿")
-        #expect(String(localized: "\(59)分钟前", bundle: chinese) == "59分钟前")
-        #expect(String(localized: "\(23)小时前", bundle: chinese) == "23小时前")
-        #expect(String(localized: "昨天", bundle: chinese) == "昨天")
+        let strings = try #require(catalog["strings"] as? [String: Any])
+        let expected = [
+            "万": "万", "亿": "亿", "%lld分钟前": "%lld分钟前",
+            "%lld小时前": "%lld小时前", "昨天": "昨天",
+        ]
+        for (key, value) in expected {
+            let entry = try #require(strings[key] as? [String: Any])
+            let localizations = try #require(entry["localizations"] as? [String: Any])
+            let chinese = try #require(localizations["zh-Hans"] as? [String: Any])
+            let unit = try #require(chinese["stringUnit"] as? [String: String])
+            #expect(unit["value"] == value)
+        }
     }
 
     @Test

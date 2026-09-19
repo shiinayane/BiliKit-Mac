@@ -27,7 +27,7 @@ class ReleaseSafetyTests(unittest.TestCase):
         runs = {'workflow_runs': [{'head_branch': 'main', 'conclusion': 'success',
                                   'jobs_url': 'jobs', 'html_url': 'run'}]}
         jobs = [{'name': f'Build and test ({osname})', 'conclusion': 'success'}
-                for osname in ('macos-15', 'macos-26', 'xcode-27')]
+                for osname in ('macos-15', 'macos-26', 'macos-27')]
         with patch.object(release, 'run', side_effect=[json.dumps(runs), json.dumps({'jobs': jobs})]):
             self.assertEqual(release.ci('a' * 40), 'run')
         with patch.object(release, 'run', side_effect=[json.dumps(runs), json.dumps({'jobs': jobs[:2]})]), self.assertRaises(ValueError):
