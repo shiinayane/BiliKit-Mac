@@ -13,13 +13,15 @@
 
 ## V1 分发
 
-- [`release/README.md`](./release/README.md)：Developer ID、签名、公证、DMG、Gatekeeper、Intel、
+- [`release/README.md`](./release/README.md)：Developer ID、签名、公证、DMG、Gatekeeper、Apple Silicon、
   Sparkle 与 Cloudflare 的当前决策和严格实施顺序。
 - [`release/CHECKLIST.md`](./release/CHECKLIST.md)：发布候选逐项 Gate。
 - [`release/MANIFEST.md`](./release/MANIFEST.md)：每个不可变发布候选的版本、工具链、签名、公证
   和最终分发物证据模板。
 - [`adr/0013-v1-universal-developer-id-distribution.md`](./adr/0013-v1-universal-developer-id-distribution.md)：
-  V1 Developer ID 成品采用 `arm64 + x86_64` Universal，并保留真实 Intel 发布 Gate。
+  1.0.0 的 Universal 历史决策。
+- [`adr/0014-apple-silicon-only-distribution.md`](./adr/0014-apple-silicon-only-distribution.md)：
+  1.0.1 起仅支持 Apple Silicon，最低 macOS 15。
 
 无更新器 build 1 与 Sparkle build 2/3 已完成各自签名公证，本机正常升级由用户确认。
 正式候选仍从新干净提交构建并检查最终签名身份、profile 与 Keychain 范围；历史 Apple 工单

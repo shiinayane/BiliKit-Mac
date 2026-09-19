@@ -2,14 +2,14 @@
 
 当前入口为 `python3 Scripts/release/release.py`。发布工作在独立 managed worktree 进行，
 使用本机 Keychain 中既有 Developer ID、`BiliKit-Notary` 和 Sparkle EdDSA key。
-GitHub Actions 负责 macOS 15 Intel 与 macOS 26 检查，不托管签名私钥。
+GitHub Actions 负责 macOS 15、26、27 Apple Silicon 检查（27 使用 `xcode-27` 预览 runner），不托管签名私钥。
 
 ## 冻结与前提
 
-- App `BiliKit`，Bundle ID `com.shiinayane.BiliKit`，Team `2B3LZ256AG`，macOS 15+ Universal。
-- 当前正式版本 `1.0.0 (4)`；未来修改工程版本/build 与 `check-project-contract.sh`，build 全局递增。
-- 本次用户已授权提交、PR、合并和正式发布；授权不把未取得的测试证据变成通过。
-- 先合并源码，等待同一提交的 main push CI 两个平台成功，再冻结干净最新 main。
+- App `BiliKit`，Bundle ID `com.shiinayane.BiliKit`，Team `2B3LZ256AG`，macOS 15+、Apple Silicon only（1.0.1 起）。
+- 当前正式版本 `1.0.0 (4)` 为最后一个 Universal；下一候选 `1.0.1 (5)` 为 ARM-only，build 全局递增。
+- 提交、PR、合并和正式发布需当前任务授权；历史发布授权不自动延续。
+- 先合并源码，等待同一提交的 main push CI 三个环境成功，再冻结干净最新 main。
 - 使用完整版 Xcode、Python 3、gh、Node **22.22.3**。DMG 工具固定 create-dmg **8.1.0** 及依赖锁；
   原生 macos-alias 与 Node ABI 必须一致。默认 Finder 布局保持 660×400、160pt 图标和 Applications 链接。
 - `gh` 与 Wrangler 在发布机完成登录；不把凭据写入参数、仓库或聊天。
@@ -33,8 +33,8 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
 Developer ID 与 notary credential。旧同名草稿需先人工核对并保留为历史草稿；脚本不自动删草稿或移动 tag。
 
 `prepare` 顺序执行一次 App Gate、Release archive、Developer ID export、App 公证/装订、
-DMG 制作/签名/公证/装订、双架构/entitlement/包内文件核对、Sparkle 官方工具签名和校验和生成。
-仅完整安装包，无 delta。新 feed 只列当前候选；旧公开 Release/URL 保留，可从 build 2/3 正常前向更新。
+DMG 制作/签名/公证/装订、arm64 架构/entitlement/包内文件核对、Sparkle 官方工具签名和校验和生成。
+仅完整安装包，无 delta。新 feed 只列当前候选；旧公开 Release/URL 保留。1.0.1 不新增 Intel 更新隔离或迁移流程，见 ADR 0014；不承诺旧 Intel 客户端的更新行为。
 
 候选目录保存 `release.json` 阶段状态、阶段日志、Archive、export、逐文件哈希、完整公证日志和
 `assets/{DMG,appcast.xml,SHA256SUMS}`。公开资产不含本机路径或 Apple 账号诊断。
@@ -66,7 +66,7 @@ python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-U
   "reviewer": "复核人",
   "evidence": "当前候选的验收记录路径与未覆盖边界",
   "real_install": false,
-  "intel_macos15": false,
+  "apple_silicon_macos15": false,
   "signed_keychain": false,
   "sparkle_failure_matrix": false
 }

@@ -22,7 +22,7 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
 ## 当前产品与工程基线
 
 - Swift 6、SwiftUI、AppKit 与 AVPlayer-first，最低 macOS 15。
-- V1 Developer ID 成品为 `arm64 + x86_64` Universal App，签名与公证已完成。
+- 已发布的 1.0.0 为最后一个 Universal App；1.0.1 候选起仅支持 Apple Silicon，最低 macOS 15（ADR 0014）。
 - 首页个性推荐、热门、搜索、二维码登录、观看历史和各自窗口内工作集已经接入；普通切换和从播放页
   返回不会把已成功内容退回首次加载。
 - 视频页保持单一 player host，支持分 P、自动画质、seek、倍速、系统字幕、弹幕、语义音轨、
@@ -37,7 +37,7 @@ BiliKit 是原生、macOS-first、非官方的 B 站浏览与播放客户端。V
   同样为默认关闭的实验能力。
 
 当前 target、product、依赖和 entitlement 以 `Packages/BiliKitCore/Package.swift`、Xcode 工程与
-质量 Gate 为准；本文不复制易漂移的源码行号或测试数量。持久架构与安全决策见 ADR 0001–0013。
+质量 Gate 为准；本文不复制易漂移的源码行号或测试数量。持久架构与安全决策见 ADR 0001–0014。
 
 ## 当前阶段：V1 正式分发与维护
 

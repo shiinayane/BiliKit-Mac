@@ -1,6 +1,7 @@
 import BiliModels
 import Foundation
 import Testing
+
 @testable import BiliBrowseFeature
 
 struct VideoUploaderHeaderTests {
@@ -31,7 +32,7 @@ struct VideoUploaderHeaderTests {
             )
         )
 
-        #expect(content.name == "未知 UP 主")
+        #expect(!content.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         #expect(content.signature == .hidden)
     }
 

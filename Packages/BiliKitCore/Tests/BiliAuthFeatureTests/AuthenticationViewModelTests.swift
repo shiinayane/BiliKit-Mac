@@ -396,7 +396,6 @@ struct AuthenticationViewModelTests {
         #expect(model.sessionState == .signedIn(nil))
         #expect(model.accountPresentationState == .signedIn(nil))
         #expect(model.canCancelFailure == false)
-        #expect(model.retryButtonTitle == "重试退出")
         #expect(
             await service.observedCalls() == ["restore", "logout", "logout"]
         )

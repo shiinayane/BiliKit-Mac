@@ -1,6 +1,6 @@
 # ADR 0013：V1 Developer ID 成品采用 Universal 架构
 
-- 状态：Accepted
+- 状态：1.0.1 起由 [ADR 0014](0014-apple-silicon-only-distribution.md) 取代；以下保留 1.0.0 历史决策
 - 日期：2026-08-24
 - 关联：ADR 0001、ADR 0003、[`../release/README.md`](../release/README.md)
 

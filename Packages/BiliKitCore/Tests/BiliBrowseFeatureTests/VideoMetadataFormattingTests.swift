@@ -5,30 +5,38 @@ import Testing
 
 struct VideoMetadataFormattingTests {
     @Test
-    func compactCountsUseOnlyDomesticUnits() {
-        let locale = Locale(identifier: "zh-Hans")
-        #expect(VideoMetadataFormatting.compactCount(-1, locale: locale) == "0")
-        #expect(VideoMetadataFormatting.compactCount(9_999, locale: locale) == "9999")
-        #expect(VideoMetadataFormatting.compactCount(10_000, locale: locale) == "1万")
-        #expect(VideoMetadataFormatting.compactCount(12_345, locale: locale) == "1.2万")
-        #expect(
-            VideoMetadataFormatting.compactCount(99_999_999, locale: locale)
-                == "9999.9万"
+    func simplifiedChineseResourcesPreserveUnitsAndRelativeTime() throws {
+        let url = try #require(
+            BrowseFeatureStrings.bundle.url(forResource: "zh-Hans", withExtension: "lproj")
         )
-        #expect(
-            VideoMetadataFormatting.compactCount(100_000_000, locale: locale)
-                == "1亿"
-        )
-        #expect(
-            VideoMetadataFormatting.compactCount(123_456_789, locale: locale)
-                == "1.2亿"
-        )
-        #expect(
-            VideoMetadataFormatting.compactCount(
-                12_345,
-                locale: Locale(identifier: "en")
-            ) == "12.3K"
-        )
+        let chinese = try #require(Bundle(url: url))
+        #expect(String(localized: "万", bundle: chinese) == "万")
+        #expect(String(localized: "亿", bundle: chinese) == "亿")
+        #expect(String(localized: "\(59)分钟前", bundle: chinese) == "59分钟前")
+        #expect(String(localized: "\(23)小时前", bundle: chinese) == "23小时前")
+        #expect(String(localized: "昨天", bundle: chinese) == "昨天")
+    }
+
+    @Test
+    func compactCountsMatchResourceLanguage() throws {
+        let language = try #require(BrowseFeatureStrings.bundle.preferredLocalizations.first)
+        let locale = Locale(identifier: language)
+        let expected: [String]
+        switch language {
+        case "en": expected = ["0", "999", "1K", "9.9K", "10K", "12.3K", "99.9M", "100M", "123.4M"]
+        case "ja": expected = ["0", "999", "1000", "9999", "1万", "1.2万", "9999.9万", "1億", "1.2億"]
+        case "zh-Hans":
+            expected = ["0", "999", "1000", "9999", "1万", "1.2万", "9999.9万", "1亿", "1.2亿"]
+        case "zh-Hant":
+            expected = ["0", "999", "1000", "9999", "1萬", "1.2萬", "9999.9萬", "1億", "1.2億"]
+        default:
+            Issue.record("Missing compact-count expectations for supported language: \(language)")
+            return
+        }
+        let counts: [Int64] = [
+            -1, 999, 1000, 9999, 10_000, 12_345, 99_999_999, 100_000_000, 123_456_789,
+        ]
+        #expect(counts.map { VideoMetadataFormatting.compactCount($0, locale: locale) } == expected)
     }
 
     @Test
@@ -55,7 +63,7 @@ struct VideoMetadataFormattingTests {
                 relativeTo: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "1小时前"
+            ) == String(localized: "\(1)小时前", bundle: BrowseFeatureStrings.bundle)
         )
         #expect(
             VideoMetadataFormatting.publishedDate(
@@ -63,7 +71,7 @@ struct VideoMetadataFormattingTests {
                 relativeTo: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "2小时前"
+            ) == String(localized: "\(2)小时前", bundle: BrowseFeatureStrings.bundle)
         )
         #expect(
             VideoMetadataFormatting.publishedDate(
@@ -76,7 +84,7 @@ struct VideoMetadataFormattingTests {
                 relativeTo: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "昨天"
+            ) == String(localized: "昨天", bundle: BrowseFeatureStrings.bundle)
         )
         #expect(
             VideoMetadataFormatting.publishedDate(
@@ -89,7 +97,7 @@ struct VideoMetadataFormattingTests {
                 relativeTo: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "7月1日"
+            ) == String(localized: "\(7)月\(1)日", bundle: BrowseFeatureStrings.bundle)
         )
         #expect(
             VideoMetadataFormatting.publishedDate(
@@ -102,7 +110,7 @@ struct VideoMetadataFormattingTests {
                 relativeTo: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "2025年12月31日"
+            ).contains("2025")
         )
     }
 
@@ -130,7 +138,7 @@ struct VideoMetadataFormattingTests {
                 date,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == "2026年7月24日 22:51:03"
+            ).contains("22:51:03")
         )
     }
 

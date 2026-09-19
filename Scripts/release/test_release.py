@@ -14,6 +14,28 @@ spec.loader.exec_module(release)
 
 
 class ReleaseSafetyTests(unittest.TestCase):
+    def test_arm_only_app_and_official_nested_architectures(self):
+        release.verify_architectures(['arm64'], is_app=True)
+        release.verify_architectures(['arm64', 'x86_64'], is_app=False)
+        release.verify_architectures(['arm64'], is_app=False)
+        for architectures, is_app in [(['arm64', 'x86_64'], True), (['x86_64'], True),
+                                      (['x86_64'], False), ([], False), (['arm64', 'i386'], False)]:
+            with self.subTest(architectures=architectures, is_app=is_app), self.assertRaises(ValueError):
+                release.verify_architectures(architectures, is_app=is_app)
+
+    def test_ci_requires_all_apple_silicon_jobs(self):
+        runs = {'workflow_runs': [{'head_branch': 'main', 'conclusion': 'success',
+                                  'jobs_url': 'jobs', 'html_url': 'run'}]}
+        jobs = [{'name': f'Build and test ({osname})', 'conclusion': 'success'}
+                for osname in ('macos-15', 'macos-26', 'xcode-27')]
+        with patch.object(release, 'run', side_effect=[json.dumps(runs), json.dumps({'jobs': jobs})]):
+            self.assertEqual(release.ci('a' * 40), 'run')
+        with patch.object(release, 'run', side_effect=[json.dumps(runs), json.dumps({'jobs': jobs[:2]})]), self.assertRaises(ValueError):
+            release.ci('a' * 40)
+        jobs[0]['name'] = 'Build and test (macos-15-intel)'
+        with patch.object(release, 'run', side_effect=[json.dumps(runs), json.dumps({'jobs': jobs})]), self.assertRaises(ValueError):
+            release.ci('a' * 40)
+
     def test_version_ignores_test_target_version(self):
         project = {'objects': {
             'app': {'isa': 'PBXNativeTarget', 'name': 'BiliKitMac', 'buildConfigurationList': 'appList'},
@@ -33,10 +55,10 @@ class ReleaseSafetyTests(unittest.TestCase):
     def test_acceptance_must_bind_exact_candidate(self):
         state = {'commit': 'a' * 40, 'assets': {'app.dmg': {'sha256': 'b' * 64}}}
         evidence = dict(commit=state['commit'], dmg_sha256='b' * 64, decision='go', reviewer='maintainer',
-                        evidence='current candidate report', real_install=True, intel_macos15=True,
+                        evidence='current candidate report', real_install=True, apple_silicon_macos15=True,
                         signed_keychain=True, sparkle_failure_matrix=True)
         release.validate_acceptance(evidence, state)
-        release.validate_acceptance(evidence | dict(intel_macos15=False, signed_keychain=False, sparkle_failure_matrix=False), state)
+        release.validate_acceptance(evidence | dict(apple_silicon_macos15=False, signed_keychain=False, sparkle_failure_matrix=False), state)
         for change in ({'commit': 'c' * 40}, {'dmg_sha256': 'c' * 64}, {'decision': 'no-go'}, {'reviewer': ''}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 release.validate_acceptance(evidence | change, state)
