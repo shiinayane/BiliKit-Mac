@@ -15,8 +15,16 @@ sh Scripts/run-quality-gates.sh app
 Gate 每次使用私有临时目录保存 SwiftPM 与 Xcode 产物，退出时清理；不修改全局
 `xcode-select`。手写 `xcodebuild`、XCUI 和 App 启动也必须统一使用本任务唯一的临时产物
 根目录，并在任务结束时清理。其他 worktree 或旧共享 DerivedData 不算 fresh closure；仅用于
-临时运行时诊断时需注明证据边界。CI 使用同一入口，并在 macOS 15/26
-宿主上显式选择同一套新 Xcode/SDK；这个矩阵不承诺旧 SDK 编译兼容。
+临时运行时诊断时需注明证据边界。CI 使用同一入口：macOS 26 / Xcode 26.3 与
+macOS 27 / Xcode 27 完整构建和测试；macOS 15 / Xcode 26.3 本地构建 Package 测试，
+并运行同一次工作流在 macOS 26 上构建的 App 测试产物。macOS 15 ARM runner 的
+Icon Composer 资源编译工具会崩溃，因此不在该宿主重复编译 App 图标。这个矩阵保留
+macOS 15 的 App 运行兼容性证据，不承诺在 macOS 15 上完成完整 App 构建。
+
+仅 CI 传递同一次工作流、同一提交的测试产物：`BILIKIT_TEST_PRODUCTS_OUTPUT` 指定
+导出 tar 文件，`BILIKIT_TEST_PRODUCTS_INPUT` 指定待运行的可信 tar 文件。归档包含
+Build/Products 与 xctestrun，保留可执行权限；GitHub artifact 保留一天。默认本地 Gate
+不设置这两个变量，仍从当前源码完整构建，临时导入目录随 Gate 退出清理。
 
 Gate 是交付闭包，不是迭代命令。定向测试可在同一任务内复用一份私有缓存；临时根必须由
 当前任务唯一创建，不能跨 worktree 或任务复用，并在任务结束时整体删除：
