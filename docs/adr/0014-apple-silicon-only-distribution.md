@@ -12,7 +12,7 @@
 - Release App 主程序严格仅含 `arm64`；Sparkle 官方嵌套组件必须包含 `arm64`，允许保留
   官方包自带的 `x86_64`，不为减小体积另行裁剪。嵌套组件不代表 App 支持 Intel。
 - DMG 文件名使用 `-arm64.dmg`；签名、公证、身份及更新验签要求保持有效。
-- CI 使用 `macos-15`、`macos-26` 与 `macos-27`的 Apple Silicon runner，移除 Intel CI。
+- CI 使用 `macos-15`、`macos-26` 与 `macos-27`（实际 runner 标签为 `xcode-27`）的 Apple Silicon runner，移除 Intel CI。
 - README、发布清单及 manifest 明确新旧版本的硬件支持范围；保留 1.0.0 历史资产。
 - 按维护者明确决定，不新增 Intel 旧用户的 appcast 架构隔离、专用 feed 或迁移流程。
   不承诺 Intel 客户端不会收到新版本提示，也不将其更新行为视为已验证。

@@ -64,9 +64,14 @@ expect_count 2 'CURRENT_PROJECT_VERSION = 1;' "$project" "测试 target build nu
 expect_count 2 'INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";' "$project" "App 类别元数据不一致"
 expect_count 2 'INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";' "$project" "App 版权元数据不一致"
 expect_count 2 'ENABLE_APP_SANDBOX = YES;' "$project" "App Sandbox 必须启用"
-expect_count 1 'ARCHS = (' "$project" "Release 必须显式声明架构列表"
-expect_count 1 'arm64,' "$project" "Release 架构列表必须包含 arm64"
-expect_count 0 'x86_64,' "$project" "Release 架构列表不得包含 x86_64"
+/usr/bin/plutil -convert json -o - "$project" | python3 -c '
+import json, sys
+objects = json.load(sys.stdin)["objects"].values()
+configs = [obj for obj in objects if "ARCHS" in obj.get("buildSettings", {})]
+valid = (len(configs) == 1 and configs[0].get("name") == "Release"
+         and configs[0]["buildSettings"]["ARCHS"] in ("arm64", ["arm64"]))
+sys.exit(0 if valid else 1)
+' || fail "Release 必须显式且仅指定 arm64 架构"
 expect_count 1 'ONLY_ACTIVE_ARCH = NO;' "$project" "Release 不得只构建当前机器架构"
 expect_count 0 '.typesettingLanguage(' "$app" "App 根不得强制内容排版语言"
 expect_count 0 '.environment(\.locale' "$app" "App 根不得强制界面 locale"

@@ -2,7 +2,7 @@
 
 当前入口为 `python3 Scripts/release/release.py`。发布工作在独立 managed worktree 进行，
 使用本机 Keychain 中既有 Developer ID、`BiliKit-Notary` 和 Sparkle EdDSA key。
-GitHub Actions 负责 macOS 15、26、27 Apple Silicon 检查，不托管签名私钥。
+GitHub Actions 负责 macOS 15、26、27 Apple Silicon 检查（27 的显示名称为 `macos-27`，实际 runner 为 `xcode-27`），不托管签名私钥。
 
 ## 冻结与前提
 
