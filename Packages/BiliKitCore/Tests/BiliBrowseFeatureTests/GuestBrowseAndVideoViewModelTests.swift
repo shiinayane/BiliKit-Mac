@@ -265,6 +265,52 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
+    func popularAndSearchTailAuthenticationFailuresRequestRevalidation() async {
+        let fixture = GuestFixtures(bvid: "BV1AuthTail1", title: "认证追加")
+        let repository = FeedRepositoryStub(
+            popular: { request, _ in
+                guard request.page == 1 else {
+                    throw GuestApplicationError.authenticationInvalid
+                }
+                return PopularPage(
+                    videos: [fixture.popularVideo],
+                    pageNumber: 1,
+                    pageSize: request.pageSize,
+                    hasMore: true
+                )
+            },
+            search: { request, _ in
+                guard request.page == 1 else {
+                    throw GuestApplicationError.authenticationInvalid
+                }
+                return SearchPage(
+                    videos: [fixture.searchVideo],
+                    pageNumber: 1,
+                    pageSize: VideoSearchCriteria.pageSize,
+                    totalResults: 40,
+                    totalPages: 2
+                )
+            }
+        )
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
+        )
+
+        model.activatePopular(pageSize: 50)
+        await model.waitForCurrentTask()
+        model.loadMorePopular()
+        await model.waitForCurrentTask()
+        #expect(model.authenticationRevalidationGeneration == 1)
+
+        model.activateSearch(VideoSearchCriteria(query: "认证"))
+        await model.waitForCurrentTask()
+        model.loadMoreSearch()
+        await model.waitForCurrentTask()
+        #expect(model.authenticationRevalidationGeneration == 2)
+    }
+
+    @Test
+    @MainActor
     func failedPopularAppendKeepsCardsAndRetriesOnlyNextPage() async {
         let first = GuestFixtures(bvid: "BV1PopularC3", title: "保留热门卡片")
         let second = GuestFixtures(bvid: "BV1PopularD4", title: "重试热门追加")

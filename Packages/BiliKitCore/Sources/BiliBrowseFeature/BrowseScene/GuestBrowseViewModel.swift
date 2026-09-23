@@ -615,6 +615,7 @@ public final class GuestBrowseViewModel {
             }
             searchWorkset.isLoadingMore = false
             searchWorkset.loadMoreError = error
+            recordAuthenticationInvalidationIfNeeded(error)
         } catch {
             guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
                 return
@@ -752,6 +753,7 @@ public final class GuestBrowseViewModel {
             }
             popularWorkset.isLoadingMore = false
             popularWorkset.loadMoreError = error
+            recordAuthenticationInvalidationIfNeeded(error)
         } catch {
             guard generation == currentGeneration, activeRequestIdentity == baseRequest else {
                 return
