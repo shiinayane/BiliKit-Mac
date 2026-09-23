@@ -88,7 +88,8 @@ public final class WatchHistoryViewModel {
                 )
                 successfulReloadGeneration &+= 1
             } catch is CancellationError {
-                return
+                // 本任务未被取消却收到取消，说明认证会话在请求途中切换；给出可重试终态而不是停在 loading。
+                apply(.failed(.transportFailure), generation: operationGeneration)
             } catch let error as WatchHistoryError {
                 apply(.failed(error), generation: operationGeneration)
             } catch {
@@ -130,7 +131,14 @@ public final class WatchHistoryViewModel {
                     generation: operationGeneration
                 )
             } catch is CancellationError {
-                return
+                applyLoaded(
+                    items: items,
+                    continuation: continuation,
+                    loadMoreError: nil,
+                    rearmAutomaticTail: false,
+                    requiresManualLoadMore: true,
+                    generation: operationGeneration
+                )
             } catch let error as WatchHistoryError {
                 applyLoaded(
                     items: items,

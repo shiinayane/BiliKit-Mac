@@ -75,6 +75,20 @@ struct WatchHistoryViewModelTests {
 
     @Test
     @MainActor
+    func requestDroppedBySessionChangeLeavesRetryableState() async {
+        let model = WatchHistoryViewModel(
+            useCase: WatchHistoryUseCase(repository: SessionChangedHistoryRepository())
+        )
+
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+
+        #expect(model.state == .failed(.transportFailure))
+        #expect(!model.isBusy)
+    }
+
+    @Test
+    @MainActor
     func authenticationRevalidationFailureLeavesRetryableHistoryState() {
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(
@@ -693,5 +707,15 @@ private actor TestEventCounter {
         waiters.removeValue(forKey: id)?.continuation.resume(
             throwing: CancellationError()
         )
+    }
+}
+
+/// 模拟 API 在认证会话切换时丢弃在途请求：抛出取消，但调用方任务本身没有被取消。
+private struct SessionChangedHistoryRepository: WatchHistoryRepository {
+    func watchHistory(
+        after continuation: WatchHistoryContinuation?,
+        pageSize: Int
+    ) async throws -> WatchHistoryPage {
+        throw CancellationError()
     }
 }
