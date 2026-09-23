@@ -13,25 +13,12 @@ struct RecommendedTabRoot: View {
     var body: some View {
         RecommendedFeedView(
             model: model,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                videos,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 RecommendedNativeGridView(
-                    videos: videos,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    imagePipeline: imagePipeline,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -51,25 +38,12 @@ struct PopularTabRoot: View {
     var body: some View {
         PopularFeedView(
             model: model,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                videos,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 PopularNativeGridView(
-                    videos: videos,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    imagePipeline: imagePipeline,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -98,25 +72,12 @@ struct SearchTabRoot: View {
             model: model,
             submittedSearchCriteria: submittedSearchCriteria,
             hasActiveFilters: filterSelection.activeFilterCount > 0,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                presentations,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 SearchNativeGridView(
-                    presentations: presentations,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    imagePipeline: imagePipeline,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -177,23 +138,12 @@ struct HistoryTabRoot: View {
         case .signedIn:
             WatchHistoryView(
                 model: model,
-                makeLoadedContent: {
-                    presentations,
-                    canLoadMore,
-                    tailIdentity,
-                    isLoading,
-                    onNearEnd,
-                    onSelect in
+                makeLoadedContent: { content in
                     HistoryNativeGridView(
-                        presentations: presentations,
+                        content: content,
                         scrollOffsetY: $scrollOffsetY,
-                        canLoadMore: canLoadMore,
-                        tailIdentity: tailIdentity,
-                        isLoading: isLoading,
                         scrollReset: $scrollReset,
-                        imagePipeline: imagePipeline,
-                        onNearEnd: onNearEnd,
-                        onSelect: onSelect
+                        imagePipeline: imagePipeline
                     )
                     .ignoresSafeArea(.container, edges: .top)
                 },

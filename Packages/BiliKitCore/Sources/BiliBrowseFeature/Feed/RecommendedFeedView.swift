@@ -7,36 +7,16 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: GuestBrowseViewModel
     private let request = GuestFeedRequest.recommendation(continuation: nil)
-    @Binding private var scrollOffsetY: CGFloat
-    private let makeLoadedContent:
-        (
-            [RecommendedVideo],
-            Binding<CGFloat>,
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    private let makeLoadedContent: (LoadedFeedContent<RecommendedVideo>) -> LoadedContent
     private let onSelect: (String) -> Void
 
     public init(
         model: GuestBrowseViewModel,
-        scrollOffsetY: Binding<CGFloat>,
         makeLoadedContent:
-            @escaping (
-                [RecommendedVideo],
-                Binding<CGFloat>,
-                Bool,
-                String?,
-                Bool,
-                @escaping () -> Void,
-                @escaping (String) -> Void
-            ) -> LoadedContent,
+            @escaping (LoadedFeedContent<RecommendedVideo>) -> LoadedContent,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
-        _scrollOffsetY = scrollOffsetY
         self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
     }
@@ -102,13 +82,14 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     ) -> some View {
         let pagination = model.recommendationPagination()
         return makeLoadedContent(
-            page.videos,
-            $scrollOffsetY,
-            pagination.canLoadMore,
-            pagination.tailIdentity,
-            pagination.isLoadingMore,
-            model.loadMoreRecommendations,
-            onSelect
+            LoadedFeedContent(
+                items: page.videos,
+                canLoadMore: pagination.canLoadMore,
+                tailIdentity: pagination.tailIdentity,
+                isLoadingMore: pagination.isLoadingMore,
+                loadMore: model.loadMoreRecommendations,
+                select: onSelect
+            )
         )
         .overlay(alignment: .top) {
             refreshStatus(presentation)

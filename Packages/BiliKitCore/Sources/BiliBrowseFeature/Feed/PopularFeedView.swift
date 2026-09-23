@@ -9,41 +9,21 @@ public struct PopularFeedView<LoadedContent: View>: View {
     private let request: GuestFeedRequest
     private let initialPage: Int
     private let pageSize: Int
-    @Binding private var scrollOffsetY: CGFloat
-    private let makeLoadedContent:
-        (
-            [PopularVideo],
-            Binding<CGFloat>,
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    private let makeLoadedContent: (LoadedFeedContent<PopularVideo>) -> LoadedContent
     private let onSelect: (String) -> Void
 
     public init(
         model: GuestBrowseViewModel,
         page: Int = 1,
-        pageSize: Int = 50,
-        scrollOffsetY: Binding<CGFloat>,
+        pageSize: Int = GuestBrowseViewModel.popularPageSize,
         makeLoadedContent:
-            @escaping (
-                [PopularVideo],
-                Binding<CGFloat>,
-                Bool,
-                String?,
-                Bool,
-                @escaping () -> Void,
-                @escaping (String) -> Void
-            ) -> LoadedContent,
+            @escaping (LoadedFeedContent<PopularVideo>) -> LoadedContent,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
         request = .popular(page: page, pageSize: pageSize)
         initialPage = page
         self.pageSize = pageSize
-        _scrollOffsetY = scrollOffsetY
         self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
     }
@@ -118,13 +98,14 @@ public struct PopularFeedView<LoadedContent: View>: View {
     ) -> some View {
         let pagination = model.popularPagination(for: request)
         return makeLoadedContent(
-            page.videos,
-            $scrollOffsetY,
-            pagination.canLoadMore,
-            pagination.tailIdentity,
-            pagination.isLoadingMore,
-            model.loadMorePopular,
-            onSelect
+            LoadedFeedContent(
+                items: page.videos,
+                canLoadMore: pagination.canLoadMore,
+                tailIdentity: pagination.tailIdentity,
+                isLoadingMore: pagination.isLoadingMore,
+                loadMore: model.loadMorePopular,
+                select: onSelect
+            )
         )
         .overlay(alignment: .top) {
             ZStack {

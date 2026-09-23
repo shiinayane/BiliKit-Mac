@@ -9,17 +9,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
     private let model: GuestBrowseViewModel
     private let submittedSearchCriteria: VideoSearchCriteria?
     private let hasActiveFilters: Bool
-    @Binding private var scrollOffsetY: CGFloat
-    private let makeLoadedContent:
-        (
-            [SearchVideoCardPresentation],
-            Binding<CGFloat>,
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    private let makeLoadedContent: (LoadedFeedContent<SearchVideoCardPresentation>) -> LoadedContent
     private let onSelect: (String) -> Void
     private let onClearFilters: () -> Void
 
@@ -27,24 +17,14 @@ public struct VideoSearchView<LoadedContent: View>: View {
         model: GuestBrowseViewModel,
         submittedSearchCriteria: VideoSearchCriteria?,
         hasActiveFilters: Bool,
-        scrollOffsetY: Binding<CGFloat>,
         makeLoadedContent:
-            @escaping (
-                [SearchVideoCardPresentation],
-                Binding<CGFloat>,
-                Bool,
-                String?,
-                Bool,
-                @escaping () -> Void,
-                @escaping (String) -> Void
-            ) -> LoadedContent,
+            @escaping (LoadedFeedContent<SearchVideoCardPresentation>) -> LoadedContent,
         onSelect: @escaping (String) -> Void,
         onClearFilters: @escaping () -> Void
     ) {
         self.model = model
         self.submittedSearchCriteria = submittedSearchCriteria
         self.hasActiveFilters = hasActiveFilters
-        _scrollOffsetY = scrollOffsetY
         self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
         self.onClearFilters = onClearFilters
@@ -154,13 +134,14 @@ public struct VideoSearchView<LoadedContent: View>: View {
                 loadMoreError: nil
             )
         return makeLoadedContent(
-            page.videos.map { SearchVideoCardPresentation(video: $0, locale: locale) },
-            $scrollOffsetY,
-            pagination.canLoadMore,
-            pagination.tailIdentity,
-            pagination.isLoadingMore,
-            model.loadMoreSearch,
-            onSelect
+            LoadedFeedContent(
+                items: page.videos.map { SearchVideoCardPresentation(video: $0, locale: locale) },
+                canLoadMore: pagination.canLoadMore,
+                tailIdentity: pagination.tailIdentity,
+                isLoadingMore: pagination.isLoadingMore,
+                loadMore: model.loadMoreSearch,
+                select: onSelect
+            )
         )
         .overlay(alignment: .bottom) {
             if pagination.isLoadingMore {
