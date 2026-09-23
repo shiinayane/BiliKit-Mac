@@ -218,15 +218,13 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
 enum PlayerKeyboardEventScope {
     static func captures(
         isEnabled: Bool,
-        isSupportedKey: Bool,
         hasDisallowedModifier: Bool,
         eventMatchesCaptureWindow: Bool,
-        isEditableResponder: Bool
+        focusedResponderOwnsKeys: Bool
     ) -> Bool {
         isEnabled
-            && isSupportedKey
             && !hasDisallowedModifier
             && eventMatchesCaptureWindow
-            && !isEditableResponder
+            && !focusedResponderOwnsKeys
     }
 }

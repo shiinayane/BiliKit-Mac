@@ -1,3 +1,4 @@
+import AppKit
 import BiliPlayback
 import Foundation
 import Testing
@@ -81,33 +82,66 @@ struct PlayerKeyboardInputStateTests {
     }
 
     @Test
-    func detailWindowScopeExcludesModifiersEditingAndOtherWindows() {
+    func detailWindowScopeExcludesModifiersFocusedControlsAndOtherWindows() {
         #expect(
             PlayerKeyboardEventScope.captures(
                 isEnabled: true,
-                isSupportedKey: true,
                 hasDisallowedModifier: false,
                 eventMatchesCaptureWindow: true,
-                isEditableResponder: false
+                focusedResponderOwnsKeys: false
             )
         )
         for excluded in [
-            (false, true, false, true, false),
-            (true, false, false, true, false),
-            (true, true, true, true, false),
-            (true, true, false, false, false),
-            (true, true, false, true, true)
+            (false, false, true, false),
+            (true, true, true, false),
+            (true, false, false, false),
+            (true, false, true, true)
         ] {
             #expect(
                 !PlayerKeyboardEventScope.captures(
                     isEnabled: excluded.0,
-                    isSupportedKey: excluded.1,
-                    hasDisallowedModifier: excluded.2,
-                    eventMatchesCaptureWindow: excluded.3,
-                    isEditableResponder: excluded.4
+                    hasDisallowedModifier: excluded.1,
+                    eventMatchesCaptureWindow: excluded.2,
+                    focusedResponderOwnsKeys: excluded.3
                 )
             )
         }
+    }
+
+    @Test
+    @MainActor
+    func controlsOutsideThePlayerKeepTheirKeys() {
+        let playerView = NSView()
+        let playerButton = NSButton()
+        playerView.addSubview(playerButton)
+        let sidebarButton = NSButton()
+        let readOnlyText = NSTextView()
+        readOnlyText.isEditable = false
+        let editableText = NSTextView()
+        let overlay = KeyboardOwningOverlay()
+        let overlayChild = NSView()
+        overlay.addSubview(overlayChild)
+        let listView = NSCollectionView()
+        listView.isSelectable = true
+        let staticListView = NSCollectionView()
+        staticListView.isSelectable = false
+
+        func ownsKeys(_ responder: NSResponder?) -> Bool {
+            PlayerScrollWheelCaptureView.focusedResponderOwnsKeys(
+                responder,
+                playerView: playerView
+            )
+        }
+
+        #expect(ownsKeys(sidebarButton))
+        #expect(ownsKeys(editableText))
+        #expect(ownsKeys(overlayChild))
+        #expect(ownsKeys(listView))
+        #expect(!ownsKeys(playerButton))
+        #expect(!ownsKeys(readOnlyText))
+        #expect(!ownsKeys(staticListView))
+        #expect(!ownsKeys(NSView()))
+        #expect(!ownsKeys(nil))
     }
 
     @Test
@@ -171,3 +205,6 @@ struct PlayerKeyboardInputStateTests {
         )
     }
 }
+
+@MainActor
+private final class KeyboardOwningOverlay: NSView, PlayerKeyboardFocusOwner {}

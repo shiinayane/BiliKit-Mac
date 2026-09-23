@@ -434,6 +434,10 @@ private final class PlayerShortcutFeedbackBadgeHostingView:
     }
 }
 
+/// 打开时独占方向键等按键的浮层；播放器快捷键不会越过它。
+@MainActor
+protocol PlayerKeyboardFocusOwner: NSView {}
+
 @MainActor
 final class DanmakuPlayerView: AVPlayerView {
     let danmakuOverlay: DanmakuOverlayView
@@ -1216,20 +1220,22 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     private func handleKeyboardEvent(_ event: KeyboardEventSnapshot) -> Bool {
         guard let captureWindow = window else { return false }
-        let isEditable = Self.isEditable(captureWindow.firstResponder)
+        let responderOwnsKeys = Self.focusedResponderOwnsKeys(
+            captureWindow.firstResponder,
+            playerView: enclosingPlayerView
+        )
         guard
             PlayerKeyboardEventScope.captures(
                 isEnabled: keyboardInputEnabled,
-                isSupportedKey: true,
                 hasDisallowedModifier: event.hasDisallowedModifier,
                 eventMatchesCaptureWindow:
                     event.windowNumber == captureWindow.windowNumber,
-                isEditableResponder: isEditable
+                focusedResponderOwnsKeys: responderOwnsKeys
             )
         else {
             if !keyboardInputEnabled
                 || event.hasDisallowedModifier
-                || isEditable
+                || responderOwnsKeys
             {
                 cancelKeyboardInputSession()
             }
@@ -1427,18 +1433,54 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     private func cancelIfEditableResponder() {
-        guard let window, Self.isEditable(window.firstResponder) else { return }
+        guard
+            let window,
+            Self.focusedResponderOwnsKeys(
+                window.firstResponder,
+                playerView: enclosingPlayerView
+            )
+        else { return }
         cancelKeyboardInputSession()
     }
 
-    private static func isEditable(_ responder: NSResponder?) -> Bool {
-        switch responder {
+    private var enclosingPlayerView: AVPlayerView? {
+        var ancestor = superview
+        while let current = ancestor {
+            if let playerView = current as? AVPlayerView { return playerView }
+            ancestor = current.superview
+        }
+        return nil
+    }
+
+    /// 键盘焦点位于播放器之外的可交互控件时，快捷键交还给该控件。
+    ///
+    /// 包括可编辑文本、全键盘访问聚焦的按钮／分段控件、可键盘导航的列表，以及声明为
+    /// `PlayerKeyboardFocusOwner` 的浮层（例如评论图片预览）。播放器自身及其子视图仍由播放器处理；
+    /// 只可选择、不可编辑的文本不拦截空格等快捷键。
+    static func focusedResponderOwnsKeys(
+        _ responder: NSResponder?,
+        playerView: NSView?
+    ) -> Bool {
+        guard let view = responder as? NSView else { return false }
+        if let playerView, view === playerView || view.isDescendant(of: playerView) {
+            return false
+        }
+        var ancestor: NSView? = view
+        while let current = ancestor {
+            if current is PlayerKeyboardFocusOwner { return true }
+            ancestor = current.superview
+        }
+        switch view {
         case let textView as NSTextView:
-            textView.isEditable
+            return textView.isEditable
         case let textField as NSTextField:
-            textField.isEditable
+            return textField.isEditable
+        case let collectionView as NSCollectionView:
+            return collectionView.isSelectable
+        case is NSControl:
+            return true
         default:
-            false
+            return false
         }
     }
 

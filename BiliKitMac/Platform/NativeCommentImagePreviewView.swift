@@ -89,7 +89,7 @@ struct NativeCommentImagePreviewSelection: Equatable {
 }
 
 @MainActor
-final class NativeCommentImagePreviewRootView: NSView {
+final class NativeCommentImagePreviewRootView: NSView, PlayerKeyboardFocusOwner {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override var acceptsFirstResponder: Bool { true }
@@ -270,6 +270,8 @@ final class NativeCommentImagePreviewRootView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        guard modifiers.isEmpty else { return super.performKeyEquivalent(with: event) }
         switch event.keyCode {
         case 53:
             dismissPreview()
