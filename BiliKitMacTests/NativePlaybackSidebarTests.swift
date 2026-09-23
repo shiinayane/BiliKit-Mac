@@ -1368,7 +1368,10 @@ struct NativePlaybackSidebarTests {
         #expect(likeImage != nil)
         #expect(
             views.compactMap { $0 as? NSButton }.contains {
-                $0.title == AppStrings.localized("共 \(1) 条回复")
+                $0.title
+                    == AppStrings.localized(
+                        "共 \(CommentPresentationFormatting.compactCount(1)) 条回复"
+                    )
             }
         )
     }
@@ -1950,7 +1953,10 @@ struct NativePlaybackSidebarTests {
 
             let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
                 .first {
-                    $0.title == AppStrings.localized("共 \(replyCount) 条回复")
+                    $0.title
+                        == AppStrings.localized(
+                            "共 \(CommentPresentationFormatting.compactCount(replyCount)) 条回复"
+                        )
                 }
             #expect(summary != nil)
         }
