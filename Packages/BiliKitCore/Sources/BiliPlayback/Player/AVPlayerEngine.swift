@@ -398,22 +398,7 @@ public final class AVPlayerEngine:
         }
         try Task.checkCancellation()
 
-        loadGeneration = generation
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = intent
-        activeResumeToken = nil
-        restartOperation = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        preparedAsset?.stop()
-        preparedAsset = nil
-        player.pause()
-        player.replaceCurrentItem(with: nil)
+        releaseCurrentPlayback(nextGeneration: generation, nextIntent: intent)
         let pendingSubtitleReset = enqueueSubtitleReset()
         timeline.begin(identity: identity, loadIntent: intent)
         emit(.stateChanged(.loading))
@@ -512,27 +497,12 @@ public final class AVPlayerEngine:
             emit(.stateChanged(.ready))
         } catch is CancellationError {
             if loadGeneration == generation {
-                loadTask = nil
-                readinessTask = nil
-                clearLoudnessNormalization()
-                activeSeekOperationID = nil
-                preparedAsset?.stop()
-                preparedAsset = nil
-                player.replaceCurrentItem(with: nil)
-                timeline.clear()
-                _ = enqueueSubtitleReset()
-                emit(.stateChanged(.idle))
+                resetToIdle()
             }
             throw CancellationError()
         } catch {
             if loadGeneration == generation {
-                loadTask = nil
-                readinessTask = nil
-                clearLoudnessNormalization()
-                activeSeekOperationID = nil
-                preparedAsset?.stop()
-                preparedAsset = nil
-                player.replaceCurrentItem(with: nil)
+                releaseCurrentPlayback()
                 timeline.markFailed()
                 _ = enqueueSubtitleReset()
                 emit(
@@ -547,24 +517,7 @@ public final class AVPlayerEngine:
 
     private func cancelLoad(generation: UUID) {
         guard loadGeneration == generation else { return }
-        loadGeneration = UUID()
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = nil
-        activeResumeToken = nil
-        restartOperation = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        preparedAsset?.stop()
-        preparedAsset = nil
-        player.replaceCurrentItem(with: nil)
-        timeline.clear()
-        _ = enqueueSubtitleReset()
-        emit(.stateChanged(.idle))
+        resetToIdle()
     }
 
     /// 当前 item 保持暂停，先完成受 intent 和交互 revision 保护的首次定位，再开始播放。
@@ -944,11 +897,23 @@ public final class AVPlayerEngine:
 
     /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
-        loadGeneration = UUID()
+        resetToIdle()
+    }
+
+    /// 使当前 load 世代失效，并释放播放项目及其派生状态：在途加载／就绪任务、响度处理、
+    /// 字幕切换、seek、恢复与重新开始操作，以及 loopback 资源。
+    ///
+    /// 先移除 AVPlayerItem 再停止 loopback 资源，避免旧项目因资源消失而触发失败回调。
+    /// 时间线终态、字幕重置与对外事件由调用方决定。
+    private func releaseCurrentPlayback(
+        nextGeneration: UUID = UUID(),
+        nextIntent: PlaybackLoadIntent? = nil
+    ) {
+        loadGeneration = nextGeneration
         activeSeekOperationID = nil
         invalidateSubtitleToggle(clearPreference: true)
         invalidateTransportSeek()
-        loadIntent = nil
+        loadIntent = nextIntent
         activeResumeToken = nil
         restartOperation = nil
         loadTask?.cancel()
@@ -960,6 +925,10 @@ public final class AVPlayerEngine:
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
         preparedAsset = nil
+    }
+
+    private func resetToIdle() {
+        releaseCurrentPlayback()
         timeline.clear()
         _ = enqueueSubtitleReset()
         emit(.stateChanged(.idle))
@@ -1162,20 +1131,7 @@ public final class AVPlayerEngine:
         guard let identity = timeline.currentSnapshot.identity,
             let intent = loadIntent
         else { return }
-        loadGeneration = UUID()
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        player.pause()
-        player.replaceCurrentItem(with: nil)
-        preparedAsset?.stop()
-        preparedAsset = nil
+        releaseCurrentPlayback()
         _ = enqueueSubtitleReset()
         failureContinuation.yield(
             PlaybackFailureEvent(identity: identity, intent: intent)
