@@ -2558,12 +2558,6 @@ struct LoopbackPlaybackServerTests {
                 rangeClient: HTTPRangeClient(transport: transport)
             )
         )
-        let eventRecorder = PlayerEventRecorder()
-        let eventTask = Task {
-            for await event in engine.events {
-                await eventRecorder.append(event)
-            }
-        }
         let failureRecorder = PlaybackFailureRecorder()
         let failureTask = Task {
             for await event in engine.playbackFailureEvents() {
@@ -2571,7 +2565,6 @@ struct LoopbackPlaybackServerTests {
             }
         }
         defer {
-            eventTask.cancel()
             failureTask.cancel()
             engine.stop()
         }
@@ -2601,19 +2594,12 @@ struct LoopbackPlaybackServerTests {
         )
 
         try await waitUntilAsync {
-            let eventCount = await eventRecorder.failureEvents().count
             let identityCount = await failureRecorder.identities().count
-            return eventCount == 1
-                && identityCount == 1
+            return identityCount == 1
                 && engine.currentTimelineSnapshot.state == .failed
         }
-        let failureEvents = await eventRecorder.failureEvents()
         let failureIdentities = await failureRecorder.identities()
 
-        #expect(
-            failureEvents
-                == [.failed(message: "PlaybackItemFailed")]
-        )
         #expect(engine.currentTimelineSnapshot.state == .failed)
         #expect(failureIdentities == [identity])
         #expect(engine.player.currentItem == nil)
@@ -3573,21 +3559,6 @@ private actor CrossIdentityFallbackTransport: HTTPTransport {
             )
         default:
             return HTTPResponse(statusCode: 400, body: Data())
-        }
-    }
-}
-
-private actor PlayerEventRecorder {
-    private(set) var events: [PlayerEvent] = []
-
-    func append(_ event: PlayerEvent) {
-        events.append(event)
-    }
-
-    func failureEvents() -> [PlayerEvent] {
-        events.filter {
-            if case .failed = $0 { return true }
-            return false
         }
     }
 }

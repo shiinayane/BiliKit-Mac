@@ -53,17 +53,3 @@ public struct SelectedPlaybackAudioTrack: Sendable, Equatable {
         self.representation = representation
     }
 }
-
-public enum PlayerState: Sendable, Equatable {
-    case idle
-    case loading
-    case ready
-    case playing
-    case paused
-    case ended
-}
-
-public enum PlayerEvent: Sendable, Equatable {
-    case stateChanged(PlayerState)
-    case failed(message: String)
-}

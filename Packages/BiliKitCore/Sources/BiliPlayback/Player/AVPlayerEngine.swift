@@ -148,13 +148,11 @@ public final class AVPlayerEngine:
     PlaybackTimelineProviding
 {
     public let player: AVPlayer
-    public let events: AsyncStream<PlayerEvent>
 
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase?
     private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
     private let loudnessNormalizationEnabledProvider: @MainActor @Sendable () -> Bool
-    private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
     private let failureEvents: AsyncStream<PlaybackFailureEvent>
     private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
     private let timeline: AVPlayerTimelineAdapter
@@ -200,17 +198,11 @@ public final class AVPlayerEngine:
             player.appliesMediaSelectionCriteriaAutomatically = false
         }
         timeline = AVPlayerTimelineAdapter(player: player)
-        let stream = AsyncStream<PlayerEvent>.makeStream()
-        events = stream.stream
-        eventContinuation = stream.continuation
         let failureStream = AsyncStream<PlaybackFailureEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(1)
         )
         failureEvents = failureStream.stream
         failureContinuation = failureStream.continuation
-        timeline.onEnded = { [weak self] in
-            self?.emit(.stateChanged(.ended))
-        }
         timeline.onFailed = { [weak self] in
             self?.handleCurrentItemFailure()
         }
@@ -235,7 +227,6 @@ public final class AVPlayerEngine:
                 await subtitleUseCase.reset(for: subtitleIdentity)
             }
         }
-        eventContinuation.finish()
         failureContinuation.finish()
     }
 
@@ -401,7 +392,6 @@ public final class AVPlayerEngine:
         releaseCurrentPlayback(nextGeneration: generation, nextIntent: intent)
         let pendingSubtitleReset = enqueueSubtitleReset()
         timeline.begin(identity: identity, loadIntent: intent)
-        emit(.stateChanged(.loading))
 
         await pendingSubtitleReset?.value
         try Task.checkCancellation()
@@ -494,7 +484,6 @@ public final class AVPlayerEngine:
                 generation: generation,
                 operationID: audioSelectionOperationID
             )
-            emit(.stateChanged(.ready))
         } catch is CancellationError {
             if loadGeneration == generation {
                 resetToIdle()
@@ -505,11 +494,6 @@ public final class AVPlayerEngine:
                 releaseCurrentPlayback()
                 timeline.markFailed()
                 _ = enqueueSubtitleReset()
-                emit(
-                    .failed(
-                        message: String(reflecting: type(of: error))
-                    )
-                )
             }
             throw error
         }
@@ -607,7 +591,6 @@ public final class AVPlayerEngine:
         let token = PlaybackResumeToken()
         activeResumeToken = token
         timeline.playAfterInternalSeek()
-        emit(.stateChanged(.playing))
         return .resumed(
             positionSeconds: resolvedPosition,
             token: token,
@@ -679,20 +662,17 @@ public final class AVPlayerEngine:
         activeSeekOperationID = nil
         activeResumeToken = nil
         timeline.playAfterInternalSeek()
-        emit(.stateChanged(.playing))
         return true
     }
 
     public func play() {
         guard player.currentItem != nil else { return }
         timeline.play()
-        emit(.stateChanged(.playing))
     }
 
     public func pause() {
         guard player.currentItem != nil else { return }
         timeline.pause()
-        emit(.stateChanged(.paused))
     }
 
     @discardableResult
@@ -931,7 +911,6 @@ public final class AVPlayerEngine:
         releaseCurrentPlayback()
         timeline.clear()
         _ = enqueueSubtitleReset()
-        emit(.stateChanged(.idle))
     }
 
     private static func validSeconds(_ time: CMTime) -> Double? {
@@ -1123,10 +1102,6 @@ public final class AVPlayerEngine:
         return try selectedAudioTracks(in: manifest, request: request)
     }
 
-    private func emit(_ event: PlayerEvent) {
-        eventContinuation.yield(event)
-    }
-
     private func handleCurrentItemFailure() {
         guard let identity = timeline.currentSnapshot.identity,
             let intent = loadIntent
@@ -1136,7 +1111,6 @@ public final class AVPlayerEngine:
         failureContinuation.yield(
             PlaybackFailureEvent(identity: identity, intent: intent)
         )
-        emit(.failed(message: "PlaybackItemFailed"))
     }
 
     private func beginObservingAudioSelection(

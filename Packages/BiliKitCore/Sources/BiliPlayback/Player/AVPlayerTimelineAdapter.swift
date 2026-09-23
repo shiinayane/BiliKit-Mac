@@ -193,7 +193,6 @@ final class AVPlayerTimelineAdapter {
         let rate: Float
     }
 
-    var onEnded: (@MainActor () -> Void)?
     var onFailed: (@MainActor () -> Void)?
     var onSeekSupersededByExternalJump: (@MainActor (UUID) -> Void)?
 
@@ -341,7 +340,6 @@ final class AVPlayerTimelineAdapter {
                     state: .ended
                 )
                 self.momentaryRateSession = nil
-                self.onEnded?()
             }
         }
 
