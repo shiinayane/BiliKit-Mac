@@ -63,7 +63,7 @@ enum NativeVideoCardTextLayout {
         "foregroundColor": NSNull(),
         "hidden": NSNull(),
         "position": NSNull(),
-        "string": NSNull(),
+        "string": NSNull()
     ]
 }
 

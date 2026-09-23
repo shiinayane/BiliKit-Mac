@@ -54,7 +54,7 @@ final class NativePlaybackCommentTextRenderer {
             attributes: [
                 .font: font,
                 .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle,
+                .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle
             ]
         )
         let linkTargets = applyLinks(content.links, to: attributed)

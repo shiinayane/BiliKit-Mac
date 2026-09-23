@@ -44,13 +44,13 @@ struct BiliSubtitleRepositoryTests {
         #expect(
             tracks.map(\.languageCode) == [
                 "zh", "ai-zh", "ai-en", "ai-ja", "ai-fr", "ai-fr", "ai-ZH",
-                "zh-Hans", "en",
+                "zh-Hans", "en"
             ]
         )
         #expect(
             tracks.map(\.kind) == [
                 .standard, .automatic, .automatic, .automatic, .unknown,
-                .automatic, .automatic, .unknown, .unknown,
+                .automatic, .automatic, .unknown, .unknown
             ]
         )
     }
@@ -60,7 +60,7 @@ struct BiliSubtitleRepositoryTests {
         let catalogTransport = SubtitleRecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try catalogResponse(),
+                try catalogResponse()
             ]
         )
         let bodyTransport = SubtitleRecordingTransport(
@@ -97,7 +97,7 @@ struct BiliSubtitleRepositoryTests {
         #expect(
             catalogRequests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/player/wbi/v2",
+                "/x/player/wbi/v2"
             ]
         )
         #expect(catalogRequests[0].headers["Cookie"] == nil)
@@ -128,7 +128,7 @@ struct BiliSubtitleRepositoryTests {
                 transport: SubtitleRecordingTransport(
                     responses: [
                         try fixtureResponse("nav"),
-                        try catalogResponse(prependingEmptyURLTrack: true),
+                        try catalogResponse(prependingEmptyURLTrack: true)
                     ]
                 ),
                 requestAuthorizer: SubtitleRecordingAuthorizer(),
@@ -172,7 +172,7 @@ struct BiliSubtitleRepositoryTests {
                 try fixtureResponse("nav"),
                 rejected,
                 try fixtureResponse("nav-refreshed"),
-                try catalogResponse(),
+                try catalogResponse()
             ]
         )
         let repository = BiliSubtitleRepository(
@@ -193,7 +193,7 @@ struct BiliSubtitleRepositoryTests {
                 "/x/web-interface/nav",
                 "/x/player/wbi/v2",
                 "/x/web-interface/nav",
-                "/x/player/wbi/v2",
+                "/x/player/wbi/v2"
             ]
         )
         let signatures =
@@ -214,7 +214,7 @@ struct BiliSubtitleRepositoryTests {
         let catalogTransport = SubtitleRecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try fixtureResponse("subtitle-catalog"),
+                try fixtureResponse("subtitle-catalog")
             ]
         )
         let bodyTransport = SubtitleRecordingTransport(responses: [])
@@ -247,7 +247,7 @@ struct BiliSubtitleRepositoryTests {
             (
                 try fixtureResponse("m4-error"),
                 SubtitleApplicationError.invalidResponse
-            ),
+            )
         ] {
             let (repository, track) = try await repository(bodyResponse: response)
             await #expect(throws: expected) {
@@ -265,7 +265,7 @@ struct BiliSubtitleRepositoryTests {
         let body = String(decoding: fixture.body, as: UTF8.self)
         let invalidBodies = [
             body.replacingOccurrences(of: #""from": 4.0"#, with: #""from": 0.5"#),
-            body.replacingOccurrences(of: #""to": 3.5"#, with: #""to": 90000"#),
+            body.replacingOccurrences(of: #""to": 3.5"#, with: #""to": 90000"#)
         ]
 
         for invalidBody in invalidBodies {
@@ -308,7 +308,7 @@ struct BiliSubtitleRepositoryTests {
                 transport: SubtitleRecordingTransport(
                     responses: [
                         try fixtureResponse("nav"),
-                        try catalogResponse(),
+                        try catalogResponse()
                     ]
                 ),
                 requestAuthorizer: SubtitleRecordingAuthorizer(),
@@ -374,7 +374,7 @@ struct BiliSubtitleRepositoryTests {
         "https://127.0.0.1/bfs/subtitle/a.json",
         "https://aisubtitle.hdslb.com.attacker.invalid/bfs/subtitle/a.json",
         "https://aisubtitle.hdslb.com/other/a.json",
-        "https://aisubtitle.hdslb.com/bfs/subtitle/a.json#fragment",
+        "https://aisubtitle.hdslb.com/bfs/subtitle/a.json#fragment"
     ])
     func subtitlePolicyRejectsUnsafeOrigins(_ value: String) throws {
         let url = try #require(URL(string: value))
@@ -389,7 +389,7 @@ struct BiliSubtitleRepositoryTests {
                 transport: SubtitleRecordingTransport(
                     responses: [
                         try fixtureResponse("nav"),
-                        try catalogResponse(),
+                        try catalogResponse()
                     ]
                 ),
                 requestAuthorizer: SubtitleRecordingAuthorizer(),

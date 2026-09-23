@@ -33,7 +33,7 @@ struct BiliWatchProgressRepositoryTests {
             Set(query.keys) == [
                 "w_start_ts", "w_aid", "w_dt", "w_realtime", "w_played_time",
                 "w_real_played_time", "w_video_duration",
-                "w_last_play_progress_time", "web_location", "wts", "w_rid",
+                "w_last_play_progress_time", "web_location", "wts", "w_rid"
             ]
         )
         #expect(query["w_start_ts"] == "1777777700")
@@ -59,7 +59,7 @@ struct BiliWatchProgressRepositoryTests {
                 "start_ts", "aid", "cid", "type", "sub_type", "dt", "play_type",
                 "realtime", "played_time", "real_played_time", "refer_url",
                 "video_duration", "last_play_progress_time", "max_play_progress_time",
-                "outer", "mobi_app", "device", "platform", "session",
+                "outer", "mobi_app", "device", "platform", "session"
             ]
         )
         #expect(fields["play_type"] == "2")

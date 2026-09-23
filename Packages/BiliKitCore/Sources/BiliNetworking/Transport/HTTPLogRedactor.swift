@@ -16,12 +16,12 @@ public struct HTTPLogRedactor: Sendable {
             "sessdata",
             "sign",
             "token",
-            "w_rid",
+            "w_rid"
         ],
         sensitiveHeaderNames: Set<String> = [
             "authorization",
             "cookie",
-            "set-cookie",
+            "set-cookie"
         ]
     ) {
         self.sensitiveQueryKeys = Set(sensitiveQueryKeys.map { $0.lowercased() })

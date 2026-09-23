@@ -24,7 +24,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1"), item("BV1HistoryB2")],
                         continuation: nil
                     )
-                ),
+                )
             ]
         )
         let model = WatchHistoryViewModel(
@@ -100,7 +100,7 @@ struct WatchHistoryViewModelTests {
                         continuation: continuation
                     )
                 ),
-                .failure(.transportFailure),
+                .failure(.transportFailure)
             ]
         )
         let model = WatchHistoryViewModel(
@@ -152,7 +152,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryB2")],
                         continuation: nil
                     )
-                ),
+                )
             ]
         )
         let model = WatchHistoryViewModel(
@@ -210,7 +210,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryB2")],
                         continuation: nil
                     )
-                ),
+                )
             ]
         )
         let model = WatchHistoryViewModel(
@@ -273,7 +273,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryC3")],
                         continuation: first
                     )
-                ),
+                )
             ]
         )
         let model = WatchHistoryViewModel(
@@ -304,7 +304,7 @@ struct WatchHistoryViewModelTests {
         let repository = HistoryRepositoryStub(
             results: [
                 .success(WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil)),
-                .success(WatchHistoryPage(items: [item("BV1HistoryB2")], continuation: nil)),
+                .success(WatchHistoryPage(items: [item("BV1HistoryB2")], continuation: nil))
             ],
             suspendedCalls: [1]
         )
@@ -410,7 +410,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1NewB")],
                         continuation: oldContinuation
                     )
-                ),
+                )
             ],
             suspendedCalls: [2]
         )
@@ -485,7 +485,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryB2")],
                         continuation: nil
                     )
-                ),
+                )
             ],
             suspendedCalls: [2]
         )
@@ -531,7 +531,7 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryB2")],
                         continuation: nil
                     )
-                ),
+                )
             ],
             suspendedCalls: [3]
         )

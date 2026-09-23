@@ -185,7 +185,7 @@ struct DanmakuPresentationControllerTests {
                 generation: 1,
                 events: [
                     event(id: "fast-0", mode: .scrolling),
-                    event(id: "fast-1", mode: .scrolling),
+                    event(id: "fast-1", mode: .scrolling)
                 ]
             )
         )
@@ -227,7 +227,7 @@ struct DanmakuPresentationControllerTests {
         let scenarios = [
             (surfaceWidth: 400.0, textWidth: 100.0),
             (surfaceWidth: 1_100.0, textWidth: 429.0),
-            (surfaceWidth: 3_440.0, textWidth: 1_479.0),
+            (surfaceWidth: 3_440.0, textWidth: 1_479.0)
         ]
 
         for scenario in scenarios {
@@ -405,7 +405,7 @@ struct DanmakuPresentationControllerTests {
             backend.operations == [
                 .rate(1),
                 .remove("first"),
-                .render("second"),
+                .render("second")
             ]
         )
         #expect(controller.statistics.active == 1)
@@ -427,7 +427,7 @@ struct DanmakuPresentationControllerTests {
                 generation: 1,
                 events: [
                     event(id: "first", mode: .scrolling),
-                    event(id: "second", mode: .scrolling),
+                    event(id: "second", mode: .scrolling)
                 ]
             )
         )
@@ -676,7 +676,7 @@ struct DanmakuPresentationControllerTests {
             0, 0, 0, 0, 0,
             0, 0, 255, 0, 0,
             0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0
         ]
         let oneX = DanmakuTextureRasterizer.outerRing(
             alpha: alpha,
@@ -701,7 +701,7 @@ struct DanmakuPresentationControllerTests {
         let adjacent: [UInt8] = [
             0, 0, 0, 0, 0,
             0, 255, 255, 255, 0,
-            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0
         ]
         let union = DanmakuTextureRasterizer.outerRing(
             alpha: adjacent,
@@ -721,7 +721,7 @@ struct DanmakuPresentationControllerTests {
             0, 0, 0, 0, 0,
             0, 0, 255, 0, 0,
             0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0
         ]
         let oneX = DanmakuTextureRasterizer.tentBlur(
             alpha: source,
@@ -838,7 +838,7 @@ struct DanmakuPresentationControllerTests {
             "中文弹幕",
             "Latin 123",
             "e\u{301}",
-            "👨‍👩‍👧‍👦 🌈",
+            "👨‍👩‍👧‍👦 🌈"
         ]
         for scale in [1.0, 2.0] {
             for size in [18.0, 25.0, 36.0] {
@@ -1183,7 +1183,7 @@ struct DanmakuPresentationControllerTests {
                 generation: 1,
                 events: [
                     event(id: "first", mode: .top),
-                    event(id: "second", mode: .top),
+                    event(id: "second", mode: .top)
                 ]
             )
         )
@@ -1362,7 +1362,7 @@ struct DanmakuPresentationControllerTests {
         let fixtures = [
             event(id: "scroll", mode: .scrolling),
             event(id: "top", mode: .top),
-            event(id: "bottom", mode: .bottom),
+            event(id: "bottom", mode: .bottom)
         ]
         for (index, fixture) in fixtures.enumerated() {
             _ = try await prepareAndRender(

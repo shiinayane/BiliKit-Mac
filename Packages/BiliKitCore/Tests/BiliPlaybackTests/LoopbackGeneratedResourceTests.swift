@@ -211,7 +211,7 @@ struct LoopbackGeneratedResourceTests {
                         data: Data("replacement".utf8),
                         contentType: "text/plain"
                     )
-                ),
+                )
             ])
         }
 

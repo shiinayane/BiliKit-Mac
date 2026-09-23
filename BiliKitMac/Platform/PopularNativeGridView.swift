@@ -54,7 +54,7 @@ struct PopularNativeGridView: View {
                     NativeVideoCardMetric(
                         text: presentation.danmakuCountText,
                         systemImage: "text.bubble.fill"
-                    ),
+                    )
                 ],
                 coverTrailingText: presentation.durationText,
                 footerLeadingText: presentation.footerText,
@@ -64,7 +64,7 @@ struct PopularNativeGridView: View {
                         presentation.ownerName,
                         AppStrings.localized("播放 \(presentation.viewCountText)", locale: locale),
                         AppStrings.localized("弹幕 \(presentation.danmakuCountText)", locale: locale),
-                        AppStrings.localized("时长 \(presentation.durationText)", locale: locale),
+                        AppStrings.localized("时长 \(presentation.durationText)", locale: locale)
                     ]
                 )
             )

@@ -76,7 +76,7 @@ struct KeychainWebCredentialStore: WebCredentialStoring, Sendable {
             kSecAttrAccessible as String:
                 kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecAttrLabel as String: "BiliKit Web 登录凭据",
-            kSecValueData as String: encoded,
+            kSecValueData as String: encoded
         ]
         try Self.requireSuccess(
             operations.update(query: baseQuery, attributes: update)
@@ -95,7 +95,7 @@ struct KeychainWebCredentialStore: WebCredentialStoring, Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: false,
-            kSecUseDataProtectionKeychain as String: true,
+            kSecUseDataProtectionKeychain as String: true
         ]
     }
 

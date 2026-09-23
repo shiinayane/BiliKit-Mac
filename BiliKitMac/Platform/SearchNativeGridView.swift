@@ -46,7 +46,7 @@ struct SearchNativeGridView: View {
                 NativeVideoCardMetric(
                     text: presentation.danmakuCountText,
                     systemImage: "text.bubble.fill"
-                ),
+                )
             ],
             coverTrailingText: presentation.durationText,
             footerLeadingText: presentation.footerText,

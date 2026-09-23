@@ -50,7 +50,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             surfaceHeight,
             laneHeight,
             minimumHorizontalGap,
-            displayAreaFraction,
+            displayAreaFraction
         ]
         guard values.allSatisfy(\.isFinite),
             surfaceWidth > 0,

@@ -36,7 +36,7 @@ struct BiliWatchHistoryRepositoryTests {
             MappingCase(
                 scenario: .invalidRequest,
                 expected: .invalidResponse
-            ),
+            )
         ]
     )
     func mapsAPIFailure(testCase: MappingCase) async {

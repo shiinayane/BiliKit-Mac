@@ -1604,7 +1604,7 @@ final class NativePlaybackSidebarOverlayView: NSView {
             NSRect(x: 16, y: 145, width: availableWidth * 0.82, height: 13),
             NSRect(x: 16, y: 184, width: min(132, availableWidth), height: 18),
             NSRect(x: 16, y: 214, width: availableWidth, height: 26),
-            NSRect(x: 16, y: 250, width: availableWidth, height: 26),
+            NSRect(x: 16, y: 250, width: availableWidth, height: 26)
         ]
         for (index, rect) in rects.enumerated() {
             (index < 2 ? NSColor.quaternaryLabelColor : NativePlaybackSkeletonColor.detailFill)

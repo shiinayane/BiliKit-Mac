@@ -606,7 +606,7 @@ struct AppEnvironment {
         "/x/web-interface/popular",
         "/x/web-interface/view",
         "/x/web-interface/wbi/index/top/feed/rcmd",
-        "/x/web-interface/wbi/search/type",
+        "/x/web-interface/wbi/search/type"
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [
@@ -673,7 +673,7 @@ private final class WatchProgressSleepObservation {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in self?.resume() }
-            },
+            }
         ]
     }
 

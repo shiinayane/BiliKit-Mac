@@ -783,7 +783,7 @@ private final class NativeVideoMergedCoverView: NSView {
         ),
         NativeVideoMergedCoverView.makeTextLayer(
             font: .systemFont(ofSize: 12, weight: .medium)
-        ),
+        )
     ]
     private let metricCells = [
         NativeVideoMergedCoverView.makeLabelCell(
@@ -791,7 +791,7 @@ private final class NativeVideoMergedCoverView: NSView {
         ),
         NativeVideoMergedCoverView.makeLabelCell(
             font: .systemFont(ofSize: 12, weight: .medium)
-        ),
+        )
     ]
     private var metricIconNames: [String?] = [nil, nil]
     private var metricIconSizes: [NSSize] = [.zero, .zero]
@@ -822,7 +822,7 @@ private final class NativeVideoMergedCoverView: NSView {
         imageLayer.actions = Self.imageLayerActions
         gradientLayer.colors = [
             NSColor.clear.cgColor,
-            NSColor.black.withAlphaComponent(0.78).cgColor,
+            NSColor.black.withAlphaComponent(0.78).cgColor
         ]
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
@@ -1085,7 +1085,7 @@ private final class NativeVideoMergedCoverView: NSView {
         "contents": NSNull(),
         "hidden": NSNull(),
         "position": NSNull(),
-        "string": NSNull(),
+        "string": NSNull()
     ]
 
     private static let imageLayerActions: [String: CAAction] = [
@@ -1093,7 +1093,7 @@ private final class NativeVideoMergedCoverView: NSView {
         "contents": NSNull(),
         "hidden": NSNull(),
         "opacity": NSNull(),
-        "position": NSNull(),
+        "position": NSNull()
     ]
 
     private static var backgroundColor: CGColor {
@@ -1126,14 +1126,14 @@ private final class NativeVideoLayerImageView: NSView {
             "contents": NSNull(),
             "hidden": NSNull(),
             "position": NSNull(),
-            "bounds": NSNull(),
+            "bounds": NSNull()
         ]
         imageLayer.contentsGravity = .resizeAspectFill
         imageLayer.actions = [
             "contents": NSNull(),
             "opacity": NSNull(),
             "position": NSNull(),
-            "bounds": NSNull(),
+            "bounds": NSNull()
         ]
         layer?.addSublayer(placeholderLayer)
         layer?.addSublayer(imageLayer)

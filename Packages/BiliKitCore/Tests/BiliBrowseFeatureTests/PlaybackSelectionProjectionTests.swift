@@ -133,7 +133,7 @@ struct PlaybackSelectionProjectionTests {
                 pages: [page(1)],
                 collection: collection(sections: [
                     Array(episodes[0..<3]),
-                    Array(episodes[3..<10]),
+                    Array(episodes[3..<10])
                 ])
             )
         )

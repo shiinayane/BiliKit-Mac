@@ -227,7 +227,7 @@ final class NativePlaybackDetailRootView: NSView {
             hostingView.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
             hostingView.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
             hostingView.topAnchor.constraint(equalTo: documentView.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
         ])
     }
 

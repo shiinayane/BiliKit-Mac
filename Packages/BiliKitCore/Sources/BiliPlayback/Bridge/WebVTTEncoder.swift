@@ -26,7 +26,7 @@ public struct WebVTTEncoder: Sendable {
         var lines = [
             "WEBVTT",
             "X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:\(mpegTimestamp)",
-            "",
+            ""
         ]
         var previousStart = 0.0
         for (index, cue) in cues.enumerated() {

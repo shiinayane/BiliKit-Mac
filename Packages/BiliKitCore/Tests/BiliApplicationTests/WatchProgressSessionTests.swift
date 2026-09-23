@@ -110,7 +110,7 @@ struct WatchProgressSessionTests {
     @Test(arguments: [
         WatchProgressError.authenticationInvalid,
         WatchProgressError.requestRestricted,
-        WatchProgressError.unavailable,
+        WatchProgressError.unavailable
     ])
     func reportingFailureClosesOnlyHeartbeatSession(
         error: WatchProgressError
@@ -201,7 +201,7 @@ struct WatchProgressSessionTests {
 
         await repository.releaseNext()
         for expectedEvent in [
-            WatchProgressEvent.paused, .resumed, .ended,
+            WatchProgressEvent.paused, .resumed, .ended
         ] {
             #expect(await attempts.next()?.event == expectedEvent)
             await repository.releaseNext()
@@ -279,7 +279,7 @@ struct WatchProgressSessionTests {
 
     @Test(arguments: [
         WatchProgressError.authenticationInvalid,
-        WatchProgressError.unavailable,
+        WatchProgressError.unavailable
     ])
     func lateFailureCannotDisableOrReplayAcrossAThroughB(
         firstError: WatchProgressError

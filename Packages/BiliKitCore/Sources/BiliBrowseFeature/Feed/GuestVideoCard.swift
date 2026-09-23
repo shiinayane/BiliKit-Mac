@@ -139,7 +139,7 @@ public struct SearchVideoCardPresentation: Sendable, Equatable {
                 durationText.map {
                     BrowseFeatureStrings.localized("时长 \($0)", locale: locale)
                 },
-                BrowseFeatureStrings.localized("发布 \(publishedDateText)", locale: locale),
+                BrowseFeatureStrings.localized("发布 \(publishedDateText)", locale: locale)
             ].compactMap { $0 }
         )
     }

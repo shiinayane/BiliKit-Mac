@@ -30,7 +30,7 @@ struct SubtitleUseCaseTests {
                 languageCode: "ai-ja",
                 displayName: "日本語",
                 kind: .automatic
-            ),
+            )
         ]
 
         let options = SubtitleDisplayPolicy.options(for: tracks)
@@ -38,7 +38,7 @@ struct SubtitleUseCaseTests {
         #expect(options.map(\.trackID) == tracks.map(\.id))
         #expect(
             options.map(\.label) == [
-                "中文", "中文（AI）", "English（AI）", "日本語（AI）",
+                "中文", "中文（AI）", "English（AI）", "日本語（AI）"
             ]
         )
     }
@@ -57,7 +57,7 @@ struct SubtitleUseCaseTests {
                 languageCode: "und-2",
                 displayName: "Unknown",
                 kind: .unknown
-            ),
+            )
         ])
 
         #expect(options.map(\.label) == ["Unknown", "Unknown"])
@@ -90,7 +90,7 @@ struct SubtitleUseCaseTests {
                     displayName: "中文",
                     kind: .standard
                 ),
-                automaticChinese,
+                automaticChinese
             ]).map(\.label) == ["中文", "中文（AI）"]
         )
         #expect(
@@ -101,7 +101,7 @@ struct SubtitleUseCaseTests {
                     displayName: "English",
                     kind: .standard
                 ),
-                automaticEnglish,
+                automaticEnglish
             ]).map(\.label) == ["English", "English（AI）"]
         )
         #expect(
@@ -136,12 +136,12 @@ struct SubtitleUseCaseTests {
                 languageCode: "ai-fr",
                 displayName: "Français",
                 kind: .unknown
-            ),
+            )
         ])
 
         #expect(
             options.map(\.label) == [
-                "Français（AI）", "한국어（AI）", "Français",
+                "Français（AI）", "한국어（AI）", "Français"
             ]
         )
     }
@@ -151,7 +151,7 @@ struct SubtitleUseCaseTests {
         arguments: [
             PlaybackItemIdentity(bvid: "", cid: 1),
             PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 0),
-            PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: -1),
+            PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: -1)
         ]
     )
     func invalidTrackIdentityFailsBeforeRepository(
@@ -171,7 +171,7 @@ struct SubtitleUseCaseTests {
         arguments: [
             ("", PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 1)),
             ("track", PlaybackItemIdentity(bvid: "", cid: 1)),
-            ("track", PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 0)),
+            ("track", PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 0))
         ]
     )
     func invalidCueInputFailsBeforeRepository(

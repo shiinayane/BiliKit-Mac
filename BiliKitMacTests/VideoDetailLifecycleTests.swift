@@ -242,7 +242,7 @@ struct VideoDetailLifecycleTests {
             playback.loadedIdentities == [
                 fixture.identity,
                 fixture.identity,
-                fixture.identity,
+                fixture.identity
             ]
         )
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
@@ -464,7 +464,7 @@ struct VideoDetailLifecycleTests {
             await repository.playbackCIDs() == [
                 fixture.initialPage.cid,
                 fixture.failingPage.cid,
-                fixture.replacementPage.cid,
+                fixture.replacementPage.cid
             ]
         )
     }

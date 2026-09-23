@@ -49,7 +49,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             requests.map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl",
+                "/x/player/playurl"
             ]
         )
         #expect(requests[0].headers["Cookie"] == nil)
@@ -104,7 +104,7 @@ struct CDNBenchmarkSampleDiscovererTests {
         let transport = CancellingFinalPlayURLTransport(
             responses: [
                 rank, detail, try fixtureResponse("playurl"),
-                rank, detail, try fixtureResponse("playurl"),
+                rank, detail, try fixtureResponse("playurl")
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -138,7 +138,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 rank,
                 mismatchedDetail,
                 acceptedDetail,
-                try fixtureResponse("playurl"),
+                try fixtureResponse("playurl")
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -158,7 +158,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
                 "/x/web-interface/view",
-                "/x/player/playurl",
+                "/x/player/playurl"
             ]
         )
     }
@@ -177,7 +177,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 rank,
                 firstDetail,
                 try fixtureResponse("playurl"),
-                jsonResponse(#"{"code":0,"data":{"result":[]}}"#),
+                jsonResponse(#"{"code":0,"data":{"result":[]}}"#)
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -196,7 +196,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             await transport.requests.map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl",
+                "/x/player/playurl"
             ]
         )
     }
@@ -212,7 +212,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 jsonResponse(
                     #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
                 ),
-                try fixtureResponse("playurl", removesAudio: true),
+                try fixtureResponse("playurl", removesAudio: true)
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -250,7 +250,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 jsonResponse(
                     #"{"code":0,"data":{"bvid":"BV1FixtureB2","cid":900002,"duration":360,"pubdate":1700074800,"tid":124,"owner":{"mid":10002}}}"#
                 ),
-                try fixtureResponse("playurl"),
+                try fixtureResponse("playurl")
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -272,7 +272,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 "/x/player/playurl",
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl",
+                "/x/player/playurl"
             ]
         )
     }
@@ -289,7 +289,7 @@ struct CDNBenchmarkSampleDiscovererTests {
         let transport = DiscoveryRecordingTransport(
             responses: [
                 rank, detail, try fixtureResponse("playurl"),
-                rank, detail, try fixtureResponse("playurl"),
+                rank, detail, try fixtureResponse("playurl")
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -318,7 +318,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 jsonResponse(
                     #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
                 ),
-                try fixtureResponse("playurl", promotesAVCToHighQuality: false),
+                try fixtureResponse("playurl", promotesAVCToHighQuality: false)
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -347,7 +347,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 jsonResponse(
                     #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
                 ),
-                try fixtureResponse("playurl"),
+                try fixtureResponse("playurl")
             ]
         )
         let discoverer = CDNBenchmarkSampleDiscoverer(
@@ -362,7 +362,7 @@ struct CDNBenchmarkSampleDiscovererTests {
         #expect(
             await transport.requests.map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
-                "/x/web-interface/view",
+                "/x/web-interface/view"
             ]
         )
     }

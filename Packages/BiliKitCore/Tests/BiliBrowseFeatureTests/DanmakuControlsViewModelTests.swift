@@ -71,7 +71,7 @@ struct DanmakuControlsViewModelTests {
             presentation.modeValues == [
                 ModeValues(scrolling: false, top: true, bottom: true),
                 ModeValues(scrolling: false, top: false, bottom: true),
-                ModeValues(scrolling: false, top: false, bottom: false),
+                ModeValues(scrolling: false, top: false, bottom: false)
             ]
         )
         #expect(presentation.stopCount == 1)

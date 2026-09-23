@@ -274,7 +274,7 @@ private struct DanmakuSettingsPopover: View {
                     ),
                     DanmakuOpacity.allowedRange.upperBound.formatted(
                         .percent.precision(.fractionLength(0))
-                    ),
+                    )
                 ]
             )
         }

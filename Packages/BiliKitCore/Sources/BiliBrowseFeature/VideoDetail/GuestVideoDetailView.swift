@@ -112,7 +112,7 @@ struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
             )
             return [
                 BrowseFeatureStrings.localized("充电专属", locale: locale),
-                durationNotice,
+                durationNotice
             ].joined(separator: " · ")
         }
     }

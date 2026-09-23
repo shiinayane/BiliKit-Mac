@@ -56,7 +56,7 @@ public struct HLSMediaPlaylistBuilder: Sendable {
             "#EXT-X-VERSION:7",
             "#EXT-X-TARGETDURATION:\(targetDuration)",
             "#EXT-X-MEDIA-SEQUENCE:0",
-            "#EXT-X-PLAYLIST-TYPE:VOD",
+            "#EXT-X-PLAYLIST-TYPE:VOD"
         ]
         if index.references.allSatisfy(\.startsWithSAP) {
             lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
@@ -185,7 +185,7 @@ public struct HLSIFramePlaylistBuilder: Sendable {
             "#EXT-X-MEDIA-SEQUENCE:0",
             "#EXT-X-PLAYLIST-TYPE:VOD",
             "#EXT-X-I-FRAMES-ONLY",
-            "#EXT-X-MAP:URI=\"\(uri)\",BYTERANGE=\"\(byteRangeValue(initialization))\"",
+            "#EXT-X-MAP:URI=\"\(uri)\",BYTERANGE=\"\(byteRangeValue(initialization))\""
         ]
         for reference in index.references {
             let duration = Double(reference.duration) / Double(index.timescale)
@@ -282,7 +282,7 @@ public struct HLSSubtitlePlaylistBuilder: Sendable {
             "#EXTINF:\(formattedDuration),",
             uri,
             "#EXT-X-ENDLIST",
-            "",
+            ""
         ].joined(separator: "\n")
     }
 }
@@ -328,7 +328,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         var audioAverageBitRate = 0
         var lines = [
             "#EXTM3U",
-            "#EXT-X-VERSION:7",
+            "#EXT-X-VERSION:7"
         ]
         let allIndices = videoVariants.map(\.index) + audioRenditions.map(\.index)
         if allIndices.allSatisfy(isIndependent) {

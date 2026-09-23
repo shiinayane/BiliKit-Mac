@@ -33,7 +33,7 @@ struct HTTPBoundedRangeClientTests {
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 10-12/100",
-                "Content-Length": "3",
+                "Content-Length": "3"
             ],
             body: Data([1, 2, 3]),
             keepsBodyPending: false
@@ -97,7 +97,7 @@ struct HTTPBoundedRangeClientTests {
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 0-2/100",
-                "Content-Length": "4",
+                "Content-Length": "4"
             ],
             body: Data([1, 2, 3, 4]),
             keepsBodyPending: true

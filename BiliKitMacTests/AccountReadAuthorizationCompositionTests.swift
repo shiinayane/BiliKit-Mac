@@ -28,7 +28,7 @@ struct AccountReadAuthorizationCompositionTests {
                 "/x/web-interface/popular",
                 "/x/web-interface/view",
                 "/x/web-interface/wbi/index/top/feed/rcmd",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         #expect(
@@ -46,7 +46,7 @@ struct AccountReadAuthorizationCompositionTests {
         let configuredCapabilities = [
             AppEnvironment.accountSessionValidationAllowedPaths,
             AppEnvironment.mainAccountReadAllowedPaths,
-            AppEnvironment.cdnBenchmarkAccountReadAllowedPaths,
+            AppEnvironment.cdnBenchmarkAccountReadAllowedPaths
         ]
 
         for allowedPaths in configuredCapabilities {

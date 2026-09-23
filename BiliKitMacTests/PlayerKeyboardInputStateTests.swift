@@ -18,7 +18,7 @@ struct PlayerKeyboardInputStateTests {
         #expect(
             shortState.keyUp(.right) == [
                 .cancelLongPress(pressID: shortID),
-                .seekBy(seconds: 5),
+                .seekBy(seconds: 5)
             ]
         )
         #expect(shortState.deadlineReached(pressID: shortID).isEmpty)
@@ -45,7 +45,7 @@ struct PlayerKeyboardInputStateTests {
             state.keyDown(.right, isRepeat: false, timestamp: 1) { rightID }
                 == [
                     .endMomentaryRate(pressID: leftID),
-                    .scheduleLongPress(pressID: rightID),
+                    .scheduleLongPress(pressID: rightID)
                 ]
         )
         #expect(state.keyUp(.left).isEmpty)
@@ -71,7 +71,7 @@ struct PlayerKeyboardInputStateTests {
         let cases: [(PlayerKeyboardShortcut, PlayerKeyboardInputState.Action)] = [
             (.playback, .togglePlayback),
             (.danmaku, .toggleDanmaku),
-            (.subtitles, .toggleSubtitles),
+            (.subtitles, .toggleSubtitles)
         ]
         for (shortcut, action) in cases {
             #expect(state.shortcutKeyDown(shortcut, isRepeat: false) == [action])
@@ -96,7 +96,7 @@ struct PlayerKeyboardInputStateTests {
             (true, false, false, true, false),
             (true, true, true, true, false),
             (true, true, false, false, false),
-            (true, true, false, true, true),
+            (true, true, false, true, true)
         ] {
             #expect(
                 !PlayerKeyboardEventScope.captures(

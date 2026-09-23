@@ -90,7 +90,7 @@ struct NativeVideoCardTextLayoutTests {
         for layer in [
             renderer.titleLayer,
             renderer.footerLeadingLayer,
-            renderer.footerTrailingLayer,
+            renderer.footerTrailingLayer
         ] {
             #expect(layer.string == nil)
             #expect(layer.isHidden)

@@ -16,13 +16,13 @@ struct PopularNativeGridTests {
             previousContents: [
                 "BV-a": "old",
                 "BV-b": "same",
-                "BV-remove": "gone",
+                "BV-remove": "gone"
             ],
             updatedIDs: ["BV-a", "BV-b", "BV-new"],
             updatedContents: [
                 "BV-a": "updated",
                 "BV-b": "same",
-                "BV-new": "inserted",
+                "BV-new": "inserted"
             ]
         )
 

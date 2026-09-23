@@ -151,7 +151,7 @@ struct AppNavigationCoordinatorTests {
             events == [
                 "start:BV1RouteA",
                 "start:BV1RouteB",
-                "start:BV1RouteC",
+                "start:BV1RouteC"
             ]
         )
     }

@@ -525,7 +525,7 @@ public struct DASHToHLSBridge: Sendable {
                 "ja": "オリジナル音声",
                 "zh": "原声",
                 "zh-Hans": "原声",
-                "zh-Hant": "原聲",
+                "zh-Hant": "原聲"
             ]
         }
         let subtitleLanguageGroups = Dictionary(

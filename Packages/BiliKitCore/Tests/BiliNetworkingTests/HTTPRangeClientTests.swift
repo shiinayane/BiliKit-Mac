@@ -51,7 +51,7 @@ struct HTTPRangeClientTests {
                     statusCode: 206,
                     headers: ["Content-Range": "bytes 10-12/100"],
                     body: Data([2, 3, 4])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)
@@ -76,7 +76,7 @@ struct HTTPRangeClientTests {
                     statusCode: 206,
                     headers: [:],
                     body: Data([0, 1, 2])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)
@@ -91,7 +91,7 @@ struct HTTPRangeClientTests {
             #expect(
                 attempts == [
                     HTTPRangeAttempt(url: first, failure: .statusCode(403)),
-                    HTTPRangeAttempt(url: second, failure: .missingContentRange),
+                    HTTPRangeAttempt(url: second, failure: .missingContentRange)
                 ]
             )
             #expect(!String(describing: attempts).contains("secret-page"))
@@ -147,7 +147,7 @@ struct HTTPRangeClientTests {
                 octalLocal,
                 hexadecimalLocal,
                 plaintext,
-                safe,
+                safe
             ],
             range: try HTTPByteRange(start: 0, endInclusive: 2)
         )

@@ -16,7 +16,7 @@ struct VideoMetadataFormattingTests {
         let strings = try #require(catalog["strings"] as? [String: Any])
         let expected = [
             "万": "万", "亿": "亿", "%lld分钟前": "%lld分钟前",
-            "%lld小时前": "%lld小时前", "昨天": "昨天",
+            "%lld小时前": "%lld小时前", "昨天": "昨天"
         ]
         for (key, value) in expected {
             let entry = try #require(strings[key] as? [String: Any])
@@ -44,7 +44,7 @@ struct VideoMetadataFormattingTests {
             return
         }
         let counts: [Int64] = [
-            -1, 999, 1000, 9999, 10_000, 12_345, 99_999_999, 100_000_000, 123_456_789,
+            -1, 999, 1000, 9999, 10_000, 12_345, 99_999_999, 100_000_000, 123_456_789
         ]
         #expect(counts.map { VideoMetadataFormatting.compactCount($0, locale: locale) } == expected)
     }

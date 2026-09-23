@@ -17,7 +17,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(arguments: [
         GuestApplicationError.authenticationInvalid,
         .authenticationUnavailable,
-        .requestRestricted,
+        .requestRestricted
     ])
     @MainActor
     func onlyInvalidAuthenticationRequestsAppRevalidation(
@@ -446,7 +446,7 @@ struct GuestBrowseAndVideoViewModelTests {
                 == [
                     VideoSearchRequest(criteria: criteria, page: 1),
                     VideoSearchRequest(criteria: criteria, page: 2),
-                    VideoSearchRequest(criteria: criteria, page: 2),
+                    VideoSearchRequest(criteria: criteria, page: 2)
                 ]
         )
     }
@@ -2077,11 +2077,11 @@ private struct CollectionFixtures: Sendable {
     let thirdBVID = "BV1FixtureC3"
     let rootPages = [
         VideoPage(cid: 900_001, index: 1, title: "当前 P1", durationSeconds: 120),
-        VideoPage(cid: 900_002, index: 2, title: "当前 P2", durationSeconds: 180),
+        VideoPage(cid: 900_002, index: 2, title: "当前 P2", durationSeconds: 180)
     ]
     let episodePages = [
         VideoPage(cid: 910_001, index: 1, title: "下一 P1", durationSeconds: 90),
-        VideoPage(cid: 910_002, index: 2, title: "下一 P2", durationSeconds: 110),
+        VideoPage(cid: 910_002, index: 2, title: "下一 P2", durationSeconds: 110)
     ]
     let thirdPages = [
         VideoPage(cid: 920_001, index: 1, title: "第三 P1", durationSeconds: 80)
@@ -2148,7 +2148,7 @@ private struct CollectionFixtures: Sendable {
                             duplicateLazyEpisode,
                             thirdLazyEpisode,
                             rootSummaryEpisode,
-                            embeddedRemoteEpisode,
+                            embeddedRemoteEpisode
                         ]
                     )
                 ]
@@ -3171,7 +3171,7 @@ private struct GuestFixtures: Sendable {
             ),
             mediaHeaders: [
                 "Referer": "https://www.bilibili.com/video/\(bvid)/",
-                "User-Agent": "BiliKitMacTests",
+                "User-Agent": "BiliKitMacTests"
             ]
         )
     }
@@ -3261,7 +3261,7 @@ private actor ResumeRepositoryStub: GuestContentRepository {
                 index: 2,
                 title: "P2",
                 durationSeconds: 120
-            ),
+            )
         ]
     }
 
@@ -3347,7 +3347,7 @@ private actor PartSwitchRepositoryStub: GuestContentRepository {
                 index: 2,
                 title: "P2",
                 durationSeconds: 180
-            ),
+            )
         ]
     }
 
@@ -3403,7 +3403,7 @@ private actor LateAuthenticationFailureRepositoryStub: GuestContentRepository {
                 index: 2,
                 title: "P2",
                 durationSeconds: 180
-            ),
+            )
         ]
     }
 
@@ -3463,7 +3463,7 @@ private actor ABAPartRepositoryStub: GuestContentRepository {
                 index: 2,
                 title: "P2",
                 durationSeconds: 180
-            ),
+            )
         ]
     }
 

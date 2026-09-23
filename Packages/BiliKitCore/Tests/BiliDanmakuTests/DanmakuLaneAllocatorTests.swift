@@ -13,7 +13,7 @@ struct DanmakuLaneAllocatorTests {
             [
                 request(id: "top", time: 1, mode: .top),
                 request(id: "bottom", time: 2, mode: .bottom),
-                request(id: "scroll", time: 2, mode: .scrolling),
+                request(id: "scroll", time: 2, mode: .scrolling)
             ],
             at: 3
         )
@@ -37,7 +37,7 @@ struct DanmakuLaneAllocatorTests {
                 request(id: "scroll", mode: .scrolling),
                 request(id: "bottom", mode: .bottom),
                 request(id: "top-blocked", mode: .top),
-                request(id: "bottom-blocked", mode: .bottom),
+                request(id: "bottom-blocked", mode: .bottom)
             ],
             at: 0
         )
@@ -76,7 +76,7 @@ struct DanmakuLaneAllocatorTests {
             [
                 request(id: "lane-0"),
                 request(id: "lane-1"),
-                request(id: "slow-overlap", duration: 20),
+                request(id: "slow-overlap", duration: 20)
             ],
             at: 0
         )
@@ -102,7 +102,7 @@ struct DanmakuLaneAllocatorTests {
         let overlapping = allocator.admit(
             [
                 request(id: "fast", duration: 8),
-                request(id: "slow", duration: 20),
+                request(id: "slow", duration: 20)
             ],
             at: 0
         )
@@ -253,7 +253,7 @@ struct DanmakuLaneAllocatorTests {
             [
                 request(id: "a", time: 1, mode: .top),
                 request(id: "b", time: 2, mode: .scrolling),
-                request(id: "c", time: 3, mode: .bottom),
+                request(id: "c", time: 3, mode: .bottom)
             ],
             at: 3
         )
@@ -407,7 +407,7 @@ struct DanmakuLaneAllocatorTests {
             [
                 request(id: "large", mode: .top, height: 39),
                 request(id: "small", mode: .top, height: 18),
-                request(id: "blocked", mode: .top, height: 18),
+                request(id: "blocked", mode: .top, height: 18)
             ],
             at: 0
         )
@@ -425,7 +425,7 @@ struct DanmakuLaneAllocatorTests {
             [
                 request(id: "large", height: 39),
                 request(id: "small", height: 18),
-                request(id: "blocked-large", height: 39),
+                request(id: "blocked-large", height: 39)
             ],
             at: 0
         )
@@ -441,7 +441,7 @@ struct DanmakuLaneAllocatorTests {
         _ = allocator.admit(
             [
                 request(id: "large", mode: .top, height: 39),
-                request(id: "small", mode: .top, height: 18),
+                request(id: "small", mode: .top, height: 18)
             ],
             at: 0
         )
@@ -463,7 +463,7 @@ struct DanmakuLaneAllocatorTests {
         _ = allocator.admit(
             [
                 request(id: "large", height: 39, duration: 1),
-                request(id: "small", height: 18, duration: 10),
+                request(id: "small", height: 18, duration: 10)
             ],
             at: 0
         )
@@ -532,7 +532,7 @@ struct DanmakuLaneAllocatorTests {
         _ = allocator.admit(
             [
                 request(id: "top", mode: .top),
-                request(id: "scroll", mode: .scrolling),
+                request(id: "scroll", mode: .scrolling)
             ],
             at: 0
         )
@@ -542,7 +542,7 @@ struct DanmakuLaneAllocatorTests {
         let reused = allocator.admit(
             [
                 request(id: "top-next", mode: .top),
-                request(id: "scroll-next", mode: .scrolling),
+                request(id: "scroll-next", mode: .scrolling)
             ],
             at: 0.1
         )
@@ -563,7 +563,7 @@ struct DanmakuLaneAllocatorTests {
             )] = [
                 (0.5, [0, 20], [60, 40]),
                 (0.75, [0, 20, 40], [60, 40, 20]),
-                (1, [0, 20, 40, 60], [60, 40, 20, 0]),
+                (1, [0, 20, 40, 60], [60, 40, 20, 0])
             ]
 
         for testCase in cases {

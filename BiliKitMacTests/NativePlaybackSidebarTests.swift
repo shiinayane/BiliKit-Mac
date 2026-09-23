@@ -25,7 +25,7 @@ struct NativePlaybackSidebarTests {
                     .summary(bvid: "BVCurrent"),
                     .selection(bvid: "BVCurrent"),
                     .commentsHeader(subject: nil),
-                    .commentsState(subject: nil, kind: .idle),
+                    .commentsState(subject: nil, kind: .idle)
                 ]
         )
     }
@@ -544,7 +544,7 @@ struct NativePlaybackSidebarTests {
             reportedEpisodeCount: 2,
             sections: [
                 collectionSection(id: 10, title: "正片", episodes: [first]),
-                collectionSection(id: 11, title: "花絮", episodes: [second]),
+                collectionSection(id: 11, title: "花絮", episodes: [second])
             ]
         )
         let projection = selectionProjection(
@@ -610,7 +610,7 @@ struct NativePlaybackSidebarTests {
                 == [
                     .commentsHeader(subject: subject),
                     .commentThread(subject: subject, rootID: first.id),
-                    .commentsFooter(subject: subject),
+                    .commentsFooter(subject: subject)
                 ]
         )
         #expect(
@@ -1095,7 +1095,7 @@ struct NativePlaybackSidebarTests {
         state.isExpanded = true
         state.replies = [
             comment(id: 11, rootID: 1, message: "旧页回复一"),
-            comment(id: 12, rootID: 1, message: "旧页回复二"),
+            comment(id: 12, rootID: 1, message: "旧页回复二")
         ]
         state.totalCount = 12
 
@@ -1274,7 +1274,7 @@ struct NativePlaybackSidebarTests {
                         length: memberRange.length
                     ),
                     target: .member(CommentAuthorID(rawValue: "301"))
-                ),
+                )
             ],
             replyCount: 1,
             preview: [comment(id: 11, rootID: 1, message: "楼中楼正文")]
@@ -1352,7 +1352,7 @@ struct NativePlaybackSidebarTests {
         #expect(
             openedTargets == [
                 .video(bvid: "BV1FixtureA1"),
-                .member(CommentAuthorID(rawValue: "301")),
+                .member(CommentAuthorID(rawValue: "301"))
             ]
         )
         let labels = views.compactMap { $0 as? NSTextField }
@@ -1415,7 +1415,7 @@ struct NativePlaybackSidebarTests {
         #expect(
             layout.frames == [
                 CGRect(x: 0, y: 0, width: 135, height: 180),
-                CGRect(x: 139, y: 0, width: 223, height: 135),
+                CGRect(x: 139, y: 0, width: 223, height: 135)
             ]
         )
     }
@@ -1437,7 +1437,7 @@ struct NativePlaybackSidebarTests {
                 position: 2,
                 pixelWidth: 446,
                 pixelHeight: 270
-            ),
+            )
         ]
         let slots = NativePlaybackCommentPictureSlots.slots(
             images: pictures,
@@ -1830,7 +1830,7 @@ struct NativePlaybackSidebarTests {
                     range: CommentTextRange(location: 3, length: 4),
                     asset: unknownAsset,
                     size: .unknown
-                ),
+                )
             ]
         )
         let scope = NativePlaybackCommentTextScope(
@@ -1860,7 +1860,7 @@ struct NativePlaybackSidebarTests {
         for (id, sex, isVIP, expectedColor) in [
             (21, CommentAuthorSex.male, false, NSColor.labelColor),
             (22, CommentAuthorSex.female, false, NSColor.labelColor),
-            (23, CommentAuthorSex.unspecified, true, NSColor.systemPink),
+            (23, CommentAuthorSex.unspecified, true, NSColor.systemPink)
         ] {
             let author = CommentAuthor(
                 id: CommentAuthorID(rawValue: "author-\(id)"),
@@ -1911,7 +1911,7 @@ struct NativePlaybackSidebarTests {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let previews = [
             comment(id: 31, rootID: 3, message: "回复一"),
-            comment(id: 32, rootID: 3, message: "回复二"),
+            comment(id: 32, rootID: 3, message: "回复二")
         ]
 
         for replyCount in [2, 3] {
@@ -2024,7 +2024,7 @@ struct NativePlaybackSidebarTests {
             statusBadges.displayedTexts
                 == [
                     AppStrings.localized("置顶"),
-                    AppStrings.localized("UP 主觉得很赞"),
+                    AppStrings.localized("UP 主觉得很赞")
                 ]
         )
         #expect(
@@ -2032,7 +2032,7 @@ struct NativePlaybackSidebarTests {
                 == ListFormatter.localizedString(
                     byJoining: [
                         AppStrings.localized("置顶"),
-                        AppStrings.localized("UP 主觉得很赞"),
+                        AppStrings.localized("UP 主觉得很赞")
                     ]
                 )
         )
@@ -2659,7 +2659,7 @@ struct NativePlaybackSidebarTests {
     ) -> GuestVideoContext {
         let pages = [
             VideoPage(cid: 1_001, index: 1, title: "第一部分", durationSeconds: 61),
-            VideoPage(cid: 1_002, index: 2, title: "第二部分", durationSeconds: 122),
+            VideoPage(cid: 1_002, index: 2, title: "第二部分", durationSeconds: 122)
         ]
         return GuestVideoContext(
             detail: VideoDetail(

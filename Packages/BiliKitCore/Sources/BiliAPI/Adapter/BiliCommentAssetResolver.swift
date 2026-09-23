@@ -6,7 +6,7 @@ public struct BiliCommentAssetResolver: Sendable {
     private static let allowedHosts: Set<String> = [
         "i0.hdslb.com",
         "i1.hdslb.com",
-        "i2.hdslb.com",
+        "i2.hdslb.com"
     ]
 
     public init() {}

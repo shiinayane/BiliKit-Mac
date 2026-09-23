@@ -126,7 +126,7 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
             guard let offset = direction.seekOffsetSeconds else { return [] }
             return [
                 .cancelLongPress(pressID: horizontalPress.pressID),
-                .seekBy(seconds: offset),
+                .seekBy(seconds: offset)
             ]
         case .longActivated:
             return [.endMomentaryRate(pressID: horizontalPress.pressID)]

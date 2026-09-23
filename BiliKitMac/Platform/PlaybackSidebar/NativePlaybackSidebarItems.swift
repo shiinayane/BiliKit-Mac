@@ -130,7 +130,7 @@ final class NativePlaybackSidebarReadOnlyTextView: NSTextView {
         typingAttributes = [
             .font: font,
             .foregroundColor: color,
-            .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle,
+            .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle
         ]
     }
 
@@ -164,7 +164,7 @@ final class NativePlaybackSidebarReadOnlyTextView: NSTextView {
                     .foregroundColor: color,
                     .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle(
                         maximumLines: maximumLines
-                    ),
+                    )
                 ]
             )
         )
@@ -282,7 +282,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
             nameLabel,
             signatureText,
             signatureLoadingBar,
-            signatureButton,
+            signatureButton
         ] {
             addSubview(subview)
         }
@@ -732,7 +732,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
             pagePopUp,
             pageStatusLabel,
             progress,
-            retryButton,
+            retryButton
         ] {
             addSubview(subview)
         }

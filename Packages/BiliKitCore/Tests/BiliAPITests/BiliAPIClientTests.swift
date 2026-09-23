@@ -40,7 +40,7 @@ struct BiliAPIClientTests {
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/index/top/feed/rcmd",
+                "/x/web-interface/wbi/index/top/feed/rcmd"
             ]
         )
         #expect(requests[0].headers["Cookie"] == nil)
@@ -278,7 +278,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(
             transport: RecordingTransport(responses: [
                 response(order: "[\(firstEpisode),\(secondEpisode)]"),
-                response(order: "[\(secondEpisode),\(firstEpisode)]"),
+                response(order: "[\(secondEpisode),\(firstEpisode)]")
             ])
         )
 
@@ -415,7 +415,7 @@ struct BiliAPIClientTests {
             URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
                 .queryItems == [
                     URLQueryItem(name: "mid", value: "10001"),
-                    URLQueryItem(name: "photo", value: "false"),
+                    URLQueryItem(name: "photo", value: "false")
                 ]
         )
         #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
@@ -496,7 +496,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -520,7 +520,7 @@ struct BiliAPIClientTests {
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         let searchQuery = URLComponents(
@@ -587,12 +587,12 @@ struct BiliAPIClientTests {
         }
         #expect(
             queries.prefix(5).map { $0["order"] } == [
-                "totalrank", "click", "pubdate", "dm", "stow",
+                "totalrank", "click", "pubdate", "dm", "stow"
             ]
         )
         #expect(
             queries.dropFirst(5).prefix(5).map { $0["duration"] } == [
-                "0", "1", "2", "3", "4",
+                "0", "1", "2", "3", "4"
             ]
         )
         #expect(queries.allSatisfy { $0["search_type"] == "video" })
@@ -610,7 +610,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -638,7 +638,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -657,7 +657,7 @@ struct BiliAPIClientTests {
     @Test(arguments: [
         HTTPRequestAuthorizationFailureKind.invalidCredential,
         .unavailable,
-        .denied,
+        .denied
     ])
     func searchFailsClosedForCredentialFailure(
         kind: HTTPRequestAuthorizationFailureKind
@@ -731,7 +731,7 @@ struct BiliAPIClientTests {
                     statusCode: response.statusCode,
                     headers: response.headers,
                     body: body
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -753,7 +753,7 @@ struct BiliAPIClientTests {
             responses: [
                 try fixtureResponse("nav"),
                 try fixtureResponse("search"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -783,7 +783,7 @@ struct BiliAPIClientTests {
                 try fixtureResponse("nav"),
                 rejected,
                 try fixtureResponse("nav-refreshed"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -800,7 +800,7 @@ struct BiliAPIClientTests {
                 "/x/web-interface/nav",
                 "/x/web-interface/wbi/search/type",
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         let signatures =
@@ -824,7 +824,7 @@ struct BiliAPIClientTests {
                 try fixtureResponse("nav"),
                 HTTPResponse(statusCode: 403, body: Data()),
                 try fixtureResponse("nav-refreshed"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -840,7 +840,7 @@ struct BiliAPIClientTests {
                 "/x/web-interface/nav",
                 "/x/web-interface/wbi/search/type",
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         let searchRequests = await transport.capturedRequests().filter {
@@ -859,7 +859,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                HTTPResponse(statusCode: 412, body: Data()),
+                HTTPResponse(statusCode: 412, body: Data())
             ]
         )
         let client = BiliAPIClient(
@@ -882,7 +882,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("nav"),
-                jsonResponse(#"{"code":-352,"message":"blocked"}"#),
+                jsonResponse(#"{"code":-352,"message":"blocked"}"#)
             ]
         )
         let client = BiliAPIClient(
@@ -997,7 +997,7 @@ struct BiliAPIClientTests {
             [
                 "length": 884_983,
                 "size": 50_000_000,
-                "backup_url": [],
+                "backup_url": []
             ]
         ]
         await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(.empty)) {
@@ -1132,14 +1132,14 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English（AI）",
-                                "production_type": 2,
+                                "production_type": 2
                             ],
                             [
                                 "lang": "ja",
                                 "title": "日本語（AI）",
-                                "production_type": 2,
-                            ],
-                        ],
+                                "production_type": 2
+                            ]
+                        ]
                     ],
                     volume: originalVolume
                 ),
@@ -1153,7 +1153,7 @@ struct BiliAPIClientTests {
                     audioPath: "ai-ja-audio.m4s",
                     currentLanguage: "ja",
                     currentProductionType: 2
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -1194,7 +1194,7 @@ struct BiliAPIClientTests {
         #"{"measured_i":null,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
         #"{"measured_i":"bad","measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
         #"{"measured_i":-200,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-        #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+        #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#
     ])
     func loudnessPayloadRequiresACompleteFiniteBoundedGroup(_ source: String) {
         let payload = try? JSONDecoder().decode(
@@ -1223,16 +1223,16 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English（AI）",
-                                "production_type": 2,
+                                "production_type": 2
                             ]
-                        ],
+                        ]
                     ]
                 ),
                 try semanticAudioResponse(
                     audioPath: "ai-en-audio.m4s",
                     currentLanguage: "en",
                     currentProductionType: 2
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -1285,7 +1285,7 @@ struct BiliAPIClientTests {
                     audioPath: "ai-en-audio.m4s",
                     currentLanguage: "en",
                     currentProductionType: currentProductionType
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -1400,9 +1400,9 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English（AI）",
-                                "production_type": 2,
+                                "production_type": 2
                             ]
-                        ],
+                        ]
                     ]
                 )
             ]
@@ -1460,7 +1460,7 @@ struct BiliAPIClientTests {
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
                 ),
-                HTTPResponse(statusCode: statusCode, body: Data()),
+                HTTPResponse(statusCode: statusCode, body: Data())
             ]
         )
         let client = BiliAPIClient(
@@ -1482,7 +1482,7 @@ struct BiliAPIClientTests {
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
                 ),
-                jsonResponse(#"{"code":-404,"message":"fixture"}"#),
+                jsonResponse(#"{"code":-404,"message":"fixture"}"#)
             ]
         )
         let client = BiliAPIClient(
@@ -1513,7 +1513,7 @@ struct BiliAPIClientTests {
                     statusCode: 200,
                     headers: ["Content-Type": "text/html"],
                     body: Data("fixture".utf8)
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -1560,9 +1560,9 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English \"AI\"",
-                                "production_type": 2,
+                                "production_type": 2
                             ]
-                        ],
+                        ]
                     ]
                 )
             ]
@@ -1628,7 +1628,7 @@ struct BiliAPIClientTests {
     @Test(arguments: [
         HTTPRequestAuthorizationFailureKind.invalidCredential,
         .unavailable,
-        .denied,
+        .denied
     ])
     func playbackFailsClosedForNonMissingAuthorizationFailure(
         kind: HTTPRequestAuthorizationFailureKind
@@ -1863,7 +1863,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("history"),
-                try fixtureResponse("history"),
+                try fixtureResponse("history")
             ]
         )
         let authorizer = RecordingRequestAuthorizer()
@@ -1915,7 +1915,7 @@ struct BiliAPIClientTests {
         #expect(
             await authorizer.capturedPaths() == [
                 "/x/web-interface/history/cursor",
-                "/x/web-interface/history/cursor",
+                "/x/web-interface/history/cursor"
             ]
         )
     }
@@ -1927,7 +1927,7 @@ struct BiliAPIClientTests {
         let transport = RecordingTransport(
             responses: [
                 try fixtureResponse("history"),
-                try fixtureResponse("history"),
+                try fixtureResponse("history")
             ]
         )
         let client = BiliAPIClient(
@@ -1969,7 +1969,7 @@ struct BiliAPIClientTests {
                 responses: [
                     try fixtureResponse("popular"),
                     try fixtureResponse("view"),
-                    try fixtureResponse("pagelist"),
+                    try fixtureResponse("pagelist")
                 ]
             ),
             requestAuthorizer: authorizer
@@ -1984,7 +1984,7 @@ struct BiliAPIClientTests {
                 == [
                     "/x/web-interface/popular",
                     "/x/web-interface/view",
-                    "/x/player/pagelist",
+                    "/x/player/pagelist"
                 ]
         )
     }
@@ -2113,7 +2113,7 @@ struct BiliAPIClientTests {
             "length": length,
             "size": size,
             "url": primaryURL ?? "https://media.example.invalid/\(path)",
-            "backup_url": backupURLs,
+            "backup_url": backupURLs
         ]
     }
 
@@ -2138,7 +2138,7 @@ struct BiliAPIClientTests {
             withJSONObject: [
                 "code": 0,
                 "message": "OK",
-                "data": ["durl": resolvedDURL, "format": format],
+                "data": ["durl": resolvedDURL, "format": format]
             ]
         )
         return HTTPResponse(
@@ -2212,9 +2212,9 @@ struct BiliAPIClientTests {
                 [
                     "lang": "en",
                     "title": "English（AI）",
-                    "production_type": 2,
+                    "production_type": 2
                 ]
-            ],
+            ]
         ]
     }
 
@@ -2249,8 +2249,8 @@ struct BiliAPIClientTests {
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",
-                            "index_range": "100-199",
-                        ],
+                            "index_range": "100-199"
+                        ]
                     ]
                 ],
                 "audio": [
@@ -2265,10 +2265,10 @@ struct BiliAPIClientTests {
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",
-                            "index_range": "100-199",
-                        ],
+                            "index_range": "100-199"
+                        ]
                     ]
-                ],
+                ]
             ]
         ]
         if let languageCatalog {
@@ -2305,7 +2305,7 @@ struct BiliAPIClientTests {
             "target_i": -14,
             "target_tp": -1,
             "target_offset": 99,
-            "multi_scene_args": "ignored",
+            "multi_scene_args": "ignored"
         ]
     }
 }

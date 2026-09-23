@@ -12,7 +12,7 @@ struct HTTPRangeStreamingClientTests {
             headers: [
                 "Content-Range": "bytes 10-13/100",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4; charset=binary",
+                "Content-Type": "video/mp4; charset=binary"
             ],
             chunks: [Data([1, 2]), Data([3, 4])]
         )
@@ -25,7 +25,7 @@ struct HTTPRangeStreamingClientTests {
             headers: [
                 "Cookie": "must-not-leave",
                 "Authorization": "must-not-leave",
-                "Referer": "https://www.bilibili.com/",
+                "Referer": "https://www.bilibili.com/"
             ],
             allowedContentTypes: ["video/mp4"],
             onResponse: { _ in await events.append("response") },
@@ -50,7 +50,7 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-2/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedContentRange(
                     expected: try HTTPByteRange(start: 0, endInclusive: 3),
@@ -61,7 +61,7 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/11", "Content-Length": "4",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedCompleteLength(expected: 10, actual: 11)
             ),
@@ -69,7 +69,7 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedContentLength(expected: 4, actual: 3)
             ),
@@ -77,10 +77,10 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/10", "Content-Length": "4",
-                    "Content-Type": "text/html",
+                    "Content-Type": "text/html"
                 ],
                 .unsupportedContentType("text/html")
-            ),
+            )
         ]
 
         for (status, headers, expectedError) in cases {
@@ -102,7 +102,7 @@ struct HTTPRangeStreamingClientTests {
         let headers = [
             "Content-Range": "bytes 0-3/10",
             "Content-Length": "4",
-            "Content-Type": "video/mp4",
+            "Content-Type": "video/mp4"
         ]
         RangeStreamURLProtocol.state.configure(
             statusCode: 206,
@@ -133,7 +133,7 @@ struct HTTPRangeStreamingClientTests {
             headers: [
                 "Content-Range": "bytes 0-3/10",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4",
+                "Content-Type": "video/mp4"
             ],
             chunks: [Data([1, 2]), Data([3, 4])]
         )
@@ -168,7 +168,7 @@ struct HTTPRangeStreamingClientTests {
             headers: [
                 "Content-Range": "bytes 0-3/10",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4",
+                "Content-Type": "video/mp4"
             ],
             chunks: [Data([1, 2, 3, 4])],
             delay: 5

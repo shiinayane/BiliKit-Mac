@@ -652,7 +652,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
         super.init(frame: frameRect)
         for (button, symbol, label) in [
             (backwardButton, "chevron.left", AppStrings.localized("上一排相关推荐")),
-            (forwardButton, "chevron.right", AppStrings.localized("下一排相关推荐")),
+            (forwardButton, "chevron.right", AppStrings.localized("下一排相关推荐"))
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             button.imagePosition = .imageOnly
@@ -759,7 +759,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
             options: [
                 .mouseEnteredAndExited,
                 .activeInKeyWindow,
-                .inVisibleRect,
+                .inVisibleRect
             ],
             owner: self
         )

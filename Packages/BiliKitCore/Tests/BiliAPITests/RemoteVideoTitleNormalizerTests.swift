@@ -11,7 +11,7 @@ struct RemoteVideoTitleNormalizerTests {
             ("A &amp; B &quot;C&quot; &apos;D&apos;", "A & B \"C\" 'D'"),
             ("&#39;&#x27;&#X1F600;", "''😀"),
             ("A&nbsp;B", "A\u{00A0}B"),
-            ("&amp;lt;", "&lt;"),
+            ("&amp;lt;", "&lt;")
         ]
 
         for (input, expected) in cases {
@@ -29,7 +29,7 @@ struct RemoteVideoTitleNormalizerTests {
             "&#xD800;",
             "&#x110000;",
             "&#0;",
-            "&#10;",
+            "&#10;"
         ]
 
         for value in cases {

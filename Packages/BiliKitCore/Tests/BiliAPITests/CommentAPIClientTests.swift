@@ -57,7 +57,7 @@ struct CommentAPIClientTests {
         let requests = await transport.requests
         #expect(
             requests.map(\.url.path) == [
-                "/x/web-interface/nav", "/x/v2/reply/wbi/main",
+                "/x/web-interface/nav", "/x/v2/reply/wbi/main"
             ]
         )
         let query = URLComponents(
@@ -79,7 +79,7 @@ struct CommentAPIClientTests {
             responses: [
                 try fixture("nav"),
                 try fixture("comment-main"),
-                try fixture("comment-main"),
+                try fixture("comment-main")
             ]
         )
         let repository = BiliCommentRepository(
@@ -310,7 +310,7 @@ struct CommentAPIClientTests {
             content["members"] = [42]
             content["pictures"] = [
                 ["img_src": "https://example.invalid/fixture.png"],
-                42,
+                42
             ]
             reply["content"] = content
             replies[0] = reply
@@ -346,14 +346,14 @@ struct CommentAPIClientTests {
         arguments: [
             "//i0.hdslb.com/bfs/face/protocol-relative.jpg",
             "http://i1.hdslb.com/bfs/face/legacy-http.jpg",
-            "https://i2.hdslb.com/bfs/face/secure.jpg",
+            "https://i2.hdslb.com/bfs/face/secure.jpg"
         ]
     )
     func commentAvatarMapsToNormalizedOpaqueAssetReference(_ value: String) throws {
         let data = try JSONSerialization.data(withJSONObject: [
             "mid": "42",
             "uname": "评论者",
-            "avatar": value,
+            "avatar": value
         ])
         let payload = try JSONDecoder().decode(CommentMemberPayload.self, from: data)
 
@@ -369,7 +369,7 @@ struct CommentAPIClientTests {
         let data = try JSONSerialization.data(withJSONObject: [
             "mid": "42",
             "uname": "评论者",
-            "avatar": "https://user@i0.hdslb.com/bfs/face/avatar.jpg",
+            "avatar": "https://user@i0.hdslb.com/bfs/face/avatar.jpg"
         ])
         let payload = try JSONDecoder().decode(CommentMemberPayload.self, from: data)
 
@@ -409,7 +409,7 @@ struct CommentAPIClientTests {
             links.map(\.range) == [
                 CommentTextRange(location: 0, length: 3),
                 CommentTextRange(location: 4, length: 4),
-                CommentTextRange(location: 9, length: 5),
+                CommentTextRange(location: 9, length: 5)
             ]
         )
         #expect(links[0].target == .video(bvid: "BV1FixtureA1"))
@@ -567,7 +567,7 @@ struct CommentAPIClientTests {
             unavailable["member"] = [
                 "mid": "305",
                 "uname": "硬核会员",
-                "is_senior_member": 1,
+                "is_senior_member": 1
             ]
             unavailable["content"] = ["message": "硬核会员评论"]
             replies = [nested, unavailable]
@@ -689,13 +689,13 @@ struct CommentAPIClientTests {
         let externalValues = [
             "https://www.bilibili.com/video/BV😈",
             "https://example.com/video/BV1FixtureA1",
-            "https://www.bilibili.com/video/BV",
+            "https://www.bilibili.com/video/BV"
         ]
         for value in externalValues {
             let data = try JSONSerialization.data(
                 withJSONObject: [
                     "message": "视频",
-                    "jump_url": ["视频": ["pc_url": value]],
+                    "jump_url": ["视频": ["pc_url": value]]
                 ]
             )
             let payload = try JSONDecoder().decode(CommentContentPayload.self, from: data)
@@ -710,13 +710,13 @@ struct CommentAPIClientTests {
 
         let rejectedValues = [
             "http://www.bilibili.com/video/BV1FixtureA1",
-            "https://user@example.com/video/BV1FixtureA1",
+            "https://user@example.com/video/BV1FixtureA1"
         ]
         for value in rejectedValues {
             let data = try JSONSerialization.data(
                 withJSONObject: [
                     "message": "视频",
-                    "jump_url": ["视频": ["pc_url": value]],
+                    "jump_url": ["视频": ["pc_url": value]]
                 ]
             )
             let payload = try JSONDecoder().decode(CommentContentPayload.self, from: data)
@@ -760,7 +760,7 @@ struct CommentAPIClientTests {
             emotes.map(\.range) == [
                 CommentTextRange(location: 3, length: 6),
                 CommentTextRange(location: 10, length: 6),
-                CommentTextRange(location: 16, length: 5),
+                CommentTextRange(location: 16, length: 5)
             ]
         )
         #expect(emotes.map(\.size) == [.standard, .standard, .large])

@@ -41,7 +41,7 @@ struct WebQRLoginSessionTests {
         let transport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-not-scanned"),
+                try fixtureResponse("qr-poll-not-scanned")
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -70,7 +70,7 @@ struct WebQRLoginSessionTests {
         let transport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-awaiting-confirmation"),
+                try fixtureResponse("qr-poll-awaiting-confirmation")
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -92,7 +92,7 @@ struct WebQRLoginSessionTests {
         let transport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-expired"),
+                try fixtureResponse("qr-poll-expired")
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -111,7 +111,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let transport = RecordingAuthTransport(
@@ -130,14 +130,14 @@ struct WebQRLoginSessionTests {
         #expect(observation.urlHost == "passport.biligame.com")
         #expect(
             observation.urlQueryNames == [
-                "DedeUserID", "Expires", "SESSDATA", "bili_jct", "first_domain", "gourl",
+                "DedeUserID", "Expires", "SESSDATA", "bili_jct", "first_domain", "gourl"
             ]
         )
         #expect(observation.refreshTokenPresent)
         #expect(
             observation.cookieNames == [
                 "DedeUserID", "DedeUserID__ckMd5", "SESSDATA", "bili_jct", "sid",
-                "unknown_cookie",
+                "unknown_cookie"
             ]
         )
         #expect(state.description == "awaiting-credential-validation")
@@ -150,7 +150,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = HTTPResponse(
@@ -162,7 +162,7 @@ struct WebQRLoginSessionTests {
             responses: [
                 try fixtureResponse("qr-generate"),
                 success,
-                navigation,
+                navigation
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -187,7 +187,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = HTTPResponse(
@@ -201,7 +201,7 @@ struct WebQRLoginSessionTests {
                 responses: [
                     try fixtureResponse("qr-generate"),
                     success,
-                    navigation,
+                    navigation
                 ]
             ),
             credentialStore: store
@@ -222,7 +222,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = HTTPResponse(
@@ -236,7 +236,7 @@ struct WebQRLoginSessionTests {
                 responses: [
                     try fixtureResponse("qr-generate"),
                     success,
-                    navigation,
+                    navigation
                 ]
             ),
             credentialStore: store
@@ -257,7 +257,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = HTTPResponse(
@@ -273,7 +273,7 @@ struct WebQRLoginSessionTests {
                 responses: [
                     try fixtureResponse("qr-generate"),
                     success,
-                    navigation,
+                    navigation
                 ]
             ),
             credentialStore: store
@@ -293,7 +293,7 @@ struct WebQRLoginSessionTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = HTTPResponse(
@@ -337,7 +337,7 @@ struct WebQRLoginSessionTests {
         let transport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-unknown"),
+                try fixtureResponse("qr-poll-unknown")
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -352,7 +352,7 @@ struct WebQRLoginSessionTests {
         #expect(observation.code == 12_345)
         #expect(
             observation.dataFieldNames == [
-                "code", "message", "refresh_token", "timestamp", "url",
+                "code", "message", "refresh_token", "timestamp", "url"
             ]
         )
         #expect(observation.urlHost == nil)
@@ -372,7 +372,7 @@ struct WebQRLoginSessionTests {
             headers: [
                 "Content-Type": "application/json",
                 "Set-Cookie":
-                    "fixture_cookie=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS; Path=/; Secure; HttpOnly",
+                    "fixture_cookie=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS; Path=/; Secure; HttpOnly"
             ],
             body: Data(
                 #"{"code":0,"data":{"url":"https://www.bilibili.com/?first_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS&second_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","refresh_token":"TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","timestamp":1700000001,"code":12345,"message":"fixture"}}"#
@@ -692,7 +692,7 @@ let fixtureSetCookieHeader = [
     "SESSDATA=FIXTURE_SESSDATA_VALUE; Domain=.bilibili.com; Path=/; Secure; HttpOnly; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
     "bili_jct=FIXTURE_BILI_JCT_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
     "sid=FIXTURE_SID_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
-    "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
+    "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT"
 ].joined(separator: ", ")
 
 func fixtureResponse(

@@ -145,7 +145,7 @@ struct WatchHistoryCardFormattingTests {
             #require(URL(string: "https://evilhdslb.com/avatar.jpg")),
             #require(URL(string: "https://i0.hdslb.com/avatar.jpg?token=public")),
             #require(URL(string: "https://i0.hdslb.com/avatar.jpg#fragment")),
-            #require(URL(string: "https://i0.hdslb.com/avatar.jpg@48w_48h.webp")),
+            #require(URL(string: "https://i0.hdslb.com/avatar.jpg@48w_48h.webp"))
         ]
 
         for (index, url) in values.enumerated() {

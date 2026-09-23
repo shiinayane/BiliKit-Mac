@@ -18,7 +18,7 @@ struct BiliCredentialRequestAuthorizerTests {
         let credential = try makeFixtureCredential()
         for allowedPaths in [
             fixtureNavigationAllowedPaths,
-            fixturePlaybackAllowedPaths,
+            fixturePlaybackAllowedPaths
         ] {
             let authorizer = BiliCredentialRequestAuthorizer(
                 store: MemoryWebCredentialStore(credential: credential),
@@ -100,7 +100,7 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://api.bilibili.com/%78/player/playurl", .get),
             ("https://api.bilibili.com/x/player/wbi/playurl", .get),
             ("https://api.bilibili.com/x/v2/history/report", .get),
-            ("https://api.bilibili.com/x/web-interface/future", .get),
+            ("https://api.bilibili.com/x/web-interface/future", .get)
         ]
 
         for (urlString, method) in cases {

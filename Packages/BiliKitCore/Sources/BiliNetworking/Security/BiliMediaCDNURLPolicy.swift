@@ -8,7 +8,7 @@ public struct BiliMediaCDNURLPolicy: Sendable {
     private static let dedicatedDomainSuffixes = [
         "bilivideo.com",
         "bilivideo.cn",
-        "szbdyd.com",
+        "szbdyd.com"
     ]
 
     private let publicHTTPSPolicy = PublicHTTPSURLPolicy()

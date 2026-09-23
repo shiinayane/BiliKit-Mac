@@ -17,7 +17,7 @@ struct BiliAuthenticationServiceTests {
             "qr-poll-success",
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader,
+                "Set-Cookie": fixtureSetCookieHeader
             ]
         )
         let navigation = navigationResponse(
@@ -30,7 +30,7 @@ struct BiliAuthenticationServiceTests {
                 responses: [
                     try fixtureResponse("qr-generate"),
                     success,
-                    navigation,
+                    navigation
                 ]
             ),
             credentialStore: store
@@ -102,7 +102,7 @@ struct BiliAuthenticationServiceTests {
                 transport: RecordingAuthTransport(
                     responses: [
                         navigationResponse(isLogin: true),
-                        navigationResponse(isLogin: false),
+                        navigationResponse(isLogin: false)
                     ]
                 )
             ),
@@ -259,7 +259,7 @@ struct BiliAuthenticationServiceTests {
                 "qr-poll-success",
                 headers: [
                     "Content-Type": "application/json",
-                    "Set-Cookie": fixtureSetCookieHeader,
+                    "Set-Cookie": fixtureSetCookieHeader
                 ]
             ),
             validationResponse: navigationResponse(isLogin: true)
@@ -387,7 +387,7 @@ struct BiliAuthenticationServiceTests {
                 "credential-deleted",
                 "api-invalidated",
                 "qr-invalidated",
-                "validation-invalidated",
+                "validation-invalidated"
             ]
         )
     }
@@ -447,7 +447,7 @@ struct BiliAuthenticationServiceTests {
                 "credential-delete-failed",
                 "api-invalidated",
                 "qr-invalidated",
-                "validation-invalidated",
+                "validation-invalidated"
             ]
         )
     }

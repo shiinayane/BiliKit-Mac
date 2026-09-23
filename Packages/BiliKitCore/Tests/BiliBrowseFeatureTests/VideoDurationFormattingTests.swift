@@ -17,7 +17,7 @@ struct VideoDurationFormattingTests {
             (3_600, "1:00:00"),
             (3_661, "1:01:01"),
             (359_999, "99:59:59"),
-            (360_000, "100:00:00"),
+            (360_000, "100:00:00")
         ]
         for localeIdentifier in ["zh_CN", "ja_JP", "en_US"] {
             let locale = Locale(identifier: localeIdentifier)

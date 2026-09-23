@@ -432,7 +432,7 @@ private actor GuestRepositoryStub: GuestContentRepository {
                 index: 1,
                 title: "第一部分",
                 durationSeconds: 120
-            ),
+            )
         ]
     }
 

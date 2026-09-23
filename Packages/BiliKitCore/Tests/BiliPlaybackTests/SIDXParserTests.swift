@@ -70,7 +70,7 @@ struct SIDXParserTests {
                     statusCode: 206,
                     headers: ["Content-Range": "bytes 100-155/924"],
                     body: data
-                ),
+                )
             ]
         )
         let representation = MediaRepresentation(
@@ -114,7 +114,7 @@ struct SIDXParserTests {
                     statusCode: 206,
                     headers: ["Content-Range": "bytes 100-155/924"],
                     body: data
-                ),
+                )
             ]
         )
         let representation = MediaRepresentation(

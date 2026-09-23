@@ -157,7 +157,7 @@ struct PlaybackSourceSettingsTests {
                         effectiveBitsPerSecond: 100_000_000,
                         successfulRuns: 1,
                         totalRuns: 3
-                    ),
+                    )
                 ]
             }
         )
@@ -171,7 +171,7 @@ struct PlaybackSourceSettingsTests {
                 .bilivideo(.alibabaMainland),
                 .serverAkamai,
                 .bilivideo(.tencentOverseas),
-                .bilivideo(.huaweiMainland),
+                .bilivideo(.huaweiMainland)
             ]
         )
     }

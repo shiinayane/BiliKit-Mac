@@ -177,7 +177,7 @@ final class NativeCommentImagePreviewRootView: NSView {
             counterLabel,
             progress,
             statusLabel,
-            retryButton,
+            retryButton
         ] {
             addSubview(subview)
         }

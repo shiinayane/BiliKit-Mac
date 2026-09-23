@@ -287,7 +287,7 @@ public actor WebQRLoginSession {
                     url: url,
                     headers: [
                         "Accept": "application/json",
-                        "User-Agent": "BiliKitMac/0.1",
+                        "User-Agent": "BiliKitMac/0.1"
                     ]
                 )
             )
@@ -345,7 +345,7 @@ public actor WebQRLoginSession {
                         "Accept": "application/json",
                         "Cookie": cookieHeader,
                         "Referer": "https://www.bilibili.com/",
-                        "User-Agent": "BiliKitMac/0.1",
+                        "User-Agent": "BiliKitMac/0.1"
                     ]
                 )
             )

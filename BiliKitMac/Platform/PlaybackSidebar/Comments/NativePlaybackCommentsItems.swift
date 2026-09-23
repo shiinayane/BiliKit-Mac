@@ -887,7 +887,7 @@ private final class NativePlaybackCommentRowView: NSView {
             likeImage,
             likeLabel,
             provenanceBadges,
-            unavailableLabel,
+            unavailableLabel
         ] {
             addSubview(subview)
         }
@@ -1199,7 +1199,7 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
                 string: segment.text,
                 attributes: [
                     .font: font,
-                    .foregroundColor: segment.foreground,
+                    .foregroundColor: segment.foreground
                 ]
             )
             textLine = CTLineCreateWithAttributedString(attributedText)
@@ -1408,7 +1408,7 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
                 string: text,
                 attributes: [
                     .font: NativePlaybackCommentProvenanceBadgesView.font,
-                    .foregroundColor: foreground,
+                    .foregroundColor: foreground
                 ]
             )
             textSize = attributedText.size()
@@ -2320,7 +2320,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
             collapseButton,
             retryButton,
             previousButton,
-            nextButton,
+            nextButton
         ] {
             button.bezelStyle = .rounded
             button.controlSize = .small
@@ -2354,7 +2354,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
             retryButton,
             previousButton,
             pageLabel,
-            nextButton,
+            nextButton
         ] {
             addSubview(subview)
         }

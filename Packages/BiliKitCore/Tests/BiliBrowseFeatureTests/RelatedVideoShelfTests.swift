@@ -39,7 +39,7 @@ struct RelatedVideoShelfTests {
         #expect(presentation.durationText == "12:34")
         for value in [
             presentation.title, presentation.ownerName, presentation.viewCountText,
-            presentation.danmakuCountText, presentation.durationText ?? "",
+            presentation.danmakuCountText, presentation.durationText ?? ""
         ] {
             #expect(presentation.accessibilityLabel.contains(value))
         }

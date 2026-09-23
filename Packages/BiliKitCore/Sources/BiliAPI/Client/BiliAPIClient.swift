@@ -118,7 +118,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             path: "/x/web-interface/popular",
             queryItems: [
                 URLQueryItem(name: "pn", value: String(page)),
-                URLQueryItem(name: "ps", value: String(pageSize)),
+                URLQueryItem(name: "ps", value: String(pageSize))
             ],
             referer: "https://www.bilibili.com/",
             access: .accountRead(
@@ -160,7 +160,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "page", value: "1"),
                 URLQueryItem(name: "pagesize", value: String(pageSize)),
                 URLQueryItem(name: "time_from", value: dateFrom),
-                URLQueryItem(name: "time_to", value: dateTo),
+                URLQueryItem(name: "time_to", value: dateTo)
             ],
             referer: "https://www.bilibili.com/"
         )
@@ -242,7 +242,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             "page_size": String(criteria.pageSize),
             "search_type": "video",
             "order": criteria.order.apiValue,
-            "duration": criteria.duration.apiValue,
+            "duration": criteria.duration.apiValue
         ]
         if let range = criteria.publicationRange {
             parameters["pubtime_begin_s"] = String(range.beginTimestamp)
@@ -330,7 +330,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "oid", value: String(subject.oid)),
                 URLQueryItem(name: "root", value: String(rootID.rawValue)),
                 URLQueryItem(name: "pn", value: String(page)),
-                URLQueryItem(name: "ps", value: String(pageSize)),
+                URLQueryItem(name: "ps", value: String(pageSize))
             ],
             referer: "https://www.bilibili.com/",
             access: .accountRead(
@@ -367,7 +367,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let path = "/x/web-interface/card"
         let queryItems = [
             URLQueryItem(name: "mid", value: String(ownerID)),
-            URLQueryItem(name: "photo", value: "false"),
+            URLQueryItem(name: "photo", value: "false")
         ]
         let url = try endpoint(path: path, queryItems: queryItems)
         guard
@@ -443,7 +443,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     URLQueryItem(name: "qn", value: String(quality)),
                     URLQueryItem(name: "fnval", value: "976"),
                     URLQueryItem(name: "fnver", value: "0"),
-                    URLQueryItem(name: "fourk", value: "1"),
+                    URLQueryItem(name: "fourk", value: "1")
                 ],
                 referer: referer,
                 access: .accountRead(
@@ -461,7 +461,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             videoRepresentations: video,
             mediaHeaders: [
                 "Referer": referer,
-                "User-Agent": userAgent,
+                "User-Agent": userAgent
             ]
         )
     }
@@ -485,7 +485,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             URLQueryItem(name: "fnval", value: "976"),
             URLQueryItem(name: "fnver", value: "0"),
             URLQueryItem(name: "fourk", value: "1"),
-            URLQueryItem(name: "voice_balance", value: "1"),
+            URLQueryItem(name: "voice_balance", value: "1")
         ]
         let resolved: AuthorizedResponse<PlayURLPayload> =
             try await getWithAuthorizationProvenance(
@@ -535,7 +535,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             media: .progressive(try segment.model()),
             mediaHeaders: [
                 "Referer": referer,
-                "User-Agent": userAgent,
+                "User-Agent": userAgent
             ],
             resumeMetadata:
                 resolved.authorizationProvenance == .authenticated
@@ -599,7 +599,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             ),
             mediaHeaders: [
                 "Referer": referer,
-                "User-Agent": userAgent,
+                "User-Agent": userAgent
             ],
             resumeMetadata:
                 authorizationProvenance == .authenticated
@@ -640,7 +640,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     URLQueryItem(name: "fnver", value: "0"),
                     URLQueryItem(name: "fourk", value: "1"),
                     URLQueryItem(name: "cur_language", value: languageTag),
-                    URLQueryItem(name: "voice_balance", value: "1"),
+                    URLQueryItem(name: "voice_balance", value: "1")
                 ],
                 referer: referer,
                 access: .accountRead(
@@ -783,7 +783,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "max", value: String(cursor.maximum)),
                 URLQueryItem(name: "view_at", value: String(cursor.viewedAt)),
                 URLQueryItem(name: "business", value: cursor.business),
-                URLQueryItem(name: "ps", value: String(pageSize)),
+                URLQueryItem(name: "ps", value: String(pageSize))
             ],
             referer: "https://www.bilibili.com/account/history",
             access: .accountRead(
@@ -816,7 +816,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             "w_played_time": String(playedTime),
             "w_real_played_time": String(report.playedSeconds),
             "w_last_play_progress_time": String(report.positionSeconds),
-            "web_location": "1315873",
+            "web_location": "1315873"
         ]
         if let duration = report.durationSeconds {
             signedFacts["w_video_duration"] = String(duration)
@@ -844,7 +844,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             ("realtime", String(report.elapsedSeconds)),
             ("played_time", String(playedTime)),
             ("real_played_time", String(report.playedSeconds)),
-            ("refer_url", referer),
+            ("refer_url", referer)
         ]
         if let duration = report.durationSeconds {
             bodyFields.append(("video_duration", String(duration)))
@@ -856,7 +856,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             ("mobi_app", "web"),
             ("device", "web"),
             ("platform", "web"),
-            ("session", report.sessionID),
+            ("session", report.sessionID)
         ])
         let authorizedResponse = try await response(
             baseRequest: HTTPRequest(
@@ -866,7 +866,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                     "Accept": "application/json",
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": referer,
-                    "User-Agent": userAgent,
+                    "User-Agent": userAgent
                 ],
                 body: try Self.formBody(bodyFields)
             ),
@@ -1044,7 +1044,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             headers: [
                 "Accept": "application/json",
                 "Referer": referer,
-                "User-Agent": userAgent,
+                "User-Agent": userAgent
             ]
         )
         let response = try await response(
@@ -1195,7 +1195,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let query = try wbiSigner.sign(
             parameters: [
                 "fresh_idx": String(freshIndex),
-                "fresh_idx_1h": String(freshIndex),
+                "fresh_idx_1h": String(freshIndex)
             ],
             keys: keys,
             timestamp: timestampProvider()
@@ -1242,7 +1242,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 "type": String(subject.type),
                 "oid": String(subject.oid),
                 "mode": sort == .hot ? "3" : "2",
-                "pagination_str": pagination,
+                "pagination_str": pagination
             ],
             keys: keys,
             timestamp: timestampProvider()
@@ -1268,7 +1268,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let query = try wbiSigner.sign(
             parameters: [
                 "bvid": identity.bvid,
-                "cid": String(identity.cid),
+                "cid": String(identity.cid)
             ],
             keys: keys,
             timestamp: timestampProvider()
@@ -1296,7 +1296,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             parameters: [
                 "type": "1",
                 "oid": String(identity.cid),
-                "segment_index": String(index),
+                "segment_index": String(index)
             ],
             keys: keys,
             timestamp: timestampProvider()
@@ -1318,7 +1318,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 headers: [
                     "Accept": "application/octet-stream",
                     "Referer": Self.videoReferer(identity.bvid),
-                    "User-Agent": userAgent,
+                    "User-Agent": userAgent
                 ]
             ),
             access: access,
@@ -1451,7 +1451,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             && components.path == "/x/web-interface/card"
             && components.queryItems == [
                 URLQueryItem(name: "mid", value: String(ownerID)),
-                URLQueryItem(name: "photo", value: "false"),
+                URLQueryItem(name: "photo", value: "false")
             ]
     }
 

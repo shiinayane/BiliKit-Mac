@@ -56,7 +56,7 @@ struct WatchHistoryUseCaseTests {
             pages: [
                 WatchHistoryPage(items: [], continuation: firstToken),
                 WatchHistoryPage(items: [], continuation: secondToken),
-                WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil),
+                WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil)
             ]
         )
         let useCase = WatchHistoryUseCase(repository: repository)
@@ -74,7 +74,7 @@ struct WatchHistoryUseCaseTests {
         let repository = WatchHistoryRepositoryStub(
             pages: [
                 WatchHistoryPage(items: [], continuation: firstToken),
-                WatchHistoryPage(items: [], continuation: secondToken),
+                WatchHistoryPage(items: [], continuation: secondToken)
             ]
         )
         let useCase = WatchHistoryUseCase(

@@ -59,7 +59,7 @@ struct LoopbackPlaybackServerTests {
             target: url.path,
             hostHeaders: [
                 "127.0.0.1:\(port)",
-                "attacker.invalid",
+                "attacker.invalid"
             ]
         )
         let malformedHostStatus = try independentHTTPStatus(
@@ -352,7 +352,7 @@ struct LoopbackPlaybackServerTests {
                     contentRange: nil,
                     body: Data()
                 )
-            ),
+            )
         ]
 
         for testCase in cases {
@@ -634,7 +634,7 @@ struct LoopbackPlaybackServerTests {
         let transport = FixtureRangeTransport(
             media: [
                 videoURL: videoData,
-                audioURL: audioData,
+                audioURL: audioData
             ],
             failingURLs: []
         )
@@ -931,7 +931,7 @@ struct LoopbackPlaybackServerTests {
                 .sorted { $0.width < $1.width }
                 == [
                     CGSize(width: 128, height: 72),
-                    CGSize(width: 256, height: 144),
+                    CGSize(width: 256, height: 144)
                 ]
         )
         #expect(
@@ -1101,7 +1101,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 lowRemoteURL: lowVideoData,
                 highRemoteURL: highVideoData,
-                audioRemoteURL: audioData,
+                audioRemoteURL: audioData
             ],
             lowVideoURL: lowRemoteURL,
             highVideoURL: highRemoteURL
@@ -1360,7 +1360,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 lowRemoteURL: lowVideoData,
                 highRemoteURL: highVideoData,
-                audioRemoteURL: audioData,
+                audioRemoteURL: audioData
             ]
         )
         let server = LoopbackPlaybackServer(
@@ -1985,7 +1985,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 videoURL: videoData,
                 originalURL: audioData,
-                aiURL: audioData,
+                aiURL: audioData
             ],
             failingURLs: []
         )
@@ -2004,7 +2004,7 @@ struct LoopbackPlaybackServerTests {
                     role: .machineGenerated,
                     isDefault: false,
                     representation: ai
-                ),
+                )
             ]
         )
         defer { prepared.stop() }
@@ -2026,7 +2026,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 videoURL: videoData,
                 originalURL: audioData,
-                aiURL: audioData,
+                aiURL: audioData
             ],
             failingURLs: [],
             unknownLengthURLs: [aiURL]
@@ -2045,7 +2045,7 @@ struct LoopbackPlaybackServerTests {
                     role: .machineGenerated,
                     isDefault: false,
                     representation: ai
-                ),
+                )
             ]
         )
         defer { fallbackPrepared.stop() }
@@ -2106,7 +2106,7 @@ struct LoopbackPlaybackServerTests {
                     media: [
                         videoURL: videoData,
                         originalURL: originalData,
-                        aiURL: shiftedAIData,
+                        aiURL: shiftedAIData
                     ],
                     failingURLs: []
                 )
@@ -2124,7 +2124,7 @@ struct LoopbackPlaybackServerTests {
                     role: .machineGenerated,
                     isDefault: false,
                     representation: ai
-                ),
+                )
             ]
         )
         defer { prepared.stop() }
@@ -2179,7 +2179,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 videoURL: videoData,
                 primaryAudioURL: primaryAudioData,
-                backupAudioURL: audioData,
+                backupAudioURL: audioData
             ],
             failingURLs: []
         )
@@ -2232,7 +2232,7 @@ struct LoopbackPlaybackServerTests {
         let transport = FixtureRangeTransport(
             media: [
                 backupVideo: videoData,
-                backupAudio: audioData,
+                backupAudio: audioData
             ],
             failingURLs: [primaryVideo, primaryAudio]
         )
@@ -2334,7 +2334,7 @@ struct LoopbackPlaybackServerTests {
             media: [
                 lowURL: lowVideoData,
                 highURL: highVideoData,
-                audioURL: audioData,
+                audioURL: audioData
             ],
             failingURLs: []
         )
@@ -2446,7 +2446,7 @@ struct LoopbackPlaybackServerTests {
                 }
             ) == [
                 CGSize(width: 128, height: 72),
-                CGSize(width: 256, height: 144),
+                CGSize(width: 256, height: 144)
             ]
         )
         #expect(
@@ -3177,11 +3177,11 @@ struct LoopbackPlaybackServerTests {
         let transport = PostReadyFailureRangeTransport(
             media: [
                 videoURL: videoData,
-                audioURL: audioData,
+                audioURL: audioData
             ],
             indexRanges: [
                 videoURL: video.segmentBase.index,
-                audioURL: audio.segmentBase.index,
+                audioURL: audio.segmentBase.index
             ],
             allowedMediaRequestsPerURL: 2
         )
@@ -3286,7 +3286,7 @@ struct LoopbackPlaybackServerTests {
         let transport = FixtureRangeTransport(
             media: [
                 videoURL: videoData,
-                audioURL: audioData,
+                audioURL: audioData
             ],
             failingURLs: []
         )
@@ -3402,13 +3402,13 @@ struct LoopbackPlaybackServerTests {
                 oldVideoURL: videoData,
                 oldAudioURL: audioData,
                 newVideoURL: videoData,
-                newAudioURL: audioData,
+                newAudioURL: audioData
             ],
             indexRanges: [
                 oldVideoURL: oldVideo.segmentBase.index,
                 oldAudioURL: oldAudio.segmentBase.index,
                 newVideoURL: newVideo.segmentBase.index,
-                newAudioURL: newAudio.segmentBase.index,
+                newAudioURL: newAudio.segmentBase.index
             ],
             blockedMediaURLs: [oldVideoURL, oldAudioURL]
         )
@@ -3489,7 +3489,7 @@ struct LoopbackPlaybackServerTests {
         let transport = FixtureRangeTransport(
             media: [
                 videoURL: videoData,
-                audioURL: audioData,
+                audioURL: audioData
             ],
             failingURLs: []
         )
@@ -3634,7 +3634,7 @@ struct LoopbackPlaybackServerTests {
         let transport = RecoverableStallRangeTransport(
             media: [
                 videoRemoteURL: videoData,
-                audioRemoteURL: audioData,
+                audioRemoteURL: audioData
             ],
             allowedRequestsPerURL: 2
         )
@@ -4222,7 +4222,7 @@ struct LoopbackPlaybackServerTests {
             "-w",
             "1",
             "127.0.0.1",
-            String(port),
+            String(port)
         ]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -4796,7 +4796,7 @@ private actor NativeSubtitleFixtureRepository: SubtitleRepository {
                 languageCode: "ai-en",
                 displayName: "English",
                 kind: .automatic
-            ),
+            )
         ]
     }
 
@@ -4866,7 +4866,7 @@ private struct UnsafeLabelNativeSubtitleRepository: SubtitleRepository {
                 languageCode: "ai-zh",
                 displayName: "中文",
                 kind: .automatic
-            ),
+            )
         ]
     }
 

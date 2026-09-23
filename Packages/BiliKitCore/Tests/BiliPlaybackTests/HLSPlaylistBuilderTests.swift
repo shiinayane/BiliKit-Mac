@@ -32,7 +32,7 @@ struct HLSPlaylistBuilderTests {
                     startsWithSAP: true,
                     sapType: 1,
                     sapDeltaTime: 0
-                ),
+                )
             ]
         )
         let mediaURI = try #require(
@@ -499,7 +499,7 @@ struct HLSPlaylistBuilderTests {
                     playlistURI: #require(
                         URL(string: "bilikit-playlist://audio/1/30280.m3u8")
                     )
-                ),
+                )
             ]
         )
 
@@ -615,7 +615,7 @@ struct HLSPlaylistBuilderTests {
         let metadata = [
             ("中文", "zh", []),
             ("中文（AI）", "zh", ["public.machine-generated"]),
-            ("English（AI）", "en", ["public.machine-generated"]),
+            ("English（AI）", "en", ["public.machine-generated"])
         ]
         let subtitleRenditions = try metadata.enumerated().map { offset, item in
             HLSSubtitleRendition(

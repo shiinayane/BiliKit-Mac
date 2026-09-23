@@ -15,7 +15,8 @@
   "lineBreakBetweenDeclarationAttributes" : false,
   "lineLength" : 100,
   "maximumBlankLines" : 1,
-  "multiElementCollectionTrailingCommas" : true,
+  "multiElementCollectionTrailingCommas" : false,
+  "multilineTrailingCommaBehavior" : "neverUsed",
   "noAssignmentInExpressions" : {
     "allowedFunctions" : [
       "XCTAssertNoThrow"
@@ -26,6 +27,7 @@
     "shouldGroupImports" : true
   },
   "prioritizeKeepingFunctionOutputTogether" : true,
+  "reflowMultilineStringLiterals" : "onlyLinesOverLength",
   "respectsExistingLineBreaks" : true,
   "rules" : {
     "AllPublicDeclarationsHaveDocumentation" : false,

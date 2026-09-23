@@ -12,14 +12,14 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
     private static let requiredQueryNames: Set<String> = [
         "w_aid", "w_dt", "w_last_play_progress_time", "w_played_time",
         "w_real_played_time", "w_realtime", "w_start_ts", "web_location",
-        "wts", "w_rid",
+        "wts", "w_rid"
     ]
     private static let optionalQueryNames: Set<String> = ["w_video_duration"]
     private static let requiredBodyNames: Set<String> = [
         "start_ts", "aid", "cid", "type", "sub_type", "dt", "play_type",
         "realtime", "played_time", "real_played_time", "refer_url",
         "last_play_progress_time", "max_play_progress_time", "outer",
-        "mobi_app", "device", "platform", "session",
+        "mobi_app", "device", "platform", "session"
     ]
     private static let optionalBodyNames: Set<String> = ["video_duration"]
 
@@ -109,7 +109,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
             by: { $0.key.lowercased() }
         )
         let allowedHeaderNames: Set<String> = [
-            "accept", "content-type", "referer", "user-agent",
+            "accept", "content-type", "referer", "user-agent"
         ]
         guard Set(normalizedHeaders.keys) == allowedHeaderNames,
             normalizedHeaders.values.allSatisfy({ $0.count == 1 }),
@@ -204,7 +204,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
             ("played_time", "w_played_time"),
             ("real_played_time", "w_real_played_time"),
             ("realtime", "w_realtime"),
-            ("start_ts", "w_start_ts"),
+            ("start_ts", "w_start_ts")
         ]
         return mirrors.allSatisfy { body[$0.0] == query[$0.1] }
             && body["video_duration"] == query["w_video_duration"]

@@ -23,7 +23,7 @@ struct PlaybackCommentsViewModelTests {
                     totalCount: 2,
                     continuation: nil,
                     isEnd: true
-                ),
+                )
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -63,7 +63,7 @@ struct PlaybackCommentsViewModelTests {
                     totalCount: 3,
                     continuation: continuation,
                     isEnd: true
-                ),
+                )
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -110,7 +110,7 @@ struct PlaybackCommentsViewModelTests {
                     totalCount: 2,
                     continuation: nil,
                     isEnd: true
-                ),
+                )
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -144,7 +144,7 @@ struct PlaybackCommentsViewModelTests {
         let repository = SequencedCommentRepository(
             rootPages: [
                 endPage([thread(1)]),
-                endPage([thread(2)]),
+                endPage([thread(2)])
             ]
         )
         let model = PlaybackCommentsViewModel(

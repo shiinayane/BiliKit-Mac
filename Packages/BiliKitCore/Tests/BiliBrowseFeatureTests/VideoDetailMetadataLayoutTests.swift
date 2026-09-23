@@ -15,7 +15,7 @@ struct VideoDetailMetadataLayoutTests {
             .viewCount,
             .danmakuCount,
             .publishedAt,
-            .accessNotice,
+            .accessNotice
         ]
 
         #expect(loaded.items.map(\.slot) == expectedSlots)

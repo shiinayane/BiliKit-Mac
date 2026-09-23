@@ -67,7 +67,7 @@ struct PlaybackRequestTests {
             ),
             preferredAudioRepresentationIDs: [
                 originalTrack.id: originalHigh.id,
-                alternateTrack.id: alternate.id,
+                alternateTrack.id: alternate.id
             ]
         )
 
@@ -98,7 +98,7 @@ struct PlaybackRequestTests {
                             id: "duplicate",
                             isDefault: false,
                             representations: [otherAudio]
-                        ),
+                        )
                     ]
                 )
             )
@@ -129,7 +129,7 @@ struct PlaybackRequestTests {
                             id: "alternate",
                             isDefault: true,
                             representations: [otherAudio]
-                        ),
+                        )
                     ]
                 )
             )
@@ -203,7 +203,7 @@ struct PlaybackRequestTests {
                             id: "alternate",
                             isDefault: false,
                             representations: [otherAudio]
-                        ),
+                        )
                     ],
                     preferences: ["original": otherAudio.id]
                 )

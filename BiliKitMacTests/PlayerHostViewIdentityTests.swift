@@ -290,7 +290,7 @@ struct PlayerHostViewIdentityTests {
                 deltaY: 0,
                 phase: [],
                 momentumPhase: .ended
-            ),
+            )
         ]
         #expect(
             routes == [
@@ -300,7 +300,7 @@ struct PlayerHostViewIdentityTests {
                 .outerScroll,
                 .outerScroll,
                 .outerScroll,
-                .outerScroll,
+                .outerScroll
             ]
         )
 
@@ -332,7 +332,7 @@ struct PlayerHostViewIdentityTests {
                 deltaX: 0,
                 deltaY: -6,
                 momentumPhase: .changed
-            ),
+            )
         ]
         let expectedForwardedCounts = [0, 2, 3, 4, 5, 6]
         for (index, event) in events.enumerated() {

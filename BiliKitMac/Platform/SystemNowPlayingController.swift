@@ -487,7 +487,7 @@ final class SystemNowPlayingController {
             MPNowPlayingInfoPropertyMediaType:
                 MPNowPlayingInfoMediaType.video.rawValue,
             MPNowPlayingInfoPropertyIsLiveStream: false,
-            MPNowPlayingInfoPropertyExcludeFromSuggestions: true,
+            MPNowPlayingInfoPropertyExcludeFromSuggestions: true
         ]
         if let artist = presentation.artist {
             info[MPMediaItemPropertyArtist] = artist

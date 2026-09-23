@@ -321,7 +321,7 @@ public actor BilivideoRouteBenchmark {
         let last = references.count - 1
         let anchors = [
             0, last, references.count / 2, references.count / 4,
-            3 * references.count / 4,
+            3 * references.count / 4
         ]
         let priority = anchors + references.indices.filter { !anchors.contains($0) }
         var selected: [HTTPByteRange] = []

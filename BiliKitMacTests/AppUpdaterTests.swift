@@ -14,7 +14,7 @@ struct AppUpdaterTests {
             "SUEnableDownloaderService": false,
             "SUVerifyUpdateBeforeExtraction": true,
             "SURequireSignedFeed": true,
-            "SUSignedFeedFailureExpirationInterval": 0,
+            "SUSignedFeedFailureExpirationInterval": 0
         ]
     }
 
@@ -44,7 +44,7 @@ struct AppUpdaterTests {
             "https://updates.example.org/appcast.xml?key=placeholder",
             "https://updates.example.org/appcast.xml#fragment",
             "https://updates.example.org:8080/appcast.xml",
-            "https://updates.example.org/",
+            "https://updates.example.org/"
         ] {
             var info = configuredInfo
             info["SUFeedURL"] = feed
@@ -52,7 +52,7 @@ struct AppUpdaterTests {
         }
         for key in [
             "SUEnableInstallerLauncherService", "SUVerifyUpdateBeforeExtraction",
-            "SURequireSignedFeed",
+            "SURequireSignedFeed"
         ] {
             var info = configuredInfo
             info[key] = false

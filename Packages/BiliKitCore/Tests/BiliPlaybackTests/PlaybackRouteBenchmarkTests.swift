@@ -26,7 +26,7 @@ struct PlaybackRouteBenchmarkTests {
             "upos-sz-mirroraliov.bilivideo.com",
             "upos-sz-mirrorcosov.bilivideo.com",
             "upos-sz-mirrorbos.bilivideo.com",
-            "upos-sz-upcdnbda2.bilivideo.com",
+            "upos-sz-upcdnbda2.bilivideo.com"
         ]
 
         #expect(Set(BilivideoRoute.allCases.map(\.host)) == expectedHosts)
@@ -245,7 +245,7 @@ struct PlaybackRouteBenchmarkTests {
         let mediaCalls = calls.filter { $0.range.start >= 108 }
         let expectedMediaRanges = [
             try HTTPByteRange(start: 108, endInclusive: 4_194_411),
-            try HTTPByteRange(start: 8_388_716, endInclusive: 12_583_019),
+            try HTTPByteRange(start: 8_388_716, endInclusive: 12_583_019)
         ]
 
         #expect(results.allSatisfy { $0.succeeded })

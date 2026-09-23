@@ -744,7 +744,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     "Accept-Ranges": "bytes",
                     "Cache-Control": "no-store",
                     "Content-Range": "bytes */\(resource.contentLength)",
-                    "Content-Type": resource.contentType,
+                    "Content-Type": resource.contentType
                 ],
                 on: connection
             )
@@ -853,7 +853,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                                 "Content-Length": "\(range.length)",
                                 "Content-Range":
                                     "bytes \(range.start)-\(range.endInclusive)/\(resource.contentLength)",
-                                "Content-Type": resource.contentType,
+                                "Content-Type": resource.contentType
                             ],
                             on: connection
                         )
@@ -931,7 +931,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             "Content-Type": resource.contentType,
             "Content-Length": isHead
                 ? "\(resource.contentLength)"
-                : "\(bodyLength)",
+                : "\(bodyLength)"
         ]
         if let range {
             headers["Content-Range"] =

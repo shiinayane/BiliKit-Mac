@@ -18,7 +18,7 @@ struct BiliDanmakuRepositoryTests {
         let transport = DanmakuRecordingTransport(
             responses: [
                 try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal"),
+                try binaryFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let client = BiliAPIClient(
@@ -45,7 +45,7 @@ struct BiliDanmakuRepositoryTests {
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so",
+                "/x/v2/dm/wbi/web/seg.so"
             ]
         )
         #expect(requests[0].headers["Cookie"] == nil)
@@ -58,7 +58,7 @@ struct BiliDanmakuRepositoryTests {
         )
         #expect(
             Set(query.map(\.name)) == [
-                "type", "oid", "segment_index", "wts", "w_rid",
+                "type", "oid", "segment_index", "wts", "w_rid"
             ]
         )
         #expect(query.first(where: { $0.name == "type" })?.value == "1")
@@ -77,7 +77,7 @@ struct BiliDanmakuRepositoryTests {
         let transport = DanmakuRecordingTransport(
             responses: [
                 try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal"),
+                try binaryFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let authorizer = DanmakuRecordingAuthorizer()
@@ -105,7 +105,7 @@ struct BiliDanmakuRepositoryTests {
         let transport = DanmakuRecordingTransport(
             responses: [
                 try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal"),
+                try binaryFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let authorizer = DanmakuRecordingAuthorizer(failureKind: .missingCredential)
@@ -125,7 +125,7 @@ struct BiliDanmakuRepositoryTests {
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so",
+                "/x/v2/dm/wbi/web/seg.so"
             ]
         )
         #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
@@ -155,7 +155,7 @@ struct BiliDanmakuRepositoryTests {
         let transport = DanmakuRecordingTransport(
             responses: [
                 try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal"),
+                try binaryFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let authorizer = DanmakuSuspendingAuthorizer()
@@ -193,7 +193,7 @@ struct BiliDanmakuRepositoryTests {
                             statusCode: 200,
                             headers: ["Content-Type": "application/json"],
                             body: Data(#"{"code":-101,"message":"fixture"}"#.utf8)
-                        ),
+                        )
                     ]
                 ),
                 timestampProvider: { 1_700_000_000 }
@@ -216,7 +216,7 @@ struct BiliDanmakuRepositoryTests {
                     body: Data(#"{"code":-403,"message":"fixture"}"#.utf8)
                 ),
                 try jsonFixtureResponse("nav-refreshed"),
-                try binaryFixtureResponse("danmaku-segment-minimal"),
+                try binaryFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let repository = BiliDanmakuRepository(
@@ -234,7 +234,7 @@ struct BiliDanmakuRepositoryTests {
                 "/x/web-interface/nav",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so",
+                "/x/v2/dm/wbi/web/seg.so"
             ]
         )
     }
@@ -267,7 +267,7 @@ struct BiliDanmakuRepositoryTests {
                 statusCode: 200,
                 headers: ["Content-Type": "application/octet-stream"],
                 body: Data(" \n<!doctype html><title>blocked</title>".utf8)
-            ),
+            )
         ] {
             let repository = try repository(response: response)
             await #expect(throws: DanmakuApplicationError.requestRestricted) {
@@ -321,7 +321,7 @@ struct BiliDanmakuRepositoryTests {
                 statusCode: 200,
                 headers: ["Content-Type": "application/octet-stream"],
                 body: Data(repeating: 0, count: 2 * 1_024 * 1_024 + 1)
-            ),
+            )
         ]
 
         for response in responses {
@@ -445,7 +445,7 @@ struct BiliDanmakuRepositoryTests {
                 transport: DanmakuRecordingTransport(
                     responses: [
                         try jsonFixtureResponse("nav"),
-                        response,
+                        response
                     ]
                 ),
                 timestampProvider: { 1_700_000_000 }

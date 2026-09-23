@@ -102,7 +102,7 @@ enum DanmakuTextureRasterizer {
             attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font,
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-                    foreground,
+                    foreground
             ]
         )
         let line = CTLineCreateWithAttributedString(attributed)

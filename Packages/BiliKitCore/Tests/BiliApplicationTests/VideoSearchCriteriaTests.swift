@@ -23,7 +23,7 @@ struct VideoSearchCriteriaTests {
     @Test(arguments: [
         (VideoPublicationFilter.today, 0),
         (.lastSevenDays, -6),
-        (.last180Days, -179),
+        (.last180Days, -179)
     ])
     func relativeRangesFreezeToLocalNaturalDays(
         filter: VideoPublicationFilter,

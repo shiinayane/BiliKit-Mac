@@ -615,7 +615,7 @@ final class DanmakuPlayerView: AVPlayerView {
             hostingView.trailingAnchor.constraint(
                 lessThanOrEqualTo: contentOverlayView.trailingAnchor,
                 constant: -20
-            ),
+            )
         ])
         previewEndedHostingView = hostingView
     }
@@ -811,7 +811,7 @@ final class DanmakuPlayerView: AVPlayerView {
             ),
             danmakuOverlay.bottomAnchor.constraint(
                 equalTo: contentOverlayView.bottomAnchor
-            ),
+            )
         ])
     }
 
@@ -839,7 +839,7 @@ final class DanmakuPlayerView: AVPlayerView {
             hostingView.bottomAnchor.constraint(
                 equalTo: contentOverlayView.bottomAnchor,
                 constant: -PlayerResumeNoticeLayout.bottomInset
-            ),
+            )
         ])
         resumeButtonHostingView = hostingView
         scheduleResumeNoticeDismissal(for: notice.token)
@@ -1364,7 +1364,7 @@ final class PlayerScrollWheelCaptureView: NSView {
         addSubview(badge)
         NSLayoutConstraint.activate([
             badge.centerXAnchor.constraint(equalTo: centerXAnchor),
-            badge.topAnchor.constraint(equalTo: topAnchor, constant: 20),
+            badge.topAnchor.constraint(equalTo: topAnchor, constant: 20)
         ])
         feedbackBadge = badge
         displayedFeedback = feedback
@@ -1460,7 +1460,7 @@ final class PlayerScrollWheelCaptureView: NSView {
             }
         }
         let disallowedModifiers: NSEvent.ModifierFlags = [
-            .command, .control, .option, .shift,
+            .command, .control, .option, .shift
         ]
         return KeyboardEventSnapshot(
             type: event.type,

@@ -49,7 +49,7 @@ struct CommentLinkResolverTests {
             "https://home.arpa./opus/42",
             "https://127.0.0.1/opus/42",
             "https://[::1]/opus/42",
-            "https://www.bilibili.com:444/opus/42",
+            "https://www.bilibili.com:444/opus/42"
         ]
     )
     func rejectsUnsafeExternalDestinations(_ value: String) throws {

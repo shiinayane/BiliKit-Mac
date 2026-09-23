@@ -103,7 +103,7 @@ final class SignedKeychainSmokeTests: XCTestCase {
             kSecAttrSynchronizable as String: false,
             kSecUseDataProtectionKeychain as String: true,
             kSecReturnAttributes as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

@@ -15,7 +15,7 @@ struct WBISignerTests {
             parameters: [
                 "keyword": "macOS !'()* 测试",
                 "page": "1",
-                "search_type": "video",
+                "search_type": "video"
             ],
             keys: keys,
             timestamp: 1_700_000_000

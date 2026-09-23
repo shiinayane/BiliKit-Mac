@@ -23,7 +23,7 @@ struct DanmakuSchedulerTests {
                     event(id: "a", time: 1.0),
                     event(id: "during-pause", time: 1.3),
                     event(id: "b", time: 2.0),
-                    event(id: "boundary", time: 360.1),
+                    event(id: "boundary", time: 360.1)
                 ]
             ),
             for: identity
@@ -147,7 +147,7 @@ struct DanmakuSchedulerTests {
                     event(id: "low", time: 1, weight: 1),
                     event(id: "top", time: 2, mode: .top, weight: 5),
                     event(id: "word", time: 3, text: "block fixture", weight: 5),
-                    event(id: "allowed", time: 4, weight: 5),
+                    event(id: "allowed", time: 4, weight: 5)
                 ]
             ),
             for: identity
@@ -223,7 +223,7 @@ struct DanmakuSchedulerTests {
                 events: [
                     event(id: "same-id", time: 1),
                     event(id: "while-disabled", time: 3),
-                    event(id: "after-enabled", time: 5),
+                    event(id: "after-enabled", time: 5)
                 ]
             ),
             for: other
@@ -288,7 +288,7 @@ struct DanmakuSchedulerTests {
                 index: 1,
                 events: [
                     event(id: "initial", time: 1),
-                    event(id: "old-future", time: 4),
+                    event(id: "old-future", time: 4)
                 ]
             ),
             for: identity
@@ -307,7 +307,7 @@ struct DanmakuSchedulerTests {
                 events: [
                     event(id: "late-past", time: 1.5),
                     event(id: "new-window", time: 2.5),
-                    event(id: "old-future", time: 4),
+                    event(id: "old-future", time: 4)
                 ]
             ),
             for: identity
@@ -336,7 +336,7 @@ struct DanmakuSchedulerTests {
                 index: 2,
                 events: [
                     event(id: "stale-prefetch", time: 2),
-                    event(id: "current", time: 361),
+                    event(id: "current", time: 361)
                 ]
             ),
             for: identity
@@ -368,7 +368,7 @@ struct DanmakuSchedulerTests {
                     time: start
                         + DanmakuScheduler.segmentDurationSeconds
                         - 0.1
-                ),
+                )
             ]
             if index > 1 {
                 events.append(
@@ -396,11 +396,11 @@ struct DanmakuSchedulerTests {
                         ? [
                             "unique-1",
                             "rolling-duplicate",
-                            "boundary-1",
+                            "boundary-1"
                         ]
                         : [
                             "unique-\(index)",
-                            "boundary-\(index)",
+                            "boundary-\(index)"
                         ])
             )
             #expect(

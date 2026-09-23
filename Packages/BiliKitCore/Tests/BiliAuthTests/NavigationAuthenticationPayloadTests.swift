@@ -53,7 +53,7 @@ struct NavigationAuthenticationPayloadTests {
         for avatar in [
             "https://localhost/avatar.png",
             "https://127.0.0.1/avatar.png",
-            "https://[::1]/avatar.png",
+            "https://[::1]/avatar.png"
         ] {
             let result = try authenticationResult(
                 "{\"isLogin\":true,\"mid\":42,\"uname\":\"Fixture Account\",\"face\":\"\(avatar)\"}"
