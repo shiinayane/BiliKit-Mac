@@ -145,12 +145,9 @@ final class URLSessionRangeStreamingTransport: NSObject, URLSessionDataDelegate,
     private let configuration: URLSessionConfiguration
     private let lock = NSLock()
     private var operations: [Int: RangeStreamingOperation] = [:]
-    private lazy var session: URLSession = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-        queue.qualityOfService = .userInitiated
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
-    }()
+    /// 首次 stream 时才在锁内创建；invalidate 后不再创建新 task。
+    private var session: URLSession?
+    private var isInvalidated = false
 
     init(configuration: URLSessionConfiguration) {
         self.configuration = configuration
@@ -172,8 +169,12 @@ final class URLSessionRangeStreamingTransport: NSObject, URLSessionDataDelegate,
             onResponse: onResponse,
             onChunk: onChunk
         )
-        let task = session.dataTask(with: request)
-        lock.withLock { operations[task.taskIdentifier] = operation }
+        let task = try lock.withLock {
+            guard !isInvalidated else { throw CancellationError() }
+            let task = activeSession().dataTask(with: request)
+            operations[task.taskIdentifier] = operation
+            return task
+        }
         return try await withTaskCancellationHandler {
             try await operation.start(task) { [weak self] in
                 self?.lock.withLock { self?.operations[task.taskIdentifier] = nil }
@@ -184,13 +185,29 @@ final class URLSessionRangeStreamingTransport: NSObject, URLSessionDataDelegate,
     }
 
     func invalidate() {
-        let pending = lock.withLock {
+        let (pending, session) = lock.withLock {
+            isInvalidated = true
             let pending = Array(operations.values)
             operations.removeAll()
-            return pending
+            return (pending, session)
         }
         for operation in pending { operation.cancel() }
-        session.invalidateAndCancel()
+        session?.invalidateAndCancel()
+    }
+
+    /// 调用方必须持有 `lock`。
+    private func activeSession() -> URLSession {
+        if let session { return session }
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        queue.qualityOfService = .userInitiated
+        let session = URLSession(
+            configuration: configuration,
+            delegate: self,
+            delegateQueue: queue
+        )
+        self.session = session
+        return session
     }
 
     func urlSession(
