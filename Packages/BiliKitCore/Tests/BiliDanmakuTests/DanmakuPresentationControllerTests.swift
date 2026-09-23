@@ -1727,12 +1727,12 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
     private var preparationCompletions:
         [UInt64: @MainActor @Sendable (DanmakuPreparationResult) -> Void] = [:]
 
-    func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
+    private func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
         measureCount += 1
         return DanmakuTextMetrics(width: 120, height: 24)
     }
 
-    func render(_ placement: DanmakuLanePlacement) {
+    private func render(_ placement: DanmakuLanePlacement) {
         let eventID = placement.request.event.id
         operations.append(.render(eventID))
         renderedEventIDs.append(eventID)
@@ -1777,6 +1777,8 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
         preparationCompletions[preparationID]?(result)
     }
 
+    func discardPreparation(preparationID: UInt64) {}
+
     func cancelPendingPreparations() {
         cancelPreparationCount += 1
     }
@@ -1798,7 +1800,11 @@ private final class RecordingRenderingBackend: DanmakuRenderingBackend {
         opacities.append(opacity)
     }
 
-    func updateSurfaceSize(width: Double, height: Double) {
+    func updateSurfaceSize(
+        width: Double,
+        height: Double,
+        backingScale: Double
+    ) {
         surfaceSizes.append(
             DanmakuTextMetrics(width: width, height: height)
         )

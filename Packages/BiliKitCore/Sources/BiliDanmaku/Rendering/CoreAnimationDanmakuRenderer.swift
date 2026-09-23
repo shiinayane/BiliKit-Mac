@@ -70,14 +70,6 @@ public final class CoreAnimationDanmakuRenderer:
         rootLayer.masksToBounds = true
     }
 
-    /// 同步接口只为旧 Lab backend 的协议兼容保留；生产 renderer 必须走 `prepare`。
-    public func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
-        DanmakuTextMetrics(width: 0, height: 0)
-    }
-
-    /// 同步接口在生产 renderer 中 fail closed，防止恢复 MainActor 栅格化路径。
-    public func render(_ placement: DanmakuLanePlacement) {}
-
     public func prepare(
         _ event: DanmakuEvent,
         preparationID: UInt64,

@@ -100,9 +100,7 @@ BiliKit 1.0.0 已正式发布。首页个性推荐、热门、搜索、二维码
 - macOS 15 或更高版本
 - 支持 Swift 6 的完整版 Xcode
 
-使用 Xcode 打开 `BiliKitMac.xcworkspace`：日常开发选择 `BiliKitMac` scheme 和 “My Mac”
-运行目标；弹幕实验与性能校准选择独立的 `DanmakuLab` scheme。`DanmakuLab` 不进入正式
-App target、归档或分发物。
+使用 Xcode 打开 `BiliKitMac.xcodeproj`，选择 `BiliKitMac` scheme 和 “My Mac” 运行目标。
 
 仓库完整质量检查：
 
@@ -162,7 +160,6 @@ BiliKitMacTests/            App composition 集成测试
 Design/                     可追踪的品牌与设计源文件
 docs/                       产品、路线图、ADR、安全与验证记录
 Scripts/                    架构、秘密、格式、质量检查与本机发布流水线
-Tools/                      不进入产品的独立开发工具
 ```
 
 核心依赖方向：
