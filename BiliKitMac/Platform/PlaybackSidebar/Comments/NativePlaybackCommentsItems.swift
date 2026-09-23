@@ -72,46 +72,13 @@ enum NativePlaybackCommentsItemMeasurement {
         case .unavailable:
             return isReply ? 22 : 30
         case .available(let details):
-            let avatar = isReply ? replyAvatarSize : rootAvatarSize
-            let contentWidth = max(60, width - avatar - contentGap)
-            let bodyHeight = max(
-                18,
-                textRenderer.flatMap { renderer in
-                    textScope.map {
-                        renderer.height(
-                            details.content,
-                            width: contentWidth,
-                            scope: $0
-                        )
-                    }
-                }
-                    ?? NativePlaybackSidebarTextLayout.height(
-                        details.content.message,
-                        width: contentWidth,
-                        font: .preferredFont(forTextStyle: .body)
-                    )
-            )
-            let authorHeight = authorLineHeight(
-                details.author,
-                width: contentWidth,
-                isReply: isReply
-            )
-            var contentHeight: CGFloat = authorHeight + 6 + bodyHeight
-            if details.content.pictureCount > 0 {
-                let pictureLayout = NativePlaybackCommentPictureLayout.make(
-                    images: details.content.pictures,
-                    count: details.content.pictureCount,
-                    availableWidth: contentWidth
-                )
-                contentHeight +=
-                    8
-                    + pictureLayout.size.height
-            }
-            contentHeight += 6 + 18
-            if hasVisibleProvenance(details.provenance) {
-                contentHeight += 6 + 20
-            }
-            return ceil(max(avatar, contentHeight))
+            return NativePlaybackCommentRowGeometry(
+                details: details,
+                width: width,
+                isReply: isReply,
+                textRenderer: textRenderer,
+                textScope: textScope
+            ).height
         }
     }
 
@@ -169,24 +136,6 @@ enum NativePlaybackCommentsItemMeasurement {
             || values.contains(.uploaderLiked)
     }
 
-    static func authorLineHeight(
-        _ author: CommentAuthor,
-        width: CGFloat,
-        isReply: Bool
-    ) -> CGFloat {
-        let nameWidth = authorNameTextWidth(author, maximumWidth: width)
-        let badgesWidth = NativePlaybackCommentAuthorBadgesView.preferredWidth(
-            for: author,
-            isReply: isReply
-        )
-        guard badgesWidth > 0,
-            nameWidth + authorBadgeSpacing + badgesWidth > width
-        else {
-            return 18
-        }
-        return 38
-    }
-
     static let authorBadgeSpacing: CGFloat = 4
 
     static func authorNameTextWidth(
@@ -211,6 +160,129 @@ enum NativePlaybackCommentsItemMeasurement {
             maximumWidth,
             authorNameTextWidth(author, maximumWidth: maximumWidth) + 12
         )
+    }
+}
+
+/// 可用评论行的唯一几何来源；`NativePlaybackCommentsItemMeasurement.comment` 的高度与
+/// 行视图 `layout()` 共用，缓存高度不会与实际布局漂移。
+@MainActor
+struct NativePlaybackCommentRowGeometry {
+    static let lineHeight: CGFloat = 18
+    static let wrappedBadgesY: CGFloat = 20
+    static let authorToBodySpacing: CGFloat = 6
+    static let bodyToPicturesSpacing: CGFloat = 8
+    static let contentToFooterSpacing: CGFloat = 6
+    static let footerToProvenanceSpacing: CGFloat = 6
+    static let provenanceHeight: CGFloat = 20
+
+    let avatarFrame: NSRect
+    let contentX: CGFloat
+    let contentWidth: CGFloat
+    let authorFrame: NSRect
+    let badgesFrame: NSRect
+    let bodyFrame: NSRect
+    /// 没有图片时为 `.zero`。
+    let picturesFrame: NSRect
+    /// 元数据与点赞行的顶部位置。
+    let footerY: CGFloat
+    /// 没有可见来源标记时为 `.zero`。
+    let provenanceFrame: NSRect
+    let height: CGFloat
+
+    init(
+        details: CommentDetails,
+        width: CGFloat,
+        isReply: Bool,
+        textRenderer: NativePlaybackCommentTextRenderer?,
+        textScope: NativePlaybackCommentTextScope?
+    ) {
+        typealias Measurement = NativePlaybackCommentsItemMeasurement
+        let avatarSize = isReply ? Measurement.replyAvatarSize : Measurement.rootAvatarSize
+        avatarFrame = NSRect(x: 0, y: 0, width: avatarSize, height: avatarSize)
+        let contentX = avatarSize + Measurement.contentGap
+        let contentWidth = max(60, width - contentX)
+        self.contentX = contentX
+        self.contentWidth = contentWidth
+
+        let badgesWidth = min(
+            NativePlaybackCommentAuthorBadgesView.preferredWidth(
+                for: details.author,
+                isReply: isReply
+            ),
+            contentWidth
+        )
+        let authorTextWidth = Measurement.authorNameTextWidth(
+            details.author,
+            maximumWidth: contentWidth
+        )
+        let wrapsBadges =
+            badgesWidth > 0
+            && authorTextWidth + Measurement.authorBadgeSpacing + badgesWidth > contentWidth
+        authorFrame = NSRect(
+            x: contentX,
+            y: 0,
+            width: Measurement.authorNameWidth(details.author, maximumWidth: contentWidth),
+            height: Self.lineHeight
+        )
+        badgesFrame = NSRect(
+            x: wrapsBadges
+                ? contentX
+                : contentX + authorTextWidth
+                    + (badgesWidth > 0 ? Measurement.authorBadgeSpacing : 0),
+            y: wrapsBadges ? Self.wrappedBadgesY : 0,
+            width: badgesWidth,
+            height: Self.lineHeight
+        )
+
+        var y = (wrapsBadges ? badgesFrame.maxY : Self.lineHeight) + Self.authorToBodySpacing
+        let bodyHeight = max(
+            Self.lineHeight,
+            textRenderer.flatMap { renderer in
+                textScope.map {
+                    renderer.height(details.content, width: contentWidth, scope: $0)
+                }
+            }
+                ?? NativePlaybackSidebarTextLayout.height(
+                    details.content.message,
+                    width: contentWidth,
+                    font: .preferredFont(forTextStyle: .body)
+                )
+        )
+        bodyFrame = NSRect(x: contentX, y: y, width: contentWidth, height: bodyHeight)
+        y += bodyHeight
+        if details.content.pictureCount > 0 {
+            y += Self.bodyToPicturesSpacing
+            let pictureSize = NativePlaybackCommentPictureLayout.make(
+                images: details.content.pictures,
+                count: details.content.pictureCount,
+                availableWidth: contentWidth
+            ).size
+            picturesFrame = NSRect(
+                x: contentX,
+                y: y,
+                width: pictureSize.width,
+                height: pictureSize.height
+            )
+            y += pictureSize.height
+        } else {
+            picturesFrame = .zero
+        }
+        y += Self.contentToFooterSpacing
+        footerY = y
+        y += Self.lineHeight
+        if Measurement.hasVisibleProvenance(details.provenance) {
+            y += Self.footerToProvenanceSpacing
+            provenanceFrame = NSRect(
+                x: contentX,
+                y: y,
+                width: contentWidth,
+                height: Self.provenanceHeight
+            )
+            y += Self.provenanceHeight
+        } else {
+            provenanceFrame = .zero
+        }
+        height = ceil(max(avatarSize, y))
     }
 }
 
@@ -979,122 +1051,41 @@ private final class NativePlaybackCommentRowView: NSView {
         case .unavailable:
             unavailableLabel.frame = bounds
         case .available(let details):
-            let avatarSize =
-                isReply
-                ? NativePlaybackCommentsItemMeasurement.replyAvatarSize
-                : NativePlaybackCommentsItemMeasurement.rootAvatarSize
-            avatar.frame = NSRect(x: 0, y: 0, width: avatarSize, height: avatarSize)
-            let contentX = avatarSize + NativePlaybackCommentsItemMeasurement.contentGap
-            let contentWidth = max(60, bounds.width - contentX)
-            let badgesWidth = min(authorBadges.preferredWidth, contentWidth)
-            let authorWidth = NativePlaybackCommentsItemMeasurement.authorNameWidth(
-                details.author,
-                maximumWidth: contentWidth
+            let geometry = NativePlaybackCommentRowGeometry(
+                details: details,
+                width: bounds.width,
+                isReply: isReply,
+                textRenderer: textRenderer,
+                textScope: textScope
             )
-            let authorTextWidth =
-                NativePlaybackCommentsItemMeasurement.authorNameTextWidth(
-                    details.author,
-                    maximumWidth: contentWidth
-                )
-            let wrapsBadges =
-                badgesWidth > 0
-                && authorTextWidth
-                    + NativePlaybackCommentsItemMeasurement.authorBadgeSpacing
-                    + badgesWidth > contentWidth
-            authorLabel.frame = NSRect(
-                x: contentX,
-                y: 0,
-                width: authorWidth,
-                height: 18
-            )
-            authorBadges.frame = NSRect(
-                x: wrapsBadges
-                    ? contentX
-                    : contentX + authorTextWidth
-                        + (badgesWidth > 0
-                            ? NativePlaybackCommentsItemMeasurement.authorBadgeSpacing
-                            : 0),
-                y: wrapsBadges ? 20 : 0,
-                width: badgesWidth,
-                height: 18
-            )
-            var y =
-                NativePlaybackCommentsItemMeasurement.authorLineHeight(
-                    details.author,
-                    width: contentWidth,
-                    isReply: isReply
-                ) + 6
-            let bodyHeight = max(
-                18,
-                textRenderer.flatMap { renderer in
-                    textScope.map {
-                        renderer.height(
-                            details.content,
-                            width: contentWidth,
-                            scope: $0
-                        )
-                    }
-                }
-                    ?? NativePlaybackSidebarTextLayout.height(
-                        details.content.message,
-                        width: contentWidth,
-                        font: .preferredFont(forTextStyle: .body)
-                    )
-            )
-            bodyText.frame = NSRect(x: contentX, y: y, width: contentWidth, height: bodyHeight)
-            y += bodyHeight
-            if details.content.pictureCount > 0 {
-                y += 8
-                let pictureLayout = NativePlaybackCommentPictureLayout.make(
-                    images: details.content.pictures,
-                    count: details.content.pictureCount,
-                    availableWidth: contentWidth
-                )
-                pictures.frame = NSRect(
-                    x: contentX,
-                    y: y,
-                    width: pictureLayout.size.width,
-                    height: pictureLayout.size.height
-                )
-                y += pictureLayout.size.height
-            } else {
-                pictures.frame = .zero
-            }
-            y += 6
+            avatar.frame = geometry.avatarFrame
+            authorLabel.frame = geometry.authorFrame
+            authorBadges.frame = geometry.badgesFrame
+            bodyText.frame = geometry.bodyFrame
+            pictures.frame = geometry.picturesFrame
+            let y = geometry.footerY
+            let lineHeight = NativePlaybackCommentRowGeometry.lineHeight
             let likeWidth = ceil(likeLabel.intrinsicContentSize.width) + 3
             let trailingInset: CGFloat = 2
             likeLabel.frame = NSRect(
-                x: max(contentX, bounds.width - trailingInset - likeWidth),
+                x: max(geometry.contentX, bounds.width - trailingInset - likeWidth),
                 y: y,
                 width: likeWidth,
-                height: 18
+                height: lineHeight
             )
             likeImage.frame = NSRect(
-                x: max(contentX, likeLabel.frame.minX - 18),
+                x: max(geometry.contentX, likeLabel.frame.minX - 18),
                 y: y + 2,
                 width: 14,
                 height: 14
             )
             metadataLabel.frame = NSRect(
-                x: contentX,
+                x: geometry.contentX,
                 y: y,
-                width: max(1, likeImage.frame.minX - contentX - 6),
-                height: 18
+                width: max(1, likeImage.frame.minX - geometry.contentX - 6),
+                height: lineHeight
             )
-            y += 18
-            if NativePlaybackCommentsItemMeasurement.hasVisibleProvenance(
-                details.provenance
-            ) {
-                y += 6
-                provenanceBadges.frame = NSRect(
-                    x: contentX,
-                    y: y,
-                    width: contentWidth,
-                    height: 20
-                )
-            } else {
-                provenanceBadges.frame = .zero
-            }
+            provenanceBadges.frame = geometry.provenanceFrame
         }
     }
 

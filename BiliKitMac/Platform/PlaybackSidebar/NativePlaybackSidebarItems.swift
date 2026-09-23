@@ -17,29 +17,11 @@ enum NativePlaybackSidebarItemMeasurement {
         width: CGFloat,
         signatureExpanded: Bool
     ) -> CGFloat {
-        let textWidth = max(80, width - avatarSize - 12)
-        let nameHeight = ceil(NSFont.preferredFont(forTextStyle: .title3).pointSize * 1.35)
-        let signatureHeight: CGFloat
-        switch content.signature {
-        case .hidden:
-            signatureHeight = 0
-        case .loading:
-            signatureHeight = 14
-        case .text(let signature):
-            let font = NSFont.preferredFont(forTextStyle: .callout)
-            let overflows =
-                NativePlaybackSidebarTextLayout.singleLineWidth(signature, font: font)
-                > textWidth
-            let measuredWidth = overflows ? max(40, textWidth - 52) : textWidth
-            signatureHeight = NativePlaybackSidebarTextLayout.height(
-                signature,
-                width: measuredWidth,
-                font: font,
-                maximumLines: overflows && !signatureExpanded ? 1 : nil
-            )
-        }
-        let textHeight = nameHeight + (signatureHeight > 0 ? textSpacing + signatureHeight : 0)
-        return max(avatarSize, textHeight)
+        NativePlaybackUploaderGeometry(
+            content: content,
+            width: width,
+            signatureExpanded: signatureExpanded
+        ).height
     }
 
     static func summary(
@@ -47,23 +29,7 @@ enum NativePlaybackSidebarItemMeasurement {
         width: CGFloat,
         expanded: Bool
     ) -> CGFloat {
-        let headerHeight: CGFloat = 22
-        let font = NSFont.preferredFont(forTextStyle: .callout)
-        let fullTextHeight = NativePlaybackSidebarTextLayout.height(
-            summary,
-            width: width,
-            font: font
-        )
-        let collapsedTextHeight = NativePlaybackSidebarTextLayout.height(
-            summary,
-            width: width,
-            font: font,
-            maximumLines: 5
-        )
-        let overflows = fullTextHeight > collapsedTextHeight + 0.5
-        let textHeight = expanded && overflows ? fullTextHeight : collapsedTextHeight
-        let toggleHeight: CGFloat = overflows ? 26 : 0
-        return sectionTopInset + headerHeight + 8 + textHeight + toggleHeight
+        NativePlaybackSummaryGeometry(summary: summary, width: width, expanded: expanded).height
     }
 
     static func selection(
@@ -103,6 +69,143 @@ enum NativePlaybackSidebarItemMeasurement {
         guard !heights.isEmpty else { return 1 }
         return sectionTopInset + heights.reduce(0, +)
             + CGFloat(heights.count - 1) * sectionSpacing
+    }
+}
+
+/// UP 主行的唯一几何来源；高度测量与 `layout()` 共用，缓存高度不会与实际布局漂移。
+@MainActor
+struct NativePlaybackUploaderGeometry {
+    static let textLeading = NativePlaybackSidebarItemMeasurement.avatarSize + 12
+    static let signatureToggleWidth: CGFloat = 48
+    static let signatureToggleHeight: CGFloat = 20
+    static let signatureToggleGap: CGFloat = 4
+    static let loadingBarInset: CGFloat = 2
+    static let loadingBarHeight: CGFloat = 14
+    static let loadingBarMaximumWidth: CGFloat = 196
+    static var nameFont: NSFont {
+        .systemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
+            weight: .semibold
+        )
+    }
+    static var signatureFont: NSFont { .preferredFont(forTextStyle: .callout) }
+
+    let nameFrame: NSRect
+    let signatureTextFrame: NSRect
+    let loadingBarFrame: NSRect
+    let signatureToggleFrame: NSRect
+    /// 签名超过一行时显示展开／收起按钮；收起时只显示一行。
+    let signatureOverflows: Bool
+    let signatureMaximumLines: Int?
+    let height: CGFloat
+
+    init(content: VideoUploaderHeaderContent, width: CGFloat, signatureExpanded: Bool) {
+        let textWidth = max(40, width - Self.textLeading)
+        let nameHeight = ceil(Self.nameFont.pointSize * 1.35)
+        let signatureY = nameHeight + NativePlaybackSidebarItemMeasurement.textSpacing
+        var overflows = false
+        var maximumLines: Int?
+        let signatureHeight: CGFloat
+        switch content.signature {
+        case .hidden:
+            signatureHeight = 0
+        case .loading:
+            signatureHeight = Self.loadingBarInset + Self.loadingBarHeight
+        case .text(let signature):
+            overflows =
+                NativePlaybackSidebarTextLayout.singleLineWidth(signature, font: Self.signatureFont)
+                > textWidth
+            maximumLines = overflows && !signatureExpanded ? 1 : nil
+            signatureHeight = NativePlaybackSidebarTextLayout.height(
+                signature,
+                width: Self.signatureTextWidth(textWidth: textWidth, overflows: overflows),
+                font: Self.signatureFont,
+                maximumLines: maximumLines
+            )
+        }
+        signatureOverflows = overflows
+        signatureMaximumLines = maximumLines
+        nameFrame = NSRect(x: Self.textLeading, y: 0, width: textWidth, height: nameHeight)
+        signatureTextFrame = NSRect(
+            x: Self.textLeading,
+            y: signatureY,
+            width: Self.signatureTextWidth(textWidth: textWidth, overflows: overflows),
+            height: signatureHeight
+        )
+        loadingBarFrame = NSRect(
+            x: Self.textLeading,
+            y: signatureY + Self.loadingBarInset,
+            width: min(Self.loadingBarMaximumWidth, textWidth),
+            height: Self.loadingBarHeight
+        )
+        let toggleWidth = overflows ? Self.signatureToggleWidth : 0
+        signatureToggleFrame = NSRect(
+            x: width - toggleWidth,
+            y: signatureY,
+            width: toggleWidth,
+            height: Self.signatureToggleHeight
+        )
+        let textHeight =
+            nameHeight
+            + (signatureHeight > 0
+                ? NativePlaybackSidebarItemMeasurement.textSpacing + signatureHeight : 0)
+        height = max(NativePlaybackSidebarItemMeasurement.avatarSize, textHeight)
+    }
+
+    private static func signatureTextWidth(textWidth: CGFloat, overflows: Bool) -> CGFloat {
+        overflows
+            ? max(1, textWidth - signatureToggleWidth - signatureToggleGap)
+            : textWidth
+    }
+}
+
+/// 简介区的唯一几何来源；正文最多测量两次（完整与五行），测量与布局共用结果。
+@MainActor
+struct NativePlaybackSummaryGeometry {
+    static let collapsedLineLimit = 5
+    static let titleHeight: CGFloat = 22
+    static let titleToTextSpacing: CGFloat = 8
+    static let toggleSpacing: CGFloat = 4
+    static let toggleHeight: CGFloat = 22
+    static let toggleMaximumWidth: CGFloat = 56
+    static var textFont: NSFont { .preferredFont(forTextStyle: .callout) }
+
+    let titleFrame: NSRect
+    let textFrame: NSRect
+    let toggleFrame: NSRect
+    let overflows: Bool
+    let maximumLines: Int?
+    let height: CGFloat
+
+    init(summary: String, width: CGFloat, expanded: Bool) {
+        let topInset = NativePlaybackSidebarItemMeasurement.sectionTopInset
+        let collapsedHeight = NativePlaybackSidebarTextLayout.height(
+            summary,
+            width: width,
+            font: Self.textFont,
+            maximumLines: Self.collapsedLineLimit
+        )
+        let fullHeight = NativePlaybackSidebarTextLayout.height(
+            summary,
+            width: width,
+            font: Self.textFont
+        )
+        overflows = fullHeight > collapsedHeight + 0.5
+        maximumLines = overflows && !expanded ? Self.collapsedLineLimit : nil
+        titleFrame = NSRect(x: 0, y: topInset, width: width, height: Self.titleHeight)
+        textFrame = NSRect(
+            x: 0,
+            y: titleFrame.maxY + Self.titleToTextSpacing,
+            width: width,
+            height: expanded && overflows ? fullHeight : collapsedHeight
+        )
+        toggleFrame = NSRect(
+            x: 0,
+            y: textFrame.maxY + Self.toggleSpacing,
+            width: min(Self.toggleMaximumWidth, width),
+            height: overflows ? Self.toggleHeight : 0
+        )
+        height = overflows ? toggleFrame.maxY : textFrame.maxY
     }
 }
 
@@ -259,10 +362,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         avatar.layer?.masksToBounds = true
         avatar.setAccessibilityElement(false)
 
-        nameLabel.font = .systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
-            weight: .semibold
-        )
+        nameLabel.font = NativePlaybackUploaderGeometry.nameFont
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.maximumNumberOfLines = 1
         nameLabel.isSelectable = true
@@ -318,10 +418,9 @@ private final class NativePlaybackSidebarUploaderView: NSView {
             signatureText.isHidden = true
             signatureLoadingBar.isHidden = true
             signatureButton.isHidden = true
-        case .text(let signature):
+        case .text:
             signatureText.isHidden = false
             signatureLoadingBar.isHidden = true
-            updateSignatureTextIfNeeded(signature)
         }
         needsLayout = true
         if avatarChanged || avatar.image == nil {
@@ -331,35 +430,21 @@ private final class NativePlaybackSidebarUploaderView: NSView {
 
     override func layout() {
         super.layout()
-        if case .text(let signature) = content?.signature {
-            updateSignatureTextIfNeeded(signature)
-        }
         let avatarSize = NativePlaybackSidebarItemMeasurement.avatarSize
         avatar.frame = NSRect(x: 0, y: 0, width: avatarSize, height: avatarSize)
-        let textX = avatarSize + 12
-        let textWidth = max(40, bounds.width - textX)
-        let nameHeight = ceil(nameLabel.font?.pointSize ?? 17) * 1.35
-        nameLabel.frame = NSRect(x: textX, y: 0, width: textWidth, height: nameHeight)
-        let signatureY = nameHeight + NativePlaybackSidebarItemMeasurement.textSpacing
-        let buttonWidth: CGFloat = signatureButton.isHidden ? 0 : 48
-        signatureText.frame = NSRect(
-            x: textX,
-            y: signatureY,
-            width: max(1, textWidth - buttonWidth),
-            height: max(0, bounds.height - signatureY)
+        guard let content else { return }
+        let geometry = NativePlaybackUploaderGeometry(
+            content: content,
+            width: bounds.width,
+            signatureExpanded: signatureExpanded
         )
-        signatureLoadingBar.frame = NSRect(
-            x: textX,
-            y: signatureY + 2,
-            width: min(196, textWidth),
-            height: 14
-        )
-        signatureButton.frame = NSRect(
-            x: bounds.width - buttonWidth,
-            y: signatureY,
-            width: buttonWidth,
-            height: 20
-        )
+        if case .text(let signature) = content.signature {
+            updateSignatureText(signature, geometry: geometry)
+        }
+        nameLabel.frame = geometry.nameFrame
+        signatureText.frame = geometry.signatureTextFrame
+        signatureLoadingBar.frame = geometry.loadingBarFrame
+        signatureButton.frame = geometry.signatureToggleFrame
     }
 
     func cancelImageRequest() {
@@ -415,19 +500,12 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         }
     }
 
-    private func updateSignatureTextIfNeeded(
-        _ signature: String
+    private func updateSignatureText(
+        _ signature: String,
+        geometry: NativePlaybackUploaderGeometry
     ) {
-        let availableWidth = max(
-            40,
-            bounds.width - NativePlaybackSidebarItemMeasurement.avatarSize - 12
-        )
-        let font = NSFont.preferredFont(forTextStyle: .callout)
-        let overflows =
-            NativePlaybackSidebarTextLayout.singleLineWidth(signature, font: font)
-            > availableWidth
-        let maximumLines = overflows && !signatureExpanded ? 1 : nil
-        signatureButton.isHidden = !overflows
+        let maximumLines = geometry.signatureMaximumLines
+        signatureButton.isHidden = !geometry.signatureOverflows
         signatureButton.title =
             signatureExpanded
             ? AppStrings.localized("收起") : AppStrings.localized("展开")
@@ -447,7 +525,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         configuredSignatureMaximumLines = maximumLines
         signatureText.setText(
             signature,
-            font: font,
+            font: NativePlaybackUploaderGeometry.signatureFont,
             color: .secondaryLabelColor,
             maximumLines: maximumLines
         )
@@ -538,28 +616,13 @@ private final class NativePlaybackSidebarSummaryView: NSView {
     override func layout() {
         super.layout()
         separator.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
-        titleLabel.frame = NSRect(
-            x: 0,
-            y: NativePlaybackSidebarItemMeasurement.sectionTopInset,
+        let geometry = NativePlaybackSummaryGeometry(
+            summary: summary,
             width: bounds.width,
-            height: 22
+            expanded: expanded
         )
-        let font = NSFont.preferredFont(forTextStyle: .callout)
-        let collapsedHeight = NativePlaybackSidebarTextLayout.height(
-            summary,
-            width: bounds.width,
-            font: font,
-            maximumLines: 5
-        )
-        let fullHeight = NativePlaybackSidebarTextLayout.height(
-            summary,
-            width: bounds.width,
-            font: font
-        )
-        let overflows = fullHeight > collapsedHeight + 0.5
-        let showsExpandedText = expanded && overflows
-        let textHeight = showsExpandedText ? fullHeight : collapsedHeight
-        let maximumLines = overflows && !expanded ? 5 : nil
+        titleLabel.frame = geometry.titleFrame
+        let maximumLines = geometry.maximumLines
         if !hasConfiguredText
             || configuredSummary != summary
             || configuredMaximumLines != maximumLines
@@ -569,18 +632,13 @@ private final class NativePlaybackSidebarSummaryView: NSView {
             configuredMaximumLines = maximumLines
             textView.setText(
                 summary,
-                font: font,
+                font: NativePlaybackSummaryGeometry.textFont,
                 color: .secondaryLabelColor,
                 maximumLines: maximumLines
             )
         }
-        textView.frame = NSRect(
-            x: 0,
-            y: NativePlaybackSidebarItemMeasurement.sectionTopInset + 30,
-            width: bounds.width,
-            height: textHeight
-        )
-        toggleButton.isHidden = !overflows
+        textView.frame = geometry.textFrame
+        toggleButton.isHidden = !geometry.overflows
         toggleButton.title =
             expanded
             ? AppStrings.localized("收起") : AppStrings.localized("展开")
@@ -590,12 +648,7 @@ private final class NativePlaybackSidebarSummaryView: NSView {
         toggleButton.setAccessibilityValue(
             expanded ? AppStrings.localized("已展开") : AppStrings.localized("已折叠为五行")
         )
-        toggleButton.frame = NSRect(
-            x: 0,
-            y: textView.frame.maxY + 4,
-            width: min(56, bounds.width),
-            height: overflows ? 22 : 0
-        )
+        toggleButton.frame = geometry.toggleFrame
     }
 
     func reset() {
