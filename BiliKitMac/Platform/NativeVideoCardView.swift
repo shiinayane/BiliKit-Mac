@@ -1105,19 +1105,16 @@ private final class NativeVideoMergedCoverView: NSView {
 private final class NativeVideoLayerImageView: NSView {
     private let placeholderSystemSymbolName: String
     private let placeholderTintColor: NSColor
-    private let placeholderFrameSize: NSSize?
     private let placeholderLayer = CALayer()
     private let imageLayer = CALayer()
     private var imageGeneration: UInt64 = 0
 
     init(
         placeholderSystemSymbolName: String,
-        placeholderTintColor: NSColor,
-        placeholderFrameSize: NSSize? = nil
+        placeholderTintColor: NSColor
     ) {
         self.placeholderSystemSymbolName = placeholderSystemSymbolName
         self.placeholderTintColor = placeholderTintColor
-        self.placeholderFrameSize = placeholderFrameSize
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = true
@@ -1147,7 +1144,7 @@ private final class NativeVideoLayerImageView: NSView {
 
     override func layout() {
         super.layout()
-        let size = placeholderFrameSize ?? bounds.size
+        let size = bounds.size
         placeholderLayer.frame = NSRect(
             x: floor((bounds.width - size.width) / 2),
             y: floor((bounds.height - size.height) / 2),

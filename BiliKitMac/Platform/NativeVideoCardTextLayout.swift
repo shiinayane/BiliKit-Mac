@@ -31,12 +31,9 @@ enum NativeVideoCardTextLayout {
         return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
     }
 
+    /// NSFont 与 CTFont toll-free bridged，直接转换即可，不需要缓存。
     static func ctFont(_ font: NSFont) -> CTFont {
-        CTFontCreateWithFontDescriptor(
-            font.fontDescriptor as CTFontDescriptor,
-            font.pointSize,
-            nil
-        )
+        font as CTFont
     }
 
     static func recommendationCapsuleTextOffset(
@@ -101,9 +98,6 @@ final class NativeVideoCardTextRenderer {
     private var footerTrailing: String?
     private var footerTrailingStyle: NativeVideoCardFooterTrailingStyle = .plain
     private var footerTrailingWidthCache = NativeVideoSingleLineWidthCache()
-    private var cachedTitleFont: (source: NSFont, resolved: CTFont)?
-    private var cachedFooterFont: (source: NSFont, resolved: CTFont)?
-    private var cachedCapsuleFont: (source: NSFont, resolved: CTFont)?
 
     var showsFooterTrailing: Bool { footerTrailing != nil }
     var usesLeadingCapsule: Bool {
@@ -235,36 +229,18 @@ final class NativeVideoCardTextRenderer {
     }
 
     private func resolvedTitleFont(for font: NSFont) -> CTFont {
-        if let cachedTitleFont, cachedTitleFont.source == font {
-            return cachedTitleFont.resolved
-        }
-        let resolved = NativeVideoCardTextLayout.ctFont(font)
-        cachedTitleFont = (font, resolved)
-        return resolved
+        font as CTFont
     }
 
     private func resolvedFooterFont(for font: NSFont) -> CTFont {
-        if let cachedFooterFont, cachedFooterFont.source == font {
-            return cachedFooterFont.resolved
-        }
-        let resolved = NativeVideoCardTextLayout.ctFont(font)
-        cachedFooterFont = (font, resolved)
-        footerTrailingWidthCache.reset()
-        return resolved
+        font as CTFont
     }
 
     private func resolvedCapsuleFont(for footerFont: NSFont) -> CTFont {
-        if let cachedCapsuleFont, cachedCapsuleFont.source == footerFont {
-            return cachedCapsuleFont.resolved
-        }
-        let source = NSFont.systemFont(
+        NSFont.systemFont(
             ofSize: min(11, max(9, footerFont.pointSize - 2)),
             weight: .medium
-        )
-        let resolved = NativeVideoCardTextLayout.ctFont(source)
-        cachedCapsuleFont = (footerFont, resolved)
-        footerTrailingWidthCache.reset()
-        return resolved
+        ) as CTFont
     }
 
     private static func makeTextLayer(

@@ -418,20 +418,10 @@ private struct PlayerPreviewEndedBadge: View {
     }
 }
 
+/// 只显示、不接收鼠标事件的播放器浮层徽章。
 @MainActor
-private final class PlayerPreviewEndedBadgeHostingView:
-    NSHostingView<PlayerPreviewEndedBadge>
-{
+private final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-@MainActor
-private final class PlayerShortcutFeedbackBadgeHostingView:
-    NSHostingView<PlayerShortcutFeedbackBadge>
-{
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
 }
 
 /// 打开时独占方向键等按键的浮层；播放器快捷键不会越过它。
@@ -452,7 +442,7 @@ final class DanmakuPlayerView: AVPlayerView {
     private var playerTimeControlObservation: NSKeyValueObservation?
     private var playerItemTimeJumpObserver: NSObjectProtocol?
     private var resumeButtonHostingView: NSHostingView<PlayerResumeButton>?
-    private var previewEndedHostingView: PlayerPreviewEndedBadgeHostingView?
+    private var previewEndedHostingView: PassthroughHostingView<PlayerPreviewEndedBadge>?
     private var displayedPreviewEndedNotice: String?
     private var displayedResumeNotice: PlaybackResumeNotice?
     private var dismissedResumeToken: PlaybackResumeToken?
@@ -601,7 +591,7 @@ final class DanmakuPlayerView: AVPlayerView {
             return
         }
         guard let contentOverlayView else { return }
-        let hostingView = PlayerPreviewEndedBadgeHostingView(
+        let hostingView = PassthroughHostingView(
             rootView: PlayerPreviewEndedBadge(message: message)
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -1362,7 +1352,7 @@ final class PlayerScrollWheelCaptureView: NSView {
         feedbackFadeTask?.cancel()
         feedbackFadeTask = nil
         feedbackBadge?.removeFromSuperview()
-        let badge = PlayerShortcutFeedbackBadgeHostingView(
+        let badge = PassthroughHostingView(
             rootView: PlayerShortcutFeedbackBadge(feedback: feedback)
         )
         badge.alphaValue = 1

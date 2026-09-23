@@ -2470,7 +2470,7 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
     override func layout() {
         super.layout()
         guard let thread,
-            case .available(let details) = thread.root.payload
+            case .available = thread.root.payload
         else { return }
         let padding = NativePlaybackCommentsItemMeasurement.replyPanelPadding
         let width = max(60, bounds.width - padding * 2)
@@ -2535,7 +2535,6 @@ private final class NativePlaybackCommentRepliesPanelView: NSView {
                 )
             }
         }
-        _ = details
     }
 
     func releaseOffscreenResources() {
