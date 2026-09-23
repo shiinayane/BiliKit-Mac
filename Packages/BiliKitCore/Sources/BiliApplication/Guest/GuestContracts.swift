@@ -14,32 +14,20 @@ public enum GuestApplicationError: Error, Sendable, Equatable {
     case unavailable
 }
 
-/// 游客浏览用例所需的远端内容 port，不暴露 endpoint DTO 或具体网络 client。
-public protocol GuestContentRepository: Sendable {
+/// 游客 Feed 用例所需的远端列表 port，不暴露 endpoint DTO 或具体网络 client。
+public protocol GuestFeedRepository: Sendable {
     func recommendations(
         after continuation: RecommendationContinuation?
     ) async throws -> RecommendationPage
     func popular(page: Int, pageSize: Int) async throws -> PopularPage
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage
     func searchVideos(request: VideoSearchRequest) async throws -> SearchPage
+}
+
+/// 游客视频用例所需的详情、分 P 与播放地址 port。
+public protocol GuestVideoRepository: Sendable {
     func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
-}
-
-extension GuestContentRepository {
-    public func recommendations(
-        after continuation: RecommendationContinuation?
-    ) async throws -> RecommendationPage {
-        throw GuestApplicationError.unavailable
-    }
-
-    public func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
-        try await searchVideos(
-            keyword: request.criteria.query,
-            page: request.page
-        )
-    }
 }
 
 /// 当前视频相关推荐所需的独立匿名只读 port。

@@ -26,7 +26,7 @@ struct GuestFeedUseCaseTests {
                     )
                 )
         )
-        #expect(await repository.searchQueries() == ["macOS"])
+        #expect(await repository.searchRequests.map(\.criteria.query) == ["macOS"])
     }
 
     @Test
@@ -37,7 +37,7 @@ struct GuestFeedUseCaseTests {
         await #expect(throws: GuestApplicationError.invalidRequest) {
             try await useCase.execute(.search(query: "   ", page: 1))
         }
-        #expect(await repository.searchQueries().isEmpty)
+        #expect(await repository.searchRequests.isEmpty)
     }
 
     @Test
@@ -58,7 +58,7 @@ struct GuestFeedUseCaseTests {
             .search(VideoSearchRequest(criteria: criteria, page: 2))
         )
         #expect(
-            await repository.searchRequests()
+            await repository.searchRequests
                 == [VideoSearchRequest(criteria: criteria, page: 2)]
         )
 
@@ -74,32 +74,25 @@ struct GuestFeedUseCaseTests {
                 .search(VideoSearchRequest(criteria: invalid, page: 1))
             )
         }
-        #expect(await repository.searchRequests().count == 1)
+        #expect(await repository.searchRequests.count == 1)
     }
 }
 
-private actor FeedRepositoryStub: GuestContentRepository {
-    private var observedSearchQueries: [String] = []
-    private var observedSearchRequests: [VideoSearchRequest] = []
+private actor FeedRepositoryStub: GuestFeedRepository {
+    private(set) var searchRequests: [VideoSearchRequest] = []
+
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        throw GuestApplicationError.unavailable
+    }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {
         PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
     }
 
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        observedSearchQueries.append(keyword)
-        return SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
-    }
-
     func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
-        observedSearchRequests.append(request)
-        observedSearchQueries.append(request.criteria.query)
+        searchRequests.append(request)
         return SearchPage(
             videos: [],
             pageNumber: request.page,
@@ -107,28 +100,5 @@ private actor FeedRepositoryStub: GuestContentRepository {
             totalResults: 0,
             totalPages: 0
         )
-    }
-
-    func videoDetail(for bvid: String) async throws -> VideoDetail {
-        throw GuestApplicationError.unavailable
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        throw GuestApplicationError.unavailable
-    }
-
-    func playback(
-        for bvid: String,
-        cid: Int64
-    ) async throws -> VideoPlayback {
-        throw GuestApplicationError.unavailable
-    }
-
-    func searchQueries() -> [String] {
-        observedSearchQueries
-    }
-
-    func searchRequests() -> [VideoSearchRequest] {
-        observedSearchRequests
     }
 }

@@ -54,9 +54,9 @@ public enum PlaybackAccessNotice: Sendable, Equatable {
 ///
 /// 用例不拥有播放器，也不保留可变状态；任何一个阶段取消都会阻止后续播放请求或结果返回。
 public struct GuestVideoUseCase: Sendable {
-    private let repository: any GuestContentRepository
+    private let repository: any GuestVideoRepository
 
-    public init(repository: any GuestContentRepository) {
+    public init(repository: any GuestVideoRepository) {
         self.repository = repository
     }
 

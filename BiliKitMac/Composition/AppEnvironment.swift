@@ -130,7 +130,8 @@ final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     let playbackPreferencesController: PlaybackPreferencesController
-    private let guestContentRepository: any GuestContentRepository
+    private let guestFeedRepository: any GuestFeedRepository
+    private let guestVideoRepository: any GuestVideoRepository
     private let relatedVideoRepository: any RelatedVideoRepository
     private let uploaderSignatureRepository: any UploaderSignatureRepository
     private let commentRepository: any CommentRepository
@@ -149,7 +150,8 @@ struct AppEnvironment {
     let close: @MainActor @Sendable () -> Void
 
     init(
-        guestContentRepository: any GuestContentRepository,
+        guestFeedRepository: any GuestFeedRepository,
+        guestVideoRepository: any GuestVideoRepository,
         relatedVideoRepository: any RelatedVideoRepository,
         uploaderSignatureRepository: any UploaderSignatureRepository,
         commentRepository: any CommentRepository,
@@ -175,7 +177,8 @@ struct AppEnvironment {
             playerEngine.nativeSubtitlesEnabled,
             "AVPlayerEngine must own native subtitle presentation"
         )
-        self.guestContentRepository = guestContentRepository
+        self.guestFeedRepository = guestFeedRepository
+        self.guestVideoRepository = guestVideoRepository
         self.relatedVideoRepository = relatedVideoRepository
         self.uploaderSignatureRepository = uploaderSignatureRepository
         self.commentRepository = commentRepository
@@ -306,13 +309,13 @@ struct AppEnvironment {
 
     func makeBrowseViewModel() -> GuestBrowseViewModel {
         GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: guestContentRepository)
+            useCase: GuestFeedUseCase(repository: guestFeedRepository)
         )
     }
 
     func makeVideoViewModel() -> GuestVideoViewModel {
         GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: guestContentRepository),
+            useCase: GuestVideoUseCase(repository: guestVideoRepository),
             playback: playerEngine,
             relatedVideoUseCase: RelatedVideoUseCase(
                 repository: relatedVideoRepository
@@ -560,7 +563,8 @@ struct AppEnvironment {
         let commentAssetResolver = BiliCommentAssetResolver()
         let commentLinkResolver = BiliCommentLinkResolver()
         return AppEnvironment(
-            guestContentRepository: guestRepository,
+            guestFeedRepository: guestRepository,
+            guestVideoRepository: guestRepository,
             relatedVideoRepository: guestRepository,
             uploaderSignatureRepository: guestRepository,
             commentRepository: BiliCommentRepository(client: api),

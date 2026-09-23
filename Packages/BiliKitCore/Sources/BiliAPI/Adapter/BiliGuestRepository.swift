@@ -1,8 +1,8 @@
 import BiliApplication
 import BiliModels
 
-public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepository,
-    UploaderSignatureRepository
+public struct BiliGuestRepository: GuestFeedRepository, GuestVideoRepository,
+    RelatedVideoRepository, UploaderSignatureRepository
 {
     private let client: BiliAPIClient
 
@@ -21,12 +21,6 @@ public struct BiliGuestRepository: GuestContentRepository, RelatedVideoRepositor
     public func popular(page: Int, pageSize: Int) async throws -> PopularPage {
         try await mapError {
             try await client.popular(page: page, pageSize: pageSize)
-        }
-    }
-
-    public func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        try await mapError {
-            try await client.searchVideos(keyword: keyword, page: page)
         }
     }
 

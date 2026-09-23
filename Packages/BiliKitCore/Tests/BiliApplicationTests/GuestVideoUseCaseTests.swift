@@ -291,25 +291,11 @@ struct GuestVideoUseCaseTests {
     }
 }
 
-private actor FallbackCancellationRepository: GuestContentRepository {
+private actor FallbackCancellationRepository: GuestVideoRepository {
     private var pagesStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
     private var playbackRequests = 0
-
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
-    }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
         VideoDetail(
@@ -368,7 +354,7 @@ private actor FallbackCancellationRepository: GuestContentRepository {
     }
 }
 
-private actor GuestRepositoryStub: GuestContentRepository {
+private actor GuestRepositoryStub: GuestVideoRepository {
     private let hasPages: Bool
     private let detailHasPages: Bool
     private let resumeMetadata: PlaybackResumeMetadata?
@@ -389,20 +375,6 @@ private actor GuestRepositoryStub: GuestContentRepository {
         self.resumeMetadata = resumeMetadata
         self.access = access
         self.playbackFailure = playbackFailure
-    }
-
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
     }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {

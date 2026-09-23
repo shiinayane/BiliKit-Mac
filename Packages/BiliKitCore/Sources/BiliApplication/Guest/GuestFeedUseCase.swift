@@ -24,9 +24,9 @@ public enum GuestFeedContent: Sendable, Equatable {
 
 /// 在进入 adapter 前验证并规范化 Feed 意图的一次性用例。
 public struct GuestFeedUseCase: Sendable {
-    private let repository: any GuestContentRepository
+    private let repository: any GuestFeedRepository
 
-    public init(repository: any GuestContentRepository) {
+    public init(repository: any GuestFeedRepository) {
         self.repository = repository
     }
 
