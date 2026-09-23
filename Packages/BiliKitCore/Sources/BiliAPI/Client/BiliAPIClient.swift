@@ -186,23 +186,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw BiliAPIError.invalidRequest
         }
         let sessionEpoch = authenticatedSessionEpoch
-        do {
-            return try await signedRecommendations(
-                freshIndex: freshIndex,
-                sessionEpoch: sessionEpoch,
-                forceKeyRefresh: false
-            )
-        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedRecommendations(
-                freshIndex: freshIndex,
-                sessionEpoch: sessionEpoch,
-                forceKeyRefresh: true
-            )
-        } catch BiliAPIError.httpStatus(403) {
-            return try await signedRecommendations(
-                freshIndex: freshIndex,
-                sessionEpoch: sessionEpoch,
-                forceKeyRefresh: true
+        return try await withWBIKeyRefresh { forceKeyRefresh in
+            try await signedRecommendations(
+            freshIndex: freshIndex,
+            sessionEpoch: sessionEpoch,
+            forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -248,23 +236,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             parameters["pubtime_begin_s"] = String(range.beginTimestamp)
             parameters["pubtime_end_s"] = String(range.endTimestamp)
         }
-        do {
-            return try await signedSearch(
-                parameters: parameters,
-                sessionEpoch: searchSessionEpoch,
-                forceKeyRefresh: false
-            )
-        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedSearch(
-                parameters: parameters,
-                sessionEpoch: searchSessionEpoch,
-                forceKeyRefresh: true
-            )
-        } catch BiliAPIError.httpStatus(403) {
-            return try await signedSearch(
-                parameters: parameters,
-                sessionEpoch: searchSessionEpoch,
-                forceKeyRefresh: true
+        return try await withWBIKeyRefresh { forceKeyRefresh in
+            try await signedSearch(
+            parameters: parameters,
+            sessionEpoch: searchSessionEpoch,
+            forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -297,19 +273,12 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard subject.type == 1, subject.oid > 0 else {
             throw BiliAPIError.invalidRequest
         }
-        do {
-            return try await signedCommentRootPage(
-                for: subject,
-                sort: sort,
-                offset: offset,
-                forceKeyRefresh: false
-            )
-        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedCommentRootPage(
-                for: subject,
-                sort: sort,
-                offset: offset,
-                forceKeyRefresh: true
+        return try await withWBIKeyRefresh(retryingHTTPForbidden: false) { forceKeyRefresh in
+            try await signedCommentRootPage(
+            for: subject,
+            sort: sort,
+            offset: offset,
+            forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -715,20 +684,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         guard requestAuthorizer != nil else {
             throw BiliAPIError.authorizationRequired
         }
-        do {
-            return try await signedSubtitleResources(
-                for: identity,
-                forceKeyRefresh: false
-            )
-        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedSubtitleResources(
-                for: identity,
-                forceKeyRefresh: true
-            )
-        } catch BiliAPIError.httpStatus(403) {
-            return try await signedSubtitleResources(
-                for: identity,
-                forceKeyRefresh: true
+        return try await withWBIKeyRefresh { forceKeyRefresh in
+            try await signedSubtitleResources(
+            for: identity,
+            forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -743,23 +702,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         else {
             throw BiliAPIError.invalidRequest
         }
-        do {
-            return try await signedDanmakuSegmentData(
-                index: index,
-                for: identity,
-                forceKeyRefresh: false
-            )
-        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
-            return try await signedDanmakuSegmentData(
-                index: index,
-                for: identity,
-                forceKeyRefresh: true
-            )
-        } catch BiliAPIError.httpStatus(403) {
-            return try await signedDanmakuSegmentData(
-                index: index,
-                for: identity,
-                forceKeyRefresh: true
+        return try await withWBIKeyRefresh { forceKeyRefresh in
+            try await signedDanmakuSegmentData(
+            index: index,
+            for: identity,
+            forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -1183,6 +1130,20 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
         try requireAuthenticatedSessionEpoch(sessionEpoch)
         return try payload.model()
+    }
+
+    /// WBI 签名请求被服务端以 -403（以及可选的 HTTP 403）拒绝时，强制刷新 WBI key 并只重试一次。
+    private func withWBIKeyRefresh<Value>(
+        retryingHTTPForbidden: Bool = true,
+        _ request: (_ forceKeyRefresh: Bool) async throws -> Value
+    ) async throws -> Value {
+        do {
+            return try await request(false)
+        } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
+            return try await request(true)
+        } catch BiliAPIError.httpStatus(403) where retryingHTTPForbidden {
+            return try await request(true)
+        }
     }
 
     private func signedRecommendations(
