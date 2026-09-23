@@ -86,6 +86,30 @@ struct BiliAuthenticationServiceTests {
     }
 
     @Test
+    func cancelledRestoreNeverPublishesSignedOutWhileCredentialRemains() async throws {
+        let store = MemoryWebCredentialStore(
+            credential: try makeFixtureCredential()
+        )
+        let service = makeService(
+            session: WebQRLoginSession(
+                transport: RecordingAuthTransport(),
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
+                transport: RecordingAuthTransport(errors: [CancellationError()])
+            ),
+            store: store
+        )
+
+        #expect(await service.restore() == .failed(.network))
+        #expect(try store.load() != nil)
+        // 凭据仍在时不能直接开始新的扫码登录。
+        #expect(await service.requestQRCode() == .failed(.network))
+    }
+
+    @Test
     func confirmedSessionBecomingSignedOutInvalidatesAuthenticatedAPIs() async throws {
         let events = LogoutEventRecorder()
         let store = MemoryWebCredentialStore(
