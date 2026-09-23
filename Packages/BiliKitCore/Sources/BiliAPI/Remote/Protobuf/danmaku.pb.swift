@@ -9,7 +9,7 @@
 //   https://github.com/apple/swift-protobuf/
 
 /// Clean-room schema derived from BiliKit's own M4 contract observations.
-/// Keep generator and runtime pinned to SwiftProtobuf 1.38.1 (ADR 0008).
+/// Keep generator and runtime pinned to SwiftProtobuf 1.38.1 (docs/ARCHITECTURE.md).
 
 import SwiftProtobuf
 
