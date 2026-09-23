@@ -22,6 +22,7 @@ enum HistoryRouteOwnership {
 /// 页面 View 只表达局部意图；关窗时需要在这里清除 Browse/History 工作集、认证临时任务，
 /// 并借导航路径清空统一停止播放、原生字幕和弹幕资源。
 struct AppRootView: View {
+    @Environment(\.appearsActive) private var appearsActive
     @StateObject private var windowOwnerHolder: AppWindowOwnerHolder
     private let accountSessionCoordinator: AccountSessionCoordinator
     private let appSettingsModel: AppSettingsModel?
@@ -119,9 +120,12 @@ struct AppRootView: View {
         .onAppear {
             windowOwner.synchronizeWatchProgressAccess(historyAccountScope)
             windowOwner.open()
-            windowOwner.markWindowActive()
         }
-        .background(AppWindowActivationObserver(onBecomeKey: windowOwner.markWindowActive))
+        .onChange(of: appearsActive, initial: true) { _, isActive in
+            if isActive {
+                windowOwner.markWindowActive()
+            }
+        }
         .task {
             authenticationModel.restoreIfNeeded()
             await authenticationModel.waitForCurrentTask()
@@ -172,28 +176,8 @@ struct AppRootView: View {
                 historyModel.deactivateRoute()
             }
         }
-        .onChange(of: videoModel.authenticationRevalidationGeneration) {
-            previousGeneration,
-            generation in
-            guard generation > previousGeneration else { return }
-            authenticationModel.revalidate()
-        }
-        .onChange(of: browseModel.authenticationRevalidationGeneration) {
-            previousGeneration,
-            generation in
-            guard generation > previousGeneration else { return }
-            authenticationModel.revalidate()
-        }
-        .onChange(of: danmakuModel.authenticationRevalidationGeneration) {
-            previousGeneration,
-            generation in
-            guard generation > previousGeneration else { return }
-            authenticationModel.revalidate()
-        }
-        .onChange(of: commentAuthenticationRevalidationGeneration) {
-            previousGeneration,
-            generation in
-            guard generation > previousGeneration else { return }
+        .onChange(of: authenticationRevalidationRequests) { previous, current in
+            guard zip(previous, current).contains(where: { $1 > $0 }) else { return }
             authenticationModel.revalidate()
         }
         .onChange(of: navigationCoordinator.searchDraft) { _, query in
@@ -286,8 +270,14 @@ struct AppRootView: View {
         return videoIdentity.aid
     }
 
-    private var commentAuthenticationRevalidationGeneration: Int {
-        commentsModel?.authenticationRevalidationGeneration ?? 0
+    /// 各 ViewModel 发现凭据失效时递增自己的计数；任一计数增加都触发一次认证复核。
+    private var authenticationRevalidationRequests: [Int] {
+        [
+            videoModel.authenticationRevalidationGeneration,
+            browseModel.authenticationRevalidationGeneration,
+            danmakuModel.authenticationRevalidationGeneration,
+            commentsModel?.authenticationRevalidationGeneration ?? 0
+        ]
     }
 
     private var normalizedSearchDraft: String {
@@ -354,7 +344,7 @@ struct AppRootView: View {
             browseModel.activateRecommendation()
             await browseModel.waitForCurrentTask()
         case .popular:
-            browseModel.activatePopular(pageSize: 50)
+            browseModel.activatePopular(pageSize: GuestBrowseViewModel.popularPageSize)
             await browseModel.waitForCurrentTask()
         case .search(nil), .inactive:
             browseModel.deactivateRoute()
@@ -390,74 +380,6 @@ struct AppRootView: View {
         browseModel.synchronizeAuthenticationSession(
             generation: processGeneration
         )
-    }
-}
-
-private struct AppWindowActivationObserver: NSViewRepresentable {
-    let onBecomeKey: @MainActor () -> Void
-
-    func makeNSView(context: Context) -> AppWindowActivationNSView {
-        AppWindowActivationNSView(onBecomeKey: onBecomeKey)
-    }
-
-    func updateNSView(
-        _ nsView: AppWindowActivationNSView,
-        context: Context
-    ) {
-        nsView.onBecomeKey = onBecomeKey
-    }
-}
-
-@MainActor
-private final class AppWindowActivationNSView: NSView {
-    var onBecomeKey: @MainActor () -> Void
-    private let observerOwner = AppWindowActivationObserverOwner()
-
-    init(onBecomeKey: @escaping @MainActor () -> Void) {
-        self.onBecomeKey = onBecomeKey
-        super.init(frame: .zero)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        observerOwner.remove()
-        guard let window else { return }
-        observerOwner.store(
-            NotificationCenter.default.addObserver(
-                forName: NSWindow.didBecomeKeyNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.onBecomeKey() }
-            }
-        )
-        if window.isKeyWindow {
-            onBecomeKey()
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-}
-
-private final class AppWindowActivationObserverOwner: @unchecked Sendable {
-    private var observer: NSObjectProtocol?
-
-    func store(_ observer: NSObjectProtocol) {
-        remove()
-        self.observer = observer
-    }
-
-    func remove() {
-        guard let observer else { return }
-        NotificationCenter.default.removeObserver(observer)
-        self.observer = nil
-    }
-
-    deinit {
-        remove()
     }
 }
 
