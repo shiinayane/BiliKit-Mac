@@ -79,6 +79,9 @@ public final class GuestBrowseViewModel {
         activateWorkset(request, workset: workset)
     }
 
+    /// App 热门 Tab 使用的分页大小；`PopularFeedView` 按同一请求匹配 presentation。
+    public static let popularPageSize = 50
+
     public func activatePopular(page: Int = 1, pageSize: Int = 20) {
         let request = GuestFeedRequest.popular(page: page, pageSize: pageSize)
         let workset =
@@ -99,7 +102,7 @@ public final class GuestBrowseViewModel {
         let request = GuestFeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
         )
-        guard isValidSearch(criteria) else {
+        guard criteria.isValid else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -208,7 +211,7 @@ public final class GuestBrowseViewModel {
         let request = GuestFeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
         )
-        guard isValidSearch(criteria) else {
+        guard criteria.isValid else {
             fail(request: request, error: .invalidRequest)
             return
         }
@@ -936,16 +939,6 @@ public final class GuestBrowseViewModel {
             guard searchWorkset.request == request else { return nil }
             return searchWorkset
         }
-    }
-
-    private func isValidSearch(_ criteria: VideoSearchCriteria) -> Bool {
-        guard !criteria.query.isEmpty,
-            criteria.query.count <= 100,
-            criteria.pageSize == VideoSearchCriteria.pageSize
-        else { return false }
-        guard let range = criteria.publicationRange else { return true }
-        return range.beginTimestamp >= 0
-            && range.beginTimestamp <= range.endTimestamp
     }
 }
 

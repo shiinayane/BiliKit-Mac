@@ -91,7 +91,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             headers: [
                 "Accept": "application/json",
                 "Referer": "https://www.bilibili.com/video/\(identity.bvid)/",
-                "User-Agent": "BiliKitMac/0.1"
+                "User-Agent": HTTPUserAgent.short
             ]
         )
 

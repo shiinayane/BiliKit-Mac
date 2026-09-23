@@ -129,7 +129,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             headers: [
                 "Accept": "application/json",
                 "Referer": "https://www.bilibili.com/",
-                "User-Agent": "BiliKitMac/0.1"
+                "User-Agent": HTTPUserAgent.short
             ]
         )
         let authorized: HTTPRequest

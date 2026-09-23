@@ -335,3 +335,16 @@ package final class PlaybackTimelineStore {
         }
     }
 }
+
+/// 播放器接受的倍速范围；偏好恢复、键盘临时倍速与 AVPlayer 写入共用。
+public enum PlaybackRate {
+    public static let supported: ClosedRange<Double> = 0.25...4
+
+    public static func isSupported(_ rate: Double) -> Bool {
+        rate.isFinite && supported.contains(rate)
+    }
+
+    public static func isSupported(_ rate: Float) -> Bool {
+        isSupported(Double(rate))
+    }
+}

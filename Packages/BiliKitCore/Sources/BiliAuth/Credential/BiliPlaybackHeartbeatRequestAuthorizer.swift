@@ -7,8 +7,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
 {
     private static let allowedPath = "/x/click-interface/web/heartbeat"
     private static let maximumBodySize = 2 * 1_024
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1"
+    private static let userAgent = HTTPUserAgent.browserCompatible
     private static let requiredQueryNames: Set<String> = [
         "w_aid", "w_dt", "w_last_play_progress_time", "w_played_time",
         "w_real_played_time", "w_realtime", "w_start_ts", "web_location",

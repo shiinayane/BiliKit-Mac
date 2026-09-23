@@ -121,6 +121,18 @@ public struct VideoSearchCriteria: Sendable, Hashable {
         self.publicationRange = publicationRange
         self.pageSize = Self.pageSize
     }
+
+    public static let maximumQueryLength = 100
+
+    /// 查询非空且不超过上限、使用固定页大小、发布时间范围不为负且不倒置。
+    public var isValid: Bool {
+        guard !query.isEmpty,
+            query.count <= Self.maximumQueryLength,
+            pageSize == Self.pageSize
+        else { return false }
+        guard let range = publicationRange else { return true }
+        return range.beginTimestamp >= 0 && range.beginTimestamp <= range.endTimestamp
+    }
 }
 
 /// 单次网络请求 identity；分页只改变 `page`，其余条件完整保留。

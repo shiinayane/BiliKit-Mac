@@ -49,12 +49,7 @@ public struct GuestFeedUseCase: Sendable {
             )
         case .search(let request):
             let criteria = request.criteria
-            guard !criteria.query.isEmpty,
-                criteria.query.count <= 100,
-                criteria.pageSize == VideoSearchCriteria.pageSize,
-                request.page > 0,
-                Self.isValid(criteria.publicationRange)
-            else {
+            guard criteria.isValid, request.page > 0 else {
                 throw GuestApplicationError.invalidRequest
             }
             return .search(
@@ -62,11 +57,5 @@ public struct GuestFeedUseCase: Sendable {
                 page: try await repository.searchVideos(request: request)
             )
         }
-    }
-
-    private static func isValid(_ range: VideoPublicationTimeRange?) -> Bool {
-        guard let range else { return true }
-        return range.beginTimestamp >= 0
-            && range.beginTimestamp <= range.endTimestamp
     }
 }

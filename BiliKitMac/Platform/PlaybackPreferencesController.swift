@@ -44,7 +44,12 @@ final class UserDefaultsPlaybackPreferencesStore:
                 ?? PlaybackPreferences.defaults.volume,
             isMuted: validBool(forKey: Key.isMuted)
                 ?? PlaybackPreferences.defaults.isMuted,
-            preferredRate: validNumber(forKey: Key.preferredRate, in: 0.25...4)
+            preferredRate: validNumber(
+                forKey: Key.preferredRate,
+                in: Float(
+                    PlaybackRate.supported.lowerBound
+                )...Float(PlaybackRate.supported.upperBound)
+            )
                 ?? PlaybackPreferences.defaults.preferredRate
         )
     }
@@ -59,7 +64,7 @@ final class UserDefaultsPlaybackPreferencesStore:
     }
 
     func savePreferredRate(_ rate: Float) {
-        guard rate.isFinite, (0.25...4).contains(rate) else { return }
+        guard PlaybackRate.isSupported(rate) else { return }
         defaults.set(rate, forKey: Key.preferredRate)
     }
 

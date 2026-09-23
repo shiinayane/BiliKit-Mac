@@ -436,7 +436,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func setRate(_ rate: Double) throws {
-        guard rate.isFinite, (0.25...4).contains(rate) else {
+        guard PlaybackRate.isSupported(rate) else {
             throw AVPlayerEngineError.invalidPlaybackRate
         }
         momentaryRateSession = nil
@@ -447,7 +447,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     func beginMomentaryRate(_ rate: Double) throws -> UUID? {
-        guard rate.isFinite, (0.25...4).contains(rate) else {
+        guard PlaybackRate.isSupported(rate) else {
             throw AVPlayerEngineError.invalidPlaybackRate
         }
         guard let token,
@@ -772,7 +772,7 @@ final class AVPlayerTimelineAdapter {
     }
 
     private static func validatedPlaybackRate(_ rate: Float) -> Float? {
-        guard rate.isFinite, (0.25...4).contains(rate) else { return nil }
+        guard PlaybackRate.isSupported(rate) else { return nil }
         return rate
     }
 }

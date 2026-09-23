@@ -89,8 +89,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         transportFactory: (@Sendable () -> any HTTPTransport)? = nil,
         baseURL: URL = BiliAPIClient.productionBaseURL,
-        userAgent: String =
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
+        userAgent: String = HTTPUserAgent.browserCompatible,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -188,9 +187,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let sessionEpoch = authenticatedSessionEpoch
         return try await withWBIKeyRefresh { forceKeyRefresh in
             try await signedRecommendations(
-            freshIndex: freshIndex,
-            sessionEpoch: sessionEpoch,
-            forceKeyRefresh: forceKeyRefresh
+                freshIndex: freshIndex,
+                sessionEpoch: sessionEpoch,
+                forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -212,16 +211,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     ) async throws -> SearchPage {
         let searchSessionEpoch = authenticatedSessionEpoch
         let criteria = request.criteria
-        let hasValidPublicationRange =
-            criteria.publicationRange.map {
-                $0.beginTimestamp >= 0 && $0.beginTimestamp <= $0.endTimestamp
-            } ?? true
-        guard !criteria.query.isEmpty,
-            criteria.query.count <= 100,
-            criteria.pageSize == VideoSearchCriteria.pageSize,
-            request.page > 0,
-            hasValidPublicationRange
-        else {
+        guard criteria.isValid, request.page > 0 else {
             throw BiliAPIError.invalidRequest
         }
         var parameters = [
@@ -238,9 +228,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return try await withWBIKeyRefresh { forceKeyRefresh in
             try await signedSearch(
-            parameters: parameters,
-            sessionEpoch: searchSessionEpoch,
-            forceKeyRefresh: forceKeyRefresh
+                parameters: parameters,
+                sessionEpoch: searchSessionEpoch,
+                forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -275,10 +265,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return try await withWBIKeyRefresh(retryingHTTPForbidden: false) { forceKeyRefresh in
             try await signedCommentRootPage(
-            for: subject,
-            sort: sort,
-            offset: offset,
-            forceKeyRefresh: forceKeyRefresh
+                for: subject,
+                sort: sort,
+                offset: offset,
+                forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -686,8 +676,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return try await withWBIKeyRefresh { forceKeyRefresh in
             try await signedSubtitleResources(
-            for: identity,
-            forceKeyRefresh: forceKeyRefresh
+                for: identity,
+                forceKeyRefresh: forceKeyRefresh
             )
         }
     }
@@ -704,9 +694,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return try await withWBIKeyRefresh { forceKeyRefresh in
             try await signedDanmakuSegmentData(
-            index: index,
-            for: identity,
-            forceKeyRefresh: forceKeyRefresh
+                index: index,
+                for: identity,
+                forceKeyRefresh: forceKeyRefresh
             )
         }
     }
