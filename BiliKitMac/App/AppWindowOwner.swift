@@ -21,8 +21,9 @@ final class AppWindowOwner {
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
-    let commentImagePipeline: NativeVideoImagePipeline
-    private let commentImagePipelineOwner: NativeVideoImagePipelineOwner
+    /// 窗口内所有封面、头像与评论图片共用的匿名有界图片管线。
+    let imagePipeline: NativeVideoImagePipeline
+    private let imagePipelineOwner: NativeVideoImagePipelineOwner
     private let playbackPreferencesController: PlaybackPreferencesController?
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator?
     private let watchProgressConnection: WatchProgressWindowConnection?
@@ -111,7 +112,7 @@ final class AppWindowOwner {
         commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
         commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
         commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
-        commentImagePipelineOwner: NativeVideoImagePipelineOwner =
+        imagePipelineOwner: NativeVideoImagePipelineOwner =
             NativeVideoImagePipelineOwner(),
         playbackPreferencesController: PlaybackPreferencesController? = nil,
         systemNowPlayingController: SystemNowPlayingController? = nil,
@@ -131,8 +132,8 @@ final class AppWindowOwner {
         self.commentAssetURLResolver = commentAssetURLResolver
         self.commentVideoLinkResolver = commentVideoLinkResolver
         self.commentLinkURLResolver = commentLinkURLResolver
-        self.commentImagePipelineOwner = commentImagePipelineOwner
-        commentImagePipeline = commentImagePipelineOwner.pipeline
+        self.imagePipelineOwner = imagePipelineOwner
+        imagePipeline = imagePipelineOwner.pipeline
         self.playbackPreferencesController = playbackPreferencesController
         if let systemNowPlayingController, let systemNowPlayingConnection {
             systemNowPlayingCoordinator = SystemNowPlayingWindowCoordinator(
@@ -161,7 +162,7 @@ final class AppWindowOwner {
         isClosed = true
         watchProgressConnection?.stop()
         systemNowPlayingCoordinator?.close()
-        commentImagePipelineOwner.shutdown()
+        imagePipelineOwner.shutdown()
         if isOpen {
             closeEnvironment?()
         }

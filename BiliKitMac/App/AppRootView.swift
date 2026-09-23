@@ -8,6 +8,7 @@
 import BiliAuthFeature
 import BiliBrowseFeature
 import BiliLibraryFeature
+import Combine
 import SwiftUI
 
 enum HistoryRouteOwnership {
@@ -21,7 +22,7 @@ enum HistoryRouteOwnership {
 /// 页面 View 只表达局部意图；关窗时需要在这里清除 Browse/History 工作集、认证临时任务，
 /// 并借导航路径清空统一停止播放、原生字幕和弹幕资源。
 struct AppRootView: View {
-    @State private var windowOwner: AppWindowOwner
+    @StateObject private var windowOwnerHolder: AppWindowOwnerHolder
     private let accountSessionCoordinator: AccountSessionCoordinator
     private let appSettingsModel: AppSettingsModel?
     @State private var isAuthenticationPresented = false
@@ -36,16 +37,16 @@ struct AppRootView: View {
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
         self.appSettingsModel = appSettingsModel
-        let environment =
-            environment
-            ?? .live(
-                accountSessionCoordinator: accountSessionCoordinator,
-                appSettingsModel: appSettingsModel
-            )
-        _windowOwner = State(
-            initialValue: AppWindowOwner(
-                environment: environment,
-                systemNowPlayingController: systemNowPlayingController
+        _windowOwnerHolder = StateObject(
+            wrappedValue: AppWindowOwnerHolder(
+                AppWindowOwner(
+                    environment: environment
+                        ?? .live(
+                            accountSessionCoordinator: accountSessionCoordinator,
+                            appSettingsModel: appSettingsModel
+                        ),
+                    systemNowPlayingController: systemNowPlayingController
+                )
             )
         )
     }
@@ -67,20 +68,22 @@ struct AppRootView: View {
     ) {
         self.accountSessionCoordinator = accountSessionCoordinator
         appSettingsModel = nil
-        _windowOwner = State(
-            initialValue: AppWindowOwner(
-                navigationCoordinator: navigationCoordinator,
-                browseModel: browseModel,
-                videoModel: videoModel,
-                commentsModel: commentsModel,
-                danmakuModel: danmakuModel,
-                authenticationModel: authenticationModel,
-                historyModel: historyModel,
-                playerContent: playerContent,
-                commentAssetURLResolver: commentAssetURLResolver,
-                commentVideoLinkResolver: commentVideoLinkResolver,
-                commentLinkURLResolver: commentLinkURLResolver,
-                watchProgressConnection: watchProgressConnection
+        _windowOwnerHolder = StateObject(
+            wrappedValue: AppWindowOwnerHolder(
+                AppWindowOwner(
+                    navigationCoordinator: navigationCoordinator,
+                    browseModel: browseModel,
+                    videoModel: videoModel,
+                    commentsModel: commentsModel,
+                    danmakuModel: danmakuModel,
+                    authenticationModel: authenticationModel,
+                    historyModel: historyModel,
+                    playerContent: playerContent,
+                    commentAssetURLResolver: commentAssetURLResolver,
+                    commentVideoLinkResolver: commentVideoLinkResolver,
+                    commentLinkURLResolver: commentLinkURLResolver,
+                    watchProgressConnection: watchProgressConnection
+                )
             )
         )
     }
@@ -98,7 +101,7 @@ struct AppRootView: View {
             commentAssetURLResolver: windowOwner.commentAssetURLResolver,
             commentVideoLinkResolver: windowOwner.commentVideoLinkResolver,
             commentLinkURLResolver: windowOwner.commentLinkURLResolver,
-            commentImagePipeline: windowOwner.commentImagePipeline,
+            imagePipeline: windowOwner.imagePipeline,
             isAuthenticationPresented: $isAuthenticationPresented,
             searchFilterSelection: $searchFilterSelection,
             submittedSearchCriteria: submittedSearchCriteria,
@@ -211,6 +214,10 @@ struct AppRootView: View {
             commentsModel?.reset()
             windowOwner.close()
         }
+    }
+
+    private var windowOwner: AppWindowOwner {
+        windowOwnerHolder.owner
     }
 
     private var navigationCoordinator: AppNavigationCoordinator {
@@ -451,6 +458,19 @@ private final class AppWindowActivationObserverOwner: @unchecked Sendable {
 
     deinit {
         remove()
+    }
+}
+
+/// 让窗口对象图只在视图身份首次出现时创建一次。
+///
+/// `@StateObject` 的 autoclosure 只求值一次；`State(initialValue:)` 会在父视图每次重算
+/// `AppRootView.init` 时构造并丢弃整套对象图（包括 AVPlayer 与 URLSession）。
+@MainActor
+private final class AppWindowOwnerHolder: ObservableObject {
+    let owner: AppWindowOwner
+
+    init(_ owner: AppWindowOwner) {
+        self.owner = owner
     }
 }
 

@@ -2,13 +2,13 @@ import BiliBrowseFeature
 import SwiftUI
 
 struct SearchNativeGridView: View {
-    @State private var imageOwner = NativeVideoImagePipelineOwner()
     let presentations: [SearchVideoCardPresentation]
     @Binding var scrollOffsetY: CGFloat
     let canLoadMore: Bool
     let tailIdentity: String?
     let isLoading: Bool
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onNearEnd: () -> Void
     let onSelect: (String) -> Void
 
@@ -23,7 +23,7 @@ struct SearchNativeGridView: View {
                 isLoading: isLoading
             ),
             scrollReset: $scrollReset,
-            imagePipeline: imageOwner.pipeline,
+            imagePipeline: imagePipeline,
             onNearEnd: onNearEnd,
             onSelect: onSelect
         )

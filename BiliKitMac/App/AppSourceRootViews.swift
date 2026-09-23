@@ -7,6 +7,7 @@ struct RecommendedTabRoot: View {
     let model: GuestBrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -28,6 +29,7 @@ struct RecommendedTabRoot: View {
                     tailIdentity: tailIdentity,
                     isLoading: isLoading,
                     scrollReset: $scrollReset,
+                    imagePipeline: imagePipeline,
                     onNearEnd: onNearEnd,
                     onSelect: onSelect
                 )
@@ -43,6 +45,7 @@ struct PopularTabRoot: View {
     let model: GuestBrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -64,6 +67,7 @@ struct PopularTabRoot: View {
                     tailIdentity: tailIdentity,
                     isLoading: isLoading,
                     scrollReset: $scrollReset,
+                    imagePipeline: imagePipeline,
                     onNearEnd: onNearEnd,
                     onSelect: onSelect
                 )
@@ -82,6 +86,7 @@ struct SearchTabRoot: View {
     let submittedSearchCriteria: VideoSearchCriteria?
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
     let onSelectOrder: (VideoSearchOrder) -> Void
@@ -109,6 +114,7 @@ struct SearchTabRoot: View {
                     tailIdentity: tailIdentity,
                     isLoading: isLoading,
                     scrollReset: $scrollReset,
+                    imagePipeline: imagePipeline,
                     onNearEnd: onNearEnd,
                     onSelect: onSelect
                 )
@@ -148,6 +154,7 @@ struct HistoryTabRoot: View {
     let accountState: AccountPresentationState
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
     let onAuthenticationRequired: () -> Void
@@ -184,6 +191,7 @@ struct HistoryTabRoot: View {
                         tailIdentity: tailIdentity,
                         isLoading: isLoading,
                         scrollReset: $scrollReset,
+                        imagePipeline: imagePipeline,
                         onNearEnd: onNearEnd,
                         onSelect: onSelect
                     )

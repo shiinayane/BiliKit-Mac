@@ -20,7 +20,7 @@ struct AppShellView: View {
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
-    let commentImagePipeline: NativeVideoImagePipeline
+    let imagePipeline: NativeVideoImagePipeline
     @Binding var isAuthenticationPresented: Bool
     @Binding var searchFilterSelection: SearchFilterSelection
     let submittedSearchCriteria: VideoSearchCriteria?
@@ -72,6 +72,7 @@ struct AppShellView: View {
                             model: videoModel,
                             danmakuModel: danmakuModel,
                             playerContent: playerContent,
+                            imagePipeline: imagePipeline,
                             onRetry: navigationCoordinator.retryPlayback,
                             onSelectRelatedVideo:
                                 navigationCoordinator.openPlayback
@@ -92,7 +93,7 @@ struct AppShellView: View {
             {
                 NativeCommentImagePreviewView(
                     request: commentImagePreview,
-                    imagePipeline: commentImagePipeline,
+                    imagePipeline: imagePipeline,
                     resolveURL: commentAssetURLResolver,
                     onDismiss: {
                         dismissCommentImagePreview(restoringFocus: true)
@@ -197,7 +198,7 @@ struct AppShellView: View {
             model: videoModel,
             commentsModel: commentsModel,
             commentAssetURLResolver: commentAssetURLResolver,
-            commentImagePipeline: commentImagePipeline,
+            commentImagePipeline: imagePipeline,
             onRetry: navigationCoordinator.retryPlayback,
             onSelectPlayback: { bvid, preferredCID in
                 navigationCoordinator.openPlayback(
@@ -263,6 +264,7 @@ struct AppShellView: View {
                 model: browseModel,
                 scrollOffsetY: $homeScrollOffsetY,
                 scrollReset: $homeScrollReset,
+                imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback
             )
         case .search:
@@ -276,6 +278,7 @@ struct AppShellView: View {
                 submittedSearchCriteria: submittedSearchCriteria,
                 scrollOffsetY: $searchScrollOffsetY,
                 scrollReset: $searchScrollReset,
+                imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback,
                 onSubmit: onSubmitSearch,
                 onSelectOrder: onSelectSearchOrder,
@@ -287,6 +290,7 @@ struct AppShellView: View {
                 model: browseModel,
                 scrollOffsetY: $popularScrollOffsetY,
                 scrollReset: $popularScrollReset,
+                imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback
             )
         case .history:
@@ -295,6 +299,7 @@ struct AppShellView: View {
                 accountState: authenticationModel.accountPresentationState,
                 scrollOffsetY: $historyScrollOffsetY,
                 scrollReset: $historyScrollReset,
+                imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback,
                 onPresentAuthentication: {
                     isAuthenticationPresented = true
@@ -309,37 +314,21 @@ struct AppShellView: View {
 }
 
 private struct PlaybackDestinationView: View {
-    @State private var relatedImageOwner: NativeVideoImagePipelineOwner? =
-        NativeVideoImagePipelineOwner()
     let model: GuestVideoViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
+    let imagePipeline: NativeVideoImagePipeline
     let onRetry: () -> Void
     let onSelectRelatedVideo: (String) -> Void
 
     var body: some View {
-        Group {
-            if let relatedImageOwner {
-                playbackDetail(imageOwner: relatedImageOwner)
-            }
-        }
-        .onAppear {
-            if relatedImageOwner == nil {
-                relatedImageOwner = NativeVideoImagePipelineOwner()
-            }
-        }
-        .onDisappear {
-            relatedImageOwner?.shutdown()
-            relatedImageOwner = nil
-        }
-        .navigationTitle("播放")
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        playbackDetail
+            .navigationTitle("播放")
+            .toolbar(removing: .title)
+            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 
-    private func playbackDetail(
-        imageOwner: NativeVideoImagePipelineOwner
-    ) -> some View {
+    private var playbackDetail: some View {
         NativePlaybackDetailView(
             contentIdentity: model.presentedBVID
         ) {
@@ -355,7 +344,7 @@ private struct PlaybackDestinationView: View {
                     RelatedNativeShelfView(
                         contentIdentity: contentIdentity,
                         presentations: presentations,
-                        imagePipeline: imageOwner.pipeline,
+                        imagePipeline: imagePipeline,
                         onSelect: onSelect
                     )
                 }

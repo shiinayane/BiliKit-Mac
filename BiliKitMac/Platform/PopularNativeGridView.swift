@@ -4,7 +4,6 @@ import Foundation
 import SwiftUI
 
 struct PopularNativeGridView: View {
-    @State private var imageOwner = NativeVideoImagePipelineOwner()
     @Environment(\.locale) private var locale
     let videos: [PopularVideo]
     @Binding var scrollOffsetY: CGFloat
@@ -12,6 +11,7 @@ struct PopularNativeGridView: View {
     let tailIdentity: String?
     let isLoading: Bool
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onNearEnd: () -> Void
     let onSelect: (String) -> Void
 
@@ -26,7 +26,7 @@ struct PopularNativeGridView: View {
                 isLoading: isLoading
             ),
             scrollReset: $scrollReset,
-            imagePipeline: imageOwner.pipeline,
+            imagePipeline: imagePipeline,
             onNearEnd: onNearEnd,
             onSelect: onSelect
         )
