@@ -7,15 +7,15 @@ import Testing
 struct HTTPBoundedRangeClientTests {
     @Test
     func rejectsHTTP200WithoutWaitingForDeclaredFullBodyAndCancelsTask() async throws {
-        RangeStreamingURLProtocol.state.configure(
+        BoundedRangeURLProtocol.state.configure(
             statusCode: 200,
             headers: ["Content-Length": "104857600"],
-            body: Data(repeating: 0xaa, count: 1_024),
-            keepsBodyPending: true
+            chunks: [Data(repeating: 0xaa, count: 1_024)],
+            delay: 0.05
         )
         let client = makeClient()
 
-        await #expect(throws: HTTPBoundedRangeError.statusCode(200)) {
+        await #expect(throws: HTTPRangeResponseError.statusCode(200)) {
             try await client.fetch(
                 from: URL(string: "https://cdn.example/video")!,
                 range: try HTTPByteRange(start: 0, endInclusive: 1_023),
@@ -23,20 +23,19 @@ struct HTTPBoundedRangeClientTests {
                 collectBody: false
             )
         }
-        await RangeStreamingURLProtocol.state.waitUntilStopped()
-        #expect(RangeStreamingURLProtocol.state.deliveredBodyBytes < 100 * 1_024 * 1_024)
+        await BoundedRangeURLProtocol.state.waitUntilStopped()
+        #expect(BoundedRangeURLProtocol.state.deliveredBodyBytes < 100 * 1_024 * 1_024)
     }
 
     @Test
     func acceptsOnlyExact206ContentRangeLengthAndDiscardsBodyWhenRequested() async throws {
-        RangeStreamingURLProtocol.state.configure(
+        BoundedRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 10-12/100",
                 "Content-Length": "3"
             ],
-            body: Data([1, 2, 3]),
-            keepsBodyPending: false
+            chunks: [Data([1, 2, 3])]
         )
         let result = try await makeClient().fetch(
             from: URL(string: "https://cdn.example/video")!,
@@ -49,28 +48,28 @@ struct HTTPBoundedRangeClientTests {
         #expect(result.body == nil)
         #expect(result.requestDurationSeconds > 0)
         #expect(
-            RangeStreamingURLProtocol.state.lastRequest?.value(forHTTPHeaderField: "Range")
+            BoundedRangeURLProtocol.state.lastRequest?.value(forHTTPHeaderField: "Range")
                 == "bytes=10-12"
         )
         #expect(
-            RangeStreamingURLProtocol.state.lastRequest?.value(forHTTPHeaderField: "Cookie") == nil
+            BoundedRangeURLProtocol.state.lastRequest?.value(forHTTPHeaderField: "Cookie") == nil
         )
     }
 
     @Test
     func rejectsMismatchedContentLengthWithoutReadingBody() async throws {
-        RangeStreamingURLProtocol.state.configure(
+        BoundedRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 0-2/100",
                 "Content-Length": "4"
             ],
-            body: Data([1, 2, 3, 4]),
-            keepsBodyPending: true
+            chunks: [Data([1, 2, 3, 4])],
+            delay: 0.05
         )
 
         await #expect(
-            throws: HTTPBoundedRangeError.mismatchedContentLength(expected: 3, actual: 4)
+            throws: HTTPRangeResponseError.mismatchedContentLength(expected: 3, actual: 4)
         ) {
             try await makeClient().fetch(
                 from: URL(string: "https://cdn.example/video")!,
@@ -83,14 +82,13 @@ struct HTTPBoundedRangeClientTests {
 
     @Test
     func hugeRetainedRangeFailsByProtocolWithoutIntegerTrap() async throws {
-        RangeStreamingURLProtocol.state.configure(
+        BoundedRangeURLProtocol.state.configure(
             statusCode: 200,
             headers: ["Content-Length": "0"],
-            body: Data(),
-            keepsBodyPending: false
+            chunks: [Data()]
         )
 
-        await #expect(throws: HTTPBoundedRangeError.statusCode(200)) {
+        await #expect(throws: HTTPRangeResponseError.statusCode(200)) {
             try await makeClient().fetch(
                 from: URL(string: "https://cdn.example/video")!,
                 range: try HTTPByteRange(start: 0, endInclusive: .max),
@@ -102,121 +100,14 @@ struct HTTPBoundedRangeClientTests {
 
     private func makeClient() -> HTTPBoundedRangeClient {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RangeStreamingURLProtocol.self]
+        configuration.protocolClasses = [BoundedRangeURLProtocol.self]
         return HTTPBoundedRangeClient(
-            transport: URLSessionBoundedRangeTransport(configuration: configuration)
+            transport: URLSessionRangeTransport(configuration: configuration)
         )
     }
 }
 
-private final class RangeStreamingURLProtocol: URLProtocol, @unchecked Sendable {
-    static let state = RangeStreamingURLProtocolState()
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        let configuration = Self.state.begin(request: request)
-        guard let url = request.url,
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: configuration.statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: configuration.headers
-            )
-        else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if configuration.keepsBodyPending {
-            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(50)) {
-                [weak self] in
-                guard let self, !Self.state.wasStopped else { return }
-                Self.state.markDelivered(configuration.body.count)
-                client?.urlProtocol(self, didLoad: configuration.body)
-                client?.urlProtocolDidFinishLoading(self)
-            }
-            return
-        }
-        Self.state.markDelivered(configuration.body.count)
-        client?.urlProtocol(self, didLoad: configuration.body)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {
-        Self.state.markStopped()
-    }
-}
-
-private struct RangeProtocolConfiguration {
-    let statusCode: Int
-    let headers: [String: String]
-    let body: Data
-    let keepsBodyPending: Bool
-}
-
-private final class RangeStreamingURLProtocolState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var configuration = RangeProtocolConfiguration(
-        statusCode: 500,
-        headers: [:],
-        body: Data(),
-        keepsBodyPending: false
-    )
-    private var stopped = false
-    private var delivered = 0
-    private var capturedRequest: URLRequest?
-    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
-
-    var wasStopped: Bool { lock.withLock { stopped } }
-    var deliveredBodyBytes: Int { lock.withLock { delivered } }
-    var lastRequest: URLRequest? { lock.withLock { capturedRequest } }
-
-    func configure(
-        statusCode: Int,
-        headers: [String: String],
-        body: Data,
-        keepsBodyPending: Bool
-    ) {
-        lock.withLock {
-            configuration = RangeProtocolConfiguration(
-                statusCode: statusCode,
-                headers: headers,
-                body: body,
-                keepsBodyPending: keepsBodyPending
-            )
-            stopped = false
-            delivered = 0
-            capturedRequest = nil
-        }
-    }
-
-    func begin(request: URLRequest) -> RangeProtocolConfiguration {
-        lock.withLock {
-            capturedRequest = request
-            return configuration
-        }
-    }
-
-    func markStopped() {
-        let waiters = lock.withLock {
-            stopped = true
-            defer { stopWaiters.removeAll() }
-            return stopWaiters
-        }
-        for waiter in waiters { waiter.resume() }
-    }
-
-    func waitUntilStopped() async {
-        await withCheckedContinuation { continuation in
-            let isStopped = lock.withLock {
-                guard !stopped else { return true }
-                stopWaiters.append(continuation)
-                return false
-            }
-            if isStopped { continuation.resume() }
-        }
-    }
-    func markDelivered(_ count: Int) { lock.withLock { delivered += count } }
+private final class BoundedRangeURLProtocol: ScriptedRangeURLProtocol, @unchecked Sendable {
+    private static let sharedState = ScriptedRangeURLProtocolState()
+    override class var state: ScriptedRangeURLProtocolState { sharedState }
 }

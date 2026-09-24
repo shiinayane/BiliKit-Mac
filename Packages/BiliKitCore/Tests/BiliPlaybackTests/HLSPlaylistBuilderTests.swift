@@ -348,6 +348,28 @@ struct HLSPlaylistBuilderTests {
         #expect(playlist.contains("CLOSED-CAPTIONS=NONE"))
     }
 
+    @Test(
+        arguments: [
+            ("http://127.0.0.1:1/a%22b.m3u8", true),
+            ("", false),
+            ("a\"b", false),
+            ("a\\b", false),
+            ("a\rb", false),
+            ("a\nb", false),
+            ("a\tb", false),
+            ("a\u{0000}b", false),
+            ("a\u{007F}b", false),
+            ("a\u{0085}b", false),
+            ("a\u{200B}b", false)
+        ]
+    )
+    func playlistTextRejectsEmptyQuoteBackslashAndControlCharacters(
+        _ text: String,
+        isSafe: Bool
+    ) {
+        #expect(isPlaylistSafeText(text) == isSafe)
+    }
+
     @Test(arguments: ["\"", "\\", "\n", "\u{0000}"])
     func rejectsUnsafeNativeSubtitleLabels(_ unsafe: String) throws {
         let index = try makeIndex(byteCounts: [1_000], durations: [1])

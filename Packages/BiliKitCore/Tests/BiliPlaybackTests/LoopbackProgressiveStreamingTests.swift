@@ -12,8 +12,8 @@ struct LoopbackProgressiveStreamingTests {
     @Test
     func progressiveRangePreservesHeaderAndStreamsExactBody() async throws {
         let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
-        let streamer = FixtureProgressiveStreamer(
-            bodies: [source: Data([0, 1, 2, 3, 4])]
+        let streamer = FixtureRangeTransport(
+            media: [source: Data([0, 1, 2, 3, 4])]
         )
         let server = LoopbackPlaybackServer(rangeStreamer: streamer)
         try await server.start()
@@ -41,16 +41,17 @@ struct LoopbackProgressiveStreamingTests {
                 == "bytes 1-4/5"
         )
         #expect(body == Data([1, 2, 3, 4]))
-        #expect(streamer.requests.map(\.rangeHeader) == ["bytes=1-"])
-        #expect(streamer.requests.first?.headers["Cookie"] == nil)
+        let requests = await streamer.requests
+        #expect(requests.map { $0.headers["Range"] } == ["bytes=1-"])
+        #expect(requests.first?.headers["Cookie"] == nil)
     }
 
     @Test
     func firstValidatedSourceSticksAcrossLaterRanges() async throws {
         let primary = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
         let backup = URL(string: "https://backup.fixture.bilivideo.com/video.mp4")!
-        let streamer = FixtureProgressiveStreamer(
-            bodies: [backup: Data([0, 1, 2, 3])],
+        let streamer = FixtureRangeTransport(
+            media: [backup: Data([0, 1, 2, 3])],
             failingURLs: [primary]
         )
         let server = LoopbackPlaybackServer(rangeStreamer: streamer)
@@ -71,7 +72,7 @@ struct LoopbackProgressiveStreamingTests {
         _ = try await request(localURL, range: "bytes=0-1")
         _ = try await request(localURL, range: "bytes=2-3")
 
-        #expect(streamer.requests.map(\.url) == [primary, backup, backup])
+        #expect(await streamer.requests.map(\.url) == [primary, backup, backup])
     }
 
     @Test
@@ -100,7 +101,7 @@ struct LoopbackProgressiveStreamingTests {
 
     @Test
     func stopInvalidatesAndCancelsProgressiveStreamer() async throws {
-        let streamer = FixtureProgressiveStreamer(bodies: [:])
+        let streamer = FixtureRangeTransport(media: [:])
         let server = LoopbackPlaybackServer(rangeStreamer: streamer)
         try await server.start()
         server.stop()
@@ -110,11 +111,14 @@ struct LoopbackProgressiveStreamingTests {
         }
     }
 
-    @Test(arguments: [Data(), Data([0, 1])])
-    func closesConnectionWhenUpstreamFailsAfterSending206(bodyPrefix: Data) async throws {
+    @Test(arguments: [0, 2])
+    func closesConnectionWhenUpstreamFailsAfterSending206(bodyPrefixLength: Int) async throws {
         let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
         let server = LoopbackPlaybackServer(
-            rangeStreamer: PostHeadFailureStreamer(bodyPrefix: bodyPrefix)
+            rangeStreamer: FixtureRangeTransport(
+                media: [source: Data([0, 1, 2, 3])],
+                truncatedBodyLengths: [source: bodyPrefixLength]
+            )
         )
         try await server.start()
         defer { server.stop() }
@@ -149,16 +153,7 @@ struct LoopbackProgressiveStreamingTests {
             )
         )
         let body = try Data(contentsOf: fixtureURL)
-        let streamer = FixtureProgressiveStreamer(bodies: [source: body])
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(),
-            serverFactory: { rangeClient in
-                LoopbackPlaybackServer(
-                    rangeClient: rangeClient,
-                    rangeStreamer: streamer
-                )
-            }
-        )
+        let bridge = makeFixtureBridge(FixtureRangeTransport(media: [source: body]))
         let engine = AVPlayerEngine(bridge: bridge)
         let player = engine.player
         let sourceModel = ProgressivePlaybackSource(
@@ -188,111 +183,4 @@ struct LoopbackProgressiveStreamingTests {
         request.setValue(range, forHTTPHeaderField: "Range")
         return try await URLSession.shared.data(for: request).0
     }
-}
-
-private struct ProgressiveStreamRequest: Sendable {
-    let url: URL
-    let rangeHeader: String
-    let headers: [String: String]
-}
-
-private final class FixtureProgressiveStreamer: HTTPRangeStreaming,
-    @unchecked Sendable
-{
-    private let lock = NSLock()
-    private let bodies: [URL: Data]
-    private let failingURLs: Set<URL>
-    private var capturedRequests: [ProgressiveStreamRequest] = []
-    private var invalidated = false
-
-    init(bodies: [URL: Data], failingURLs: Set<URL> = []) {
-        self.bodies = bodies
-        self.failingURLs = failingURLs
-    }
-
-    var requests: [ProgressiveStreamRequest] { lock.withLock { capturedRequests } }
-    var wasInvalidated: Bool { lock.withLock { invalidated } }
-
-    func stream(
-        from url: URL,
-        rangeHeader: String,
-        expectedRange: HTTPByteRange,
-        expectedCompleteLength: Int64,
-        headers: [String: String],
-        allowedContentTypes: Set<String>,
-        onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
-        onChunk: @escaping @Sendable (Data) async throws -> Void
-    ) async throws -> HTTPRangeStreamResult {
-        lock.withLock {
-            capturedRequests.append(
-                ProgressiveStreamRequest(
-                    url: url,
-                    rangeHeader: rangeHeader,
-                    headers: headers
-                )
-            )
-        }
-        if failingURLs.contains(url) { throw FixtureProgressiveError.rejected }
-        guard let body = bodies[url] else { throw FixtureProgressiveError.rejected }
-        let lower = Int(expectedRange.start)
-        let upper = Int(expectedRange.endInclusive) + 1
-        let slice = body.subdata(in: lower..<upper)
-        try await onResponse(
-            HTTPRangeStreamResponse(
-                contentRange: try HTTPContentRange(
-                    start: expectedRange.start,
-                    endInclusive: expectedRange.endInclusive,
-                    completeLength: expectedCompleteLength
-                ),
-                contentLength: expectedRange.length,
-                contentType: "video/mp4"
-            )
-        )
-        let midpoint = max(1, slice.count / 2)
-        try await onChunk(slice.prefix(midpoint))
-        if midpoint < slice.count {
-            try await onChunk(slice.suffix(from: midpoint))
-        }
-        return HTTPRangeStreamResult(byteCount: UInt64(slice.count))
-    }
-
-    func invalidate() { lock.withLock { invalidated = true } }
-}
-
-private enum FixtureProgressiveError: Error { case rejected }
-
-private struct PostHeadFailureStreamer: HTTPRangeStreaming {
-    let bodyPrefix: Data
-
-    func stream(
-        from url: URL,
-        rangeHeader: String,
-        expectedRange: HTTPByteRange,
-        expectedCompleteLength: Int64,
-        headers: [String: String],
-        allowedContentTypes: Set<String>,
-        onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
-        onChunk: @escaping @Sendable (Data) async throws -> Void
-    ) async throws -> HTTPRangeStreamResult {
-        try await onResponse(
-            HTTPRangeStreamResponse(
-                contentRange: try HTTPContentRange(
-                    start: expectedRange.start,
-                    endInclusive: expectedRange.endInclusive,
-                    completeLength: expectedCompleteLength
-                ),
-                contentLength: expectedRange.length,
-                contentType: "video/mp4"
-            )
-        )
-        if !bodyPrefix.isEmpty {
-            try await onChunk(bodyPrefix)
-        }
-        throw HTTPRangeStreamingError.bodyLengthMismatch(
-            expected: expectedRange.length,
-            actual: UInt64(bodyPrefix.count)
-        )
-    }
-
-    func invalidate() {}
 }

@@ -6,7 +6,6 @@ import Testing
 
 struct PlaybackRequestTests {
     @Test
-    @MainActor
     func selectsPreferredRepresentationWithinEachSemanticTrack() throws {
         let originalLow = try makeRepresentation(id: 30_216, kind: .audio)
         let originalHigh = try makeRepresentation(id: 30_280, kind: .audio)
@@ -32,23 +31,21 @@ struct PlaybackRequestTests {
             ]
         )
 
-        let selected = try AVPlayerEngine().selectedAudioTracks(for: request)
+        let selected = try selectAudio(request)
 
         #expect(selected.map(\.track.id) == ["original", "alternate"])
         #expect(selected.map(\.representation.id) == [30_280, 40_080])
     }
 
     @Test
-    @MainActor
     func rejectsInvalidSemanticAudioTrackContracts() throws {
         let audio = try makeRepresentation(id: 30_216, kind: .audio)
         let otherAudio = try makeRepresentation(id: 30_280, kind: .audio)
         let video = try makeRepresentation(id: 80, kind: .video)
-        let engine = AVPlayerEngine()
 
         #expect(throws: AVPlayerEngineError.duplicateAudioTrackID("duplicate")) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "duplicate",
@@ -65,8 +62,8 @@ struct PlaybackRequestTests {
             )
         }
         #expect(throws: AVPlayerEngineError.invalidDefaultAudioTrackCount(0)) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -78,8 +75,8 @@ struct PlaybackRequestTests {
             )
         }
         #expect(throws: AVPlayerEngineError.invalidDefaultAudioTrackCount(2)) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -101,8 +98,8 @@ struct PlaybackRequestTests {
                 representationID: video.id
             )
         ) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -116,8 +113,8 @@ struct PlaybackRequestTests {
         #expect(
             throws: AVPlayerEngineError.preferredAudioTrackNotFound("missing")
         ) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -134,8 +131,8 @@ struct PlaybackRequestTests {
                 "original"
             )
         ) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -152,8 +149,8 @@ struct PlaybackRequestTests {
                 representationID: otherAudio.id
             )
         ) {
-            try engine.selectedAudioTracks(
-                for: makeRequest(
+            try selectAudio(
+                makeRequest(
                     tracks: [
                         makeAudioTrack(
                             id: "original",
@@ -170,6 +167,12 @@ struct PlaybackRequestTests {
                 )
             )
         }
+    }
+
+    private func selectAudio(
+        _ request: PlaybackRequest
+    ) throws -> [SelectedPlaybackAudioTrack] {
+        try request.selectedAudioTracks(in: try #require(request.dashManifest))
     }
 
     private func makeRequest(

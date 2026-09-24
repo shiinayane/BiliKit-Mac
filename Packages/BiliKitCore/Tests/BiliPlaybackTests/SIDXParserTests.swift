@@ -63,15 +63,9 @@ struct SIDXParserTests {
         let data = try fixtureData()
         let primaryURL = try #require(URL(string: "https://primary.example/media"))
         let backupURL = try #require(URL(string: "https://backup.example/media"))
-        let transport = IndexStubTransport(
-            responses: [
-                HTTPResponse(statusCode: 403, body: Data()),
-                HTTPResponse(
-                    statusCode: 206,
-                    headers: ["Content-Range": "bytes 100-155/924"],
-                    body: data
-                )
-            ]
+        let transport = FixtureRangeTransport(
+            media: [backupURL: mediaPlacing(data, at: 100)],
+            failingURLs: [primaryURL]
         )
         let representation = MediaRepresentation(
             id: 80,
@@ -103,18 +97,10 @@ struct SIDXParserTests {
         let backupURL = try #require(URL(string: "https://backup.example/media"))
         var errorPage = Data("<html>blocked</html>".utf8)
         errorPage.append(Data(repeating: 0x20, count: data.count - errorPage.count))
-        let transport = IndexStubTransport(
-            responses: [
-                HTTPResponse(
-                    statusCode: 206,
-                    headers: ["Content-Range": "bytes 100-155/924"],
-                    body: errorPage
-                ),
-                HTTPResponse(
-                    statusCode: 206,
-                    headers: ["Content-Range": "bytes 100-155/924"],
-                    body: data
-                )
+        let transport = FixtureRangeTransport(
+            media: [
+                primaryURL: mediaPlacing(errorPage, at: 100),
+                backupURL: mediaPlacing(data, at: 100)
             ]
         )
         let representation = MediaRepresentation(
@@ -196,47 +182,14 @@ struct SIDXParserTests {
         return data
     }
 
-    private func firstTopLevelBox(
-        named expectedType: String,
-        in data: Data
-    ) -> (offset: Int, size: Int)? {
-        var offset = 0
-        while offset + 8 <= data.count {
-            let size = Int(readUInt32(in: data, at: offset))
-            let typeData = data.subdata(in: (offset + 4)..<(offset + 8))
-            let type = String(data: typeData, encoding: .ascii)
-            guard size >= 8, offset + size <= data.count else {
-                return nil
-            }
-            if type == expectedType {
-                return (offset, size)
-            }
-            offset += size
-        }
-        return nil
-    }
-
-    private func readUInt32(in data: Data, at offset: Int) -> UInt32 {
-        data[offset..<(offset + 4)].reduce(UInt32(0)) { value, byte in
-            (value << 8) | UInt32(byte)
-        }
+    /// 把 SIDX 放在 924 字节远端媒体的指定偏移处。
+    private func mediaPlacing(_ box: Data, at offset: Int) -> Data {
+        var media = Data(count: 924)
+        media.replaceSubrange(offset..<(offset + box.count), with: box)
+        return media
     }
 }
 
 private enum FixtureError: Error {
     case invalidHexadecimal
-}
-
-private actor IndexStubTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        self.responses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        return responses.removeFirst()
-    }
 }

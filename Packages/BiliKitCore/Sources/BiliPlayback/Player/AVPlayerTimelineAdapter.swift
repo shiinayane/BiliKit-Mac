@@ -500,31 +500,6 @@ final class AVPlayerTimelineAdapter {
         )
     }
 
-    func prepareExplicitSeek(
-        operationID: UUID,
-        to positionSeconds: Double
-    ) {
-        prepareObservedSeek(operationID: operationID, to: positionSeconds)
-    }
-
-    func prepareTransportSeek(
-        operationID: UUID,
-        to positionSeconds: Double
-    ) {
-        prepareObservedSeek(operationID: operationID, to: positionSeconds)
-    }
-
-    func transportSeekFailed(operationID: UUID) {
-        seekFailed(operationID: operationID)
-    }
-
-    func transportSeekCompleted(
-        operationID: UUID,
-        at positionSeconds: Double
-    ) {
-        seekCompleted(operationID: operationID, at: positionSeconds)
-    }
-
     func prepareInitialSeek(operationID: UUID, to positionSeconds: Double) {
         interactionTracker.allowInternalSeek(to: positionSeconds)
         beginPendingSeek(operationID: operationID, to: positionSeconds)
@@ -535,37 +510,8 @@ final class AVPlayerTimelineAdapter {
         beginPendingSeek(operationID: operationID, to: 0)
     }
 
-    func resumeRestartFailed(operationID: UUID) {
-        seekFailed(operationID: operationID)
-    }
-
-    func resumeRestartCompleted(operationID: UUID) {
-        seekCompleted(operationID: operationID, at: 0)
-    }
-
-    func initialSeekFailed(operationID: UUID) {
-        seekFailed(operationID: operationID)
-    }
-
-    func initialSeekCompleted(
-        operationID: UUID,
-        at positionSeconds: Double
-    ) {
-        seekCompleted(operationID: operationID, at: positionSeconds)
-    }
-
-    func explicitSeekFailed(operationID: UUID) {
-        seekFailed(operationID: operationID)
-    }
-
-    func explicitSeekCompleted(
-        operationID: UUID,
-        at positionSeconds: Double
-    ) {
-        seekCompleted(operationID: operationID, at: positionSeconds)
-    }
-
-    private func prepareObservedSeek(
+    /// 用户或 transport 发起的 seek：先记为用户交互，再登记待定落点。
+    func prepareObservedSeek(
         operationID: UUID,
         to positionSeconds: Double
     ) {
@@ -657,7 +603,7 @@ final class AVPlayerTimelineAdapter {
         )
     }
 
-    private func seekFailed(operationID: UUID) {
+    func seekFailed(operationID: UUID) {
         guard pendingSeek?.operationID == operationID else { return }
         pendingSeek = nil
         interactionTracker.cancelInternalSeek()
@@ -675,7 +621,7 @@ final class AVPlayerTimelineAdapter {
         }
     }
 
-    private func seekCompleted(
+    func seekCompleted(
         operationID: UUID,
         at positionSeconds: Double
     ) {

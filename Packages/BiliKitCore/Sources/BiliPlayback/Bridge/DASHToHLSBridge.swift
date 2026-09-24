@@ -42,7 +42,6 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
 ///
 /// Bridge 只构造内存 playlist 与按需代理，不下载完整媒体；任一步失败都会停止已启动 server。
 public struct DASHToHLSBridge: Sendable {
-    private let rangeClient: HTTPRangeClient
     private let indexLoader: RepresentationIndexLoader
     private let audioFormatLoader: AudioFormatMetadataLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
@@ -51,26 +50,25 @@ public struct DASHToHLSBridge: Sendable {
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
     private let webVTTEncoder: WebVTTEncoder
     private let subtitleCatalogGrace: Duration
-    private let serverFactory: @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
+    private let serverFactory: @Sendable () -> LoopbackPlaybackServer
 
     public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
         self.init(
             rangeClient: rangeClient,
-            serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
+            serverFactory: { LoopbackPlaybackServer() }
         )
     }
 
-    /// 测试可注入 server（例如替换 progressive streamer）并缩短字幕目录等待。
+    /// 测试可注入 server（例如替换媒体 Range streamer）并缩短字幕目录等待。
     init(
         rangeClient: HTTPRangeClient,
         subtitleCatalogGrace: Duration = .seconds(2),
-        serverFactory: @escaping @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
+        serverFactory: @escaping @Sendable () -> LoopbackPlaybackServer
     ) {
         precondition(
             subtitleCatalogGrace > .zero,
             "Subtitle catalog grace must be positive"
         )
-        self.rangeClient = rangeClient
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
         audioFormatLoader = AudioFormatMetadataLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
@@ -82,26 +80,13 @@ public struct DASHToHLSBridge: Sendable {
         self.serverFactory = serverFactory
     }
 
-    public func prepare(
-        video: MediaRepresentation,
-        audioTracks: [SelectedPlaybackAudioTrack],
-        headers: [String: String] = [:]
-    ) async throws -> PreparedPlaybackAsset {
-        try await prepare(
-            videos: [video],
-            audioTracks: audioTracks,
-            headers: headers,
-            subtitleSource: nil
-        )
-    }
-
     /// 在同一个 loopback owner 中登记 progressive MP4；正文由 server 按 AVPlayer 的单 Range
     /// 逐块转发，不在 bridge 或 server 中缓存完整媒体。
     public func prepare(
         progressive source: ProgressivePlaybackSource,
         headers: [String: String] = [:]
     ) async throws -> PreparedPlaybackAsset {
-        let server = serverFactory(rangeClient)
+        let server = serverFactory()
         do {
             try await server.start()
             let resource = try LoopbackProgressiveResource(
@@ -127,19 +112,6 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
-    public func prepare(
-        videos: [MediaRepresentation],
-        audioTracks: [SelectedPlaybackAudioTrack],
-        headers: [String: String] = [:]
-    ) async throws -> PreparedPlaybackAsset {
-        try await prepare(
-            videos: videos,
-            audioTracks: audioTracks,
-            headers: headers,
-            subtitleSource: nil
-        )
-    }
-
     func prepare(
         videos: [MediaRepresentation],
         audioTracks: [SelectedPlaybackAudioTrack],
@@ -163,23 +135,10 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
         }
-        guard !audioTracks.isEmpty else {
-            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
-                audioTracks.count
-            )
-        }
-        let defaultAudioTracks = audioTracks.filter(\.track.isDefault)
-        guard defaultAudioTracks.count == 1,
-            defaultAudioTracks[0].track.role == .original,
-            defaultAudioTracks[0].track.isAutoselect
-        else {
-            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
-                defaultAudioTracks.count
-            )
-        }
-        var audioTrackIDs = Set<String>()
+        // 非空、ID 唯一、恰好一条默认轨与音频 representation 由 AVPlayerEngine 在释放旧 item 前验证；
+        // 这里只守住 bridge 自己的 HLS 角色约束。
         for selectedAudio in audioTracks {
-            guard audioTrackIDs.insert(selectedAudio.track.id).inserted,
+            guard
                 selectedAudio.track.representations.contains(
                     selectedAudio.representation
                 )
@@ -191,7 +150,9 @@ public struct DASHToHLSBridge: Sendable {
             }
             switch selectedAudio.track.role {
             case .original:
-                guard selectedAudio.track.isDefault else {
+                guard selectedAudio.track.isDefault,
+                    selectedAudio.track.isAutoselect
+                else {
                     throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
                         selectedAudio.track.id
                     )
@@ -204,12 +165,6 @@ public struct DASHToHLSBridge: Sendable {
                         selectedAudio.track.id
                     )
                 }
-            }
-            guard selectedAudio.representation.kind == .audio else {
-                throw DASHToHLSBridgeError.invalidMediaKind(
-                    expected: .audio,
-                    actual: selectedAudio.representation.kind
-                )
             }
         }
 
@@ -244,7 +199,7 @@ public struct DASHToHLSBridge: Sendable {
                 )
         }
 
-        let server = serverFactory(rangeClient)
+        let server = serverFactory()
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")
@@ -606,7 +561,7 @@ public struct DASHToHLSBridge: Sendable {
         _ catalogTask: Task<[NativeSubtitleCatalogEntry], any Error>?
     ) async throws -> [NativeSubtitleCatalogEntry] {
         guard let catalogTask else { return [] }
-        let relay = CatalogResultRelay<[NativeSubtitleCatalogEntry]>()
+        let relay = OneShotResult<[NativeSubtitleCatalogEntry]>()
         let observer = Task {
             do {
                 relay.resolve(.success(try await catalogTask.value))
@@ -785,37 +740,4 @@ private struct LoadedAudioRendition: Sendable {
     let selectedTrack: SelectedPlaybackAudioTrack
     let index: LoadedSegmentIndex
     let format: AudioFormatMetadata?
-}
-
-private final class CatalogResultRelay<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Result<Value, any Error>, Never>?
-    private var result: Result<Value, any Error>?
-
-    func value() async throws -> Value {
-        let result: Result<Value, any Error> = await withCheckedContinuation {
-            continuation in
-            let pending = lock.withLock { () -> Result<Value, any Error>? in
-                if let storedResult = self.result { return storedResult }
-                self.continuation = continuation
-                return nil
-            }
-            if let pending {
-                continuation.resume(returning: pending)
-            }
-        }
-        return try result.get()
-    }
-
-    func resolve(_ result: Result<Value, any Error>) {
-        let continuation = lock.withLock {
-            () -> CheckedContinuation<Result<Value, any Error>, Never>? in
-            guard self.result == nil else { return nil }
-            self.result = result
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume(returning: result)
-    }
 }

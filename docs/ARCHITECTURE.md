@@ -63,7 +63,8 @@ BiliNetworking 不依赖任何 Bili 模块
 `BiliPlayback` 在进程内起一个最小 HTTP/1.1 server，只绑定 `127.0.0.1`、系统分配端口、随机
 session path，提供内存中生成的 master／media playlist，并把 AVPlayer 的 Range 转发到 CDN。
 
-- SIDX 成功的候选成为该 representation 的唯一远端来源，后续 init、media 与 Range 不跨来源拼字节。
+- SIDX 成功的候选成为该 representation 的唯一远端来源，后续 init、media 与 Range 不跨来源拼字节；
+  分段正文与 progressive 共用同一流式转发，逐 chunk 写入 loopback，不整段缓存。
 - 上游响应必须通过状态码、`Content-Range`、长度校验；取消不触发备用线路。
 - 只有全部 SIDX reference 从 type-1 SAP 开始且 `SAP_delta_time` 为 0 时才发布 I-frame rendition，
   它复用同一 route 的完整 fragment Range，不预读、不缓存。
