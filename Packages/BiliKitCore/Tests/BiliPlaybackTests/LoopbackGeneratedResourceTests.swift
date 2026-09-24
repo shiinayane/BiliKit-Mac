@@ -76,7 +76,7 @@ struct LoopbackGeneratedResourceTests {
 
         async let first = URLSession.shared.data(from: url)
         async let second = URLSession.shared.data(from: url)
-        try await waitUntil { await probe.loadCount == 1 }
+        await probe.waitForLoads(1)
         await probe.release()
         let results = try await [first, second]
 
@@ -99,7 +99,7 @@ struct LoopbackGeneratedResourceTests {
         let url = try server.register(.generated(generated), at: "cancelled.vtt")
 
         let first = Task { try await URLSession.shared.data(from: url) }
-        try await waitUntil { await probe.loadCount == 1 }
+        await probe.waitForLoads(1)
         first.cancel()
         _ = try? await first.value
         await probe.release()
@@ -125,10 +125,10 @@ struct LoopbackGeneratedResourceTests {
         let url = try server.register(.generated(generated), at: "stopped.vtt")
 
         let request = Task { try await URLSession.shared.data(from: url) }
-        try await waitUntil { await probe.loadCount == 1 }
+        await probe.waitForLoads(1)
         server.stop()
         _ = try? await request.value
-        try await waitUntil { await probe.cancellationCount == 1 }
+        await probe.waitForCancellations(1)
 
         #expect(await probe.cancellationCount == 1)
     }
@@ -151,10 +151,10 @@ struct LoopbackGeneratedResourceTests {
         )
 
         let request = Task { try await URLSession.shared.data(from: firstURL) }
-        try await waitUntil { await probe.loadCount == 1 }
+        await probe.waitForLoads(1)
         try server.unregister(relativePaths: ["removed.vtt"])
         _ = try? await request.value
-        try await waitUntil { await probe.cancellationCount == 1 }
+        await probe.waitForCancellations(1)
 
         let secondURL = try server.register(
             .generated(generated),
@@ -223,22 +223,10 @@ struct LoopbackGeneratedResourceTests {
         let (_, response) = try await URLSession.shared.data(from: freshURL)
         #expect((response as? HTTPURLResponse)?.statusCode == 404)
     }
-
-    private func waitUntil(
-        _ condition: @escaping @Sendable () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
-        while !(await condition()) {
-            guard clock.now < deadline else { throw ProbeError.timedOut }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-    }
 }
 
 private enum ProbeError: Error {
     case firstFailure
-    case timedOut
 }
 
 private actor RetryProbe {
@@ -259,6 +247,7 @@ private actor RetryProbe {
 private actor BlockingProbe {
     let body: Data
     private(set) var loadCount = 0
+    private var loadWaiters = CountWaiters()
     private var continuation: CheckedContinuation<Void, Never>?
 
     init(body: Data) {
@@ -267,10 +256,17 @@ private actor BlockingProbe {
 
     func load() async -> Data {
         loadCount += 1
+        loadWaiters.resume(reaching: loadCount)
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
         return body
+    }
+
+    func waitForLoads(_ count: Int) async {
+        await withCheckedContinuation {
+            loadWaiters.add($0, until: count, current: loadCount)
+        }
     }
 
     func release() {
@@ -279,18 +275,35 @@ private actor BlockingProbe {
     }
 }
 
+/// 加载挂起到被取消；60 s 只是兜底超时。
 private actor CancellationProbe {
     private(set) var loadCount = 0
     private(set) var cancellationCount = 0
+    private var loadWaiters = CountWaiters()
+    private var cancellationWaiters = CountWaiters()
 
     func load() async throws -> Data {
         loadCount += 1
+        loadWaiters.resume(reaching: loadCount)
         do {
             try await Task.sleep(for: .seconds(60))
             return Data("late".utf8)
         } catch is CancellationError {
             cancellationCount += 1
+            cancellationWaiters.resume(reaching: cancellationCount)
             throw CancellationError()
+        }
+    }
+
+    func waitForLoads(_ count: Int) async {
+        await withCheckedContinuation {
+            loadWaiters.add($0, until: count, current: loadCount)
+        }
+    }
+
+    func waitForCancellations(_ count: Int) async {
+        await withCheckedContinuation {
+            cancellationWaiters.add($0, until: count, current: cancellationCount)
         }
     }
 }

@@ -80,8 +80,18 @@ struct DASHBridgeRouteTests {
         #expect(iFrameByteRanges == fullFragmentByteRanges)
     }
 
-    @Test
-    func bridgeRejectsInvalidAudioRolesBeforeStartingServer() async throws {
+    enum InvalidAudioRole: CaseIterable, Sendable {
+        case videoRepresentationInAudioTrack
+        case originalNotAutoselect
+        case extraOriginalTrack
+        case machineGeneratedWithoutLanguage
+        case defaultMachineGeneratedTrack
+    }
+
+    @Test(arguments: InvalidAudioRole.allCases)
+    func bridgeRejectsInvalidAudioRolesBeforeStartingServer(
+        _ role: InvalidAudioRole
+    ) async throws {
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -102,61 +112,57 @@ struct DASHBridgeRouteTests {
             serverFactory: { registry.create() }
         )
         let original = makeSelectedAudioTrack(representation: audio)
-        let cases: [([SelectedPlaybackAudioTrack], DASHToHLSBridgeError)] = [
-            (
-                [SelectedPlaybackAudioTrack(track: original.track, representation: video)],
-                .invalidAudioTrackSelection(trackID: "original", representationID: video.id)
-            ),
-            (
-                [makeSelectedAudioTrack(isAutoselect: false, representation: audio)],
-                .unsupportedAudioTrackRole("original")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "extra",
-                        isDefault: false,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("extra")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "machine-generated:en",
-                        role: .machineGenerated,
-                        isDefault: false,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("machine-generated:en")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "machine-generated:en",
-                        languageTag: "en",
-                        role: .machineGenerated,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("machine-generated:en")
+        let audioTracks: [SelectedPlaybackAudioTrack]
+        let expectedError: DASHToHLSBridgeError
+        switch role {
+        case .videoRepresentationInAudioTrack:
+            audioTracks = [
+                SelectedPlaybackAudioTrack(track: original.track, representation: video)
+            ]
+            expectedError = .invalidAudioTrackSelection(
+                trackID: "original",
+                representationID: video.id
             )
-        ]
-
-        for (audioTracks, expectedError) in cases {
-            await #expect(throws: expectedError) {
-                try await bridge.prepare(
-                    videos: [video],
-                    audioTracks: audioTracks,
-                    headers: [:],
-                    subtitleSource: nil
+        case .originalNotAutoselect:
+            audioTracks = [makeSelectedAudioTrack(isAutoselect: false, representation: audio)]
+            expectedError = .unsupportedAudioTrackRole("original")
+        case .extraOriginalTrack:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(trackID: "extra", isDefault: false, representation: audio)
+            ]
+            expectedError = .unsupportedAudioTrackRole("extra")
+        case .machineGeneratedWithoutLanguage:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    representation: audio
                 )
-            }
+            ]
+            expectedError = .unsupportedAudioTrackRole("machine-generated:en")
+        case .defaultMachineGeneratedTrack:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    representation: audio
+                )
+            ]
+            expectedError = .unsupportedAudioTrackRole("machine-generated:en")
+        }
+
+        await #expect(throws: expectedError) {
+            try await bridge.prepare(
+                videos: [video],
+                audioTracks: audioTracks,
+                headers: [:],
+                subtitleSource: nil
+            )
         }
         #expect(registry.servers.isEmpty)
     }

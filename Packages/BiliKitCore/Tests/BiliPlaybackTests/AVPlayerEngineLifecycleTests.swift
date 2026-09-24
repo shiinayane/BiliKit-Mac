@@ -222,11 +222,9 @@ struct AVPlayerEngineLifecycleTests {
         #expect(await subtitleRepository.trackRequests == [firstA])
 
         await subtitleRepository.releaseReset()
-        do {
+        // 旧 reset 返回后，较新的 A generation 必须拒绝 B。
+        await #expect(throws: CancellationError.self) {
             try await blockedBLoad.value
-            Issue.record("Superseded B load unexpectedly completed")
-        } catch is CancellationError {
-            // The newer A generation must reject B after the old reset returns.
         }
         try await replacementALoad.value
         #expect(await subtitleRepository.trackRequests == [firstA, firstA])
@@ -237,11 +235,9 @@ struct AVPlayerEngineLifecycleTests {
         await subtitleRepository.waitForResetCalls(2)
         engine.stop()
         await subtitleRepository.releaseReset()
-        do {
+        // stop 在字幕准备前让排队中的 load 失效。
+        await #expect(throws: CancellationError.self) {
             try await stoppedBLoad.value
-            Issue.record("Stopped B load unexpectedly completed")
-        } catch is CancellationError {
-            // stop invalidates the queued load before subtitle preparation.
         }
         #expect(await subtitleRepository.trackRequests == [firstA, firstA])
         #expect(await subtitleRepository.resetCalls == [firstA, firstA])

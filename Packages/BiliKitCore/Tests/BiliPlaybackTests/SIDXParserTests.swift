@@ -5,6 +5,7 @@ import Testing
 @testable import BiliNetworking
 @testable import BiliPlayback
 
+@Suite(.timeLimit(.minutes(1)))
 struct SIDXParserTests {
     @Test
     func parsesSelfOwnedVersionZeroFixtureWithMultipleReferences() throws {

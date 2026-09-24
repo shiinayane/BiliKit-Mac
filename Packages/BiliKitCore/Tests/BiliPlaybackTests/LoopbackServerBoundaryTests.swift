@@ -435,6 +435,8 @@ struct LoopbackServerBoundaryTests {
         }
     }
 
+    /// 独立进程看到的端口关闭发生在 listener 异步取消之后，进程内没有可等待的事件；
+    /// 这里是唯一保留的系统边界轮询，1 s 上限只作超时。
     private func waitForIndependentProcessToRejectConnections(
         port: Int
     ) async throws {

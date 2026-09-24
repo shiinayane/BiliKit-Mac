@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliPlayback
 
+@Suite(.timeLimit(.minutes(1)))
 struct ProgressivePlaybackEndTimeTests {
     @Test(arguments: ["video-avc", "audio-aac"])
     func usesObservedTrackEndWithoutSubtractingATolerance(
