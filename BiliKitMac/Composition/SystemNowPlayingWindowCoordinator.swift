@@ -4,41 +4,6 @@ import BiliModels
 import Foundation
 
 @MainActor
-final class SystemNowPlayingDefaultRateObservation {
-    private var cancellation: (() -> Void)?
-
-    init(cancellation: @escaping () -> Void) {
-        self.cancellation = cancellation
-    }
-
-    isolated deinit {
-        cancellation?()
-    }
-
-    func cancel() {
-        cancellation?()
-        cancellation = nil
-    }
-}
-
-@MainActor
-struct SystemNowPlayingPlaybackConnection {
-    let currentSnapshot: () -> PlaybackTimelineSnapshot
-    let timelineUpdates: () -> AsyncStream<PlaybackTimelineSnapshot>
-    let currentItemIdentifier: () -> ObjectIdentifier?
-    let currentDefaultPlaybackRate: () -> Double
-    let observeDefaultPlaybackRate:
-        (@escaping @MainActor @Sendable (Double) -> Void) ->
-            SystemNowPlayingDefaultRateObservation
-    let perform:
-        (
-            SystemNowPlayingCommand,
-            PlaybackItemIdentity,
-            ObjectIdentifier
-        ) -> Bool
-}
-
-@MainActor
 final class SystemNowPlayingWindowCoordinator {
     private let controller: SystemNowPlayingController
     private let connection: SystemNowPlayingPlaybackConnection

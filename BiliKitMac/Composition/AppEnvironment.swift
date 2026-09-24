@@ -1,5 +1,4 @@
 import AVFoundation
-import AppKit
 import BiliAPI
 import BiliApplication
 import BiliAuth
@@ -17,110 +16,6 @@ import SwiftUI
 typealias CommentAssetURLResolver = @Sendable (CommentAssetReference) -> URL?
 typealias CommentVideoLinkResolver = @Sendable (CommentLinkTarget) -> String?
 typealias CommentLinkURLResolver = @Sendable (CommentLinkTarget) -> URL?
-
-@MainActor
-struct WatchProgressWindowConnection {
-    let start: () -> Void
-    let stop: () -> Void
-    let setReportingAccess: (Bool) -> Void
-}
-
-enum WatchProgressTargetResolution {
-    static func resolve(
-        aid: Int64?,
-        bvid: String,
-        cid: Int64,
-        identity: PlaybackItemIdentity,
-        loadIntent: PlaybackLoadIntent
-    ) -> WatchProgressTarget? {
-        guard bvid == identity.bvid, cid == identity.cid, let aid else {
-            return nil
-        }
-        return WatchProgressTarget(
-            aid: aid,
-            identity: identity,
-            loadIntent: loadIntent
-        )
-    }
-}
-
-enum SystemNowPlayingSeekTarget {
-    static func relative(
-        positionSeconds: Double,
-        durationSeconds: Double,
-        offsetSeconds: Double
-    ) -> Double? {
-        guard positionSeconds.isFinite,
-            durationSeconds.isFinite,
-            durationSeconds > 0,
-            offsetSeconds.isFinite,
-            offsetSeconds != 0
-        else { return nil }
-        return min(max(positionSeconds + offsetSeconds, 0), durationSeconds)
-    }
-}
-
-@MainActor
-@Observable
-final class AccountSessionCoordinator: AuthenticatedSessionInvalidating {
-    private(set) var generation: UInt64 = 0
-    private(set) var scope = AccountSessionScope.unresolved
-    @ObservationIgnored
-    private var sessionInvalidators: [UUID: any AuthenticatedSessionInvalidating] = [:]
-    @ObservationIgnored
-    /// 由 `BiliKitMacApp` 持有的 coordinator 拥有整个进程生命周期；注册项随进程一起释放。
-    private var processWatchProgressRepository: (any WatchProgressRepository)?
-
-    var watchProgressRepository: (any WatchProgressRepository)? {
-        processWatchProgressRepository
-    }
-
-    func publish(_ scope: AccountSessionScope) {
-        guard scope != .unresolved, scope != self.scope else { return }
-        self.scope = scope
-        generation &+= 1
-    }
-
-    func registerSessionInvalidator(
-        _ invalidator: any AuthenticatedSessionInvalidating
-    ) -> UUID {
-        let registrationID = UUID()
-        sessionInvalidators[registrationID] = invalidator
-        return registrationID
-    }
-
-    func unregisterSessionInvalidator(_ registrationID: UUID) {
-        sessionInvalidators[registrationID] = nil
-    }
-
-    func resolveWatchProgressRepository(
-        make: () -> (
-            any WatchProgressRepository,
-            any AuthenticatedSessionInvalidating
-        )
-    ) -> any WatchProgressRepository {
-        if let processWatchProgressRepository {
-            return processWatchProgressRepository
-        }
-        let (base, transportInvalidator) = make()
-        let writer = SerializedWatchProgressRepository(base: base)
-        processWatchProgressRepository = writer
-        _ = registerSessionInvalidator(writer)
-        _ = registerSessionInvalidator(transportInvalidator)
-        return writer
-    }
-
-    func invalidateAuthenticatedSession() async {
-        let invalidators = Array(sessionInvalidators.values)
-        await withTaskGroup(of: Void.self) { group in
-            for invalidator in invalidators {
-                group.addTask {
-                    await invalidator.invalidateAuthenticatedSession()
-                }
-            }
-        }
-    }
-}
 
 @MainActor
 /// App 的 Composition Root：创建具体 adapter，并把它们收窄为 Feature 所需的 port。
@@ -215,96 +110,7 @@ struct AppEnvironment {
     func makeSystemNowPlayingPlaybackConnection()
         -> SystemNowPlayingPlaybackConnection
     {
-        SystemNowPlayingPlaybackConnection(
-            currentSnapshot: { [playerEngine] in
-                playerEngine.currentTimelineSnapshot
-            },
-            timelineUpdates: { [playerEngine] in
-                playerEngine.timelineUpdates()
-            },
-            currentItemIdentifier: { [playerEngine] in
-                playerEngine.player.currentItem.map(ObjectIdentifier.init)
-            },
-            currentDefaultPlaybackRate: { [playerEngine] in
-                Double(playerEngine.player.defaultRate)
-            },
-            observeDefaultPlaybackRate: { [playerEngine] notify in
-                let observation = playerEngine.player.observe(
-                    \.defaultRate,
-                    options: [.new]
-                ) { player, change in
-                    let rate = Double(change.newValue ?? player.defaultRate)
-                    Task { @MainActor in notify(rate) }
-                }
-                return SystemNowPlayingDefaultRateObservation {
-                    observation.invalidate()
-                }
-            },
-            perform: { [playerEngine] command, identity, itemIdentifier in
-                guard playerEngine.currentTimelineSnapshot.identity == identity,
-                    let item = playerEngine.player.currentItem,
-                    ObjectIdentifier(item) == itemIdentifier
-                else { return false }
-                switch command {
-                case .play:
-                    playerEngine.play()
-                    return true
-                case .pause:
-                    playerEngine.pause()
-                    return true
-                case .togglePlayPause:
-                    if playerEngine.currentTimelineSnapshot.state == .playing
-                        || playerEngine.currentTimelineSnapshot.state == .buffering
-                    {
-                        playerEngine.pause()
-                    } else {
-                        playerEngine.play()
-                    }
-                    return true
-                case .seek(let positionSeconds):
-                    return Self.requestSystemSeek(
-                        positionSeconds,
-                        engine: playerEngine,
-                        identity: identity,
-                        itemIdentifier: itemIdentifier
-                    )
-                case .skip(let offsetSeconds):
-                    let snapshot = playerEngine.currentTimelineSnapshot
-                    guard let duration = snapshot.durationSeconds,
-                        let target = SystemNowPlayingSeekTarget.relative(
-                            positionSeconds: snapshot.positionSeconds,
-                            durationSeconds: duration,
-                            offsetSeconds: offsetSeconds
-                        )
-                    else {
-                        return false
-                    }
-                    return Self.requestSystemSeek(
-                        target,
-                        engine: playerEngine,
-                        identity: identity,
-                        itemIdentifier: itemIdentifier
-                    )
-                }
-            }
-        )
-    }
-
-    private static func requestSystemSeek(
-        _ positionSeconds: Double,
-        engine: AVPlayerEngine,
-        identity: PlaybackItemIdentity,
-        itemIdentifier: ObjectIdentifier
-    ) -> Bool {
-        guard positionSeconds.isFinite, positionSeconds >= 0,
-            let duration = engine.currentTimelineSnapshot.durationSeconds,
-            positionSeconds <= duration
-        else { return false }
-        guard engine.currentTimelineSnapshot.identity == identity,
-            let item = engine.player.currentItem,
-            ObjectIdentifier(item) == itemIdentifier
-        else { return false }
-        return engine.requestSeek(to: .seconds(positionSeconds))
+        .live(engine: playerEngine)
     }
 
     func makeBrowseViewModel() -> GuestBrowseViewModel {
@@ -409,36 +215,9 @@ struct AppEnvironment {
     func makeWatchProgressConnection(
         videoModel: GuestVideoViewModel
     ) -> WatchProgressWindowConnection? {
-        guard let watchProgressRepository else { return nil }
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: watchProgressRepository),
-            timeline: playerEngine,
-            resolveTarget: { [weak videoModel] identity, loadIntent in
-                guard let context = videoModel?.presentedContext else { return nil }
-                return WatchProgressTargetResolution.resolve(
-                    aid: context.detail.aid,
-                    bvid: context.detail.bvid,
-                    cid: context.selectedPage.cid,
-                    identity: identity,
-                    loadIntent: loadIntent
-                )
-            }
-        )
-        let sleepObservation = WatchProgressSleepObservation(
-            suspend: { session.suspend() },
-            resume: { session.resumeAfterSuspension() }
-        )
-        return WatchProgressWindowConnection(
-            start: {
-                session.start()
-                sleepObservation.start()
-            },
-            stop: {
-                sleepObservation.stop()
-                session.stop()
-            },
-            setReportingAccess: { session.setReportingAccess(signedIn: $0) }
-        )
+        watchProgressRepository.map {
+            .live(repository: $0, timeline: playerEngine, videoModel: videoModel)
+        }
     }
 
     static func liveAppSettingsModel(
@@ -461,14 +240,8 @@ struct AppEnvironment {
                             headers: $0.mediaHeaders
                         )
                     }
-                } catch let error as BiliAPIError {
-                    switch error {
-                    case .authorizationRequired, .authenticationInvalid,
-                        .authorizationUnavailable:
-                        throw PlaybackRouteBenchmarkOperationError.authenticationFailure
-                    default:
-                        throw error
-                    }
+                } catch {
+                    throw PlaybackRouteBenchmarkOperationError.mappingDiscoveryError(error)
                 }
             },
             resetDiscovery: { await discoverer.resetSeenSamples() },
@@ -646,73 +419,6 @@ struct AppEnvironment {
             historyWriteAuthorizer: historyWriteAuthorizer,
             transportFactory: transportFactory
         )
-    }
-}
-
-@MainActor
-private final class WatchProgressSleepObservation {
-    private let suspend: () -> Void
-    private let resume: () -> Void
-    private var observers: [NSObjectProtocol] = []
-
-    init(suspend: @escaping () -> Void, resume: @escaping () -> Void) {
-        self.suspend = suspend
-        self.resume = resume
-    }
-
-    func start() {
-        guard observers.isEmpty else { return }
-        let center = NSWorkspace.shared.notificationCenter
-        observers = [
-            center.addObserver(
-                forName: NSWorkspace.willSleepNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.suspend() }
-            },
-            center.addObserver(
-                forName: NSWorkspace.didWakeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.resume() }
-            }
-        ]
-    }
-
-    func stop() {
-        let center = NSWorkspace.shared.notificationCenter
-        for observer in observers {
-            center.removeObserver(observer)
-        }
-        observers.removeAll(keepingCapacity: false)
-    }
-}
-
-@MainActor
-private final class AppEnvironmentSessionRegistration {
-    private weak var coordinator: AccountSessionCoordinator?
-    private let invalidator: any AuthenticatedSessionInvalidating
-    private var registrationID: UUID?
-
-    init(
-        coordinator: AccountSessionCoordinator,
-        invalidator: any AuthenticatedSessionInvalidating
-    ) {
-        self.coordinator = coordinator
-        self.invalidator = invalidator
-    }
-
-    func open() {
-        guard registrationID == nil, let coordinator else { return }
-        registrationID = coordinator.registerSessionInvalidator(invalidator)
-    }
-
-    func close() {
-        guard let registrationID else { return }
-        coordinator?.unregisterSessionInvalidator(registrationID)
-        self.registrationID = nil
     }
 }
 
