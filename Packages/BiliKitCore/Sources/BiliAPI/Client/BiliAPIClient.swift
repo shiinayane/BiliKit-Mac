@@ -125,59 +125,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         cachedWBIKey = nil
     }
 
-    func get<Payload: Decodable & Sendable>(
-        path: String,
-        queryItems: [URLQueryItem],
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> Payload {
-        try await getWithAuthorizationProvenance(
-            path: path,
-            queryItems: queryItems,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        ).payload
-    }
-
-    func getWithAuthorizationProvenance<
-        Payload: Decodable & Sendable
-    >(
-        path: String,
-        queryItems: [URLQueryItem],
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> AuthorizedResponse<Payload> {
-        let url = try endpoint(path: path, queryItems: queryItems)
-        return try await getWithAuthorizationProvenance(
-            url: url,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        )
-    }
-
-    func get<Payload: Decodable & Sendable>(
-        path: String,
-        percentEncodedQuery: String,
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> Payload {
-        let url = try endpoint(
-            path: path,
-            percentEncodedQuery: percentEncodedQuery
-        )
-        return try await get(
-            url: url,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        )
-    }
-
+    /// 不关心授权来源时的薄封装。
     func get<Payload: Decodable & Sendable>(
         url: URL,
         referer: String,
@@ -192,6 +140,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         ).payload
     }
 
+    /// JSON GET 的唯一管线：请求、授权、状态码与 envelope 解码，并返回授权来源。
     func getWithAuthorizationProvenance<
         Payload: Decodable & Sendable
     >(
@@ -452,25 +401,20 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         path: String,
         queryItems: [URLQueryItem]
     ) throws -> URL {
-        guard
-            var components = URLComponents(
-                url: Self.baseURL,
-                resolvingAgainstBaseURL: false
-            )
-        else {
-            throw BiliAPIError.invalidRequest
-        }
-        components.path = path
-        components.queryItems = queryItems
-        guard let url = components.url else {
-            throw BiliAPIError.invalidRequest
-        }
-        return url
+        try endpoint(path: path) { $0.queryItems = queryItems }
     }
 
+    /// WBI 签名后的 query 已按签名顺序编码，必须原样使用。
     func endpoint(
         path: String,
         percentEncodedQuery: String
+    ) throws -> URL {
+        try endpoint(path: path) { $0.percentEncodedQuery = percentEncodedQuery }
+    }
+
+    private func endpoint(
+        path: String,
+        applyingQuery applyQuery: (inout URLComponents) -> Void
     ) throws -> URL {
         guard
             var components = URLComponents(
@@ -481,7 +425,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw BiliAPIError.invalidRequest
         }
         components.path = path
-        components.percentEncodedQuery = percentEncodedQuery
+        applyQuery(&components)
         guard let url = components.url else {
             throw BiliAPIError.invalidRequest
         }

@@ -10,8 +10,10 @@ extension BiliAPIClient {
             throw BiliAPIError.invalidRequest
         }
         let payload: VideoDetailPayload = try await get(
-            path: "/x/web-interface/view",
-            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            url: try endpoint(
+                path: "/x/web-interface/view",
+                queryItems: [URLQueryItem(name: "bvid", value: bvid)]
+            ),
             referer: Self.videoReferer(bvid),
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,
@@ -31,8 +33,10 @@ extension BiliAPIClient {
             throw BiliAPIError.invalidRequest
         }
         let payload: [RelatedVideoPayload] = try await get(
-            path: "/x/web-interface/archive/related",
-            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            url: try endpoint(
+                path: "/x/web-interface/archive/related",
+                queryItems: [URLQueryItem(name: "bvid", value: bvid)]
+            ),
             referer: Self.videoReferer(bvid),
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,

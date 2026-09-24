@@ -35,14 +35,16 @@ extension BiliAPIClient {
             rootID.rawValue > 0, page > 0, pageSize == 10
         else { throw BiliAPIError.invalidRequest }
         let payload: CommentReplyListPayload = try await get(
-            path: "/x/v2/reply/reply",
-            queryItems: [
-                URLQueryItem(name: "type", value: String(subject.type)),
-                URLQueryItem(name: "oid", value: String(subject.oid)),
-                URLQueryItem(name: "root", value: String(rootID.rawValue)),
-                URLQueryItem(name: "pn", value: String(page)),
-                URLQueryItem(name: "ps", value: String(pageSize))
-            ],
+            url: try endpoint(
+                path: "/x/v2/reply/reply",
+                queryItems: [
+                    URLQueryItem(name: "type", value: String(subject.type)),
+                    URLQueryItem(name: "oid", value: String(subject.oid)),
+                    URLQueryItem(name: "root", value: String(rootID.rawValue)),
+                    URLQueryItem(name: "pn", value: String(page)),
+                    URLQueryItem(name: "ps", value: String(pageSize))
+                ]
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,
@@ -78,8 +80,10 @@ extension BiliAPIClient {
             timestamp: timestampProvider()
         )
         let payload: CommentMainPayload = try await get(
-            path: "/x/v2/reply/wbi/main",
-            percentEncodedQuery: query,
+            url: try endpoint(
+                path: "/x/v2/reply/wbi/main",
+                percentEncodedQuery: query
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,

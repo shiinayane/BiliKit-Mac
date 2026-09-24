@@ -58,8 +58,10 @@ extension BiliAPIClient {
             timestamp: timestampProvider()
         )
         let payload: SubtitleCatalogPayload = try await get(
-            path: "/x/player/wbi/v2",
-            percentEncodedQuery: query,
+            url: try endpoint(
+                path: "/x/player/wbi/v2",
+                percentEncodedQuery: query
+            ),
             referer: Self.videoReferer(identity.bvid),
             access: .accountRead(
                 missingCredential: .fail,
