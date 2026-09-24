@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliAuth
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func authorizesExactContractAndInjectsOnlySessionAndCSRF() async throws {
@@ -23,7 +24,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     }
 
     @Test
-    func rejectsEveryOriginMethodPathAndHeaderExpansion() async throws {
+    func rejectsEveryOriginMethodAndPathExpansion() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
         )
@@ -54,12 +55,17 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
                 try await authorizer.authorize(request)
             }
         }
+    }
 
-        for header in ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"] {
-            let request = try heartbeatRequest(additionalHeader: header)
-            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
-                try await authorizer.authorize(request)
-            }
+    @Test(arguments: ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"])
+    func rejectsEveryHeaderExpansion(header: String) async throws {
+        let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
+            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        )
+        let request = try heartbeatRequest(additionalHeader: header)
+
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await authorizer.authorize(request)
         }
     }
 

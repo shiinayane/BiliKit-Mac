@@ -132,10 +132,7 @@ actor RecordingAuthTransport: HTTPTransport, HTTPTransportInvalidating {
         }
 
         suspendedRequestArrived = true
-        for waiter in arrivalWaiters {
-            waiter.resume()
-        }
-        arrivalWaiters.removeAll()
+        arrivalWaiters.resumeAll()
         let resumed = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if suspendedRequestCancelled {
@@ -210,4 +207,15 @@ func navigationResponse(
             "{\"code\":0,\"data\":{\"isLogin\":\(isLogin)\(identityFields)}}".utf8
         )
     )
+}
+
+extension Array where Element == CheckedContinuation<Void, Never> {
+    /// 放行并清空全部挂起者；本 target 的替身共用。
+    mutating func resumeAll() {
+        let pending = self
+        removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
 }

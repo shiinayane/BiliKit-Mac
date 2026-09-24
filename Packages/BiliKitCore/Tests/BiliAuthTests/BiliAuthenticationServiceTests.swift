@@ -298,10 +298,7 @@ private actor SuspendingAuthenticatedSessionInvalidator:
 
     func invalidateAuthenticatedSession() async {
         started = true
-        for waiter in startWaiters {
-            waiter.resume()
-        }
-        startWaiters.removeAll()
+        startWaiters.resumeAll()
         await withCheckedContinuation { continuation in
             invalidationContinuation = continuation
         }
