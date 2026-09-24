@@ -190,11 +190,6 @@ public final class PlaybackCommentsViewModel {
         await rootTask?.value
     }
 
-    func waitForActiveReplyTaskForTesting(rootID: CommentID) async {
-        guard let requestID = replyRequestIDs[rootID] else { return }
-        await activeReplyTasks[requestID]?.value
-    }
-
     func rootTaskSnapshotForTesting() -> Task<Void, Never>? {
         rootTask
     }
@@ -202,10 +197,6 @@ public final class PlaybackCommentsViewModel {
     func replyTaskSnapshotForTesting(rootID: CommentID) -> Task<Void, Never>? {
         guard let requestID = replyRequestIDs[rootID] else { return nil }
         return activeReplyTasks[requestID]
-    }
-
-    func replyWorkCountsForTesting() -> (active: Int, pending: Int) {
-        (activeReplyTasks.count, pendingReplyRequests.count)
     }
 
     private func replaceRootWorkset(
