@@ -1,17 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct NativeVideoGridTailState: Equatable {
-    let canLoadMore: Bool
-    let tailIdentity: String?
-    let isLoading: Bool
-
-    static let end = Self(
-        canLoadMore: false,
-        tailIdentity: nil,
-        isLoading: false
-    )
-}
+typealias NativeVideoGridTailState = NearEndTailState<String>
 
 struct NativeVideoGridUpdatePlan: Equatable {
     let identityChanged: Bool
@@ -44,66 +34,6 @@ struct NativeVideoGridUpdatePlan: Equatable {
             && Array(updatedIDs.prefix(previousIDs.count)) == previousIDs
             && removedIDs.isEmpty
             && insertedIDs == Array(updatedIDs.dropFirst(previousIDs.count))
-    }
-}
-
-struct NativeVideoGridNearEndGate {
-    private(set) var tailIdentity: String?
-    private(set) var wasInsideThreshold = false
-    private(set) var triggeredTailIdentity: String?
-
-    mutating func update(
-        isInsideThreshold: Bool,
-        state: NativeVideoGridTailState
-    ) -> Bool {
-        if state.tailIdentity != tailIdentity {
-            let changedWhileStillInside =
-                tailIdentity != nil && state.tailIdentity != nil
-                && wasInsideThreshold && isInsideThreshold
-            tailIdentity = state.tailIdentity
-            triggeredTailIdentity = nil
-            if changedWhileStillInside {
-                wasInsideThreshold = true
-                return false
-            }
-            wasInsideThreshold = false
-        }
-        guard state.canLoadMore, state.tailIdentity != nil else {
-            wasInsideThreshold = false
-            return false
-        }
-        defer { wasInsideThreshold = isInsideThreshold }
-        guard isInsideThreshold,
-            !wasInsideThreshold,
-            !state.isLoading,
-            triggeredTailIdentity != state.tailIdentity
-        else {
-            return false
-        }
-        triggeredTailIdentity = state.tailIdentity
-        return true
-    }
-
-    mutating func reset() {
-        tailIdentity = nil
-        wasInsideThreshold = false
-        triggeredTailIdentity = nil
-    }
-}
-
-struct NativeVideoGridLiveScrollBackpressure {
-    private(set) var requiresNewGesture = false
-
-    var permitsAutomaticLoad: Bool { !requiresNewGesture }
-
-    mutating func beginLiveScroll() {
-        requiresNewGesture = false
-    }
-
-    mutating func recordTrigger(isLiveScrolling: Bool) {
-        if isLiveScrolling {
-            requiresNewGesture = true
-        }
     }
 }
 
@@ -387,7 +317,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         private var accessibilityLabel: String
         private var tailState: NativeVideoGridTailState
         private var scrollResetGate: NativeVideoGridScrollResetGate
-        private var nearEndGate = NativeVideoGridNearEndGate()
+        private var nearEndPagination = NearEndPagination<String>()
         private var onScroll: (CGFloat) -> Void
         private var onAcknowledgeScrollReset: (UInt64) -> Void
         private var onNearEnd: () -> Void
@@ -406,7 +336,6 @@ struct NativeVideoGridView: NSViewRepresentable {
         private var scrollGeneration: UInt64 = 0
         private var isApplyingRestoration = false
         private var isLiveScrolling = false
-        private var liveScrollBackpressure = NativeVideoGridLiveScrollBackpressure()
         private var isResizingDocument = false
         private var isReset = false
 
@@ -509,7 +438,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                 object: scrollView
             ) { [weak self] in
                 self?.isLiveScrolling = true
-                self?.liveScrollBackpressure.beginLiveScroll()
+                self?.nearEndPagination.releaseBackpressure()
             }
             observers.observeAccessibilityDisplayOptions { [weak collectionView] in
                 collectionView?.refreshVisibleCardAppearance()
@@ -577,6 +506,10 @@ struct NativeVideoGridView: NSViewRepresentable {
             }
             contents = updatedContents
 
+            if updatePlan.identityChanged, !updatePlan.isStrictTailAppend {
+                // 内容整体替换后，旧手势留下的背压不再适用。
+                nearEndPagination.releaseBackpressure()
+            }
             if updatePlan.identityChanged {
                 let operationGeneration = updateEpoch.advance()
                 let capturedScrollGeneration = scrollGeneration
@@ -640,7 +573,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             onSelect = { _ in }
             lastViewportSize = nil
             contents = NativeVideoCardContents()
-            nearEndGate.reset()
+            nearEndPagination.reset()
             pendingViewportAnchor = nil
             pendingAnchorScrollGeneration = nil
         }
@@ -921,32 +854,18 @@ struct NativeVideoGridView: NSViewRepresentable {
                     width: collectionView.bounds.width
                 )
             else { return }
-            guard tailState.canLoadMore, tailState.tailIdentity != nil else {
-                _ = nearEndGate.update(
-                    isInsideThreshold: false,
-                    state: tailState
+            let isInside =
+                tailState.canLoadMore && tailState.tailIdentity != nil
+                && NativeVideoGridGeometry.isNearEnd(
+                    itemCount: contents.orderedIDs.count,
+                    width: collectionView.bounds.width,
+                    visibleMaximumY: collectionView.visibleRect.maxY
                 )
-                return
-            }
-            let isInside = NativeVideoGridGeometry.isNearEnd(
-                itemCount: contents.orderedIDs.count,
-                width: collectionView.bounds.width,
-                visibleMaximumY: collectionView.visibleRect.maxY
-            )
-            if !liveScrollBackpressure.permitsAutomaticLoad {
-                _ = nearEndGate.update(
-                    isInsideThreshold: false,
-                    state: tailState
-                )
-                return
-            }
-            if nearEndGate.update(
+            if nearEndPagination.shouldLoadMore(
                 isInsideThreshold: isInside,
-                state: tailState
+                state: tailState,
+                isLiveScrolling: isLiveScrolling
             ) {
-                liveScrollBackpressure.recordTrigger(
-                    isLiveScrolling: isLiveScrolling
-                )
                 onNearEnd()
             }
         }

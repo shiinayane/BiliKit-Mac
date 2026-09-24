@@ -1400,60 +1400,6 @@ struct NativePlaybackSidebarTests {
     }
 
     @Test
-    func commentsPaginationRequiresThresholdExitBeforeLoadingAnotherTail() {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let first = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: .init(subject: subject, lastRootID: .init(rawValue: 1)),
-            isLoading: false
-        )
-        let loading = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: first.identity,
-            isLoading: true
-        )
-        let second = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: .init(subject: subject, lastRootID: .init(rawValue: 2)),
-            isLoading: false
-        )
-        var gate = NativePlaybackCommentsPaginationGate()
-
-        let outside = gate.update(isInsideThreshold: false, state: first)
-        let firstEntry = gate.update(isInsideThreshold: true, state: first)
-        let loadingEntry = gate.update(isInsideThreshold: true, state: loading)
-        let changedTail = gate.update(isInsideThreshold: true, state: second)
-        let repeatedTail = gate.update(isInsideThreshold: true, state: second)
-        let leftThreshold = gate.update(isInsideThreshold: false, state: second)
-        let reentered = gate.update(isInsideThreshold: true, state: second)
-        let ended = gate.update(isInsideThreshold: true, state: .end)
-
-        #expect(!outside)
-        #expect(firstEntry)
-        #expect(!loadingEntry)
-        #expect(!changedTail)
-        #expect(!repeatedTail)
-        #expect(!leftThreshold)
-        #expect(reentered)
-        #expect(!ended)
-    }
-
-    @Test
-    func commentsLiveScrollBackpressureAllowsOnlyOnePagePerGesture() {
-        var backpressure = NativePlaybackCommentsLiveScrollBackpressure()
-
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: true)
-        #expect(!backpressure.permitsAutomaticLoad)
-        backpressure.beginLiveScroll()
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: false)
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.reset()
-        #expect(backpressure.permitsAutomaticLoad)
-    }
-
-    @Test
     @MainActor
     func commentHeightCacheIsBoundedAndUsesTrueLRURecency() {
         let cache = NativePlaybackSidebarHeightCache(capacity: 2)

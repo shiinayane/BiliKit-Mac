@@ -262,77 +262,9 @@ final class NativePlaybackSidebarScrollView: NSScrollView {
     }
 }
 
-struct NativePlaybackCommentsPaginationTailState: Equatable {
-    struct Identity: Equatable {
-        let subject: CommentSubjectIdentity
-        let lastRootID: CommentID?
-    }
-
-    let canLoadMore: Bool
-    let identity: Identity?
-    let isLoading: Bool
-
-    static let end = Self(canLoadMore: false, identity: nil, isLoading: false)
-}
-
-struct NativePlaybackCommentsPaginationGate {
-    private(set) var tailIdentity: NativePlaybackCommentsPaginationTailState.Identity?
-    private(set) var wasInsideThreshold = false
-    private(set) var triggeredTailIdentity: NativePlaybackCommentsPaginationTailState.Identity?
-
-    mutating func update(
-        isInsideThreshold: Bool,
-        state: NativePlaybackCommentsPaginationTailState
-    ) -> Bool {
-        if state.identity != tailIdentity {
-            let changedWhileStillInside =
-                tailIdentity != nil && state.identity != nil
-                && wasInsideThreshold && isInsideThreshold
-            tailIdentity = state.identity
-            triggeredTailIdentity = nil
-            if changedWhileStillInside {
-                wasInsideThreshold = true
-                return false
-            }
-            wasInsideThreshold = false
-        }
-        guard state.canLoadMore, state.identity != nil else {
-            wasInsideThreshold = false
-            return false
-        }
-        defer { wasInsideThreshold = isInsideThreshold }
-        guard isInsideThreshold,
-            !wasInsideThreshold,
-            !state.isLoading,
-            triggeredTailIdentity != state.identity
-        else { return false }
-        triggeredTailIdentity = state.identity
-        return true
-    }
-
-    mutating func reset() {
-        tailIdentity = nil
-        wasInsideThreshold = false
-        triggeredTailIdentity = nil
-    }
-}
-
-struct NativePlaybackCommentsLiveScrollBackpressure {
-    private(set) var requiresNewGesture = false
-
-    var permitsAutomaticLoad: Bool { !requiresNewGesture }
-
-    mutating func beginLiveScroll() {
-        requiresNewGesture = false
-    }
-
-    mutating func recordTrigger(isLiveScrolling: Bool) {
-        if isLiveScrolling { requiresNewGesture = true }
-    }
-
-    mutating func reset() {
-        requiresNewGesture = false
-    }
+struct NativePlaybackCommentsPaginationIdentity: Equatable {
+    let subject: CommentSubjectIdentity
+    let lastRootID: CommentID?
 }
 
 @MainActor
@@ -397,9 +329,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private var refinementGeneration: UInt64 = 0
     private var refinementTask: Task<Void, Never>?
     private var paginationTask: Task<Void, Never>?
-    private var commentsPaginationGate = NativePlaybackCommentsPaginationGate()
-    private var commentsLiveScrollBackpressure =
-        NativePlaybackCommentsLiveScrollBackpressure()
+    private var commentsPagination = NearEndPagination<NativePlaybackCommentsPaginationIdentity>()
     private var isLiveScrolling = false
     private var snapshotApplicationsInFlight = 0
     private var pendingResetToTop = false
@@ -443,7 +373,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.isLiveScrolling = true
-                self?.commentsLiveScrollBackpressure.beginLiveScroll()
+                self?.commentsPagination.releaseBackpressure()
                 self?.scheduleNextCommentsPageIfNeeded()
             }
         }
@@ -492,16 +422,14 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             signatureExpanded = false
             browsedSectionID = nil
             lastSelectedEpisodeID = nil
-            commentsPaginationGate.reset()
-            commentsLiveScrollBackpressure.reset()
+            commentsPagination.reset()
         } else if previousPresentation.content?.uploader.signature
             != presentation.content?.uploader.signature
         {
             signatureExpanded = false
         }
         if changesCommentSort {
-            commentsPaginationGate.reset()
-            commentsLiveScrollBackpressure.reset()
+            commentsPagination.reset()
         }
         reconcileBrowsedSection(with: presentation.content?.selection)
         let changedItemIDs = presentation.changedItemIDs(
@@ -541,8 +469,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         cancelRefinement()
         paginationTask?.cancel()
         paginationTask = nil
-        commentsPaginationGate.reset()
-        commentsLiveScrollBackpressure.reset()
+        commentsPagination.reset()
         isLiveScrolling = false
         pendingResetToTop = false
         pendingScrollToComments = false
@@ -1380,43 +1307,34 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
                 self.snapshotApplicationsInFlight == 0,
                 self.snapshotGeneration == generation
             else { return }
-            let state = self.commentsPaginationTailState
-            let footerIsVisible = self.commentsFooterIsVisible
-            guard self.commentsLiveScrollBackpressure.permitsAutomaticLoad else {
-                _ = self.commentsPaginationGate.update(
-                    isInsideThreshold: false,
-                    state: state
-                )
-                return
-            }
             guard
-                self.commentsPaginationGate.update(
-                    isInsideThreshold: footerIsVisible,
-                    state: state
+                self.commentsPagination.shouldLoadMore(
+                    isInsideThreshold: self.commentsFooterIsVisible,
+                    state: self.commentsPaginationTailState,
+                    isLiveScrolling: self.isLiveScrolling
                 ), self.presentation.content?.comments.footer == .loadMore
             else { return }
-            self.commentsLiveScrollBackpressure.recordTrigger(
-                isLiveScrolling: self.isLiveScrolling
-            )
             self.actions.loadNextComments()
         }
     }
 
-    private var commentsPaginationTailState: NativePlaybackCommentsPaginationTailState {
+    private var commentsPaginationTailState:
+        NearEndTailState<NativePlaybackCommentsPaginationIdentity>
+    {
         guard let comments = presentation.content?.comments,
             let subject = comments.subject
         else { return .end }
-        let identity = NativePlaybackCommentsPaginationTailState.Identity(
+        let identity = NativePlaybackCommentsPaginationIdentity(
             subject: subject,
             lastRootID: comments.threads.last?.thread.id
         )
         switch comments.footer {
         case .loadMore:
-            return .init(canLoadMore: true, identity: identity, isLoading: false)
+            return .init(canLoadMore: true, tailIdentity: identity, isLoading: false)
         case .loading:
-            return .init(canLoadMore: true, identity: identity, isLoading: true)
+            return .init(canLoadMore: true, tailIdentity: identity, isLoading: true)
         case .retry, .stopped, .end:
-            return .init(canLoadMore: false, identity: identity, isLoading: false)
+            return .init(canLoadMore: false, tailIdentity: identity, isLoading: false)
         }
     }
 
