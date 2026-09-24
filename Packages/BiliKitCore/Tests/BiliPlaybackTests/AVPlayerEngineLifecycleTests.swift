@@ -62,9 +62,11 @@ struct AVPlayerEngineLifecycleTests {
             cid: 900_002
         )
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [video],
+                    originalAudioRepresentations: [audio]
+                )
             )
         )
 
@@ -198,9 +200,11 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine.player.isMuted = true
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [fixture.video],
-                originalAudioRepresentations: [fixture.audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    originalAudioRepresentations: [fixture.audio]
+                )
             )
         )
         let firstA = PlaybackItemIdentity(bvid: "BV1NativeA", cid: 101)
@@ -353,9 +357,11 @@ struct AVPlayerEngineLifecycleTests {
             cid: 900_001
         )
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [video],
+                    originalAudioRepresentations: [audio]
+                )
             )
         )
 
@@ -535,9 +541,11 @@ struct AVPlayerEngineLifecycleTests {
 
         try await engine.load(
             PlaybackRequest(
-                manifest: PlaybackManifest(
-                    videoRepresentations: [video],
-                    originalAudioRepresentations: [audio]
+                media: .dash(
+                    PlaybackManifest(
+                        videoRepresentations: [video],
+                        originalAudioRepresentations: [audio]
+                    )
                 )
             ),
             identity: identity
@@ -620,15 +628,19 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine.player.isMuted = true
         let oldRequest = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [oldVideo],
-                originalAudioRepresentations: [oldAudio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [oldVideo],
+                    originalAudioRepresentations: [oldAudio]
+                )
             )
         )
         let newRequest = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [newVideo],
-                originalAudioRepresentations: [newAudio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [newVideo],
+                    originalAudioRepresentations: [newAudio]
+                )
             )
         )
 
@@ -671,9 +683,11 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine?.player.isMuted = true
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [fixture.video],
-                originalAudioRepresentations: [fixture.audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    originalAudioRepresentations: [fixture.audio]
+                )
             )
         )
 

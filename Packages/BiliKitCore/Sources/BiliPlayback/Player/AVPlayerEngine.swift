@@ -10,12 +10,6 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
     case duplicateAudioTrackID(String)
     case invalidDefaultAudioTrackCount(Int)
     case invalidAudioTrackRepresentation(trackID: String, representationID: Int)
-    case preferredVideoRepresentationNotFound(Int)
-    case preferredAudioTrackNotFound(String)
-    case preferredAudioRepresentationNotFound(
-        trackID: String,
-        representationID: Int
-    )
     case itemFailed(errorType: String)
     case invalidPlaybackRate
 }
@@ -266,10 +260,10 @@ public final class AVPlayerEngine:
         switch request.media {
         case .dash(let manifest):
             progressiveSource = nil
-            videos = try request.selectedVideos(in: manifest).map {
+            videos = try manifest.selectedVideos().map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
-            audioTracks = try request.selectedAudioTracks(in: manifest)
+            audioTracks = try manifest.selectedAudioTracks()
         case .progressive(let source):
             progressiveSource = source
             videos = []
