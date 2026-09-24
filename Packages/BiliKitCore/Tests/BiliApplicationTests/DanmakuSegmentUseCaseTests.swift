@@ -2,7 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct DanmakuSegmentUseCaseTests {
     private let identity = PlaybackItemIdentity(
         bvid: "BV1DanmakuFixture",

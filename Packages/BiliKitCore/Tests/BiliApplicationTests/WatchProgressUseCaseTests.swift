@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliApplication
 
+@Suite(.timeLimit(.minutes(1)))
 struct WatchProgressUseCaseTests {
     @Test
     func authenticationGenerationCancelsQueuedOldSessionWithoutReplay() async throws {

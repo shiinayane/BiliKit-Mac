@@ -1,6 +1,7 @@
 import BiliApplication
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct UploaderSignatureUseCaseTests {
     @Test(
         arguments: [

@@ -45,20 +45,15 @@ final class ProgressTimeline: PlaybackTimelineProviding {
 @MainActor
 final class ResolutionProbe {
     private(set) var count = 0
-    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var waiters = CountWaiters()
 
     func observe() {
         count += 1
-        let ready = waiters.filter { count >= $0.0 }
-        waiters.removeAll { count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
-        }
+        waiters.resume(reaching: count)
     }
 
     func wait(for target: Int) async {
-        if count >= target { return }
-        await withCheckedContinuation { waiters.append((target, $0)) }
+        await withCheckedContinuation { waiters.add($0, until: target, current: count) }
     }
 }
 
@@ -67,8 +62,8 @@ final class ResolutionProbe {
 @MainActor
 final class ManualProgressTicks {
     private var continuations: [AsyncStream<Void>.Continuation] = []
-    private var demandWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var terminationWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var demandWaiters = CountWaiters()
+    private var terminationWaiters = CountWaiters()
     private(set) var intervals: [Double] = []
     private var demandCount = 0
     private var terminationCount = 0
@@ -95,34 +90,25 @@ final class ManualProgressTicks {
 
     /// 第 1 次请求来自计时器启动；之后每处理完一个 tick 再加 1。
     func waitForDemand(_ expected: Int) async {
-        if demandCount >= expected { return }
-        await withCheckedContinuation { demandWaiters.append((expected, $0)) }
+        await withCheckedContinuation {
+            demandWaiters.add($0, until: expected, current: demandCount)
+        }
     }
 
     func waitForTermination(_ expected: Int) async {
-        if terminationCount >= expected { return }
-        await withCheckedContinuation { terminationWaiters.append((expected, $0)) }
+        await withCheckedContinuation {
+            terminationWaiters.add($0, until: expected, current: terminationCount)
+        }
     }
 
     private func recordDemand() {
         demandCount += 1
-        Self.resume(&demandWaiters, reaching: demandCount)
+        demandWaiters.resume(reaching: demandCount)
     }
 
     private func recordTermination() {
         terminationCount += 1
-        Self.resume(&terminationWaiters, reaching: terminationCount)
-    }
-
-    private static func resume(
-        _ waiters: inout [(Int, CheckedContinuation<Void, Never>)],
-        reaching count: Int
-    ) {
-        let ready = waiters.filter { count >= $0.0 }
-        waiters.removeAll { count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
-        }
+        terminationWaiters.resume(reaching: terminationCount)
     }
 }
 

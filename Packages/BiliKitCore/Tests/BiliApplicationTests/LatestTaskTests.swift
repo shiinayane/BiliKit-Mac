@@ -78,11 +78,7 @@ private final class Gate {
 
     func open() {
         isOpen = true
-        let pending = waiters
-        waiters.removeAll()
-        for waiter in pending {
-            waiter.resume()
-        }
+        waiters.resumeAll()
     }
 }
 
