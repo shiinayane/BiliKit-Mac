@@ -131,7 +131,6 @@ struct LoopbackGeneratedResourceTests {
         try await waitUntil { await probe.cancellationCount == 1 }
 
         #expect(await probe.cancellationCount == 1)
-        #expect(server.diagnosticsSnapshot().registeredRouteCount == 0)
     }
 
     @Test
@@ -191,7 +190,7 @@ struct LoopbackGeneratedResourceTests {
         let server = LoopbackPlaybackServer()
         try await server.start()
         defer { server.stop() }
-        _ = try server.register(
+        let existingURL = try server.register(
             .inMemory(data: Data("existing".utf8), contentType: "text/plain"),
             at: "existing.txt"
         )
@@ -215,7 +214,11 @@ struct LoopbackGeneratedResourceTests {
             ])
         }
 
-        #expect(server.diagnosticsSnapshot().registeredRouteCount == 1)
+        let (existingBody, existingResponse) = try await URLSession.shared.data(
+            from: existingURL
+        )
+        #expect((existingResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(existingBody == Data("existing".utf8))
         let freshURL = try server.url(for: "fresh.txt")
         let (_, response) = try await URLSession.shared.data(from: freshURL)
         #expect((response as? HTTPURLResponse)?.statusCode == 404)

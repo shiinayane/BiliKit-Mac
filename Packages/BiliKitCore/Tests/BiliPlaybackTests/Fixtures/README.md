@@ -7,7 +7,7 @@
   `video-avc-256x144-4s-global-sidx.mp4.base64`：四秒、四个一秒 fragment 的蓝色／
   绿色 H.264 视频，单个 global SIDX 覆盖全部 fragment。
 - `audio-aac-4s-global-sidx.mp4.base64`：与上述视频配套的四秒静音 AAC；
-  三者用于同一 `AVPlayerItem` 的运行时 HLS 降档验证。
+  用于 I-frame playlist 与需要可 seek 时长的 engine 起播／续播测试。
 - `audio-aac.mp4`：440 Hz AAC 音频。
 - `sidx-v0-two-references.hex`：手工编写、包含两个直接媒体引用的 SIDX v0 box。
 

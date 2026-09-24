@@ -53,17 +53,14 @@ public struct DASHToHLSBridge: Sendable {
     private let subtitleCatalogGrace: Duration
     private let serverFactory: @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
 
-    public init(
-        rangeClient: HTTPRangeClient = HTTPRangeClient(),
-        subtitleCatalogGrace: Duration = .seconds(2)
-    ) {
+    public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
         self.init(
             rangeClient: rangeClient,
-            subtitleCatalogGrace: subtitleCatalogGrace,
             serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
         )
     }
 
+    /// 测试可注入 server（例如替换 progressive streamer）并缩短字幕目录等待。
     init(
         rangeClient: HTTPRangeClient,
         subtitleCatalogGrace: Duration = .seconds(2),

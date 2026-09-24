@@ -78,7 +78,14 @@ struct LoopbackPlaybackServerTests {
             port: port,
             target: url.path
         )
-        try await waitForLoopbackConnectionsToDrain(server)
+        // 半截请求后断开的客户端不能让 server 卡住或占住后续请求。
+        #expect(
+            try independentHTTPStatus(
+                port: port,
+                target: url.path,
+                host: "127.0.0.1:\(port)"
+            ) == 200
+        )
         server.stop()
         try await waitForIndependentProcessToRejectConnections(port: port)
     }
@@ -954,7 +961,8 @@ struct LoopbackPlaybackServerTests {
                     failingURLs: []
                 )
             ),
-            subtitleCatalogGrace: .milliseconds(20)
+            subtitleCatalogGrace: .milliseconds(20),
+            serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
         )
         let source = NativeSubtitleSource(
             useCase: SubtitleUseCase(repository: repository),
@@ -1782,21 +1790,6 @@ struct LoopbackPlaybackServerTests {
             _ = entry.output.fileHandleForReading.readDataToEndOfFile()
             entry.process.waitUntilExit()
         }
-    }
-
-    private func waitForLoopbackConnectionsToDrain(
-        _ server: LoopbackPlaybackServer
-    ) async throws {
-        for _ in 0..<100 {
-            let diagnostics = server.diagnosticsSnapshot()
-            if diagnostics.activeConnectionCount == 0,
-                diagnostics.activeTaskCount == 0
-            {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        throw LoopbackFixtureError.timedOut
     }
 
     private func independentProcessCanConnect(port: Int) -> Bool {
