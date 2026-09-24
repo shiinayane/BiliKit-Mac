@@ -533,34 +533,17 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
-    @Test
-    func playThenPauseDuringInitialSeekCancelsThePendingCommit() {
+    /// 首次定位期间无论已真正播放还是仍在按请求速率等待，随后的暂停都要取消待提交断点。
+    @Test(arguments: [true, false])
+    func pauseAfterStartDuringInitialSeekCancelsThePendingCommit(
+        reachedPlaying: Bool
+    ) {
         let tracker = PlaybackInteractionTracker()
         tracker.allowInternalSeek(to: 42)
 
         tracker.observeTimeControlStatus(
             isPaused: false,
-            isPlaying: true,
-            playbackRate: 1
-        )
-        #expect(tracker.revision == 0)
-        tracker.observeTimeControlStatus(
-            isPaused: true,
-            isPlaying: false,
-            playbackRate: 0
-        )
-
-        #expect(tracker.revision == 1)
-    }
-
-    @Test
-    func requestedWaitingThenPauseDuringInitialSeekCancelsCommit() {
-        let tracker = PlaybackInteractionTracker()
-        tracker.allowInternalSeek(to: 42)
-
-        tracker.observeTimeControlStatus(
-            isPaused: false,
-            isPlaying: false,
+            isPlaying: reachedPlaying,
             playbackRate: 1
         )
         #expect(tracker.revision == 0)
