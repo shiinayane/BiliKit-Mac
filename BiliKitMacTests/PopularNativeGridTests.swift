@@ -357,6 +357,21 @@ struct PopularNativeGridTests {
     }
 
     @Test
+    @MainActor
+    func hoverTrackerDropsCardThatEndsDisplayingBeforeReuse() {
+        let tracker = NativeVideoHoverTracker()
+        let hovered = NativeVideoCollectionItem()
+        let other = NativeVideoCollectionItem()
+        tracker.setHoveredItem(hovered)
+
+        tracker.itemDidEndDisplaying(other)
+        #expect(tracker.hoveredItem === hovered)
+
+        tracker.itemDidEndDisplaying(hovered)
+        #expect(tracker.hoveredItem == nil)
+    }
+
+    @Test
     func imageApplicationGateRejectsCancellationAndLateCoverOrAvatarReuse() {
         let current = NativeVideoReuseIdentity(itemID: "BV-current", generation: 8)
         #expect(

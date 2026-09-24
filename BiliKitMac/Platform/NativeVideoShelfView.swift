@@ -131,15 +131,13 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private let configuredItems = NSHashTable<NativeVideoCollectionItem>.weakObjects()
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
         private var contentIdentity: String
-        private var contentsByID: [String: NativeVideoCardPresentation]
-        private var orderedIDs: [String]
+        private var contents: NativeVideoCardContents
         private var reduceMotion: Bool
         private var isInteractionEnabled: Bool
         private var onSelect: (String) -> Void
-        private var boundsObserver: NSObjectProtocol?
-        private var accessibilityObserver: NSObjectProtocol?
-        private var windowResignObserver: NSObjectProtocol?
-        private weak var hoveredItem: NativeVideoCollectionItem?
+        private var observers = NativeVideoNotificationObservers()
+        private var windowObservers = NativeVideoNotificationObservers()
+        private let hover = NativeVideoHoverTracker()
         private var operationGeneration: UInt64 = 0
         private var isResizingDocument = false
         private var isReset = false
@@ -152,12 +150,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
             isInteractionEnabled: Bool,
             onSelect: @escaping (String) -> Void
         ) {
-            let uniqueItems = Self.uniqueItems(items)
             self.contentIdentity = contentIdentity
-            contentsByID = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            orderedIDs = uniqueItems.map(\.id)
+            contents = NativeVideoCardContents(items)
             self.imagePipeline = imagePipeline
             self.reduceMotion = reduceMotion
             self.isInteractionEnabled = isInteractionEnabled
@@ -188,8 +182,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 self?.selectAndActivate(id)
             }
             collectionView.itemIDAtIndex = { [weak self] index in
-                guard let self, self.orderedIDs.indices.contains(index) else { return nil }
-                return self.orderedIDs[index]
+                guard let ids = self?.contents.orderedIDs, ids.indices.contains(index) else {
+                    return nil
+                }
+                return ids[index]
             }
             collectionView.onFocusChange = { [weak scrollView] in
                 scrollView?.updateFocusWithinSoon()
@@ -200,24 +196,16 @@ struct NativeVideoShelfView: NSViewRepresentable {
             )
             collectionView.setAccessibilityLabel(AppStrings.localized("横向相关推荐"))
 
-            dataSource = NSCollectionViewDiffableDataSource<Int, String>(
-                collectionView: collectionView
-            ) { [weak self] collectionView, indexPath, id in
-                guard
-                    let self,
-                    let presentation = self.contentsByID[id],
-                    let item = collectionView.makeItem(
-                        withIdentifier: .nativeVideoCard,
-                        for: indexPath
-                    ) as? NativeVideoCollectionItem
-                else { return nil }
-                self.configure(item, with: presentation)
-                item.setKeyboardFocusVisible(
-                    self.collectionView.showsKeyboardSelection
-                        && self.collectionView.selectionIndexPaths.contains(indexPath)
-                )
-                return item
-            }
+            dataSource = NativeVideoCardDataSource.make(
+                collectionView: collectionView,
+                presentation: { [weak self] id in self?.contents[id] },
+                configure: { [weak self] item, presentation in
+                    self?.configure(item, with: presentation)
+                },
+                showsKeyboardSelection: { [weak collectionView] in
+                    collectionView?.showsKeyboardSelection == true
+                }
+            )
 
             scrollView.install(collectionView: collectionView)
             applyInteractionState(isInteractionEnabled, reconfiguresCards: false)
@@ -230,19 +218,9 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 self?.observeWindow(window)
             }
 
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.didScroll() }
-            }
-            accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshVisibleCards() }
+            observers.observeScrolling(of: scrollView) { [weak self] in self?.didScroll() }
+            observers.observeAccessibilityDisplayOptions { [weak collectionView] in
+                collectionView?.refreshVisibleCardAppearance()
             }
 
             operationGeneration &+= 1
@@ -271,23 +249,18 @@ struct NativeVideoShelfView: NSViewRepresentable {
             self.reduceMotion = reduceMotion
             self.onSelect = onSelect
             applyInteractionState(isInteractionEnabled, reconfiguresCards: true)
-            let uniqueItems = Self.uniqueItems(items)
-            let updatedContents = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            let updatedIDs = uniqueItems.map(\.id)
+            let updatedContents = NativeVideoCardContents(items)
             let plan = NativeVideoShelfUpdatePlan(
                 previousContentIdentity: self.contentIdentity,
                 updatedContentIdentity: contentIdentity,
-                previousIDs: orderedIDs,
-                previousContents: contentsByID,
-                updatedIDs: updatedIDs,
-                updatedContents: updatedContents
+                previousIDs: contents.orderedIDs,
+                previousContents: contents.byID,
+                updatedIDs: updatedContents.orderedIDs,
+                updatedContents: updatedContents.byID
             )
             let resetsToLeading = self.contentIdentity != contentIdentity
             self.contentIdentity = contentIdentity
-            contentsByID = updatedContents
-            orderedIDs = updatedIDs
+            contents = updatedContents
 
             if plan.identityChanged {
                 operationGeneration &+= 1
@@ -316,18 +289,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
             scrollView.clearFirstResponderIfNeeded()
             isReset = true
             operationGeneration &+= 1
-            setHoveredItem(nil)
+            hover.setHoveredItem(nil)
             for item in configuredItems.allObjects { item.invalidate() }
-            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
-            if let accessibilityObserver {
-                NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
-            }
-            if let windowResignObserver {
-                NotificationCenter.default.removeObserver(windowResignObserver)
-            }
-            boundsObserver = nil
-            accessibilityObserver = nil
-            windowResignObserver = nil
+            observers.removeAll()
+            windowObservers.removeAll()
             collectionView.onActivateSelection = nil
             collectionView.itemIDAtIndex = nil
             collectionView.onFocusChange = nil
@@ -335,27 +300,16 @@ struct NativeVideoShelfView: NSViewRepresentable {
             collectionView.dataSource = nil
             dataSource = nil
             scrollView.reset()
-            contentsByID.removeAll()
-            orderedIDs.removeAll()
+            contents = NativeVideoCardContents()
             onSelect = { _ in }
-        }
-
-        private static func uniqueItems(
-            _ items: [NativeVideoCardPresentation]
-        ) -> [NativeVideoCardPresentation] {
-            var seen: Set<String> = []
-            return items.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
         }
 
         private func applySnapshot(
             animatingDifferences: Bool,
             completion: (() -> Void)? = nil
         ) {
-            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
-            snapshot.appendSections([0])
-            snapshot.appendItems(orderedIDs, toSection: 0)
             dataSource?.apply(
-                snapshot,
+                contents.makeSnapshot(),
                 animatingDifferences: animatingDifferences,
                 completion: completion
             )
@@ -386,34 +340,23 @@ struct NativeVideoShelfView: NSViewRepresentable {
             guard
                 !isReset,
                 isInteractionEnabled,
-                contentsByID[id] != nil
+                contents[id] != nil
             else { return }
-            if let index = orderedIDs.firstIndex(of: id) {
-                collectionView.selectionIndexPaths = [IndexPath(item: index, section: 0)]
+            if let indexPath = contents.indexPath(of: id) {
+                collectionView.selectionIndexPaths = [indexPath]
             }
             onSelect(id)
         }
 
         private func reconfigureVisibleCards(ids: Set<String>? = nil) {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                guard
-                    let id = item.representedVideoID,
-                    ids?.contains(id) ?? true,
-                    let presentation = contentsByID[id]
-                else { continue }
+            for (item, presentation) in contents.visibleCards(in: collectionView, ids: ids) {
                 configure(item, with: presentation)
-            }
-        }
-
-        private func refreshVisibleCards() {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                item.refreshEnvironmentAppearance()
             }
         }
 
         private func invalidateInteractionAndImageRequestsForContentReplacement() {
             scrollView.clearFirstResponderIfNeeded()
-            setHoveredItem(nil)
+            hover.setHoveredItem(nil)
             collectionView.clearSelectionForContentReplacement()
             for item in configuredItems.allObjects {
                 item.invalidateImageRequests()
@@ -448,7 +391,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             let targetSize = NSSize(
                 width: max(
                     viewport.width,
-                    NativeVideoShelfGeometry.documentWidth(itemCount: orderedIDs.count)
+                    NativeVideoShelfGeometry.documentWidth(itemCount: contents.orderedIDs.count)
                 ),
                 height: max(viewport.height, NativeVideoShelfGeometry.viewportHeight)
             )
@@ -484,7 +427,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private var maximumLogicalOffsetX: CGFloat {
             NativeVideoShelfScrollCoordinates.maximumLogicalOffsetX(
                 documentWidth: NativeVideoShelfGeometry.documentWidth(
-                    itemCount: orderedIDs.count
+                    itemCount: contents.orderedIDs.count
                 ),
                 viewportWidth: scrollView.contentSize.width,
                 leadingInset: scrollView.contentInsets.left,
@@ -495,7 +438,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private func page(by direction: Int) {
             let current = NativeVideoShelfGeometry.nearestIndex(
                 offset: currentLogicalOffsetX,
-                itemCount: orderedIDs.count
+                itemCount: contents.orderedIDs.count
             )
             let capacity = NativeVideoShelfGeometry.pageCapacity(
                 viewportWidth: max(
@@ -513,8 +456,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private func scroll(to index: Int, animated: Bool) {
-            guard !orderedIDs.isEmpty else { return }
-            let targetIndex = min(orderedIDs.count - 1, max(0, index))
+            guard !contents.orderedIDs.isEmpty else { return }
+            let targetIndex = min(contents.orderedIDs.count - 1, max(0, index))
             applyLogicalScrollOffset(
                 NativeVideoShelfGeometry.offset(for: targetIndex),
                 animated: animated
@@ -547,31 +490,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
         private func updateHoverForCurrentPointerLocation() {
             guard isInteractionEnabled else {
-                setHoveredItem(nil)
+                hover.setHoveredItem(nil)
                 return
             }
-            let candidate: NativeVideoCollectionItem?
-            if let windowPoint = collectionView.window?.mouseLocationOutsideOfEventStream {
-                let collectionPoint = collectionView.convert(windowPoint, from: nil)
-                if collectionView.visibleRect.contains(collectionPoint),
-                    let indexPath = collectionView.indexPathForItem(at: collectionPoint)
-                {
-                    candidate = collectionView.item(at: indexPath) as? NativeVideoCollectionItem
-                } else {
-                    candidate = nil
-                }
-            } else {
-                candidate = nil
-            }
-            setHoveredItem(candidate)
-        }
-
-        private func setHoveredItem(_ item: NativeVideoCollectionItem?) {
-            guard hoveredItem !== item else { return }
-            let previous = hoveredItem
-            hoveredItem = item
-            previous?.setHovered(false)
-            item?.setHovered(true)
+            hover.updateForCurrentPointerLocation(in: collectionView)
         }
 
         private func item(
@@ -583,35 +505,20 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 if isHovered { item.clearHover() }
                 return
             }
-            if isHovered {
-                guard hoveredItem !== item else { return }
-                let previous = hoveredItem
-                hoveredItem = item
-                previous?.setHovered(false)
-            } else if hoveredItem === item {
-                hoveredItem = nil
-            }
+            hover.itemDidChangeHover(item, isHovered: isHovered)
         }
 
         private func observeWindow(_ window: NSWindow?) {
-            if let windowResignObserver {
-                NotificationCenter.default.removeObserver(windowResignObserver)
-                self.windowResignObserver = nil
-            }
+            windowObservers.removeAll()
             guard let window else {
-                setHoveredItem(nil)
+                hover.setHoveredItem(nil)
                 return
             }
-            windowResignObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResignKeyNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.setHoveredItem(nil)
-                    self?.collectionView.hideKeyboardSelectionAppearance()
-                    self?.scrollView.clearTransientControls()
-                }
+            windowObservers.observe(NSWindow.didResignKeyNotification, object: window) {
+                [weak self] in
+                self?.hover.setHoveredItem(nil)
+                self?.collectionView.hideKeyboardSelectionAppearance()
+                self?.scrollView.clearTransientControls()
             }
         }
 
@@ -622,9 +529,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         ) {
             guard let item = item as? NativeVideoCollectionItem else { return }
             guard collectionView.indexPath(for: item) == nil else { return }
-            if hoveredItem === item { hoveredItem = nil }
-            item.invalidateImageRequests()
-            item.clearHover()
+            hover.itemDidEndDisplaying(item)
         }
     }
 }
@@ -944,7 +849,7 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
                 selectionIndexPaths = [first]
             }
             showsKeyboardSelection = true
-            updateVisibleKeyboardSelection()
+            updateVisibleKeyboardSelection(showsKeyboardSelection: true)
             onFocusChange?()
         }
         return accepted
@@ -976,17 +881,15 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
             super.keyDown(with: event)
             return
         }
-        if event.keyCode == 36 || event.charactersIgnoringModifiers == " " {
+        if NativeVideoCollectionKeys.isActivation(event) {
             activateSelectedItem()
             return
         }
-        let delta: Int? =
-            switch event.keyCode {
-            case 123: -1
-            case 124: 1
-            default: nil
-            }
-        if let delta, moveSelection(by: delta) { return }
+        if let delta = NativeVideoCollectionKeys.selectionDelta(for: event),
+            moveSelection(by: delta)
+        {
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -1001,7 +904,7 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
     func hideKeyboardSelectionAppearance() {
         guard showsKeyboardSelection else { return }
         showsKeyboardSelection = false
-        updateVisibleKeyboardSelection()
+        updateVisibleKeyboardSelection(showsKeyboardSelection: false)
         onFocusChange?()
     }
 
@@ -1042,17 +945,14 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
         showsKeyboardSelection = true
         let targetPath = IndexPath(item: target, section: 0)
         selectionIndexPaths = [targetPath]
-        updateVisibleKeyboardSelection()
+        updateVisibleKeyboardSelection(showsKeyboardSelection: true)
         scrollToItems(at: [targetPath], scrollPosition: .nearestHorizontalEdge)
         DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleKeyboardSelection()
+            guard let self else { return }
+            self.updateVisibleKeyboardSelection(
+                showsKeyboardSelection: self.showsKeyboardSelection
+            )
         }
         return true
-    }
-
-    private func updateVisibleKeyboardSelection() {
-        for case let item as NativeVideoCollectionItem in visibleItems() {
-            item.setKeyboardFocusVisible(showsKeyboardSelection && item.isSelected)
-        }
     }
 }

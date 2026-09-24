@@ -374,8 +374,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         private let layout = NSCollectionViewFlowLayout()
         private let imagePipeline: NativeVideoImagePipeline
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
-        private var contentsByID: [String: NativeVideoCardPresentation]
-        private var orderedIDs: [String]
+        private var contents: NativeVideoCardContents
         private var accessibilityLabel: String
         private var tailState: NativeVideoGridTailState
         private var scrollResetGate: NativeVideoGridScrollResetGate
@@ -384,15 +383,12 @@ struct NativeVideoGridView: NSViewRepresentable {
         private var onAcknowledgeScrollReset: (UInt64) -> Void
         private var onNearEnd: () -> Void
         private var onSelect: (String) -> Void
-        private var boundsObserver: NSObjectProtocol?
-        private var liveScrollStartObserver: NSObjectProtocol?
-        private var liveScrollEndObserver: NSObjectProtocol?
-        private var accessibilityObserver: NSObjectProtocol?
+        private var observers = NativeVideoNotificationObservers()
         private var pendingRestoreOffsetY: CGFloat?
         private var pendingScrollResetAcknowledgementID: UInt64?
         private var retainedScrollOffset: NativeVideoScrollOffsetRetention
         private var scrollBindingBridge: NativeVideoScrollBindingBridge
-        private weak var hoveredItem: NativeVideoCollectionItem?
+        private let hover = NativeVideoHoverTracker()
         private var lastViewportSize: NSSize?
         private var documentLayoutNeedsInvalidation = true
         private var updateEpoch = NativeVideoGridOperationEpoch()
@@ -418,11 +414,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             onNearEnd: @escaping () -> Void,
             onSelect: @escaping (String) -> Void
         ) {
-            let uniqueItems = Self.uniqueItems(items)
-            contentsByID = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            orderedIDs = uniqueItems.map(\.id)
+            contents = NativeVideoCardContents(items)
             self.accessibilityLabel = accessibilityLabel
             self.tailState = tailState
             scrollResetGate = NativeVideoGridScrollResetGate(
@@ -469,25 +461,16 @@ struct NativeVideoGridView: NSViewRepresentable {
                 forItemWithIdentifier: .nativeVideoCard
             )
 
-            dataSource = NSCollectionViewDiffableDataSource<Int, String>(
-                collectionView: collectionView
-            ) { [weak self] collectionView, indexPath, id in
-                guard
-                    let self,
-                    let presentation = self.contentsByID[id],
-                    let item = collectionView.makeItem(
-                        withIdentifier: .nativeVideoCard,
-                        for: indexPath
-                    ) as? NativeVideoCollectionItem
-                else { return nil }
-                self.configure(item, with: presentation)
-                item.setKeyboardFocusVisible(
-                    (collectionView as? NativeVideoCollectionView)?
-                        .showsKeyboardSelection == true
-                        && collectionView.selectionIndexPaths.contains(indexPath)
-                )
-                return item
-            }
+            dataSource = NativeVideoCardDataSource.make(
+                collectionView: collectionView,
+                presentation: { [weak self] id in self?.contents[id] },
+                configure: { [weak self] item, presentation in
+                    self?.configure(item, with: presentation)
+                },
+                showsKeyboardSelection: { [weak collectionView] in
+                    collectionView?.showsKeyboardSelection == true
+                }
+            )
 
             scrollView.documentView = collectionView
             scrollView.hasVerticalScroller = true
@@ -504,41 +487,23 @@ struct NativeVideoGridView: NSViewRepresentable {
             }
             collectionView.setAccessibilityLabel(accessibilityLabel)
 
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.didScroll() }
+            observers.observeScrolling(of: scrollView) { [weak self] in self?.didScroll() }
+            observers.observe(
+                NSScrollView.didEndLiveScrollNotification,
+                object: scrollView
+            ) { [weak self] in
+                self?.isLiveScrolling = false
+                self?.persistScrollOffset()
             }
-            liveScrollEndObserver = NotificationCenter.default.addObserver(
-                forName: NSScrollView.didEndLiveScrollNotification,
-                object: scrollView,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.isLiveScrolling = false
-                    self?.persistScrollOffset()
-                }
+            observers.observe(
+                NSScrollView.willStartLiveScrollNotification,
+                object: scrollView
+            ) { [weak self] in
+                self?.isLiveScrolling = true
+                self?.liveScrollBackpressure.beginLiveScroll()
             }
-            liveScrollStartObserver = NotificationCenter.default.addObserver(
-                forName: NSScrollView.willStartLiveScrollNotification,
-                object: scrollView,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.isLiveScrolling = true
-                    self?.liveScrollBackpressure.beginLiveScroll()
-                }
-            }
-            accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.refreshVisibleInteractionAppearance()
-                }
+            observers.observeAccessibilityDisplayOptions { [weak collectionView] in
+                collectionView?.refreshVisibleCardAppearance()
             }
 
             applySnapshot(animatingDifferences: false)
@@ -587,16 +552,12 @@ struct NativeVideoGridView: NSViewRepresentable {
                 collectionView.setAccessibilityLabel(accessibilityLabel)
             }
 
-            let uniqueItems = Self.uniqueItems(items)
-            let updatedByID = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            let updatedIDs = uniqueItems.map(\.id)
+            let updatedContents = NativeVideoCardContents(items)
             let updatePlan = NativeVideoGridUpdatePlan(
-                previousIDs: orderedIDs,
-                previousContents: contentsByID,
-                updatedIDs: updatedIDs,
-                updatedContents: updatedByID
+                previousIDs: contents.orderedIDs,
+                previousContents: contents.byID,
+                updatedIDs: updatedContents.orderedIDs,
+                updatedContents: updatedContents.byID
             )
             if updatePlan.restoresViewportAnchor,
                 pendingRestoreOffsetY == nil,
@@ -605,8 +566,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                 pendingViewportAnchor = captureViewportAnchor()
                 pendingAnchorScrollGeneration = scrollGeneration
             }
-            contentsByID = updatedByID
-            orderedIDs = updatedIDs
+            contents = updatedContents
 
             if updatePlan.identityChanged {
                 let operationGeneration = updateEpoch.advance()
@@ -620,7 +580,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                         !self.isReset,
                         self.updateEpoch.accepts(operationGeneration)
                     else { return }
-                    self.reconfigureAllVisibleItems()
+                    self.reconfigureVisibleItems()
                     let anchor = self.pendingViewportAnchor
                     let anchorScrollGeneration = self.pendingAnchorScrollGeneration
                     self.pendingViewportAnchor = nil
@@ -656,79 +616,39 @@ struct NativeVideoGridView: NSViewRepresentable {
             persistScrollOffset()
             isReset = true
             _ = updateEpoch.advance()
-            hoveredItem = nil
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                item.invalidate()
-            }
+            hover.forgetHoveredItem()
+            for item in collectionView.visibleVideoCards { item.invalidate() }
             collectionView.onActivateSelection = nil
             scrollView.onViewportLayout = nil
             scrollView.onContentInsetsChange = nil
             collectionView.delegate = nil
             collectionView.dataSource = nil
             dataSource = nil
-            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
-            if let liveScrollEndObserver {
-                NotificationCenter.default.removeObserver(liveScrollEndObserver)
-            }
-            if let liveScrollStartObserver {
-                NotificationCenter.default.removeObserver(liveScrollStartObserver)
-            }
-            if let accessibilityObserver {
-                NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
-            }
-            boundsObserver = nil
-            liveScrollStartObserver = nil
-            liveScrollEndObserver = nil
-            accessibilityObserver = nil
+            observers.removeAll()
             onScroll = { _ in }
             onAcknowledgeScrollReset = { _ in }
             onNearEnd = {}
             onSelect = { _ in }
             lastViewportSize = nil
-            contentsByID.removeAll()
-            orderedIDs.removeAll()
+            contents = NativeVideoCardContents()
             nearEndGate.reset()
             pendingViewportAnchor = nil
             pendingAnchorScrollGeneration = nil
-        }
-
-        private static func uniqueItems(
-            _ items: [NativeVideoCardPresentation]
-        ) -> [NativeVideoCardPresentation] {
-            var seen: Set<String> = []
-            return items.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
         }
 
         private func applySnapshot(
             animatingDifferences: Bool,
             completion: (() -> Void)? = nil
         ) {
-            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
-            snapshot.appendSections([0])
-            snapshot.appendItems(orderedIDs, toSection: 0)
             dataSource?.apply(
-                snapshot,
+                contents.makeSnapshot(),
                 animatingDifferences: animatingDifferences,
                 completion: completion
             )
         }
 
-        private func reconfigureVisibleItems(_ ids: Set<String>) {
-            guard !ids.isEmpty else { return }
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                guard let id = item.representedVideoID,
-                    ids.contains(id),
-                    let presentation = contentsByID[id]
-                else { continue }
-                configure(item, with: presentation)
-            }
-        }
-
-        private func reconfigureAllVisibleItems() {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                guard let id = item.representedVideoID,
-                    let presentation = contentsByID[id]
-                else { continue }
+        private func reconfigureVisibleItems(_ ids: Set<String>? = nil) {
+            for (item, presentation) in contents.visibleCards(in: collectionView, ids: ids) {
                 configure(item, with: presentation)
             }
         }
@@ -744,10 +664,8 @@ struct NativeVideoGridView: NSViewRepresentable {
                     self?.item(item, didChangeHover: isHovered)
                 },
                 activation: { [weak self, weak collectionView] selectedID in
-                    if let index = self?.orderedIDs.firstIndex(of: selectedID) {
-                        collectionView?.selectionIndexPaths = [
-                            IndexPath(item: index, section: 0)
-                        ]
+                    if let indexPath = self?.contents.indexPath(of: selectedID) {
+                        collectionView?.selectionIndexPaths = [indexPath]
                     }
                     self?.onSelect(selectedID)
                 }
@@ -784,7 +702,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             documentLayoutNeedsInvalidation = false
             let contentHeight = NativeVideoGridGeometry.contentHeight(
                 for: width,
-                itemCount: orderedIDs.count
+                itemCount: contents.orderedIDs.count
             )
             collectionView.setFrameSize(
                 NSSize(width: width, height: max(viewportSize.height, contentHeight))
@@ -810,7 +728,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             documentLayoutNeedsInvalidation = false
             let contentHeight = NativeVideoGridGeometry.contentHeight(
                 for: width,
-                itemCount: orderedIDs.count
+                itemCount: contents.orderedIDs.count
             )
             collectionView.setFrameSize(
                 NSSize(width: width, height: max(viewportSize.height, contentHeight))
@@ -853,7 +771,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                     width: scrollView.contentSize.width
                 )
             else { return }
-            updateHoverForCurrentPointerLocation()
+            hover.updateForCurrentPointerLocation(in: collectionView)
             recordCurrentScrollOffset(requireAttachedWindow: true)
             evaluateNearEnd()
         }
@@ -900,7 +818,7 @@ struct NativeVideoGridView: NSViewRepresentable {
 
         private func captureViewportAnchor() -> NativeVideoGridViewportAnchor? {
             guard
-                !orderedIDs.isEmpty,
+                !contents.orderedIDs.isEmpty,
                 lastViewportSize != nil,
                 NativeVideoGridGeometry.isRenderableViewport(
                     width: collectionView.bounds.width
@@ -915,10 +833,10 @@ struct NativeVideoGridView: NSViewRepresentable {
                 return (indexPath, attributes)
             }
             guard let first = candidates.min(by: { $0.1.frame.minY < $1.1.frame.minY }),
-                orderedIDs.indices.contains(first.0.item)
+                contents.orderedIDs.indices.contains(first.0.item)
             else { return nil }
             return NativeVideoGridViewportAnchor(
-                id: orderedIDs[first.0.item],
+                id: contents.orderedIDs[first.0.item],
                 offsetFromViewportTop: first.1.frame.minY - visibleTop
             )
         }
@@ -926,7 +844,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         private func restore(_ anchor: NativeVideoGridViewportAnchor?) {
             guard
                 let anchor,
-                let index = orderedIDs.firstIndex(of: anchor.id),
+                let index = contents.orderedIDs.firstIndex(of: anchor.id),
                 let attributes = layout.layoutAttributesForItem(
                     at: IndexPath(item: index, section: 0)
                 )
@@ -1002,7 +920,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                 return
             }
             let isInside = NativeVideoGridGeometry.isNearEnd(
-                itemCount: orderedIDs.count,
+                itemCount: contents.orderedIDs.count,
                 width: collectionView.bounds.width,
                 visibleMaximumY: collectionView.visibleRect.maxY
             )
@@ -1024,52 +942,12 @@ struct NativeVideoGridView: NSViewRepresentable {
             }
         }
 
-        private func updateHoverForCurrentPointerLocation() {
-            let candidate: NativeVideoCollectionItem?
-            if let windowPoint = collectionView.window?.mouseLocationOutsideOfEventStream {
-                let collectionPoint = collectionView.convert(windowPoint, from: nil)
-                if collectionView.visibleRect.contains(collectionPoint),
-                    let indexPath = collectionView.indexPathForItem(at: collectionPoint)
-                {
-                    candidate =
-                        collectionView.item(at: indexPath)
-                        as? NativeVideoCollectionItem
-                } else {
-                    candidate = nil
-                }
-            } else {
-                candidate = nil
-            }
-            setHoveredItem(candidate)
-        }
-
-        private func setHoveredItem(_ item: NativeVideoCollectionItem?) {
-            guard hoveredItem !== item else { return }
-            let previous = hoveredItem
-            hoveredItem = item
-            previous?.setHovered(false)
-            item?.setHovered(true)
-        }
-
         private func item(
             _ item: NativeVideoCollectionItem,
             didChangeHover isHovered: Bool
         ) {
             guard !isReset else { return }
-            if isHovered {
-                guard hoveredItem !== item else { return }
-                let previous = hoveredItem
-                hoveredItem = item
-                previous?.setHovered(false)
-            } else if hoveredItem === item {
-                hoveredItem = nil
-            }
-        }
-
-        private func refreshVisibleInteractionAppearance() {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                item.refreshEnvironmentAppearance()
-            }
+            hover.itemDidChangeHover(item, isHovered: isHovered)
         }
 
         func collectionView(
@@ -1087,9 +965,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         ) {
             guard let item = item as? NativeVideoCollectionItem else { return }
             guard collectionView.indexPath(for: item) == nil else { return }
-            if hoveredItem === item { hoveredItem = nil }
-            item.invalidateImageRequests()
-            item.clearHover()
+            hover.itemDidEndDisplaying(item)
         }
     }
 }
@@ -1132,7 +1008,7 @@ private final class NativeVideoCollectionView: NSCollectionView {
 
     override func mouseDown(with event: NSEvent) {
         showsKeyboardSelection = false
-        updateVisibleKeyboardSelection()
+        updateVisibleKeyboardSelection(showsKeyboardSelection: false)
         let point = convert(event.locationInWindow, from: nil)
         let clickedIndexPath = indexPathForItem(at: point)
         super.mouseDown(with: event)
@@ -1144,22 +1020,17 @@ private final class NativeVideoCollectionView: NSCollectionView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 || event.charactersIgnoringModifiers == " ",
+        if NativeVideoCollectionKeys.isActivation(event),
             let indexPath = selectionIndexPaths.first,
             let id = item(at: indexPath)?.representedObject as? String
         {
             onActivateSelection?(id)
             return
         }
-        let columnCount = NativeVideoGridGeometry.columnCount(for: bounds.width)
-        let delta: Int? =
-            switch event.keyCode {
-            case 123: -1
-            case 124: 1
-            case 125: columnCount
-            case 126: -columnCount
-            default: nil
-            }
+        let delta = NativeVideoCollectionKeys.selectionDelta(
+            for: event,
+            rowLength: NativeVideoGridGeometry.columnCount(for: bounds.width)
+        )
         if let delta, moveSelection(by: delta) { return }
         super.keyDown(with: event)
     }
@@ -1173,17 +1044,14 @@ private final class NativeVideoCollectionView: NSCollectionView {
         let targetPath = IndexPath(item: target, section: 0)
         showsKeyboardSelection = true
         selectionIndexPaths = [targetPath]
-        updateVisibleKeyboardSelection()
+        updateVisibleKeyboardSelection(showsKeyboardSelection: true)
         scrollToItems(at: [targetPath], scrollPosition: .nearestVerticalEdge)
         DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleKeyboardSelection()
+            guard let self else { return }
+            self.updateVisibleKeyboardSelection(
+                showsKeyboardSelection: self.showsKeyboardSelection
+            )
         }
         return true
-    }
-
-    private func updateVisibleKeyboardSelection() {
-        for case let item as NativeVideoCollectionItem in visibleItems() {
-            item.setKeyboardFocusVisible(showsKeyboardSelection && item.isSelected)
-        }
     }
 }
