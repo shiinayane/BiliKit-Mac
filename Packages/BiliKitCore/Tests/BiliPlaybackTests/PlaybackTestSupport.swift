@@ -105,7 +105,7 @@ func makeFixtureTrack(
         bandwidth: bandwidth,
         videoAttributes: resolvedVideoAttributes,
         primaryURL: try primaryURL ?? #require(
-            URL(string: "https://fixture.invalid/\(id)")
+            URL(string: "https://media.fixture.bilivideo.com/\(id)")
         ),
         backupURLs: backupURLs,
         segmentBase: SegmentBase(

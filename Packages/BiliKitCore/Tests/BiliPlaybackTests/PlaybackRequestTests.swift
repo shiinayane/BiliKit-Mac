@@ -216,7 +216,7 @@ struct PlaybackRequestTests {
             kind: kind,
             codecs: kind == .audio ? "mp4a.40.2" : "avc1.640032",
             mimeType: kind == .audio ? "audio/mp4" : "video/mp4",
-            primaryURL: try #require(URL(string: "https://example.com/\(id)")),
+            primaryURL: try #require(URL(string: "https://media.fixture.bilivideo.com/\(id)")),
             segmentBase: segmentBase
         )
     }

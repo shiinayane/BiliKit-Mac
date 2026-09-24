@@ -17,6 +17,9 @@ public struct LoopbackRemoteResource: Sendable, Equatable {
         contentType: String,
         headers: [String: String] = [:]
     ) throws {
+        guard BiliMediaCDNURLPolicy().allows(sourceURL) else {
+            throw LoopbackPlaybackServerError.invalidRemoteSource
+        }
         guard contentLength > 0 else {
             throw LoopbackPlaybackServerError.invalidContentLength(contentLength)
         }
@@ -279,6 +282,7 @@ public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case listenerFailed(String)
     case invalidHTTPRequest
     case invalidProgressiveSource
+    case invalidRemoteSource
 }
 
 private enum LoopbackRangeRequest {

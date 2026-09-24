@@ -61,8 +61,8 @@ struct SIDXParserTests {
     @Test
     func loadsIndexThroughRangeValidationAndKeepsSuccessfulCDN() async throws {
         let data = try fixtureData()
-        let primaryURL = try #require(URL(string: "https://primary.example/media"))
-        let backupURL = try #require(URL(string: "https://backup.example/media"))
+        let primaryURL = try #require(URL(string: "https://primary.fixture.bilivideo.com/media"))
+        let backupURL = try #require(URL(string: "https://backup.fixture.bilivideo.com/media"))
         let transport = FixtureRangeTransport(
             media: [backupURL: mediaPlacing(data, at: 100)],
             failingURLs: [primaryURL]
@@ -93,8 +93,8 @@ struct SIDXParserTests {
     @Test
     func rejectsErrorPageBodyAndParsesBackupSIDX() async throws {
         let data = try fixtureData()
-        let primaryURL = try #require(URL(string: "https://primary.example/media"))
-        let backupURL = try #require(URL(string: "https://backup.example/media"))
+        let primaryURL = try #require(URL(string: "https://primary.fixture.bilivideo.com/media"))
+        let backupURL = try #require(URL(string: "https://backup.fixture.bilivideo.com/media"))
         var errorPage = Data("<html>blocked</html>".utf8)
         errorPage.append(Data(repeating: 0x20, count: data.count - errorPage.count))
         let transport = FixtureRangeTransport(
