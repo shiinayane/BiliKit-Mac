@@ -51,7 +51,7 @@ public enum AccountPresentationState: Sendable, Equatable {
 @Observable
 /// 拥有恢复、登录、轮询与登出的单一 UI Task，并仅发布非秘密认证状态和二维码图像。
 ///
-/// generation 拒绝旧操作写回；轮询同时受总时限与次数上限约束。Cookie、QR key 与完整 URL
+/// `LatestTask` 拒绝旧操作写回；轮询同时受总时限与次数上限约束。Cookie、QR key 与完整 URL
 /// 始终留在 `BiliAuth` adapter，失败重试也保持原操作类型，避免把登出失败误当成登录失败。
 public final class AuthenticationViewModel {
     public private(set) var state: AuthenticationState = .signedOut
@@ -133,8 +133,7 @@ public final class AuthenticationViewModel {
     private static let maximumPollAttempts = 90
 
     @ObservationIgnored private let pollInterval: Duration
-    @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private let operationTask = LatestTask()
     @ObservationIgnored private var didStartInitialRestore = false
     @ObservationIgnored private var retryAction: RetryAction = .login
 
@@ -171,12 +170,12 @@ public final class AuthenticationViewModel {
         guard state != .signingOut else { return }
         didStartInitialRestore = true
         retryAction = .restore
-        begin(state: .restoring) { [weak self] operationGeneration in
+        begin(state: .restoring) { [weak self] isCurrent in
             guard let self else { return }
             let nextState = await service.restoreAfterExternalSessionChange()
             await apply(
                 nextState,
-                generation: operationGeneration,
+                isCurrent: isCurrent,
                 commitsConfirmedSession: true
             )
         }
@@ -184,12 +183,12 @@ public final class AuthenticationViewModel {
 
     private func restore() {
         retryAction = .restore
-        begin(state: .restoring) { [weak self] operationGeneration in
+        begin(state: .restoring) { [weak self] isCurrent in
             guard let self else { return }
             let nextState = await service.restore()
             await apply(
                 nextState,
-                generation: operationGeneration,
+                isCurrent: isCurrent,
                 commitsConfirmedSession: true
             )
         }
@@ -197,13 +196,13 @@ public final class AuthenticationViewModel {
 
     public func startLogin() {
         retryAction = .login
-        begin(state: .requestingQRCode) { [weak self] operationGeneration in
+        begin(state: .requestingQRCode) { [weak self] isCurrent in
             guard let self else { return }
             let requested = await service.requestQRCode()
-            guard await apply(requested, generation: operationGeneration) else {
+            guard await apply(requested, isCurrent: isCurrent) else {
                 return
             }
-            await pollUntilTerminal(generation: operationGeneration)
+            await pollUntilTerminal(isCurrent: isCurrent)
         }
     }
 
@@ -226,22 +225,22 @@ public final class AuthenticationViewModel {
     }
 
     public func cancelLogin() {
-        begin(state: state) { [weak self] operationGeneration in
+        begin(state: state) { [weak self] isCurrent in
             guard let self else { return }
             let nextState = await service.cancelLogin()
-            await apply(nextState, generation: operationGeneration)
+            await apply(nextState, isCurrent: isCurrent)
         }
     }
 
     public func logout() {
         guard state != .signingOut else { return }
         retryAction = .logout
-        begin(state: .signingOut) { [weak self] operationGeneration in
+        begin(state: .signingOut) { [weak self] isCurrent in
             guard let self else { return }
             let nextState = await service.logout()
             await apply(
                 nextState,
-                generation: operationGeneration,
+                isCurrent: isCurrent,
                 commitsConfirmedSession: true
             )
         }
@@ -276,44 +275,32 @@ public final class AuthenticationViewModel {
     }
 
     public func waitForCurrentTask() async {
-        await task?.value
-    }
-
-    func taskSnapshotForTesting() -> Task<Void, Never>? {
-        task
+        await operationTask.wait()
     }
 
     private func begin(
         state initialState: AuthenticationState,
-        operation: @escaping @MainActor (Int) async -> Void
+        operation: @escaping @MainActor (_ isCurrent: @escaping LatestTask.IsCurrent) async -> Void
     ) {
-        generation += 1
-        let operationGeneration = generation
-        task?.cancel()
-        task = nil
         state = initialState
         if initialState != .awaitingScan,
             initialState != .awaitingConfirmation
         {
             qrCodeImage = nil
         }
-        task = Task { [weak self] in
-            await operation(operationGeneration)
-            guard let self, generation == operationGeneration else { return }
-            task = nil
-        }
+        operationTask.replace(operation)
     }
 
-    private func pollUntilTerminal(generation operationGeneration: Int) async {
+    private func pollUntilTerminal(isCurrent: LatestTask.IsCurrent) async {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: Self.pollTimeout)
         var attempts = 0
 
-        while generation == operationGeneration,
+        while isCurrent(),
             state == .awaitingScan || state == .awaitingConfirmation
         {
             if attempts >= Self.maximumPollAttempts || clock.now >= deadline {
-                await expireLocalChallenge(generation: operationGeneration)
+                await expireLocalChallenge(isCurrent: isCurrent)
                 return
             }
 
@@ -326,20 +313,20 @@ public final class AuthenticationViewModel {
             }
 
             guard clock.now < deadline else {
-                await expireLocalChallenge(generation: operationGeneration)
+                await expireLocalChallenge(isCurrent: isCurrent)
                 return
             }
 
             let polled = await service.pollOnce()
             attempts += 1
-            guard await apply(polled, generation: operationGeneration) else {
+            guard await apply(polled, isCurrent: isCurrent) else {
                 return
             }
             if polled == .finalizing {
                 let finalized = await service.finalizeLogin()
                 _ = await apply(
                     finalized,
-                    generation: operationGeneration,
+                    isCurrent: isCurrent,
                     commitsConfirmedSession: true
                 )
                 return
@@ -347,11 +334,9 @@ public final class AuthenticationViewModel {
         }
     }
 
-    private func expireLocalChallenge(generation operationGeneration: Int) async {
+    private func expireLocalChallenge(isCurrent: LatestTask.IsCurrent) async {
         _ = await service.cancelLogin()
-        guard generation == operationGeneration, !Task.isCancelled else {
-            return
-        }
+        guard isCurrent() else { return }
         state = .expired
         qrCodeImage = nil
     }
@@ -359,12 +344,10 @@ public final class AuthenticationViewModel {
     @discardableResult
     private func apply(
         _ nextState: AuthenticationState,
-        generation operationGeneration: Int,
+        isCurrent: LatestTask.IsCurrent,
         commitsConfirmedSession: Bool = false
     ) async -> Bool {
-        guard generation == operationGeneration, !Task.isCancelled else {
-            return false
-        }
+        guard isCurrent() else { return false }
         state = nextState
         if commitsConfirmedSession {
             updateConfirmedSession(from: nextState)
@@ -373,21 +356,17 @@ public final class AuthenticationViewModel {
         case .awaitingScan, .awaitingConfirmation:
             do {
                 let image = try await qrCodeProvider.makeQRCodeImage(scale: 12)
-                guard generation == operationGeneration, !Task.isCancelled else {
-                    return false
-                }
+                guard isCurrent() else { return false }
                 qrCodeImage = image
             } catch {
-                guard generation == operationGeneration, !Task.isCancelled else {
-                    return false
-                }
+                guard isCurrent() else { return false }
                 state = .failed(.invalidResponse)
                 qrCodeImage = nil
             }
         default:
             qrCodeImage = nil
         }
-        return generation == operationGeneration && !Task.isCancelled
+        return isCurrent()
     }
 
     private func updateConfirmedSession(from nextState: AuthenticationState) {

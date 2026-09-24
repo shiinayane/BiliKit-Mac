@@ -75,12 +75,11 @@ public final class DanmakuPresentationController:
     public private(set) var statistics = DanmakuRendererStatistics()
 
     private let backend: any DanmakuRenderingBackend
-    private let motionPolicy: DanmakuMotionPolicy
     private var allocator: DanmakuLaneAllocator
     private var configuration: DanmakuLaneConfiguration
-    private var speedLevel = DanmakuSpeedLevel.three
-    private var displayArea = DanmakuDisplayArea.full
-    private var density = DanmakuDensity.normal
+    private var speedLevel = DanmakuSpeedLevel.default
+    private var displayArea = DanmakuDisplayArea.default
+    private var density = DanmakuDensity.default
     private var identity: PlaybackItemIdentity?
     private var discontinuityGeneration: UInt64?
     private var surfaceOwnerID: UUID?
@@ -94,13 +93,11 @@ public final class DanmakuPresentationController:
 
     public init(
         backend: any DanmakuRenderingBackend,
-        configuration: DanmakuLaneConfiguration,
-        motionPolicy: DanmakuMotionPolicy = DanmakuMotionPolicy()
+        configuration: DanmakuLaneConfiguration
     ) {
         self.backend = backend
         self.allocator = DanmakuLaneAllocator(configuration: configuration)
         self.configuration = configuration
-        self.motionPolicy = motionPolicy
         backend.delegate = self
         backend.updateSurfaceSize(
             width: configuration.surfaceWidth,
@@ -369,7 +366,7 @@ public final class DanmakuPresentationController:
             event: pending.event,
             width: metrics.width,
             height: metrics.height,
-            durationSeconds: motionPolicy.duration(
+            durationSeconds: DanmakuMotionPolicy.duration(
                 for: pending.event.mode,
                 textWidth: metrics.width,
                 surfaceWidth: configuration.surfaceWidth,

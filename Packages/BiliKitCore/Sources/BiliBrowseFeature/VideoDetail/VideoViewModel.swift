@@ -278,30 +278,6 @@ public final class VideoViewModel {
         }
     }
 
-    public func waitForCurrentTask() async {
-        await loadTask.wait()
-    }
-
-    func collectionEpisodeTaskSnapshotForTesting() -> Task<Void, Never>? {
-        collectionEpisodes.task
-    }
-
-    func taskSnapshotForTesting() -> Task<Void, Never>? {
-        loadTask.task
-    }
-
-    func resumeActionTaskSnapshotForTesting() -> Task<Void, Never>? {
-        resumeActionTask.task
-    }
-
-    func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
-        relatedVideoTask.task
-    }
-
-    func uploaderSignatureTaskSnapshotForTesting() -> Task<Void, Never>? {
-        uploaderSignatureTask.task
-    }
-
     private func loadRelatedVideos(for bvid: String) {
         guard let relatedVideoUseCase else {
             relatedVideoTask.cancel()

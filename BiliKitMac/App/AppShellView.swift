@@ -29,14 +29,7 @@ struct AppShellView: View {
     let onApplySearchFilters: (SearchFilterSelection) -> Void
     let onClearSearchFilters: () -> Void
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var homeScrollOffsetY: CGFloat = 0
-    @State private var popularScrollOffsetY: CGFloat = 0
-    @State private var searchScrollOffsetY: CGFloat = 0
-    @State private var historyScrollOffsetY: CGFloat = 0
-    @State private var homeScrollReset = NativeVideoGridScrollResetState()
-    @State private var popularScrollReset = NativeVideoGridScrollResetState()
-    @State private var searchScrollReset = NativeVideoGridScrollResetState()
-    @State private var historyScrollReset = NativeVideoGridScrollResetState()
+    @State private var gridScroll = SourceGridScrollStates()
     @State private var commentImagePreview: NativeCommentImagePreviewRequest?
 
     var body: some View {
@@ -106,48 +99,19 @@ struct AppShellView: View {
         }
         .onChange(of: submittedSearchCriteria) { previousCriteria, criteria in
             guard previousCriteria != criteria else { return }
-            searchScrollOffsetY = 0
-            searchScrollReset.request()
+            scrollToTop(.search)
         }
-        .onChange(of: browseModel.recommendationSuccessfulRefreshGeneration) {
-            previousGeneration,
-            generation in
-            guard previousGeneration != generation else { return }
-            homeScrollOffsetY = 0
-            homeScrollReset.request()
-        }
-        .onChange(of: browseModel.popularSuccessfulRefreshGeneration) {
-            previousGeneration,
-            generation in
-            guard previousGeneration != generation else { return }
-            popularScrollOffsetY = 0
-            popularScrollReset.request()
-        }
-        .onChange(of: browseModel.searchSuccessfulRefreshGeneration) {
-            previousGeneration,
-            generation in
-            guard previousGeneration != generation else { return }
-            searchScrollOffsetY = 0
-            searchScrollReset.request()
-        }
-        .onChange(of: historyModel.successfulReloadGeneration) {
-            previousGeneration,
-            generation in
-            guard previousGeneration != generation else { return }
-            historyScrollOffsetY = 0
-            historyScrollReset.request()
+        .onChange(of: successfulRefreshGenerations) { previousGenerations, generations in
+            for (tab, generation) in generations where previousGenerations[tab] != generation {
+                scrollToTop(tab)
+            }
         }
         .onChange(of: historyAccountScope) { previousScope, scope in
             guard AccountSessionScope.isResolvedChange(from: previousScope, to: scope)
             else {
                 return
             }
-            homeScrollOffsetY = 0
-            homeScrollReset.request()
-            searchScrollOffsetY = 0
-            searchScrollReset.request()
-            historyScrollOffsetY = 0
-            historyScrollReset.request()
+            scrollToTop(.home, .search, .history)
         }
         .onChange(of: navigationCoordinator.currentPlaybackBVID) {
             previousBVID,
@@ -191,6 +155,28 @@ struct AppShellView: View {
 
     private var historyAccountScope: AccountSessionScope {
         authenticationModel.sessionScope
+    }
+
+    /// 各来源最近一次刷新成功的代次；某来源前进时只把它自己的网格滚回顶部。
+    private var successfulRefreshGenerations: [AppTab: UInt64] {
+        [
+            .home: browseModel.successfulRefreshGeneration(for: .recommendation),
+            .popular: browseModel.successfulRefreshGeneration(for: .popular),
+            .search: browseModel.successfulRefreshGeneration(for: .search),
+            .history: historyModel.successfulReloadGeneration
+        ]
+    }
+
+    private func gridScrollBinding(_ tab: AppTab) -> Binding<SourceGridScrollState> {
+        $gridScroll[dynamicMember: \.[tab]]
+    }
+
+    /// 回顶只发 reset 请求：已挂载的网格立即滚到 0 并把位置同步回 offset binding，
+    /// 未挂载的网格在下次挂载时消费同一请求。
+    private func scrollToTop(_ tabs: AppTab...) {
+        for tab in tabs {
+            gridScroll[tab].reset.request()
+        }
     }
 
     private var playbackSidebar: some View {
@@ -262,8 +248,8 @@ struct AppShellView: View {
         case .home:
             RecommendedTabRoot(
                 model: browseModel,
-                scrollOffsetY: $homeScrollOffsetY,
-                scrollReset: $homeScrollReset,
+                scrollOffsetY: gridScrollBinding(.home).offsetY,
+                scrollReset: gridScrollBinding(.home).reset,
                 imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback
             )
@@ -276,8 +262,8 @@ struct AppShellView: View {
                     set: { navigationCoordinator.searchDraft = $0 }
                 ),
                 submittedSearchCriteria: submittedSearchCriteria,
-                scrollOffsetY: $searchScrollOffsetY,
-                scrollReset: $searchScrollReset,
+                scrollOffsetY: gridScrollBinding(.search).offsetY,
+                scrollReset: gridScrollBinding(.search).reset,
                 imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback,
                 onSubmit: onSubmitSearch,
@@ -288,8 +274,8 @@ struct AppShellView: View {
         case .popular:
             PopularTabRoot(
                 model: browseModel,
-                scrollOffsetY: $popularScrollOffsetY,
-                scrollReset: $popularScrollReset,
+                scrollOffsetY: gridScrollBinding(.popular).offsetY,
+                scrollReset: gridScrollBinding(.popular).reset,
                 imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback
             )
@@ -297,8 +283,8 @@ struct AppShellView: View {
             HistoryTabRoot(
                 model: historyModel,
                 accountState: authenticationModel.accountPresentationState,
-                scrollOffsetY: $historyScrollOffsetY,
-                scrollReset: $historyScrollReset,
+                scrollOffsetY: gridScrollBinding(.history).offsetY,
+                scrollReset: gridScrollBinding(.history).reset,
                 imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlayback,
                 onPresentAuthentication: {
@@ -310,6 +296,22 @@ struct AppShellView: View {
                 }
             )
         }
+    }
+}
+
+/// 单个来源网格的滚动位置与回顶请求。
+private struct SourceGridScrollState {
+    var offsetY: CGFloat = 0
+    var reset = NativeVideoGridScrollResetState()
+}
+
+/// 四个来源各自独立的网格滚动状态；来源之间不共享可被互相覆盖的位置。
+private struct SourceGridScrollStates {
+    private var states: [AppTab: SourceGridScrollState] = [:]
+
+    subscript(tab: AppTab) -> SourceGridScrollState {
+        get { states[tab] ?? SourceGridScrollState() }
+        set { states[tab] = newValue }
     }
 }
 

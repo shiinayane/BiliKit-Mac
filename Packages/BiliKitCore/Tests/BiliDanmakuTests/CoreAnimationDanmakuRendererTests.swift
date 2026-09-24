@@ -55,7 +55,6 @@ struct CoreAnimationDanmakuRendererTests {
         let key = try #require(
             DanmakuTextureRasterizer.key(
                 event: fixture,
-                style: .production,
                 backingScale: 2
             )
         )
@@ -88,14 +87,12 @@ struct CoreAnimationDanmakuRendererTests {
         var secondResult: DanmakuPreparationResult?
         owner.prepare(
             event: fixtureEvent(id: "bounded-first", mode: .scrolling),
-            style: .production,
             backingScale: 2,
             preparationID: 1,
             generation: 0
         ) { _ in }
         owner.prepare(
             event: fixtureEvent(id: "bounded-second", mode: .scrolling),
-            style: .production,
             backingScale: 2,
             preparationID: 2,
             generation: 0
@@ -155,38 +152,6 @@ struct CoreAnimationDanmakuRendererTests {
         )
         #expect(renderer.activeLayerCount == 0)
         #expect(delegate.finishedEventIDs == [fixture.id])
-    }
-
-    @Test
-    func rendererRejectsTextureBeyondActiveByteBudget() async {
-        let renderer = CoreAnimationDanmakuRenderer(
-            style: .production,
-            contentsScale: 2,
-            preparationConfiguration: .production,
-            activeTextureByteLimit: 1
-        )
-        renderer.updateSurfaceSize(width: 800, height: 300)
-        let fixture = fixtureEvent(id: "active-byte-limit", mode: .top)
-        let prepared = await prepare(
-            renderer: renderer,
-            event: fixture,
-            preparationID: 1
-        )
-        guard case .ready(let metrics) = prepared else {
-            Issue.record("texture preparation was rejected")
-            return
-        }
-
-        #expect(
-            !renderer.renderPrepared(
-                placement(event: fixture, metrics: metrics, originY: 0),
-                preparationID: 1,
-                generation: 0
-            )
-        )
-        #expect(renderer.activeLayerCount == 0)
-        #expect(renderer.activeTextureByteCost == 0)
-        #expect(renderer.outstandingPreparationCount == 0)
     }
 
     @Test
@@ -300,7 +265,6 @@ struct CoreAnimationDanmakuRendererTests {
         await withCheckedContinuation { continuation in
             owner.prepare(
                 event: event,
-                style: .production,
                 backingScale: 2,
                 preparationID: preparationID,
                 generation: 0

@@ -34,10 +34,10 @@ public final class DanmakuControlsViewModel {
 
     public init(
         presentation: any DanmakuPresentationControlling,
-        initialSpeedLevel: DanmakuSpeedLevel = .three,
+        initialSpeedLevel: DanmakuSpeedLevel = .default,
         initialOpacity: DanmakuOpacity = .fullyOpaque,
-        initialDisplayArea: DanmakuDisplayArea = .full,
-        initialDensity: DanmakuDensity = .normal,
+        initialDisplayArea: DanmakuDisplayArea = .default,
+        initialDensity: DanmakuDensity = .default,
         saveSpeedLevel: @escaping @MainActor (DanmakuSpeedLevel) -> Void = { _ in },
         saveOpacity: @escaping @MainActor (DanmakuOpacity) -> Void = { _ in },
         saveDisplayArea: @escaping @MainActor (DanmakuDisplayArea) -> Void = { _ in },

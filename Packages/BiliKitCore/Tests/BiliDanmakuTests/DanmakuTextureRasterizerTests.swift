@@ -7,18 +7,6 @@ import Testing
 @Suite
 struct DanmakuTextureRasterizerTests {
     @Test
-    func styleFallsBackToDefaultsForNonFiniteInputs() {
-        let nonfinite = CoreAnimationDanmakuStyle(
-            fontScale: .nan,
-            fontWeight: .regular,
-            shadowBlurRadius: .infinity
-        )
-
-        #expect(nonfinite.fontScale == 1)
-        #expect(nonfinite.shadowBlurRadius == 1)
-    }
-
-    @Test
     func unionOuterRingDoesNotEnterFillAndMapsHalfPointAtOneAndTwoX() {
         let alpha: [UInt8] = [
             0, 0, 0, 0, 0,
@@ -103,13 +91,11 @@ struct DanmakuTextureRasterizerTests {
         )
         func key(
             _ event: DanmakuEvent,
-            style: CoreAnimationDanmakuStyle = .production,
             backingScale: Double = 2
         ) throws -> DanmakuTextureCacheKey {
             try #require(
                 DanmakuTextureRasterizer.key(
                     event: event,
-                    style: style,
                     backingScale: backingScale
                 )
             )
@@ -125,14 +111,6 @@ struct DanmakuTextureRasterizerTests {
                     fontSize: 25,
                     colorRGB: 0xFFFFFF,
                     weight: 1
-                )
-            ),
-            try key(
-                baseEvent,
-                style: CoreAnimationDanmakuStyle(
-                    fontScale: 1.5,
-                    fontWeight: .bold,
-                    shadowBlurRadius: 4
                 )
             ),
             try key(baseEvent, backingScale: 1),
@@ -191,10 +169,7 @@ struct DanmakuTextureRasterizerTests {
             text: text,
             fontSize: 25,
             colorRGB: 0xFFFFFF,
-            fontWeight: .semibold,
-            fontScale: 1,
-            backingScale: 2,
-            shadowRadiusPoints: 1
+            backingScale: 2
         )
     }
 }

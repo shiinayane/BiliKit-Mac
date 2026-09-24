@@ -22,7 +22,7 @@ final class CollectionEpisodePagesController {
     @ObservationIgnored private let useCase: VideoUseCase
     /// 最近一次 reconcile 的视频 context；分 P 切换不改变其 detail 与 pages。
     @ObservationIgnored private var context: VideoContext?
-    @ObservationIgnored private(set) var task: Task<Void, Never>?
+    @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var activeRequest: PageRequest?
     @ObservationIgnored private var waitersByBVID: [String: Set<VideoCollectionEpisodeIdentity>] =
         [:]

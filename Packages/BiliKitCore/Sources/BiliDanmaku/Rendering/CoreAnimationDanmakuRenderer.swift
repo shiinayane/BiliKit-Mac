@@ -25,7 +25,6 @@ public final class CoreAnimationDanmakuRenderer:
 
     public weak var delegate: (any DanmakuRenderingBackendDelegate)?
     public let rootLayer: CALayer
-    public let style: CoreAnimationDanmakuStyle
 
     private(set) var renderEpoch: UInt64 = 0
     var activeLayerCount: Int { entries.count }
@@ -35,35 +34,11 @@ public final class CoreAnimationDanmakuRenderer:
     private var nextObjectIdentity: UInt64 = 0
     private var surfaceSize = CGSize.zero
     private let preparationOwner: DanmakuTexturePreparationOwner
-    private let activeTextureByteLimit: Int
     private(set) var activeTextureByteCost = 0
 
-    public convenience init(
-        style: CoreAnimationDanmakuStyle = .production,
-        contentsScale: Double = 2
-    ) {
-        self.init(
-            style: style,
-            contentsScale: contentsScale,
-            preparationConfiguration: .production,
-            activeTextureByteLimit: Self.maximumActiveTextureByteCost
-        )
-    }
-
-    init(
-        style: CoreAnimationDanmakuStyle,
-        contentsScale: Double,
-        preparationConfiguration: DanmakuTexturePreparationOwner.Configuration,
-        activeTextureByteLimit: Int = CoreAnimationDanmakuRenderer
-            .maximumActiveTextureByteCost
-    ) {
-        precondition(activeTextureByteLimit > 0)
-        self.style = style
-        self.activeTextureByteLimit = activeTextureByteLimit
+    public init(contentsScale: Double = 2) {
         backingScale = Self.normalizedBackingScale(contentsScale)
-        preparationOwner = DanmakuTexturePreparationOwner(
-            configuration: preparationConfiguration
-        )
+        preparationOwner = DanmakuTexturePreparationOwner()
         rootLayer = CALayer()
         rootLayer.anchorPoint = .zero
         rootLayer.isGeometryFlipped = true
@@ -87,7 +62,6 @@ public final class CoreAnimationDanmakuRenderer:
         }
         preparationOwner.prepare(
             event: event,
-            style: style,
             backingScale: normalizedScale,
             preparationID: preparationID,
             generation: generation,
@@ -109,7 +83,6 @@ public final class CoreAnimationDanmakuRenderer:
             surfaceSize.height > 0,
             let key = DanmakuTextureRasterizer.key(
                 event: event,
-                style: style,
                 backingScale: backingScale
             ),
             let payload = preparationOwner.consume(
@@ -122,7 +95,7 @@ public final class CoreAnimationDanmakuRenderer:
             return false
         }
         let remainingTextureBytes = max(
-            activeTextureByteLimit - activeTextureByteCost,
+            Self.maximumActiveTextureByteCost - activeTextureByteCost,
             0
         )
         guard payload.byteCost <= remainingTextureBytes,

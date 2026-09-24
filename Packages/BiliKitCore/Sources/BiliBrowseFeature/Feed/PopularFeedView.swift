@@ -96,14 +96,14 @@ public struct PopularFeedView<LoadedContent: View>: View {
         page: PopularPage,
         presentation: FeedPresentation
     ) -> some View {
-        let pagination = model.popularPagination(for: request)
+        let pagination = model.pagination(for: request)
         return makeLoadedContent(
             LoadedFeedContent(
                 items: page.videos,
                 canLoadMore: pagination.canLoadMore,
                 tailIdentity: pagination.tailIdentity,
                 isLoadingMore: pagination.isLoadingMore,
-                loadMore: model.loadMorePopular,
+                loadMore: { model.loadMore(.popular) },
                 select: onSelect
             )
         )
@@ -128,7 +128,7 @@ public struct PopularFeedView<LoadedContent: View>: View {
                     Text(error.displayMessage)
                         .lineLimit(2)
                     Button(BrowseFeatureStrings.localized("重试")) {
-                        model.retryPopularLoadMore()
+                        model.retryLoadMore(.popular)
                     }
                 }
                 .font(.caption)

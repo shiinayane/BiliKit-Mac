@@ -125,14 +125,17 @@ public struct VideoSearchView<LoadedContent: View>: View {
         criteria: VideoSearchCriteria?,
         page: SearchPage
     ) -> some View {
-        let pagination = criteria.map(model.searchPagination(for:)) ?? .unavailable
+        let pagination =
+            criteria.map {
+                model.pagination(for: .search(VideoSearchRequest(criteria: $0, page: 1)))
+            } ?? .unavailable
         return makeLoadedContent(
             LoadedFeedContent(
                 items: page.videos.map { SearchVideoCardPresentation(video: $0, locale: locale) },
                 canLoadMore: pagination.canLoadMore,
                 tailIdentity: pagination.tailIdentity,
                 isLoadingMore: pagination.isLoadingMore,
-                loadMore: model.loadMoreSearch,
+                loadMore: { model.loadMore(.search) },
                 select: onSelect
             )
         )
@@ -150,7 +153,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
                     Text(error.displayMessage)
                         .lineLimit(2)
                     Button(BrowseFeatureStrings.localized("重试", locale: locale)) {
-                        model.retrySearchLoadMore()
+                        model.retryLoadMore(.search)
                     }
                 }
                 .font(.caption)

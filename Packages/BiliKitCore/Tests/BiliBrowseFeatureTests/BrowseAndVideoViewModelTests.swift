@@ -28,7 +28,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(
             model.authenticationRevalidationGeneration
@@ -63,11 +63,10 @@ struct BrowseAndVideoViewModelTests {
 
         model.search(VideoSearchCriteria(query: "旧搜索"))
         try await searchGate.waitForEntries()
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.refreshPopular()
+        try await searchGate.waitForCancellations()
         await model.waitForCurrentTask()
         await searchGate.open()
-        await supersededTask.value
 
         #expect(
             model.state
@@ -109,9 +108,9 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        #expect(model.recommendationPagination().canLoadMore)
+        #expect(model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
 
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
         guard case .loaded(.recommendation(let secondBatch)) = model.state else {
             Issue.record("推荐追加后应保持 loaded")
@@ -120,7 +119,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(secondBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
         #expect(secondBatch.nextContinuation == RecommendationContinuation(freshIndex: 3))
 
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
         guard case .loaded(.recommendation(let finalBatch)) = model.state else {
             Issue.record("全重复推荐批次后应保持 loaded")
@@ -128,7 +127,7 @@ struct BrowseAndVideoViewModelTests {
         }
         #expect(finalBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
         #expect(finalBatch.nextContinuation == nil)
-        #expect(!model.recommendationPagination().canLoadMore)
+        #expect(!model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
         #expect(await repository.recommendationRequests.count == 3)
     }
 
@@ -155,7 +154,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
 
         guard case .loaded(.recommendation(let page)) = model.state else {
@@ -167,7 +166,7 @@ struct BrowseAndVideoViewModelTests {
                 == BrowseViewModel.maximumRetainedRecommendationVideos
         )
         #expect(page.nextContinuation == nil)
-        #expect(!model.recommendationPagination().canLoadMore)
+        #expect(!model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
     }
 
     @Test
@@ -209,7 +208,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
 
         guard case .loaded(.recommendation(let page)) = model.state else {
@@ -218,7 +217,10 @@ struct BrowseAndVideoViewModelTests {
         }
         #expect(page.videos.count == 1)
         #expect(model.authenticationRevalidationGeneration == 1)
-        #expect(model.recommendationPagination().loadMoreError == .authenticationInvalid)
+        #expect(
+            model.pagination(for: .recommendation(continuation: nil)).loadMoreError
+                == .authenticationInvalid
+        )
     }
 
     @Test
@@ -256,13 +258,13 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
         #expect(model.authenticationRevalidationGeneration == 1)
 
         model.activateSearch(VideoSearchCriteria(query: "认证"))
         await model.waitForCurrentTask()
-        model.loadMoreSearch()
+        model.loadMore(.search)
         await model.waitForCurrentTask()
         #expect(model.authenticationRevalidationGeneration == 2)
     }
@@ -281,7 +283,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
 
         guard case .loaded(.popular(let page)) = model.state else {
@@ -291,7 +293,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(page.videos.map(\.bvid) == [fixture.bvid])
         #expect(page.pageNumber == 2)
         #expect(!page.hasMore)
-        #expect(!model.popularPagination(for: request).canLoadMore)
+        #expect(!model.pagination(for: request).canLoadMore)
         #expect(await repository.popularPages.count == 2)
     }
 
@@ -317,14 +319,13 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         try await appendGate.waitForEntries()
-        let oldAppendTask = try #require(model.taskSnapshotForTesting())
 
         model.refreshPopular(pageSize: 50)
+        try await appendGate.waitForCancellations()
         await model.waitForCurrentTask()
         await appendGate.open()
-        await oldAppendTask.value
 
         guard case .loaded(.popular(let page)) = model.state else {
             Issue.record("刷新后的热门榜单应保持 loaded")
@@ -333,7 +334,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(page.videos.map(\.bvid) == [fresh.bvid])
         #expect(page.pageNumber == 1)
         #expect(!page.hasMore)
-        #expect(model.popularSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .popular) == 1)
     }
 
     @Test
@@ -475,14 +476,13 @@ struct BrowseAndVideoViewModelTests {
 
         model.search(oldCriteria)
         await model.waitForCurrentTask()
-        model.loadMoreSearch()
+        model.loadMore(.search)
         try await oldAppendGate.waitForEntries()
-        let oldAppendTask = try #require(model.taskSnapshotForTesting())
 
         model.search(newCriteria)
+        try await oldAppendGate.waitForCancellations()
         await model.waitForCurrentTask()
         await oldAppendGate.open()
-        await oldAppendTask.value
 
         guard case .loaded(.search(let query, let page)) = model.state else {
             Issue.record("新搜索应保持 loaded")
@@ -495,7 +495,10 @@ struct BrowseAndVideoViewModelTests {
             model.activeRequestIdentity
                 == .search(VideoSearchRequest(criteria: newCriteria, page: 1))
         )
-        #expect(model.searchPagination(for: newCriteria).loadMoreError == nil)
+        #expect(
+            model.pagination(for: .search(VideoSearchRequest(criteria: newCriteria, page: 1)))
+                .loadMoreError == nil
+        )
     }
 
     @Test(.timeLimit(.minutes(1)), arguments: [BrowseFeed.recommendation, .popular, .search])
@@ -524,16 +527,15 @@ struct BrowseAndVideoViewModelTests {
 
         feed.activate(model)
         try await gates[0].waitForEntries()
-        let oldTask = try #require(model.taskSnapshotForTesting())
 
         model.synchronizeAuthenticationSession(generation: 1)
+        try await gates[0].waitForCancellations()
         try await gates[1].waitForEntries()
         await gates[1].open()
         await model.waitForCurrentTask()
 
         model.synchronizeAuthenticationSession(generation: 1)
         await gates[0].open()
-        await oldTask.value
 
         #expect(feed.loadedBVIDs(model) == [fresh.bvid])
         #expect(await repository.requestedPages(feed).count == 2)
@@ -559,7 +561,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
         model.activateSearch(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
@@ -591,7 +593,7 @@ struct BrowseAndVideoViewModelTests {
         await model.waitForCurrentTask()
         let loadedState = model.state
         let successfulRefreshGeneration =
-            model.popularSuccessfulRefreshGeneration
+            model.successfulRefreshGeneration(for: .popular)
 
         model.refreshPopular(pageSize: 50)
         #expect(model.state == loadedState)
@@ -602,7 +604,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(!model.isRefreshing)
         #expect(model.refreshError == .requestRestricted)
         #expect(
-            model.popularSuccessfulRefreshGeneration
+            model.successfulRefreshGeneration(for: .popular)
                 == successfulRefreshGeneration
         )
         #expect(await repository.popularPages.count == 2)
@@ -622,19 +624,45 @@ struct BrowseAndVideoViewModelTests {
 
         model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
-        #expect(model.searchSuccessfulRefreshGeneration == 0)
+        #expect(model.successfulRefreshGeneration(for: .search) == 0)
 
         model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
-        #expect(model.searchSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .search) == 1)
 
         model.search(VideoSearchCriteria(query: "macOS"))
         #expect(model.isRefreshing)
         await model.waitForCurrentTask()
 
-        #expect(model.searchSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .search) == 1)
         #expect(model.refreshError == .requestRestricted)
         #expect(await repository.searchRequests.count == 3)
+    }
+
+    @Test(arguments: [BrowseFeed.recommendation, .popular, .search])
+    @MainActor
+    func successfulRefreshAdvancesOnlyItsOwnSourceGeneration(_ feed: BrowseFeed) async {
+        let fixture = ContentFixtures()
+        let repository = FeedRepositoryStub(
+            recommendations: { _, _ in fixture.recommendationPage },
+            popular: { request, _ in fixture.popularPage(request) },
+            search: { request, _ in fixture.searchPage(page: request.page) }
+        )
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
+        )
+
+        feed.activate(model)
+        await model.waitForCurrentTask()
+        feed.refresh(model)
+        await model.waitForCurrentTask()
+
+        for source in FeedSource.allCases {
+            #expect(
+                model.successfulRefreshGeneration(for: source)
+                    == (source == feed.source ? 1 : 0)
+            )
+        }
     }
 
     @Test
@@ -694,7 +722,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedContext?.selectedPage.cid == 900_002)
         #expect(await repository.playbackRequests.map(\.cid) == [900_001, 900_002])
@@ -708,9 +736,8 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.restartFromBeginning()
-        await model.resumeActionTaskSnapshotForTesting()?.value
+        await waitForObservedState { model.resumeNotice == nil }
 
-        #expect(model.resumeNotice == nil)
         #expect(player.restartTokens == [resumeToken])
     }
 
@@ -743,24 +770,21 @@ struct BrowseAndVideoViewModelTests {
             playback: player
         )
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         #expect(model.resumeNotice != nil)
 
         model.restartFromBeginning()
         await player.waitForRestartCount(1)
-        let superseded = try #require(model.resumeActionTaskSnapshotForTesting())
         model.restartFromBeginning()
         await player.waitForRestartCount(2)
 
         player.releaseRestart(at: 0)
-        await superseded.value
+        // 替身在 main actor 上直接恢复旧动作；让出一次后，main executor 的 FIFO 保证旧动作已经跑完。
+        await Task.yield()
         #expect(model.resumeNotice != nil)
-        let current = try #require(model.resumeActionTaskSnapshotForTesting())
 
         player.releaseRestart(at: 1)
-        await current.value
-        #expect(model.resumeNotice == nil)
-        #expect(model.resumeActionTaskSnapshotForTesting() == nil)
+        await waitForObservedState { model.resumeNotice == nil }
     }
 
     @Test
@@ -778,7 +802,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(
             model.state
@@ -805,11 +829,11 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(first.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         #expect(model.presentedContext?.detail.bvid == first.bvid)
 
         model.loadVideo(replacement.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(
             model.state
@@ -836,12 +860,12 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(first.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         #expect(model.presentedContext?.detail.bvid == first.bvid)
 
         model.loadVideo(cancelled.bvid)
         #expect(model.presentedContext?.detail.bvid == first.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.state == .idle)
         #expect(model.presentedContext == nil)
@@ -879,11 +903,10 @@ struct BrowseAndVideoViewModelTests {
         model.loadVideo(slow.detail.bvid)
         // 旧请求停在自带分 P 的 `/view` 上，此时只有 detail 在飞行。
         try await slowGate.waitForEntries(1)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.loadVideo(fast.detail.bvid)
-        await model.waitForCurrentTask()
+        try await slowGate.waitForCancellations()
+        await waitUntilSettled(model)
         await slowGate.open()
-        await supersededTask.value
 
         guard case .ready(let context) = model.state else {
             Issue.record("最新视频未进入就绪状态")
@@ -914,7 +937,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         let firstIdentity = PlaybackItemIdentity(
             bvid: fixture.bvid,
             cid: 900_001
@@ -928,7 +951,7 @@ struct BrowseAndVideoViewModelTests {
         model.selectPage(cid: 900_002)
         #expect(model.requestedPlaybackIdentity == secondIdentity)
         #expect(model.presentedPlaybackIdentity == nil)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedContext?.selectedPage.cid == 900_002)
         #expect(model.presentedPlaybackIdentity == secondIdentity)
@@ -966,10 +989,10 @@ struct BrowseAndVideoViewModelTests {
             playback: player
         )
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         model.selectPage(cid: 900_002)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         guard case .failedPage(_, let targetPage, .content) = model.state else {
             Issue.record("目标分 P 未进入内容失败状态")
             return
@@ -979,7 +1002,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(model.requestedPlaybackIdentity?.cid == 900_002)
 
         model.retry()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedContext?.selectedPage.cid == 900_002)
         #expect(model.presentedPlaybackIdentity?.cid == 900_002)
@@ -1003,7 +1026,7 @@ struct BrowseAndVideoViewModelTests {
             playback: player
         )
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         let identity = try #require(model.presentedPlaybackIdentity)
 
         await player.fail(identity)
@@ -1018,7 +1041,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(model.presentedPlaybackIdentity == nil)
 
         model.retry()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedPlaybackIdentity == identity)
         #expect(player.loadedIdentities == [identity, identity])
@@ -1037,7 +1060,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         let identity = PlaybackItemIdentity(
             bvid: fixture.bvid,
             cid: 900_001
@@ -1053,7 +1076,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(player.stopCallCount == 1)
 
         model.retry()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedPlaybackIdentity == identity)
         #expect(player.loadedIdentities == [identity, identity])
@@ -1072,7 +1095,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         let firstIdentity = PlaybackItemIdentity(
             bvid: fixture.bvid,
             cid: 900_001
@@ -1080,7 +1103,7 @@ struct BrowseAndVideoViewModelTests {
         let oldIntent = try #require(player.loadedIntents.first)
 
         model.selectPage(cid: 900_002)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectPage(cid: 900_001)
         await player.waitForLoadCount(3)
 
@@ -1095,7 +1118,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(player.stopCallCount == 2)
 
         player.releaseHeldLoad()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await player.finishFailures()
 
         #expect(model.presentedPlaybackIdentity == firstIdentity)
@@ -1126,15 +1149,14 @@ struct BrowseAndVideoViewModelTests {
             playback: PlayerStub()
         )
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         model.selectPage(cid: 900_002)
         try await secondPageGate.waitForEntries()
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.selectPage(cid: 900_001)
-        await model.waitForCurrentTask()
+        try await secondPageGate.waitForCancellations()
+        await waitUntilSettled(model)
         await secondPageGate.open()
-        await supersededTask.value
 
         #expect(model.authenticationRevalidationGeneration == 0)
         #expect(model.presentedPlaybackIdentity?.cid == 900_001)
@@ -1164,18 +1186,17 @@ struct BrowseAndVideoViewModelTests {
             playback: player
         )
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         model.selectPage(cid: 900_002)
         try await secondPageGate.waitForEntries()
-        let supersededP2 = try #require(model.taskSnapshotForTesting())
 
         model.selectPage(cid: 900_001)
+        try await secondPageGate.waitForCancellations()
         try await firstPageGate.waitForEntries()
         await firstPageGate.open()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await secondPageGate.open()
-        await supersededP2.value
 
         #expect(model.presentedContext?.selectedPage.cid == 900_001)
         #expect(model.presentedPlaybackIdentity?.cid == 900_001)
@@ -1200,7 +1221,6 @@ struct BrowseAndVideoViewModelTests {
 
         model.loadVideo("BV1RelatedAA")
         await relatedRepository.waitForRequestCount(1)
-        let oldA = try #require(model.relatedVideoTaskSnapshotForTesting())
         model.loadVideo("BV1RelatedBB")
         await relatedRepository.waitForRequestCount(2)
         model.loadVideo("BV1RelatedAA")
@@ -1208,17 +1228,15 @@ struct BrowseAndVideoViewModelTests {
 
         let newResult = RelatedVideo.testFixture(bvid: "BV1CurrentAA1")
         await relatedRepository.releaseRequest(2, videos: [newResult])
-        await model.relatedVideoTaskSnapshotForTesting()?.value
-        #expect(
+        await waitForObservedState {
             model.relatedVideoState
                 == .loaded(bvid: "BV1RelatedAA", videos: [newResult])
-        )
+        }
 
         await relatedRepository.releaseRequest(
             0,
             videos: [.testFixture(bvid: "BV1StaleAAA1")]
         )
-        await oldA.value
         await relatedRepository.releaseRequest(1, videos: [])
 
         #expect(
@@ -1249,23 +1267,21 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
-        await model.relatedVideoTaskSnapshotForTesting()?.value
-        #expect(
+        await waitUntilSettled(model)
+        await waitForObservedState {
             model.relatedVideoState
                 == .failed(bvid: fixture.bvid, error: .transportFailure)
-        )
+        }
 
         model.retryRelatedVideos()
-        await model.relatedVideoTaskSnapshotForTesting()?.value
-
-        #expect(
+        await waitForObservedState {
             model.relatedVideoState
                 == .loaded(
                     bvid: fixture.bvid,
                     videos: [.testFixture(bvid: "BV1RetryVid1")]
                 )
-        )
+        }
+
         #expect(player.loadedPlaybacks.count == 1)
         #expect(await relatedRepository.callCount == 2)
     }
@@ -1286,16 +1302,14 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await signatureRepository.waitForRequestCount(1)
 
         #expect(model.presentedContext?.detail == fixture.detail)
         #expect(model.uploaderSignatureState == .loading)
 
         await signatureRepository.releaseRequest(0, signature: "公开签名")
-        await model.uploaderSignatureTaskSnapshotForTesting()?.value
-
-        #expect(model.uploaderSignatureState == .loaded("公开签名"))
+        await waitForObservedState { model.uploaderSignatureState == .loaded("公开签名") }
     }
 
     @Test
@@ -1313,8 +1327,8 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
-        await model.uploaderSignatureTaskSnapshotForTesting()?.value
+        await waitUntilSettled(model)
+        await waitForObservedState { model.uploaderSignatureState != .loading }
 
         #expect(
             model.state
@@ -1346,10 +1360,10 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
-        await model.uploaderSignatureTaskSnapshotForTesting()?.value
+        await waitUntilSettled(model)
+        await waitForObservedState { model.uploaderSignatureState != .loading }
         model.selectPage(cid: 900_002)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.uploaderSignatureState == .loaded("公开签名"))
         #expect(await signatureRepository.callCount == 1)
@@ -1372,23 +1386,19 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(first.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await signatureRepository.waitForRequestCount(1)
-        let oldA = try #require(
-            model.uploaderSignatureTaskSnapshotForTesting()
-        )
 
         model.loadVideo(second.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await signatureRepository.waitForRequestCount(2)
         model.loadVideo(first.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await signatureRepository.waitForRequestCount(3)
 
         await signatureRepository.releaseRequest(2, signature: "新 A 签名")
-        await model.uploaderSignatureTaskSnapshotForTesting()?.value
+        await waitForObservedState { model.uploaderSignatureState == .loaded("新 A 签名") }
         await signatureRepository.releaseRequest(0, signature: "旧 A 签名")
-        await oldA.value
         await signatureRepository.releaseRequest(1, signature: "旧 B 签名")
 
         #expect(model.presentedContext?.detail.bvid == first.bvid)
@@ -1411,14 +1421,10 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixture.bvid)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         await signatureRepository.waitForRequestCount(1)
-        let cancelledTask = try #require(
-            model.uploaderSignatureTaskSnapshotForTesting()
-        )
         model.reset()
         await signatureRepository.releaseRequest(0, signature: "迟到签名")
-        await cancelledTask.value
 
         #expect(model.state == .idle)
         #expect(model.presentedContext == nil)
@@ -1442,7 +1448,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(model.requestedSelectionBVID == fixtures.episodeBVID)
         #expect(model.requestedPreferredCID == fixtures.episodePages[1].cid)
         #expect(model.presentedPlaybackIdentity == nil)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedPlaybackIdentity?.bvid == fixtures.episodeBVID)
         #expect(model.presentedPlaybackIdentity?.cid == fixtures.episodePages[1].cid)
@@ -1467,12 +1473,12 @@ struct BrowseAndVideoViewModelTests {
             fixtures.episodeBVID,
             preferredCID: fixtures.episodePages[1].cid
         )
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         #expect(model.requestedPreferredCID == fixtures.episodePages[1].cid)
         #expect(model.presentedPlaybackIdentity == nil)
 
         model.retry()
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.presentedPlaybackIdentity?.cid == fixtures.episodePages[1].cid)
         #expect(await repository.playbackBVIDs() == [fixtures.episodeBVID])
@@ -1492,7 +1498,7 @@ struct BrowseAndVideoViewModelTests {
             playback: PlayerStub()
         )
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         var resolved: [(String, Int64?)] = []
 
         model.selectCollectionEpisode(fixtures.lazyEpisode) {
@@ -1505,7 +1511,10 @@ struct BrowseAndVideoViewModelTests {
         #expect(resolved.isEmpty)
 
         await repository.releaseEpisodeDetail()
-        await model.collectionEpisodeTaskSnapshotForTesting()?.value
+        await waitForObservedState {
+            model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        }
 
         #expect(resolved.count == 1)
         #expect(resolved.first?.0 == fixtures.episodeBVID)
@@ -1523,7 +1532,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.rootSummaryEpisode) { _, _ in }
         #expect(model.selectedCollectionEpisode == fixtures.rootSummaryEpisode.id)
 
@@ -1531,7 +1540,7 @@ struct BrowseAndVideoViewModelTests {
             fixtures.rootBVID,
             preferredCID: fixtures.rootPages[1].cid
         )
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
 
         #expect(model.selectedCollectionEpisode == fixtures.rootSummaryEpisode.id)
     }
@@ -1550,12 +1559,15 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         model.selectCollectionEpisode(fixtures.duplicateLazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
         await repository.releaseEpisodeDetail()
-        await model.collectionEpisodeTaskSnapshotForTesting()?.value
+        await waitForObservedState {
+            model.collectionEpisodePageStates[fixtures.duplicateLazyEpisode.id]
+                == .loaded(bvid: fixtures.episodeBVID)
+        }
 
         #expect(await repository.episodeDetailRequestCount() == 1)
         #expect(
@@ -1582,15 +1594,11 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
-        let cancelledTask = try #require(
-            model.collectionEpisodeTaskSnapshotForTesting()
-        )
         model.selectCollectionEpisode(fixtures.embeddedEpisode) { _, _ in }
         await repository.releaseEpisodeDetail()
-        await cancelledTask.value
 
         #expect(model.authenticationRevalidationGeneration == 0)
         #expect(model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle)
@@ -1610,23 +1618,19 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
-        await model.collectionEpisodeTaskSnapshotForTesting()?.value
-
-        #expect(
+        await waitForObservedState {
             model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
                 == .failed(.transportFailure)
-        )
+        }
         #expect(model.presentedContext?.detail.bvid == fixtures.rootBVID)
 
         model.retryCollectionEpisodePages(fixtures.lazyEpisode)
-        await model.collectionEpisodeTaskSnapshotForTesting()?.value
-
-        #expect(
+        await waitForObservedState {
             model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
                 == .loaded(bvid: fixtures.episodeBVID)
-        )
+        }
         #expect(await repository.episodeDetailRequestCount() == 2)
     }
 
@@ -1644,16 +1648,12 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
-        let lateTask = try #require(
-            model.collectionEpisodeTaskSnapshotForTesting()
-        )
 
         model.reset()
         await repository.releaseEpisodeDetail()
-        await lateTask.value
 
         #expect(model.selectedCollectionEpisode == nil)
         #expect(model.collectionEpisodePageStates.isEmpty)
@@ -1674,7 +1674,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest(count: 1)
         model.selectCollectionEpisode(fixtures.thirdLazyEpisode) { _, _ in }
@@ -1685,15 +1685,14 @@ struct BrowseAndVideoViewModelTests {
         #expect(model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id] == .loading)
 
         await repository.releaseEpisodeDetail()
-        await model.collectionEpisodeTaskSnapshotForTesting()?.value
+        await waitForObservedState {
+            model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id]
+                == .loaded(bvid: fixtures.thirdBVID)
+        }
 
         #expect(await repository.episodeDetailRequestCount() == 2)
         #expect(
             model.collectionEpisodePageStates[fixtures.lazyEpisode.id] == .idle
-        )
-        #expect(
-            model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id]
-                == .loaded(bvid: fixtures.thirdBVID)
         )
     }
 
@@ -1708,7 +1707,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         var embeddedSelection: String?
         model.selectCollectionEpisode(fixtures.embeddedEpisode) { bvid, _ in
             embeddedSelection = bvid
@@ -1745,7 +1744,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(fixtures.rootBVID)
-        await model.waitForCurrentTask()
+        await waitUntilSettled(model)
         for episode in fixtures.episodes {
             model.selectCollectionEpisode(episode) { _, _ in }
         }
@@ -2456,86 +2455,6 @@ private actor VideoRepositoryStub: VideoRepository {
     }
 }
 
-/// 让替身中的请求挂起到测试放行；放行后后续请求直接通过。
-private actor TestGate {
-    private let entries = TestEventCounter()
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func pass() async {
-        await entries.signal()
-        guard !isOpen else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    /// 等到第 `count` 个请求进入；等待失败时先放行，避免挂起的请求拖住测试。
-    func waitForEntries(_ count: Int = 1) async throws {
-        do {
-            try await entries.wait(until: count)
-        } catch {
-            open()
-            throw error
-        }
-    }
-
-    func open() {
-        isOpen = true
-        let pending = waiters
-        waiters.removeAll()
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-}
-
-private actor TestEventCounter {
-    private struct Waiter {
-        let expectedCount: Int
-        let continuation: CheckedContinuation<Void, any Error>
-    }
-
-    private var count = 0
-    private var waiters: [UUID: Waiter] = [:]
-
-    func signal() {
-        count += 1
-        let ready = waiters.filter { count >= $0.value.expectedCount }
-        for (id, waiter) in ready where waiters.removeValue(forKey: id) != nil {
-            waiter.continuation.resume()
-        }
-    }
-
-    func wait(until expectedCount: Int) async throws {
-        let id = UUID()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                if count >= expectedCount {
-                    continuation.resume()
-                } else if Task.isCancelled {
-                    continuation.resume(throwing: CancellationError())
-                } else {
-                    waiters[id] = Waiter(
-                        expectedCount: expectedCount,
-                        continuation: continuation
-                    )
-                }
-            }
-        } onCancel: {
-            Task {
-                await self.cancelWaiter(id)
-            }
-        }
-    }
-
-    private func cancelWaiter(_ id: UUID) {
-        waiters.removeValue(forKey: id)?.continuation.resume(
-            throwing: CancellationError()
-        )
-    }
-}
-
 /// 唯一的 PlaybackControlling 替身，记录 load、开播、重播与停止。
 ///
 /// 可让指定 BVID 的 load 失败、让第 `heldLoad` 次 load 挂起到测试放行，
@@ -2779,39 +2698,47 @@ enum BrowseFeed: Sendable {
         }
     }
 
-    @MainActor
-    func loadMore(_ model: BrowseViewModel) {
+    var source: FeedSource {
         switch self {
-        case .recommendation: model.loadMoreRecommendations()
-        case .popular: model.loadMorePopular()
-        case .search: model.loadMoreSearch()
+        case .recommendation: .recommendation
+        case .popular: .popular
+        case .search: .search
+        }
+    }
+
+    private var firstPageRequest: FeedRequest {
+        switch self {
+        case .recommendation: .recommendation(continuation: nil)
+        case .popular: Self.popularRequest
+        case .search: .search(VideoSearchRequest(criteria: Self.searchCriteria, page: 1))
         }
     }
 
     @MainActor
-    func retryLoadMore(_ model: BrowseViewModel) {
+    func refresh(_ model: BrowseViewModel) {
         switch self {
-        case .recommendation: model.retryRecommendationLoadMore()
-        case .popular: model.retryPopularLoadMore()
-        case .search: model.retrySearchLoadMore()
+        case .recommendation: model.refreshRecommendation()
+        case .popular: model.refreshPopular(pageSize: 50)
+        case .search: model.search(Self.searchCriteria)
         }
+    }
+
+    @MainActor
+    func loadMore(_ model: BrowseViewModel) {
+        model.loadMore(source)
+    }
+
+    @MainActor
+    func retryLoadMore(_ model: BrowseViewModel) {
+        model.retryLoadMore(source)
     }
 
     @MainActor
     func pagination(
         _ model: BrowseViewModel
     ) -> (canLoadMore: Bool, tailIdentity: String?, loadMoreError: ContentApplicationError?) {
-        switch self {
-        case .recommendation:
-            let pagination = model.recommendationPagination()
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        case .popular:
-            let pagination = model.popularPagination(for: Self.popularRequest)
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        case .search:
-            let pagination = model.searchPagination(for: Self.searchCriteria)
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        }
+        let pagination = model.pagination(for: firstPageRequest)
+        return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
     }
 
     @MainActor

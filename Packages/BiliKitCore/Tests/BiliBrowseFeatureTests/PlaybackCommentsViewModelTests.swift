@@ -141,14 +141,12 @@ struct PlaybackCommentsViewModelTests {
 
         model.activate(subject: .video(aid: 700_001))
         await repository.waitForRootRequestCount(1)
-        let oldTask = try #require(model.rootTaskSnapshotForTesting())
 
         model.selectSort(.latest)
         await repository.waitForRootRequestCount(2)
         await repository.releaseRoot(1, page: endPage([thread(2)]))
         await model.waitForCurrentRootTask()
         await repository.releaseRoot(0, page: endPage([thread(1)]))
-        await oldTask.value
 
         #expect(model.sort == .latest)
         #expect(model.threads.map(\.id.rawValue) == [2])
@@ -170,18 +168,21 @@ struct PlaybackCommentsViewModelTests {
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
         await repository.waitForReplyRequestCount(1)
-        let replyTask = try #require(
-            model.replyTaskSnapshotForTesting(rootID: rootID)
-        )
 
         model.collapseReplies(for: rootID)
-        await repository.releaseReply(at: 0)
-        await replyTask.value
+        let collapsed = try #require(model.replyStates[rootID])
+        #expect(!collapsed.isExpanded)
+        #expect(!collapsed.isLoading)
 
-        let state = try #require(model.replyStates[rootID])
-        #expect(!state.isExpanded)
-        #expect(!state.isLoading)
-        #expect(state.replies.isEmpty)
+        await repository.releaseReply(at: 0)
+        // 同一根评论的新请求要等旧请求让出请求位才会发出，第二个请求出现即证明迟到回复已处理完。
+        model.expandReplies(for: rootID)
+        await repository.waitForReplyRequestCount(2)
+        #expect(model.replyStates[rootID]?.replies.isEmpty == true)
+
+        await repository.releaseReply(at: 1)
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
+        #expect(model.replyStates[rootID]?.replies.map(\.id.rawValue) == [1001])
     }
 
     @Test
@@ -200,17 +201,17 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_001))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
-        await model.replyTaskSnapshotForTesting(rootID: rootID)?.value
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
 
         model.showNextReplyPage(for: rootID)
-        await model.replyTaskSnapshotForTesting(rootID: rootID)?.value
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
         #expect(model.replyStates[rootID]?.error == .transportFailure)
 
         model.showNextReplyPage(for: rootID)
         #expect(await repository.requestedReplyPages == [1, 2])
 
         model.retryReplies(for: rootID)
-        await model.replyTaskSnapshotForTesting(rootID: rootID)?.value
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
         #expect(await repository.requestedReplyPages == [1, 2, 2])
         #expect(model.replyStates[rootID]?.error == nil)
     }
@@ -249,16 +250,12 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_001))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
-        await model.replyTaskSnapshotForTesting(rootID: rootID)?.value
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
         model.showNextReplyPage(for: rootID)
         await repository.waitForReplyRequestCount(2)
-        let pendingTask = try #require(
-            model.replyTaskSnapshotForTesting(rootID: rootID)
-        )
 
         model.collapseReplies(for: rootID)
         await repository.releaseReply(at: 1)
-        await pendingTask.value
         model.expandReplies(for: rootID)
 
         let state = try #require(model.replyStates[rootID])
@@ -324,7 +321,7 @@ struct PlaybackCommentsViewModelTests {
         await repository.releaseReply(at: 0, replyID: 51)
         await repository.waitForReplyRequestCount(2)
         await repository.releaseReply(at: 1, replyID: 52)
-        await model.replyTaskSnapshotForTesting(rootID: root.id)?.value
+        await waitForObservedState { model.replyStates[root.id]?.isLoading == false }
 
         let state = try #require(model.replyStates[root.id])
         #expect(state.replies.map(\.id.rawValue) == [52])
@@ -357,7 +354,9 @@ struct PlaybackCommentsViewModelTests {
         replyFailureModel.activate(subject: .video(aid: 700_001))
         await replyFailureModel.waitForCurrentRootTask()
         replyFailureModel.expandReplies(for: root.id)
-        await replyFailureModel.replyTaskSnapshotForTesting(rootID: root.id)?.value
+        await waitForObservedState {
+            replyFailureModel.replyStates[root.id]?.isLoading == false
+        }
 
         #expect(
             replyFailureModel.replyStates[root.id]?.error

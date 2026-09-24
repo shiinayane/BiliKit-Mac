@@ -80,14 +80,14 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
         page: RecommendationPage,
         presentation: FeedPresentation
     ) -> some View {
-        let pagination = model.recommendationPagination()
+        let pagination = model.pagination(for: .recommendation(continuation: nil))
         return makeLoadedContent(
             LoadedFeedContent(
                 items: page.videos,
                 canLoadMore: pagination.canLoadMore,
                 tailIdentity: pagination.tailIdentity,
                 isLoadingMore: pagination.isLoadingMore,
-                loadMore: model.loadMoreRecommendations,
+                loadMore: { model.loadMore(.recommendation) },
                 select: onSelect
             )
         )
@@ -106,7 +106,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                     Text(error.displayMessage)
                         .lineLimit(2)
                     Button(BrowseFeatureStrings.localized("重试")) {
-                        model.retryRecommendationLoadMore()
+                        model.retryLoadMore(.recommendation)
                     }
                 }
                 .font(.caption)
