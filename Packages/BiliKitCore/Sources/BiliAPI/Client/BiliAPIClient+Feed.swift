@@ -134,15 +134,19 @@ extension BiliAPIClient {
             keys: keys,
             timestamp: timestampProvider()
         )
-        let payload: SearchPayload = try await get(
-            path: "/x/web-interface/wbi/search/type",
-            percentEncodedQuery: query,
+        // 该接口要求 Cookie 含 buvid3；匿名与账户读取两条路径都在授权后附加。
+        let payload: SearchPayload = try await getWithAuthorizationProvenance(
+            url: try endpoint(
+                path: "/x/web-interface/wbi/search/type",
+                percentEncodedQuery: query
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,
                 mapsAuthenticationInvalidation: true
-            )
-        )
+            ),
+            additionalCookie: Self.searchBuvid3Cookie
+        ).payload
         try requireAuthenticatedSessionEpoch(sessionEpoch)
         return try payload.model()
     }

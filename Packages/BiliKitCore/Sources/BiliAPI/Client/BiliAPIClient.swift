@@ -71,6 +71,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
 
+    /// 搜索接口要求的 `buvid3`，进程内随机生成一次，只附加到搜索请求。
+    ///
+    /// 只在内存中，不持久化、不关联账户；格式与 yt-dlp 相同（小写 UUID + `infoc`）。
+    static let searchBuvid3Cookie = "buvid3=\(UUID().uuidString.lowercased())infoc"
+
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
     private let transportFactory: (@Sendable () -> any HTTPTransport)?
@@ -193,13 +198,15 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedResponse<Payload> {
         let authorizedResponse = try await response(
             url: url,
             referer: referer,
             access: access,
-            maximumResponseSize: maximumResponseSize
+            maximumResponseSize: maximumResponseSize,
+            additionalCookie: additionalCookie
         )
         let response = authorizedResponse.response
 
@@ -238,7 +245,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedHTTPResponse {
         let baseRequest = HTTPRequest(
             url: url,
@@ -251,7 +259,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let response = try await response(
             baseRequest: baseRequest,
             access: access,
-            maximumResponseSize: maximumResponseSize
+            maximumResponseSize: maximumResponseSize,
+            additionalCookie: additionalCookie
         )
         guard response.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
@@ -259,15 +268,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return response
     }
 
+    /// `additionalCookie` 只承载 endpoint 要求的非秘密 Cookie，在授权之后并入请求，
+    /// 因此不会绕过授权器对调用方自带 Cookie 的拒绝。
     func response(
         baseRequest: HTTPRequest,
         access: RequestAccess,
-        maximumResponseSize: Int
+        maximumResponseSize: Int,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedHTTPResponse {
         let requestClient = httpClient
         let requestSessionEpoch =
             access.requiresAuthentication ? authenticatedSessionEpoch : nil
-        let request: HTTPRequest
+        var request: HTTPRequest
         let authorizationProvenance: AuthorizationProvenance
         let activeAuthorizer: (any HTTPRequestAuthorizing)? =
             switch access {
@@ -313,6 +325,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         } else {
             request = baseRequest
             authorizationProvenance = .anonymous
+        }
+        if let additionalCookie {
+            var headers = request.headers
+            headers["Cookie"] = [headers["Cookie"], additionalCookie]
+                .compactMap { $0 }
+                .joined(separator: "; ")
+            request = HTTPRequest(
+                url: request.url,
+                method: request.method,
+                headers: headers,
+                body: request.body
+            )
         }
         try Task.checkCancellation()
         if let requestSessionEpoch,

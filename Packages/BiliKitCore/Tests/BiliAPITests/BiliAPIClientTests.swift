@@ -24,7 +24,14 @@ struct BiliAPIClientTests {
         let requests = transport.capturedRequests()
         #expect(await authorizer.capturedPaths() == [testCase.path])
         #expect(requests.last?.url.path == testCase.path)
-        #expect(requests.last?.headers["Cookie"] == StubAuthorizer.cookie)
+        let cookies = requests.last?.headers["Cookie"]?.components(separatedBy: "; ")
+        #expect(cookies?.first == StubAuthorizer.cookie)
+        // buvid3 只附加到搜索 endpoint。
+        #expect(
+            cookies.map { Array($0.dropFirst()) }
+                == (testCase.path == "/x/web-interface/wbi/search/type"
+                    ? [BiliAPIClient.searchBuvid3Cookie] : [])
+        )
         // WBI key 的 nav 请求始终匿名。
         #expect(requests.dropLast().allSatisfy { $0.headers["Cookie"] == nil })
     }
@@ -394,24 +401,31 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func searchFallsBackAnonymouslyOnlyForMissingCredential() async throws {
+    func searchCarriesOneBuvid3OnAnonymousAndAuthorizedPaths() async throws {
         let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
+                try fixtureResponse("search"),
                 try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: StubAuthorizer(.fail(.missingCredential)),
+            requestAuthorizer: StubAuthorizer(.fail(.missingCredential), .authorize),
             timestampProvider: { 1_700_000_000 }
         )
 
         _ = try await search(client, "macOS")
+        _ = try await search(client, "Swift")
 
         let requests = transport.capturedRequests()
-        #expect(requests.count == 2)
-        #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
+        #expect(requests.count == 3)
+        #expect(requests[0].headers["Cookie"] == nil)
+        // 无凭据时只有 buvid3；登录后与授权器给出的 Cookie 并列，且同一进程内不变。
+        let anonymousCookie = try #require(requests[1].headers["Cookie"])
+        let buvid3 = /buvid3=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}infoc/
+        #expect(anonymousCookie.wholeMatch(of: buvid3) != nil)
+        #expect(requests[2].headers["Cookie"] == "\(StubAuthorizer.cookie); \(anonymousCookie)")
     }
 
     @Test(arguments: [
@@ -524,7 +538,12 @@ struct BiliAPIClientTests {
             ]
         )
         let searches = [requests[1], requests[3]]
-        #expect(searches.allSatisfy { $0.headers["Cookie"] == StubAuthorizer.cookie })
+        #expect(
+            searches.allSatisfy {
+                $0.headers["Cookie"]
+                    == "\(StubAuthorizer.cookie); \(BiliAPIClient.searchBuvid3Cookie)"
+            }
+        )
         let signatures = searches.map {
             URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "w_rid" })?.value

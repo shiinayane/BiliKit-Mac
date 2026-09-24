@@ -38,7 +38,11 @@
 
 ## 3. 哪些请求可以带凭据
 
-默认所有网络匿名。只有两个授权器，均由 Composition 注入 `BiliAPI`：
+默认所有网络匿名，且不带任何 Cookie。唯一的非凭据例外是搜索 `/x/web-interface/wbi/search/type`：
+该接口要求 Cookie 含 `buvid3`，`BiliAPI` 为此在进程内存中随机生成一个 `buvid3=<小写 UUID>infoc`，
+不持久化、不激活、不与账户关联；匿名与账户读取两条搜索路径都在授权之后附加它（账户读取时与授权器
+给出的 Cookie 并列），任何其他请求（含 WBI nav）都不携带。只有两个授权器，均由 Composition 注入
+`BiliAPI`：
 
 **账户读取**（`BiliCredentialRequestAuthorizer`）
 
