@@ -15,10 +15,13 @@ extension BiliAPIClient {
         "fourk": "1",
         "web_location": "1315873"
     ]
-    /// 文档：`gaia_source` 在带 SESSDATA 时不需要；Web 客户端游客请求带这组参数。
+    /// 只用于本地无凭据的匿名请求，授权请求按账户权益取清晰度。
+    ///
+    /// `gaia_source` 在带 SESSDATA 时不需要；`try_look=1` 让游客可取得 720P/1080P。
     private static let guestPlayURLParameters = [
         "gaia_source": "pre-load",
-        "isGaiaAvoided": "true"
+        "isGaiaAvoided": "true",
+        "try_look": "1"
     ]
 
     /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。

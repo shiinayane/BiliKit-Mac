@@ -584,6 +584,7 @@ struct BiliAPIClientTests {
         // 游客参数只属于本地无凭据的匿名请求。
         #expect(queryItems?.contains { $0.name == "gaia_source" } == false)
         #expect(queryItems?.contains { $0.name == "isGaiaAvoided" } == false)
+        #expect(queryItems?.contains { $0.name == "try_look" } == false)
         #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
@@ -916,6 +917,7 @@ struct BiliAPIClientTests {
         )?.queryItems
         #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "try_look", value: "1")) == true)
         #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
     }
 
