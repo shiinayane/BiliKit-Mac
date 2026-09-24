@@ -3,9 +3,9 @@ import Foundation
 import Testing
 
 struct VideoDurationFormattingTests {
-    @Test
-    func nonnegativeDurationsPreserveProductClockFormatAcrossLocales() {
-        let expectations: [(seconds: Int, text: String)] = [
+    @Test(
+        arguments: ["zh_CN", "ja_JP", "en_US"],
+        [
             (0, "0:00"),
             (1, "0:01"),
             (9, "0:09"),
@@ -19,16 +19,16 @@ struct VideoDurationFormattingTests {
             (359_999, "99:59:59"),
             (360_000, "100:00:00")
         ]
-        for localeIdentifier in ["zh_CN", "ja_JP", "en_US"] {
-            let locale = Locale(identifier: localeIdentifier)
-            for expectation in expectations {
-                #expect(
-                    VideoDurationFormatting.string(
-                        seconds: expectation.seconds,
-                        locale: locale
-                    ) == expectation.text
-                )
-            }
-        }
+    )
+    func nonnegativeDurationsPreserveProductClockFormatAcrossLocales(
+        localeIdentifier: String,
+        expectation: (seconds: Int, text: String)
+    ) {
+        #expect(
+            VideoDurationFormatting.string(
+                seconds: expectation.seconds,
+                locale: Locale(identifier: localeIdentifier)
+            ) == expectation.text
+        )
     }
 }

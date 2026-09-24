@@ -7,7 +7,7 @@ import Testing
 @testable import BiliDanmaku
 
 @MainActor
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct CoreAnimationDanmakuRendererTests {
     @Test
     func rendererAppliesUserOpacityAtRootAndReleasesTextureBytes() async throws {
