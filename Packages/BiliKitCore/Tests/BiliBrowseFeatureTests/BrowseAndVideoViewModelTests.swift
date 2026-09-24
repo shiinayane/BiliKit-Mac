@@ -2053,11 +2053,7 @@ private actor CollectionEpisodeRepositoryStub: VideoRepository {
     }
 
     func releaseEpisodeDetail() {
-        let waiters = episodeReleaseWaiters
-        episodeReleaseWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
+        episodeReleaseWaiters.resumeAll()
     }
 }
 
@@ -2065,7 +2061,7 @@ private actor CollectionEpisodeRepositoryStub: VideoRepository {
 private actor SignatureRepositoryStub: UploaderSignatureRepository {
     private let immediate: Result<String?, ContentApplicationError>?
     private var held: [CheckedContinuation<String?, Never>?] = []
-    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var requestWaiters = CountWaiters()
     private(set) var callCount = 0
 
     init(immediate: Result<String?, ContentApplicationError>? = nil) {
@@ -2077,15 +2073,14 @@ private actor SignatureRepositoryStub: UploaderSignatureRepository {
         if let immediate { return try immediate.get() }
         return await withCheckedContinuation { continuation in
             held.append(continuation)
-            let ready = requestWaiters.filter { held.count >= $0.0 }
-            requestWaiters.removeAll { held.count >= $0.0 }
-            for waiter in ready { waiter.1.resume() }
+            requestWaiters.resume(reaching: held.count)
         }
     }
 
     func waitForRequestCount(_ count: Int) async {
-        guard held.count < count else { return }
-        await withCheckedContinuation { requestWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            requestWaiters.add($0, until: count, current: held.count)
+        }
     }
 
     func releaseRequest(_ index: Int, signature: String?) {
@@ -2098,7 +2093,7 @@ private actor SignatureRepositoryStub: UploaderSignatureRepository {
 private actor RelatedRepositoryStub: RelatedVideoRepository {
     private var responses: [Result<[RelatedVideo], ContentApplicationError>]
     private var held: [Int: CheckedContinuation<[RelatedVideo], Never>] = [:]
-    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var requestWaiters = CountWaiters()
     private(set) var callCount = 0
 
     init(responses: [Result<[RelatedVideo], ContentApplicationError>] = []) {
@@ -2108,16 +2103,15 @@ private actor RelatedRepositoryStub: RelatedVideoRepository {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         callCount += 1
         let index = callCount - 1
-        let ready = requestWaiters.filter { callCount >= $0.0 }
-        requestWaiters.removeAll { callCount >= $0.0 }
-        for waiter in ready { waiter.1.resume() }
+        requestWaiters.resume(reaching: callCount)
         if !responses.isEmpty { return try responses.removeFirst().get() }
         return await withCheckedContinuation { held[index] = $0 }
     }
 
     func waitForRequestCount(_ count: Int) async {
-        guard callCount < count else { return }
-        await withCheckedContinuation { requestWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            requestWaiters.add($0, until: count, current: callCount)
+        }
     }
 
     func releaseRequest(_ index: Int, videos: [RelatedVideo]) {
@@ -2470,9 +2464,9 @@ private final class PlayerStub: PlaybackControlling {
     private let failsFirstLoadUntilStopped: Bool
     private let failureSource = FailureEventSource()
     private var heldLoadContinuation: CheckedContinuation<Void, Never>?
-    private var loadWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var stopWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var restartWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var loadWaiters = CountWaiters()
+    private var stopWaiters = CountWaiters()
+    private var restartWaiters = CountWaiters()
     private var heldRestarts: [Int: CheckedContinuation<Void, Never>] = [:]
     private(set) var loadedPlaybacks: [VideoPlayback] = []
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
@@ -2515,7 +2509,7 @@ private final class PlayerStub: PlaybackControlling {
         loadedPlaybacks.append(playback)
         loadedIdentities.append(identity)
         loadedIntents.append(intent)
-        Self.resume(&loadWaiters, reaching: loadedIdentities.count)
+        loadWaiters.resume(reaching: loadedIdentities.count)
         if identity.bvid == failingBVID {
             throw PlayerStubFailure()
         }
@@ -2545,7 +2539,7 @@ private final class PlayerStub: PlaybackControlling {
     ) async -> Bool {
         let index = restartTokens.count
         restartTokens.append(resumeToken)
-        Self.resume(&restartWaiters, reaching: restartTokens.count)
+        restartWaiters.resume(reaching: restartTokens.count)
         if holdsRestarts {
             await withCheckedContinuation { heldRestarts[index] = $0 }
         }
@@ -2556,7 +2550,7 @@ private final class PlayerStub: PlaybackControlling {
 
     func stop() {
         stopCallCount += 1
-        Self.resume(&stopWaiters, reaching: stopCallCount)
+        stopWaiters.resume(reaching: stopCallCount)
         if failsFirstLoadUntilStopped {
             releaseHeldLoad()
         }
@@ -2581,8 +2575,9 @@ private final class PlayerStub: PlaybackControlling {
     }
 
     func waitForLoadCount(_ expectedCount: Int) async {
-        guard loadedIdentities.count < expectedCount else { return }
-        await withCheckedContinuation { loadWaiters.append((expectedCount, $0)) }
+        await withCheckedContinuation {
+            loadWaiters.add($0, until: expectedCount, current: loadedIdentities.count)
+        }
     }
 
     func releaseHeldLoad() {
@@ -2591,8 +2586,9 @@ private final class PlayerStub: PlaybackControlling {
     }
 
     func waitForRestartCount(_ expectedCount: Int) async {
-        guard restartTokens.count < expectedCount else { return }
-        await withCheckedContinuation { restartWaiters.append((expectedCount, $0)) }
+        await withCheckedContinuation {
+            restartWaiters.add($0, until: expectedCount, current: restartTokens.count)
+        }
     }
 
     func releaseRestart(at index: Int) {
@@ -2600,18 +2596,8 @@ private final class PlayerStub: PlaybackControlling {
     }
 
     func waitForStopCallCount(_ expectedCount: Int) async {
-        guard stopCallCount < expectedCount else { return }
-        await withCheckedContinuation { stopWaiters.append((expectedCount, $0)) }
-    }
-
-    private static func resume(
-        _ waiters: inout [(Int, CheckedContinuation<Void, Never>)],
-        reaching count: Int
-    ) {
-        let ready = waiters.filter { count >= $0.0 }
-        waiters.removeAll { count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
+        await withCheckedContinuation {
+            stopWaiters.add($0, until: expectedCount, current: stopCallCount)
         }
     }
 }
@@ -2620,13 +2606,12 @@ private actor FailureEventSource {
     private var queuedEvents: [PlaybackFailureEvent] = []
     private var pendingNext: CheckedContinuation<PlaybackFailureEvent?, Never>?
     private var requestCount = 0
-    private var requestWaiters:
-        [(expectedCount: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var requestWaiters = CountWaiters()
     private var isFinished = false
 
     func next() async -> PlaybackFailureEvent? {
         requestCount += 1
-        resumeSatisfiedRequestWaiters()
+        requestWaiters.resume(reaching: requestCount)
         if !queuedEvents.isEmpty {
             return queuedEvents.removeFirst()
         }
@@ -2647,9 +2632,8 @@ private actor FailureEventSource {
     }
 
     func waitForRequestCount(_ expectedCount: Int) async {
-        guard requestCount < expectedCount else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((expectedCount, continuation))
+        await withCheckedContinuation {
+            requestWaiters.add($0, until: expectedCount, current: requestCount)
         }
     }
 
@@ -2658,18 +2642,6 @@ private actor FailureEventSource {
         queuedEvents.removeAll()
         pendingNext?.resume(returning: nil)
         pendingNext = nil
-    }
-
-    private func resumeSatisfiedRequestWaiters() {
-        let satisfied = requestWaiters.filter {
-            requestCount >= $0.expectedCount
-        }
-        requestWaiters.removeAll {
-            requestCount >= $0.expectedCount
-        }
-        for waiter in satisfied {
-            waiter.continuation.resume()
-        }
     }
 }
 
