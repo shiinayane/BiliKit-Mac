@@ -1001,19 +1001,9 @@ final class PlayerScrollWheelShieldView: NSView {
         setAccessibilityElement(false)
     }
 
-    static func capturesEvent(
-        ofType type: NSEvent.EventType?
-    ) -> Bool {
-        type == .scrollWheel
-    }
-
-    static func capturesEvent(_ event: NSEvent) -> Bool {
-        capturesEvent(ofType: event.type)
-    }
-
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let event = NSApp.currentEvent else { return nil }
-        return Self.capturesEvent(event) ? self : nil
+        PlayerScrollWheelCaptureView.capturesEvent(ofType: NSApp.currentEvent?.type)
+            ? self : nil
     }
 
     override func scrollWheel(with event: NSEvent) {
