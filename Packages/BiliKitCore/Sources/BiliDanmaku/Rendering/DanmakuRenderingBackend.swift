@@ -24,31 +24,16 @@ public enum DanmakuPreparationResult: Sendable, Equatable {
     case rejected(DanmakuPreparationRejectionReason)
 }
 
-public struct DanmakuMotionPolicy: Sendable, Equatable {
-    public let basePointSpeed: Double
-    public let lengthReferenceWidth: Double
-    public let lengthCoefficient: Double
-    public let minimumScrollingSeconds: Double
-    public let maximumScrollingSeconds: Double
-    public let fixedSeconds: Double
+/// 弹幕运动时长的唯一策略来源；基准速度、长度加成与上下限都是产品固定值。
+enum DanmakuMotionPolicy {
+    static let basePointSpeed = 130.0
+    static let lengthReferenceWidth = 960.0
+    static let lengthCoefficient = 0.3
+    static let minimumScrollingSeconds = 1.5
+    static let maximumScrollingSeconds = 60.0
+    static let fixedSeconds = 4.0
 
-    public init(
-        basePointSpeed: Double = 130,
-        lengthReferenceWidth: Double = 960,
-        lengthCoefficient: Double = 0.3,
-        minimumScrollingSeconds: Double = 1.5,
-        maximumScrollingSeconds: Double = 60,
-        fixedSeconds: Double = 4
-    ) {
-        self.basePointSpeed = basePointSpeed
-        self.lengthReferenceWidth = lengthReferenceWidth
-        self.lengthCoefficient = lengthCoefficient
-        self.minimumScrollingSeconds = minimumScrollingSeconds
-        self.maximumScrollingSeconds = maximumScrollingSeconds
-        self.fixedSeconds = fixedSeconds
-    }
-
-    func duration(
+    static func duration(
         for mode: DanmakuPresentationMode,
         textWidth: Double,
         surfaceWidth: Double,
@@ -58,17 +43,7 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
         case .top, .bottom:
             return fixedSeconds
         case .scrolling:
-            guard basePointSpeed.isFinite,
-                basePointSpeed > 0,
-                lengthReferenceWidth.isFinite,
-                lengthReferenceWidth > 0,
-                lengthCoefficient.isFinite,
-                lengthCoefficient >= 0,
-                minimumScrollingSeconds.isFinite,
-                minimumScrollingSeconds > 0,
-                maximumScrollingSeconds.isFinite,
-                maximumScrollingSeconds >= minimumScrollingSeconds,
-                textWidth.isFinite,
+            guard textWidth.isFinite,
                 textWidth > 0,
                 surfaceWidth.isFinite,
                 surfaceWidth > 0
@@ -88,7 +63,7 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
         }
     }
 
-    private func speedMultiplier(for level: DanmakuSpeedLevel) -> Double {
+    private static func speedMultiplier(for level: DanmakuSpeedLevel) -> Double {
         switch level {
         case .one: 90 / 130
         case .two: 110 / 130

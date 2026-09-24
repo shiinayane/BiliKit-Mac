@@ -25,7 +25,6 @@ public final class CoreAnimationDanmakuRenderer:
 
     public weak var delegate: (any DanmakuRenderingBackendDelegate)?
     public let rootLayer: CALayer
-    public let style: CoreAnimationDanmakuStyle
 
     private(set) var renderEpoch: UInt64 = 0
     var activeLayerCount: Int { entries.count }
@@ -37,11 +36,7 @@ public final class CoreAnimationDanmakuRenderer:
     private let preparationOwner: DanmakuTexturePreparationOwner
     private(set) var activeTextureByteCost = 0
 
-    public init(
-        style: CoreAnimationDanmakuStyle = .production,
-        contentsScale: Double = 2
-    ) {
-        self.style = style
+    public init(contentsScale: Double = 2) {
         backingScale = Self.normalizedBackingScale(contentsScale)
         preparationOwner = DanmakuTexturePreparationOwner()
         rootLayer = CALayer()
@@ -67,7 +62,6 @@ public final class CoreAnimationDanmakuRenderer:
         }
         preparationOwner.prepare(
             event: event,
-            style: style,
             backingScale: normalizedScale,
             preparationID: preparationID,
             generation: generation,
@@ -89,7 +83,6 @@ public final class CoreAnimationDanmakuRenderer:
             surfaceSize.height > 0,
             let key = DanmakuTextureRasterizer.key(
                 event: event,
-                style: style,
                 backingScale: backingScale
             ),
             let payload = preparationOwner.consume(

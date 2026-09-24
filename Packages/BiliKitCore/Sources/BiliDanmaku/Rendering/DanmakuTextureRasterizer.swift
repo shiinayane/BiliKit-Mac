@@ -8,10 +8,7 @@ struct DanmakuTextureCacheKey: Hashable, Sendable {
     let text: String
     let fontSize: Double
     let colorRGB: UInt32
-    let fontWeight: CoreAnimationDanmakuFontWeight
-    let fontScale: Double
     let backingScale: Double
-    let shadowRadiusPoints: Double
 }
 
 struct DanmakuTexturePayload: Sendable, Equatable {
@@ -41,11 +38,13 @@ enum DanmakuTextureRasterizer {
     static let maximumTextureByteCost = 8 * 1_024 * 1_024
     static let maximumBackingScale = 4.0
     static let outlineWidthPoints = 0.5
+    /// 字重与阴影是产品固定视觉，不随设置变化；阴影是预烘焙 tent convolution 的 point 半径。
+    static let fontWeight = NSFont.Weight.semibold
+    static let shadowRadiusPoints = 1.0
     static let lightInkRelativeLuminanceThreshold = 0.179
 
     static func key(
         event: DanmakuEvent,
-        style: CoreAnimationDanmakuStyle,
         backingScale: Double
     ) -> DanmakuTextureCacheKey? {
         guard !event.text.isEmpty,
@@ -64,10 +63,7 @@ enum DanmakuTextureRasterizer {
             text: event.text,
             fontSize: fontSize,
             colorRGB: event.colorRGB & 0x00FF_FFFF,
-            fontWeight: style.fontWeight,
-            fontScale: style.fontScale,
-            backingScale: backingScale,
-            shadowRadiusPoints: style.shadowBlurRadius
+            backingScale: backingScale
         )
     }
 
@@ -79,8 +75,8 @@ enum DanmakuTextureRasterizer {
             CGColorSpace(name: CGColorSpace.sRGB)
             ?? CGColorSpaceCreateDeviceRGB()
         let font = NSFont.systemFont(
-            ofSize: CGFloat(key.fontSize * key.fontScale),
-            weight: fontWeight(key.fontWeight)
+            ofSize: CGFloat(key.fontSize),
+            weight: fontWeight
         )
         let components = rgbComponents(key.colorRGB)
         let foreground = CGColor(
@@ -111,10 +107,10 @@ enum DanmakuTextureRasterizer {
 
         let outlineRadiusPixels = outlineWidthPoints * key.backingScale
         let shadowRadiusPixels =
-            key.shadowRadiusPoints > 0
+            shadowRadiusPoints > 0
             ? max(
                 1,
-                Int((key.shadowRadiusPoints * key.backingScale).rounded())
+                Int((shadowRadiusPoints * key.backingScale).rounded())
             ) : 0
         let paddingPixels = max(
             4,
@@ -374,17 +370,6 @@ enum DanmakuTextureRasterizer {
         component <= 0.04045
             ? component / 12.92
             : pow((component + 0.055) / 1.055, 2.4)
-    }
-
-    private static func fontWeight(
-        _ weight: CoreAnimationDanmakuFontWeight
-    ) -> NSFont.Weight {
-        switch weight {
-        case .regular: .regular
-        case .medium: .medium
-        case .semibold: .semibold
-        case .bold: .bold
-        }
     }
 
     private static let bitmapInfo = CGBitmapInfo(

@@ -55,7 +55,6 @@ struct CoreAnimationDanmakuRendererTests {
         let key = try #require(
             DanmakuTextureRasterizer.key(
                 event: fixture,
-                style: .production,
                 backingScale: 2
             )
         )
@@ -88,14 +87,12 @@ struct CoreAnimationDanmakuRendererTests {
         var secondResult: DanmakuPreparationResult?
         owner.prepare(
             event: fixtureEvent(id: "bounded-first", mode: .scrolling),
-            style: .production,
             backingScale: 2,
             preparationID: 1,
             generation: 0
         ) { _ in }
         owner.prepare(
             event: fixtureEvent(id: "bounded-second", mode: .scrolling),
-            style: .production,
             backingScale: 2,
             preparationID: 2,
             generation: 0
@@ -268,7 +265,6 @@ struct CoreAnimationDanmakuRendererTests {
         await withCheckedContinuation { continuation in
             owner.prepare(
                 event: event,
-                style: .production,
                 backingScale: 2,
                 preparationID: preparationID,
                 generation: 0

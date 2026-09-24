@@ -81,7 +81,7 @@ struct AppEnvironment {
         self.playerEngine = playerEngine
         self.playbackPreferencesController = playbackPreferencesController
         self.danmakuPreferencesStore = danmakuPreferencesStore
-        let renderer = CoreAnimationDanmakuRenderer(style: .production)
+        let renderer = CoreAnimationDanmakuRenderer()
         let controller = DanmakuPresentationController(
             backend: renderer,
             configuration: Self.emptyDanmakuConfiguration

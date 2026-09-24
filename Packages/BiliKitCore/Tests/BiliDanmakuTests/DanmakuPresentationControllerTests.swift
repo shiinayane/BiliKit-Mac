@@ -119,9 +119,8 @@ struct DanmakuPresentationControllerTests {
         surfaceWidth: Double,
         textWidth: Double
     ) {
-        let policy = DanmakuMotionPolicy()
         let durations = DanmakuSpeedLevel.allCases.map {
-            policy.duration(
+            DanmakuMotionPolicy.duration(
                 for: .scrolling,
                 textWidth: textWidth,
                 surfaceWidth: surfaceWidth,
@@ -134,10 +133,8 @@ struct DanmakuPresentationControllerTests {
 
     @Test
     func durationSafetyBoundsOnlyClampExtremeInputs() {
-        let policy = DanmakuMotionPolicy()
-
         #expect(
-            policy.duration(
+            DanmakuMotionPolicy.duration(
                 for: .scrolling,
                 textWidth: 1,
                 surfaceWidth: 1,
@@ -145,7 +142,7 @@ struct DanmakuPresentationControllerTests {
             ) == 1.5
         )
         #expect(
-            policy.duration(
+            DanmakuMotionPolicy.duration(
                 for: .scrolling,
                 textWidth: 4_000,
                 surfaceWidth: 10_000,
@@ -153,7 +150,7 @@ struct DanmakuPresentationControllerTests {
             ) == 60
         )
         #expect(
-            policy.duration(
+            DanmakuMotionPolicy.duration(
                 for: .top,
                 textWidth: 123,
                 surfaceWidth: 1_100,
@@ -210,8 +207,7 @@ struct DanmakuPresentationControllerTests {
         let backend = RecordingRenderingBackend()
         let controller = DanmakuPresentationController(
             backend: backend,
-            configuration: configuration(maximumActiveCount: 2),
-            motionPolicy: DanmakuMotionPolicy(fixedSeconds: 1)
+            configuration: configuration(maximumActiveCount: 2)
         )
         let identity = PlaybackItemIdentity(bvid: "BV1OrderFixture", cid: 1)
 
@@ -226,7 +222,7 @@ struct DanmakuPresentationControllerTests {
         controller.apply(
             update(
                 identity: identity,
-                position: 3,
+                position: 1 + DanmakuMotionPolicy.fixedSeconds + 1,
                 generation: 1,
                 events: [fixtureEvent(id: "second", mode: .top)]
             )

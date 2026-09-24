@@ -4,6 +4,9 @@ public enum DanmakuSpeedLevel: Int, CaseIterable, Sendable, Equatable {
     case three
     case four
     case five
+
+    /// 未保存偏好时的唯一默认值；设置、控件与 presentation 初值都从这里读取。
+    public static let `default` = Self.three
 }
 
 public enum DanmakuDisplayArea: Int, CaseIterable, Sendable, Equatable {
@@ -12,6 +15,8 @@ public enum DanmakuDisplayArea: Int, CaseIterable, Sendable, Equatable {
     case half = 50
     case threeQuarters = 75
     case full = 100
+
+    public static let `default` = Self.full
 
     public var fraction: Double {
         Double(rawValue) / 100
@@ -22,6 +27,8 @@ public enum DanmakuDensity: Int, CaseIterable, Sendable, Equatable {
     case normal
     case increased
     case overlapping
+
+    public static let `default` = Self.normal
 }
 
 public struct DanmakuOpacity: Sendable, Equatable {

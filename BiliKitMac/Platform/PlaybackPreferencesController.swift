@@ -108,10 +108,10 @@ final class UserDefaultsPlaybackPreferencesStore:
 
 struct DanmakuPreferences: Equatable, Sendable {
     static let defaults = DanmakuPreferences(
-        speedLevel: .three,
+        speedLevel: .default,
         opacity: .fullyOpaque,
-        displayArea: .full,
-        density: .normal
+        displayArea: .default,
+        density: .default
     )
 
     let speedLevel: DanmakuSpeedLevel

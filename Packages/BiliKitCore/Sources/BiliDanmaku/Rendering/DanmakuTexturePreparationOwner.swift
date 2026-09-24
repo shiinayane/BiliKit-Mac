@@ -78,7 +78,6 @@ final class DanmakuTexturePreparationOwner {
 
     func prepare(
         event: DanmakuEvent,
-        style: CoreAnimationDanmakuStyle,
         backingScale: Double,
         preparationID: UInt64,
         generation: UInt64,
@@ -95,7 +94,6 @@ final class DanmakuTexturePreparationOwner {
         guard
             let key = DanmakuTextureRasterizer.key(
                 event: event,
-                style: style,
                 backingScale: backingScale
             )
         else {
