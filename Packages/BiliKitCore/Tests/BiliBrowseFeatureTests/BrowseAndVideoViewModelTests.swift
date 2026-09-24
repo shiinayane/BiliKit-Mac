@@ -108,9 +108,9 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        #expect(model.recommendationPagination().canLoadMore)
+        #expect(model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
 
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
         guard case .loaded(.recommendation(let secondBatch)) = model.state else {
             Issue.record("推荐追加后应保持 loaded")
@@ -119,7 +119,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(secondBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
         #expect(secondBatch.nextContinuation == RecommendationContinuation(freshIndex: 3))
 
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
         guard case .loaded(.recommendation(let finalBatch)) = model.state else {
             Issue.record("全重复推荐批次后应保持 loaded")
@@ -127,7 +127,7 @@ struct BrowseAndVideoViewModelTests {
         }
         #expect(finalBatch.videos.map(\.bvid) == [first.bvid, second.bvid])
         #expect(finalBatch.nextContinuation == nil)
-        #expect(!model.recommendationPagination().canLoadMore)
+        #expect(!model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
         #expect(await repository.recommendationRequests.count == 3)
     }
 
@@ -154,7 +154,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
 
         guard case .loaded(.recommendation(let page)) = model.state else {
@@ -166,7 +166,7 @@ struct BrowseAndVideoViewModelTests {
                 == BrowseViewModel.maximumRetainedRecommendationVideos
         )
         #expect(page.nextContinuation == nil)
-        #expect(!model.recommendationPagination().canLoadMore)
+        #expect(!model.pagination(for: .recommendation(continuation: nil)).canLoadMore)
     }
 
     @Test
@@ -208,7 +208,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activateRecommendation()
         await model.waitForCurrentTask()
-        model.loadMoreRecommendations()
+        model.loadMore(.recommendation)
         await model.waitForCurrentTask()
 
         guard case .loaded(.recommendation(let page)) = model.state else {
@@ -217,7 +217,10 @@ struct BrowseAndVideoViewModelTests {
         }
         #expect(page.videos.count == 1)
         #expect(model.authenticationRevalidationGeneration == 1)
-        #expect(model.recommendationPagination().loadMoreError == .authenticationInvalid)
+        #expect(
+            model.pagination(for: .recommendation(continuation: nil)).loadMoreError
+                == .authenticationInvalid
+        )
     }
 
     @Test
@@ -255,13 +258,13 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
         #expect(model.authenticationRevalidationGeneration == 1)
 
         model.activateSearch(VideoSearchCriteria(query: "认证"))
         await model.waitForCurrentTask()
-        model.loadMoreSearch()
+        model.loadMore(.search)
         await model.waitForCurrentTask()
         #expect(model.authenticationRevalidationGeneration == 2)
     }
@@ -280,7 +283,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
 
         guard case .loaded(.popular(let page)) = model.state else {
@@ -290,7 +293,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(page.videos.map(\.bvid) == [fixture.bvid])
         #expect(page.pageNumber == 2)
         #expect(!page.hasMore)
-        #expect(!model.popularPagination(for: request).canLoadMore)
+        #expect(!model.pagination(for: request).canLoadMore)
         #expect(await repository.popularPages.count == 2)
     }
 
@@ -316,7 +319,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         try await appendGate.waitForEntries()
 
         model.refreshPopular(pageSize: 50)
@@ -331,7 +334,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(page.videos.map(\.bvid) == [fresh.bvid])
         #expect(page.pageNumber == 1)
         #expect(!page.hasMore)
-        #expect(model.popularSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .popular) == 1)
     }
 
     @Test
@@ -473,7 +476,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.search(oldCriteria)
         await model.waitForCurrentTask()
-        model.loadMoreSearch()
+        model.loadMore(.search)
         try await oldAppendGate.waitForEntries()
 
         model.search(newCriteria)
@@ -492,7 +495,10 @@ struct BrowseAndVideoViewModelTests {
             model.activeRequestIdentity
                 == .search(VideoSearchRequest(criteria: newCriteria, page: 1))
         )
-        #expect(model.searchPagination(for: newCriteria).loadMoreError == nil)
+        #expect(
+            model.pagination(for: .search(VideoSearchRequest(criteria: newCriteria, page: 1)))
+                .loadMoreError == nil
+        )
     }
 
     @Test(.timeLimit(.minutes(1)), arguments: [BrowseFeed.recommendation, .popular, .search])
@@ -555,7 +561,7 @@ struct BrowseAndVideoViewModelTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
-        model.loadMorePopular()
+        model.loadMore(.popular)
         await model.waitForCurrentTask()
         model.activateSearch(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
@@ -587,7 +593,7 @@ struct BrowseAndVideoViewModelTests {
         await model.waitForCurrentTask()
         let loadedState = model.state
         let successfulRefreshGeneration =
-            model.popularSuccessfulRefreshGeneration
+            model.successfulRefreshGeneration(for: .popular)
 
         model.refreshPopular(pageSize: 50)
         #expect(model.state == loadedState)
@@ -598,7 +604,7 @@ struct BrowseAndVideoViewModelTests {
         #expect(!model.isRefreshing)
         #expect(model.refreshError == .requestRestricted)
         #expect(
-            model.popularSuccessfulRefreshGeneration
+            model.successfulRefreshGeneration(for: .popular)
                 == successfulRefreshGeneration
         )
         #expect(await repository.popularPages.count == 2)
@@ -618,19 +624,45 @@ struct BrowseAndVideoViewModelTests {
 
         model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
-        #expect(model.searchSuccessfulRefreshGeneration == 0)
+        #expect(model.successfulRefreshGeneration(for: .search) == 0)
 
         model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
-        #expect(model.searchSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .search) == 1)
 
         model.search(VideoSearchCriteria(query: "macOS"))
         #expect(model.isRefreshing)
         await model.waitForCurrentTask()
 
-        #expect(model.searchSuccessfulRefreshGeneration == 1)
+        #expect(model.successfulRefreshGeneration(for: .search) == 1)
         #expect(model.refreshError == .requestRestricted)
         #expect(await repository.searchRequests.count == 3)
+    }
+
+    @Test(arguments: [BrowseFeed.recommendation, .popular, .search])
+    @MainActor
+    func successfulRefreshAdvancesOnlyItsOwnSourceGeneration(_ feed: BrowseFeed) async {
+        let fixture = ContentFixtures()
+        let repository = FeedRepositoryStub(
+            recommendations: { _, _ in fixture.recommendationPage },
+            popular: { request, _ in fixture.popularPage(request) },
+            search: { request, _ in fixture.searchPage(page: request.page) }
+        )
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
+        )
+
+        feed.activate(model)
+        await model.waitForCurrentTask()
+        feed.refresh(model)
+        await model.waitForCurrentTask()
+
+        for source in FeedSource.allCases {
+            #expect(
+                model.successfulRefreshGeneration(for: source)
+                    == (source == feed.source ? 1 : 0)
+            )
+        }
     }
 
     @Test
@@ -2658,39 +2690,47 @@ enum BrowseFeed: Sendable {
         }
     }
 
-    @MainActor
-    func loadMore(_ model: BrowseViewModel) {
+    var source: FeedSource {
         switch self {
-        case .recommendation: model.loadMoreRecommendations()
-        case .popular: model.loadMorePopular()
-        case .search: model.loadMoreSearch()
+        case .recommendation: .recommendation
+        case .popular: .popular
+        case .search: .search
+        }
+    }
+
+    private var firstPageRequest: FeedRequest {
+        switch self {
+        case .recommendation: .recommendation(continuation: nil)
+        case .popular: Self.popularRequest
+        case .search: .search(VideoSearchRequest(criteria: Self.searchCriteria, page: 1))
         }
     }
 
     @MainActor
-    func retryLoadMore(_ model: BrowseViewModel) {
+    func refresh(_ model: BrowseViewModel) {
         switch self {
-        case .recommendation: model.retryRecommendationLoadMore()
-        case .popular: model.retryPopularLoadMore()
-        case .search: model.retrySearchLoadMore()
+        case .recommendation: model.refreshRecommendation()
+        case .popular: model.refreshPopular(pageSize: 50)
+        case .search: model.search(Self.searchCriteria)
         }
+    }
+
+    @MainActor
+    func loadMore(_ model: BrowseViewModel) {
+        model.loadMore(source)
+    }
+
+    @MainActor
+    func retryLoadMore(_ model: BrowseViewModel) {
+        model.retryLoadMore(source)
     }
 
     @MainActor
     func pagination(
         _ model: BrowseViewModel
     ) -> (canLoadMore: Bool, tailIdentity: String?, loadMoreError: ContentApplicationError?) {
-        switch self {
-        case .recommendation:
-            let pagination = model.recommendationPagination()
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        case .popular:
-            let pagination = model.popularPagination(for: Self.popularRequest)
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        case .search:
-            let pagination = model.searchPagination(for: Self.searchCriteria)
-            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
-        }
+        let pagination = model.pagination(for: firstPageRequest)
+        return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
     }
 
     @MainActor

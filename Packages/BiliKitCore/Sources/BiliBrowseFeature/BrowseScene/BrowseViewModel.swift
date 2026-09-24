@@ -16,6 +16,23 @@ struct FeedPresentation: Sendable, Equatable {
     let refreshError: ContentApplicationError?
 }
 
+/// 首页推荐、热门与搜索三个来源；各自拥有独立工作集，互不共享可被污染的状态。
+public enum FeedSource: Sendable, Hashable, CaseIterable {
+    case recommendation
+    case popular
+    case search
+}
+
+extension FeedRequest {
+    var source: FeedSource {
+        switch self {
+        case .recommendation: .recommendation
+        case .popular: .popular
+        case .search: .search
+        }
+    }
+}
+
 /// 推荐、热门与搜索共用的分页 footer 投影。
 struct FeedPaginationPresentation: Sendable, Equatable {
     static let unavailable = FeedPaginationPresentation(
@@ -42,9 +59,7 @@ public final class BrowseViewModel {
 
     public private(set) var state: FeedState = .idle
     public private(set) var authenticationRevalidationGeneration = 0
-    public private(set) var recommendationSuccessfulRefreshGeneration: UInt64 = 0
-    public private(set) var popularSuccessfulRefreshGeneration: UInt64 = 0
-    public private(set) var searchSuccessfulRefreshGeneration: UInt64 = 0
+    private var successfulRefreshGenerations: [FeedSource: UInt64] = [:]
     private(set) var activeRequestIdentity: FeedRequest?
     private(set) var isRefreshing = false
     private(set) var refreshError: ContentApplicationError?
@@ -52,9 +67,7 @@ public final class BrowseViewModel {
     @ObservationIgnored private let useCase: FeedUseCase
     @ObservationIgnored private let loadTask = LatestTask()
     @ObservationIgnored private var authenticationSessionGeneration: UInt64?
-    private var recommendationWorkset = FeedWorkset()
-    private var popularWorkset = FeedWorkset()
-    private var searchWorkset = FeedWorkset()
+    private var worksets: [FeedSource: FeedWorkset] = [:]
 
     public init(useCase: FeedUseCase) {
         self.useCase = useCase
@@ -90,55 +103,30 @@ public final class BrowseViewModel {
         refresh(.recommendation(continuation: nil))
     }
 
-    public func loadMoreRecommendations() {
-        let baseRequest = FeedRequest.recommendation(continuation: nil)
+    /// 该来源刷新成功的次数；App 只在它前进时把对应网格滚回顶部。
+    public func successfulRefreshGeneration(for source: FeedSource) -> UInt64 {
+        successfulRefreshGenerations[source, default: 0]
+    }
+
+    /// 为当前路由的来源加载下一页；只在已加载内容仍能衔接且没有其他请求时发出。
+    public func loadMore(_ source: FeedSource) {
         guard
-            activeRequestIdentity == baseRequest,
-            case .loaded(.recommendation(let page)) = state,
-            let nextContinuation = page.nextContinuation,
-            !page.videos.isEmpty,
+            let baseRequest = activeRequestIdentity,
+            baseRequest.source == source,
+            case .loaded(let content) = state,
             !isRefreshing,
-            !recommendationWorkset.isLoadingMore,
-            !loadTask.isRunning
+            worksets[source]?.isLoadingMore != true,
+            !loadTask.isRunning,
+            let nextRequest = Self.nextPageRequest(after: content, base: baseRequest)
         else {
             return
         }
-
-        startAppend(
-            .recommendation(continuation: nextContinuation),
-            baseRequest: baseRequest
-        )
+        startAppend(nextRequest, baseRequest: baseRequest)
     }
 
-    public func retryRecommendationLoadMore() {
-        guard recommendationWorkset.loadMoreError != nil else { return }
-        loadMoreRecommendations()
-    }
-
-    public func loadMorePopular() {
-        guard
-            case .popular(let basePage, let pageSize) = activeRequestIdentity,
-            case .loaded(.popular(let page)) = state,
-            page.pageNumber >= basePage,
-            page.pageSize == pageSize,
-            page.hasMore,
-            !page.videos.isEmpty,
-            !isRefreshing,
-            !popularWorkset.isLoadingMore,
-            !loadTask.isRunning
-        else {
-            return
-        }
-
-        startAppend(
-            .popular(page: page.pageNumber + 1, pageSize: pageSize),
-            baseRequest: .popular(page: basePage, pageSize: pageSize)
-        )
-    }
-
-    public func retryPopularLoadMore() {
-        guard popularWorkset.loadMoreError != nil else { return }
-        loadMorePopular()
+    public func retryLoadMore(_ source: FeedSource) {
+        guard worksets[source]?.loadMoreError != nil else { return }
+        loadMore(source)
     }
 
     public func search(_ criteria: VideoSearchCriteria) {
@@ -149,40 +137,10 @@ public final class BrowseViewModel {
             fail(request: request, error: .invalidRequest)
             return
         }
-        if searchWorkset.request != request {
-            searchWorkset = FeedWorkset(request: request)
+        if worksets[.search]?.request != request {
+            worksets[.search] = FeedWorkset(request: request)
         }
         refresh(request)
-    }
-
-    public func loadMoreSearch() {
-        guard
-            case .search(let baseSearchRequest) = activeRequestIdentity,
-            baseSearchRequest.page == 1,
-            case .loaded(.search(let loadedQuery, let page)) = state,
-            loadedQuery == baseSearchRequest.criteria.query,
-            page.pageNumber < page.totalPages,
-            !isRefreshing,
-            !searchWorkset.isLoadingMore,
-            !loadTask.isRunning
-        else {
-            return
-        }
-
-        startAppend(
-            .search(
-                VideoSearchRequest(
-                    criteria: baseSearchRequest.criteria,
-                    page: page.pageNumber + 1
-                )
-            ),
-            baseRequest: .search(baseSearchRequest)
-        )
-    }
-
-    public func retrySearchLoadMore() {
-        guard searchWorkset.loadMoreError != nil else { return }
-        loadMoreSearch()
     }
 
     /// 丢弃上一账户范围的推荐、热门与搜索工作集；当前路由会以同一请求重新开始。
@@ -196,9 +154,7 @@ public final class BrowseViewModel {
         state = .idle
         isRefreshing = false
         refreshError = nil
-        recommendationWorkset = FeedWorkset()
-        popularWorkset = FeedWorkset()
-        searchWorkset = FeedWorkset()
+        worksets = [:]
         switch activeRequest {
         case .recommendation:
             activateRecommendation()
@@ -236,9 +192,7 @@ public final class BrowseViewModel {
     /// 取消请求并丢弃三份内存工作集，适用于窗口关闭而非普通页面 push/pop。
     public func reset() {
         deactivateRoute()
-        recommendationWorkset = FeedWorkset()
-        popularWorkset = FeedWorkset()
-        searchWorkset = FeedWorkset()
+        worksets = [:]
     }
 
     func presentation(
@@ -258,64 +212,45 @@ public final class BrowseViewModel {
         )
     }
 
-    func popularPagination(
-        for request: FeedRequest
-    ) -> FeedPaginationPresentation {
-        guard
-            case .popular(let basePage, let pageSize) = request,
-            popularWorkset.request == request,
-            case .loaded(.popular(let page)) = popularWorkset.state,
-            page.pageNumber >= basePage,
-            page.pageSize == pageSize
+    /// 分页 footer 投影；`request` 是该来源工作集的第一页请求。
+    func pagination(for request: FeedRequest) -> FeedPaginationPresentation {
+        guard let workset = workset(for: request),
+            case .loaded(let content) = workset.state
         else {
             return .unavailable
         }
-        return pagination(
-            of: popularWorkset,
-            hasMore: page.hasMore && !page.videos.isEmpty,
-            tailIdentity: page.videos.last.map {
-                "popular|\(basePage)|\(pageSize)|\(page.pageNumber)|\($0.bvid)"
+        switch (request, content) {
+        case (.recommendation, .recommendation(let page)):
+            return pagination(
+                of: workset,
+                hasMore: page.nextContinuation != nil && !page.videos.isEmpty,
+                tailIdentity: page.videos.last.map {
+                    "recommendation|\(page.continuation.freshIndex)|\($0.bvid)"
+                }
+            )
+        case (.popular(let basePage, let pageSize), .popular(let page)):
+            guard page.pageNumber >= basePage, page.pageSize == pageSize else {
+                return .unavailable
             }
-        )
-    }
-
-    func recommendationPagination() -> FeedPaginationPresentation {
-        let request = FeedRequest.recommendation(continuation: nil)
-        guard
-            recommendationWorkset.request == request,
-            case .loaded(.recommendation(let page)) = recommendationWorkset.state
-        else {
+            return pagination(
+                of: workset,
+                hasMore: page.hasMore && !page.videos.isEmpty,
+                tailIdentity: page.videos.last.map {
+                    "popular|\(basePage)|\(pageSize)|\(page.pageNumber)|\($0.bvid)"
+                }
+            )
+        case (.search(let searchRequest), .search(let loadedQuery, let page)):
+            guard loadedQuery == searchRequest.criteria.query else { return .unavailable }
+            return pagination(
+                of: workset,
+                hasMore: page.pageNumber < page.totalPages,
+                tailIdentity: page.videos.last.map {
+                    "\(searchRequest.criteria.identityComponent)|\(page.pageNumber)|\($0.bvid)"
+                }
+            )
+        default:
             return .unavailable
         }
-        return pagination(
-            of: recommendationWorkset,
-            hasMore: page.nextContinuation != nil && !page.videos.isEmpty,
-            tailIdentity: page.videos.last.map {
-                "recommendation|\(page.continuation.freshIndex)|\($0.bvid)"
-            }
-        )
-    }
-
-    func searchPagination(
-        for criteria: VideoSearchCriteria
-    ) -> FeedPaginationPresentation {
-        let request = FeedRequest.search(
-            VideoSearchRequest(criteria: criteria, page: 1)
-        )
-        guard
-            searchWorkset.request == request,
-            case .loaded(.search(let loadedQuery, let page)) = searchWorkset.state,
-            loadedQuery == criteria.query
-        else {
-            return .unavailable
-        }
-        return pagination(
-            of: searchWorkset,
-            hasMore: page.pageNumber < page.totalPages,
-            tailIdentity: page.videos.last.map {
-                "\(criteria.identityComponent)|\(page.pageNumber)|\($0.bvid)"
-            }
-        )
     }
 
     public func waitForCurrentTask() async {
@@ -411,14 +346,7 @@ public final class BrowseViewModel {
             isRefreshing = false
             refreshError = nil
             if recordsSuccessfulRefresh {
-                switch request {
-                case .recommendation:
-                    recommendationSuccessfulRefreshGeneration &+= 1
-                case .popular:
-                    popularSuccessfulRefreshGeneration &+= 1
-                case .search:
-                    searchSuccessfulRefreshGeneration &+= 1
-                }
+                successfulRefreshGenerations[request.source, default: 0] &+= 1
             }
         } catch is CancellationError {
             guard isCurrent(), activeRequestIdentity == request else { return }
@@ -488,6 +416,40 @@ public final class BrowseViewModel {
 
         if isCurrent(), activeRequestIdentity == baseRequest {
             storeActiveWorkset()
+        }
+    }
+
+    /// 各来源只在"下一页请求怎样构造"上不同：推荐沿 continuation，热门与搜索按页码递增。
+    private static func nextPageRequest(
+        after content: FeedContent,
+        base: FeedRequest
+    ) -> FeedRequest? {
+        switch (base, content) {
+        case (.recommendation(.none), .recommendation(let page)):
+            guard let nextContinuation = page.nextContinuation, !page.videos.isEmpty else {
+                return nil
+            }
+            return .recommendation(continuation: nextContinuation)
+        case (.popular(let basePage, let pageSize), .popular(let page)):
+            guard page.pageNumber >= basePage,
+                page.pageSize == pageSize,
+                page.hasMore,
+                !page.videos.isEmpty
+            else { return nil }
+            return .popular(page: page.pageNumber + 1, pageSize: pageSize)
+        case (.search(let searchRequest), .search(let loadedQuery, let page)):
+            guard searchRequest.page == 1,
+                loadedQuery == searchRequest.criteria.query,
+                page.pageNumber < page.totalPages
+            else { return nil }
+            return .search(
+                VideoSearchRequest(
+                    criteria: searchRequest.criteria,
+                    page: page.pageNumber + 1
+                )
+            )
+        default:
+            return nil
         }
     }
 
@@ -698,28 +660,14 @@ public final class BrowseViewModel {
         for request: FeedRequest,
         _ update: (inout FeedWorkset) -> Void
     ) {
-        switch request {
-        case .recommendation:
-            update(&recommendationWorkset)
-        case .popular:
-            update(&popularWorkset)
-        case .search:
-            update(&searchWorkset)
-        }
+        update(&worksets[request.source, default: FeedWorkset()])
     }
 
     private func workset(for request: FeedRequest) -> FeedWorkset? {
-        switch request {
-        case .recommendation:
-            guard recommendationWorkset.request == request else { return nil }
-            return recommendationWorkset
-        case .popular:
-            guard popularWorkset.request == request else { return nil }
-            return popularWorkset
-        case .search:
-            guard searchWorkset.request == request else { return nil }
-            return searchWorkset
+        guard let workset = worksets[request.source], workset.request == request else {
+            return nil
         }
+        return workset
     }
 }
 
