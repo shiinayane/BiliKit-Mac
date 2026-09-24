@@ -99,7 +99,7 @@ public final class BrowseViewModel {
             !page.videos.isEmpty,
             !isRefreshing,
             !recommendationWorkset.isLoadingMore,
-            loadTask.task == nil
+            !loadTask.isRunning
         else {
             return
         }
@@ -125,7 +125,7 @@ public final class BrowseViewModel {
             !page.videos.isEmpty,
             !isRefreshing,
             !popularWorkset.isLoadingMore,
-            loadTask.task == nil
+            !loadTask.isRunning
         else {
             return
         }
@@ -164,7 +164,7 @@ public final class BrowseViewModel {
             page.pageNumber < page.totalPages,
             !isRefreshing,
             !searchWorkset.isLoadingMore,
-            loadTask.task == nil
+            !loadTask.isRunning
         else {
             return
         }

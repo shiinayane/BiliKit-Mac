@@ -32,7 +32,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | target | 拥有 | 不得依赖 |
 | --- | --- | --- |
 | `BiliModels` | 跨层稳定实体与值类型（视频、播放清单、字幕、弹幕、评论、账户投影） | 任何 Bili 模块、SwiftUI、AppKit、AVFoundation、Network |
-| `BiliApplication` | Use Case、port（内容仓库、播放控制与时间轴、字幕、弹幕、评论、认证、观看进度）与应用级错误 | 除 `BiliModels` 外的 Bili 模块、UI/播放/网络框架、DTO、Keychain、Cookie |
+| `BiliApplication` | Use Case、port（内容仓库、播放控制与时间轴、字幕、弹幕、评论、认证、观看进度）、应用级错误，以及 Feature 共用的 `package` 并发原语 `LatestTask` | 除 `BiliModels` 外的 Bili 模块、UI/播放/网络框架、DTO、Keychain、Cookie |
 | `BiliNetworking` | 无业务语义的 HTTP client、Range client、`HTTPRequestAuthorizing`、URL 形状策略与 JSON 响应判定 | Bili 模块、`Security`、UI/播放框架 |
 | `BiliAPI` | endpoint DTO、WBI、解码、protobuf wire、远端错误映射，并实现 Application 仓库 port | `BiliAuth`（只接受注入的授权器） |
 | `BiliAuth` | Web QR 状态机、Cookie envelope、Keychain store、请求授权器，实现 `AuthenticationServicing` | `BiliAPI`、`BiliPlayback`、`BiliDanmaku`、Feature、UI 框架 |
@@ -46,8 +46,8 @@ BiliNetworking 不依赖任何 Bili 模块
 
 - SwiftProtobuf 只允许 `BiliAPI` import；Sparkle 只允许 App target。
 - Feature 之间不互相 import，跨域跳转由 App 层协调。
-- ViewModel 拥有用户意图的 Task、取消与 generation；只有最新意图能写回 UI State。View 的
-  `.task(id:)` 只把生命周期意图交给 ViewModel。
+- ViewModel 拥有用户意图的 Task、取消与 generation；只有最新意图能写回 UI State，单一最新
+  意图统一用 `LatestTask` 隔离，不各自手写。View 的 `.task(id:)` 只把生命周期意图交给 ViewModel。
 - adapter 必须传播 `CancellationError`，不把取消折叠成网络失败。
 - 新 target 需同时具备稳定独立领域、独立状态或安全／性能边界、真实调用方与测试；默认在现有
   target 内加子目录。不建立 `Common`／`Shared`／`Utils`，不建立空占位 target。
