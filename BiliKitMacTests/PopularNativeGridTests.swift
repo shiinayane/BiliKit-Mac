@@ -8,6 +8,7 @@ import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct PopularNativeGridTests {
     @Test
     func updatePlanDescribesAppendReloadAndRemovalWithoutFullReloadContract() {

@@ -82,7 +82,7 @@ struct PlayerKeyboardInputStateTests {
     }
 
     @Test
-    func detailWindowScopeExcludesModifiersFocusedControlsAndOtherWindows() {
+    func detailWindowScopeCapturesOnlyAnEnabledUnmodifiedPlayerWindow() {
         #expect(
             PlayerKeyboardEventScope.captures(
                 isEnabled: true,
@@ -91,21 +91,31 @@ struct PlayerKeyboardInputStateTests {
                 focusedResponderOwnsKeys: false
             )
         )
-        for excluded in [
+    }
+
+    /// 依次为：未启用、带修饰键、不是捕获窗口、焦点控件自行处理按键。
+    @Test(
+        arguments: [
             (false, false, true, false),
             (true, true, true, false),
             (true, false, false, false),
             (true, false, true, true)
-        ] {
-            #expect(
-                !PlayerKeyboardEventScope.captures(
-                    isEnabled: excluded.0,
-                    hasDisallowedModifier: excluded.1,
-                    eventMatchesCaptureWindow: excluded.2,
-                    focusedResponderOwnsKeys: excluded.3
-                )
+        ]
+    )
+    func detailWindowScopeExcludesModifiersFocusedControlsAndOtherWindows(
+        isEnabled: Bool,
+        hasDisallowedModifier: Bool,
+        eventMatchesCaptureWindow: Bool,
+        focusedResponderOwnsKeys: Bool
+    ) {
+        #expect(
+            !PlayerKeyboardEventScope.captures(
+                isEnabled: isEnabled,
+                hasDisallowedModifier: hasDisallowedModifier,
+                eventMatchesCaptureWindow: eventMatchesCaptureWindow,
+                focusedResponderOwnsKeys: focusedResponderOwnsKeys
             )
-        }
+        )
     }
 
     @Test

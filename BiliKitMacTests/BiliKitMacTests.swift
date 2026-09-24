@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliKitMacTests {
     @Test
     @MainActor

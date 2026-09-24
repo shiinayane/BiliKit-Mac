@@ -8,6 +8,7 @@ import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct AppNavigationCoordinatorTests {
     @Test
     @MainActor
@@ -103,27 +104,25 @@ struct AppNavigationCoordinatorTests {
         )
     }
 
-    @Test
+    @Test(arguments: [AppTab.search, .home, .popular, .history])
     @MainActor
-    func nativeBackReturnsEachSourceInOnePop() {
-        for source in [AppTab.search, .home, .popular, .history] {
-            var stopCount = 0
-            let coordinator = AppNavigationCoordinator(
-                startPlayback: { _ in },
-                stopPlayback: { stopCount += 1 }
-            )
-            coordinator.selectedTab = source
+    func nativeBackReturnsEachSourceInOnePop(source: AppTab) {
+        var stopCount = 0
+        let coordinator = AppNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: { stopCount += 1 }
+        )
+        coordinator.selectedTab = source
 
-            coordinator.openPlayback("BV1Source")
-            #expect(coordinator.playbackPath.count == 1)
-            coordinator.playbackPath.removeLast()
-            coordinator.playbackPath.removeAll()
+        coordinator.openPlayback("BV1Source")
+        #expect(coordinator.playbackPath.count == 1)
+        coordinator.playbackPath.removeLast()
+        coordinator.playbackPath.removeAll()
 
-            #expect(coordinator.selectedTab == source)
-            #expect(coordinator.playbackPath.isEmpty)
-            #expect(coordinator.currentPlaybackBVID == nil)
-            #expect(stopCount == 1)
-        }
+        #expect(coordinator.selectedTab == source)
+        #expect(coordinator.playbackPath.isEmpty)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(stopCount == 1)
     }
 
     @Test
