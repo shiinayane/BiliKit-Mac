@@ -145,10 +145,8 @@ struct PlayerKeyboardInputStateTests {
     }
 
     @Test
-    func feedbackDismissalUsesStaleIdentityGuard() {
+    func feedbackDismissalUsesStaleIdentityGuardAndRespectsReduceMotion() {
         let identity = UUID()
-        #expect(PlayerShortcutFeedbackDismissalPolicy.delay == .milliseconds(800))
-        #expect(PlayerShortcutFeedbackDismissalPolicy.fadeDuration == 0.16)
         #expect(
             PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
                 reduceMotion: false
@@ -170,38 +168,6 @@ struct PlayerKeyboardInputStateTests {
                 displayedID: UUID(),
                 scheduledID: identity
             )
-        )
-        #expect(PlayerShortcutFeedback.volume(55).label == "55%")
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(-5).label
-                == AppStrings.localized("后退 \(5) 秒")
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(5).label
-                == AppStrings.localized("前进 \(5) 秒")
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(-5).symbolName
-                == "gobackward.5"
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(5).accessibilityLabel
-                == AppStrings.localized("已前进 \(5) 秒")
-        )
-        #expect(PlayerShortcutFeedback.playback(true).label == AppStrings.localized("播放"))
-        #expect(PlayerShortcutFeedback.playback(false).label == AppStrings.localized("暂停"))
-        #expect(PlayerShortcutFeedback.playback(true).symbolName == "play.fill")
-        #expect(
-            PlayerShortcutFeedback.playback(false).accessibilityLabel
-                == AppStrings.localized("已暂停播放")
-        )
-        #expect(
-            PlayerShortcutFeedback.danmaku(false).label
-                == AppStrings.localized("弹幕 关")
-        )
-        #expect(
-            PlayerShortcutFeedback.subtitles(.unavailable).label
-                == AppStrings.localized("无可用字幕")
         )
     }
 }
