@@ -235,14 +235,6 @@ private final class DefaultSystemRemoteCommandManager:
     }
 }
 
-private final class SystemNowPlayingArtworkImageBox: @unchecked Sendable {
-    let image: CGImage
-
-    init(_ image: CGImage) {
-        self.image = image
-    }
-}
-
 @MainActor
 final class SystemNowPlayingController {
     private let center: any SystemNowPlayingCenterWriting
@@ -569,10 +561,9 @@ final class SystemNowPlayingController {
     nonisolated private static func makeArtwork(
         from image: CGImage
     ) -> MPMediaItemArtwork {
-        let box = SystemNowPlayingArtworkImageBox(image)
         let size = NSSize(width: image.width, height: image.height)
         return MPMediaItemArtwork(boundsSize: size) { _ in
-            NSImage(cgImage: box.image, size: size)
+            NSImage(cgImage: image, size: size)
         }
     }
 

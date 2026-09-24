@@ -10,7 +10,7 @@ enum NativeVideoImageLoadOrigin: Equatable {
     var shouldAnimate: Bool { self == .network }
 }
 
-struct NativeVideoImageLoadResult: @unchecked Sendable {
+struct NativeVideoImageLoadResult: Sendable {
     let image: CGImage
     let origin: NativeVideoImageLoadOrigin
 }
@@ -54,7 +54,7 @@ struct NativeVideoImageResponseAccumulator {
     }
 }
 
-private struct NativeVideoImageResponse: @unchecked Sendable {
+private struct NativeVideoImageResponse: Sendable {
     let data: Data
 }
 
