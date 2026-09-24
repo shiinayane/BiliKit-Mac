@@ -108,8 +108,10 @@ generation。消费者不自建 wall-clock timer，也不接触 `AVPlayer`／`CM
 
 Web QR 协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
 `BiliAuth`；Application 只暴露非秘密认证状态与 `AuthenticationServicing`，二维码图像走
-`BiliAuthFeature` 定义的窄 Presentation port 注入。`BiliAPI` 在私有 builder 中逐请求选择匿名或账户
-读取，授权器由 Composition 注入。唯一写能力是观看进度 heartbeat。具体边界见
+`BiliAuthFeature` 定义的窄 Presentation port 注入。`BiliAPIClient` 的请求 builder（`RequestAccess`
+与请求管线）只在 `BiliAPI` 内部可见，由同 actor 的各域 endpoint 扩展逐请求选择匿名或账户读取；
+Repository adapter 只调用 endpoint 方法，不自行构造 `RequestAccess`。授权器由 Composition 注入。
+唯一写能力是观看进度 heartbeat。具体边界见
 [`SECURITY-MODEL.md`](SECURITY-MODEL.md)。
 
 多窗口共享一个 App 级账户 session coordinator：窗口出现后注册其 API transport，登出／换号／凭据
