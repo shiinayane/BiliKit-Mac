@@ -143,8 +143,6 @@ private final class DefaultSystemNowPlayingCenter: SystemNowPlayingCenterWriting
 
 @MainActor
 protocol SystemRemoteCommandManaging: AnyObject {
-    var installationCount: Int { get }
-    var removalCount: Int { get }
     func install(
         handler:
             @escaping @Sendable (SystemNowPlayingCommand) ->
@@ -159,8 +157,6 @@ private final class DefaultSystemRemoteCommandManager:
 {
     private let center: MPRemoteCommandCenter
     private var registrations: [(command: MPRemoteCommand, token: Any)] = []
-    private(set) var installationCount = 0
-    private(set) var removalCount = 0
 
     init(center: MPRemoteCommandCenter = .shared()) {
         self.center = center
@@ -172,7 +168,6 @@ private final class DefaultSystemRemoteCommandManager:
             SystemNowPlayingCommandResult
     ) {
         guard registrations.isEmpty else { return }
-        installationCount += 1
 
         register(center.playCommand) { _ in handler(.play) }
         register(center.pauseCommand) { _ in handler(.pause) }
@@ -213,7 +208,6 @@ private final class DefaultSystemRemoteCommandManager:
 
     func removeHandlers() {
         guard !registrations.isEmpty else { return }
-        removalCount += 1
         for registration in registrations {
             registration.command.removeTarget(registration.token)
         }
