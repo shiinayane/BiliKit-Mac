@@ -98,8 +98,8 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
     @ObservationIgnored private let uploaderSignatureUseCase: UploaderSignatureUseCase?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
-    @ObservationIgnored private var relatedVideoTask: Task<Void, Never>?
-    @ObservationIgnored private var uploaderSignatureTask: Task<Void, Never>?
+    @ObservationIgnored private let relatedVideoTask = LatestTask()
+    @ObservationIgnored private let uploaderSignatureTask = LatestTask()
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
     @ObservationIgnored private var resumeActionTask: Task<Void, Never>?
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
@@ -115,8 +115,6 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private var collectionSeasonID: Int64?
     @ObservationIgnored private var collectionEpisodeRequestGeneration = 0
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var relatedVideoGeneration = 0
-    @ObservationIgnored private var uploaderSignatureGeneration = 0
 
     public init(
         useCase: GuestVideoUseCase,
@@ -138,8 +136,6 @@ public final class GuestVideoViewModel {
 
     deinit {
         loadTask?.cancel()
-        relatedVideoTask?.cancel()
-        uploaderSignatureTask?.cancel()
         playbackFailureTask?.cancel()
         collectionEpisodeTask?.cancel()
         resumeActionTask?.cancel()
@@ -273,11 +269,9 @@ public final class GuestVideoViewModel {
     /// 取消内容准备并停止播放 adapter，作为离开播放目的地的最终清理边界。
     public func reset() {
         generation += 1
-        relatedVideoGeneration += 1
         loadTask?.cancel()
         loadTask = nil
-        relatedVideoTask?.cancel()
-        relatedVideoTask = nil
+        relatedVideoTask.cancel()
         relatedVideoState = .idle
         cancelUploaderSignature()
         clearCollectionEpisodeState()
@@ -339,59 +333,38 @@ public final class GuestVideoViewModel {
     }
 
     func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
-        relatedVideoTask
+        relatedVideoTask.task
     }
 
     func uploaderSignatureTaskSnapshotForTesting() -> Task<Void, Never>? {
-        uploaderSignatureTask
+        uploaderSignatureTask.task
     }
 
     private func loadRelatedVideos(for bvid: String) {
-        relatedVideoGeneration += 1
-        let currentGeneration = relatedVideoGeneration
-        relatedVideoTask?.cancel()
         guard let relatedVideoUseCase else {
+            relatedVideoTask.cancel()
             relatedVideoState = .empty(bvid: bvid)
-            relatedVideoTask = nil
             return
         }
         relatedVideoState = .loading(bvid: bvid)
-        relatedVideoTask = Task { [weak self] in
+        relatedVideoTask.replace { [weak self] isCurrent in
+            let nextState: RelatedVideoState
             do {
-                let videos = try await relatedVideoUseCase.relatedVideos(
-                    to: bvid
-                )
+                let videos = try await relatedVideoUseCase.relatedVideos(to: bvid)
                 try Task.checkCancellation()
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState =
+                nextState =
                     videos.isEmpty
                     ? .empty(bvid: bvid)
                     : .loaded(bvid: bvid, videos: videos)
-                self.relatedVideoTask = nil
             } catch is CancellationError {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .idle
-                self.relatedVideoTask = nil
+                nextState = .idle
             } catch let error as GuestApplicationError {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .failed(bvid: bvid, error: error)
-                self.relatedVideoTask = nil
+                nextState = .failed(bvid: bvid, error: error)
             } catch {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .failed(
-                    bvid: bvid,
-                    error: .unavailable
-                )
-                self.relatedVideoTask = nil
+                nextState = .failed(bvid: bvid, error: .unavailable)
             }
+            guard let self, isCurrent() else { return }
+            self.relatedVideoState = nextState
         }
     }
 
@@ -597,16 +570,12 @@ public final class GuestVideoViewModel {
     }
 
     private func loadUploaderSignature(for ownerID: Int64) {
-        uploaderSignatureGeneration += 1
-        let currentGeneration = uploaderSignatureGeneration
-        uploaderSignatureTask?.cancel()
         guard let uploaderSignatureUseCase else {
-            uploaderSignatureState = .loaded(nil)
-            uploaderSignatureTask = nil
+            cancelUploaderSignature()
             return
         }
         uploaderSignatureState = .loading
-        uploaderSignatureTask = Task { [weak self] in
+        uploaderSignatureTask.replace { [weak self] isCurrent in
             let signature: String?
             do {
                 let resolved = try await uploaderSignatureUseCase.signature(
@@ -617,19 +586,13 @@ public final class GuestVideoViewModel {
             } catch {
                 signature = nil
             }
-            guard let self,
-                self.uploaderSignatureGeneration == currentGeneration,
-                !Task.isCancelled
-            else { return }
+            guard let self, isCurrent() else { return }
             self.uploaderSignatureState = .loaded(signature)
-            self.uploaderSignatureTask = nil
         }
     }
 
     private func cancelUploaderSignature() {
-        uploaderSignatureGeneration += 1
-        uploaderSignatureTask?.cancel()
-        uploaderSignatureTask = nil
+        uploaderSignatureTask.cancel()
         uploaderSignatureState = .loaded(nil)
     }
 
