@@ -50,12 +50,13 @@ public final class PlaybackCommentsViewModel {
     public private(set) var authenticationRevalidationGeneration = 0
 
     @ObservationIgnored private let useCase: CommentUseCase
-    @ObservationIgnored private var rootTask: Task<Void, Never>?
+    @ObservationIgnored private let rootTask = LatestTask()
     @ObservationIgnored private var activeReplyTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var activeReplyRoots: [UUID: CommentID] = [:]
     @ObservationIgnored private var replyRequestIDs: [CommentID: UUID] = [:]
     @ObservationIgnored private var pendingReplyRequests: [PendingReplyRequest] = []
     @ObservationIgnored private var continuation: CommentContinuation?
+    /// root 工作集身份；楼中楼请求以它拒绝跨 subject、排序或重载的旧结果。
     @ObservationIgnored private var rootGeneration = 0
     private static let maximumRetainedRootThreads = 1_000
     private static let maximumConcurrentReplyRequests = 4
@@ -73,7 +74,6 @@ public final class PlaybackCommentsViewModel {
     }
 
     deinit {
-        rootTask?.cancel()
         for task in activeReplyTasks.values {
             task.cancel()
         }
@@ -170,28 +170,19 @@ public final class PlaybackCommentsViewModel {
 
     public func reset() {
         rootGeneration += 1
-        rootTask?.cancel()
-        rootTask = nil
+        rootTask.cancel()
         cancelAllReplyTasks()
         subject = nil
         rootState = .idle
-        threads = []
-        totalCount = 0
-        continuation = nil
-        isLoadingNextPage = false
-        paginationError = nil
-        paginationTermination = nil
-        reachedEnd = false
-        reachedMemoryLimit = false
-        replyStates = [:]
+        clearRootState()
     }
 
     public func waitForCurrentRootTask() async {
-        await rootTask?.value
+        await rootTask.wait()
     }
 
     func rootTaskSnapshotForTesting() -> Task<Void, Never>? {
-        rootTask
+        rootTask.task
     }
 
     func replyTaskSnapshotForTesting(rootID: CommentID) -> Task<Void, Never>? {
@@ -204,44 +195,38 @@ public final class PlaybackCommentsViewModel {
         sort newSort: CommentSort
     ) {
         rootGeneration += 1
-        rootTask?.cancel()
-        rootTask = nil
+        rootTask.cancel()
         cancelAllReplyTasks()
         subject = newSubject
         sort = newSort
         rootState = .idle
-        threads = []
-        totalCount = 0
-        continuation = nil
-        isLoadingNextPage = false
-        paginationError = nil
-        paginationTermination = nil
-        reachedEnd = false
-        reachedMemoryLimit = false
-        replyStates = [:]
+        clearRootState()
         loadInitialPage()
     }
 
     private func loadInitialPage() {
         guard subject != nil else { return }
         rootGeneration += 1
-        rootTask?.cancel()
-        continuation = nil
         rootState = .loading
+        clearRootState()
+        loadRootPage(isInitial: true)
+    }
+
+    /// 清空 root 列表、分页与楼中楼展示状态；`rootState` 与请求取消由调用方决定。
+    private func clearRootState() {
         threads = []
         totalCount = 0
+        continuation = nil
         isLoadingNextPage = false
         paginationError = nil
         paginationTermination = nil
         reachedEnd = false
         reachedMemoryLimit = false
         replyStates = [:]
-        loadRootPage(isInitial: true)
     }
 
     private func loadRootPage(isInitial: Bool) {
         guard let subject else { return }
-        let currentGeneration = rootGeneration
         let requestedContinuation = continuation
         let requestedSort = sort
         let existingIDs = Set(threads.map(\.id))
@@ -250,7 +235,7 @@ public final class PlaybackCommentsViewModel {
             paginationError = nil
         }
         let useCase = self.useCase
-        rootTask = Task { [weak self, useCase] in
+        rootTask.replace { [weak self, useCase] isCurrent in
             do {
                 let batch = try await useCase.loadRoots(
                     for: subject,
@@ -259,48 +244,43 @@ public final class PlaybackCommentsViewModel {
                     excluding: existingIDs
                 )
                 try Task.checkCancellation()
-                guard let self else { return }
-                guard rootGeneration == currentGeneration,
-                    self.subject == subject
-                else { return }
-                let remainingCapacity = max(
-                    0,
-                    Self.maximumRetainedRootThreads - threads.count
-                )
-                let droppedByMemoryLimit = batch.threads.count > remainingCapacity
-                threads.append(contentsOf: batch.threads.prefix(remainingCapacity))
-                totalCount = batch.totalCount
-                reachedMemoryLimit =
-                    droppedByMemoryLimit
-                    || (threads.count == Self.maximumRetainedRootThreads
-                        && batch.termination == nil)
-                continuation = reachedMemoryLimit ? nil : batch.continuation
-                paginationTermination = batch.termination
-                reachedEnd =
-                    batch.termination == .serverEnd || reachedMemoryLimit
-                rootState = threads.isEmpty ? .empty : .loaded
-                isLoadingNextPage = false
-                paginationError = nil
+                guard let self, isCurrent(), self.subject == subject else { return }
+                appendRootBatch(batch)
             } catch is CancellationError {
-                guard let self else { return }
-                guard rootGeneration == currentGeneration else { return }
+                guard let self, isCurrent() else { return }
                 if isInitial {
                     rootState = .idle
                 }
                 isLoadingNextPage = false
-            } catch let error as CommentReadError {
-                guard let self else { return }
-                guard rootGeneration == currentGeneration else { return }
-                recordRootFailure(error, isInitial: isInitial)
             } catch {
-                guard let self else { return }
-                guard rootGeneration == currentGeneration else { return }
-                recordRootFailure(.unavailable, isInitial: isInitial)
-            }
-            if let self, rootGeneration == currentGeneration {
-                rootTask = nil
+                guard let self, isCurrent() else { return }
+                recordRootFailure(
+                    error as? CommentReadError ?? .unavailable,
+                    isInitial: isInitial
+                )
             }
         }
+    }
+
+    private func appendRootBatch(_ batch: CommentRootBatch) {
+        let remainingCapacity = max(
+            0,
+            Self.maximumRetainedRootThreads - threads.count
+        )
+        let droppedByMemoryLimit = batch.threads.count > remainingCapacity
+        threads.append(contentsOf: batch.threads.prefix(remainingCapacity))
+        totalCount = batch.totalCount
+        reachedMemoryLimit =
+            droppedByMemoryLimit
+            || (threads.count == Self.maximumRetainedRootThreads
+                && batch.termination == nil)
+        continuation = reachedMemoryLimit ? nil : batch.continuation
+        paginationTermination = batch.termination
+        reachedEnd =
+            batch.termination == .serverEnd || reachedMemoryLimit
+        rootState = threads.isEmpty ? .empty : .loaded
+        isLoadingNextPage = false
+        paginationError = nil
     }
 
     private func recordRootFailure(
