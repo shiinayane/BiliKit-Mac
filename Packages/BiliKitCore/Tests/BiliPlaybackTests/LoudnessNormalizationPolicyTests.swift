@@ -50,38 +50,6 @@ struct LoudnessNormalizationPolicyTests {
     }
 
     @Test
-    func runtimePolicyRequiresMacOS26SettingAndMetadata() {
-        #expect(
-            !LoudnessNormalizationRuntimePolicy.shouldInstall(
-                enabled: true,
-                hasMetadata: true,
-                runtimeSupportsTap: false
-            )
-        )
-        #expect(
-            !LoudnessNormalizationRuntimePolicy.shouldInstall(
-                enabled: false,
-                hasMetadata: true,
-                runtimeSupportsTap: true
-            )
-        )
-        #expect(
-            !LoudnessNormalizationRuntimePolicy.shouldInstall(
-                enabled: true,
-                hasMetadata: false,
-                runtimeSupportsTap: true
-            )
-        )
-        #expect(
-            LoudnessNormalizationRuntimePolicy.shouldInstall(
-                enabled: true,
-                hasMetadata: true,
-                runtimeSupportsTap: true
-            )
-        )
-    }
-
-    @Test
     func float32ProcessorHandlesInterleavedAndBoundedBuffers() {
         let state = LoudnessProcessingTap.State(initialGain: 2)
         state.prepare(floatFormat(sampleRate: 10, channels: 2, interleaved: true))

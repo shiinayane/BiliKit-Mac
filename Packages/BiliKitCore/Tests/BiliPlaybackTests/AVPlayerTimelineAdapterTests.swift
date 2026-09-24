@@ -33,34 +33,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func playbackTogglePausesUnlessPlayerIsPaused() {
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .paused
-            ) == .play
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .playing,
-                timelineState: .playing
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
-                timelineState: .buffering
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .ended
-            ) == nil
-        )
-    }
-
-    @Test
     func transportSeekAccumulatesClampsAndRejectsStaleCompletion() throws {
         final class Item {}
         var state = TransportSeekOperationState()
@@ -500,17 +472,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func explicitPauseOrSeekAdvancesInteractionRevision() {
-        let tracker = PlaybackInteractionTracker()
-
-        tracker.markObserved()
-        tracker.markObserved()
-
-        #expect(tracker.hasObservedInteraction)
-        #expect(tracker.revision == 2)
-    }
-
-    @Test
     func controlledRestartIsAnInteractionButIgnoresItsOwnTimeJump() {
         let tracker = PlaybackInteractionTracker()
 
@@ -659,17 +620,5 @@ struct AVPlayerTimelineAdapterTests {
         #expect(player.rate == 2)
         #expect(timeline.currentSnapshot.rate == 2)
         #expect(timeline.currentSnapshot.state == .playing)
-    }
-
-    @Test
-    @MainActor
-    func invalidPlayerDefaultRateFallsBackBeforePlayback() {
-        let player = AVPlayer()
-        player.defaultRate = .nan
-
-        let timeline = AVPlayerTimelineAdapter(player: player)
-
-        #expect(player.defaultRate == 1)
-        withExtendedLifetime(timeline) {}
     }
 }

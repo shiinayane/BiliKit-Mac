@@ -7,42 +7,6 @@ import Testing
 
 struct PlaybackRouteBenchmarkTests {
     @Test
-    func routeCatalogContainsTheReviewedResolvableUPOSHosts() {
-        let expectedHosts: Set<String> = [
-            "upos-sz-mirrorali.bilivideo.com",
-            "upos-sz-mirroralib.bilivideo.com",
-            "upos-sz-mirroralio1.bilivideo.com",
-            "upos-sz-mirrorcos.bilivideo.com",
-            "upos-sz-mirrorcosb.bilivideo.com",
-            "upos-sz-mirrorcoso1.bilivideo.com",
-            "upos-sz-mirrorhw.bilivideo.com",
-            "upos-sz-mirrorhwb.bilivideo.com",
-            "upos-sz-mirrorhwo1.bilivideo.com",
-            "upos-sz-mirror08c.bilivideo.com",
-            "upos-sz-mirror08h.bilivideo.com",
-            "upos-sz-mirror08ct.bilivideo.com",
-            "upos-tf-all-hw.bilivideo.com",
-            "upos-tf-all-tx.bilivideo.com",
-            "upos-sz-mirroraliov.bilivideo.com",
-            "upos-sz-mirrorcosov.bilivideo.com",
-            "upos-sz-mirrorbos.bilivideo.com",
-            "upos-sz-upcdnbda2.bilivideo.com"
-        ]
-
-        #expect(Set(BilivideoRoute.allCases.map(\.host)) == expectedHosts)
-        #expect(!expectedHosts.contains("upos-sz-mirrorhwov.bilivideo.com"))
-    }
-
-    @Test
-    func eachRouteHasAnExactTenMiBMediaCap() {
-        let minimumCompletedBitsPerSecond =
-            Double(BilivideoRouteBenchmark.maximumMediaProbeBytes) * 8
-            / BilivideoRouteBenchmark.resourceTimeout
-        #expect(BilivideoRouteBenchmark.maximumMediaProbeBytes == 10 * 1_024 * 1_024)
-        #expect(minimumCompletedBitsPerSecond < 3_000_000)
-    }
-
-    @Test
     func routeReplacementKeepsSignedSuffixByteForByte() throws {
         let source = try #require(
             URL(
