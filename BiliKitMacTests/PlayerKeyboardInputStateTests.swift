@@ -127,7 +127,7 @@ struct PlayerKeyboardInputStateTests {
         staticListView.isSelectable = false
 
         func ownsKeys(_ responder: NSResponder?) -> Bool {
-            PlayerScrollWheelCaptureView.focusedResponderOwnsKeys(
+            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(
                 responder,
                 playerView: playerView
             )

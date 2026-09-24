@@ -647,29 +647,30 @@ final class DanmakuPlayerView: AVPlayerView {
         overlayHostingView.interactiveFrame = { [overlayModel] in
             overlayModel.interactiveFrame
         }
-        scrollWheelCaptureView.feedbackPresenter = overlayModel
-        scrollWheelCaptureView.onKeyboardMomentaryRateBegan = {
+        let keyboardShortcuts = scrollWheelCaptureView.keyboardShortcuts
+        keyboardShortcuts.feedbackPresenter = overlayModel
+        keyboardShortcuts.onKeyboardMomentaryRateBegan = {
             [weak self] rate, pressID in
             self?.beginMomentaryPlaybackRate(rate, pressID: pressID)
         }
-        scrollWheelCaptureView.onKeyboardMomentaryRateEnded = {
+        keyboardShortcuts.onKeyboardMomentaryRateEnded = {
             [weak self] pressID in
             self?.endMomentaryPlaybackRate(ifPressID: pressID)
         }
-        scrollWheelCaptureView.onRelativeSeek = { [weak self] offset in
+        keyboardShortcuts.onRelativeSeek = { [weak self] offset in
             self?.seekByTransportOffset?(offset) ?? false
         }
-        scrollWheelCaptureView.onVolumeStep = { [weak self] offset in
+        keyboardShortcuts.onVolumeStep = { [weak self] offset in
             self?.adjustVolume?(offset)
         }
-        scrollWheelCaptureView.onTogglePlayback = { [weak self] in
+        keyboardShortcuts.onTogglePlayback = { [weak self] in
             guard let togglePlayback = self?.togglePlayback else { return nil }
             return togglePlayback()
         }
-        scrollWheelCaptureView.onToggleDanmaku = { [weak self] in
+        keyboardShortcuts.onToggleDanmaku = { [weak self] in
             self?.toggleDanmaku?()
         }
-        scrollWheelCaptureView.onToggleSubtitles = { [weak self] in
+        keyboardShortcuts.onToggleSubtitles = { [weak self] in
             guard let toggleSubtitles = self?.toggleSubtitles else {
                 return .unavailable
             }
@@ -694,7 +695,7 @@ final class DanmakuPlayerView: AVPlayerView {
             blocksNativePlaybackInteraction: blocked
         )
         setAccessibilityHidden(blocked)
-        scrollWheelCaptureView.setKeyboardInputEnabled(!blocked)
+        scrollWheelCaptureView.keyboardShortcuts.setKeyboardInputEnabled(!blocked)
         guard stateChanged else {
             if !blocked {
                 applyPendingInitialKeyboardFocus()
@@ -1016,47 +1017,17 @@ final class PlayerScrollWheelShieldView: NSView {
 ///
 /// 只对 scroll-wheel 事件参与 hit testing；点击、拖动、magnify、键盘与辅助功能继续穿透。
 /// AVKit detached 全屏会携带 content overlay；横向 wheel 在所有 surface 都不产生播放器动作。
+/// 它也是键盘快捷键的窗口锚点：`keyboardShortcuts` 跟随本视图所在窗口（包括 detached 全屏）。
 @MainActor
 final class PlayerScrollWheelCaptureView: NSView {
-    private enum KeyboardKey: Sendable {
-        case direction(PlayerKeyboardDirection)
-        case shortcut(PlayerKeyboardShortcut)
-    }
-
-    private struct KeyboardEventSnapshot: Sendable {
-        let type: NSEvent.EventType
-        let key: KeyboardKey
-        let hasDisallowedModifier: Bool
-        let isRepeat: Bool
-        let timestamp: TimeInterval
-        let windowNumber: Int
-    }
-
+    let keyboardShortcuts = PlayerKeyboardShortcutController()
     private var windowResignObservers = NativeVideoNotificationObservers()
-    private var keyboardMonitor: Any?
-    private var keyboardInputEnabled = true
-    private var keyboardState = PlayerKeyboardInputState()
     private var scrollWheelRouter = PlayerScrollWheelRouter<NSEvent>()
-    private var keyboardLongPressTask: Task<Void, Never>?
-    private var keyboardLongPressID: UUID?
-    private var subtitleToggleTask: Task<Void, Never>?
-    weak var feedbackPresenter: PlayerOverlayModel?
-    var onKeyboardMomentaryRateBegan: (PlayerMomentaryRate, UUID) -> Void = {
-        _,
-        _ in
-    }
-    var onKeyboardMomentaryRateEnded: (UUID) -> Void = { _ in }
-    var onRelativeSeek: (Double) -> Bool = { _ in false }
-    var onVolumeStep: (Float) -> Float? = { _ in nil }
-    var onTogglePlayback: () -> Bool? = { nil }
-    var onToggleDanmaku: () -> Bool? = { nil }
-    var onToggleSubtitles: () async -> NativeSubtitleToggleResult = {
-        .unavailable
-    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(false)
+        keyboardShortcuts.anchorView = self
     }
 
     static func capturesEvent(ofType type: NSEvent.EventType?) -> Bool {
@@ -1090,7 +1061,7 @@ final class PlayerScrollWheelCaptureView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { return }
-        startKeyboardMonitoring()
+        keyboardShortcuts.startMonitoring()
         windowResignObservers.removeAll()
         windowResignObservers.observe(
             NSWindow.didResignKeyNotification,
@@ -1102,18 +1073,91 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     func cancelInputSession() {
         scrollWheelRouter.cancel()
-        cancelKeyboardInputSession()
+        keyboardShortcuts.cancelInputSession()
+    }
+
+    func stopKeyboardMonitoring() {
+        cancelInputSession()
+        keyboardShortcuts.stopMonitoring()
+        stopObservingWindowFocusLoss()
+    }
+
+    /// 忽略 AVPlayerView 内部可能存在的滚动视图，只找播放器之外的详情容器。
+    private var detailScrollViewAncestor: NSScrollView? {
+        var ancestor = superview
+        var passedPlayerView = false
+        while let current = ancestor {
+            if current is AVPlayerView {
+                passedPlayerView = true
+            } else if passedPlayerView,
+                let scrollView = current as? NSScrollView
+            {
+                return scrollView
+            }
+            ancestor = current.superview
+        }
+        return nil
+    }
+
+    private func stopObservingWindowFocusLoss() {
+        windowResignObservers.removeAll()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
+
+/// 播放器键盘快捷键：本地 key monitor、长按临时倍速、离散快捷键与焦点让渡规则。
+///
+/// 以 content overlay 中的捕获层为锚点取窗口与所属 `AVPlayerView`，因此 detached 全屏窗口里同样生效。
+@MainActor
+final class PlayerKeyboardShortcutController {
+    private enum KeyboardKey: Sendable {
+        case direction(PlayerKeyboardDirection)
+        case shortcut(PlayerKeyboardShortcut)
+    }
+
+    private struct KeyboardEventSnapshot: Sendable {
+        let type: NSEvent.EventType
+        let key: KeyboardKey
+        let hasDisallowedModifier: Bool
+        let isRepeat: Bool
+        let timestamp: TimeInterval
+        let windowNumber: Int
+    }
+
+    weak var anchorView: NSView?
+    weak var feedbackPresenter: PlayerOverlayModel?
+    private var keyboardMonitor: Any?
+    private var keyboardInputEnabled = true
+    private var keyboardState = PlayerKeyboardInputState()
+    private var keyboardLongPressTask: Task<Void, Never>?
+    private var keyboardLongPressID: UUID?
+    private var subtitleToggleTask: Task<Void, Never>?
+    var onKeyboardMomentaryRateBegan: (PlayerMomentaryRate, UUID) -> Void = {
+        _,
+        _ in
+    }
+    var onKeyboardMomentaryRateEnded: (UUID) -> Void = { _ in }
+    var onRelativeSeek: (Double) -> Bool = { _ in false }
+    var onVolumeStep: (Float) -> Float? = { _ in nil }
+    var onTogglePlayback: () -> Bool? = { nil }
+    var onToggleDanmaku: () -> Bool? = { nil }
+    var onToggleSubtitles: () async -> NativeSubtitleToggleResult = {
+        .unavailable
     }
 
     func setKeyboardInputEnabled(_ enabled: Bool) {
         guard keyboardInputEnabled != enabled else { return }
         keyboardInputEnabled = enabled
         if !enabled {
-            cancelKeyboardInputSession()
+            cancelInputSession()
         }
     }
 
-    private func cancelKeyboardInputSession() {
+    func cancelInputSession() {
         applyKeyboardActions(keyboardState.cancel())
         keyboardLongPressTask?.cancel()
         keyboardLongPressTask = nil
@@ -1123,7 +1167,7 @@ final class PlayerScrollWheelCaptureView: NSView {
         feedbackPresenter?.clearFeedback()
     }
 
-    func startKeyboardMonitoring() {
+    func startMonitoring() {
         guard keyboardMonitor == nil else { return }
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.keyDown, .keyUp, .leftMouseDown]
@@ -1147,17 +1191,15 @@ final class PlayerScrollWheelCaptureView: NSView {
         }
     }
 
-    func stopKeyboardMonitoring() {
-        cancelInputSession()
+    func stopMonitoring() {
         if let keyboardMonitor {
             NSEvent.removeMonitor(keyboardMonitor)
             self.keyboardMonitor = nil
         }
-        stopObservingWindowFocusLoss()
     }
 
     private func handleKeyboardEvent(_ event: KeyboardEventSnapshot) -> Bool {
-        guard let captureWindow = window else { return false }
+        guard let captureWindow = anchorView?.window else { return false }
         let responderOwnsKeys = Self.focusedResponderOwnsKeys(
             captureWindow.firstResponder,
             playerView: enclosingPlayerView
@@ -1175,7 +1217,7 @@ final class PlayerScrollWheelCaptureView: NSView {
                 || event.hasDisallowedModifier
                 || responderOwnsKeys
             {
-                cancelKeyboardInputSession()
+                cancelInputSession()
             }
             return false
         }
@@ -1275,17 +1317,17 @@ final class PlayerScrollWheelCaptureView: NSView {
 
     private func cancelIfEditableResponder() {
         guard
-            let window,
+            let window = anchorView?.window,
             Self.focusedResponderOwnsKeys(
                 window.firstResponder,
                 playerView: enclosingPlayerView
             )
         else { return }
-        cancelKeyboardInputSession()
+        cancelInputSession()
     }
 
     private var enclosingPlayerView: AVPlayerView? {
-        var ancestor = superview
+        var ancestor = anchorView?.superview
         while let current = ancestor {
             if let playerView = current as? AVPlayerView { return playerView }
             ancestor = current.superview
@@ -1354,32 +1396,6 @@ final class PlayerScrollWheelCaptureView: NSView {
             timestamp: event.timestamp,
             windowNumber: event.windowNumber
         )
-    }
-
-    /// 忽略 AVPlayerView 内部可能存在的滚动视图，只找播放器之外的详情容器。
-    private var detailScrollViewAncestor: NSScrollView? {
-        var ancestor = superview
-        var passedPlayerView = false
-        while let current = ancestor {
-            if current is AVPlayerView {
-                passedPlayerView = true
-            } else if passedPlayerView,
-                let scrollView = current as? NSScrollView
-            {
-                return scrollView
-            }
-            ancestor = current.superview
-        }
-        return nil
-    }
-
-    private func stopObservingWindowFocusLoss() {
-        windowResignObservers.removeAll()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
     }
 }
 
