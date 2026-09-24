@@ -59,7 +59,7 @@ struct WatchHistoryViewModelTests {
     @MainActor
     func authenticationFailureRequestsRevalidation() async {
         let repository = HistoryRepositoryStub(
-            results: [.failure(.authenticationRequired)]
+            results: [.failure(WatchHistoryError.authenticationRequired)]
         )
         let model = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(repository: repository)
@@ -77,7 +77,10 @@ struct WatchHistoryViewModelTests {
     @MainActor
     func requestDroppedBySessionChangeLeavesRetryableState() async {
         let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: SessionChangedHistoryRepository())
+            useCase: WatchHistoryUseCase(
+                // API 在认证会话切换时丢弃在途请求：抛出取消，但调用方任务本身没有被取消。
+                repository: HistoryRepositoryStub(results: [.failure(CancellationError())])
+            )
         )
 
         model.loadIfNeeded()
@@ -114,7 +117,7 @@ struct WatchHistoryViewModelTests {
                         continuation: continuation
                     )
                 ),
-                .failure(.transportFailure)
+                .failure(WatchHistoryError.transportFailure)
             ]
         )
         let model = WatchHistoryViewModel(
@@ -159,8 +162,8 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1")],
                         continuation: first
                     )
-                ),
-                .success(WatchHistoryPage(items: [], continuation: second)),
+                )
+            ] + emptyPagesEnding(at: second) + [
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryB2")],
@@ -170,10 +173,7 @@ struct WatchHistoryViewModelTests {
             ]
         )
         let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(
-                repository: repository,
-                maximumEmptyPagesToSkip: 0
-            )
+            useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.loadIfNeeded()
@@ -216,9 +216,9 @@ struct WatchHistoryViewModelTests {
                         items: [item("BV1HistoryA1")],
                         continuation: first
                     )
-                ),
-                .success(WatchHistoryPage(items: [], continuation: manual)),
-                .failure(.transportFailure),
+                )
+            ] + emptyPagesEnding(at: manual) + [
+                .failure(WatchHistoryError.transportFailure),
                 .success(
                     WatchHistoryPage(
                         items: [item("BV1HistoryB2")],
@@ -228,10 +228,7 @@ struct WatchHistoryViewModelTests {
             ]
         )
         let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(
-                repository: repository,
-                maximumEmptyPagesToSkip: 0
-            )
+            useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.loadIfNeeded()
@@ -368,34 +365,6 @@ struct WatchHistoryViewModelTests {
 
     @Test
     @MainActor
-    func resetCancelsInFlightLoadAndRejectsItsLateResult() async throws {
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: nil
-                    )
-                )
-            ],
-            suspendedCalls: [1]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        try await repository.waitUntilCallCount(1)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.reset()
-        await repository.releaseCall(1)
-        await supersededTask.value
-
-        #expect(model.state == .idle)
-    }
-
-    @Test
-    @MainActor
     func resetRejectsLatePaginationContinuationMutation() async throws {
         let oldContinuation = token(100)
         let intermediateContinuation = token(200)
@@ -454,136 +423,99 @@ struct WatchHistoryViewModelTests {
         #expect(error == nil)
     }
 
-    @Test
-    @MainActor
-    func deactivatingRouteDuringInitialLoadReturnsToIdle() async throws {
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: nil
-                    )
-                )
-            ],
-            suspendedCalls: [1]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        try await repository.waitUntilCallCount(1)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.deactivateRoute()
-        await repository.releaseCall(1)
-        await supersededTask.value
-
-        #expect(model.state == .idle)
+    enum Interruption: CaseIterable, Sendable {
+        case resetInitialLoad
+        case deactivateInitialLoad
+        case deactivatePagination
+        case deactivateManualPagination
     }
 
-    @Test
+    @Test(arguments: Interruption.allCases)
     @MainActor
-    func deactivatingRouteDuringPaginationRestoresLoadedItems() async throws {
-        let continuation = token(100)
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: continuation
-                    )
-                ),
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryB2")],
-                        continuation: nil
-                    )
-                )
-            ],
-            suspendedCalls: [2]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        try await repository.waitUntilCallCount(2)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.deactivateRoute()
-        await repository.releaseCall(2)
-        await supersededTask.value
-
-        #expect(
-            model.state
-                == .loaded(
-                    items: [item("BV1HistoryA1")],
-                    continuation: continuation,
-                    loadMoreError: nil
-                )
-        )
-    }
-
-    @Test
-    @MainActor
-    func deactivatingManualPaginationRestoresExplicitContinueRequirement() async throws {
+    func interruptionCancelsInFlightLoadAndRejectsItsLateResult(
+        _ interruption: Interruption
+    ) async throws {
         let first = token(100)
         let manual = token(200)
+        let firstPage: Result<WatchHistoryPage, any Error> = .success(
+            WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: first)
+        )
+        let prefix: [Result<WatchHistoryPage, any Error>] =
+            switch interruption {
+            case .resetInitialLoad, .deactivateInitialLoad: []
+            case .deactivatePagination: [firstPage]
+            case .deactivateManualPagination: [firstPage] + emptyPagesEnding(at: manual)
+            }
+        let lateResult: Result<WatchHistoryPage, any Error> = .success(
+            WatchHistoryPage(items: [item("BV1HistoryB2")], continuation: nil)
+        )
         let repository = HistoryRepositoryStub(
-            results: [
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: first
-                    )
-                ),
-                .success(WatchHistoryPage(items: [], continuation: manual)),
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryB2")],
-                        continuation: nil
-                    )
-                )
-            ],
-            suspendedCalls: [3]
+            results: prefix + [lateResult],
+            suspendedCalls: [prefix.count + 1]
         )
         let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(
-                repository: repository,
-                maximumEmptyPagesToSkip: 0
-            )
+            useCase: WatchHistoryUseCase(repository: repository)
         )
 
         model.loadIfNeeded()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-        #expect(model.requiresManualLoadMore)
-
-        model.loadMore()
-        try await repository.waitUntilCallCount(3)
+        if !prefix.isEmpty {
+            await model.waitForCurrentTask()
+            if interruption == .deactivateManualPagination {
+                model.loadMore()
+                await model.waitForCurrentTask()
+                #expect(model.requiresManualLoadMore)
+            }
+            model.loadMore()
+        }
+        try await repository.waitUntilCallCount(prefix.count + 1)
         let supersededTask = try #require(model.taskSnapshotForTesting())
-        model.deactivateRoute()
-        await repository.releaseCall(3)
+        if interruption == .resetInitialLoad {
+            model.reset()
+        } else {
+            model.deactivateRoute()
+        }
+        await repository.releaseCall(prefix.count + 1)
         await supersededTask.value
 
-        #expect(model.requiresManualLoadMore)
-        #expect(model.paginationTailIdentity == nil)
-        #expect(
-            model.state
-                == .loaded(
-                    items: [item("BV1HistoryA1")],
-                    continuation: manual,
-                    loadMoreError: nil
-                )
-        )
+        switch interruption {
+        case .resetInitialLoad, .deactivateInitialLoad:
+            #expect(model.state == .idle)
+        case .deactivatePagination:
+            #expect(
+                model.state
+                    == .loaded(
+                        items: [item("BV1HistoryA1")],
+                        continuation: first,
+                        loadMoreError: nil
+                    )
+            )
+            #expect(!model.requiresManualLoadMore)
+        case .deactivateManualPagination:
+            #expect(
+                model.state
+                    == .loaded(
+                        items: [item("BV1HistoryA1")],
+                        continuation: manual,
+                        loadMoreError: nil
+                    )
+            )
+            #expect(model.requiresManualLoadMore)
+            #expect(model.paginationTailIdentity == nil)
+        }
     }
 }
 
 private func token(_ value: Int) -> WatchHistoryContinuation {
     WatchHistoryContinuation(rawValue: "fixture-\(value)")
+}
+
+/// UseCase 跳过 3 个空页后把第 4 个空页的 continuation 交给用户显式继续。
+private func emptyPagesEnding(
+    at manual: WatchHistoryContinuation
+) -> [Result<WatchHistoryPage, any Error>] {
+    [token(901), token(902), token(903), manual].map {
+        .success(WatchHistoryPage(items: [], continuation: $0))
+    }
 }
 
 private func item(_ bvid: String) -> WatchHistoryItem {
@@ -599,7 +531,7 @@ private func item(_ bvid: String) -> WatchHistoryItem {
 }
 
 private actor HistoryRepositoryStub: WatchHistoryRepository {
-    private var results: [Result<WatchHistoryPage, WatchHistoryError>]
+    private var results: [Result<WatchHistoryPage, any Error>]
     private let suspendedCalls: Set<Int>
     private var callCount = 0
     private var continuations: [WatchHistoryContinuation?] = []
@@ -608,7 +540,7 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
     private var releasedCalls: Set<Int> = []
 
     init(
-        results: [Result<WatchHistoryPage, WatchHistoryError>],
+        results: [Result<WatchHistoryPage, any Error>],
         suspendedCalls: Set<Int> = []
     ) {
         self.results = results
@@ -707,15 +639,5 @@ private actor TestEventCounter {
         waiters.removeValue(forKey: id)?.continuation.resume(
             throwing: CancellationError()
         )
-    }
-}
-
-/// 模拟 API 在认证会话切换时丢弃在途请求：抛出取消，但调用方任务本身没有被取消。
-private struct SessionChangedHistoryRepository: WatchHistoryRepository {
-    func watchHistory(
-        after continuation: WatchHistoryContinuation?,
-        pageSize: Int
-    ) async throws -> WatchHistoryPage {
-        throw CancellationError()
     }
 }
