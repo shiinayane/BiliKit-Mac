@@ -2033,18 +2033,4 @@ struct NativePlaybackSidebarTests {
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
-
-    @MainActor
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        _ condition: @MainActor () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            await Task.yield()
-        }
-        return true
-    }
 }

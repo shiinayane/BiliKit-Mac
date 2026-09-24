@@ -316,11 +316,3 @@ struct AppNavigationCoordinatorTests {
         #expect(events.isEmpty)
     }
 }
-
-private actor RecordingSessionInvalidator: AuthenticatedSessionInvalidating {
-    private(set) var invalidationCount = 0
-
-    func invalidateAuthenticatedSession() {
-        invalidationCount += 1
-    }
-}

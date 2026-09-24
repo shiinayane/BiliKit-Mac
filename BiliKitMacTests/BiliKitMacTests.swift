@@ -75,7 +75,7 @@ struct BiliKitMacTests {
     func accountCoordinatorOwnsOneProcessWatchProgressWriter() async {
         let coordinator = AccountSessionCoordinator()
         let base = EmptyWatchProgressRepository()
-        let transport = WatchProgressTransportInvalidator()
+        let transport = RecordingSessionInvalidator()
         var factoryCount = 0
 
         for _ in 0..<2 {
@@ -93,12 +93,4 @@ struct BiliKitMacTests {
 
 private actor EmptyWatchProgressRepository: WatchProgressRepository {
     func report(_ progress: WatchProgressReport) {}
-}
-
-private actor WatchProgressTransportInvalidator: AuthenticatedSessionInvalidating {
-    private(set) var invalidationCount = 0
-
-    func invalidateAuthenticatedSession() {
-        invalidationCount += 1
-    }
 }

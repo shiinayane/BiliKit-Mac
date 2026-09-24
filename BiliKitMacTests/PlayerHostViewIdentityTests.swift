@@ -341,20 +341,6 @@ struct PlayerHostViewIdentityTests {
         return try #require(NSEvent(cgEvent: event))
     }
 
-    @MainActor
-    private func waitUntil(
-        timeout: Duration = .seconds(2),
-        _ condition: @MainActor () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            await Task.yield()
-        }
-        return true
-    }
-
     private static let emptyDanmakuConfiguration = DanmakuLaneConfiguration(
         surfaceWidth: 0,
         surfaceHeight: 0,
