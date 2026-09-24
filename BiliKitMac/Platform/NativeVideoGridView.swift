@@ -243,6 +243,14 @@ enum NativeVideoGridGeometry {
     static let verticalSpacing: CGFloat = 28
     static let contentPadding: CGFloat = 24
     static let topContentPadding: CGFloat = 0
+    /// 列数按“卡片至少这么宽”自然计算，再夹在最小／最大列数之间。
+    static let minimumCardWidth: CGFloat = 240
+    static let minimumColumnCount = 2
+    static let maximumColumnCount = 5
+    /// 卡片高度 = 16:9 封面 + 标题、UP 主与统计信息区。
+    static let coverAspectWidth: CGFloat = 16
+    static let coverAspectHeight: CGFloat = 9
+    static let cardTextAreaHeight: CGFloat = 84
     static let minimumRenderableWidth = contentPadding * 2 + horizontalSpacing + 2
 
     static func isRenderableViewport(width: CGFloat) -> Bool {
@@ -252,9 +260,9 @@ enum NativeVideoGridGeometry {
     static func columnCount(for width: CGFloat) -> Int {
         let usableWidth = max(0, width - contentPadding * 2)
         let naturalCount = Int(
-            (usableWidth + horizontalSpacing) / (240 + horizontalSpacing)
+            (usableWidth + horizontalSpacing) / (minimumCardWidth + horizontalSpacing)
         )
-        return min(5, max(2, naturalCount))
+        return min(maximumColumnCount, max(minimumColumnCount, naturalCount))
     }
 
     static func itemSize(for width: CGFloat) -> NSSize {
@@ -265,7 +273,8 @@ enum NativeVideoGridGeometry {
             1,
             floor((usableWidth - spacing) / CGFloat(count))
         )
-        return NSSize(width: cardWidth, height: floor(cardWidth * 9 / 16) + 84)
+        let coverHeight = floor(cardWidth * coverAspectHeight / coverAspectWidth)
+        return NSSize(width: cardWidth, height: coverHeight + cardTextAreaHeight)
     }
 
     static func contentHeight(for width: CGFloat, itemCount: Int) -> CGFloat {
