@@ -573,6 +573,28 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
+    @Test(
+        arguments: [
+            (AVPlayer.TimeControlStatus.paused, 0, MomentaryRateRestorationAction.none),
+            (.playing, 2, .setCurrentRate),
+            (.waitingToPlayAtSpecifiedRate, 0, .resumeAtDefaultRate),
+            (.waitingToPlayAtSpecifiedRate, 1.5, .none)
+        ] as [(AVPlayer.TimeControlStatus, Float, MomentaryRateRestorationAction)]
+    )
+    func momentaryRateRestorationPreservesPauseAndRecoversBuffering(
+        status: AVPlayer.TimeControlStatus,
+        currentRate: Float,
+        expected: MomentaryRateRestorationAction
+    ) {
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: status,
+                currentRate: currentRate,
+                momentaryRate: 2
+            ) == expected
+        )
+    }
+
     @Test
     @MainActor
     func playImmediatelyUsesValidatedDefaultRateWhileWaitingForMedia() {

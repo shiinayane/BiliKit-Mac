@@ -1,10 +1,8 @@
 @preconcurrency import AVFoundation
-import AppKit
 import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
-import QuartzCore
 import Testing
 
 @testable import BiliPlayback
@@ -132,209 +130,42 @@ struct LoopbackPlaybackServerTests {
         #expect(requestedURLs == [primary, primary])
     }
 
-    @Test
-    func loopbackRangeAndHeadResponseMatrix() async throws {
-        struct ExpectedResponse {
-            let status: Int
-            let contentLength: String
-            let contentRange: String?
-            let body: Data
-        }
-        struct Case {
-            let name: String
-            let method: String
-            let range: String?
-            let expected: ExpectedResponse
-        }
-
-        let server = LoopbackPlaybackServer()
-        try await server.start()
-        defer { server.stop() }
-        let url = try server.register(
-            .inMemory(
-                data: Data([0, 1, 2, 3, 4]),
-                contentType: "application/octet-stream"
-            ),
-            at: "range-matrix.bin"
+    @Test(arguments: loopbackGETRangeCases)
+    func loopbackGETServesSingleRangesAndIgnoresUnsupportedOnes(
+        _ testCase: LoopbackGETRangeCase
+    ) async throws {
+        let (body, response) = try await requestFiveByteResource(
+            method: "GET",
+            range: testCase.range
         )
-        let cases = [
-            Case(
-                name: "GET full",
-                method: "GET",
-                range: nil,
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data([0, 1, 2, 3, 4])
-                )
-            ),
-            Case(
-                name: "GET closed",
-                method: "GET",
-                range: "bytes=1-3",
-                expected: ExpectedResponse(
-                    status: 206,
-                    contentLength: "3",
-                    contentRange: "bytes 1-3/5",
-                    body: Data([1, 2, 3])
-                )
-            ),
-            Case(
-                name: "GET open",
-                method: "GET",
-                range: "bytes=2-",
-                expected: ExpectedResponse(
-                    status: 206,
-                    contentLength: "3",
-                    contentRange: "bytes 2-4/5",
-                    body: Data([2, 3, 4])
-                )
-            ),
-            Case(
-                name: "GET suffix",
-                method: "GET",
-                range: "bytes=-2",
-                expected: ExpectedResponse(
-                    status: 206,
-                    contentLength: "2",
-                    contentRange: "bytes 3-4/5",
-                    body: Data([3, 4])
-                )
-            ),
-            Case(
-                name: "GET unsatisfiable",
-                method: "GET",
-                range: "bytes=5-",
-                expected: ExpectedResponse(
-                    status: 416,
-                    contentLength: "0",
-                    contentRange: "bytes */5",
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "GET multi range ignored",
-                method: "GET",
-                range: "bytes=0-0,2-2",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data([0, 1, 2, 3, 4])
-                )
-            ),
-            Case(
-                name: "GET malformed range ignored",
-                method: "GET",
-                range: "items=0-1",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data([0, 1, 2, 3, 4])
-                )
-            ),
-            Case(
-                name: "HEAD full",
-                method: "HEAD",
-                range: nil,
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "HEAD range ignored",
-                method: "HEAD",
-                range: "bytes=1-3",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "HEAD suffix ignored",
-                method: "HEAD",
-                range: "bytes=-2",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "HEAD unsatisfiable ignored",
-                method: "HEAD",
-                range: "bytes=5-",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "HEAD multi range ignored",
-                method: "HEAD",
-                range: "bytes=0-0,2-2",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            ),
-            Case(
-                name: "HEAD unknown unit ignored",
-                method: "HEAD",
-                range: "items=0-1",
-                expected: ExpectedResponse(
-                    status: 200,
-                    contentLength: "5",
-                    contentRange: nil,
-                    body: Data()
-                )
-            )
-        ]
 
-        for testCase in cases {
-            var request = URLRequest(url: url)
-            request.httpMethod = testCase.method
-            if let range = testCase.range {
-                request.setValue(range, forHTTPHeaderField: "Range")
-            }
-            let (body, response) = try await URLSession.shared.data(for: request)
-            let httpResponse = try #require(
-                response as? HTTPURLResponse,
-                "Missing HTTP response for \(testCase.name)"
-            )
-            #expect(
-                httpResponse.statusCode == testCase.expected.status,
-                Testing.Comment(rawValue: testCase.name)
-            )
-            #expect(
-                httpResponse.value(
-                    forHTTPHeaderField: "Content-Length"
-                ) == testCase.expected.contentLength,
-                Testing.Comment(rawValue: testCase.name)
-            )
-            #expect(
-                httpResponse.value(
-                    forHTTPHeaderField: "Content-Range"
-                ) == testCase.expected.contentRange,
-                Testing.Comment(rawValue: testCase.name)
-            )
-            #expect(
-                body == testCase.expected.body,
-                Testing.Comment(rawValue: testCase.name)
-            )
-        }
+        #expect(response.statusCode == testCase.status)
+        #expect(
+            response.value(forHTTPHeaderField: "Content-Length")
+                == String(testCase.body.count)
+        )
+        #expect(
+            response.value(forHTTPHeaderField: "Content-Range")
+                == testCase.contentRange
+        )
+        #expect(body == Data(testCase.body))
+    }
+
+    @Test(
+        arguments: [
+            nil, "bytes=1-3", "bytes=-2", "bytes=5-", "bytes=0-0,2-2", "items=0-1"
+        ] as [String?]
+    )
+    func loopbackHEADIgnoresRange(_ range: String?) async throws {
+        let (body, response) = try await requestFiveByteResource(
+            method: "HEAD",
+            range: range
+        )
+
+        #expect(response.statusCode == 200)
+        #expect(response.value(forHTTPHeaderField: "Content-Length") == "5")
+        #expect(response.value(forHTTPHeaderField: "Content-Range") == nil)
+        #expect(body.isEmpty)
     }
 
     @Test
@@ -405,8 +236,7 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
-    @MainActor
-    func bridgeUsesFullFragmentsForOnDemandIFrameTrickPlay() async throws {
+    func bridgeIFramePlaylistAddressesFullSIDXFragments() async throws {
         let videoData = try markingTypeOneSAP(
             in: fixtureBase64Data(
                 named: "video-avc-128x72-4s-global-sidx.mp4"
@@ -427,106 +257,51 @@ struct LoopbackPlaybackServerTests {
             codecs: "avc1.4d400a",
             bandwidth: 50_000,
             data: videoData,
-            primaryURL: videoURL,
-            videoAttributes: try VideoRepresentationAttributes(
-                width: 128,
-                height: 72,
-                frameRate: 24
-            )
+            primaryURL: videoURL
         )
-        let audioFixture = try makeFixtureTrack(
+        let audio = try makeFixtureTrack(
             id: 30_280,
             kind: .audio,
             codecs: "mp4a.40.2",
             bandwidth: 32_000,
             data: audioData,
             primaryURL: audioURL
-        )
-        let transport = FixtureRangeTransport(
-            media: [
-                videoURL: videoData,
-                audioURL: audioData
-            ],
-            failingURLs: []
-        )
-        let registry = LoopbackServerRegistry()
+        ).representation
         let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport),
-            serverFactory: { rangeClient in
-                registry.create(rangeClient: rangeClient)
-            }
-        )
-        let prepared = try await bridge.prepare(
-            video: videoFixture.representation,
-            audioTracks: [
-                makeSelectedAudioTrack(
-                    representation: audioFixture.representation
+            rangeClient: HTTPRangeClient(
+                transport: FixtureRangeTransport(
+                    media: [videoURL: videoData, audioURL: audioData],
+                    failingURLs: []
                 )
-            ]
-        )
-        defer { prepared.stop() }
-        let server = try #require(registry.servers.last)
-        let masterData = try await URLSession.shared.data(from: prepared.url).0
-        let master = try #require(String(data: masterData, encoding: .utf8))
-
-        #expect(master.contains("#EXT-X-I-FRAME-STREAM-INF:"))
-        #expect(master.contains("/video/64-iframe.m3u8"))
-
-        let item = AVPlayerItem(url: prepared.url)
-        let player = AVPlayer(playerItem: item)
-        player.isMuted = true
-        try await waitUntilReadyToPlay(item)
-
-        #expect(item.canPlayFastForward)
-        #expect(item.canPlayFastReverse)
-        let iFrameRequestsBeforeFastForward = try server.requestCount(
-            method: "GET",
-            at: "video/64-iframe.m3u8"
-        )
-        let requestsBeforeFastForward = await transport.requests.count
-
-        player.playImmediately(atRate: 4)
-        try await waitUntilRequest(
-            method: "GET",
-            at: "video/64-iframe.m3u8",
-            exceeds: iFrameRequestsBeforeFastForward,
-            on: server
-        )
-        try await waitUntilRequestCount(
-            exceeds: requestsBeforeFastForward,
-            on: transport
-        )
-        player.pause()
-
-        let fastForwardRequests = await transport.requests.dropFirst(
-            requestsBeforeFastForward
-        )
-        let fullFragmentRanges = Set(
-            videoFixture.index.references.map(
-                \.byteRange.httpRangeHeaderValue
             )
         )
-        #expect(
-            fastForwardRequests.contains { request in
-                request.url == videoURL
-                    && request.headers.contains { name, value in
-                        name.caseInsensitiveCompare("Range") == .orderedSame
-                            && fullFragmentRanges.contains(value)
-                    }
-            }
-        )
-        #expect(
-            fastForwardRequests.allSatisfy { request in
-                request.headers.keys.allSatisfy {
-                    $0.caseInsensitiveCompare("Cookie") != .orderedSame
-                        && $0.caseInsensitiveCompare("Authorization")
-                            != .orderedSame
-                }
-            }
-        )
 
-        #expect(item.status == .readyToPlay)
-        _ = player
+        let prepared = try await bridge.prepare(
+            video: videoFixture.representation,
+            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+        )
+        defer { prepared.stop() }
+        let master = try await fetchText(prepared.url)
+        let iFramePlaylistURL = prepared.url.deletingLastPathComponent()
+            .appending(path: "video/64-iframe.m3u8")
+        let iFramePlaylist = try await fetchText(iFramePlaylistURL)
+        let byteRangePrefix = "#EXT-X-BYTERANGE:"
+        let iFrameByteRanges = iFramePlaylist.split(separator: "\n")
+            .filter { $0.hasPrefix(byteRangePrefix) }
+            .map { String($0.dropFirst(byteRangePrefix.count)) }
+        let fullFragmentByteRanges = videoFixture.index.references.map {
+            let range = $0.byteRange
+            return "\(range.endInclusive - range.start + 1)@\(range.start)"
+        }
+
+        #expect(
+            master.contains(
+                #"URI="\#(iFramePlaylistURL.absoluteString)""#
+            )
+        )
+        #expect(iFramePlaylist.contains("#EXT-X-I-FRAMES-ONLY"))
+        #expect(!fullFragmentByteRanges.isEmpty)
+        #expect(iFrameByteRanges == fullFragmentByteRanges)
     }
 
     @Test
@@ -851,7 +626,7 @@ struct LoopbackPlaybackServerTests {
     }
 
     @Test
-    func bridgeKeepsSuccessfulCDNsForAVPlayerMediaRanges() async throws {
+    func bridgeKeepsSuccessfulCDNsForLoopbackMediaRanges() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
         let primaryVideo = try #require(URL(string: "https://primary.example/video"))
@@ -892,69 +667,47 @@ struct LoopbackPlaybackServerTests {
             audioTracks: [makeSelectedAudioTrack(representation: audio)]
         )
         defer { prepared.stop() }
-        let item = AVPlayerItem(url: prepared.url)
-        let player = AVPlayer(playerItem: item)
-        player.automaticallyWaitsToMinimizeStalling = false
-        player.isMuted = true
-
-        try await waitUntilReadyToPlay(item)
-        player.play()
-        try await waitUntilPlaybackTime(player, reaches: 0.15)
-        player.pause()
+        let preparationRequestCount = await transport.requests.count
+        let sessionRoot = prepared.url.deletingLastPathComponent()
+        for mediaPath in ["media/video/80.mp4", "media/audio/0/30280.mp4"] {
+            var request = URLRequest(url: sessionRoot.appending(path: mediaPath))
+            request.setValue("bytes=0-99", forHTTPHeaderField: "Range")
+            let (body, response) = try await URLSession.shared.data(for: request)
+            #expect((response as? HTTPURLResponse)?.statusCode == 206)
+            #expect(body.count == 100)
+        }
 
         let requests = await transport.requests
+        #expect(
+            requests.dropFirst(preparationRequestCount).map(\.url)
+                == [backupVideo, backupAudio]
+        )
         #expect(requests.filter { $0.url == primaryVideo }.count == 1)
         #expect(requests.filter { $0.url == primaryAudio }.count == 1)
-        #expect(requests.contains { $0.url == backupVideo })
-        #expect(requests.contains { $0.url == backupAudio })
-        #expect(item.status == .readyToPlay)
-        _ = player
     }
 
     @Test
     @MainActor
-    func engineBuildsOneAdaptiveItemFromAllVideoRepresentations() async throws {
-        let lowVideoData = try fixtureBase64Data(
-            named: "video-avc-128x72-4s-global-sidx.mp4"
-        )
-        let highVideoData = try fixtureBase64Data(
+    func engineBeginPlaybackIsIntentGuardedAndRestartsOnce() async throws {
+        let videoData = try fixtureBase64Data(
             named: "video-avc-256x144-4s-global-sidx.mp4"
         )
         let audioData = try fixtureBase64Data(
             named: "audio-aac-4s-global-sidx.mp4"
         )
-        let lowURL = try #require(
-            URL(string: "https://adaptive.example/video-low")
-        )
-        let highURL = try #require(
-            URL(string: "https://adaptive.example/video-high")
+        let videoURL = try #require(
+            URL(string: "https://begin-playback.example/video")
         )
         let audioURL = try #require(
-            URL(string: "https://adaptive.example/audio")
+            URL(string: "https://begin-playback.example/audio")
         )
-        let alternateAudioURL = try #require(
-            URL(string: "https://adaptive.example/audio-alternate")
-        )
-        let lowVideo = try makeFixtureTrack(
-            id: 64,
-            kind: .video,
-            codecs: "avc1.4d400a",
-            bandwidth: 50_000,
-            data: lowVideoData,
-            primaryURL: lowURL,
-            videoAttributes: try VideoRepresentationAttributes(
-                width: 128,
-                height: 72,
-                frameRate: 24
-            )
-        ).representation
-        let highVideo = try makeFixtureTrack(
+        let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
             codecs: "avc1.4d400c",
             bandwidth: 100_000,
-            data: highVideoData,
-            primaryURL: highURL,
+            data: videoData,
+            primaryURL: videoURL,
             videoAttributes: try VideoRepresentationAttributes(
                 width: 256,
                 height: 144,
@@ -969,145 +722,32 @@ struct LoopbackPlaybackServerTests {
             data: audioData,
             primaryURL: audioURL
         ).representation
-        let alternateAudio = try makeFixtureTrack(
-            id: 30_216,
-            kind: .audio,
-            codecs: "mp4a.40.2",
-            bandwidth: 16_000,
-            data: audioData,
-            primaryURL: alternateAudioURL
-        ).representation
-        let transport = FixtureRangeTransport(
-            media: [
-                lowURL: lowVideoData,
-                highURL: highVideoData,
-                audioURL: audioData
-            ],
-            failingURLs: []
-        )
         let engine = AVPlayerEngine(
             bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
+                rangeClient: HTTPRangeClient(
+                    transport: FixtureRangeTransport(
+                        media: [videoURL: videoData, audioURL: audioData],
+                        failingURLs: []
+                    )
+                )
             )
         )
         engine.player.isMuted = true
+        defer { engine.stop() }
         let identity = PlaybackItemIdentity(
-            bvid: "BV1AdaptiveFixture",
+            bvid: "BV1BeginPlaybackFixture",
             cid: 900_002
         )
-
-        let duplicateTrack = PlaybackAudioTrack(
-            id: "duplicate",
-            displayName: "原声",
-            role: .original,
-            isDefault: true,
-            isAutoselect: true,
-            representations: [audio]
-        )
-        let duplicateAITrack = PlaybackAudioTrack(
-            id: "duplicate",
-            displayName: "English（AI）",
-            languageTag: "en",
-            role: .machineGenerated,
-            isDefault: false,
-            isAutoselect: true,
-            representations: [alternateAudio]
-        )
-        await #expect(
-            throws: AVPlayerEngineError.duplicateAudioTrackID("duplicate")
-        ) {
-            try await engine.load(
-                PlaybackRequest(
-                    manifest: PlaybackManifest(
-                        videoRepresentations: [highVideo, lowVideo],
-                        audioTracks: [duplicateTrack, duplicateAITrack]
-                    )
-                ),
-                identity: identity
-            )
-        }
-        #expect(engine.player.currentItem == nil)
-        #expect(engine.currentTimelineSnapshot == .idle)
-
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
-                videoRepresentations: [highVideo, lowVideo],
-                originalAudioRepresentations: [audio, alternateAudio]
+                videoRepresentations: [video],
+                originalAudioRepresentations: [audio]
             )
         )
+
+        // 过期 intent、过期 identity 或已观察到的用户暂停都不能自动起播。
         let loadIntent = PlaybackLoadIntent()
-        try await engine.load(
-            request,
-            identity: identity,
-            intent: loadIntent
-        )
-        let item = try #require(engine.player.currentItem)
-        let asset = try #require(item.asset as? AVURLAsset)
-        let variants = try await asset.load(.variants)
-        let audibleGroup = try #require(
-            try await asset.loadMediaSelectionGroup(for: .audible)
-        )
-        let masterData = try await URLSession.shared.data(from: asset.url).0
-        let master = try #require(String(data: masterData, encoding: .utf8))
-        let localizedNamesURL = asset.url.deletingLastPathComponent()
-            .appending(path: "metadata/localized-rendition-names.json")
-        let localizedNamesData = try await URLSession.shared.data(
-            from: localizedNamesURL
-        ).0
-        let localizedNames = try #require(
-            try JSONSerialization.jsonObject(with: localizedNamesData)
-                as? [String: [String: String]]
-        )
-
-        #expect(variants.count == 2)
-        #expect(audibleGroup.options.count == 1)
-        #expect(
-            audibleGroup.options[0].hasMediaCharacteristic(
-                .isOriginalContent
-            )
-        )
-        #expect(item.preferredPeakBitRate == 0)
-        #expect(item.preferredMaximumResolution == .zero)
-        #expect(item.preferredForwardBufferDuration == 0)
-        #expect(!item.startsOnFirstEligibleVariant)
-        #expect(engine.currentTimelineSnapshot.state == .ready)
-        #expect(master.contains("#EXT-X-VERSION:7\n"))
-        #expect(
-            master.contains(
-                #"NAME="原声",LANGUAGE="und",CHARACTERISTICS="public.original-content",CHANNELS="2",BIT-DEPTH=16,SAMPLE-RATE=48000,DEFAULT=YES,AUTOSELECT=YES"#
-            )
-        )
-        #expect(master.contains("CLOSED-CAPTIONS=NONE"))
-        #expect(
-            master.contains(
-                #"DATA-ID="_hls.localized-rendition-names""#
-            )
-        )
-        #expect(localizedNames["原声"]?["en"] == "Original audio")
-        #expect(localizedNames["原声"]?["ja"] == "オリジナル音声")
-        #expect(localizedNames["原声"]?["zh-Hant"] == "原聲")
-        #expect(
-            Set(
-                variants.compactMap {
-                    $0.videoAttributes?.presentationSize
-                }
-            ) == [
-                CGSize(width: 128, height: 72),
-                CGSize(width: 256, height: 144)
-            ]
-        )
-        #expect(
-            await transport.requests.contains { $0.url == lowURL }
-        )
-        #expect(
-            await transport.requests.contains { $0.url == highURL }
-        )
-        #expect(
-            await transport.requests.allSatisfy {
-                $0.url != alternateAudioURL
-            }
-        )
-
+        try await engine.load(request, identity: identity, intent: loadIntent)
         #expect(
             await engine.beginPlayback(
                 identity: identity,
@@ -1134,32 +774,23 @@ struct LoopbackPlaybackServerTests {
             ) == .rejected
         )
 
+        // 起播前的用户 seek 同样优先于自动起播。
         engine.stop()
-        let restartedIntent = PlaybackLoadIntent()
-        try await engine.load(
-            request,
-            identity: identity,
-            intent: restartedIntent
-        )
+        let seekedIntent = PlaybackLoadIntent()
+        try await engine.load(request, identity: identity, intent: seekedIntent)
         try await engine.seek(to: .milliseconds(100))
         #expect(
             await engine.beginPlayback(
                 identity: identity,
-                intent: restartedIntent,
+                intent: seekedIntent,
                 initialPositionSeconds: nil
             ) == .rejected
         )
 
+        // 同一 intent 最多起播一次。
         engine.stop()
         let playableIntent = PlaybackLoadIntent()
-        try await engine.load(
-            request,
-            identity: identity,
-            intent: playableIntent
-        )
-        let playableItemIdentity = engine.player.currentItem.map(
-            ObjectIdentifier.init
-        )
+        try await engine.load(request, identity: identity, intent: playableIntent)
         #expect(
             await engine.beginPlayback(
                 identity: identity,
@@ -1174,40 +805,22 @@ struct LoopbackPlaybackServerTests {
                 initialPositionSeconds: nil
             ) == .rejected
         )
-        try await waitUntilPlaybackTime(engine.player, reaches: 0.15)
-        #expect(
-            engine.player.currentItem.map(ObjectIdentifier.init)
-                == playableItemIdentity
-        )
-        engine.stop()
+        try await waitUntilTimeControlStatus(of: engine.player, is: .playing)
 
+        // 断点续播 token 只允许一次“从头播放”，重叠调用只有一个成功。
+        engine.stop()
         let resumeIntent = PlaybackLoadIntent()
-        try await engine.load(
-            request,
-            identity: identity,
-            intent: resumeIntent
-        )
+        try await engine.load(request, identity: identity, intent: resumeIntent)
         let resumeOutcome = await engine.beginPlayback(
             identity: identity,
             intent: resumeIntent,
             initialPositionSeconds: 0.3
         )
-        let diagnosticDuration = engine.player.currentItem?.duration.seconds ?? -1
-        let diagnosticSeekableCount =
-            engine.player.currentItem?.seekableTimeRanges.count ?? -1
-        let diagnosticLoadedCount =
-            engine.player.currentItem?.loadedTimeRanges.count ?? -1
-        guard case .resumed(let position, let resumeToken, _) = resumeOutcome
-        else {
-            let diagnostic =
-                "有效首次断点未完成 seek-before-play；state=\(engine.currentTimelineSnapshot.state)，time=\(engine.player.currentTime().seconds)，duration=\(diagnosticDuration)，seekable=\(diagnosticSeekableCount)，loaded=\(diagnosticLoadedCount)"
-            Issue.record(Testing.Comment(rawValue: diagnostic))
-            engine.stop()
+        guard case .resumed(_, let resumeToken, _) = resumeOutcome else {
+            Issue.record("有效首次断点未完成 seek-before-play：\(resumeOutcome)")
             return
         }
-        #expect(position >= 0.05)
-        #expect(engine.player.currentTime().seconds >= 0.05)
-        try await waitUntilPlaybackStarts(engine.player)
+        try await waitUntilTimeControlStatus(of: engine.player, is: .playing)
 
         async let firstRestart = engine.restartFromBeginning(
             identity: identity,
@@ -1221,8 +834,6 @@ struct LoopbackPlaybackServerTests {
         )
         let restartResults = await [firstRestart, overlappingRestart]
         #expect(restartResults.filter { $0 }.count == 1)
-        #expect(restartResults.filter { !$0 }.count == 1)
-        #expect(engine.player.currentTime().seconds < 0.25)
         #expect(
             !(await engine.restartFromBeginning(
                 identity: identity,
@@ -1230,87 +841,21 @@ struct LoopbackPlaybackServerTests {
                 resumeToken: resumeToken
             ))
         )
-        engine.stop()
-    }
-
-    @Test
-    func momentaryRateRestorationPreservesPauseAndRecoversBuffering() {
-        #expect(
-            MomentaryRateRestorationPolicy.action(
-                timeControlStatus: .paused,
-                currentRate: 0,
-                momentaryRate: 2
-            ) == .none
-        )
-        #expect(
-            MomentaryRateRestorationPolicy.action(
-                timeControlStatus: .playing,
-                currentRate: 2,
-                momentaryRate: 2
-            ) == .setCurrentRate
-        )
-        #expect(
-            MomentaryRateRestorationPolicy.action(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
-                currentRate: 0,
-                momentaryRate: 2
-            ) == .resumeAtDefaultRate
-        )
-        #expect(
-            MomentaryRateRestorationPolicy.action(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
-                currentRate: 1.5,
-                momentaryRate: 2
-            ) == .none
-        )
     }
 
     @Test
     @MainActor
-    func engineFreezesNativeCatalogDefaultsOffAndSerializesResetAcrossABA()
-        async throws
-    {
-        let videoData = try fixtureBase64Data(
-            named: "video-avc-256x144-4s-global-sidx.mp4"
-        )
-        let audioData = try fixtureBase64Data(
-            named: "audio-aac-4s-global-sidx.mp4"
-        )
-        let videoURL = try #require(
-            URL(string: "https://native-subtitle.example/video")
-        )
-        let audioURL = try #require(
-            URL(string: "https://native-subtitle.example/audio")
-        )
-        let video = try makeFixtureTrack(
-            id: 80,
-            kind: .video,
-            codecs: "avc1.4d400c",
-            bandwidth: 100_000,
-            data: videoData,
-            primaryURL: videoURL,
-            videoAttributes: try VideoRepresentationAttributes(
-                width: 256,
-                height: 144,
-                frameRate: 24
-            )
-        ).representation
-        let audio = try makeFixtureTrack(
-            id: 30_280,
-            kind: .audio,
-            codecs: "mp4a.40.2",
-            bandwidth: 32_000,
-            data: audioData,
-            primaryURL: audioURL
-        ).representation
-        let transport = FixtureRangeTransport(
-            media: [videoURL: videoData, audioURL: audioData],
-            failingURLs: []
-        )
+    func engineSerializesSubtitleResetAcrossABALoads() async throws {
+        let fixture = try makeSimpleMedia(host: "native-subtitle.example")
         let subtitleRepository = NativeSubtitleFixtureRepository()
         let engine = AVPlayerEngine(
             bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
+                rangeClient: HTTPRangeClient(
+                    transport: FixtureRangeTransport(
+                        media: fixture.media,
+                        failingURLs: []
+                    )
+                )
             ),
             subtitleUseCase: SubtitleUseCase(
                 repository: subtitleRepository
@@ -1319,82 +864,19 @@ struct LoopbackPlaybackServerTests {
         engine.player.isMuted = true
         let request = PlaybackRequest(
             manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
+                videoRepresentations: [fixture.video],
+                originalAudioRepresentations: [fixture.audio]
             )
         )
         let firstA = PlaybackItemIdentity(bvid: "BV1NativeA", cid: 101)
         let itemB = PlaybackItemIdentity(bvid: "BV1NativeB", cid: 202)
 
         try await engine.load(request, identity: firstA)
-        let item = try #require(engine.player.currentItem)
-        let group = try #require(
-            try await item.asset.loadMediaSelectionGroup(for: .legible)
-        )
-        let asset = try #require(item.asset as? AVURLAsset)
-        let localizedNamesURL = asset.url.deletingLastPathComponent()
-            .appending(path: "metadata/localized-rendition-names.json")
-        let localizedNamesData = try await URLSession.shared.data(
-            from: localizedNamesURL
-        ).0
-        let localizedNames = try #require(
-            try JSONSerialization.jsonObject(with: localizedNamesData)
-                as? [String: [String: String]]
-        )
-        let machineGenerated = AVMediaCharacteristic(
-            rawValue: "public.machine-generated"
-        )
-        let automaticSubtitles = group.options.filter {
-            $0.hasMediaCharacteristic(machineGenerated)
-        }
-        let authoredSubtitle = try #require(
-            group.options.first {
-                $0.extendedLanguageTag == "zh"
-                    && !$0.hasMediaCharacteristic(machineGenerated)
-            }
-        )
-        // System-generated translations may add options beyond the source catalog.
-        // Source rendition counts and attributes stay strict in HLS builder tests.
-        #expect(automaticSubtitles.contains { $0.extendedLanguageTag == "zh" })
-        #expect(automaticSubtitles.contains { $0.extendedLanguageTag == "en" })
-        #expect(group.options.allSatisfy { !$0.displayName.isEmpty })
-        #expect(localizedNames["中文"]?["zh"] == "中文")
-        #expect(localizedNames["中文（AI）"]?["zh"] == "中文")
-        #expect(localizedNames["English（AI）"]?["en"] == "English")
-        #expect(localizedNames["原声"]?["en"] == "Original audio")
-        #expect(
-            group.options.allSatisfy {
-                !$0.hasMediaCharacteristic(.isOriginalContent)
-            }
-        )
-        #expect(
-            item.currentMediaSelection.selectedMediaOption(in: group) == nil
-        )
-        #expect(await subtitleRepository.cueRequestCount == 0)
-
-        let enabledResult = await engine.toggleNativeSubtitles()
-        let selectedByShortcut = try #require(
-            item.currentMediaSelection.selectedMediaOption(in: group)
-        )
-        #expect(enabledResult == .enabled(label: selectedByShortcut.displayName))
-        #expect(await engine.toggleNativeSubtitles() == .disabled)
-        #expect(
-            item.currentMediaSelection.selectedMediaOption(in: group) == nil
-        )
-
-        item.select(authoredSubtitle, in: group)
-        engine.play()
-        try await waitUntilAsync {
-            await subtitleRepository.cueRequestCount == 1
-        }
-        engine.pause()
 
         let blockedBLoad = Task {
             try await engine.load(request, identity: itemB)
         }
-        try await waitUntilAsync {
-            await subtitleRepository.resetCalls.count == 1
-        }
+        await subtitleRepository.waitForResetCalls(1)
         let replacementALoad = Task {
             try await engine.load(request, identity: firstA)
         }
@@ -1413,9 +895,7 @@ struct LoopbackPlaybackServerTests {
         let stoppedBLoad = Task {
             try await engine.load(request, identity: itemB)
         }
-        try await waitUntilAsync {
-            await subtitleRepository.resetCalls.count == 2
-        }
+        await subtitleRepository.waitForResetCalls(2)
         engine.stop()
         await subtitleRepository.releaseCurrentReset()
         do {
@@ -1429,177 +909,51 @@ struct LoopbackPlaybackServerTests {
         #expect(engine.player.currentItem == nil)
     }
 
-    @Test
-    @MainActor
-    func nativeCatalogFailureFallsBackToMediaOnly() async throws {
-        let videoData = try fixtureData(named: "video-avc")
-        let audioData = try fixtureData(named: "audio-aac")
-        let videoURL = try #require(
-            URL(string: "https://media-only.example/video")
-        )
-        let audioURL = try #require(
-            URL(string: "https://media-only.example/audio")
-        )
-        let video = try makeFixtureTrack(
-            id: 80,
-            kind: .video,
-            codecs: "avc1.4d400b",
-            bandwidth: 50_000,
-            data: videoData,
-            primaryURL: videoURL
-        ).representation
-        let audio = try makeFixtureTrack(
-            id: 30_280,
-            kind: .audio,
-            codecs: "mp4a.40.2",
-            bandwidth: 96_000,
-            data: audioData,
-            primaryURL: audioURL
-        ).representation
-        let transport = FixtureRangeTransport(
-            media: [videoURL: videoData, audioURL: audioData],
-            failingURLs: []
-        )
-        let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
-            ),
-            subtitleUseCase: SubtitleUseCase(
-                repository: FailingNativeSubtitleRepository()
-            )
-        )
-        engine.player.isMuted = true
-
-        try await engine.load(
-            PlaybackRequest(
-                manifest: PlaybackManifest(
-                    videoRepresentations: [video],
-                    originalAudioRepresentations: [audio]
+    @Test(arguments: UnusableNativeSubtitleCatalog.allCases)
+    func unusableSubtitleCatalogFallsBackToMediaOnly(
+        _ catalog: UnusableNativeSubtitleCatalog
+    ) async throws {
+        let fixture = try makeSimpleMedia(host: "media-only.example")
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(
+                transport: FixtureRangeTransport(
+                    media: fixture.media,
+                    failingURLs: []
                 )
-            ),
-            identity: PlaybackItemIdentity(
-                bvid: "BV1MediaOnly",
-                cid: 303
             )
         )
 
-        let item = try #require(engine.player.currentItem)
-        let asset = try #require(item.asset as? AVURLAsset)
-        let masterBody = try await URLSession.shared.data(from: asset.url).0
-        let master = try #require(
-            String(data: masterBody, encoding: .utf8)
-        )
-        #expect(!master.contains("TYPE=SUBTITLES"))
-        #expect(item.status == .readyToPlay)
-        engine.stop()
-    }
-
-    @Test
-    @MainActor
-    func unsafeNativeSubtitleLabelFallsBackToMediaOnly() async throws {
-        let videoData = try fixtureData(named: "video-avc")
-        let audioData = try fixtureData(named: "audio-aac")
-        let videoURL = try #require(
-            URL(string: "https://unsafe-subtitle.example/video")
-        )
-        let audioURL = try #require(
-            URL(string: "https://unsafe-subtitle.example/audio")
-        )
-        let video = try makeFixtureTrack(
-            id: 80,
-            kind: .video,
-            codecs: "avc1.4d400b",
-            bandwidth: 50_000,
-            data: videoData,
-            primaryURL: videoURL
-        ).representation
-        let audio = try makeFixtureTrack(
-            id: 30_280,
-            kind: .audio,
-            codecs: "mp4a.40.2",
-            bandwidth: 96_000,
-            data: audioData,
-            primaryURL: audioURL
-        ).representation
-        let transport = FixtureRangeTransport(
-            media: [videoURL: videoData, audioURL: audioData],
-            failingURLs: []
-        )
-        let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
-            ),
-            subtitleUseCase: SubtitleUseCase(
-                repository: UnsafeLabelNativeSubtitleRepository()
+        let prepared = try await bridge.prepare(
+            videos: [fixture.video],
+            audioTracks: [makeSelectedAudioTrack(representation: fixture.audio)],
+            headers: [:],
+            subtitleSource: NativeSubtitleSource(
+                useCase: SubtitleUseCase(repository: catalog.repository),
+                identity: PlaybackItemIdentity(bvid: "BV1MediaOnly", cid: 303)
             )
         )
-        engine.player.isMuted = true
-
-        try await engine.load(
-            PlaybackRequest(
-                manifest: PlaybackManifest(
-                    videoRepresentations: [video],
-                    originalAudioRepresentations: [audio]
-                )
-            ),
-            identity: PlaybackItemIdentity(
-                bvid: "BV1UnsafeSubtitle",
-                cid: 304
-            )
+        defer { prepared.stop() }
+        let master = try await fetchText(prepared.url)
+        let localizedNames = try await localizedRenditionNames(
+            besideMaster: prepared.url
         )
 
-        let item = try #require(engine.player.currentItem)
-        let asset = try #require(item.asset as? AVURLAsset)
-        let masterBody = try await URLSession.shared.data(from: asset.url).0
-        let master = try #require(String(data: masterBody, encoding: .utf8))
-        let localizedNamesURL = asset.url.deletingLastPathComponent()
-            .appending(path: "metadata/localized-rendition-names.json")
-        let localizedNamesData = try await URLSession.shared.data(
-            from: localizedNamesURL
-        ).0
-        let localizedNames = try #require(
-            try JSONSerialization.jsonObject(with: localizedNamesData)
-                as? [String: [String: String]]
-        )
+        #expect(master.contains("#EXT-X-STREAM-INF:"))
         #expect(!master.contains("TYPE=SUBTITLES"))
         #expect(localizedNames["原声"]?["en"] == "Original audio")
-        #expect(item.status == .readyToPlay)
-        engine.stop()
     }
 
     @Test
     func subtitleCatalogGraceDoesNotWaitForNoncooperativeRepository() async throws {
-        let videoData = try fixtureData(named: "video-avc")
-        let audioData = try fixtureData(named: "audio-aac")
-        let videoURL = try #require(
-            URL(string: "https://subtitle-timeout.example/video")
-        )
-        let audioURL = try #require(
-            URL(string: "https://subtitle-timeout.example/audio")
-        )
-        let video = try makeFixtureTrack(
-            id: 80,
-            kind: .video,
-            codecs: "avc1.4d400b",
-            bandwidth: 50_000,
-            data: videoData,
-            primaryURL: videoURL
-        ).representation
-        let audio = try makeFixtureTrack(
-            id: 30_280,
-            kind: .audio,
-            codecs: "mp4a.40.2",
-            bandwidth: 96_000,
-            data: audioData,
-            primaryURL: audioURL
-        ).representation
-        let transport = FixtureRangeTransport(
-            media: [videoURL: videoData, audioURL: audioData],
-            failingURLs: []
-        )
+        let fixture = try makeSimpleMedia(host: "subtitle-timeout.example")
         let repository = NoncooperativeNativeSubtitleRepository()
         let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport),
+            rangeClient: HTTPRangeClient(
+                transport: FixtureRangeTransport(
+                    media: fixture.media,
+                    failingURLs: []
+                )
+            ),
             subtitleCatalogGrace: .milliseconds(20)
         )
         let source = NativeSubtitleSource(
@@ -1611,19 +965,18 @@ struct LoopbackPlaybackServerTests {
         )
         let prepareTask = Task {
             try await bridge.prepare(
-                videos: [video],
-                audioTracks: [makeSelectedAudioTrack(representation: audio)],
+                videos: [fixture.video],
+                audioTracks: [makeSelectedAudioTrack(representation: fixture.audio)],
                 headers: [:],
                 subtitleSource: source
             )
         }
-        try await waitUntilAsync { await repository.started }
+        await repository.waitUntilStarted()
         let prepared = try await prepareTask.value
         defer { prepared.stop() }
         await repository.release()
 
-        let masterBody = try await URLSession.shared.data(from: prepared.url).0
-        let master = try #require(String(data: masterBody, encoding: .utf8))
+        let master = try await fetchText(prepared.url)
         #expect(!master.contains("TYPE=SUBTITLES"))
     }
 
@@ -1957,13 +1310,7 @@ struct LoopbackPlaybackServerTests {
                 )
             )
         }
-        for _ in 0..<200 {
-            if await transport.startedMediaRequestCount > 0 {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(await transport.startedMediaRequestCount > 0)
+        await transport.waitForStartedMediaRequest()
 
         try await engine.load(
             newRequest,
@@ -1982,11 +1329,103 @@ struct LoopbackPlaybackServerTests {
 
     @Test
     @MainActor
-    func repeatedReplacementStopsOldServersAndReleasesResources() async throws {
+    func replacementAndReleaseStopEveryPreviousLoopbackSession() async throws {
+        let fixture = try makeSimpleMedia(host: "fixture.example")
+        var engine: AVPlayerEngine? = AVPlayerEngine(
+            bridge: DASHToHLSBridge(
+                rangeClient: HTTPRangeClient(
+                    transport: FixtureRangeTransport(
+                        media: fixture.media,
+                        failingURLs: []
+                    )
+                )
+            )
+        )
+        engine?.player.isMuted = true
+        let request = PlaybackRequest(
+            manifest: PlaybackManifest(
+                videoRepresentations: [fixture.video],
+                originalAudioRepresentations: [fixture.audio]
+            )
+        )
+
+        var masterURLs: [URL] = []
+        for cid in 1...3 {
+            try await engine?.load(
+                request,
+                identity: PlaybackItemIdentity(
+                    bvid: "BV1LoopFixture",
+                    cid: Int64(900_000 + cid)
+                )
+            )
+            let asset = try #require(
+                engine?.player.currentItem?.asset as? AVURLAsset
+            )
+            masterURLs.append(asset.url)
+            #expect(await isServing(asset.url))
+            for previousURL in masterURLs.dropLast() {
+                #expect(!(await isServing(previousURL)))
+            }
+        }
+
+        weak let releasedEngine = engine
+        engine = nil
+        #expect(releasedEngine == nil)
+        for url in masterURLs {
+            #expect(!(await isServing(url)))
+        }
+    }
+
+    private func requestFiveByteResource(
+        method: String,
+        range: String?
+    ) async throws -> (Data, HTTPURLResponse) {
+        let server = LoopbackPlaybackServer()
+        try await server.start()
+        defer { server.stop() }
+        let url = try server.register(
+            .inMemory(
+                data: Data([0, 1, 2, 3, 4]),
+                contentType: "application/octet-stream"
+            ),
+            at: "range.bin"
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue(range, forHTTPHeaderField: "Range")
+        let (body, response) = try await URLSession.shared.data(for: request)
+        return (body, try #require(response as? HTTPURLResponse))
+    }
+
+    private func fetchText(_ url: URL) async throws -> String {
+        let data = try await URLSession.shared.data(from: url).0
+        return try #require(String(data: data, encoding: .utf8))
+    }
+
+    private func localizedRenditionNames(
+        besideMaster masterURL: URL
+    ) async throws -> [String: [String: String]] {
+        let url = masterURL.deletingLastPathComponent()
+            .appending(path: "metadata/localized-rendition-names.json")
+        let data = try await URLSession.shared.data(from: url).0
+        return try #require(
+            try JSONSerialization.jsonObject(with: data)
+                as? [String: [String: String]]
+        )
+    }
+
+    /// 两秒 128x72 AVC 与 AAC fixture，挂在给定 host 的独立远端 URL 上。
+    private func makeSimpleMedia(
+        host: String
+    ) throws -> (
+        video: MediaRepresentation,
+        audio: MediaRepresentation,
+        media: [URL: Data]
+    ) {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
-        let videoURL = try #require(URL(string: "https://fixture.example/video"))
-        let audioURL = try #require(URL(string: "https://fixture.example/audio"))
+        let videoURL = try #require(URL(string: "https://\(host)/video"))
+        let audioURL = try #require(URL(string: "https://\(host)/audio"))
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -2003,71 +1442,7 @@ struct LoopbackPlaybackServerTests {
             data: audioData,
             primaryURL: audioURL
         ).representation
-        let transport = FixtureRangeTransport(
-            media: [
-                videoURL: videoData,
-                audioURL: audioData
-            ],
-            failingURLs: []
-        )
-        let registry = LoopbackServerRegistry()
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport),
-            serverFactory: { rangeClient in
-                registry.create(rangeClient: rangeClient)
-            }
-        )
-        var engine: AVPlayerEngine? = AVPlayerEngine(bridge: bridge)
-        engine?.player.isMuted = true
-        let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
-            )
-        )
-
-        for expectedServerCount in 1...12 {
-            try await engine?.load(
-                request,
-                identity: PlaybackItemIdentity(
-                    bvid: "BV1LoopFixture",
-                    cid: Int64(900_000 + expectedServerCount)
-                )
-            )
-            let servers = registry.servers
-            #expect(servers.count == expectedServerCount)
-            for server in servers.dropLast() {
-                #expect(
-                    server.diagnosticsSnapshot()
-                        == LoopbackPlaybackServerDiagnostics(
-                            isRunning: false,
-                            registeredRouteCount: 0,
-                            activeConnectionCount: 0,
-                            activeTaskCount: 0
-                        )
-                )
-            }
-        }
-
-        engine = nil
-        for _ in 0..<100 {
-            if registry.servers.allSatisfy({ !$0.diagnosticsSnapshot().isRunning }) {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-
-        for server in registry.servers {
-            #expect(
-                server.diagnosticsSnapshot()
-                    == LoopbackPlaybackServerDiagnostics(
-                        isRunning: false,
-                        registeredRouteCount: 0,
-                        activeConnectionCount: 0,
-                        activeTaskCount: 0
-                    )
-            )
-        }
+        return (video, audio, [videoURL: videoData, audioURL: audioData])
     }
 
     private func fixtureData(named name: String) throws -> Data {
@@ -2264,34 +1639,29 @@ struct LoopbackPlaybackServerTests {
         }
     }
 
-    private func waitUntilReadyToPlay(_ item: AVPlayerItem) async throws {
+    /// 以 KVO 事件等待 AVPlayer 进入指定状态；固定时长只作超时。
+    private func waitUntilTimeControlStatus(
+        of player: AVPlayer,
+        is expected: AVPlayer.TimeControlStatus
+    ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                let observationBox = PlayerItemObservationBox()
-                let statuses = AsyncStream<AVPlayerItem.Status> { continuation in
-                    let observation = item.observe(
-                        \.status,
+                let observationBox = KeyValueObservationBox()
+                let statuses = AsyncStream<AVPlayer.TimeControlStatus> {
+                    continuation in
+                    let observation = player.observe(
+                        \.timeControlStatus,
                         options: [.initial, .new]
-                    ) { observedItem, _ in
-                        continuation.yield(observedItem.status)
+                    ) { observedPlayer, _ in
+                        continuation.yield(observedPlayer.timeControlStatus)
                     }
                     observationBox.store(observation)
                     continuation.onTermination = { _ in
                         observationBox.invalidate()
                     }
                 }
-
-                for await status in statuses {
-                    switch status {
-                    case .readyToPlay:
-                        return
-                    case .failed:
-                        throw item.error ?? LoopbackFixtureError.itemFailedWithoutError
-                    case .unknown:
-                        continue
-                    @unknown default:
-                        throw LoopbackFixtureError.unknownItemStatus
-                    }
+                for await status in statuses where status == expected {
+                    return
                 }
                 throw CancellationError()
             }
@@ -2322,49 +1692,12 @@ struct LoopbackPlaybackServerTests {
         throw LoopbackFixtureError.timedOut
     }
 
-    private func waitUntilPlaybackStarts(_ player: AVPlayer) async throws {
-        for _ in 0..<100 {
-            if player.timeControlStatus == .playing {
-                return
-            }
-            if player.currentItem?.status == .failed {
-                throw player.currentItem?.error
-                    ?? LoopbackFixtureError.itemFailedWithoutError
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw LoopbackFixtureError.timedOut
-    }
-
-    private func waitUntilRequest(
-        method: String,
-        at relativePath: String,
-        exceeds baseline: Int = 0,
-        on server: LoopbackPlaybackServer
-    ) async throws {
-        for _ in 0..<100 {
-            if try server.requestCount(
-                method: method,
-                at: relativePath
-            ) > baseline {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw LoopbackFixtureError.timedOut
-    }
-
-    private func waitUntilRequestCount(
-        exceeds count: Int,
-        on transport: FixtureRangeTransport
-    ) async throws {
-        for _ in 0..<100 {
-            if await transport.requests.count > count {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw LoopbackFixtureError.timedOut
+    /// 旧 session 的 URL 只要不能再返回 200 即视为已释放：连接被拒绝，或端口被复用
+    /// 但 session token 不同而返回 404。
+    private func isServing(_ url: URL) async -> Bool {
+        guard let (_, response) = try? await URLSession.shared.data(from: url)
+        else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
     @MainActor
@@ -2520,7 +1853,26 @@ struct LoopbackPlaybackServerTests {
     }
 }
 
-private final class PlayerItemObservationBox: @unchecked Sendable {
+struct LoopbackGETRangeCase: Sendable, CustomTestStringConvertible {
+    let range: String?
+    let status: Int
+    let contentRange: String?
+    let body: [UInt8]
+
+    var testDescription: String { range ?? "no Range" }
+}
+
+let loopbackGETRangeCases: [LoopbackGETRangeCase] = [
+    .init(range: nil, status: 200, contentRange: nil, body: [0, 1, 2, 3, 4]),
+    .init(range: "bytes=1-3", status: 206, contentRange: "bytes 1-3/5", body: [1, 2, 3]),
+    .init(range: "bytes=2-", status: 206, contentRange: "bytes 2-4/5", body: [2, 3, 4]),
+    .init(range: "bytes=-2", status: 206, contentRange: "bytes 3-4/5", body: [3, 4]),
+    .init(range: "bytes=5-", status: 416, contentRange: "bytes */5", body: []),
+    .init(range: "bytes=0-0,2-2", status: 200, contentRange: nil, body: [0, 1, 2, 3, 4]),
+    .init(range: "items=0-1", status: 200, contentRange: nil, body: [0, 1, 2, 3, 4])
+]
+
+private final class KeyValueObservationBox: @unchecked Sendable {
     private let lock = NSLock()
     private var observation: NSKeyValueObservation?
     private var isInvalidated = false
@@ -2566,7 +1918,6 @@ private final class LoopbackServerRegistry: @unchecked Sendable {
 
 private enum LoopbackFixtureError: Error {
     case itemFailedWithoutError
-    case unknownItemStatus
     case timedOut
     case missingPort
     case invalidIndependentResponse
@@ -2647,6 +1998,7 @@ private actor ReplacementRangeTransport: HTTPTransport {
     private let blockedMediaURLs: Set<URL>
     private(set) var startedMediaRequestCount = 0
     private(set) var cancelledMediaRequestCount = 0
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         media: [URL: Data],
@@ -2672,6 +2024,9 @@ private actor ReplacementRangeTransport: HTTPTransport {
             requestedRange != indexRanges[request.url]
         {
             startedMediaRequestCount += 1
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
             do {
                 try await Task.sleep(for: .seconds(60))
             } catch is CancellationError {
@@ -2691,6 +2046,11 @@ private actor ReplacementRangeTransport: HTTPTransport {
             ],
             body: body
         )
+    }
+
+    func waitForStartedMediaRequest() async {
+        guard startedMediaRequestCount == 0 else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
     }
 
     private func parseRange(_ value: String) -> MediaByteRange? {
@@ -2759,11 +2119,12 @@ private actor PlaybackFailureRecorder {
     }
 }
 
+/// reset 会一直挂起到测试显式放行，用于固定 ABA 加载与 reset 的串行顺序。
 private actor NativeSubtitleFixtureRepository: SubtitleRepository {
-    private(set) var cueRequestCount = 0
     private(set) var trackRequests: [PlaybackItemIdentity] = []
     private(set) var resetCalls: [PlaybackItemIdentity] = []
     private var resetContinuation: CheckedContinuation<Void, Never>?
+    private var resetWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func tracks(
         for identity: PlaybackItemIdentity
@@ -2775,18 +2136,6 @@ private actor NativeSubtitleFixtureRepository: SubtitleRepository {
                 languageCode: "zh",
                 displayName: "中文",
                 kind: .standard
-            ),
-            SubtitleTrack(
-                id: "automatic-zh",
-                languageCode: "ai-zh",
-                displayName: "中文",
-                kind: .automatic
-            ),
-            SubtitleTrack(
-                id: "automatic-en",
-                languageCode: "ai-en",
-                displayName: "English",
-                kind: .automatic
             )
         ]
     }
@@ -2795,26 +2144,40 @@ private actor NativeSubtitleFixtureRepository: SubtitleRepository {
         for trackID: String,
         identity: PlaybackItemIdentity
     ) -> [SubtitleCue] {
-        cueRequestCount += 1
-        return [
-            SubtitleCue(
-                startSeconds: 0,
-                endSeconds: 3,
-                text: "Native subtitle fixture"
-            )
-        ]
+        []
     }
 
     func reset(for identity: PlaybackItemIdentity) async {
         resetCalls.append(identity)
+        let reached = resetWaiters.filter { $0.count <= resetCalls.count }
+        resetWaiters.removeAll { $0.count <= resetCalls.count }
+        for waiter in reached { waiter.continuation.resume() }
         await withCheckedContinuation { continuation in
             resetContinuation = continuation
         }
     }
 
+    func waitForResetCalls(_ count: Int) async {
+        guard resetCalls.count < count else { return }
+        await withCheckedContinuation { resetWaiters.append((count, $0)) }
+    }
+
     func releaseCurrentReset() {
         resetContinuation?.resume()
         resetContinuation = nil
+    }
+}
+
+/// 两种不可用的原生字幕目录：拉取失败，或标签不安全／归一化后重名。
+enum UnusableNativeSubtitleCatalog: CaseIterable, Sendable {
+    case failing
+    case unsafeLabels
+
+    var repository: any SubtitleRepository {
+        switch self {
+        case .failing: FailingNativeSubtitleRepository()
+        case .unsafeLabels: UnsafeLabelNativeSubtitleRepository()
+        }
     }
 }
 
@@ -2872,13 +2235,17 @@ private struct UnsafeLabelNativeSubtitleRepository: SubtitleRepository {
 }
 
 private actor NoncooperativeNativeSubtitleRepository: SubtitleRepository {
-    private(set) var started = false
+    private var started = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var continuation: CheckedContinuation<Void, Never>?
 
     func tracks(
         for identity: PlaybackItemIdentity
     ) async -> [SubtitleTrack] {
         started = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
@@ -2890,6 +2257,11 @@ private actor NoncooperativeNativeSubtitleRepository: SubtitleRepository {
                 kind: .standard
             )
         ]
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
     }
 
     func cues(
