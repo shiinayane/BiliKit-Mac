@@ -94,10 +94,6 @@ public final class GuestBrowseViewModel {
         activateWorkset(request, workset: workset)
     }
 
-    public func activateSearch(_ query: String) {
-        activateSearch(VideoSearchCriteria(query: query))
-    }
-
     public func activateSearch(_ criteria: VideoSearchCriteria) {
         let request = GuestFeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
@@ -201,10 +197,6 @@ public final class GuestBrowseViewModel {
     public func retryPopularLoadMore() {
         guard popularWorkset.loadMoreError != nil else { return }
         loadMorePopular()
-    }
-
-    public func search(_ query: String) {
-        search(VideoSearchCriteria(query: query))
     }
 
     public func search(_ criteria: VideoSearchCriteria) {
@@ -396,12 +388,6 @@ public final class GuestBrowseViewModel {
             isLoadingMore: recommendationWorkset.isLoadingMore,
             loadMoreError: recommendationWorkset.loadMoreError
         )
-    }
-
-    func searchPagination(
-        for query: String
-    ) -> SearchPaginationPresentation {
-        searchPagination(for: VideoSearchCriteria(query: query))
     }
 
     func searchPagination(

@@ -161,18 +161,6 @@ public final class WatchProgressSession {
         startPeriodicTimer()
     }
 
-    func waitForCurrentReportForTesting() async {
-        await reportTask?.value
-    }
-
-    func sendPeriodicHeartbeatForTesting() {
-        sendPeriodicHeartbeat()
-    }
-
-    func pendingReportsForTesting() -> [WatchProgressReport] {
-        pending.map(\.report)
-    }
-
     private func consume(_ snapshot: PlaybackTimelineSnapshot) {
         guard reportingAccessEnabled, !isSuspended,
             let identity = snapshot.identity,

@@ -326,10 +326,6 @@ public final class GuestVideoViewModel {
         await loadTask?.value
     }
 
-    public func waitForCurrentCollectionEpisodeTask() async {
-        await collectionEpisodeTask?.value
-    }
-
     func collectionEpisodeTaskSnapshotForTesting() -> Task<Void, Never>? {
         collectionEpisodeTask
     }
@@ -342,16 +338,8 @@ public final class GuestVideoViewModel {
         await resumeActionTask?.value
     }
 
-    public func waitForCurrentRelatedVideoTask() async {
-        await relatedVideoTask?.value
-    }
-
     func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
         relatedVideoTask
-    }
-
-    public func waitForCurrentUploaderSignatureTask() async {
-        await uploaderSignatureTask?.value
     }
 
     func uploaderSignatureTaskSnapshotForTesting() -> Task<Void, Never>? {

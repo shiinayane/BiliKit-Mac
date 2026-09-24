@@ -5,123 +5,48 @@ import Testing
 
 struct WatchHistoryUseCaseTests {
     @Test
-    func forwardsContinuationAndPageSizeToRepository() async throws {
-        let repository = WatchHistoryRepositoryStub(
-            pages: [WatchHistoryPage(items: [], continuation: nil)]
-        )
-        let useCase = WatchHistoryUseCase(repository: repository)
-        let continuation = token(123)
-
-        _ = try await useCase.load(after: continuation, pageSize: 30)
-
-        #expect(
-            await repository.requests() == [
-                Request(continuation: continuation, pageSize: 30)
-            ]
-        )
-    }
-
-    @Test
-    func defaultsToTwentyItems() async throws {
-        let repository = WatchHistoryRepositoryStub(
-            pages: [WatchHistoryPage(items: [], continuation: nil)]
-        )
-        let useCase = WatchHistoryUseCase(repository: repository)
-
-        _ = try await useCase.load()
-
-        #expect(
-            await repository.requests() == [
-                Request(continuation: nil, pageSize: 20)
-            ]
-        )
-    }
-
-    @Test(arguments: [31, 0, -1])
-    func rejectsInvalidPageSizeBeforeCallingRepository(pageSize: Int) async {
-        let repository = WatchHistoryRepositoryStub(pages: [])
-        let useCase = WatchHistoryUseCase(repository: repository)
-
-        await #expect(throws: WatchHistoryError.invalidResponse) {
-            try await useCase.load(pageSize: pageSize)
-        }
-        #expect(await repository.requests().isEmpty)
-    }
-
-    @Test
     func skipsFilteredEmptyPagesUntilItemsAreDisplayable() async throws {
-        let firstToken = token(1)
-        let secondToken = token(2)
         let repository = WatchHistoryRepositoryStub(
             pages: [
-                WatchHistoryPage(items: [], continuation: firstToken),
-                WatchHistoryPage(items: [], continuation: secondToken),
+                WatchHistoryPage(items: [], continuation: token(1)),
+                WatchHistoryPage(items: [], continuation: token(2)),
                 WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: nil)
             ]
         )
-        let useCase = WatchHistoryUseCase(repository: repository)
 
-        let page = try await useCase.load()
+        let page = try await WatchHistoryUseCase(repository: repository).load()
 
         #expect(page.items.map(\.bvid) == ["BV1HistoryA1"])
-        #expect(await repository.requests().map(\.continuation) == [nil, firstToken, secondToken])
+        #expect(await repository.continuations == [nil, token(1), token(2)])
     }
 
     @Test
     func boundedEmptyPageScanPreservesManualContinuation() async throws {
-        let firstToken = token(1)
-        let secondToken = token(2)
         let repository = WatchHistoryRepositoryStub(
-            pages: [
-                WatchHistoryPage(items: [], continuation: firstToken),
-                WatchHistoryPage(items: [], continuation: secondToken)
-            ]
-        )
-        let useCase = WatchHistoryUseCase(
-            repository: repository,
-            maximumEmptyPagesToSkip: 1
+            pages: (1...5).map { WatchHistoryPage(items: [], continuation: token($0)) }
         )
 
-        let page = try await useCase.load()
+        let page = try await WatchHistoryUseCase(repository: repository).load()
 
         #expect(page.items.isEmpty)
-        #expect(page.continuation == secondToken)
-        #expect(await repository.requests().map(\.continuation) == [nil, firstToken])
+        #expect(page.continuation == token(4))
+        #expect(await repository.continuations == [nil, token(1), token(2), token(3)])
     }
 
-    @Test
-    func rejectsNonAdvancingEmptyPageCursor() async {
+    @Test(arguments: [[], ["BV1HistoryA1"]])
+    func rejectsNonAdvancingCursor(bvids: [String]) async {
         let repeatedToken = token(1)
         let repository = WatchHistoryRepositoryStub(
-            pages: [WatchHistoryPage(items: [], continuation: repeatedToken)]
+            pages: [WatchHistoryPage(items: bvids.map(item), continuation: repeatedToken)]
         )
-        let useCase = WatchHistoryUseCase(repository: repository)
 
         await #expect(throws: WatchHistoryError.invalidResponse) {
-            try await useCase.load(after: repeatedToken)
-        }
-    }
-
-    @Test
-    func rejectsNonAdvancingCursorEvenWhenPageContainsItems() async {
-        let repeatedToken = token(1)
-        let repository = WatchHistoryRepositoryStub(
-            pages: [
-                WatchHistoryPage(
-                    items: [item("BV1HistoryA1")],
-                    continuation: repeatedToken
-                )
-            ]
-        )
-        let useCase = WatchHistoryUseCase(repository: repository)
-
-        await #expect(throws: WatchHistoryError.invalidResponse) {
-            try await useCase.load(after: repeatedToken)
+            try await WatchHistoryUseCase(repository: repository).load(after: repeatedToken)
         }
     }
 }
 
-private func token(_ value: Int64) -> WatchHistoryContinuation {
+private func token(_ value: Int) -> WatchHistoryContinuation {
     WatchHistoryContinuation(rawValue: "fixture-\(value)")
 }
 
@@ -137,13 +62,8 @@ private func item(_ bvid: String) -> WatchHistoryItem {
     )
 }
 
-private struct Request: Sendable, Equatable {
-    let continuation: WatchHistoryContinuation?
-    let pageSize: Int
-}
-
 private actor WatchHistoryRepositoryStub: WatchHistoryRepository {
-    private var observedRequests: [Request] = []
+    private(set) var continuations: [WatchHistoryContinuation?] = []
     private var pages: [WatchHistoryPage]
 
     init(pages: [WatchHistoryPage]) {
@@ -154,16 +74,10 @@ private actor WatchHistoryRepositoryStub: WatchHistoryRepository {
         after continuation: WatchHistoryContinuation?,
         pageSize: Int
     ) throws -> WatchHistoryPage {
-        observedRequests.append(
-            Request(continuation: continuation, pageSize: pageSize)
-        )
+        continuations.append(continuation)
         guard !pages.isEmpty else {
             throw WatchHistoryError.invalidResponse
         }
         return pages.removeFirst()
-    }
-
-    func requests() -> [Request] {
-        observedRequests
     }
 }

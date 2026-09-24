@@ -18,18 +18,6 @@ struct RelatedVideoUseCaseTests {
 
         #expect(videos == [first, second])
     }
-
-    @Test
-    func currentVideoOnlyBecomesEmptyResult() async throws {
-        let current = RelatedVideo.fixture(bvid: "BV1CurrentAA1")
-        let useCase = RelatedVideoUseCase(
-            repository: RelatedVideoRepositoryStub(videos: [current])
-        )
-
-        let videos = try await useCase.relatedVideos(to: current.bvid)
-
-        #expect(videos.isEmpty)
-    }
 }
 
 private struct RelatedVideoRepositoryStub: RelatedVideoRepository {

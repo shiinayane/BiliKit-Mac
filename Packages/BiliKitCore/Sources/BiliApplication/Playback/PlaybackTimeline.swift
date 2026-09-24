@@ -164,8 +164,6 @@ package struct PlaybackTimelineItemToken: Sendable, Equatable {
 /// 以不可复用 item token 拒绝旧 AVPlayer observer 写回的时间线状态容器。
 package final class PlaybackTimelineStore {
     package private(set) var currentSnapshot = PlaybackTimelineSnapshot.idle
-    package var subscriberCount: Int { continuations.count }
-    package var observerCount: Int { observers.count }
 
     private var currentToken: PlaybackTimelineItemToken?
     private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]

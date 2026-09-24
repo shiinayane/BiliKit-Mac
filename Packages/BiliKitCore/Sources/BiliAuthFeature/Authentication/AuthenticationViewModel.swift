@@ -129,37 +129,30 @@ public final class AuthenticationViewModel {
 
     @ObservationIgnored private let service: any AuthenticationServicing
     @ObservationIgnored private let qrCodeProvider: any AuthenticationQRCodeProviding
+    private static let pollTimeout: Duration = .seconds(180)
+    private static let maximumPollAttempts = 90
+
     @ObservationIgnored private let pollInterval: Duration
-    @ObservationIgnored private let pollTimeout: Duration
-    @ObservationIgnored private let maximumPollAttempts: Int
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var didStartInitialRestore = false
     @ObservationIgnored private var retryAction: RetryAction = .login
 
-    public init(
+    public convenience init(
         service: any AuthenticationServicing,
         qrCodeProvider: any AuthenticationQRCodeProviding
     ) {
-        self.service = service
-        self.qrCodeProvider = qrCodeProvider
-        pollInterval = .seconds(2)
-        pollTimeout = .seconds(180)
-        maximumPollAttempts = 90
+        self.init(service: service, qrCodeProvider: qrCodeProvider, pollInterval: .seconds(2))
     }
 
     init(
         service: any AuthenticationServicing,
         qrCodeProvider: any AuthenticationQRCodeProviding,
-        pollInterval: Duration,
-        pollTimeout: Duration = .seconds(180),
-        maximumPollAttempts: Int = 90
+        pollInterval: Duration
     ) {
         self.service = service
         self.qrCodeProvider = qrCodeProvider
         self.pollInterval = pollInterval
-        self.pollTimeout = pollTimeout
-        self.maximumPollAttempts = maximumPollAttempts
     }
 
     public func restoreIfNeeded() {
@@ -313,13 +306,13 @@ public final class AuthenticationViewModel {
 
     private func pollUntilTerminal(generation operationGeneration: Int) async {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: pollTimeout)
+        let deadline = clock.now.advanced(by: Self.pollTimeout)
         var attempts = 0
 
         while generation == operationGeneration,
             state == .awaitingScan || state == .awaitingConfirmation
         {
-            if attempts >= maximumPollAttempts || clock.now >= deadline {
+            if attempts >= Self.maximumPollAttempts || clock.now >= deadline {
                 await expireLocalChallenge(generation: operationGeneration)
                 return
             }
