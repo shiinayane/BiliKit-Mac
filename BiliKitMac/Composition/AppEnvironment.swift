@@ -50,23 +50,19 @@ struct AppEnvironment {
         relatedVideoRepository: any RelatedVideoRepository,
         uploaderSignatureRepository: any UploaderSignatureRepository,
         commentRepository: any CommentRepository,
-        commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
-        commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { target in
-            guard case .video(let bvid) = target else { return nil }
-            return bvid
-        },
-        commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
+        commentAssetURLResolver: @escaping CommentAssetURLResolver,
+        commentVideoLinkResolver: @escaping CommentVideoLinkResolver,
+        commentLinkURLResolver: @escaping CommentLinkURLResolver,
         historyRepository: any WatchHistoryRepository,
-        watchProgressRepository: (any WatchProgressRepository)? = nil,
+        watchProgressRepository: (any WatchProgressRepository)?,
         danmakuRepository: any DanmakuSegmentRepository,
         playerEngine: AVPlayerEngine,
         playbackPreferencesController: PlaybackPreferencesController,
-        danmakuPreferencesStore: any DanmakuPreferencesStoring =
-            UserDefaultsDanmakuPreferencesStore(),
+        danmakuPreferencesStore: any DanmakuPreferencesStoring,
         authenticationService: any AuthenticationServicing,
         authenticationQRCodeProvider: any AuthenticationQRCodeProviding,
-        open: @escaping @MainActor @Sendable () -> Void = {},
-        close: @escaping @MainActor @Sendable () -> Void = {}
+        open: @escaping @MainActor @Sendable () -> Void,
+        close: @escaping @MainActor @Sendable () -> Void
     ) {
         precondition(
             playerEngine.nativeSubtitlesEnabled,
@@ -101,10 +97,6 @@ struct AppEnvironment {
         self.authenticationQRCodeProvider = authenticationQRCodeProvider
         self.open = open
         self.close = close
-    }
-
-    var nativeSubtitlesEnabled: Bool {
-        playerEngine.nativeSubtitlesEnabled
     }
 
     func makeSystemNowPlayingPlaybackConnection()
@@ -276,42 +268,19 @@ struct AppEnvironment {
     /// playurl 与 WBI 弹幕分段在明确无本地凭据时仍请求同一个 endpoint。登出还会替换 API 的
     /// ephemeral transport，使旧认证会话中的在途请求失效。
     static func live(
-        accountSessionCoordinator: AccountSessionCoordinator? = nil,
+        accountSessionCoordinator: AccountSessionCoordinator,
         appSettingsModel: AppSettingsModel? = nil
     ) -> AppEnvironment {
         let api = makeLiveAPIClient(
             accountReadAllowedPaths: mainAccountReadAllowedPaths
         )
-        let sessionRegistration = accountSessionCoordinator.map {
-            AppEnvironmentSessionRegistration(
-                coordinator: $0,
-                invalidator: api
-            )
-        }
-        let sessionInvalidator: any AuthenticatedSessionInvalidating
-        if let accountSessionCoordinator {
-            sessionInvalidator = accountSessionCoordinator
-        } else {
-            sessionInvalidator = api
-        }
-        let watchProgressRepository: (any WatchProgressRepository)?
-        var standaloneWriteInvalidators: [any AuthenticatedSessionInvalidating] = []
-        if let accountSessionCoordinator {
-            watchProgressRepository = accountSessionCoordinator.watchProgressRepository
-        } else {
-            let writeAPI = makeLiveAPIClient(
-                accountReadAllowedPaths: watchProgressAccountReadAllowedPaths,
-                historyWriteEnabled: true
-            )
-            let writer = SerializedWatchProgressRepository(
-                base: BiliWatchProgressRepository(client: writeAPI)
-            )
-            watchProgressRepository = writer
-            standaloneWriteInvalidators = [writer, writeAPI]
-        }
+        let sessionRegistration = AppEnvironmentSessionRegistration(
+            coordinator: accountSessionCoordinator,
+            invalidator: api
+        )
         let authenticationService = BiliAuthenticationService(
             accountReadAllowedPaths: accountSessionValidationAllowedPaths,
-            additionalSessionInvalidators: [sessionInvalidator] + standaloneWriteInvalidators
+            additionalSessionInvalidators: [accountSessionCoordinator]
         )
         let player = AVPlayer()
         let playbackPreferencesController = PlaybackPreferencesController(
@@ -344,20 +313,25 @@ struct AppEnvironment {
             commentAssetURLResolver: { reference in
                 commentAssetResolver.imageURL(for: reference)
             },
+            commentVideoLinkResolver: { target in
+                guard case .video(let bvid) = target else { return nil }
+                return bvid
+            },
             commentLinkURLResolver: { target in
                 commentLinkResolver.externalURL(for: target)
             },
             historyRepository: BiliWatchHistoryRepository(client: api),
-            watchProgressRepository: watchProgressRepository,
+            watchProgressRepository: accountSessionCoordinator.watchProgressRepository,
             danmakuRepository: BiliDanmakuRepository(client: api),
             playerEngine: playerEngine,
             playbackPreferencesController: playbackPreferencesController,
+            danmakuPreferencesStore: UserDefaultsDanmakuPreferencesStore(),
             authenticationService: authenticationService,
             authenticationQRCodeProvider: AuthenticationQRCodeProvider(
                 service: authenticationService
             ),
-            open: { sessionRegistration?.open() },
-            close: { sessionRegistration?.close() }
+            open: { sessionRegistration.open() },
+            close: { sessionRegistration.close() }
         )
     }
 
