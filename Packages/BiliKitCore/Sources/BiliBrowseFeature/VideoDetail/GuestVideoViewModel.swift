@@ -50,7 +50,7 @@ private struct PlaybackStartPreparationFailure: Error {}
 
 @MainActor
 @Observable
-/// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一 generation。
+/// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一个可替换的 Task。
 ///
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
@@ -87,9 +87,14 @@ public final class GuestVideoViewModel {
     /// 仅在确认凭据失效时递增，由 App 层协调账户重校验；其他播放失败不能触发登出。
     public private(set) var authenticationRevalidationGeneration = 0
     /// Picker 当前请求的合集 episode；可能先于新视频 context 到达。
-    public private(set) var selectedCollectionEpisode: VideoCollectionEpisodeIdentity?
-    public private(set) var collectionEpisodePageStates:
-        [VideoCollectionEpisodeIdentity: CollectionEpisodePagesState] = [:]
+    public var selectedCollectionEpisode: VideoCollectionEpisodeIdentity? {
+        collectionEpisodes.selectedEpisode
+    }
+    public var collectionEpisodePageStates:
+        [VideoCollectionEpisodeIdentity: CollectionEpisodePagesState]
+    {
+        collectionEpisodes.pageStates
+    }
     /// 只在当前 item 已完成首次定位并开始播放后出现。
     public private(set) var resumeNotice: PlaybackResumeNotice?
 
@@ -97,26 +102,13 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let playback: any PlaybackControlling
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
     @ObservationIgnored private let uploaderSignatureUseCase: UploaderSignatureUseCase?
-    @ObservationIgnored private var loadTask: Task<Void, Never>?
-    @ObservationIgnored private var relatedVideoTask: Task<Void, Never>?
-    @ObservationIgnored private var uploaderSignatureTask: Task<Void, Never>?
+    @ObservationIgnored private let loadTask = LatestTask()
+    @ObservationIgnored private let relatedVideoTask = LatestTask()
+    @ObservationIgnored private let uploaderSignatureTask = LatestTask()
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
-    @ObservationIgnored private var resumeActionTask: Task<Void, Never>?
+    @ObservationIgnored private let resumeActionTask = LatestTask()
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
-    @ObservationIgnored private var collectionEpisodeTask: Task<Void, Never>?
-    @ObservationIgnored private var activeCollectionEpisodeRequest: CollectionEpisodePageRequest?
-    @ObservationIgnored private var collectionEpisodeWaitersByBVID:
-        [String: Set<VideoCollectionEpisodeIdentity>] = [:]
-    @ObservationIgnored private var pendingCollectionEpisodeBVIDs: [String] = []
-    @ObservationIgnored private var collectionEpisodeCache: [String: [VideoPage]] = [:]
-    @ObservationIgnored private var collectionEpisodeCacheOrder: [String] = []
-    @ObservationIgnored private var collectionEpisodeSelectionHandler: ((String, Int64?) -> Void)?
-    @ObservationIgnored private var selectedCollectionEpisodeIsExplicit = false
-    @ObservationIgnored private var collectionSeasonID: Int64?
-    @ObservationIgnored private var collectionEpisodeRequestGeneration = 0
-    @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var relatedVideoGeneration = 0
-    @ObservationIgnored private var uploaderSignatureGeneration = 0
+    @ObservationIgnored private let collectionEpisodes: CollectionEpisodePagesController
 
     public init(
         useCase: GuestVideoUseCase,
@@ -128,6 +120,10 @@ public final class GuestVideoViewModel {
         self.playback = playback
         self.relatedVideoUseCase = relatedVideoUseCase
         self.uploaderSignatureUseCase = uploaderSignatureUseCase
+        collectionEpisodes = CollectionEpisodePagesController(useCase: useCase)
+        collectionEpisodes.onAuthenticationInvalid = { [weak self] in
+            self?.recordAuthenticationInvalidationIfNeeded(.authenticationInvalid)
+        }
         playbackFailureTask = Task { [weak self, playback] in
             for await event in playback.playbackFailureEvents() {
                 guard !Task.isCancelled else { return }
@@ -137,20 +133,13 @@ public final class GuestVideoViewModel {
     }
 
     deinit {
-        loadTask?.cancel()
-        relatedVideoTask?.cancel()
-        uploaderSignatureTask?.cancel()
         playbackFailureTask?.cancel()
-        collectionEpisodeTask?.cancel()
-        resumeActionTask?.cancel()
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
     public func loadVideo(_ bvid: String, preferredCID: Int64? = nil) {
-        generation += 1
-        let currentGeneration = generation
-        loadTask?.cancel()
-        cancelCollectionEpisodeRequest(markWaitersIdle: true)
+        loadTask.cancel()
+        collectionEpisodes.cancelRequests()
         cancelUploaderSignature()
         if state != .idle {
             playback.stop()
@@ -169,11 +158,11 @@ public final class GuestVideoViewModel {
         clearResumeNotice()
         state = .loading(bvid: bvid)
         loadRelatedVideos(for: bvid)
-        loadTask = Task { [weak self] in
+        loadTask.replace { [weak self] isCurrent in
             await self?.performLoad(
                 bvid: bvid,
                 preferredCID: preferredCID,
-                generation: currentGeneration
+                isCurrent: isCurrent
             )
         }
     }
@@ -183,35 +172,17 @@ public final class GuestVideoViewModel {
         _ episode: VideoCollectionEpisode,
         onResolved: @escaping (String, Int64?) -> Void
     ) {
-        guard collectionContains(episode) else { return }
-        if selectedCollectionEpisode != episode.id {
-            clearSelectedCollectionEpisodeRequest(
-                preservingRequestForBVID: episode.bvid
-            )
-        }
-        selectedCollectionEpisode = episode.id
-        selectedCollectionEpisodeIsExplicit = true
-        collectionEpisodeSelectionHandler = onResolved
-        resolveOrEnqueueCollectionEpisode(episode)
+        collectionEpisodes.select(episode, onResolved: onResolved)
     }
 
-    public func retryCollectionEpisodePages(
-        _ episode: VideoCollectionEpisode
-    ) {
-        guard selectedCollectionEpisode == episode.id,
-            collectionContains(episode),
-            episode.isIdentityConsistent,
-            let bvid = episode.bvid
-        else { return }
-        enqueueCollectionEpisode(episode, bvid: bvid)
+    public func retryCollectionEpisodePages(_ episode: VideoCollectionEpisode) {
+        collectionEpisodes.retry(episode)
     }
 
     public func collectionEpisodePages(
         for identity: VideoCollectionEpisodeIdentity
     ) -> [VideoPage]? {
-        guard case .loaded(let bvid) = collectionEpisodePageStates[identity]
-        else { return nil }
-        return collectionEpisodeCache[bvid]
+        collectionEpisodes.pages(for: identity)
     }
 
     /// 在同一 BVID 的现有 pages 内替换 CID，不创建新的导航目的地或播放器 owner。
@@ -230,9 +201,7 @@ public final class GuestVideoViewModel {
         }
         guard requestedPlaybackIdentity != targetIdentity else { return }
 
-        generation += 1
-        let currentGeneration = generation
-        loadTask?.cancel()
+        loadTask.cancel()
         playback.stop()
         clearResumeNotice()
         requestedPlaybackIdentity = targetIdentity
@@ -242,12 +211,12 @@ public final class GuestVideoViewModel {
         let intent = PlaybackLoadIntent()
         playbackIntent = intent
         state = .loadingPage(context: context, targetPage: targetPage)
-        loadTask = Task { [weak self] in
+        loadTask.replace { [weak self] isCurrent in
             await self?.performPageLoad(
                 context: context,
                 targetPage: targetPage,
                 intent: intent,
-                generation: currentGeneration
+                isCurrent: isCurrent
             )
         }
     }
@@ -272,15 +241,11 @@ public final class GuestVideoViewModel {
 
     /// 取消内容准备并停止播放 adapter，作为离开播放目的地的最终清理边界。
     public func reset() {
-        generation += 1
-        relatedVideoGeneration += 1
-        loadTask?.cancel()
-        loadTask = nil
-        relatedVideoTask?.cancel()
-        relatedVideoTask = nil
+        loadTask.cancel()
+        relatedVideoTask.cancel()
         relatedVideoState = .idle
         cancelUploaderSignature()
-        clearCollectionEpisodeState()
+        collectionEpisodes.clear()
         presentedContext = nil
         requestedPlaybackIdentity = nil
         presentedPlaybackIdentity = nil
@@ -293,112 +258,82 @@ public final class GuestVideoViewModel {
     }
 
     /// 当前浮层的 token、identity 与 load intent 都匹配时才允许回到 0 秒。
+    ///
+    /// 新的重播、切换或 reset 都会取消旧动作；旧动作即使稍后返回，也不能清掉浮层或新动作。
     public func restartFromBeginning() {
         guard let resumeNotice,
             let identity = presentedPlaybackIdentity,
             let intent = playbackIntent
         else { return }
-        let currentGeneration = generation
-        resumeActionTask?.cancel()
-        resumeActionTask = Task { [weak self, playback] in
+        resumeActionTask.replace { [weak self, playback] isCurrent in
             let restarted = await playback.restartFromBeginning(
                 identity: identity,
                 intent: intent,
                 resumeToken: resumeNotice.token
             )
-            guard let self else { return }
-            guard generation == currentGeneration,
+            guard let self, isCurrent(), restarted,
                 self.resumeNotice?.token == resumeNotice.token
-            else {
-                if generation == currentGeneration {
-                    self.resumeActionTask = nil
-                }
-                return
-            }
-            if restarted {
-                self.resumeNotice = nil
-            }
-            self.resumeActionTask = nil
+            else { return }
+            self.resumeNotice = nil
         }
     }
 
     public func waitForCurrentTask() async {
-        await loadTask?.value
+        await loadTask.wait()
     }
 
     func collectionEpisodeTaskSnapshotForTesting() -> Task<Void, Never>? {
-        collectionEpisodeTask
+        collectionEpisodes.task
     }
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
-        loadTask
+        loadTask.task
     }
 
-    func waitForResumeActionForTesting() async {
-        await resumeActionTask?.value
+    func resumeActionTaskSnapshotForTesting() -> Task<Void, Never>? {
+        resumeActionTask.task
     }
 
     func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
-        relatedVideoTask
+        relatedVideoTask.task
     }
 
     func uploaderSignatureTaskSnapshotForTesting() -> Task<Void, Never>? {
-        uploaderSignatureTask
+        uploaderSignatureTask.task
     }
 
     private func loadRelatedVideos(for bvid: String) {
-        relatedVideoGeneration += 1
-        let currentGeneration = relatedVideoGeneration
-        relatedVideoTask?.cancel()
         guard let relatedVideoUseCase else {
+            relatedVideoTask.cancel()
             relatedVideoState = .empty(bvid: bvid)
-            relatedVideoTask = nil
             return
         }
         relatedVideoState = .loading(bvid: bvid)
-        relatedVideoTask = Task { [weak self] in
+        relatedVideoTask.replace { [weak self] isCurrent in
+            let nextState: RelatedVideoState
             do {
-                let videos = try await relatedVideoUseCase.relatedVideos(
-                    to: bvid
-                )
+                let videos = try await relatedVideoUseCase.relatedVideos(to: bvid)
                 try Task.checkCancellation()
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState =
+                nextState =
                     videos.isEmpty
                     ? .empty(bvid: bvid)
                     : .loaded(bvid: bvid, videos: videos)
-                self.relatedVideoTask = nil
             } catch is CancellationError {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .idle
-                self.relatedVideoTask = nil
+                nextState = .idle
             } catch let error as GuestApplicationError {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .failed(bvid: bvid, error: error)
-                self.relatedVideoTask = nil
+                nextState = .failed(bvid: bvid, error: error)
             } catch {
-                guard let self,
-                    self.relatedVideoGeneration == currentGeneration
-                else { return }
-                self.relatedVideoState = .failed(
-                    bvid: bvid,
-                    error: .unavailable
-                )
-                self.relatedVideoTask = nil
+                nextState = .failed(bvid: bvid, error: .unavailable)
             }
+            guard let self, isCurrent() else { return }
+            self.relatedVideoState = nextState
         }
     }
 
     private func performLoad(
         bvid: String,
         preferredCID: Int64?,
-        generation currentGeneration: Int
+        isCurrent: LatestTask.IsCurrent
     ) async {
         do {
             let context = try await useCase.prepareVideo(
@@ -406,10 +341,13 @@ public final class GuestVideoViewModel {
                 preferredCID: preferredCID
             )
             try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
+            guard isCurrent() else { return }
 
             presentedContext = context
-            reconcileCollectionContext(context.detail.collection)
+            collectionEpisodes.reconcile(
+                with: context,
+                preferredCID: requestedPreferredCID
+            )
             loadUploaderSignature(for: context.detail.owner.id)
             let identity = PlaybackItemIdentity(
                 bvid: context.detail.bvid,
@@ -421,48 +359,19 @@ public final class GuestVideoViewModel {
             let intent = PlaybackLoadIntent()
             playbackIntent = intent
             state = .preparingPlayback(context)
-            try await playback.load(
-                context.playback,
-                identity: identity,
-                intent: intent
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            let startOutcome = await playback.beginPlayback(
-                identity: identity,
-                intent: intent,
-                initialPositionSeconds: context.resumePositionSeconds
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            if startOutcome == .preparationFailed {
-                throw PlaybackStartPreparationFailure()
-            }
-            applyResumeNotice(from: startOutcome)
+            guard
+                try await startPlayback(
+                    context,
+                    identity: identity,
+                    intent: intent,
+                    isCurrent: isCurrent
+                )
+            else { return }
             presentedPlaybackIdentity = requestedPlaybackIdentity
             state = .ready(context)
-        } catch is CancellationError {
-            guard generation == currentGeneration else { return }
-            clearCollectionEpisodeState()
-            clearResumeNotice()
-            presentedContext = nil
-            requestedPlaybackIdentity = nil
-            presentedPlaybackIdentity = nil
-            playbackIntent = nil
-            state = .idle
-        } catch let error as GuestApplicationError {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            recordAuthenticationInvalidationIfNeeded(error)
-            state = .failed(bvid: bvid, failure: .content(error))
         } catch {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            state = .failed(bvid: bvid, failure: .playback)
-        }
-
-        if generation == currentGeneration {
-            loadTask = nil
+            guard isCurrent() else { return }
+            handleLoadFailure(error) { .failed(bvid: bvid, failure: $0) }
         }
     }
 
@@ -470,7 +379,7 @@ public final class GuestVideoViewModel {
         context: GuestVideoContext,
         targetPage: VideoPage,
         intent: PlaybackLoadIntent,
-        generation currentGeneration: Int
+        isCurrent: LatestTask.IsCurrent
     ) async {
         do {
             let replacement = try await useCase.preparePage(
@@ -478,7 +387,7 @@ public final class GuestVideoViewModel {
                 cid: targetPage.cid
             )
             try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
+            guard isCurrent() else { return }
 
             presentedContext = replacement
             state = .preparingPlayback(replacement)
@@ -486,56 +395,71 @@ public final class GuestVideoViewModel {
                 bvid: replacement.detail.bvid,
                 cid: replacement.selectedPage.cid
             )
-            try await playback.load(
-                replacement.playback,
-                identity: identity,
-                intent: intent
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            let startOutcome = await playback.beginPlayback(
-                identity: identity,
-                intent: intent,
-                initialPositionSeconds: replacement.resumePositionSeconds
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            if startOutcome == .preparationFailed {
-                throw PlaybackStartPreparationFailure()
-            }
-            applyResumeNotice(from: startOutcome)
+            guard
+                try await startPlayback(
+                    replacement,
+                    identity: identity,
+                    intent: intent,
+                    isCurrent: isCurrent
+                )
+            else { return }
             presentedPlaybackIdentity = identity
             state = .ready(replacement)
-        } catch is CancellationError {
-            guard generation == currentGeneration else { return }
-            clearCollectionEpisodeState()
-            clearResumeNotice()
+        } catch {
+            guard isCurrent() else { return }
+            handleLoadFailure(error) {
+                .failedPage(context: context, targetPage: targetPage, failure: $0)
+            }
+        }
+    }
+
+    /// 安装并开播已准备好的 context；返回 false 表示意图已被取代，调用方不得再写状态。
+    private func startPlayback(
+        _ context: GuestVideoContext,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        isCurrent: LatestTask.IsCurrent
+    ) async throws -> Bool {
+        try await playback.load(
+            context.playback,
+            identity: identity,
+            intent: intent
+        )
+        try Task.checkCancellation()
+        guard isCurrent() else { return false }
+        let startOutcome = await playback.beginPlayback(
+            identity: identity,
+            intent: intent,
+            initialPositionSeconds: context.resumePositionSeconds
+        )
+        try Task.checkCancellation()
+        guard isCurrent() else { return false }
+        if startOutcome == .preparationFailed {
+            throw PlaybackStartPreparationFailure()
+        }
+        applyResumeNotice(from: startOutcome)
+        return true
+    }
+
+    /// 当前意图的准备失败：取消回到 idle，其余错误按调用方给出的失败形态呈现。
+    private func handleLoadFailure(
+        _ error: any Error,
+        failedState: (GuestVideoFailure) -> GuestVideoState
+    ) {
+        clearResumeNotice()
+        switch error {
+        case is CancellationError:
+            collectionEpisodes.clear()
+            presentedContext = nil
             requestedPlaybackIdentity = nil
             presentedPlaybackIdentity = nil
             playbackIntent = nil
             state = .idle
-            presentedContext = nil
-        } catch let error as GuestApplicationError {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
+        case let error as GuestApplicationError:
             recordAuthenticationInvalidationIfNeeded(error)
-            state = .failedPage(
-                context: context,
-                targetPage: targetPage,
-                failure: .content(error)
-            )
-        } catch {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            state = .failedPage(
-                context: context,
-                targetPage: targetPage,
-                failure: .playback
-            )
-        }
-
-        if generation == currentGeneration {
-            loadTask = nil
+            state = failedState(.content(error))
+        default:
+            state = failedState(.playback)
         }
     }
 
@@ -557,9 +481,7 @@ public final class GuestVideoViewModel {
             })
         else { return }
 
-        generation += 1
-        loadTask?.cancel()
-        loadTask = nil
+        loadTask.cancel()
         playback.stop()
         clearResumeNotice()
         requestedPlaybackIdentity = event.identity
@@ -591,22 +513,17 @@ public final class GuestVideoViewModel {
     }
 
     private func clearResumeNotice() {
-        resumeActionTask?.cancel()
-        resumeActionTask = nil
+        resumeActionTask.cancel()
         resumeNotice = nil
     }
 
     private func loadUploaderSignature(for ownerID: Int64) {
-        uploaderSignatureGeneration += 1
-        let currentGeneration = uploaderSignatureGeneration
-        uploaderSignatureTask?.cancel()
         guard let uploaderSignatureUseCase else {
-            uploaderSignatureState = .loaded(nil)
-            uploaderSignatureTask = nil
+            cancelUploaderSignature()
             return
         }
         uploaderSignatureState = .loading
-        uploaderSignatureTask = Task { [weak self] in
+        uploaderSignatureTask.replace { [weak self] isCurrent in
             let signature: String?
             do {
                 let resolved = try await uploaderSignatureUseCase.signature(
@@ -617,393 +534,13 @@ public final class GuestVideoViewModel {
             } catch {
                 signature = nil
             }
-            guard let self,
-                self.uploaderSignatureGeneration == currentGeneration,
-                !Task.isCancelled
-            else { return }
+            guard let self, isCurrent() else { return }
             self.uploaderSignatureState = .loaded(signature)
-            self.uploaderSignatureTask = nil
         }
     }
 
     private func cancelUploaderSignature() {
-        uploaderSignatureGeneration += 1
-        uploaderSignatureTask?.cancel()
-        uploaderSignatureTask = nil
+        uploaderSignatureTask.cancel()
         uploaderSignatureState = .loaded(nil)
     }
-
-    private func resolveOrEnqueueCollectionEpisode(
-        _ episode: VideoCollectionEpisode
-    ) {
-        guard episode.isIdentityConsistent, let bvid = episode.bvid else {
-            collectionEpisodePageStates[episode.id] = .failed(.invalidResponse)
-            return
-        }
-        if let knownPages = episode.knownPages {
-            cacheAndMarkCollectionPages(knownPages, bvid: bvid, requested: episode.id)
-            return
-        }
-        if presentedContext?.detail.bvid == bvid,
-            let pages = presentedContext?.pages,
-            !pages.isEmpty
-        {
-            cacheAndMarkCollectionPages(pages, bvid: bvid, requested: episode.id)
-            return
-        }
-        if collectionEpisodeCache[bvid] != nil {
-            touchCollectionEpisodeCache(bvid)
-            collectionEpisodePageStates[episode.id] = .loaded(bvid: bvid)
-            completeSelectedCollectionEpisodeIfPossible(episode)
-            return
-        }
-        enqueueCollectionEpisode(episode, bvid: bvid)
-    }
-
-    private func enqueueCollectionEpisode(
-        _ episode: VideoCollectionEpisode,
-        bvid: String
-    ) {
-        collectionEpisodeWaitersByBVID[bvid, default: []].insert(episode.id)
-        collectionEpisodePageStates[episode.id] = .loading
-        if activeCollectionEpisodeRequest?.bvid != bvid,
-            !pendingCollectionEpisodeBVIDs.contains(bvid)
-        {
-            pendingCollectionEpisodeBVIDs.append(bvid)
-        }
-        startNextCollectionEpisodeRequestIfNeeded()
-    }
-
-    private func startNextCollectionEpisodeRequestIfNeeded() {
-        guard activeCollectionEpisodeRequest == nil else { return }
-        while !pendingCollectionEpisodeBVIDs.isEmpty {
-            let bvid = pendingCollectionEpisodeBVIDs.removeFirst()
-            guard let waiters = collectionEpisodeWaitersByBVID[bvid],
-                !waiters.isEmpty,
-                let seasonID = collectionSeasonID
-            else { continue }
-            collectionEpisodeRequestGeneration += 1
-            let request = CollectionEpisodePageRequest(
-                seasonID: seasonID,
-                bvid: bvid,
-                generation: collectionEpisodeRequestGeneration
-            )
-            activeCollectionEpisodeRequest = request
-            let useCase = useCase
-            collectionEpisodeTask = Task { [weak self, useCase] in
-                let result: CollectionEpisodePageResult
-                do {
-                    let pages = try await useCase.pagesForCollectionEpisode(
-                        bvid: request.bvid
-                    )
-                    try Task.checkCancellation()
-                    result = .success(pages)
-                } catch is CancellationError {
-                    result = .cancelled
-                } catch let error as GuestApplicationError {
-                    result = Task.isCancelled ? .cancelled : .failure(error)
-                } catch {
-                    result = Task.isCancelled ? .cancelled : .failure(.unavailable)
-                }
-                self?.completeCollectionEpisodeRequest(request, result: result)
-            }
-            return
-        }
-    }
-
-    private func completeCollectionEpisodeRequest(
-        _ request: CollectionEpisodePageRequest,
-        result: CollectionEpisodePageResult
-    ) {
-        guard activeCollectionEpisodeRequest == request,
-            collectionSeasonID == request.seasonID
-        else { return }
-        let waiters = matchingCollectionEpisodeWaiters(for: request.bvid)
-        switch result {
-        case .success(let pages):
-            do {
-                let resolved = try validatedCollectionPages(pages)
-                storeCollectionEpisodeCache(resolved, for: request.bvid)
-                for identity in waiters {
-                    collectionEpisodePageStates[identity] = .loaded(bvid: request.bvid)
-                }
-                completeSelectedCollectionEpisodeIfPossible()
-            } catch let error as GuestApplicationError {
-                for identity in waiters {
-                    collectionEpisodePageStates[identity] = .failed(error)
-                }
-            } catch {
-                for identity in waiters {
-                    collectionEpisodePageStates[identity] = .failed(.invalidResponse)
-                }
-            }
-        case .failure(let error):
-            recordAuthenticationInvalidationIfNeeded(error)
-            for identity in waiters {
-                collectionEpisodePageStates[identity] = .failed(error)
-            }
-        case .cancelled:
-            for identity in waiters
-            where collectionEpisodePageStates[identity] == .loading {
-                collectionEpisodePageStates[identity] = .idle
-            }
-        }
-        collectionEpisodeWaitersByBVID.removeValue(forKey: request.bvid)
-        activeCollectionEpisodeRequest = nil
-        collectionEpisodeTask = nil
-        startNextCollectionEpisodeRequestIfNeeded()
-    }
-
-    private func cacheAndMarkCollectionPages(
-        _ pages: [VideoPage],
-        bvid: String,
-        requested identity: VideoCollectionEpisodeIdentity
-    ) {
-        do {
-            let resolved = try validatedCollectionPages(pages)
-            storeCollectionEpisodeCache(resolved, for: bvid)
-            collectionEpisodePageStates[identity] = .loaded(bvid: bvid)
-            completeSelectedCollectionEpisodeIfPossible()
-        } catch let error as GuestApplicationError {
-            collectionEpisodePageStates[identity] = .failed(error)
-        } catch {
-            collectionEpisodePageStates[identity] = .failed(.invalidResponse)
-        }
-    }
-
-    private func validatedCollectionPages(
-        _ pages: [VideoPage]
-    ) throws
-        -> [VideoPage]
-    {
-        guard !pages.isEmpty,
-            Set(pages.map(\.cid)).count == pages.count,
-            Set(pages.map(\.index)).count == pages.count
-        else {
-            throw GuestApplicationError.invalidResponse
-        }
-        return pages.sorted(by: { $0.index < $1.index })
-    }
-
-    private func matchingCollectionEpisodeWaiters(
-        for bvid: String
-    )
-        -> Set<VideoCollectionEpisodeIdentity>
-    {
-        Set(
-            (collectionEpisodeWaitersByBVID[bvid] ?? []).filter { identity in
-                selectedCollectionEpisode == identity
-                    && collectionEpisode(identity: identity)?.bvid == bvid
-            }
-        )
-    }
-
-    private func cancelCollectionEpisodeRequest(markWaitersIdle: Bool) {
-        collectionEpisodeRequestGeneration += 1
-        collectionEpisodeTask?.cancel()
-        collectionEpisodeTask = nil
-        if markWaitersIdle {
-            for waiters in collectionEpisodeWaitersByBVID.values {
-                for identity in waiters
-                where collectionEpisodePageStates[identity] == .loading {
-                    collectionEpisodePageStates[identity] = .idle
-                }
-            }
-        }
-        activeCollectionEpisodeRequest = nil
-        collectionEpisodeWaitersByBVID.removeAll()
-        pendingCollectionEpisodeBVIDs.removeAll()
-    }
-
-    private func removeCollectionEpisodeWaiter(_ episode: VideoCollectionEpisode) {
-        collectionEpisodePageStates[episode.id] = .idle
-        guard let bvid = episode.bvid else { return }
-        collectionEpisodeWaitersByBVID[bvid]?.remove(episode.id)
-        guard collectionEpisodeWaitersByBVID[bvid]?.isEmpty == true else { return }
-        collectionEpisodeWaitersByBVID.removeValue(forKey: bvid)
-        pendingCollectionEpisodeBVIDs.removeAll(where: { $0 == bvid })
-        if activeCollectionEpisodeRequest?.bvid == bvid {
-            collectionEpisodeRequestGeneration += 1
-            activeCollectionEpisodeRequest = nil
-            let cancelledTask = collectionEpisodeTask
-            collectionEpisodeTask = nil
-            cancelledTask?.cancel()
-            startNextCollectionEpisodeRequestIfNeeded()
-        }
-    }
-
-    private func reconcileCollectionContext(_ collection: VideoCollection?) {
-        guard let collection else {
-            clearCollectionEpisodeState()
-            return
-        }
-        if collectionSeasonID != collection.id {
-            let explicitSelection =
-                selectedCollectionEpisodeIsExplicit
-                ? selectedCollectionEpisode : nil
-            clearCollectionEpisodeState()
-            collectionSeasonID = collection.id
-            if let explicitSelection,
-                collection.sections.flatMap(\.episodes).contains(where: {
-                    $0.id == explicitSelection
-                })
-            {
-                selectedCollectionEpisode = explicitSelection
-                selectedCollectionEpisodeIsExplicit = true
-            }
-            synchronizeSelectedCollectionEpisodeWithPresentedContext()
-            return
-        }
-        let validIdentities = Set(
-            collection.sections.flatMap(\.episodes).map(\.id)
-        )
-        if let selectedCollectionEpisode,
-            !validIdentities.contains(selectedCollectionEpisode)
-        {
-            self.selectedCollectionEpisode = nil
-            selectedCollectionEpisodeIsExplicit = false
-            collectionEpisodeSelectionHandler = nil
-        }
-        collectionEpisodePageStates = collectionEpisodePageStates.filter {
-            validIdentities.contains($0.key)
-        }
-        synchronizeSelectedCollectionEpisodeWithPresentedContext()
-    }
-
-    private func synchronizeSelectedCollectionEpisodeWithPresentedContext() {
-        guard let context = presentedContext else { return }
-        let episodes = context.detail.collection?.sections.flatMap(\.episodes) ?? []
-        let explicitSelection =
-            selectedCollectionEpisodeIsExplicit
-            ? selectedCollectionEpisode : nil
-        let explicitSelectionForContext = explicitSelection.flatMap { identity in
-            episodes.first(where: {
-                $0.id == identity && $0.bvid == context.detail.bvid
-            })?.id
-        }
-        let currentEpisode = PlaybackCollectionEpisodeResolver.resolve(
-            episodes: episodes,
-            explicitlySelectedID: explicitSelectionForContext,
-            bvid: context.detail.bvid,
-            cid: requestedPreferredCID ?? context.selectedPage.cid
-        )
-        selectedCollectionEpisode = currentEpisode?.id
-        selectedCollectionEpisodeIsExplicit =
-            currentEpisode?.id == explicitSelectionForContext
-        collectionEpisodeSelectionHandler = nil
-        guard let currentEpisode else { return }
-        cacheAndMarkCollectionPages(
-            context.pages,
-            bvid: context.detail.bvid,
-            requested: currentEpisode.id
-        )
-    }
-
-    private func clearCollectionEpisodeState() {
-        cancelCollectionEpisodeRequest(markWaitersIdle: false)
-        selectedCollectionEpisode = nil
-        selectedCollectionEpisodeIsExplicit = false
-        collectionEpisodeSelectionHandler = nil
-        collectionEpisodePageStates.removeAll()
-        collectionEpisodeCache.removeAll()
-        collectionEpisodeCacheOrder.removeAll()
-        collectionSeasonID = nil
-    }
-
-    private func collectionContains(_ episode: VideoCollectionEpisode) -> Bool {
-        collectionEpisode(identity: episode.id) == episode
-    }
-
-    private func collectionEpisode(
-        identity: VideoCollectionEpisodeIdentity
-    ) -> VideoCollectionEpisode? {
-        presentedContext?.detail.collection?.sections
-            .flatMap(\.episodes)
-            .first(where: { $0.id == identity })
-    }
-
-    private func storeCollectionEpisodeCache(
-        _ pages: [VideoPage],
-        for bvid: String
-    ) {
-        collectionEpisodeCache[bvid] = pages
-        touchCollectionEpisodeCache(bvid)
-        while collectionEpisodeCacheOrder.count > 12 {
-            let evicted = collectionEpisodeCacheOrder.removeFirst()
-            collectionEpisodeCache.removeValue(forKey: evicted)
-            let evictedIdentities = collectionEpisodePageStates.compactMap { identity, state in
-                state == .loaded(bvid: evicted) ? identity : nil
-            }
-            for identity in evictedIdentities {
-                collectionEpisodePageStates[identity] = .idle
-            }
-        }
-    }
-
-    private func touchCollectionEpisodeCache(_ bvid: String) {
-        collectionEpisodeCacheOrder.removeAll(where: { $0 == bvid })
-        collectionEpisodeCacheOrder.append(bvid)
-    }
-
-    private func clearSelectedCollectionEpisodeRequest(
-        preservingRequestForBVID preservedBVID: String? = nil
-    ) {
-        guard let selectedCollectionEpisode,
-            let episode = collectionEpisode(identity: selectedCollectionEpisode)
-        else {
-            self.selectedCollectionEpisode = nil
-            selectedCollectionEpisodeIsExplicit = false
-            collectionEpisodeSelectionHandler = nil
-            return
-        }
-        if episode.bvid == preservedBVID,
-            let bvid = episode.bvid,
-            activeCollectionEpisodeRequest?.bvid == bvid
-        {
-            collectionEpisodePageStates[episode.id] = .idle
-            collectionEpisodeWaitersByBVID[bvid]?.remove(episode.id)
-        } else {
-            removeCollectionEpisodeWaiter(episode)
-        }
-        self.selectedCollectionEpisode = nil
-        selectedCollectionEpisodeIsExplicit = false
-        collectionEpisodeSelectionHandler = nil
-    }
-
-    private func completeSelectedCollectionEpisodeIfPossible(
-        _ resolvedEpisode: VideoCollectionEpisode? = nil
-    ) {
-        guard let selectedCollectionEpisode,
-            let episode = resolvedEpisode
-                ?? collectionEpisode(identity: selectedCollectionEpisode),
-            episode.id == selectedCollectionEpisode,
-            episode.isIdentityConsistent,
-            let bvid = episode.bvid,
-            case .loaded(let loadedBVID) = collectionEpisodePageStates[episode.id],
-            loadedBVID == bvid,
-            let pages = collectionEpisodeCache[bvid],
-            !pages.isEmpty
-        else { return }
-        if let defaultCID = episode.defaultCID,
-            !pages.contains(where: { $0.cid == defaultCID })
-        {
-            collectionEpisodePageStates[episode.id] = .failed(.invalidResponse)
-            return
-        }
-        let handler = collectionEpisodeSelectionHandler
-        collectionEpisodeSelectionHandler = nil
-        handler?(bvid, episode.defaultCID ?? pages.first?.cid)
-    }
-}
-
-private struct CollectionEpisodePageRequest: Sendable, Equatable {
-    let seasonID: Int64
-    let bvid: String
-    let generation: Int
-}
-
-private enum CollectionEpisodePageResult: Sendable {
-    case success([VideoPage])
-    case failure(GuestApplicationError)
-    case cancelled
 }
