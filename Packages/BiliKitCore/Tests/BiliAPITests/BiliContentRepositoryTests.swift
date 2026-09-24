@@ -23,6 +23,7 @@ struct BiliContentRepositoryTests {
         (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted),
         (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted),
         (htmlRiskControlResponse(), .requestRestricted),
+        (jsonResponse(#"{"code":0,"data":{"v_voucher":"voucher_fixture"}}"#), .requestRestricted),
         (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
         (HTTPResponse(statusCode: 500, body: Data()), .unavailable),
         (jsonResponse("{"), .invalidResponse)
@@ -49,6 +50,7 @@ struct BiliContentRepositoryTests {
         let repository = BiliContentRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [
+                    try fixtureResponse("nav"),
                     HTTPResponse(
                         statusCode: fixture.statusCode,
                         headers: fixture.headers,

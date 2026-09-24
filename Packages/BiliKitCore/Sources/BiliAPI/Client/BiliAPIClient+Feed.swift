@@ -13,11 +13,13 @@ extension BiliAPIClient {
             throw BiliAPIError.invalidRequest
         }
         let payload: PopularPayload = try await get(
-            path: "/x/web-interface/popular",
-            queryItems: [
-                URLQueryItem(name: "pn", value: String(page)),
-                URLQueryItem(name: "ps", value: String(pageSize))
-            ],
+            url: try endpoint(
+                path: "/x/web-interface/popular",
+                queryItems: [
+                    URLQueryItem(name: "pn", value: String(page)),
+                    URLQueryItem(name: "ps", value: String(pageSize))
+                ]
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,
@@ -46,20 +48,22 @@ extension BiliAPIClient {
             dateFrom <= dateTo
         else { throw BiliAPIError.invalidRequest }
         let payload: RecentRankPayload = try await get(
-            path: "/x/web-interface/newlist_rank",
-            queryItems: [
-                URLQueryItem(name: "main_ver", value: "v3"),
-                URLQueryItem(name: "search_type", value: "video"),
-                URLQueryItem(name: "view_type", value: "hot_rank"),
-                URLQueryItem(name: "copy_right", value: "-1"),
-                URLQueryItem(name: "new_web_tag", value: "1"),
-                URLQueryItem(name: "order", value: "pubdate"),
-                URLQueryItem(name: "cate_id", value: String(regionID)),
-                URLQueryItem(name: "page", value: "1"),
-                URLQueryItem(name: "pagesize", value: String(pageSize)),
-                URLQueryItem(name: "time_from", value: dateFrom),
-                URLQueryItem(name: "time_to", value: dateTo)
-            ],
+            url: try endpoint(
+                path: "/x/web-interface/newlist_rank",
+                queryItems: [
+                    URLQueryItem(name: "main_ver", value: "v3"),
+                    URLQueryItem(name: "search_type", value: "video"),
+                    URLQueryItem(name: "view_type", value: "hot_rank"),
+                    URLQueryItem(name: "copy_right", value: "-1"),
+                    URLQueryItem(name: "new_web_tag", value: "1"),
+                    URLQueryItem(name: "order", value: "pubdate"),
+                    URLQueryItem(name: "cate_id", value: String(regionID)),
+                    URLQueryItem(name: "page", value: "1"),
+                    URLQueryItem(name: "pagesize", value: String(pageSize)),
+                    URLQueryItem(name: "time_from", value: dateFrom),
+                    URLQueryItem(name: "time_to", value: dateTo)
+                ]
+            ),
             referer: "https://www.bilibili.com/"
         )
         return Array((payload.result ?? []).prefix(pageSize))
@@ -70,8 +74,10 @@ extension BiliAPIClient {
     ) async throws -> RecentSubmissionDetailPayload {
         guard Self.isValidBVID(bvid) else { throw BiliAPIError.invalidRequest }
         return try await get(
-            path: "/x/web-interface/view",
-            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
+            url: try endpoint(
+                path: "/x/web-interface/view",
+                queryItems: [URLQueryItem(name: "bvid", value: bvid)]
+            ),
             referer: Self.videoReferer(bvid)
         )
     }
@@ -134,15 +140,19 @@ extension BiliAPIClient {
             keys: keys,
             timestamp: timestampProvider()
         )
-        let payload: SearchPayload = try await get(
-            path: "/x/web-interface/wbi/search/type",
-            percentEncodedQuery: query,
+        // 该接口要求 Cookie 含 buvid3；匿名与账户读取两条路径都在授权后附加。
+        let payload: SearchPayload = try await getWithAuthorizationProvenance(
+            url: try endpoint(
+                path: "/x/web-interface/wbi/search/type",
+                percentEncodedQuery: query
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,
                 mapsAuthenticationInvalidation: true
-            )
-        )
+            ),
+            additionalCookie: Self.searchBuvid3Cookie
+        ).payload
         try requireAuthenticatedSessionEpoch(sessionEpoch)
         return try payload.model()
     }
@@ -163,8 +173,10 @@ extension BiliAPIClient {
             timestamp: timestampProvider()
         )
         let payload: RecommendationPayload = try await get(
-            path: "/x/web-interface/wbi/index/top/feed/rcmd",
-            percentEncodedQuery: query,
+            url: try endpoint(
+                path: "/x/web-interface/wbi/index/top/feed/rcmd",
+                percentEncodedQuery: query
+            ),
             referer: "https://www.bilibili.com/",
             access: .accountRead(
                 missingCredential: .useAnonymousRequest,

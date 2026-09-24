@@ -12,6 +12,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case nonProtobufResponse
     case decodingFailed
     case apiRejected(code: Int, message: String)
+    /// `code` 为 0 但 `data` 只有 `v_voucher`：WBI 签名缺失／错误或风控时的挑战响应。
+    case riskControlVoucher
     case missingData
     case invalidWBIKey
     case signingFailed
@@ -48,6 +50,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "decoding-failed"
         case .apiRejected(let code, _):
             "api-rejected-\(code)"
+        case .riskControlVoucher:
+            "risk-control-voucher"
         case .missingData:
             "missing-data"
         case .invalidWBIKey:
@@ -95,7 +99,7 @@ extension BiliAPIError {
         case transport
         /// 403/412 以外、非 2xx 的 HTTP 状态。
         case unexpectedHTTPStatus
-        /// HTTP 403/412、业务 -352/-403/-412，以及 HTML 风控页等非预期格式的正文。
+        /// HTTP 403/412、业务 -352/-403/-412、`v_voucher` 挑战，以及 HTML 风控页等非预期格式的正文。
         case restricted
         case rejected(code: Int)
         case unsupportedMedia
@@ -126,7 +130,7 @@ extension BiliAPIError {
             .transport
         case .httpStatus(403), .httpStatus(412),
             .apiRejected(code: -352, _), .apiRejected(code: -403, _),
-            .apiRejected(code: -412, _),
+            .apiRejected(code: -412, _), .riskControlVoucher,
             .nonJSONResponse, .nonProtobufResponse:
             .restricted
         case .httpStatus:

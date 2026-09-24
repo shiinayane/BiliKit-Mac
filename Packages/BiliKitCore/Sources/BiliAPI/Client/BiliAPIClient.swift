@@ -71,6 +71,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
     private static let maximumResponseSize = 5 * 1_024 * 1_024
 
+    /// 搜索接口要求的 `buvid3`，进程内随机生成一次，只附加到搜索请求。
+    ///
+    /// 只在内存中，不持久化、不关联账户；格式与 yt-dlp 相同（小写 UUID + `infoc`）。
+    static let searchBuvid3Cookie = "buvid3=\(UUID().uuidString.lowercased())infoc"
+
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
     private let transportFactory: (@Sendable () -> any HTTPTransport)?
@@ -120,59 +125,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         cachedWBIKey = nil
     }
 
-    func get<Payload: Decodable & Sendable>(
-        path: String,
-        queryItems: [URLQueryItem],
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> Payload {
-        try await getWithAuthorizationProvenance(
-            path: path,
-            queryItems: queryItems,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        ).payload
-    }
-
-    func getWithAuthorizationProvenance<
-        Payload: Decodable & Sendable
-    >(
-        path: String,
-        queryItems: [URLQueryItem],
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> AuthorizedResponse<Payload> {
-        let url = try endpoint(path: path, queryItems: queryItems)
-        return try await getWithAuthorizationProvenance(
-            url: url,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        )
-    }
-
-    func get<Payload: Decodable & Sendable>(
-        path: String,
-        percentEncodedQuery: String,
-        referer: String,
-        access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
-    ) async throws -> Payload {
-        let url = try endpoint(
-            path: path,
-            percentEncodedQuery: percentEncodedQuery
-        )
-        return try await get(
-            url: url,
-            referer: referer,
-            access: access,
-            maximumResponseSize: maximumResponseSize
-        )
-    }
-
+    /// 不关心授权来源时的薄封装。
     func get<Payload: Decodable & Sendable>(
         url: URL,
         referer: String,
@@ -187,19 +140,22 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         ).payload
     }
 
+    /// JSON GET 的唯一管线：请求、授权、状态码与 envelope 解码，并返回授权来源。
     func getWithAuthorizationProvenance<
         Payload: Decodable & Sendable
     >(
         url: URL,
         referer: String,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedResponse<Payload> {
         let authorizedResponse = try await response(
             url: url,
             referer: referer,
             access: access,
-            maximumResponseSize: maximumResponseSize
+            maximumResponseSize: maximumResponseSize,
+            additionalCookie: additionalCookie
         )
         let response = authorizedResponse.response
 
@@ -217,6 +173,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 code: status.code,
                 message: status.message ?? ""
             )
+        }
+        if Self.isRiskControlVoucher(response.body) {
+            throw BiliAPIError.riskControlVoucher
         }
         let envelope: APIEnvelope<Payload>
         do {
@@ -238,7 +197,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedHTTPResponse {
         let baseRequest = HTTPRequest(
             url: url,
@@ -251,7 +211,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let response = try await response(
             baseRequest: baseRequest,
             access: access,
-            maximumResponseSize: maximumResponseSize
+            maximumResponseSize: maximumResponseSize,
+            additionalCookie: additionalCookie
         )
         guard response.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
@@ -259,15 +220,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return response
     }
 
+    /// `additionalCookie` 只承载 endpoint 要求的非秘密 Cookie，在授权之后并入请求，
+    /// 因此不会绕过授权器对调用方自带 Cookie 的拒绝。
     func response(
         baseRequest: HTTPRequest,
         access: RequestAccess,
-        maximumResponseSize: Int
+        maximumResponseSize: Int,
+        additionalCookie: String? = nil
     ) async throws -> AuthorizedHTTPResponse {
         let requestClient = httpClient
         let requestSessionEpoch =
             access.requiresAuthentication ? authenticatedSessionEpoch : nil
-        let request: HTTPRequest
+        var request: HTTPRequest
         let authorizationProvenance: AuthorizationProvenance
         let activeAuthorizer: (any HTTPRequestAuthorizing)? =
             switch access {
@@ -314,6 +278,18 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             request = baseRequest
             authorizationProvenance = .anonymous
         }
+        if let additionalCookie {
+            var headers = request.headers
+            headers["Cookie"] = [headers["Cookie"], additionalCookie]
+                .compactMap { $0 }
+                .joined(separator: "; ")
+            request = HTTPRequest(
+                url: request.url,
+                method: request.method,
+                headers: headers,
+                body: request.body
+            )
+        }
         try Task.checkCancellation()
         if let requestSessionEpoch,
             requestSessionEpoch != authenticatedSessionEpoch
@@ -356,7 +332,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
-    /// WBI 签名请求被服务端以 -403（以及可选的 HTTP 403）拒绝时，强制刷新 WBI key 并只重试一次。
+    /// WBI 签名请求被服务端以 -403、`v_voucher` 挑战（以及可选的 HTTP 403）拒绝时，
+    /// 强制刷新 WBI key 并只重试一次。
     func withWBIKeyRefresh<Value>(
         retryingHTTPForbidden: Bool = true,
         _ request: (_ forceKeyRefresh: Bool) async throws -> Value
@@ -365,9 +342,20 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             return try await request(false)
         } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
             return try await request(true)
+        } catch BiliAPIError.riskControlVoucher {
+            return try await request(true)
         } catch BiliAPIError.httpStatus(403) where retryingHTTPForbidden {
             return try await request(true)
         }
+    }
+
+    /// 只有 `data` 恰好是 `{"v_voucher": …}` 才算挑战；正常响应里并列的 `v_voucher` 不影响解码。
+    private static func isRiskControlVoucher(_ body: Data) -> Bool {
+        guard body.range(of: Data(#""v_voucher""#.utf8)) != nil,
+            let root = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+            let data = root["data"] as? [String: Any]
+        else { return false }
+        return data.count == 1 && data["v_voucher"] != nil
     }
 
     func requireAuthenticatedSessionEpoch(_ expected: UInt64) throws {
@@ -413,25 +401,20 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         path: String,
         queryItems: [URLQueryItem]
     ) throws -> URL {
-        guard
-            var components = URLComponents(
-                url: Self.baseURL,
-                resolvingAgainstBaseURL: false
-            )
-        else {
-            throw BiliAPIError.invalidRequest
-        }
-        components.path = path
-        components.queryItems = queryItems
-        guard let url = components.url else {
-            throw BiliAPIError.invalidRequest
-        }
-        return url
+        try endpoint(path: path) { $0.queryItems = queryItems }
     }
 
+    /// WBI 签名后的 query 已按签名顺序编码，必须原样使用。
     func endpoint(
         path: String,
         percentEncodedQuery: String
+    ) throws -> URL {
+        try endpoint(path: path) { $0.percentEncodedQuery = percentEncodedQuery }
+    }
+
+    private func endpoint(
+        path: String,
+        applyingQuery applyQuery: (inout URLComponents) -> Void
     ) throws -> URL {
         guard
             var components = URLComponents(
@@ -442,7 +425,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw BiliAPIError.invalidRequest
         }
         components.path = path
-        components.percentEncodedQuery = percentEncodedQuery
+        applyQuery(&components)
         guard let url = components.url else {
             throw BiliAPIError.invalidRequest
         }

@@ -345,8 +345,7 @@ struct AppEnvironment {
     ]
 
     static let mainAccountReadAllowedPaths: Set<String> = [
-        "/x/player/pagelist",
-        "/x/player/playurl",
+        "/x/player/wbi/playurl",
         "/x/player/wbi/v2",
         "/x/v2/dm/wbi/web/seg.so",
         "/x/v2/reply/reply",
@@ -361,7 +360,7 @@ struct AppEnvironment {
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [
-        "/x/player/playurl"
+        "/x/player/wbi/playurl"
     ]
 
     static let watchProgressAccountReadAllowedPaths: Set<String>? = nil

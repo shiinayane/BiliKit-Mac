@@ -16,8 +16,7 @@ struct AccountReadAuthorizationCompositionTests {
         )
         #expect(
             AppEnvironment.mainAccountReadAllowedPaths == [
-                "/x/player/pagelist",
-                "/x/player/playurl",
+                "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/v2/reply/reply",
@@ -33,7 +32,7 @@ struct AccountReadAuthorizationCompositionTests {
         )
         #expect(
             AppEnvironment.cdnBenchmarkAccountReadAllowedPaths == [
-                "/x/player/playurl"
+                "/x/player/wbi/playurl"
             ]
         )
         #expect(AppEnvironment.watchProgressAccountReadAllowedPaths == nil)

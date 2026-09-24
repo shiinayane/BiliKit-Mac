@@ -19,13 +19,15 @@ extension BiliAPIClient {
             cursor = .initial
         }
         let payload: WatchHistoryPayload = try await get(
-            path: "/x/web-interface/history/cursor",
-            queryItems: [
-                URLQueryItem(name: "max", value: String(cursor.maximum)),
-                URLQueryItem(name: "view_at", value: String(cursor.viewedAt)),
-                URLQueryItem(name: "business", value: cursor.business),
-                URLQueryItem(name: "ps", value: String(pageSize))
-            ],
+            url: try endpoint(
+                path: "/x/web-interface/history/cursor",
+                queryItems: [
+                    URLQueryItem(name: "max", value: String(cursor.maximum)),
+                    URLQueryItem(name: "view_at", value: String(cursor.viewedAt)),
+                    URLQueryItem(name: "business", value: cursor.business),
+                    URLQueryItem(name: "ps", value: String(pageSize))
+                ]
+            ),
             referer: "https://www.bilibili.com/account/history",
             access: .accountRead(
                 missingCredential: .fail,

@@ -12,19 +12,7 @@ public actor WebQRLoginSession {
         }
         return url
     }()
-    private static let navigationValidationURL: URL = {
-        guard
-            let url = URL(
-                string: "https://api.bilibili.com/x/web-interface/nav"
-            )
-        else {
-            preconditionFailure("Static navigation validation URL must be valid")
-        }
-        return url
-    }()
-
     private static let qrCodeHost = "account.bilibili.com"
-    private static let maximumResponseSize = 256 * 1_024
 
     public private(set) var state: WebQRLoginState = .signedOut
 
@@ -39,7 +27,7 @@ public actor WebQRLoginSession {
     private var latestPollID: UInt64 = 0
 
     public init() {
-        let transport = Self.makeProductionTransport()
+        let transport = AuthenticationHTTP.makeProductionTransport()
         httpClient = HTTPClient(transport: transport)
         baseURL = Self.productionBaseURL
         credentialStore = KeychainWebCredentialStore()
@@ -238,44 +226,41 @@ public actor WebQRLoginSession {
     private func validate(
         _ pendingCredential: PendingCredential
     ) async throws -> NavigationAuthenticationResult {
-        let response = try await sendNavigationValidation(
-            cookieHeader: pendingCredential.credential.cookieHeader
+        let response = try await send(
+            AuthenticationHTTP.navigationValidationRequest(
+                cookieHeader: pendingCredential.credential.cookieHeader
+            )
         )
         try Task.checkCancellation()
         guard generation == pendingCredential.generation else {
             throw CancellationError()
         }
-        let envelope: NavigationAuthenticationEnvelope
         do {
-            envelope = try decoder.decode(
-                NavigationAuthenticationEnvelope.self,
-                from: response.body
-            )
+            return try AuthenticationHTTP.navigationResult(from: response)
         } catch {
             throw WebQRLoginFailure.invalidResponse
         }
-        guard envelope.code == 0, let data = envelope.data else {
-            throw WebQRLoginFailure.invalidResponse
-        }
-        return data.authenticationResult
     }
 
     private func send(
         path: String,
         queryItems: [URLQueryItem] = []
     ) async throws -> HTTPResponse {
-        let url = try endpoint(path: path, queryItems: queryItems)
+        try await send(
+            HTTPRequest(
+                url: try endpoint(path: path, queryItems: queryItems),
+                headers: [
+                    "Accept": "application/json",
+                    "User-Agent": HTTPUserAgent.short
+                ]
+            )
+        )
+    }
+
+    private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let response: HTTPResponse
         do {
-            response = try await httpClient.send(
-                HTTPRequest(
-                    url: url,
-                    headers: [
-                        "Accept": "application/json",
-                        "User-Agent": HTTPUserAgent.short
-                    ]
-                )
-            )
+            response = try await httpClient.send(request)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as HTTPClientError {
@@ -289,7 +274,7 @@ public actor WebQRLoginSession {
             throw WebQRLoginFailure.network
         }
 
-        guard response.body.count <= Self.maximumResponseSize else {
+        guard response.body.count <= AuthenticationHTTP.maximumResponseSize else {
             throw WebQRLoginFailure.responseTooLarge
         }
         guard response.looksLikeJSON() else {
@@ -316,43 +301,6 @@ public actor WebQRLoginSession {
             throw WebQRLoginFailure.invalidResponse
         }
         return url
-    }
-
-    private func sendNavigationValidation(
-        cookieHeader: String
-    ) async throws -> HTTPResponse {
-        let response: HTTPResponse
-        do {
-            response = try await httpClient.send(
-                HTTPRequest(
-                    url: Self.navigationValidationURL,
-                    headers: [
-                        "Accept": "application/json",
-                        "Cookie": cookieHeader,
-                        "Referer": "https://www.bilibili.com/",
-                        "User-Agent": HTTPUserAgent.short
-                    ]
-                )
-            )
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HTTPClientError {
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw WebQRLoginFailure.httpStatus(status)
-            case .nonHTTPResponse:
-                throw WebQRLoginFailure.network
-            }
-        } catch {
-            throw WebQRLoginFailure.network
-        }
-        guard response.body.count <= Self.maximumResponseSize else {
-            throw WebQRLoginFailure.responseTooLarge
-        }
-        guard response.looksLikeJSON() else {
-            throw WebQRLoginFailure.nonJSONResponse
-        }
-        return response
     }
 
     private func requireCurrentGeneration(_ expected: UInt64) throws {
@@ -438,20 +386,6 @@ public actor WebQRLoginSession {
         return PendingCredential(
             generation: generation,
             credential: credential
-        )
-    }
-
-    private static func makeProductionTransport() -> URLSessionTransport {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 30
-        return URLSessionTransport(
-            configuration: configuration,
-            redirectPolicy: .reject
         )
     }
 }
