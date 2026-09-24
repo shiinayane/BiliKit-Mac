@@ -17,10 +17,10 @@
           "width": 1280,
           "height": 720,
           "frame_rate": "60000/1001",
-          "base_url": "https://media.example.invalid/video-avc-primary.m4s",
+          "base_url": "https://media.fixture.bilivideo.com/video-avc-primary.m4s",
           "backup_url": [
-            "https://backup.example.invalid/video-avc.m4s",
-            "https://media.example.invalid/video-avc-primary.m4s"
+            "https://backup.fixture.bilivideo.com/video-avc.m4s",
+            "https://media.fixture.bilivideo.com/video-avc-primary.m4s"
           ],
           "segment_base": {
             "initialization": "0-999",
@@ -36,7 +36,7 @@
           "width": 1920,
           "height": 1080,
           "frame_rate": "60",
-          "baseUrl": "https://media.example.invalid/video-hevc.m4s",
+          "baseUrl": "https://media.fixture.bilivideo.com/video-hevc.m4s",
           "backupUrl": [],
           "SegmentBase": {
             "initialization": "0-899",
@@ -51,9 +51,9 @@
           "codecs": "mp4a.40.2",
           "mimeType": "audio/mp4",
           "bandwidth": 64000,
-          "baseUrl": "https://media.example.invalid/audio-aac-primary.m4s",
+          "baseUrl": "https://media.fixture.bilivideo.com/audio-aac-primary.m4s",
           "backupUrl": [
-            "https://backup.example.invalid/audio-aac.m4s"
+            "https://backup.fixture.bilivideo.com/audio-aac.m4s"
           ],
           "SegmentBase": {
             "initialization": "0-799",
@@ -66,7 +66,7 @@
           "codecs": "mp4a.40.2",
           "mimeType": "audio/mp4",
           "bandwidth": 192000,
-          "baseUrl": "https://media.example.invalid/audio-aac-high.m4s",
+          "baseUrl": "https://media.fixture.bilivideo.com/audio-aac-high.m4s",
           "backupUrl": [],
           "SegmentBase": {
             "initialization": "0-799",
@@ -79,7 +79,7 @@
           "codecs": "ec-3",
           "mime_type": "audio/mp4",
           "bandwidth": 192000,
-          "base_url": "https://media.example.invalid/audio-ec3.m4s",
+          "base_url": "https://media.fixture.bilivideo.com/audio-ec3.m4s",
           "backup_url": [],
           "segment_base": {
             "initialization": "0-699",

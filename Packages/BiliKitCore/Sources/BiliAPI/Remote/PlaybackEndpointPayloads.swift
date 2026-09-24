@@ -1,5 +1,6 @@
 import BiliApplication
 import BiliModels
+import BiliNetworking
 import Foundation
 
 struct PlayURLPayload: Decodable, Sendable {
@@ -126,7 +127,7 @@ struct DURLPayload: Decodable, Sendable {
         let candidates = ([url].compactMap { $0 } + backupURLs).compactMap {
             raw -> URL? in
             guard let candidate = URL(string: raw),
-                BiliMediaURLPolicy().allows(candidate),
+                BiliMediaCDNURLPolicy().allows(candidate),
                 seen.insert(candidate).inserted
             else { return nil }
             return candidate
@@ -372,7 +373,7 @@ struct DASHRepresentationPayload: Decodable, Sendable {
 
     private static func validMediaURL(_ value: String) -> URL? {
         guard let url = URL(string: value),
-            BiliMediaURLPolicy().allows(url)
+            BiliMediaCDNURLPolicy().allows(url)
         else {
             return nil
         }

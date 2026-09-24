@@ -25,9 +25,6 @@ public struct BiliMediaCDNURLPolicy: Sendable {
         }) {
             return true
         }
-        if host.hasPrefix("upos-") && host.hasSuffix(".akamaized.net") {
-            return true
-        }
-        return host.hasSuffix(".example.invalid")
+        return host.hasPrefix("upos-") && host.hasSuffix(".akamaized.net")
     }
 }

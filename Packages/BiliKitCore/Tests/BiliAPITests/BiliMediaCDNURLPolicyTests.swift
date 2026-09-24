@@ -1,21 +1,21 @@
+import BiliNetworking
 import Foundation
 import Testing
 
 @testable import BiliAPI
 
-struct BiliMediaURLPolicyTests {
+struct BiliMediaCDNURLPolicyTests {
     @Test(
         arguments: [
             "https://upos-sz-mirrorali.bilivideo.com/video.m4s",
             "https://mcdn.bilivideo.cn/audio.m4s",
             "https://edge.szbdyd.com/video.m4s",
-            "https://upos-hz-mirrorakam.akamaized.net/video.m4s",
-            "https://media.example.invalid/fixture.m4s"
+            "https://upos-hz-mirrorakam.akamaized.net/video.m4s"
         ]
     )
     func acceptsAuditedMediaHostFamilies(_ value: String) throws {
         let url = try #require(URL(string: value))
-        #expect(BiliMediaURLPolicy().allows(url))
+        #expect(BiliMediaCDNURLPolicy().allows(url))
     }
 
     @Test(
@@ -31,11 +31,12 @@ struct BiliMediaURLPolicyTests {
             "https://router.local/video.m4s",
             "https://bilivideo.com.attacker.example/video.m4s",
             "https://cdn.example.com/video.m4s",
+            "https://media.example.invalid/fixture.m4s",
             "https://upos-sz-mirrorali.bilivideo.com/video.m4s#fragment"
         ]
     )
     func rejectsUntrustedOrLocalMediaOrigins(_ value: String) throws {
         let url = try #require(URL(string: value))
-        #expect(!BiliMediaURLPolicy().allows(url))
+        #expect(!BiliMediaCDNURLPolicy().allows(url))
     }
 }

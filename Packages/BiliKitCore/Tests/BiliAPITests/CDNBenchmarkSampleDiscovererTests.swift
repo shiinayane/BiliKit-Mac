@@ -391,10 +391,10 @@ struct CDNBenchmarkSampleDiscovererTests {
                 )
             }
             text = text.replacingOccurrences(
-                of: "https://media.example.invalid/video-avc-primary.m4s",
+                of: "https://media.fixture.bilivideo.com/video-avc-primary.m4s",
                 with: "https://upos-sz-mirrorhw.bilivideo.com/video-avc-primary.m4s"
             ).replacingOccurrences(
-                of: "https://backup.example.invalid/video-avc.m4s",
+                of: "https://backup.fixture.bilivideo.com/video-avc.m4s",
                 with: "https://upos-hz-mirrorakam.akamaized.net/video-avc.m4s"
             )
             body = Data(text.utf8)

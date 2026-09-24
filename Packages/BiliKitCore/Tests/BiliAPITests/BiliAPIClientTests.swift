@@ -1838,8 +1838,8 @@ struct BiliAPIClientTests {
     func playURLRejectsRepresentationsWithoutTrustedMediaOrigin() async throws {
         let fixture = try fixtureResponse("playurl")
         let unsafeBody = String(decoding: fixture.body, as: UTF8.self)
-            .replacingOccurrences(of: "media.example.invalid", with: "127.0.0.1")
-            .replacingOccurrences(of: "backup.example.invalid", with: "localhost")
+            .replacingOccurrences(of: "media.fixture.bilivideo.com", with: "127.0.0.1")
+            .replacingOccurrences(of: "backup.fixture.bilivideo.com", with: "localhost")
         let response = HTTPResponse(
             statusCode: fixture.statusCode,
             headers: fixture.headers,
@@ -2107,12 +2107,12 @@ struct BiliAPIClientTests {
         length: Int64 = 884_983,
         size: Int64 = 50_000_000,
         primaryURL: String? = nil,
-        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
+        backupURLs: [String] = ["https://backup.fixture.bilivideo.com/preview.mp4"]
     ) -> [String: Any] {
         [
             "length": length,
             "size": size,
-            "url": primaryURL ?? "https://media.example.invalid/\(path)",
+            "url": primaryURL ?? "https://media.fixture.bilivideo.com/\(path)",
             "backup_url": backupURLs
         ]
     }
@@ -2123,7 +2123,7 @@ struct BiliAPIClientTests {
         length: Int64 = 884_983,
         size: Int64 = 50_000_000,
         primaryURL: String? = nil,
-        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
+        backupURLs: [String] = ["https://backup.fixture.bilivideo.com/preview.mp4"]
     ) throws -> HTTPResponse {
         let resolvedDURL =
             durl ?? [
@@ -2245,7 +2245,7 @@ struct BiliAPIClientTests {
                         "width": 1_280,
                         "height": 720,
                         "frame_rate": "30",
-                        "base_url": "https://media.example.invalid/video.m4s",
+                        "base_url": "https://media.fixture.bilivideo.com/video.m4s",
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",
@@ -2261,7 +2261,7 @@ struct BiliAPIClientTests {
                         "mime_type": "audio/mp4",
                         "bandwidth": 192_000,
                         "base_url":
-                            "https://media.example.invalid/\(audioPath)",
+                            "https://media.fixture.bilivideo.com/\(audioPath)",
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",

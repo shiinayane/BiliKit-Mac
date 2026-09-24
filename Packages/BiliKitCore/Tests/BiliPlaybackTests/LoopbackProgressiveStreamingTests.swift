@@ -11,7 +11,7 @@ import Testing
 struct LoopbackProgressiveStreamingTests {
     @Test
     func progressiveRangePreservesHeaderAndStreamsExactBody() async throws {
-        let source = URL(string: "https://primary.example.invalid/video.mp4")!
+        let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
         let streamer = FixtureProgressiveStreamer(
             bodies: [source: Data([0, 1, 2, 3, 4])]
         )
@@ -47,8 +47,8 @@ struct LoopbackProgressiveStreamingTests {
 
     @Test
     func firstValidatedSourceSticksAcrossLaterRanges() async throws {
-        let primary = URL(string: "https://primary.example.invalid/video.mp4")!
-        let backup = URL(string: "https://backup.example.invalid/video.mp4")!
+        let primary = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
+        let backup = URL(string: "https://backup.fixture.bilivideo.com/video.mp4")!
         let streamer = FixtureProgressiveStreamer(
             bodies: [backup: Data([0, 1, 2, 3])],
             failingURLs: [primary]
@@ -90,7 +90,7 @@ struct LoopbackProgressiveStreamingTests {
     func rejectsProgressiveSourceWhoseDeclaredContainerIsNotMP4() throws {
         #expect(throws: LoopbackPlaybackServerError.invalidProgressiveSource) {
             try LoopbackProgressiveResource(
-                candidateURLs: [URL(string: "https://primary.example.invalid/video.mp4")!],
+                candidateURLs: [URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!],
                 contentLength: 4,
                 contentType: "video/webm",
                 allowsOctetStreamWithContainerEvidence: false
@@ -110,7 +110,7 @@ struct LoopbackProgressiveStreamingTests {
 
     @Test(arguments: [Data(), Data([0, 1])])
     func closesConnectionWhenUpstreamFailsAfterSending206(bodyPrefix: Data) async throws {
-        let source = URL(string: "https://primary.example.invalid/video.mp4")!
+        let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
         let server = LoopbackPlaybackServer(
             rangeStreamer: PostHeadFailureStreamer(bodyPrefix: bodyPrefix)
         )
@@ -138,7 +138,7 @@ struct LoopbackProgressiveStreamingTests {
     @Test
     @MainActor
     func progressiveUsesTheExistingEngineItemAndClearsItOnStop() async throws {
-        let source = URL(string: "https://primary.example.invalid/video.mp4")!
+        let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
         let fixtureURL = try #require(
             Bundle.module.url(
                 forResource: "video-avc",

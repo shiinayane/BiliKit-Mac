@@ -392,7 +392,7 @@ struct LoopbackPlaybackServerTests {
     @Test
     func remoteRangeErrorsStayLocalAndSuffixIsForwardedAsClosedRange() async throws {
         let remoteURL = try #require(
-            URL(string: "https://media.example.invalid/remote.mp4")
+            URL(string: "https://media.fixture.bilivideo.com/remote.mp4")
         )
         let media = Data([0, 1, 2, 3, 4])
         let transport = FixtureRangeTransport(
