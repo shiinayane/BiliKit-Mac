@@ -101,7 +101,7 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let relatedVideoTask = LatestTask()
     @ObservationIgnored private let uploaderSignatureTask = LatestTask()
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
-    @ObservationIgnored private var resumeActionTask: Task<Void, Never>?
+    @ObservationIgnored private let resumeActionTask = LatestTask()
     @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
     @ObservationIgnored private var collectionEpisodeTask: Task<Void, Never>?
     @ObservationIgnored private var activeCollectionEpisodeRequest: CollectionEpisodePageRequest?
@@ -138,7 +138,6 @@ public final class GuestVideoViewModel {
         loadTask?.cancel()
         playbackFailureTask?.cancel()
         collectionEpisodeTask?.cancel()
-        resumeActionTask?.cancel()
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
@@ -287,32 +286,23 @@ public final class GuestVideoViewModel {
     }
 
     /// 当前浮层的 token、identity 与 load intent 都匹配时才允许回到 0 秒。
+    ///
+    /// 新的重播、切换或 reset 都会取消旧动作；旧动作即使稍后返回，也不能清掉浮层或新动作。
     public func restartFromBeginning() {
         guard let resumeNotice,
             let identity = presentedPlaybackIdentity,
             let intent = playbackIntent
         else { return }
-        let currentGeneration = generation
-        resumeActionTask?.cancel()
-        resumeActionTask = Task { [weak self, playback] in
+        resumeActionTask.replace { [weak self, playback] isCurrent in
             let restarted = await playback.restartFromBeginning(
                 identity: identity,
                 intent: intent,
                 resumeToken: resumeNotice.token
             )
-            guard let self else { return }
-            guard generation == currentGeneration,
+            guard let self, isCurrent(), restarted,
                 self.resumeNotice?.token == resumeNotice.token
-            else {
-                if generation == currentGeneration {
-                    self.resumeActionTask = nil
-                }
-                return
-            }
-            if restarted {
-                self.resumeNotice = nil
-            }
-            self.resumeActionTask = nil
+            else { return }
+            self.resumeNotice = nil
         }
     }
 
@@ -328,8 +318,8 @@ public final class GuestVideoViewModel {
         loadTask
     }
 
-    func waitForResumeActionForTesting() async {
-        await resumeActionTask?.value
+    func resumeActionTaskSnapshotForTesting() -> Task<Void, Never>? {
+        resumeActionTask.task
     }
 
     func relatedVideoTaskSnapshotForTesting() -> Task<Void, Never>? {
@@ -564,8 +554,7 @@ public final class GuestVideoViewModel {
     }
 
     private func clearResumeNotice() {
-        resumeActionTask?.cancel()
-        resumeActionTask = nil
+        resumeActionTask.cancel()
         resumeNotice = nil
     }
 

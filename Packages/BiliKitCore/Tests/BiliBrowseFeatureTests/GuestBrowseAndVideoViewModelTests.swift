@@ -708,10 +708,59 @@ struct GuestBrowseAndVideoViewModelTests {
         )
 
         model.restartFromBeginning()
-        await model.waitForResumeActionForTesting()
+        await model.resumeActionTaskSnapshotForTesting()?.value
 
         #expect(model.resumeNotice == nil)
         #expect(player.restartTokens == [resumeToken])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func supersededRestartCannotClearNoticeOrNewerRestart() async throws {
+        let fixture = GuestFixtures()
+        let resumeToken = PlaybackResumeToken()
+        let metadata = try #require(
+            PlaybackResumeMetadata(
+                lastPlayedCID: 900_001,
+                positionMilliseconds: 42_500
+            )
+        )
+        let repository = VideoRepositoryStub(
+            fixture,
+            playback: { _, _ in fixture.playback(resuming: metadata) }
+        )
+        let player = PlayerStub(
+            startOutcome: .resumed(
+                positionSeconds: 42.5,
+                token: resumeToken,
+                discontinuityGeneration: 1
+            ),
+            restartSucceeds: true,
+            holdsRestarts: true
+        )
+        let model = GuestVideoViewModel(
+            useCase: GuestVideoUseCase(repository: repository),
+            playback: player
+        )
+        model.loadVideo(fixture.bvid)
+        await model.waitForCurrentTask()
+        #expect(model.resumeNotice != nil)
+
+        model.restartFromBeginning()
+        await player.waitForRestartCount(1)
+        let superseded = try #require(model.resumeActionTaskSnapshotForTesting())
+        model.restartFromBeginning()
+        await player.waitForRestartCount(2)
+
+        player.releaseRestart(at: 0)
+        await superseded.value
+        #expect(model.resumeNotice != nil)
+        let current = try #require(model.resumeActionTaskSnapshotForTesting())
+
+        player.releaseRestart(at: 1)
+        await current.value
+        #expect(model.resumeNotice == nil)
+        #expect(model.resumeActionTaskSnapshotForTesting() == nil)
     }
 
     @Test
@@ -2488,6 +2537,7 @@ private actor TestEventCounter {
 private final class PlayerStub: PlaybackControlling {
     private let startOutcome: PlaybackStartOutcome
     private let restartSucceeds: Bool
+    private let holdsRestarts: Bool
     private let failingBVID: String?
     private let heldLoad: Int?
     private let failsFirstLoadUntilStopped: Bool
@@ -2495,6 +2545,8 @@ private final class PlayerStub: PlaybackControlling {
     private var heldLoadContinuation: CheckedContinuation<Void, Never>?
     private var loadWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var stopWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var restartWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var heldRestarts: [Int: CheckedContinuation<Void, Never>] = [:]
     private(set) var loadedPlaybacks: [VideoPlayback] = []
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var loadedIntents: [PlaybackLoadIntent] = []
@@ -2507,12 +2559,14 @@ private final class PlayerStub: PlaybackControlling {
     init(
         startOutcome: PlaybackStartOutcome = .startedAtBeginning,
         restartSucceeds: Bool = false,
+        holdsRestarts: Bool = false,
         failingBVID: String? = nil,
         heldLoad: Int? = nil,
         failsFirstLoadUntilStopped: Bool = false
     ) {
         self.startOutcome = startOutcome
         self.restartSucceeds = restartSucceeds
+        self.holdsRestarts = holdsRestarts
         self.failingBVID = failingBVID
         self.heldLoad = heldLoad
         self.failsFirstLoadUntilStopped = failsFirstLoadUntilStopped
@@ -2562,7 +2616,12 @@ private final class PlayerStub: PlaybackControlling {
         intent: PlaybackLoadIntent,
         resumeToken: PlaybackResumeToken
     ) async -> Bool {
+        let index = restartTokens.count
         restartTokens.append(resumeToken)
+        Self.resume(&restartWaiters, reaching: restartTokens.count)
+        if holdsRestarts {
+            await withCheckedContinuation { heldRestarts[index] = $0 }
+        }
         return restartSucceeds
     }
 
@@ -2602,6 +2661,15 @@ private final class PlayerStub: PlaybackControlling {
     func releaseHeldLoad() {
         heldLoadContinuation?.resume()
         heldLoadContinuation = nil
+    }
+
+    func waitForRestartCount(_ expectedCount: Int) async {
+        guard restartTokens.count < expectedCount else { return }
+        await withCheckedContinuation { restartWaiters.append((expectedCount, $0)) }
+    }
+
+    func releaseRestart(at index: Int) {
+        heldRestarts.removeValue(forKey: index)?.resume()
     }
 
     func waitForStopCallCount(_ expectedCount: Int) async {
