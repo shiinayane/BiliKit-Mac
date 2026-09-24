@@ -11,36 +11,6 @@ struct NativeCommentImagePreviewRequest: Identifiable {
     let restoreFocus: () -> Void
 }
 
-private struct NativeCommentImagePreviewRepresentable: NSViewRepresentable {
-    let request: NativeCommentImagePreviewRequest
-    let imagePipeline: NativeVideoImagePipeline
-    let resolveURL: CommentAssetURLResolver
-    let onDismiss: () -> Void
-
-    func makeNSView(context: Context) -> NativeCommentImagePreviewRootView {
-        let view = NativeCommentImagePreviewRootView(
-            imagePipeline: imagePipeline,
-            resolveURL: resolveURL
-        )
-        view.configure(request: request, onDismiss: onDismiss)
-        return view
-    }
-
-    func updateNSView(
-        _ view: NativeCommentImagePreviewRootView,
-        context: Context
-    ) {
-        view.configure(request: request, onDismiss: onDismiss)
-    }
-
-    static func dismantleNSView(
-        _ view: NativeCommentImagePreviewRootView,
-        coordinator: Void
-    ) {
-        view.tearDown()
-    }
-}
-
 struct NativeCommentImagePreviewView: View {
     let request: NativeCommentImagePreviewRequest
     let imagePipeline: NativeVideoImagePipeline
@@ -48,11 +18,16 @@ struct NativeCommentImagePreviewView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        NativeCommentImagePreviewRepresentable(
-            request: request,
-            imagePipeline: imagePipeline,
-            resolveURL: resolveURL,
-            onDismiss: onDismiss
+        NativeCommentImagePreviewHost(
+            content: NativeCommentImagePreviewContent(
+                request: request,
+                loader: NativePlaybackCommentPictureLoader(
+                    imagePipeline: imagePipeline,
+                    resolveURL: resolveURL,
+                    variant: .commentPicturePreview
+                ),
+                onDismiss: onDismiss
+            )
         )
         .id(request.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,371 +63,243 @@ struct NativeCommentImagePreviewSelection: Equatable {
     }
 }
 
+/// 预览打开时独占键盘：播放器的按键监视看到第一响应者在它之内，就把方向键与 Esc 留给预览。
 @MainActor
-final class NativeCommentImagePreviewRootView: NSView, PlayerKeyboardFocusOwner {
-    override var isFlipped: Bool { true }
-    override var isOpaque: Bool { false }
-    override var acceptsFirstResponder: Bool { true }
-
-    private let loader: NativePlaybackCommentPictureLoader
-    private let imageView = NSImageView()
-    private let closeButton = NSButton()
-    private let previousButton = NSButton()
-    private let nextButton = NSButton()
-    private let counterLabel = NSTextField(labelWithString: "")
-    private let progress = NSProgressIndicator()
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let retryButton = NSButton(
-        title: AppStrings.localized("重试"),
-        target: nil,
-        action: nil
-    )
-    private var requestID: UUID?
-    private var references: [CommentAssetReference] = []
-    private var selection = NativeCommentImagePreviewSelection(
-        count: 0,
-        requestedIndex: 0
-    )
-    private var currentReference: CommentAssetReference?
-    private var loadGeneration: UInt64 = 0
-    private var imageTask: Task<Void, Never>?
-    private var onDismiss: (() -> Void)?
-
-    init(
-        imagePipeline: NativeVideoImagePipeline,
-        resolveURL: @escaping CommentAssetURLResolver
-    ) {
-        loader = NativePlaybackCommentPictureLoader(
-            imagePipeline: imagePipeline,
-            resolveURL: resolveURL,
-            variant: .commentPicturePreview
-        )
-        super.init(frame: .zero)
-        wantsLayer = true
-        imageView.wantsLayer = true
-        imageView.layer?.cornerRadius = 6
-        imageView.layer?.masksToBounds = true
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.imageAlignment = .alignCenter
-        imageView.setAccessibilityElement(true)
-        configureButton(
-            closeButton,
-            symbol: "xmark",
-            accessibilityLabel: AppStrings.localized("关闭图片预览")
-        )
-        configureButton(
-            previousButton,
-            symbol: "chevron.left",
-            accessibilityLabel: AppStrings.localized("上一张图片")
-        )
-        configureButton(
-            nextButton,
-            symbol: "chevron.right",
-            accessibilityLabel: AppStrings.localized("下一张图片")
-        )
-        closeButton.target = self
-        closeButton.action = #selector(dismissPreview)
-        previousButton.target = self
-        previousButton.action = #selector(selectPrevious)
-        nextButton.target = self
-        nextButton.action = #selector(selectNext)
-        retryButton.target = self
-        retryButton.action = #selector(retry)
-        retryButton.bezelStyle = .rounded
-        retryButton.setAccessibilityLabel(AppStrings.localized("重新加载评论图片"))
-        counterLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        counterLabel.textColor = .white
-        counterLabel.alignment = .center
-        progress.style = .spinning
-        progress.controlSize = .regular
-        progress.setAccessibilityLabel(AppStrings.localized("评论图片加载中"))
-        statusLabel.font = .preferredFont(forTextStyle: .body)
-        statusLabel.textColor = .white
-        statusLabel.alignment = .center
-        for subview in [
-            imageView,
-            closeButton,
-            previousButton,
-            nextButton,
-            counterLabel,
-            progress,
-            statusLabel,
-            retryButton
-        ] {
-            addSubview(subview)
-        }
-        closeButton.nextKeyView = previousButton
-        previousButton.nextKeyView = nextButton
-        nextButton.nextKeyView = retryButton
-        retryButton.nextKeyView = closeButton
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        setAccessibilitySubrole(.dialog)
-        setAccessibilityLabel(AppStrings.localized("评论图片预览"))
-        setAccessibilityModal(true)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
-
-    override func updateLayer() {
-        super.updateLayer()
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.82).cgColor
-    }
-
-    override func layout() {
-        super.layout()
-        let horizontalInset = min(96, max(56, bounds.width * 0.08))
-        let verticalInset = min(86, max(54, bounds.height * 0.08))
-        imageView.frame = NSRect(
-            x: horizontalInset,
-            y: verticalInset,
-            width: max(1, bounds.width - horizontalInset * 2),
-            height: max(1, bounds.height - verticalInset * 2)
-        )
-        let buttonSize: CGFloat = 40
-        closeButton.frame = NSRect(
-            x: max(12, bounds.maxX - buttonSize - 18),
-            y: 18,
-            width: buttonSize,
-            height: buttonSize
-        )
-        previousButton.frame = NSRect(
-            x: 18,
-            y: max(18, bounds.midY - buttonSize / 2),
-            width: buttonSize,
-            height: buttonSize
-        )
-        nextButton.frame = NSRect(
-            x: max(18, bounds.maxX - buttonSize - 18),
-            y: max(18, bounds.midY - buttonSize / 2),
-            width: buttonSize,
-            height: buttonSize
-        )
-        counterLabel.frame = NSRect(
-            x: max(0, bounds.midX - 60),
-            y: max(0, bounds.maxY - 38),
-            width: 120,
-            height: 20
-        )
-        progress.frame = NSRect(
-            x: bounds.midX - 12,
-            y: bounds.midY - 12,
-            width: 24,
-            height: 24
-        )
-        statusLabel.frame = NSRect(
-            x: max(20, bounds.midX - 150),
-            y: bounds.midY - 34,
-            width: min(300, max(1, bounds.width - 40)),
-            height: 24
-        )
-        retryButton.frame = NSRect(
-            x: bounds.midX - 40,
-            y: bounds.midY + 4,
-            width: 80,
-            height: 30
-        )
-    }
-
+final class NativeCommentImagePreviewHostingView<Content: View>: NSHostingView<Content>,
+    PlayerKeyboardFocusOwner
+{
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window else { return }
-        Task { @MainActor [weak self, weak window] in
-            await Task.yield()
-            guard let self, let window, self.window === window else { return }
-            window.makeFirstResponder(self.closeButton)
-        }
+        window?.makeFirstResponder(self)
+    }
+}
+
+private struct NativeCommentImagePreviewHost<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    func makeNSView(context: Context) -> NativeCommentImagePreviewHostingView<Content> {
+        let view = NativeCommentImagePreviewHostingView(rootView: content)
+        view.sizingOptions = []
+        return view
     }
 
-    override func mouseDown(with event: NSEvent) {
-        dismissPreview()
+    func updateNSView(
+        _ view: NativeCommentImagePreviewHostingView<Content>,
+        context: Context
+    ) {
+        view.rootView = content
+    }
+}
+
+private struct NativeCommentImagePreviewContent: View {
+    private enum Focus: Hashable {
+        case surface
+        case close
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        guard modifiers.isEmpty else { return super.performKeyEquivalent(with: event) }
-        switch event.keyCode {
-        case 53:
-            dismissPreview()
-            return true
-        case 123:
-            selectPrevious()
-            return true
-        case 124:
-            selectNext()
-            return true
-        default:
-            return super.performKeyEquivalent(with: event)
-        }
+    private enum Phase {
+        case loading
+        case loaded(NSImage)
+        case failed
     }
 
-    func configure(
+    private struct LoadKey: Equatable {
+        let index: Int
+        let attempt: Int
+    }
+
+    private static let buttonInset: CGFloat = 18
+    private static let counterBottomInset: CGFloat = 18
+
+    let request: NativeCommentImagePreviewRequest
+    let loader: NativePlaybackCommentPictureLoader
+    let onDismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focus: Focus?
+    @State private var selection: NativeCommentImagePreviewSelection
+    @State private var phase = Phase.loading
+    @State private var loadAttempt = 0
+
+    init(
         request: NativeCommentImagePreviewRequest,
+        loader: NativePlaybackCommentPictureLoader,
         onDismiss: @escaping () -> Void
     ) {
+        self.request = request
+        self.loader = loader
         self.onDismiss = onDismiss
-        guard requestID != request.id else { return }
-        requestID = request.id
-        references = request.references
-        selection = NativeCommentImagePreviewSelection(
-            count: references.count,
-            requestedIndex: request.selectedIndex
-        )
-        updateNavigation()
-        loadCurrentImage()
-    }
-
-    func tearDown() {
-        cancelImageRequest()
-        requestID = nil
-        references.removeAll(keepingCapacity: false)
-        currentReference = nil
-        onDismiss = nil
-        imageView.image = nil
-        imageView.isHidden = true
-        progress.stopAnimation(nil)
-    }
-
-    private func configureButton(
-        _ button: NSButton,
-        symbol: String,
-        accessibilityLabel: String
-    ) {
-        button.title = ""
-        button.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: nil
-        )
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.controlSize = .large
-        if #available(macOS 26.0, *) {
-            button.bezelStyle = .glass
-        } else {
-            button.bezelStyle = .circular
-        }
-        button.setAccessibilityLabel(accessibilityLabel)
-    }
-
-    private func updateNavigation() {
-        let hasMultipleImages = selection.count > 1
-        previousButton.isHidden = !hasMultipleImages
-        nextButton.isHidden = !hasMultipleImages
-        previousButton.isEnabled = selection.canSelectPrevious
-        nextButton.isEnabled = selection.canSelectNext
-        counterLabel.stringValue =
-            selection.count > 0
-            ? "\(selection.index + 1) / \(selection.count)"
-            : ""
-        imageView.setAccessibilityLabel(
-            selection.count > 0
-                ? AppStrings.localized("评论图片，第 \(selection.index + 1) 张，共 \(selection.count) 张")
-                : AppStrings.localized("评论图片")
-        )
-    }
-
-    private func loadCurrentImage() {
-        cancelImageRequest()
-        imageView.image = nil
-        imageView.isHidden = true
-        statusLabel.isHidden = true
-        retryButton.isHidden = true
-        guard references.indices.contains(selection.index) else {
-            showFailure()
-            return
-        }
-        let reference = references[selection.index]
-        currentReference = reference
-        if let cached = loader.cachedImage(for: reference) {
-            apply(cached, animated: false)
-            return
-        }
-        progress.isHidden = false
-        progress.startAnimation(nil)
-        let generation = loadGeneration
-        imageTask = Task { [weak self] in
-            guard let self else { return }
-            let result = await self.loader.image(for: reference)
-            guard !Task.isCancelled,
-                self.loadGeneration == generation,
-                self.currentReference == reference
-            else { return }
-            self.imageTask = nil
-            guard let result else {
-                self.showFailure()
-                return
-            }
-            self.apply(
-                result.image,
-                animated: result.origin.shouldAnimate
+        _selection = State(
+            initialValue: NativeCommentImagePreviewSelection(
+                count: request.references.count,
+                requestedIndex: request.selectedIndex
             )
+        )
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.82)
+                phaseContent
+                    .padding(.horizontal, min(96, max(56, geometry.size.width * 0.08)))
+                    .padding(.vertical, min(86, max(54, geometry.size.height * 0.08)))
+            }
+            .overlay(alignment: .topTrailing) {
+                iconButton(
+                    "xmark",
+                    label: AppStrings.localized("关闭图片预览"),
+                    action: onDismiss
+                )
+                .focused($focus, equals: .close)
+                .padding(Self.buttonInset)
+            }
+            .overlay { navigation }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onDismiss)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focus, equals: .surface)
+        .defaultFocus($focus, .close)
+        .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift])
+            else { return .ignored }
+            if press.key == .leftArrow { selectPrevious() } else { selectNext() }
+            return .handled
+        }
+        .onExitCommand(perform: onDismiss)
+        .task(id: LoadKey(index: selection.index, attempt: loadAttempt)) {
+            await loadCurrentImage()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AppStrings.localized("评论图片预览"))
+        .accessibilityAddTraits(.isModal)
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch phase {
+        case .loading:
+            ProgressView()
+                .accessibilityLabel(AppStrings.localized("评论图片加载中"))
+        case .loaded(let image):
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .accessibilityLabel(imageAccessibilityLabel)
+                .transition(.opacity)
+        case .failed:
+            VStack(spacing: 10) {
+                Text(AppStrings.localized("图片加载失败"))
+                    .foregroundStyle(.white)
+                Button(AppStrings.localized("重试")) { retry() }
+                    .accessibilityLabel(AppStrings.localized("重新加载评论图片"))
+            }
         }
     }
 
-    private func cancelImageRequest() {
-        loadGeneration &+= 1
-        imageTask?.cancel()
-        imageTask = nil
-        imageView.layer?.removeAnimation(
-            forKey: "native-comment-image-preview.fade"
-        )
-        imageView.layer?.opacity = 1
-        progress.stopAnimation(nil)
-        progress.isHidden = true
+    @ViewBuilder
+    private var navigation: some View {
+        if selection.count > 1 {
+            HStack {
+                iconButton(
+                    "chevron.left",
+                    label: AppStrings.localized("上一张图片"),
+                    action: selectPrevious
+                )
+                .disabled(!selection.canSelectPrevious)
+                Spacer()
+                iconButton(
+                    "chevron.right",
+                    label: AppStrings.localized("下一张图片"),
+                    action: selectNext
+                )
+                .disabled(!selection.canSelectNext)
+            }
+            .padding(.horizontal, Self.buttonInset)
+        }
+        if selection.count > 0 {
+            Text(verbatim: "\(selection.index + 1) / \(selection.count)")
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, Self.counterBottomInset)
+        }
     }
 
-    private func apply(_ image: CGImage, animated: Bool) {
-        progress.stopAnimation(nil)
-        progress.isHidden = true
-        statusLabel.isHidden = true
-        retryButton.isHidden = true
-        imageView.image = NSImage(
-            cgImage: image,
-            size: NSSize(width: image.width, height: image.height)
-        )
-        imageView.isHidden = false
-        guard animated,
-            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-            let imageLayer = imageView.layer
-        else { return }
-        imageLayer.removeAnimation(forKey: "native-comment-image-preview.fade")
-        imageLayer.opacity = 1
-        let animation = CABasicAnimation(keyPath: "opacity")
-        animation.fromValue = 0
-        animation.toValue = 1
-        animation.duration = NativePlaybackCommentImageTransition.duration
-        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        imageLayer.add(animation, forKey: "native-comment-image-preview.fade")
+    private var imageAccessibilityLabel: String {
+        selection.count > 0
+            ? AppStrings.localized("评论图片，第 \(selection.index + 1) 张，共 \(selection.count) 张")
+            : AppStrings.localized("评论图片")
     }
 
-    private func showFailure() {
-        progress.stopAnimation(nil)
-        progress.isHidden = true
-        imageView.image = nil
-        imageView.isHidden = true
-        statusLabel.stringValue = AppStrings.localized("图片加载失败")
-        statusLabel.isHidden = false
-        retryButton.isHidden = false
+    private func iconButton(
+        _ systemImage: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let button = Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .frame(width: 24, height: 24)
+        }
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .accessibilityLabel(label)
+        return Group {
+            if #available(macOS 26.0, *) {
+                button.buttonStyle(.glass)
+            } else {
+                button.buttonStyle(.bordered)
+            }
+        }
     }
 
-    @objc private func dismissPreview() {
-        onDismiss?()
-    }
-
-    @objc private func selectPrevious() {
+    private func selectPrevious() {
         guard selection.selectPrevious() else { return }
-        updateNavigation()
-        loadCurrentImage()
+        phase = .loading
     }
 
-    @objc private func selectNext() {
+    private func selectNext() {
         guard selection.selectNext() else { return }
-        updateNavigation()
-        loadCurrentImage()
+        phase = .loading
     }
 
-    @objc private func retry() {
-        loadCurrentImage()
+    private func retry() {
+        phase = .loading
+        loadAttempt += 1
+    }
+
+    /// 由 `.task(id:)` 驱动：切换图片、重试或关闭都会取消上一次加载。
+    private func loadCurrentImage() async {
+        guard request.references.indices.contains(selection.index) else {
+            phase = .failed
+            return
+        }
+        let reference = request.references[selection.index]
+        if let cached = loader.cachedImage(for: reference) {
+            phase = .loaded(Self.image(cached))
+            return
+        }
+        phase = .loading
+        let result = await loader.image(for: reference)
+        guard !Task.isCancelled else { return }
+        guard let result else {
+            phase = .failed
+            return
+        }
+        let animation: Animation? =
+            result.origin.shouldAnimate && !reduceMotion
+            ? .easeOut(duration: NativePlaybackCommentImageTransition.duration)
+            : nil
+        withAnimation(animation) {
+            phase = .loaded(Self.image(result.image))
+        }
+    }
+
+    private static func image(_ image: CGImage) -> NSImage {
+        NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 }
