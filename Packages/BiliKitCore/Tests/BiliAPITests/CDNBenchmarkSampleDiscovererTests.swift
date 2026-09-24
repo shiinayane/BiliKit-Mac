@@ -6,45 +6,32 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct CDNBenchmarkSampleDiscovererTests {
+    private static let candidateA = Candidate(bvid: "BV1FixtureA1", mid: 10_001)
+    private static let candidateB = Candidate(
+        bvid: "BV1FixtureB2",
+        mid: 10_002,
+        duration: 360,
+        cid: 900_002
+    )
+
     @Test
     func usesAuthenticationOnlyForHighQualityPlayURLAndKeepsDiscoveryBounded() async throws {
-        let now: Int64 = 1_700_100_000
-        let rankResponse = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureB2","duration":600,"senddate":1700074800,"mid":20002,"play":"50000"},{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":"120"}]}}"#
-                    .utf8
-            )
-        )
-        let detailResponse = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-                    .utf8
-            )
-        )
-        let transport = DiscoveryRecordingTransport(
-            responses: [rankResponse, detailResponse, try fixtureResponse("playurl")]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: DiscoveryAuthorizer()
-        )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: client,
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
+        let popular = Candidate(bvid: "BV1FixtureB2", mid: 20_002, duration: 600, play: #""50000""#)
+        var candidate = Self.candidateA
+        candidate.play = #""120""#
+        let transport = StubTransport(
+            responses: [rank(popular, candidate), detail(candidate), try playURL()]
         )
 
-        let samples = try await discoverer.discover()
+        let samples = try await discoverer(transport).discover()
 
         #expect(samples.count == 1)
         let sample = try #require(samples.first)
         #expect(sample.videoRepresentation.kind == .video)
+        #expect(sample.videoRepresentation.id == 64)
+        #expect(sample.videoRepresentation.bandwidth == 800_000)
         #expect(sample.mediaHeaders["Cookie"] == nil)
-        let requests = await transport.requests
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
@@ -52,12 +39,8 @@ struct CDNBenchmarkSampleDiscovererTests {
                 "/x/player/playurl"
             ]
         )
-        #expect(requests[0].headers["Cookie"] == nil)
-        #expect(requests[1].headers["Cookie"] == nil)
-        #expect(requests[2].headers["Cookie"] == "SIGNED_IN_FIXTURE")
+        #expect(requests.map { $0.headers["Cookie"] } == [nil, nil, StubAuthorizer.cookie])
         #expect(requests.allSatisfy { $0.headers["Authorization"] == nil })
-        #expect(sample.videoRepresentation.id == 64)
-        #expect(sample.videoRepresentation.bandwidth == 800_000)
         let query = try #require(
             URLComponents(url: requests[0].url, resolvingAgainstBaseURL: false)?.queryItems
         )
@@ -65,56 +48,33 @@ struct CDNBenchmarkSampleDiscovererTests {
         #expect(query.contains(URLQueryItem(name: "cate_id", value: "201")))
         #expect(query.contains(URLQueryItem(name: "page", value: "1")))
         #expect(query.contains(URLQueryItem(name: "pagesize", value: "5")))
-        let dateFrom = try #require(query.first(where: { $0.name == "time_from" })?.value)
-        let dateTo = try #require(query.first(where: { $0.name == "time_to" })?.value)
-        #expect(dateFrom == "20231102")
-        #expect(dateTo == "20231115")
+        #expect(query.contains(URLQueryItem(name: "time_from", value: "20231102")))
+        #expect(query.contains(URLQueryItem(name: "time_to", value: "20231115")))
     }
 
     @Test
     func cancellationStopsBeforeAnotherDiscoveryRequest() async throws {
-        let transport = BlockingDiscoveryTransport()
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: Date.init,
-            regionIDs: [1, 3, 4]
-        )
+        let transport = StubTransport([.suspended(rank(Self.candidateA))])
+        let discoverer = discoverer(transport, regionIDs: [1, 3, 4])
         let task = Task { try await discoverer.discover() }
-        try await waitUntil { await transport.requests.count == 1 }
+        await transport.waitForRequests(1)
         task.cancel()
 
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(await transport.requests.count == 1)
+        #expect(transport.capturedRequests().count == 1)
     }
 
     @Test
     func cancellationAfterFinalPlayURLDoesNotMarkSampleAsSeen() async throws {
-        let now: Int64 = 1_700_100_000
-        let rank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-        )
-        let detail = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-        )
-        let transport = CancellingFinalPlayURLTransport(
-            responses: [
-                rank, detail, try fixtureResponse("playurl"),
-                rank, detail, try fixtureResponse("playurl")
-            ]
-        )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
-        )
+        let rank = rank(Self.candidateA)
+        let detail = detail(Self.candidateA)
+        let transport = StubTransport([
+            .response(rank), .response(detail), .cancellingCaller(try playURL()),
+            .response(rank), .response(detail), .response(try playURL())
+        ])
+        let discoverer = discoverer(transport)
 
         let cancelled = Task { try await discoverer.discover() }
         await #expect(throws: CancellationError.self) { try await cancelled.value }
@@ -123,38 +83,22 @@ struct CDNBenchmarkSampleDiscovererTests {
 
     @Test
     func rejectedDetailUsesNextCandidateWithoutExceedingBoundedRequestChain() async throws {
-        let now: Int64 = 1_700_100_000
-        let rank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120},{"bvid":"BV1FixtureB2","duration":360,"senddate":1700074800,"mid":10002,"play":140}]}}"#
-        )
-        let mismatchedDetail = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":999,"owner":{"mid":10001}}}"#
-        )
-        let acceptedDetail = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureB2","cid":900002,"duration":360,"pubdate":1700074800,"tid":201,"owner":{"mid":10002}}}"#
-        )
-        let transport = DiscoveryRecordingTransport(
+        var mismatched = Self.candidateA
+        mismatched.tid = 999
+        let transport = StubTransport(
             responses: [
-                rank,
-                mismatchedDetail,
-                acceptedDetail,
-                try fixtureResponse("playurl")
+                rank(Self.candidateA, Self.candidateB),
+                detail(mismatched),
+                detail(Self.candidateB),
+                try playURL()
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
-        )
 
-        let samples = try await discoverer.discover()
+        let samples = try await discoverer(transport).discover()
 
         #expect(samples.count == 1)
         #expect(
-            await transport.requests.map(\.url.path) == [
+            transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
                 "/x/web-interface/view",
@@ -165,35 +109,20 @@ struct CDNBenchmarkSampleDiscovererTests {
 
     @Test
     func stopsImmediatelyAfterOneQualifiedSample() async throws {
-        let now: Int64 = 1_700_100_000
-        let rank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120},{"bvid":"BV1FixtureB2","duration":360,"senddate":1700074800,"mid":10002,"play":140}]}}"#
-        )
-        let firstDetail = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-        )
-        let transport = DiscoveryRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                rank,
-                firstDetail,
-                try fixtureResponse("playurl"),
-                jsonResponse(#"{"code":0,"data":{"result":[]}}"#)
+                rank(Self.candidateA, Self.candidateB),
+                detail(Self.candidateA),
+                try playURL(),
+                rank()
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201, 124]
-        )
 
-        let samples = try await discoverer.discover()
+        let samples = try await discoverer(transport, regionIDs: [201, 124]).discover()
 
         #expect(samples.count == 1)
         #expect(
-            await transport.requests.map(\.url.path) == [
+            transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
                 "/x/player/playurl"
@@ -203,28 +132,15 @@ struct CDNBenchmarkSampleDiscovererTests {
 
     @Test
     func qualifiedAVCDoesNotRequireAnAudioRepresentation() async throws {
-        let now: Int64 = 1_700_100_000
-        let transport = DiscoveryRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                jsonResponse(
-                    #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-                ),
-                jsonResponse(
-                    #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-                ),
-                try fixtureResponse("playurl", removesAudio: true)
+                rank(Self.candidateA),
+                detail(Self.candidateA),
+                try playURL(removesAudio: true)
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
-        )
 
-        let samples = try await discoverer.discover()
+        let samples = try await discoverer(transport).discover()
 
         #expect(samples.count == 1)
         #expect(samples.first?.videoRepresentation.kind == .video)
@@ -232,41 +148,25 @@ struct CDNBenchmarkSampleDiscovererTests {
 
     @Test
     func requestedSampleCountUsesDifferentRegionsAndUploaders() async throws {
-        let now: Int64 = 1_700_100_000
-        let firstRank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-        )
-        let secondRank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureB2","duration":360,"senddate":1700074800,"mid":10002,"play":140}]}}"#
-        )
-        let transport = DiscoveryRecordingTransport(
+        var secondRegion = Self.candidateB
+        secondRegion.tid = 124
+        let transport = StubTransport(
             responses: [
-                firstRank,
-                jsonResponse(
-                    #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-                ),
-                try fixtureResponse("playurl"),
-                secondRank,
-                jsonResponse(
-                    #"{"code":0,"data":{"bvid":"BV1FixtureB2","cid":900002,"duration":360,"pubdate":1700074800,"tid":124,"owner":{"mid":10002}}}"#
-                ),
-                try fixtureResponse("playurl")
+                rank(Self.candidateA),
+                detail(Self.candidateA),
+                try playURL(),
+                rank(secondRegion),
+                detail(secondRegion),
+                try playURL()
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201, 124]
-        )
 
-        let samples = try await discoverer.discover(targetCount: 2)
+        let samples = try await discoverer(transport, regionIDs: [201, 124])
+            .discover(targetCount: 2)
 
         #expect(samples.count == 2)
         #expect(
-            await transport.requests.map(\.url.path) == [
+            transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
                 "/x/player/playurl",
@@ -279,131 +179,110 @@ struct CDNBenchmarkSampleDiscovererTests {
 
     @Test
     func resettingDiscoveryLifecycleAllowsTheSameAnonymousCandidateAgain() async throws {
-        let now: Int64 = 1_700_100_000
-        let rank = jsonResponse(
-            #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-        )
-        let detail = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-        )
-        let transport = DiscoveryRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                rank, detail, try fixtureResponse("playurl"),
-                rank, detail, try fixtureResponse("playurl")
+                rank(Self.candidateA), detail(Self.candidateA), try playURL(),
+                rank(Self.candidateA), detail(Self.candidateA), try playURL()
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
-        )
+        let discoverer = discoverer(transport)
 
         #expect(try await discoverer.discover().count == 1)
         await discoverer.resetSeenSamples()
         #expect(try await discoverer.discover().count == 1)
-        #expect(await transport.requests.count == 6)
+        #expect(transport.capturedRequests().count == 6)
     }
 
     @Test
     func rejectsAnonymousQualityManifestEvenWhenOriginsAreComparable() async throws {
-        let now: Int64 = 1_700_100_000
-        let transport = DiscoveryRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                jsonResponse(
-                    #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-                ),
-                jsonResponse(
-                    #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-                ),
-                try fixtureResponse("playurl", promotesAVCToHighQuality: false)
+                rank(Self.candidateA),
+                detail(Self.candidateA),
+                try playURL(promotesAVCToHighQuality: false)
             ]
         )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: DiscoveryAuthorizer()
-            ),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
-        )
 
-        let samples = try await discoverer.discover()
+        let samples = try await discoverer(transport).discover()
 
         #expect(samples.isEmpty)
-        #expect(await transport.requests.count == 3)
+        #expect(transport.capturedRequests().count == 3)
     }
 
     @Test
     func missingCredentialDoesNotFallBackToAnonymousPlayURL() async throws {
-        let now: Int64 = 1_700_100_000
-        let transport = DiscoveryRecordingTransport(
-            responses: [
-                jsonResponse(
-                    #"{"code":0,"data":{"result":[{"bvid":"BV1FixtureA1","duration":300,"senddate":1700074800,"mid":10001,"play":120}]}}"#
-                ),
-                jsonResponse(
-                    #"{"code":0,"data":{"bvid":"BV1FixtureA1","cid":900001,"duration":300,"pubdate":1700074800,"tid":201,"owner":{"mid":10001}}}"#
-                ),
-                try fixtureResponse("playurl")
-            ]
-        )
-        let discoverer = CDNBenchmarkSampleDiscoverer(
-            client: BiliAPIClient(transport: transport),
-            now: { Date(timeIntervalSince1970: TimeInterval(now)) },
-            regionIDs: [201]
+        let transport = StubTransport(
+            responses: [rank(Self.candidateA), detail(Self.candidateA), try playURL()]
         )
 
         await #expect(throws: BiliAPIError.authorizationRequired) {
-            try await discoverer.discover()
+            try await discoverer(transport, authorized: false).discover()
         }
         #expect(
-            await transport.requests.map(\.url.path) == [
+            transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view"
             ]
         )
     }
 
-    private func fixtureResponse(
-        _ name: String,
+    private func discoverer(
+        _ transport: StubTransport,
+        regionIDs: [Int] = [201],
+        authorized: Bool = true
+    ) -> CDNBenchmarkSampleDiscoverer {
+        CDNBenchmarkSampleDiscoverer(
+            client: BiliAPIClient(
+                transport: transport,
+                requestAuthorizer: authorized ? StubAuthorizer() : nil
+            ),
+            now: { Date(timeIntervalSince1970: 1_700_100_000) },
+            regionIDs: regionIDs
+        )
+    }
+
+    private func rank(_ candidates: Candidate...) -> HTTPResponse {
+        let items = candidates.map {
+            #"{"bvid":"\#($0.bvid)","duration":\#($0.duration),"senddate":1700074800,"mid":\#($0.mid),"play":\#($0.play)}"#
+        }
+        return jsonResponse(
+            #"{"code":0,"data":{"result":[\#(items.joined(separator: ","))]}}"#
+        )
+    }
+
+    private func detail(_ candidate: Candidate) -> HTTPResponse {
+        jsonResponse(
+            #"{"code":0,"data":{"bvid":"\#(candidate.bvid)","cid":\#(candidate.cid),"duration":\#(candidate.duration),"pubdate":1700074800,"tid":\#(candidate.tid),"owner":{"mid":\#(candidate.mid)}}}"#
+        )
+    }
+
+    /// 测速只接受高清 AVC 且主备地址可比较的 manifest；默认把 fixture 调整为合格样本。
+    private func playURL(
         promotesAVCToHighQuality: Bool = true,
         removesAudio: Bool = false
     ) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        var body = try Data(contentsOf: url)
-        if name == "playurl", var text = String(data: body, encoding: .utf8) {
-            if promotesAVCToHighQuality {
-                text = text.replacingOccurrences(
-                    of: "\"id\": 32",
-                    with: "\"id\": 64"
-                ).replacingOccurrences(
+        var text = String(decoding: try fixtureResponse("playurl").body, as: UTF8.self)
+        if promotesAVCToHighQuality {
+            text = text.replacingOccurrences(of: "\"id\": 32", with: "\"id\": 64")
+                .replacingOccurrences(
                     of: "\"bandwidth\": 500000",
                     with: "\"bandwidth\": 800000"
                 )
-            }
-            text = text.replacingOccurrences(
-                of: "https://media.fixture.bilivideo.com/video-avc-primary.m4s",
-                with: "https://upos-sz-mirrorhw.bilivideo.com/video-avc-primary.m4s"
-            ).replacingOccurrences(
-                of: "https://backup.fixture.bilivideo.com/video-avc.m4s",
-                with: "https://upos-hz-mirrorakam.akamaized.net/video-avc.m4s"
-            )
-            body = Data(text.utf8)
         }
-        if removesAudio,
-            var root = try JSONSerialization.jsonObject(with: body) as? [String: Any],
-            var data = root["data"] as? [String: Any],
-            var dash = data["dash"] as? [String: Any]
-        {
+        text = text.replacingOccurrences(
+            of: "https://media.fixture.bilivideo.com/video-avc-primary.m4s",
+            with: "https://upos-sz-mirrorhw.bilivideo.com/video-avc-primary.m4s"
+        ).replacingOccurrences(
+            of: "https://backup.fixture.bilivideo.com/video-avc.m4s",
+            with: "https://upos-hz-mirrorakam.akamaized.net/video-avc.m4s"
+        )
+        var body = Data(text.utf8)
+        if removesAudio {
+            var root = try #require(
+                JSONSerialization.jsonObject(with: body) as? [String: Any]
+            )
+            var data = try #require(root["data"] as? [String: Any])
+            var dash = try #require(data["dash"] as? [String: Any])
             dash.removeValue(forKey: "audio")
             data["dash"] = dash
             root["data"] = data
@@ -415,75 +294,14 @@ struct CDNBenchmarkSampleDiscovererTests {
             body: body
         )
     }
-
-    private func jsonResponse(_ value: String) -> HTTPResponse {
-        HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(value.utf8)
-        )
-    }
-
-    private func waitUntil(_ condition: () async -> Bool) async throws {
-        while !(await condition()) {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-    }
 }
 
-private actor DiscoveryRecordingTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) { self.responses = responses }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        guard !responses.isEmpty else { throw DiscoveryTransportError.noResponse }
-        return responses.removeFirst()
-    }
-}
-
-private actor BlockingDiscoveryTransport: HTTPTransport {
-    private(set) var requests: [HTTPRequest] = []
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        try await Task.sleep(for: .seconds(60))
-        throw DiscoveryTransportError.noResponse
-    }
-}
-
-private actor CancellingFinalPlayURLTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private var didCancel = false
-
-    init(responses: [HTTPResponse]) { self.responses = responses }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        guard !responses.isEmpty else { throw DiscoveryTransportError.noResponse }
-        let response = responses.removeFirst()
-        if request.url.path == "/x/player/playurl", !didCancel {
-            didCancel = true
-            withUnsafeCurrentTask { $0?.cancel() }
-        }
-        return response
-    }
-}
-
-private enum DiscoveryTransportError: Error {
-    case noResponse
-}
-
-private struct DiscoveryAuthorizer: HTTPRequestAuthorizing {
-    func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
-        var headers = request.headers
-        headers["Cookie"] = "SIGNED_IN_FIXTURE"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
+/// 近期投稿候选；`play` 是原样写入 JSON 的片段，以覆盖字符串与数字两种形状。
+private struct Candidate {
+    let bvid: String
+    let mid: Int64
+    var duration = 300
+    var play = "120"
+    var tid = 201
+    var cid: Int64 = 900_001
 }

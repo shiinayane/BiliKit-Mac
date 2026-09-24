@@ -15,10 +15,10 @@ struct BiliDanmakuRepositoryTests {
 
     @Test
     func productionDecoderMapsMinimalFixtureAndBuildsWBIAnonymousRequest() async throws {
-        let transport = DanmakuRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
+                try fixtureResponse("nav"),
+                try hexFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let client = BiliAPIClient(
@@ -41,7 +41,7 @@ struct BiliDanmakuRepositoryTests {
         #expect(event.weight == 5)
         #expect(event.description == "DanmakuEvent(redacted)")
 
-        let requests = await transport.requests()
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
@@ -76,9 +76,9 @@ struct BiliDanmakuRepositoryTests {
     {
         let repository = BiliDanmakuRepository(
             client: BiliAPIClient(
-                transport: DanmakuRecordingTransport(
+                transport: StubTransport(
                     responses: [
-                        try jsonFixtureResponse("nav"),
+                        try fixtureResponse("nav"),
                         HTTPResponse(
                             statusCode: 200,
                             headers: ["Content-Type": "application/json"],
@@ -98,7 +98,7 @@ struct BiliDanmakuRepositoryTests {
     @Test
     func truncatedFixtureFailsClosed() async throws {
         let repository = try repository(
-            response: try binaryFixtureResponse("danmaku-segment-truncated")
+            response: try hexFixtureResponse("danmaku-segment-truncated")
         )
 
         await #expect(throws: DanmakuApplicationError.invalidResponse) {
@@ -284,9 +284,9 @@ struct BiliDanmakuRepositoryTests {
     private func repository(response: HTTPResponse) throws -> BiliDanmakuRepository {
         BiliDanmakuRepository(
             client: BiliAPIClient(
-                transport: DanmakuRecordingTransport(
+                transport: StubTransport(
                     responses: [
-                        try jsonFixtureResponse("nav"),
+                        try fixtureResponse("nav"),
                         response
                     ]
                 ),
@@ -294,69 +294,4 @@ struct BiliDanmakuRepositoryTests {
             )
         )
     }
-
-    private func binaryFixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "hex",
-                subdirectory: "Fixtures"
-            )
-        )
-        let text = try String(contentsOf: url, encoding: .utf8)
-        let digits = text.filter { $0.isHexDigit }
-        var body = Data()
-        var index = digits.startIndex
-        while index < digits.endIndex {
-            let next = digits.index(index, offsetBy: 2)
-            let byte = try #require(UInt8(digits[index..<next], radix: 16))
-            body.append(byte)
-            index = next
-        }
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/octet-stream"],
-            body: body
-        )
-    }
-
-    private func jsonFixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: try Data(contentsOf: url)
-        )
-    }
-}
-
-private actor DanmakuRecordingTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private var capturedRequests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        self.responses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        capturedRequests.append(request)
-        guard !responses.isEmpty else {
-            throw DanmakuTestError.missingResponse
-        }
-        return responses.removeFirst()
-    }
-
-    func requests() -> [HTTPRequest] {
-        capturedRequests
-    }
-}
-
-private enum DanmakuTestError: Error {
-    case missingResponse
 }
