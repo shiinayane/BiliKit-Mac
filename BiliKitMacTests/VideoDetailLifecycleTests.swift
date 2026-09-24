@@ -643,7 +643,7 @@ private struct EmptyLifecycleFeedRepository: FeedRepository {
 private actor LifecycleCommentRepository: CommentRepository {
     private let rootError: CommentReadError?
     private var subjects: [CommentSubjectIdentity] = []
-    private var requestWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var requestWaiters = CountWaiters()
 
     init(rootError: CommentReadError? = nil) {
         self.rootError = rootError
@@ -655,11 +655,7 @@ private actor LifecycleCommentRepository: CommentRepository {
         after continuation: CommentContinuation?
     ) async throws -> CommentRootPage {
         subjects.append(subject)
-        let ready = requestWaiters.filter { $0.target <= subjects.count }
-        requestWaiters.removeAll { $0.target <= subjects.count }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
+        requestWaiters.resume(reaching: subjects.count)
         if let rootError { throw rootError }
         return CommentRootPage(
             threads: [],
@@ -690,9 +686,8 @@ private actor LifecycleCommentRepository: CommentRepository {
     }
 
     func waitForRequestCount(_ target: Int) async {
-        guard subjects.count < target else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            requestWaiters.add($0, until: target, current: subjects.count)
         }
     }
 }
@@ -762,18 +757,12 @@ private actor PendingLifecycleUploaderSignatureRepository:
 
     func signature(for ownerID: Int64) async throws -> String? {
         requestStarted = true
-        for waiter in requestWaiters {
-            waiter.resume()
-        }
-        requestWaiters.removeAll()
+        requestWaiters.resumeAll()
         let result = await withCheckedContinuation { continuation in
             resultContinuation = continuation
         }
         requestCompleted = true
-        for waiter in completionWaiters {
-            waiter.resume()
-        }
-        completionWaiters.removeAll()
+        completionWaiters.resumeAll()
         return result
     }
 
@@ -808,8 +797,8 @@ private final class LifecyclePlayback: PlaybackControlling {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCallCount = 0
     private var pendingLoad: CheckedContinuation<Void, any Error>?
-    private var loadWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
-    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var loadWaiters = CountWaiters()
+    private var stopWaiters = CountWaiters()
 
     init(holdsLoads: Bool = false) {
         self.holdsLoads = holdsLoads
@@ -825,7 +814,7 @@ private final class LifecyclePlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async throws {
         loadedIdentities.append(identity)
-        Self.resume(&loadWaiters, reaching: loadedIdentities.count)
+        loadWaiters.resume(reaching: loadedIdentities.count)
         guard holdsLoads else { return }
         try await withCheckedThrowingContinuation { continuation in
             pendingLoad = continuation
@@ -851,7 +840,7 @@ private final class LifecyclePlayback: PlaybackControlling {
 
     func stop() {
         stopCallCount += 1
-        Self.resume(&stopWaiters, reaching: stopCallCount)
+        stopWaiters.resume(reaching: stopCallCount)
     }
 
     func failPendingLoad() {
@@ -860,27 +849,14 @@ private final class LifecyclePlayback: PlaybackControlling {
     }
 
     func waitForLoadCallCount(_ target: Int) async {
-        guard loadedIdentities.count < target else { return }
-        await withCheckedContinuation { continuation in
-            loadWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            loadWaiters.add($0, until: target, current: loadedIdentities.count)
         }
     }
 
     func waitForStopCallCount(_ target: Int) async {
-        guard stopCallCount < target else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append((target, continuation))
-        }
-    }
-
-    private static func resume(
-        _ waiters: inout [(target: Int, continuation: CheckedContinuation<Void, Never>)],
-        reaching count: Int
-    ) {
-        let ready = waiters.filter { $0.target <= count }
-        waiters.removeAll { $0.target <= count }
-        for waiter in ready {
-            waiter.continuation.resume()
+        await withCheckedContinuation {
+            stopWaiters.add($0, until: target, current: stopCallCount)
         }
     }
 }
@@ -889,12 +865,12 @@ private final class LifecyclePlayback: PlaybackControlling {
 private final class RecordingPresentation: DanmakuPresentationControlling {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCount = 0
-    private var startWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
-    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var startWaiters = CountWaiters()
+    private var stopWaiters = CountWaiters()
 
     func start(for identity: PlaybackItemIdentity) {
         startedIdentities.append(identity)
-        resumeStartWaiters()
+        startWaiters.resume(reaching: startedIdentities.count)
     }
 
     func setEnabled(_ enabled: Bool) {}
@@ -911,36 +887,18 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
 
     func stop() {
         stopCount += 1
-        resumeStopWaiters()
+        stopWaiters.resume(reaching: stopCount)
     }
 
     func waitForStartedCount(_ target: Int) async {
-        guard startedIdentities.count < target else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            startWaiters.add($0, until: target, current: startedIdentities.count)
         }
     }
 
     func waitForStopCount(_ target: Int) async {
-        guard stopCount < target else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append((target, continuation))
-        }
-    }
-
-    private func resumeStartWaiters() {
-        let ready = startWaiters.filter { $0.target <= startedIdentities.count }
-        startWaiters.removeAll { $0.target <= startedIdentities.count }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
-
-    private func resumeStopWaiters() {
-        let ready = stopWaiters.filter { $0.target <= stopCount }
-        stopWaiters.removeAll { $0.target <= stopCount }
-        for waiter in ready {
-            waiter.continuation.resume()
+        await withCheckedContinuation {
+            stopWaiters.add($0, until: target, current: stopCount)
         }
     }
 }
@@ -953,8 +911,7 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     private var firstRestoreReleased = false
     private var restoreStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
-    private var restoreCountWaiters:
-        [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var restoreCountWaiters = CountWaiters()
 
     init(
         restoreState: AuthenticationState,
@@ -974,10 +931,10 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
 
     func restore() async -> AuthenticationState {
         restoreCount += 1
-        resumeRestoreCountWaiters()
+        restoreCountWaiters.resume(reaching: restoreCount)
         if blocksFirstRestore, restoreCount == 1 {
             firstRestoreStarted = true
-            resume(&restoreStartWaiters)
+            restoreStartWaiters.resumeAll()
             await withCheckedContinuation { continuation in
                 if firstRestoreReleased {
                     continuation.resume()
@@ -997,32 +954,16 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     }
 
     func waitForRestoreCallCount(_ target: Int) async {
-        guard restoreCount < target else { return }
-        await withCheckedContinuation { continuation in
-            restoreCountWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            restoreCountWaiters.add($0, until: target, current: restoreCount)
         }
     }
 
     func releaseFirstRestore() {
         firstRestoreReleased = true
-        resume(&restoreReleaseWaiters)
+        restoreReleaseWaiters.resumeAll()
     }
 
-    private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
-        let pending = waiters
-        waiters.removeAll(keepingCapacity: false)
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-
-    private func resumeRestoreCountWaiters() {
-        let ready = restoreCountWaiters.filter { $0.target <= restoreCount }
-        restoreCountWaiters.removeAll { $0.target <= restoreCount }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
     func requestQRCode() async -> AuthenticationState { .signedOut }
     func pollOnce() async -> AuthenticationState { .signedOut }
     func finalizeLogin() async -> AuthenticationState { .signedOut }

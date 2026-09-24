@@ -513,7 +513,7 @@ struct HLSPlaylistBuilderTests {
             mimeType: kind == .video ? "video/mp4" : "audio/mp4",
             bandwidth: bandwidth,
             videoAttributes: videoAttributes,
-            primaryURL: try #require(URL(string: "https://cdn.example/\(id)")),
+            primaryURL: try #require(URL(string: "https://cdn.fixture.bilivideo.com/\(id)")),
             segmentBase: SegmentBase(
                 initialization: try MediaByteRange(start: 0, endInclusive: 99),
                 index: try MediaByteRange(start: 100, endInclusive: 155)

@@ -12,36 +12,34 @@ private let fixturePlaybackAllowedPaths: Set<String> = [
     "/x/player/playurl"
 ]
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliCredentialRequestAuthorizerTests {
-    @Test
-    func authorizesConfiguredPathsAndInjectsOnlyStoredCredential() async throws {
+    @Test(arguments: [fixtureNavigationAllowedPaths, fixturePlaybackAllowedPaths])
+    func authorizesConfiguredPathsAndInjectsOnlyStoredCredential(
+        allowedPaths: Set<String>
+    ) async throws {
         let credential = try makeFixtureCredential()
-        for allowedPaths in [
-            fixtureNavigationAllowedPaths,
-            fixturePlaybackAllowedPaths
-        ] {
-            let authorizer = BiliCredentialRequestAuthorizer(
-                store: MemoryWebCredentialStore(credential: credential),
-                allowedPaths: allowedPaths
+        let authorizer = BiliCredentialRequestAuthorizer(
+            store: MemoryWebCredentialStore(credential: credential),
+            allowedPaths: allowedPaths
+        )
+        for path in allowedPaths {
+            let request = HTTPRequest(
+                url: try #require(
+                    URL(
+                        string: "https://api.bilibili.com:443\(path)?fixture=1"
+                    )
+                ),
+                headers: ["Accept": "application/json"]
             )
-            for path in allowedPaths {
-                let request = HTTPRequest(
-                    url: try #require(
-                        URL(
-                            string: "https://api.bilibili.com:443\(path)?fixture=1"
-                        )
-                    ),
-                    headers: ["Accept": "application/json"]
-                )
 
-                let authorized = try await authorizer.authorize(request)
+            let authorized = try await authorizer.authorize(request)
 
-                #expect(authorized.headers["Accept"] == "application/json")
-                #expect(authorized.headers["Cookie"] == credential.cookieHeader)
-                #expect(authorized.headers["Authorization"] == nil)
-                #expect(authorized.headers["X-CSRF-Token"] == nil)
-                #expect(authorized.headers.count == 2)
-            }
+            #expect(authorized.headers["Accept"] == "application/json")
+            #expect(authorized.headers["Cookie"] == credential.cookieHeader)
+            #expect(authorized.headers["Authorization"] == nil)
+            #expect(authorized.headers["X-CSRF-Token"] == nil)
+            #expect(authorized.headers.count == 2)
         }
     }
 
@@ -112,25 +110,23 @@ struct BiliCredentialRequestAuthorizerTests {
         }
     }
 
-    @Test
-    func rejectsPreexistingCredentialHeadersCaseInsensitively() async throws {
+    @Test(arguments: ["cOoKiE", "aUtHoRiZaTiOn", "x-CsRf-ToKeN"])
+    func rejectsPreexistingCredentialHeadersCaseInsensitively(header: String) async throws {
         let authorizer = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
             allowedPaths: fixtureNavigationAllowedPaths
         )
-        for header in ["cOoKiE", "aUtHoRiZaTiOn", "x-CsRf-ToKeN"] {
-            let request = HTTPRequest(
-                url: try #require(
-                    URL(string: "https://api.bilibili.com/x/web-interface/nav")
-                ),
-                headers: [header: "FIXTURE_PREEXISTING_VALUE"]
-            )
+        let request = HTTPRequest(
+            url: try #require(
+                URL(string: "https://api.bilibili.com/x/web-interface/nav")
+            ),
+            headers: [header: "FIXTURE_PREEXISTING_VALUE"]
+        )
 
-            await #expect(
-                throws: BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
-            ) {
-                try await authorizer.authorize(request)
-            }
+        await #expect(
+            throws: BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
+        ) {
+            try await authorizer.authorize(request)
         }
     }
 

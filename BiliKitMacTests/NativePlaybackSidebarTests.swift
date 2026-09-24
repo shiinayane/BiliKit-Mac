@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliKit
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct NativePlaybackSidebarTests {
     @Test
     @MainActor
@@ -1294,109 +1294,114 @@ struct NativePlaybackSidebarTests {
         )
     }
 
-    @Test
+    @Test(
+        arguments: [
+            (21, CommentAuthorSex.male, false),
+            (22, CommentAuthorSex.female, false),
+            (23, CommentAuthorSex.unspecified, true)
+        ]
+    )
     @MainActor
-    func commentAuthorNameColorOnlyReflectsVIPState() throws {
-        for (id, sex, isVIP, expectedColor) in [
-            (21, CommentAuthorSex.male, false, NSColor.labelColor),
-            (22, CommentAuthorSex.female, false, NSColor.labelColor),
-            (23, CommentAuthorSex.unspecified, true, NSColor.systemPink)
-        ] {
-            let author = CommentAuthor(
-                id: CommentAuthorID(rawValue: "author-\(id)"),
-                name: "昵称\(id)",
-                sex: sex,
-                isVIP: isVIP
-            )
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: .video(aid: 700_001),
-                thread: commentThread(id: Int64(id), message: "正文", author: author),
-                replyState: nil
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
+    func commentAuthorNameColorOnlyReflectsVIPState(
+        id: Int,
+        sex: CommentAuthorSex,
+        isVIP: Bool
+    ) throws {
+        let expectedColor = isVIP ? NSColor.systemPink : NSColor.labelColor
+        let author = CommentAuthor(
+            id: CommentAuthorID(rawValue: "author-\(id)"),
+            name: "昵称\(id)",
+            sex: sex,
+            isVIP: isVIP
+        )
+        let row = NativePlaybackCommentThreadPresentation(
+            subject: .video(aid: 700_001),
+            thread: commentThread(id: Int64(id), message: "正文", author: author),
+            replyState: nil
+        )
+        let item = NativePlaybackCommentThreadItem()
+        item.view.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 408,
+            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
+        )
+        item.configure(
+            presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onPrevious: {},
+            onNext: {},
+            onRetry: {},
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
+        )
+        item.view.layoutSubtreeIfNeeded()
 
-            let authorLabel = try #require(
-                descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
-                    $0.stringValue == author.name
-                }
-            )
-            #expect(authorLabel.textColor == expectedColor)
-        }
+        let authorLabel = try #require(
+            descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
+                $0.stringValue == author.name
+            }
+        )
+        #expect(authorLabel.textColor == expectedColor)
     }
 
-    @Test
+    @Test(arguments: [2, 3])
     @MainActor
-    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply() throws {
+    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply(
+        replyCount: Int
+    ) throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let previews = [
             comment(id: 31, rootID: 3, message: "回复一"),
             comment(id: 32, rootID: 3, message: "回复二")
         ]
 
-        for replyCount in [2, 3] {
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: subject,
-                thread: commentThread(
-                    id: 3,
-                    message: "正文",
-                    replyCount: replyCount,
-                    preview: previews
-                ),
-                replyState: nil
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
+        let row = NativePlaybackCommentThreadPresentation(
+            subject: subject,
+            thread: commentThread(
+                id: 3,
+                message: "正文",
+                replyCount: replyCount,
+                preview: previews
+            ),
+            replyState: nil
+        )
+        let item = NativePlaybackCommentThreadItem()
+        item.view.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 408,
+            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
+        )
+        item.configure(
+            presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onPrevious: {},
+            onNext: {},
+            onRetry: {},
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
+        )
+        item.view.layoutSubtreeIfNeeded()
 
-            let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
-                .first {
-                    $0.title
-                        == AppStrings.localized(
-                            "共 \(CommentPresentationFormatting.compactCount(replyCount)) 条回复"
-                        )
-                }
-            #expect(summary != nil)
-        }
+        let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
+            .first {
+                $0.title
+                    == AppStrings.localized(
+                        "共 \(CommentPresentationFormatting.compactCount(replyCount)) 条回复"
+                    )
+            }
+        #expect(summary != nil)
     }
 
     @Test

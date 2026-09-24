@@ -105,7 +105,7 @@ func makeFixtureTrack(
         bandwidth: bandwidth,
         videoAttributes: resolvedVideoAttributes,
         primaryURL: try primaryURL ?? #require(
-            URL(string: "https://fixture.invalid/\(id)")
+            URL(string: "https://media.fixture.bilivideo.com/\(id)")
         ),
         backupURLs: backupURLs,
         segmentBase: SegmentBase(
@@ -268,13 +268,41 @@ func waitUntilTimeControlStatus(
 
 // MARK: - 替身
 
-/// 等待计数达到 `count` 的调用方。
-typealias CountWaiter = (count: Int, continuation: CheckedContinuation<Void, Never>)
+/// 由持有者在自己的隔离域内同步使用的计数等待表；计数本身由持有者保存与推进。
+struct CountWaiters {
+    private var pending: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
-func resumeCountWaiters(_ waiters: inout [CountWaiter], reaching count: Int) {
-    let reached = waiters.filter { $0.count <= count }
-    waiters.removeAll { $0.count <= count }
-    for waiter in reached { waiter.continuation.resume() }
+    /// `current` 已达到 `target` 时立即恢复，否则登记到 `resume(reaching:)`。
+    mutating func add(
+        _ continuation: CheckedContinuation<Void, Never>,
+        until target: Int,
+        current: Int
+    ) {
+        if current >= target {
+            continuation.resume()
+        } else {
+            pending.append((target, continuation))
+        }
+    }
+
+    mutating func resume(reaching count: Int) {
+        let ready = pending.filter { $0.target <= count }
+        pending.removeAll { $0.target <= count }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
+}
+
+extension Array where Element == CheckedContinuation<Void, Never> {
+    /// 放行并清空全部挂起者。
+    mutating func resumeAll() {
+        let pending = self
+        removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
 }
 
 /// BiliPlaybackTests 唯一的媒体 Range 替身，同时服务 `HTTPTransport`（SIDX／音频格式读取）
@@ -293,8 +321,8 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
     private(set) var requests: [HTTPRequest] = []
     private(set) var startedBlockedRequestCount = 0
     private(set) var cancelledBlockedRequestCount = 0
-    private var blockedRequestWaiters: [CountWaiter] = []
-    private var cancelledRequestWaiters: [CountWaiter] = []
+    private var blockedRequestWaiters = CountWaiters()
+    private var cancelledRequestWaiters = CountWaiters()
 
     init(
         media: [URL: Data],
@@ -405,13 +433,15 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
     }
 
     func waitForBlockedRequest() async {
-        guard startedBlockedRequestCount == 0 else { return }
-        await withCheckedContinuation { blockedRequestWaiters.append((1, $0)) }
+        await withCheckedContinuation {
+            blockedRequestWaiters.add($0, until: 1, current: startedBlockedRequestCount)
+        }
     }
 
     func waitForCancelledBlockedRequests(_ count: Int) async {
-        guard cancelledBlockedRequestCount < count else { return }
-        await withCheckedContinuation { cancelledRequestWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            cancelledRequestWaiters.add($0, until: count, current: cancelledBlockedRequestCount)
+        }
     }
 
     /// 返回可服务的完整媒体；nil 表示该请求被配置为失败或越界。
@@ -433,18 +463,12 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
 
     private func blockUntilCancelled() async throws {
         startedBlockedRequestCount += 1
-        resumeCountWaiters(
-            &blockedRequestWaiters,
-            reaching: startedBlockedRequestCount
-        )
+        blockedRequestWaiters.resume(reaching: startedBlockedRequestCount)
         do {
             try await Task.sleep(for: .seconds(60))
         } catch is CancellationError {
             cancelledBlockedRequestCount += 1
-            resumeCountWaiters(
-                &cancelledRequestWaiters,
-                reaching: cancelledBlockedRequestCount
-            )
+            cancelledRequestWaiters.resume(reaching: cancelledBlockedRequestCount)
             throw CancellationError()
         }
     }
@@ -493,8 +517,8 @@ actor FixtureSubtitleRepository: SubtitleRepository {
     private(set) var resetCalls: [PlaybackItemIdentity] = []
     private var heldTracks: CheckedContinuation<Void, Never>?
     private var heldReset: CheckedContinuation<Void, Never>?
-    private var trackRequestWaiters: [CountWaiter] = []
-    private var resetWaiters: [CountWaiter] = []
+    private var trackRequestWaiters = CountWaiters()
+    private var resetWaiters = CountWaiters()
 
     /// `holdsReset` 让每次 reset 挂起到 `releaseReset()`，用于固定加载与 reset 的串行顺序。
     init(catalog: Catalog, holdsReset: Bool = false) {
@@ -506,7 +530,7 @@ actor FixtureSubtitleRepository: SubtitleRepository {
         for identity: PlaybackItemIdentity
     ) async throws -> [SubtitleTrack] {
         trackRequests.append(identity)
-        resumeCountWaiters(&trackRequestWaiters, reaching: trackRequests.count)
+        trackRequestWaiters.resume(reaching: trackRequests.count)
         switch catalog {
         case .tracks(let tracks):
             return tracks
@@ -530,19 +554,21 @@ actor FixtureSubtitleRepository: SubtitleRepository {
 
     func reset(for identity: PlaybackItemIdentity) async {
         resetCalls.append(identity)
-        resumeCountWaiters(&resetWaiters, reaching: resetCalls.count)
+        resetWaiters.resume(reaching: resetCalls.count)
         guard holdsReset else { return }
         await withCheckedContinuation { heldReset = $0 }
     }
 
     func waitForTrackRequests(_ count: Int) async {
-        guard trackRequests.count < count else { return }
-        await withCheckedContinuation { trackRequestWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            trackRequestWaiters.add($0, until: count, current: trackRequests.count)
+        }
     }
 
     func waitForResetCalls(_ count: Int) async {
-        guard resetCalls.count < count else { return }
-        await withCheckedContinuation { resetWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            resetWaiters.add($0, until: count, current: resetCalls.count)
+        }
     }
 
     func releaseTracks() {
@@ -575,16 +601,17 @@ final class LoopbackServerRegistry: @unchecked Sendable {
 
 actor PlaybackFailureRecorder {
     private var recordedEvents: [PlaybackFailureEvent] = []
-    private var waiters: [CountWaiter] = []
+    private var waiters = CountWaiters()
 
     func append(_ event: PlaybackFailureEvent) {
         recordedEvents.append(event)
-        resumeCountWaiters(&waiters, reaching: recordedEvents.count)
+        waiters.resume(reaching: recordedEvents.count)
     }
 
     func waitForEvents(_ count: Int) async {
-        guard recordedEvents.count < count else { return }
-        await withCheckedContinuation { waiters.append((count, $0)) }
+        await withCheckedContinuation {
+            waiters.add($0, until: count, current: recordedEvents.count)
+        }
     }
 
     func identities() -> [PlaybackItemIdentity] {

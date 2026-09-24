@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-@Suite("Comment API")
+@Suite("Comment API", .timeLimit(.minutes(1)))
 struct CommentAPIClientTests {
     @Test
     func rootCommentsUseAccountEnhancedWBIAndMapReadableRows() async throws {

@@ -90,6 +90,21 @@ public actor HTTPClient {
     }
 }
 
+extension URLSessionConfiguration {
+    /// 认证、媒体与字幕共用的 ephemeral 基线：不自动附加 Cookie，没有 Cookie、凭据与 URL cache。
+    ///
+    /// 超时按用途由调用方设置；需要账户凭据的请求只由授权器显式写入 header。
+    package static func credentialFreeEphemeral() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
+    }
+}
+
 /// `URLSession` adapter；实际 Cookie、缓存与重定向行为取决于注入的 session。
 ///
 /// 默认 `.shared` 不提供认证、媒体或字幕所需的隔离保证；这些调用方必须注入用途专属配置。

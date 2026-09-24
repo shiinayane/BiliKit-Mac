@@ -23,10 +23,10 @@ struct DASHBridgeRouteTests {
             named: "audio-aac-4s-global-sidx.mp4"
         )
         let videoURL = try #require(
-            URL(string: "https://iframe-full-fragment.example/video.mp4")
+            URL(string: "https://iframe-full-fragment.fixture.bilivideo.com/video.mp4")
         )
         let audioURL = try #require(
-            URL(string: "https://iframe-full-fragment.example/audio.mp4")
+            URL(string: "https://iframe-full-fragment.fixture.bilivideo.com/audio.mp4")
         )
         let videoFixture = try makeFixtureTrack(
             id: 64,
@@ -80,8 +80,18 @@ struct DASHBridgeRouteTests {
         #expect(iFrameByteRanges == fullFragmentByteRanges)
     }
 
-    @Test
-    func bridgeRejectsInvalidAudioRolesBeforeStartingServer() async throws {
+    enum InvalidAudioRole: CaseIterable, Sendable {
+        case videoRepresentationInAudioTrack
+        case originalNotAutoselect
+        case extraOriginalTrack
+        case machineGeneratedWithoutLanguage
+        case defaultMachineGeneratedTrack
+    }
+
+    @Test(arguments: InvalidAudioRole.allCases)
+    func bridgeRejectsInvalidAudioRolesBeforeStartingServer(
+        _ role: InvalidAudioRole
+    ) async throws {
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -102,62 +112,109 @@ struct DASHBridgeRouteTests {
             serverFactory: { registry.create() }
         )
         let original = makeSelectedAudioTrack(representation: audio)
-        let cases: [([SelectedPlaybackAudioTrack], DASHToHLSBridgeError)] = [
-            (
-                [SelectedPlaybackAudioTrack(track: original.track, representation: video)],
-                .invalidAudioTrackSelection(trackID: "original", representationID: video.id)
-            ),
-            (
-                [makeSelectedAudioTrack(isAutoselect: false, representation: audio)],
-                .unsupportedAudioTrackRole("original")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "extra",
-                        isDefault: false,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("extra")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "machine-generated:en",
-                        role: .machineGenerated,
-                        isDefault: false,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("machine-generated:en")
-            ),
-            (
-                [
-                    original,
-                    makeSelectedAudioTrack(
-                        trackID: "machine-generated:en",
-                        languageTag: "en",
-                        role: .machineGenerated,
-                        representation: audio
-                    )
-                ],
-                .unsupportedAudioTrackRole("machine-generated:en")
+        let audioTracks: [SelectedPlaybackAudioTrack]
+        let expectedError: DASHToHLSBridgeError
+        switch role {
+        case .videoRepresentationInAudioTrack:
+            audioTracks = [
+                SelectedPlaybackAudioTrack(track: original.track, representation: video)
+            ]
+            expectedError = .invalidAudioTrackSelection(
+                trackID: "original",
+                representationID: video.id
             )
-        ]
-
-        for (audioTracks, expectedError) in cases {
-            await #expect(throws: expectedError) {
-                try await bridge.prepare(
-                    videos: [video],
-                    audioTracks: audioTracks,
-                    headers: [:],
-                    subtitleSource: nil
+        case .originalNotAutoselect:
+            audioTracks = [makeSelectedAudioTrack(isAutoselect: false, representation: audio)]
+            expectedError = .unsupportedAudioTrackRole("original")
+        case .extraOriginalTrack:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(trackID: "extra", isDefault: false, representation: audio)
+            ]
+            expectedError = .unsupportedAudioTrackRole("extra")
+        case .machineGeneratedWithoutLanguage:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    representation: audio
                 )
-            }
+            ]
+            expectedError = .unsupportedAudioTrackRole("machine-generated:en")
+        case .defaultMachineGeneratedTrack:
+            audioTracks = [
+                original,
+                makeSelectedAudioTrack(
+                    trackID: "machine-generated:en",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    representation: audio
+                )
+            ]
+            expectedError = .unsupportedAudioTrackRole("machine-generated:en")
         }
+
+        await #expect(throws: expectedError) {
+            try await bridge.prepare(
+                videos: [video],
+                audioTracks: audioTracks,
+                headers: [:],
+                subtitleSource: nil
+            )
+        }
+        #expect(registry.servers.isEmpty)
+    }
+
+    /// 媒体来源在 DTO 映射后仍可能被线路偏好改写；bridge 在首个 SIDX 请求前再按 allowlist 复核。
+    @Test(arguments: [false, true])
+    func bridgeRejectsDisallowedSegmentSourceBeforeAnyUpstreamRequest(
+        disallowsAudio: Bool
+    ) async throws {
+        let allowed = try #require(
+            URL(string: "https://media.fixture.bilivideo.com/segment.mp4")
+        )
+        let disallowed = try #require(
+            URL(string: "https://cdn.attacker.invalid/segment.mp4")
+        )
+        let video = try makeFixtureTrack(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400b",
+            bandwidth: 50_000,
+            data: try fixtureData(named: "video-avc"),
+            primaryURL: allowed,
+            backupURLs: disallowsAudio ? [] : [disallowed]
+        ).representation
+        let audio = try makeFixtureTrack(
+            id: 30_280,
+            kind: .audio,
+            codecs: "mp4a.40.2",
+            bandwidth: 96_000,
+            data: try fixtureData(named: "audio-aac"),
+            primaryURL: disallowsAudio ? disallowed : allowed
+        ).representation
+        let transport = FixtureRangeTransport(media: [:])
+        let registry = LoopbackServerRegistry()
+        let bridge = DASHToHLSBridge(
+            rangeClient: HTTPRangeClient(transport: transport),
+            serverFactory: { registry.create() }
+        )
+
+        await #expect(
+            throws: DASHToHLSBridgeError.disallowedMediaSource(
+                representationID: disallowsAudio ? audio.id : video.id
+            )
+        ) {
+            try await bridge.prepare(
+                videos: [video],
+                audioTracks: [makeSelectedAudioTrack(representation: audio)],
+                headers: [:],
+                subtitleSource: nil
+            )
+        }
+        #expect(await transport.requests.isEmpty)
         #expect(registry.servers.isEmpty)
     }
 
@@ -166,13 +223,13 @@ struct DASHBridgeRouteTests {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
         let videoURL = try #require(
-            URL(string: "https://multi-audio.example/video")
+            URL(string: "https://multi-audio.fixture.bilivideo.com/video")
         )
         let originalURL = try #require(
-            URL(string: "https://multi-audio.example/original")
+            URL(string: "https://multi-audio.fixture.bilivideo.com/original")
         )
         let aiURL = try #require(
-            URL(string: "https://multi-audio.example/ai-en")
+            URL(string: "https://multi-audio.fixture.bilivideo.com/ai-en")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -283,13 +340,13 @@ struct DASHBridgeRouteTests {
             in: originalData
         )
         let videoURL = try #require(
-            URL(string: "https://multi-audio-timeline.example/video")
+            URL(string: "https://multi-audio-timeline.fixture.bilivideo.com/video")
         )
         let originalURL = try #require(
-            URL(string: "https://multi-audio-timeline.example/original")
+            URL(string: "https://multi-audio-timeline.fixture.bilivideo.com/original")
         )
         let aiURL = try #require(
-            URL(string: "https://multi-audio-timeline.example/ai-en")
+            URL(string: "https://multi-audio-timeline.fixture.bilivideo.com/ai-en")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -364,13 +421,13 @@ struct DASHBridgeRouteTests {
         )
 
         let videoURL = try #require(
-            URL(string: "https://format-source.example/video")
+            URL(string: "https://format-source.fixture.bilivideo.com/video")
         )
         let primaryAudioURL = try #require(
-            URL(string: "https://format-source.example/audio-primary")
+            URL(string: "https://format-source.fixture.bilivideo.com/audio-primary")
         )
         let backupAudioURL = try #require(
-            URL(string: "https://format-source.example/audio-backup")
+            URL(string: "https://format-source.fixture.bilivideo.com/audio-backup")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -420,10 +477,10 @@ struct DASHBridgeRouteTests {
     func bridgeKeepsSuccessfulCDNsForLoopbackMediaRanges() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
-        let primaryVideo = try #require(URL(string: "https://primary.example/video"))
-        let backupVideo = try #require(URL(string: "https://backup.example/video"))
-        let primaryAudio = try #require(URL(string: "https://primary.example/audio"))
-        let backupAudio = try #require(URL(string: "https://backup.example/audio"))
+        let primaryVideo = try #require(URL(string: "https://primary.fixture.bilivideo.com/video"))
+        let backupVideo = try #require(URL(string: "https://backup.fixture.bilivideo.com/video"))
+        let primaryAudio = try #require(URL(string: "https://primary.fixture.bilivideo.com/audio"))
+        let backupAudio = try #require(URL(string: "https://backup.fixture.bilivideo.com/audio"))
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,

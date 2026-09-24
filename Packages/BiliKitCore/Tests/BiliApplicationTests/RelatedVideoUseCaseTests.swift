@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct RelatedVideoUseCaseTests {
     @Test
     func removesCurrentVideoAndDuplicatesWithoutChangingRemoteOrder() async throws {

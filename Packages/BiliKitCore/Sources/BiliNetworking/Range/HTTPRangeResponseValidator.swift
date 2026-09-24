@@ -111,19 +111,6 @@ struct HTTPRangeResponseValidator: Sendable {
     }
 }
 
-extension URLSessionConfiguration {
-    /// 媒体与字幕等无凭据请求使用的 ephemeral 配置：不设置 Cookie，没有 Cookie、凭据与 URL cache。
-    package static func credentialFreeEphemeral() -> URLSessionConfiguration {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCredentialStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return configuration
-    }
-}
-
 extension Dictionary where Key == String, Value == String {
     /// 去掉不能随媒体 Range 请求离开进程的 `Cookie`、`Authorization`，以及由 client 自己设置的 `Range`。
     package func removingCredentialAndRangeHeaders() -> [String: String] {

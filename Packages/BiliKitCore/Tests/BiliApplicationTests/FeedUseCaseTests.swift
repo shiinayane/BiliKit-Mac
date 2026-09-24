@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct FeedUseCaseTests {
     @Test
     func rejectsInvalidFeedRequestWithoutCallingRepository() async {

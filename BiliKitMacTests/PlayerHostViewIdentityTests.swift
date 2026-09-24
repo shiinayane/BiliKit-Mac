@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliKit
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlayerHostViewIdentityTests {
     @Test
     @MainActor

@@ -5,39 +5,14 @@ import Foundation
 
 public struct PlaybackRequest: Sendable, Equatable {
     public let media: PlaybackMedia
-    public let preferredVideoRepresentationID: Int?
-    public let preferredAudioRepresentationIDs: [String: Int]
     public let mediaHeaders: [String: String]
-
-    public var dashManifest: PlaybackManifest? {
-        guard case .dash(let manifest) = media else { return nil }
-        return manifest
-    }
 
     public init(
         media: PlaybackMedia,
-        preferredVideoRepresentationID: Int? = nil,
-        preferredAudioRepresentationIDs: [String: Int] = [:],
         mediaHeaders: [String: String] = [:]
     ) {
         self.media = media
-        self.preferredVideoRepresentationID = preferredVideoRepresentationID
-        self.preferredAudioRepresentationIDs = preferredAudioRepresentationIDs
         self.mediaHeaders = mediaHeaders
-    }
-
-    public init(
-        manifest: PlaybackManifest,
-        preferredVideoRepresentationID: Int? = nil,
-        preferredAudioRepresentationIDs: [String: Int] = [:],
-        mediaHeaders: [String: String] = [:]
-    ) {
-        self.init(
-            media: .dash(manifest),
-            preferredVideoRepresentationID: preferredVideoRepresentationID,
-            preferredAudioRepresentationIDs: preferredAudioRepresentationIDs,
-            mediaHeaders: mediaHeaders
-        )
     }
 }
 
@@ -57,50 +32,34 @@ public struct SelectedPlaybackAudioTrack: Sendable, Equatable {
     }
 }
 
-extension PlaybackRequest {
-    /// 按请求偏好选出本次加载的视频 representation；没有偏好时交给 ABR 使用全部。
-    func selectedVideos(in manifest: PlaybackManifest) throws -> [MediaRepresentation] {
-        if let preferredID = preferredVideoRepresentationID {
-            guard
-                let representation = manifest.videoRepresentations.first(
-                    where: { $0.id == preferredID }
-                )
-            else {
-                throw AVPlayerEngineError.preferredVideoRepresentationNotFound(
-                    preferredID
-                )
-            }
-            return [representation]
-        }
-        guard !manifest.videoRepresentations.isEmpty else {
+extension PlaybackManifest {
+    /// 本次加载交给 ABR 的全部视频 representation。
+    func selectedVideos() throws -> [MediaRepresentation] {
+        guard !videoRepresentations.isEmpty else {
             throw AVPlayerEngineError.missingVideoRepresentation
         }
-        return manifest.videoRepresentations
+        return videoRepresentations
     }
 
-    /// 为每条语义音轨选出一个 representation，并在释放旧播放项之前验证音轨契约。
-    func selectedAudioTracks(in manifest: PlaybackManifest) throws -> [SelectedPlaybackAudioTrack] {
-        guard !manifest.audioTracks.isEmpty else {
+    /// 每条语义音轨取其首个 representation，并在释放旧播放项之前验证音轨契约。
+    func selectedAudioTracks() throws -> [SelectedPlaybackAudioTrack] {
+        guard !audioTracks.isEmpty else {
             throw AVPlayerEngineError.missingAudioRepresentation
         }
         var trackIDs = Set<String>()
-        for track in manifest.audioTracks {
+        for track in audioTracks {
             guard trackIDs.insert(track.id).inserted else {
                 throw AVPlayerEngineError.duplicateAudioTrackID(track.id)
             }
         }
-        for trackID in preferredAudioRepresentationIDs.keys
-        where !trackIDs.contains(trackID) {
-            throw AVPlayerEngineError.preferredAudioTrackNotFound(trackID)
-        }
-        let defaultTracks = manifest.audioTracks.filter(\.isDefault)
+        let defaultTracks = audioTracks.filter(\.isDefault)
         guard defaultTracks.count == 1 else {
             throw AVPlayerEngineError.invalidDefaultAudioTrackCount(
                 defaultTracks.count
             )
         }
 
-        return try manifest.audioTracks.map { track in
+        return try audioTracks.map { track in
             for representation in track.representations
             where representation.kind != .audio {
                 throw AVPlayerEngineError.invalidAudioTrackRepresentation(
@@ -108,30 +67,10 @@ extension PlaybackRequest {
                     representationID: representation.id
                 )
             }
-            let representation: MediaRepresentation
-            if let preferredID =
-                preferredAudioRepresentationIDs[track.id]
-            {
-                guard
-                    let preferred = track.representations.first(
-                        where: { $0.id == preferredID }
-                    )
-                else {
-                    throw
-                        AVPlayerEngineError
-                        .preferredAudioRepresentationNotFound(
-                            trackID: track.id,
-                            representationID: preferredID
-                        )
-                }
-                representation = preferred
-            } else {
-                guard let first = track.representations.first else {
-                    throw AVPlayerEngineError.missingAudioTrackRepresentation(
-                        track.id
-                    )
-                }
-                representation = first
+            guard let representation = track.representations.first else {
+                throw AVPlayerEngineError.missingAudioTrackRepresentation(
+                    track.id
+                )
             }
             return SelectedPlaybackAudioTrack(
                 track: track,

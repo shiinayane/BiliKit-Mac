@@ -64,7 +64,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         guard isAllowed(request) else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard !Self.containsCredentialHeader(request.headers) else {
+        guard !request.headers.containsCredentialHeader else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -165,19 +165,22 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             && request.method == .get
     }
 
-    private static func containsCredentialHeader(_ headers: [String: String]) -> Bool {
-        headers.keys.contains {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
-                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
-        }
-    }
-
     private func purgeStoredCredential() throws {
         do {
             try store.delete()
         } catch {
             throw BiliRequestAuthorizationError.credentialStoreUnavailable
+        }
+    }
+}
+
+extension Dictionary where Key == String, Value == String {
+    /// 调用方已自带凭据类 header 时，授权器拒绝而不覆盖；两个授权器共用这一判定。
+    var containsCredentialHeader: Bool {
+        keys.contains {
+            $0.caseInsensitiveCompare("Cookie") == .orderedSame
+                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
+                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
         }
     }
 }

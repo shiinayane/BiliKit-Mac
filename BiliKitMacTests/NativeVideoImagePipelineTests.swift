@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct NativeVideoImagePipelineTests {
     @Test
     func waiterDeliversTheFirstResultWhetherItFinishesBeforeOrAfterSuspension() async throws {

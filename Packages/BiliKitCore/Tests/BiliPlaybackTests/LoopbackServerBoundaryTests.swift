@@ -91,12 +91,23 @@ struct LoopbackServerBoundaryTests {
     }
 
     @Test
+    func remoteResourceRejectsSourceOutsideMediaAllowlist() throws {
+        #expect(throws: LoopbackPlaybackServerError.invalidRemoteSource) {
+            try LoopbackRemoteResource(
+                sourceURL: URL(string: "https://example.com/media.mp4")!,
+                contentLength: 4,
+                contentType: "video/mp4"
+            )
+        }
+    }
+
+    @Test
     func remoteResourceStaysOnItsPreparedSourceAcrossRanges() async throws {
         let primary = try #require(
-            URL(string: "https://primary.example/media.mp4")
+            URL(string: "https://primary.fixture.bilivideo.com/media.mp4")
         )
         let backup = try #require(
-            URL(string: "https://backup.example/media.mp4")
+            URL(string: "https://backup.fixture.bilivideo.com/media.mp4")
         )
         // 备用来源能提供第二段 Range，但已固定的首个来源失败后也不能跨来源拼字节。
         let transport = FixtureRangeTransport(
@@ -424,6 +435,8 @@ struct LoopbackServerBoundaryTests {
         }
     }
 
+    /// 独立进程看到的端口关闭发生在 listener 异步取消之后，进程内没有可等待的事件；
+    /// 这里是唯一保留的系统边界轮询，1 s 上限只作超时。
     private func waitForIndependentProcessToRejectConnections(
         port: Int
     ) async throws {

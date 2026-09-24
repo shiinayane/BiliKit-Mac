@@ -385,8 +385,8 @@ private actor CommentRepositoryStub: CommentRepository {
     private var heldRoots: [CheckedContinuation<CommentRootPage, Never>?] = []
     private var replyRequests: [ReplyRequest] = []
     private var activeReplyCount = 0
-    private var rootWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var replyWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var rootWaiters = CountWaiters()
+    private var replyWaiters = CountWaiters()
     private(set) var rootRequestCount = 0
     private(set) var maximumActiveReplyCount = 0
 
@@ -417,7 +417,7 @@ private actor CommentRepositoryStub: CommentRepository {
         after continuation: CommentContinuation?
     ) async throws -> CommentRootPage {
         rootRequestCount += 1
-        Self.resume(&rootWaiters, reaching: rootRequestCount)
+        rootWaiters.resume(reaching: rootRequestCount)
         if let rootFailure { throw rootFailure }
         if holdsRoots {
             return await withCheckedContinuation { heldRoots.append($0) }
@@ -432,7 +432,7 @@ private actor CommentRepositoryStub: CommentRepository {
         pageSize: Int
     ) async throws -> CommentReplyPage {
         replyRequests.append(ReplyRequest(rootID: rootID, page: page))
-        Self.resume(&replyWaiters, reaching: replyRequests.count)
+        replyWaiters.resume(reaching: replyRequests.count)
         if let replyFailure { throw replyFailure }
         if failingReplyPagesOnce.remove(page) != nil {
             throw CommentReadError.transportFailure
@@ -447,13 +447,15 @@ private actor CommentRepositoryStub: CommentRepository {
     }
 
     func waitForRootRequestCount(_ count: Int) async {
-        guard rootRequestCount < count else { return }
-        await withCheckedContinuation { rootWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            rootWaiters.add($0, until: count, current: rootRequestCount)
+        }
     }
 
     func waitForReplyRequestCount(_ count: Int) async {
-        guard replyRequests.count < count else { return }
-        await withCheckedContinuation { replyWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            replyWaiters.add($0, until: count, current: replyRequests.count)
+        }
     }
 
     func releaseRoot(_ index: Int, page: CommentRootPage) {
@@ -492,17 +494,6 @@ private actor CommentRepositoryStub: CommentRepository {
             pageSize: 10,
             totalCount: replyTotalCount
         )
-    }
-
-    private static func resume(
-        _ waiters: inout [(Int, CheckedContinuation<Void, Never>)],
-        reaching count: Int
-    ) {
-        let ready = waiters.filter { count >= $0.0 }
-        waiters.removeAll { count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
-        }
     }
 }
 

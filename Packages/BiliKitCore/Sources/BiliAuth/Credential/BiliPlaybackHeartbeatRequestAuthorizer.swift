@@ -44,7 +44,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
         else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard !Self.containsCredentialHeader(request.headers) else {
+        guard !request.headers.containsCredentialHeader else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -281,14 +281,6 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
         guard let value, value.count == count else { return false }
         return value.allSatisfy {
             $0.isNumber || ("a"..."f").contains(String($0))
-        }
-    }
-
-    private static func containsCredentialHeader(_ headers: [String: String]) -> Bool {
-        headers.keys.contains {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
-                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
         }
     }
 

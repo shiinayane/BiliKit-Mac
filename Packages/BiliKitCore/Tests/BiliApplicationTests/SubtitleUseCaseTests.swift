@@ -2,7 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct SubtitleUseCaseTests {
     @Test(arguments: [
         (kind: SubtitleTrackKind.standard, name: " 中文 ", expected: "中文"),

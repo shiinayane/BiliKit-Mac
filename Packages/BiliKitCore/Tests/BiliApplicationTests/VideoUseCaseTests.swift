@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct VideoUseCaseTests {
     @Test
     func resolvesDetailPagesAndPlaybackForFirstOrderedPage() async throws {
@@ -300,10 +301,7 @@ private actor ContentRepositoryStub: VideoRepository {
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
         observedDetailRequestCount += 1
-        for waiter in detailRequestWaiters {
-            waiter.resume()
-        }
-        detailRequestWaiters.removeAll()
+        detailRequestWaiters.resumeAll()
         if blocksDetail {
             await withCheckedContinuation { detailReleases.append($0) }
         }
@@ -316,10 +314,7 @@ private actor ContentRepositoryStub: VideoRepository {
     }
 
     func releaseDetail() {
-        for release in detailReleases {
-            release.resume()
-        }
-        detailReleases.removeAll()
+        detailReleases.resumeAll()
     }
 
     private var fixturePages: [VideoPage] {

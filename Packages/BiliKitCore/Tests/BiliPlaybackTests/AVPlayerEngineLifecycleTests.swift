@@ -22,10 +22,10 @@ struct AVPlayerEngineLifecycleTests {
             named: "audio-aac-4s-global-sidx.mp4"
         )
         let videoURL = try #require(
-            URL(string: "https://begin-playback.example/video")
+            URL(string: "https://begin-playback.fixture.bilivideo.com/video")
         )
         let audioURL = try #require(
-            URL(string: "https://begin-playback.example/audio")
+            URL(string: "https://begin-playback.fixture.bilivideo.com/audio")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -62,9 +62,11 @@ struct AVPlayerEngineLifecycleTests {
             cid: 900_002
         )
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [video],
+                    originalAudioRepresentations: [audio]
+                )
             )
         )
 
@@ -174,7 +176,7 @@ struct AVPlayerEngineLifecycleTests {
     @Test
     @MainActor
     func engineSerializesSubtitleResetAcrossABALoads() async throws {
-        let fixture = try makeSimpleMedia(host: "native-subtitle.example")
+        let fixture = try makeSimpleMedia(host: "native-subtitle.fixture.bilivideo.com")
         let subtitleRepository = FixtureSubtitleRepository(
             catalog: .tracks([
                 SubtitleTrack(
@@ -198,9 +200,11 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine.player.isMuted = true
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [fixture.video],
-                originalAudioRepresentations: [fixture.audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    originalAudioRepresentations: [fixture.audio]
+                )
             )
         )
         let firstA = PlaybackItemIdentity(bvid: "BV1NativeA", cid: 101)
@@ -218,11 +222,9 @@ struct AVPlayerEngineLifecycleTests {
         #expect(await subtitleRepository.trackRequests == [firstA])
 
         await subtitleRepository.releaseReset()
-        do {
+        // 旧 reset 返回后，较新的 A generation 必须拒绝 B。
+        await #expect(throws: CancellationError.self) {
             try await blockedBLoad.value
-            Issue.record("Superseded B load unexpectedly completed")
-        } catch is CancellationError {
-            // The newer A generation must reject B after the old reset returns.
         }
         try await replacementALoad.value
         #expect(await subtitleRepository.trackRequests == [firstA, firstA])
@@ -233,11 +235,9 @@ struct AVPlayerEngineLifecycleTests {
         await subtitleRepository.waitForResetCalls(2)
         engine.stop()
         await subtitleRepository.releaseReset()
-        do {
+        // stop 在字幕准备前让排队中的 load 失效。
+        await #expect(throws: CancellationError.self) {
             try await stoppedBLoad.value
-            Issue.record("Stopped B load unexpectedly completed")
-        } catch is CancellationError {
-            // stop invalidates the queued load before subtitle preparation.
         }
         #expect(await subtitleRepository.trackRequests == [firstA, firstA])
         #expect(await subtitleRepository.resetCalls == [firstA, firstA])
@@ -248,7 +248,7 @@ struct AVPlayerEngineLifecycleTests {
     func unusableSubtitleCatalogFallsBackToMediaOnly(
         _ catalog: UnusableNativeSubtitleCatalog
     ) async throws {
-        let fixture = try makeSimpleMedia(host: "media-only.example")
+        let fixture = try makeSimpleMedia(host: "media-only.fixture.bilivideo.com")
         let bridge = makeFixtureBridge(
             FixtureRangeTransport(
                 media: fixture.media
@@ -277,7 +277,7 @@ struct AVPlayerEngineLifecycleTests {
 
     @Test
     func subtitleCatalogGraceDoesNotWaitForNoncooperativeRepository() async throws {
-        let fixture = try makeSimpleMedia(host: "subtitle-timeout.example")
+        let fixture = try makeSimpleMedia(host: "subtitle-timeout.fixture.bilivideo.com")
         let repository = FixtureSubtitleRepository(
             catalog: .heldUntilReleased([
                 SubtitleTrack(
@@ -323,8 +323,8 @@ struct AVPlayerEngineLifecycleTests {
     func enginePublishesTimelineAndClearsItWhenStopped() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
-        let videoURL = try #require(URL(string: "https://timeline.example/video"))
-        let audioURL = try #require(URL(string: "https://timeline.example/audio"))
+        let videoURL = try #require(URL(string: "https://timeline.fixture.bilivideo.com/video"))
+        let audioURL = try #require(URL(string: "https://timeline.fixture.bilivideo.com/audio"))
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -353,9 +353,11 @@ struct AVPlayerEngineLifecycleTests {
             cid: 900_001
         )
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [video],
-                originalAudioRepresentations: [audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [video],
+                    originalAudioRepresentations: [audio]
+                )
             )
         )
 
@@ -488,10 +490,10 @@ struct AVPlayerEngineLifecycleTests {
             named: "audio-aac-4s-global-sidx.mp4"
         )
         let videoURL = try #require(
-            URL(string: "https://failure-event.example/video.mp4")
+            URL(string: "https://failure-event.fixture.bilivideo.com/video.mp4")
         )
         let audioURL = try #require(
-            URL(string: "https://failure-event.example/audio.mp4")
+            URL(string: "https://failure-event.fixture.bilivideo.com/audio.mp4")
         )
         let video = try makeFixtureTrack(
             id: 80,
@@ -535,9 +537,11 @@ struct AVPlayerEngineLifecycleTests {
 
         try await engine.load(
             PlaybackRequest(
-                manifest: PlaybackManifest(
-                    videoRepresentations: [video],
-                    originalAudioRepresentations: [audio]
+                media: .dash(
+                    PlaybackManifest(
+                        videoRepresentations: [video],
+                        originalAudioRepresentations: [audio]
+                    )
                 )
             ),
             identity: identity
@@ -567,10 +571,10 @@ struct AVPlayerEngineLifecycleTests {
     func replacingEngineLoadCancelsOldMediaRequests() async throws {
         let videoData = try fixtureData(named: "video-avc")
         let audioData = try fixtureData(named: "audio-aac")
-        let oldVideoURL = try #require(URL(string: "https://old.example/video"))
-        let oldAudioURL = try #require(URL(string: "https://old.example/audio"))
-        let newVideoURL = try #require(URL(string: "https://new.example/video"))
-        let newAudioURL = try #require(URL(string: "https://new.example/audio"))
+        let oldVideoURL = try #require(URL(string: "https://old.fixture.bilivideo.com/video"))
+        let oldAudioURL = try #require(URL(string: "https://old.fixture.bilivideo.com/audio"))
+        let newVideoURL = try #require(URL(string: "https://new.fixture.bilivideo.com/video"))
+        let newAudioURL = try #require(URL(string: "https://new.fixture.bilivideo.com/audio"))
         let oldVideo = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -620,15 +624,19 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine.player.isMuted = true
         let oldRequest = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [oldVideo],
-                originalAudioRepresentations: [oldAudio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [oldVideo],
+                    originalAudioRepresentations: [oldAudio]
+                )
             )
         )
         let newRequest = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [newVideo],
-                originalAudioRepresentations: [newAudio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [newVideo],
+                    originalAudioRepresentations: [newAudio]
+                )
             )
         )
 
@@ -661,7 +669,7 @@ struct AVPlayerEngineLifecycleTests {
     @Test
     @MainActor
     func replacementAndReleaseStopEveryPreviousLoopbackSession() async throws {
-        let fixture = try makeSimpleMedia(host: "fixture.example")
+        let fixture = try makeSimpleMedia(host: "media.fixture.bilivideo.com")
         var engine: AVPlayerEngine? = AVPlayerEngine(
             bridge: makeFixtureBridge(
                 FixtureRangeTransport(
@@ -671,9 +679,11 @@ struct AVPlayerEngineLifecycleTests {
         )
         engine?.player.isMuted = true
         let request = PlaybackRequest(
-            manifest: PlaybackManifest(
-                videoRepresentations: [fixture.video],
-                originalAudioRepresentations: [fixture.audio]
+            media: .dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    originalAudioRepresentations: [fixture.audio]
+                )
             )
         )
 

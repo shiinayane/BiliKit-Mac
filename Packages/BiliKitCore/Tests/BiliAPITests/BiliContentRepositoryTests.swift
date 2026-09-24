@@ -4,6 +4,7 @@ import BiliNetworking
 import Foundation
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliContentRepositoryTests {
     @Test
     func mapsInvalidRequestAtAdapterBoundary() async {

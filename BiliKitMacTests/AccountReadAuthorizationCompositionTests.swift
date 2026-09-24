@@ -5,6 +5,7 @@ import Testing
 @testable import BiliAuth
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct AccountReadAuthorizationCompositionTests {
     @Test
     @MainActor

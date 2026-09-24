@@ -10,6 +10,7 @@ public enum DASHToHLSBridgeError: Error, Sendable, Equatable {
     case invalidMediaKind(expected: MediaKind, actual: MediaKind)
     case duplicateVideoRepresentationID(Int)
     case missingCompleteMediaLength(representationID: Int)
+    case disallowedMediaSource(representationID: Int)
     case subtitleCatalogTimedOut
     case inconsistentSubtitleTimeline
 }
@@ -166,6 +167,15 @@ public struct DASHToHLSBridge: Sendable {
                     )
                 }
             }
+        }
+
+        // SIDX 读取就是首个上游连接；此前复核每个候选来源，失败关闭。
+        let mediaURLPolicy = BiliMediaCDNURLPolicy()
+        for representation in videos + audioTracks.map(\.representation)
+        where !representation.urlCandidates.allSatisfy(mediaURLPolicy.allows) {
+            throw DASHToHLSBridgeError.disallowedMediaSource(
+                representationID: representation.id
+            )
         }
 
         let catalogTask = subtitleSource.map { source in

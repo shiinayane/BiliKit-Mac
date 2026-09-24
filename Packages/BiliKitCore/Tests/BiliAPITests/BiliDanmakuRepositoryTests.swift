@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct BiliDanmakuRepositoryTests {
     private let identity = PlaybackItemIdentity(
         bvid: "BV1DanmakuFixture",
@@ -106,9 +106,8 @@ struct BiliDanmakuRepositoryTests {
         }
     }
 
-    @Test
-    func errorBodiesAndWrongContentTypesFailBeforeDecoder() async throws {
-        for response in [
+    @Test(
+        arguments: [
             HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "application/json"],
@@ -124,11 +123,14 @@ struct BiliDanmakuRepositoryTests {
                 headers: ["Content-Type": "application/octet-stream"],
                 body: Data(" \n<!doctype html><title>blocked</title>".utf8)
             )
-        ] {
-            let repository = try repository(response: response)
-            await #expect(throws: DanmakuApplicationError.requestRestricted) {
-                try await repository.segment(index: 1, for: identity)
-            }
+        ]
+    )
+    func errorBodiesAndWrongContentTypesFailBeforeDecoder(
+        response: HTTPResponse
+    ) async throws {
+        let repository = try repository(response: response)
+        await #expect(throws: DanmakuApplicationError.requestRestricted) {
+            try await repository.segment(index: 1, for: identity)
         }
     }
 

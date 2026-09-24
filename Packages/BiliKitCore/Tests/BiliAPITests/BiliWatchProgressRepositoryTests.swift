@@ -4,6 +4,7 @@ import BiliNetworking
 import Foundation
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliWatchProgressRepositoryTests {
     @Test
     func buildsOnlyCurrentWBIHeartbeatContract() async throws {
