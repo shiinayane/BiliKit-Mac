@@ -1632,7 +1632,6 @@ struct NativePlaybackSidebarTests {
         )
         var nextPageRequests = 0
         let testActions = NativePlaybackSidebarActions(
-            retry: {},
             selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},
@@ -1687,7 +1686,6 @@ struct NativePlaybackSidebarTests {
     @MainActor
     private var actions: NativePlaybackSidebarActions {
         NativePlaybackSidebarActions(
-            retry: {},
             selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},

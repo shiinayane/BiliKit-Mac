@@ -15,12 +15,12 @@ struct NativePlaybackSidebarView: View {
     let onOpenCommentPictures: (NativePlaybackCommentPictureGallery) -> Void
 
     var body: some View {
+        let presentation = presentation
         NativePlaybackSidebarRepresentable(
             presentation: presentation,
             commentAssetURLResolver: commentAssetURLResolver,
             commentImagePipeline: commentImagePipeline,
             actions: NativePlaybackSidebarActions(
-                retry: retry,
                 selectEpisode: selectEpisode,
                 selectPage: selectPage,
                 retryPages: retryPages,
@@ -38,6 +38,9 @@ struct NativePlaybackSidebarView: View {
                 openCommentPictures: onOpenCommentPictures
             )
         )
+        .overlay {
+            NativePlaybackSidebarOverlayView(overlay: presentation.overlay, retry: retry)
+        }
         .navigationTitle("观看辅助")
     }
 
@@ -130,7 +133,6 @@ struct NativePlaybackSidebarView: View {
 }
 
 struct NativePlaybackSidebarActions {
-    let retry: () -> Void
     let selectEpisode: (VideoCollectionEpisodeIdentity) -> Void
     let selectPage: (String, Int64) -> Void
     let retryPages: () -> Void
@@ -182,7 +184,6 @@ private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
 @MainActor
 final class NativePlaybackSidebarRootView: NSView {
     let scrollView = NativePlaybackSidebarScrollView()
-    let overlayView = NativePlaybackSidebarOverlayView()
     var commentsTopButton: NSButton { scrollView.commentsTopButton }
     var viewportSizeDidChange: ((CGSize) -> Void)?
 
@@ -198,7 +199,6 @@ final class NativePlaybackSidebarRootView: NSView {
         scrollView.horizontalScrollElasticity = .none
         scrollView.automaticallyAdjustsContentInsets = true
         addSubview(scrollView)
-        addSubview(overlayView)
         commentsTopButton.imagePosition = .imageOnly
         commentsTopButton.imageScaling = .scaleProportionallyDown
         commentsTopButton.controlSize = .large
@@ -220,7 +220,6 @@ final class NativePlaybackSidebarRootView: NSView {
 
     override func layout() {
         scrollView.frame = bounds
-        overlayView.frame = bounds
         super.layout()
         viewportSizeDidChange?(scrollView.contentSize)
     }
@@ -294,7 +293,6 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         )
     )
     private var actions = NativePlaybackSidebarActions(
-        retry: {},
         selectEpisode: { _ in },
         selectPage: { _, _ in },
         retryPages: {},
@@ -1173,14 +1171,9 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         if blocked, !collectionView.isHidden {
             releaseCollectionFirstResponder()
         }
-        rootView.overlayView.configure(
-            presentation.overlay,
-            retry: { [weak self] in self?.actions.retry() }
-        )
         rootView.scrollView.setAccessibilityHidden(blocked)
         rootView.scrollView.isHidden = false
         collectionView.isHidden = blocked
-        rootView.overlayView.isHidden = !blocked
         updateCommentsTopButton()
     }
 
@@ -1340,146 +1333,33 @@ enum NativePlaybackSidebarAnchorPolicy {
     }
 }
 
-@MainActor
-final class NativePlaybackSidebarOverlayView: NSView {
-    override var isFlipped: Bool { true }
-    override var isOpaque: Bool { false }
+/// 加载、失败与不可用状态盖在侧栏之上；`.none` 时不创建任何视图。
+private struct NativePlaybackSidebarOverlayView: View {
+    let overlay: NativePlaybackSidebarOverlay
+    let retry: () -> Void
 
-    private let titleLabel = NSTextField(wrappingLabelWithString: "")
-    private let messageLabel = NSTextField(wrappingLabelWithString: "")
-    private let progress = NSProgressIndicator()
-    private let retryButton = NSButton(title: AppStrings.localized("重试"), target: nil, action: nil)
-    private var retry: (() -> Void)?
-    private var showsSkeleton = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        titleLabel.font = .systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
-            weight: .semibold
-        )
-        titleLabel.alignment = .center
-        messageLabel.font = .preferredFont(forTextStyle: .body)
-        messageLabel.textColor = .secondaryLabelColor
-        messageLabel.alignment = .center
-        progress.style = .spinning
-        progress.controlSize = .small
-        retryButton.bezelStyle = .rounded
-        retryButton.target = self
-        retryButton.action = #selector(retryAction)
-        for subview in [titleLabel, messageLabel, progress, retryButton] {
-            addSubview(subview)
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    func configure(
-        _ overlay: NativePlaybackSidebarOverlay,
-        retry: @escaping () -> Void
-    ) {
-        self.retry = retry
-        showsSkeleton = false
-        progress.stopAnimation(nil)
-        progress.isHidden = true
-        retryButton.isHidden = true
+    var body: some View {
         switch overlay {
         case .none:
-            titleLabel.stringValue = ""
-            messageLabel.stringValue = ""
+            EmptyView()
         case .loading(let label):
-            showsSkeleton = true
-            titleLabel.stringValue = ""
-            messageLabel.stringValue = ""
-            progress.isHidden = false
-            progress.startAnimation(nil)
-            setAccessibilityElement(true)
-            setAccessibilityLabel(label)
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel(label)
         case .failure(let title, let message):
-            titleLabel.stringValue = title
-            messageLabel.stringValue = message
-            retryButton.isHidden = false
-            setAccessibilityElement(false)
+            ContentUnavailableView {
+                Text(title)
+            } description: {
+                Text(message)
+            } actions: {
+                Button(AppStrings.localized("重试"), action: retry)
+            }
         case .unavailable(let title, let message):
-            titleLabel.stringValue = title
-            messageLabel.stringValue = message
-            setAccessibilityElement(false)
+            ContentUnavailableView {
+                Text(title)
+            } description: {
+                Text(message)
+            }
         }
-        needsLayout = true
-        needsDisplay = true
-    }
-
-    override func layout() {
-        super.layout()
-        if showsSkeleton {
-            progress.frame = NSRect(
-                x: bounds.midX - 8,
-                y: bounds.midY - 8,
-                width: 16,
-                height: 16
-            )
-            return
-        }
-        let contentWidth = max(120, min(280, bounds.width - 32))
-        let titleHeight = titleLabel.sizeThatFits(
-            NSSize(width: contentWidth, height: .greatestFiniteMagnitude)
-        ).height
-        let messageHeight = messageLabel.sizeThatFits(
-            NSSize(width: contentWidth, height: .greatestFiniteMagnitude)
-        ).height
-        let buttonHeight: CGFloat = retryButton.isHidden ? 0 : 30
-        let total =
-            titleHeight + 8 + messageHeight
-            + (buttonHeight > 0 ? 16 + buttonHeight : 0)
-        var y = bounds.midY - total / 2
-        titleLabel.frame = NSRect(
-            x: bounds.midX - contentWidth / 2,
-            y: y,
-            width: contentWidth,
-            height: titleHeight
-        )
-        y += titleHeight + 8
-        messageLabel.frame = NSRect(
-            x: bounds.midX - contentWidth / 2,
-            y: y,
-            width: contentWidth,
-            height: messageHeight
-        )
-        y += messageHeight + 16
-        retryButton.frame = NSRect(
-            x: bounds.midX - 40,
-            y: y,
-            width: 80,
-            height: buttonHeight
-        )
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard showsSkeleton else { return }
-        let availableWidth = max(80, bounds.width - 32)
-        let rects = [
-            NSRect(x: 16, y: 24, width: 48, height: 48),
-            NSRect(x: 76, y: 28, width: min(128, availableWidth - 60), height: 18),
-            NSRect(x: 76, y: 52, width: min(196, availableWidth - 60), height: 12),
-            NSRect(x: 16, y: 96, width: min(64, availableWidth), height: 18),
-            NSRect(x: 16, y: 124, width: availableWidth, height: 13),
-            NSRect(x: 16, y: 145, width: availableWidth * 0.82, height: 13),
-            NSRect(x: 16, y: 184, width: min(132, availableWidth), height: 18),
-            NSRect(x: 16, y: 214, width: availableWidth, height: 26),
-            NSRect(x: 16, y: 250, width: availableWidth, height: 26)
-        ]
-        for (index, rect) in rects.enumerated() {
-            (index < 2 ? NSColor.quaternaryLabelColor : NativePlaybackSkeletonColor.detailFill)
-                .setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
-        }
-    }
-
-    @objc private func retryAction() {
-        retry?()
     }
 }
