@@ -59,10 +59,6 @@ struct WebQRLoginSessionTests {
                 .first(where: { $0.name == "qrcode_key" })?
                 .value == "FIXTURE_QR_KEY_00000000000000000"
         )
-
-        let redacted = HTTPLogRedactor().redact(url: pollRequest.url)
-        #expect(redacted.contains("qrcode_key=%3Credacted%3E"))
-        #expect(!redacted.contains("FIXTURE_QR_KEY"))
     }
 
     @Test
@@ -178,7 +174,6 @@ struct WebQRLoginSessionTests {
         #expect(cookieHeader.contains("SESSDATA=FIXTURE_SESSDATA_VALUE"))
         #expect(cookieHeader.contains("bili_jct=FIXTURE_BILI_JCT_VALUE"))
         #expect(!cookieHeader.contains("unknown_cookie"))
-        #expect(HTTPLogRedactor().redact(headers: request.headers)["Cookie"] == "<redacted>")
     }
 
     @Test

@@ -120,7 +120,7 @@ storage、无 URL cache，并拒绝 redirect。`PublicHTTPSURLPolicy` 是基线�
 
 ## 8. 日志、fixture、截图
 
-- `HTTPLogRedactor` 负责脱敏；错误只含阶段与分类。日志与诊断不记录内容身份组合、标题、位置、
+- 产品代码不输出网络日志；错误只含阶段与分类。新增任何日志或诊断前必须先加脱敏并更新本文。日志与诊断不记录内容身份组合、标题、位置、
   Referer、query/body、Cookie、CSRF、账号标识、完整 URL 或响应正文。
 - fixture 只用手写假值与 `example.invalid`（媒体地址用虚构的 `*.fixture.bilivideo.com`，生产 allowlist 不为测试开口），不录制现场响应；`Scripts/check-secrets.sh` 在 static Gate
   中扫描已知秘密模式。
