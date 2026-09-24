@@ -360,13 +360,13 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
         )
         guard let data = try await admit(url, rangeHeader: rangeHeader, range: range)
         else {
-            throw HTTPRangeStreamingError.statusCode(403)
+            throw HTTPRangeResponseError.statusCode(403)
         }
         guard !unknownLengthURLs.contains(url) else {
-            throw HTTPRangeStreamingError.missingCompleteLength
+            throw HTTPRangeResponseError.missingCompleteLength
         }
         guard Int64(data.count) == expectedCompleteLength else {
-            throw HTTPRangeStreamingError.mismatchedCompleteLength(
+            throw HTTPRangeResponseError.mismatchedCompleteLength(
                 expected: expectedCompleteLength,
                 actual: Int64(data.count)
             )
@@ -387,7 +387,7 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
             if truncatedLength > 0 {
                 try await onChunk(body.prefix(truncatedLength))
             }
-            throw HTTPRangeStreamingError.bodyLengthMismatch(
+            throw HTTPRangeResponseError.bodyLengthMismatch(
                 expected: expectedRange.length,
                 actual: UInt64(truncatedLength)
             )

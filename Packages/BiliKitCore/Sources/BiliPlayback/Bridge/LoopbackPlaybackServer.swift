@@ -67,11 +67,7 @@ public final class LoopbackProgressiveResource: @unchecked Sendable, Equatable {
             allowed.insert("application/octet-stream")
         }
         allowedUpstreamContentTypes = allowed
-        self.headers = headers.filter { name, _ in
-            name.caseInsensitiveCompare("Cookie") != .orderedSame
-                && name.caseInsensitiveCompare("Authorization") != .orderedSame
-                && name.caseInsensitiveCompare("Range") != .orderedSame
-        }
+        self.headers = headers.removingCredentialAndRangeHeaders()
     }
 
     public static func == (
@@ -824,7 +820,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     }
                 )
                 guard result.byteCount == range.length else {
-                    throw HTTPRangeStreamingError.bodyLengthMismatch(
+                    throw HTTPRangeResponseError.bodyLengthMismatch(
                         expected: range.length,
                         actual: result.byteCount
                     )
