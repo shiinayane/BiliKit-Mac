@@ -43,7 +43,7 @@ public struct HLSMediaPlaylistBuilder: Sendable {
         guard index.timescale > 0 else {
             throw HLSPlaylistBuilderError.invalidTimescale
         }
-        let uri = try safeURI(mediaURI)
+        let uri = try safePlaylistURI(mediaURI)
         let maximumDuration =
             index.references
             .map { Double($0.duration) / Double(index.timescale) }
@@ -67,38 +67,13 @@ public struct HLSMediaPlaylistBuilder: Sendable {
 
         for reference in index.references {
             let duration = Double(reference.duration) / Double(index.timescale)
-            lines.append("#EXTINF:\(formattedDuration(duration)),")
+            lines.append("#EXTINF:\(formattedPlaylistDuration(duration)),")
             lines.append("#EXT-X-BYTERANGE:\(byteRangeValue(reference.byteRange))")
             lines.append(uri)
         }
         lines.append("#EXT-X-ENDLIST")
 
         return lines.joined(separator: "\n") + "\n"
-    }
-
-    private func byteRangeValue(_ range: MediaByteRange) -> String {
-        let length = UInt64(range.endInclusive - range.start) + 1
-        return "\(length)@\(range.start)"
-    }
-
-    private func formattedDuration(_ duration: Double) -> String {
-        String(
-            format: "%.6f",
-            locale: Locale(identifier: "en_US_POSIX"),
-            duration
-        )
-    }
-
-    private func safeURI(_ url: URL) throws -> String {
-        let value = url.absoluteString
-        guard !value.isEmpty,
-            !value.contains("\r"),
-            !value.contains("\n"),
-            !value.contains("\"")
-        else {
-            throw HLSPlaylistBuilderError.unsafeURI
-        }
-        return value
     }
 }
 
@@ -268,18 +243,13 @@ public struct HLSSubtitlePlaylistBuilder: Sendable {
         }
         let uri = try safePlaylistURI(segmentURI)
         let targetDuration = max(1, Int(ceil(duration)))
-        let formattedDuration = String(
-            format: "%.6f",
-            locale: Locale(identifier: "en_US_POSIX"),
-            duration
-        )
         return [
             "#EXTM3U",
             "#EXT-X-VERSION:7",
             "#EXT-X-TARGETDURATION:\(targetDuration)",
             "#EXT-X-MEDIA-SEQUENCE:0",
             "#EXT-X-PLAYLIST-TYPE:VOD",
-            "#EXTINF:\(formattedDuration),",
+            "#EXTINF:\(formattedPlaylistDuration(duration)),",
             uri,
             "#EXT-X-ENDLIST",
             ""
@@ -336,7 +306,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         }
         if let localizedRenditionNamesURI {
             lines.append(
-                "#EXT-X-SESSION-DATA:DATA-ID=\"_hls.localized-rendition-names\",URI=\"\(try safeURI(localizedRenditionNamesURI))\""
+                "#EXT-X-SESSION-DATA:DATA-ID=\"_hls.localized-rendition-names\",URI=\"\(try safePlaylistURI(localizedRenditionNamesURI))\""
             )
         }
         for rendition in audioRenditions {
@@ -400,7 +370,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 audioLine += ",SAMPLE-RATE=\(sampleRate)"
             }
             audioLine +=
-                ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(try safeURI(rendition.playlistURI))\""
+                ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(try safePlaylistURI(rendition.playlistURI))\""
             lines.append(audioLine)
         }
 
@@ -417,7 +387,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             }
             let name = try safeAttribute(rendition.name)
             let language = try safeLanguageTag(rendition.languageTag)
-            let uri = try safeURI(rendition.playlistURI)
+            let uri = try safePlaylistURI(rendition.playlistURI)
             var subtitleLine =
                 "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"\(subtitleGroupID)\",NAME=\"\(name)\",LANGUAGE=\"\(language)\""
             if !rendition.characteristics.isEmpty {
@@ -459,7 +429,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 videoBitRates.average,
                 audioAverageBitRate
             )
-            let videoURI = try safeURI(variant.playlistURI)
+            let videoURI = try safePlaylistURI(variant.playlistURI)
             let videoCodecs = try safeAttribute(video.codecs)
             let codecs = try safeAttribute(
                 ([videoCodecs] + audioCodecs).joined(separator: ",")
@@ -512,7 +482,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 throw HLSPlaylistBuilderError.nonIndependentIFrameSegments
             }
             let bitRates = try bitRates(for: variant.index)
-            let uri = try safeURI(variant.playlistURI)
+            let uri = try safePlaylistURI(variant.playlistURI)
             let codecs = try safeAttribute(video.codecs)
             lines.append(
                 "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=\(bitRates.peak),AVERAGE-BANDWIDTH=\(bitRates.average),RESOLUTION=\(attributes.width)x\(attributes.height),CODECS=\"\(codecs)\",URI=\"\(uri)\""
@@ -637,12 +607,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
     }
 
     private func safeAttribute(_ value: String) throws -> String {
-        guard !value.isEmpty,
-            value.utf8.count <= 128,
-            !value.contains("\""),
-            !value.contains("\\"),
-            !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
-        else {
+        guard isPlaylistSafeText(value), value.utf8.count <= 128 else {
             throw HLSPlaylistBuilderError.unsafeAttributeValue
         }
         return value
@@ -683,19 +648,19 @@ public struct HLSMasterPlaylistBuilder: Sendable {
     private func isASCIIAlphaNumeric(_ byte: UInt8) -> Bool {
         isASCIILetter(byte) || (48...57).contains(byte)
     }
+}
 
-    private func safeURI(_ url: URL) throws -> String {
-        try safePlaylistURI(url)
-    }
+/// playlist 的引号属性与 URI 行只接受非空、且不含引号、反斜杠或任何控制字符（含 CR/LF/Tab）的文本。
+func isPlaylistSafeText(_ value: String) -> Bool {
+    !value.isEmpty
+        && !value.contains("\"")
+        && !value.contains("\\")
+        && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
 }
 
 private func safePlaylistURI(_ url: URL) throws -> String {
     let value = url.absoluteString
-    guard !value.isEmpty,
-        !value.contains("\""),
-        !value.contains("\\"),
-        !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
-    else {
+    guard isPlaylistSafeText(value) else {
         throw HLSPlaylistBuilderError.unsafeURI
     }
     return value
