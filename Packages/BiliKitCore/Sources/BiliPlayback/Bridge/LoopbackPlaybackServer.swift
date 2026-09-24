@@ -284,13 +284,6 @@ public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case invalidProgressiveSource
 }
 
-struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
-    let isRunning: Bool
-    let registeredRouteCount: Int
-    let activeConnectionCount: Int
-    let activeTaskCount: Int
-}
-
 private enum LoopbackRangeRequest {
     case ignored
     case satisfiable(headerValue: String, resolved: HTTPByteRange)
@@ -312,19 +305,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private var listener: NWListener?
     private var port: NWEndpoint.Port?
     private var routes: [String: LoopbackPlaybackResource] = [:]
-    private var requestCounts: [String: Int] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var connectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var connectionTargets: [ObjectIdentifier: String] = [:]
 
     public init(
         rangeClient: HTTPRangeClient = HTTPRangeClient(),
-        rangeStreamer: any HTTPRangeStreaming = HTTPRangeStreamingClient(),
-        queueLabel: String = "com.shiinayane.BiliKit.loopback-playback"
+        rangeStreamer: any HTTPRangeStreaming = HTTPRangeStreamingClient()
     ) {
         self.rangeClient = rangeClient
         self.rangeStreamer = rangeStreamer
-        queue = DispatchQueue(label: queueLabel)
+        queue = DispatchQueue(label: "com.shiinayane.BiliKit.loopback-playback")
         sessionToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
     }
 
@@ -508,7 +499,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             listener = nil
             port = nil
             routes.removeAll()
-            requestCounts.removeAll()
             connections.removeAll()
             connectionTasks.removeAll()
             connectionTargets.removeAll()
@@ -524,24 +514,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
         cancelGeneratedResources(in: state.3)
         rangeStreamer.invalidate()
-    }
-
-    func diagnosticsSnapshot() -> LoopbackPlaybackServerDiagnostics {
-        lock.withLock {
-            LoopbackPlaybackServerDiagnostics(
-                isRunning: listener != nil && port != nil,
-                registeredRouteCount: routes.count,
-                activeConnectionCount: connections.count,
-                activeTaskCount: connectionTasks.count
-            )
-        }
-    }
-
-    func requestCount(method: String, at relativePath: String) throws -> Int {
-        let route = try url(for: relativePath).path
-        return lock.withLock {
-            requestCounts[requestKey(method: method, target: route), default: 0]
-        }
     }
 
     private func accept(_ connection: NWConnection) {
@@ -646,10 +618,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             let resource = lock.withLock({ () -> LoopbackPlaybackResource? in
                 guard let resource = routes[request.target] else { return nil }
                 connectionTargets[id] = request.target
-                requestCounts[
-                    requestKey(method: request.method, target: request.target),
-                    default: 0
-                ] += 1
                 return resource
             })
         else {
@@ -687,10 +655,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             task.cancel()
             connection.cancel()
         }
-    }
-
-    private func requestKey(method: String, target: String) -> String {
-        "\(method.uppercased()) \(target)"
     }
 
     private func respond(

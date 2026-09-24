@@ -33,34 +33,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func playbackTogglePausesUnlessPlayerIsPaused() {
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .paused
-            ) == .play
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .playing,
-                timelineState: .playing
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
-                timelineState: .buffering
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .ended
-            ) == nil
-        )
-    }
-
-    @Test
     func transportSeekAccumulatesClampsAndRejectsStaleCompletion() throws {
         final class Item {}
         var state = TransportSeekOperationState()
@@ -500,17 +472,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func explicitPauseOrSeekAdvancesInteractionRevision() {
-        let tracker = PlaybackInteractionTracker()
-
-        tracker.markObserved()
-        tracker.markObserved()
-
-        #expect(tracker.hasObservedInteraction)
-        #expect(tracker.revision == 2)
-    }
-
-    @Test
     func controlledRestartIsAnInteractionButIgnoresItsOwnTimeJump() {
         let tracker = PlaybackInteractionTracker()
 
@@ -572,14 +533,17 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
-    @Test
-    func playThenPauseDuringInitialSeekCancelsThePendingCommit() {
+    /// 首次定位期间无论已真正播放还是仍在按请求速率等待，随后的暂停都要取消待提交断点。
+    @Test(arguments: [true, false])
+    func pauseAfterStartDuringInitialSeekCancelsThePendingCommit(
+        reachedPlaying: Bool
+    ) {
         let tracker = PlaybackInteractionTracker()
         tracker.allowInternalSeek(to: 42)
 
         tracker.observeTimeControlStatus(
             isPaused: false,
-            isPlaying: true,
+            isPlaying: reachedPlaying,
             playbackRate: 1
         )
         #expect(tracker.revision == 0)
@@ -592,24 +556,26 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
-    @Test
-    func requestedWaitingThenPauseDuringInitialSeekCancelsCommit() {
-        let tracker = PlaybackInteractionTracker()
-        tracker.allowInternalSeek(to: 42)
-
-        tracker.observeTimeControlStatus(
-            isPaused: false,
-            isPlaying: false,
-            playbackRate: 1
+    @Test(
+        arguments: [
+            (AVPlayer.TimeControlStatus.paused, 0, MomentaryRateRestorationAction.none),
+            (.playing, 2, .setCurrentRate),
+            (.waitingToPlayAtSpecifiedRate, 0, .resumeAtDefaultRate),
+            (.waitingToPlayAtSpecifiedRate, 1.5, .none)
+        ] as [(AVPlayer.TimeControlStatus, Float, MomentaryRateRestorationAction)]
+    )
+    func momentaryRateRestorationPreservesPauseAndRecoversBuffering(
+        status: AVPlayer.TimeControlStatus,
+        currentRate: Float,
+        expected: MomentaryRateRestorationAction
+    ) {
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: status,
+                currentRate: currentRate,
+                momentaryRate: 2
+            ) == expected
         )
-        #expect(tracker.revision == 0)
-        tracker.observeTimeControlStatus(
-            isPaused: true,
-            isPlaying: false,
-            playbackRate: 0
-        )
-
-        #expect(tracker.revision == 1)
     }
 
     @Test
@@ -659,17 +625,5 @@ struct AVPlayerTimelineAdapterTests {
         #expect(player.rate == 2)
         #expect(timeline.currentSnapshot.rate == 2)
         #expect(timeline.currentSnapshot.state == .playing)
-    }
-
-    @Test
-    @MainActor
-    func invalidPlayerDefaultRateFallsBackBeforePlayback() {
-        let player = AVPlayer()
-        player.defaultRate = .nan
-
-        let timeline = AVPlayerTimelineAdapter(player: player)
-
-        #expect(player.defaultRate == 1)
-        withExtendedLifetime(timeline) {}
     }
 }

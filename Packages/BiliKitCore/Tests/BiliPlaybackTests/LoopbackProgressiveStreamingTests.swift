@@ -105,7 +105,9 @@ struct LoopbackProgressiveStreamingTests {
         try await server.start()
         server.stop()
         #expect(streamer.wasInvalidated)
-        #expect(!server.diagnosticsSnapshot().isRunning)
+        #expect(throws: LoopbackPlaybackServerError.notStarted) {
+            try server.url(for: "progressive/media.mp4")
+        }
     }
 
     @Test(arguments: [Data(), Data([0, 1])])
