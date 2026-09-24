@@ -9,20 +9,45 @@ import Foundation
 extension BiliAPIClient {
     private static let playURLPath = "/x/player/wbi/playurl"
     /// 与 Web 播放页一致的固定参数；fnval 976 只请求本项目能消费的 DASH 形状。
+    ///
+    /// gaia 两项与 PiliPlus 一致，不分登录状态都带。
     private static let playURLBaseParameters = [
         "fnval": "976",
         "fnver": "0",
         "fourk": "1",
-        "web_location": "1315873"
-    ]
-    /// 只用于本地无凭据的匿名请求，授权请求按账户权益取清晰度。
-    ///
-    /// `gaia_source` 在带 SESSDATA 时不需要；`try_look=1` 让游客可取得 720P/1080P。
-    private static let guestPlayURLParameters = [
+        "web_location": "1315873",
         "gaia_source": "pre-load",
-        "isGaiaAvoided": "true",
-        "try_look": "1"
+        "isGaiaAvoided": "true"
     ]
+    /// 只用于本地无凭据的匿名请求：`try_look=1` 让游客可取得 720P/1080P。
+    private static let guestPlayURLParameters = ["try_look": "1"]
+    private static let riskControlInteractionParameter = #"{"ds":[],"wh":[0,0,0],"of":[0,0,0]}"#
+    private static let riskControlRandomAlphabet = Array(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    )
+
+    /// Web 播放页随 wbi playurl 上报的 WebGL 环境字段。
+    ///
+    /// 服务端只校验字段存在，缺失时返回 -352／v_voucher；与 PiliPlus、yt-dlp 一样每次用随机值，
+    /// 不上报本机真实环境。
+    static func playURLRiskControlParameters() -> [String: String] {
+        [
+            "dm_img_list": "[]",
+            "dm_img_str": randomRiskControlString(length: 16...64),
+            "dm_cover_img_str": randomRiskControlString(length: 32...128),
+            "dm_img_inter": riskControlInteractionParameter
+        ]
+    }
+
+    /// 随机字符串的 base64 去掉末两位，与 yt-dlp 的构造一致。
+    private static func randomRiskControlString(length: ClosedRange<Int>) -> String {
+        let text = String(
+            (0..<Int.random(in: length)).map { _ in
+                riskControlRandomAlphabet[Int.random(in: riskControlRandomAlphabet.indices)]
+            }
+        )
+        return String(Data(text.utf8).base64EncodedString().dropLast(2))
+    }
 
     /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
     public func playback(
@@ -156,7 +181,7 @@ extension BiliAPIClient {
         return try await withWBIKeyRefresh(retryingHTTPForbidden: false) { forceKeyRefresh in
             let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
             let query = try wbiSigner.sign(
-                parameters: signedParameters,
+                parameters: signedParameters.merging(Self.playURLRiskControlParameters()) { $1 },
                 keys: keys,
                 timestamp: timestampProvider()
             )

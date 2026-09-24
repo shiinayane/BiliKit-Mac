@@ -597,10 +597,23 @@ struct BiliAPIClientTests {
         )?.queryItems
         #expect(queryItems?.contains(URLQueryItem(name: "web_location", value: "1315873")) == true)
         #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
-        // 游客参数只属于本地无凭据的匿名请求。
-        #expect(queryItems?.contains { $0.name == "gaia_source" } == false)
-        #expect(queryItems?.contains { $0.name == "isGaiaAvoided" } == false)
+        // gaia 与 dm_img 风控字段不分登录状态；try_look 只属于本地无凭据的匿名请求。
+        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
         #expect(queryItems?.contains { $0.name == "try_look" } == false)
+        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
+        #expect(
+            queryItems?.contains(
+                URLQueryItem(name: "dm_img_inter", value: #"{"ds":[],"wh":[0,0,0],"of":[0,0,0]}"#)
+            ) == true
+        )
+        for name in ["dm_img_str", "dm_cover_img_str"] {
+            let value = try #require(queryItems?.first { $0.name == name }?.value)
+            #expect(!value.isEmpty)
+            #expect(
+                value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "+/".contains($0)) }
+            )
+        }
         #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
@@ -948,6 +961,7 @@ struct BiliAPIClientTests {
         #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "try_look", value: "1")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
         #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
     }
 
