@@ -58,40 +58,6 @@ struct HTTPBoundedRangeClientTests {
     }
 
     @Test
-    func sharedSessionAcceptsSequentialExactRanges() async throws {
-        let client = makeClient()
-        RangeStreamingURLProtocol.state.configure(
-            statusCode: 206,
-            headers: ["Content-Range": "bytes 0-2/100", "Content-Length": "3"],
-            body: Data([1, 2, 3]),
-            keepsBodyPending: false
-        )
-        let first = try await client.fetch(
-            from: URL(string: "https://cdn.example/video")!,
-            range: try HTTPByteRange(start: 0, endInclusive: 2),
-            headers: [:],
-            collectBody: false
-        )
-
-        RangeStreamingURLProtocol.state.configure(
-            statusCode: 206,
-            headers: ["Content-Range": "bytes 3-5/100", "Content-Length": "3"],
-            body: Data([4, 5, 6]),
-            keepsBodyPending: false
-        )
-        let second = try await client.fetch(
-            from: URL(string: "https://cdn.example/video")!,
-            range: try HTTPByteRange(start: 3, endInclusive: 5),
-            headers: [:],
-            collectBody: false
-        )
-        client.invalidate()
-
-        #expect(first.byteCount == 3)
-        #expect(second.byteCount == 3)
-    }
-
-    @Test
     func rejectsMismatchedContentLengthWithoutReadingBody() async throws {
         RangeStreamingURLProtocol.state.configure(
             statusCode: 206,

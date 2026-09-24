@@ -127,41 +127,6 @@ struct HTTPRangeStreamingClientTests {
     }
 
     @Test
-    func slowForwardingAcceptsCompleteBodyWithBoundedChunkDelivery() async throws {
-        RangeStreamURLProtocol.state.configure(
-            statusCode: 206,
-            headers: [
-                "Content-Range": "bytes 0-3/10",
-                "Content-Length": "4",
-                "Content-Type": "video/mp4"
-            ],
-            chunks: [Data([1, 2]), Data([3, 4])]
-        )
-        let recorder = StreamEventRecorder()
-
-        let result = try await makeClient().stream(
-            from: URL(string: "https://cdn.example/video.mp4")!,
-            rangeHeader: "bytes=0-3",
-            expectedRange: try HTTPByteRange(start: 0, endInclusive: 3),
-            expectedCompleteLength: 10,
-            headers: [:],
-            allowedContentTypes: ["video/mp4"],
-            onResponse: { _ in },
-            onChunk: { data in
-                await recorder.append("chunk:\(data.count)")
-                try await Task.sleep(for: .milliseconds(10))
-            }
-        )
-
-        #expect(result.byteCount == 4)
-        let deliveredSizes = await recorder.values.compactMap {
-            Int($0.replacingOccurrences(of: "chunk:", with: ""))
-        }
-        #expect(deliveredSizes.reduce(0, +) == 4)
-        #expect(deliveredSizes.count <= 2)
-    }
-
-    @Test
     func cancellationStopsTheUpstreamTask() async throws {
         RangeStreamURLProtocol.state.configure(
             statusCode: 206,

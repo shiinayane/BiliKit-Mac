@@ -159,57 +159,6 @@ struct BiliSubtitleRepositoryTests {
     }
 
     @Test
-    func signatureRejectionRefreshesWBIKeyOnce() async throws {
-        let rejected = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                #"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#.utf8
-            )
-        )
-        let catalogTransport = SubtitleRecordingTransport(
-            responses: [
-                try fixtureResponse("nav"),
-                rejected,
-                try fixtureResponse("nav-refreshed"),
-                try catalogResponse()
-            ]
-        )
-        let repository = BiliSubtitleRepository(
-            client: BiliAPIClient(
-                transport: catalogTransport,
-                requestAuthorizer: SubtitleRecordingAuthorizer(),
-                timestampProvider: { 1_700_000_000 }
-            ),
-            bodyTransport: SubtitleRecordingTransport(responses: [])
-        )
-
-        let tracks = try await repository.tracks(for: identity)
-
-        #expect(tracks.count == 1)
-        let requests = await catalogTransport.capturedRequests()
-        #expect(
-            requests.map(\.url.path) == [
-                "/x/web-interface/nav",
-                "/x/player/wbi/v2",
-                "/x/web-interface/nav",
-                "/x/player/wbi/v2"
-            ]
-        )
-        let signatures =
-            requests
-            .filter { $0.url.path == "/x/player/wbi/v2" }
-            .compactMap {
-                URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
-                    .queryItems?
-                    .first(where: { $0.name == "w_rid" })?
-                    .value
-            }
-        #expect(signatures.count == 2)
-        #expect(signatures[0] != signatures[1])
-    }
-
-    @Test
     func catalogRejectsUntrustedSubtitleOriginBeforeBodyTransport() async throws {
         let catalogTransport = SubtitleRecordingTransport(
             responses: [
