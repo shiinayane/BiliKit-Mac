@@ -58,26 +58,11 @@ public struct RelatedVideoCardPresentation: Identifiable, Equatable, Sendable {
     }
 }
 
-struct RelatedVideoShelfSelection {
-    let onSelect: (String) -> Void
-
-    func select(_ bvid: String) {
-        onSelect(bvid)
-    }
-}
-
 enum RelatedVideoShelfState: Equatable, Sendable {
     case loading
     case loaded([RelatedVideoCardPresentation])
     case empty
     case failure
-
-    var itemCount: Int {
-        if case .loaded(let items) = self {
-            return items.count
-        }
-        return 0
-    }
 }
 
 /// 播放详情下方的横向相关推荐 shelf。
@@ -90,7 +75,7 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
     private static var contentPadding: CGFloat { 40 }
 
     let state: RelatedVideoShelfState
-    let selection: RelatedVideoShelfSelection
+    let onSelect: (String) -> Void
     let onRetry: () -> Void
 
     private let shelfHeight: CGFloat = 232
@@ -116,7 +101,7 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
     ) {
         self.state = state
         self.contentIdentity = contentIdentity
-        selection = RelatedVideoShelfSelection(onSelect: onSelect)
+        self.onSelect = onSelect
         self.onRetry = onRetry
         self.makeLoadedContent = makeLoadedContent
     }
@@ -168,7 +153,7 @@ struct RelatedVideoShelf<LoadedContent: View>: View {
     private func loadedShelf(
         _ items: [RelatedVideoCardPresentation]
     ) -> some View {
-        makeLoadedContent(contentIdentity, items, selection.select)
+        makeLoadedContent(contentIdentity, items, onSelect)
             .frame(height: shelfHeight)
     }
 

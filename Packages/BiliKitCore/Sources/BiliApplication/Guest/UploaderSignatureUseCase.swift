@@ -14,9 +14,14 @@ public struct UploaderSignatureUseCase: Sendable {
         }
         let signature = try await repository.signature(for: ownerID)
         try Task.checkCancellation()
-        guard let signature else { return nil }
+        return Self.singleLine(signature)
+    }
+
+    /// 把连续空白折叠为单个空格，结果为空时视为缺省；UP 主名称与签名展示共用这一规则。
+    package static func singleLine(_ value: String?) -> String? {
+        guard let value else { return nil }
         let normalized =
-            signature
+            value
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         return normalized.isEmpty ? nil : normalized

@@ -43,7 +43,6 @@ struct RelatedVideoShelfTests {
         ] {
             #expect(presentation.accessibilityLabel.contains(value))
         }
-        #expect(RelatedVideoShelfState.loaded([presentation]).itemCount == 1)
     }
 
     @Test
