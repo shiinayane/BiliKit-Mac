@@ -50,7 +50,7 @@ private struct PlaybackStartPreparationFailure: Error {}
 
 @MainActor
 @Observable
-/// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一 generation。
+/// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一个可替换的 Task。
 ///
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
 public final class GuestVideoViewModel {
@@ -97,7 +97,7 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let playback: any PlaybackControlling
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
     @ObservationIgnored private let uploaderSignatureUseCase: UploaderSignatureUseCase?
-    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private let loadTask = LatestTask()
     @ObservationIgnored private let relatedVideoTask = LatestTask()
     @ObservationIgnored private let uploaderSignatureTask = LatestTask()
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
@@ -114,7 +114,6 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private var selectedCollectionEpisodeIsExplicit = false
     @ObservationIgnored private var collectionSeasonID: Int64?
     @ObservationIgnored private var collectionEpisodeRequestGeneration = 0
-    @ObservationIgnored private var generation = 0
 
     public init(
         useCase: GuestVideoUseCase,
@@ -135,16 +134,13 @@ public final class GuestVideoViewModel {
     }
 
     deinit {
-        loadTask?.cancel()
         playbackFailureTask?.cancel()
         collectionEpisodeTask?.cancel()
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
     public func loadVideo(_ bvid: String, preferredCID: Int64? = nil) {
-        generation += 1
-        let currentGeneration = generation
-        loadTask?.cancel()
+        loadTask.cancel()
         cancelCollectionEpisodeRequest(markWaitersIdle: true)
         cancelUploaderSignature()
         if state != .idle {
@@ -164,11 +160,11 @@ public final class GuestVideoViewModel {
         clearResumeNotice()
         state = .loading(bvid: bvid)
         loadRelatedVideos(for: bvid)
-        loadTask = Task { [weak self] in
+        loadTask.replace { [weak self] isCurrent in
             await self?.performLoad(
                 bvid: bvid,
                 preferredCID: preferredCID,
-                generation: currentGeneration
+                isCurrent: isCurrent
             )
         }
     }
@@ -225,9 +221,7 @@ public final class GuestVideoViewModel {
         }
         guard requestedPlaybackIdentity != targetIdentity else { return }
 
-        generation += 1
-        let currentGeneration = generation
-        loadTask?.cancel()
+        loadTask.cancel()
         playback.stop()
         clearResumeNotice()
         requestedPlaybackIdentity = targetIdentity
@@ -237,12 +231,12 @@ public final class GuestVideoViewModel {
         let intent = PlaybackLoadIntent()
         playbackIntent = intent
         state = .loadingPage(context: context, targetPage: targetPage)
-        loadTask = Task { [weak self] in
+        loadTask.replace { [weak self] isCurrent in
             await self?.performPageLoad(
                 context: context,
                 targetPage: targetPage,
                 intent: intent,
-                generation: currentGeneration
+                isCurrent: isCurrent
             )
         }
     }
@@ -267,9 +261,7 @@ public final class GuestVideoViewModel {
 
     /// 取消内容准备并停止播放 adapter，作为离开播放目的地的最终清理边界。
     public func reset() {
-        generation += 1
-        loadTask?.cancel()
-        loadTask = nil
+        loadTask.cancel()
         relatedVideoTask.cancel()
         relatedVideoState = .idle
         cancelUploaderSignature()
@@ -307,7 +299,7 @@ public final class GuestVideoViewModel {
     }
 
     public func waitForCurrentTask() async {
-        await loadTask?.value
+        await loadTask.wait()
     }
 
     func collectionEpisodeTaskSnapshotForTesting() -> Task<Void, Never>? {
@@ -315,7 +307,7 @@ public final class GuestVideoViewModel {
     }
 
     func taskSnapshotForTesting() -> Task<Void, Never>? {
-        loadTask
+        loadTask.task
     }
 
     func resumeActionTaskSnapshotForTesting() -> Task<Void, Never>? {
@@ -361,7 +353,7 @@ public final class GuestVideoViewModel {
     private func performLoad(
         bvid: String,
         preferredCID: Int64?,
-        generation currentGeneration: Int
+        isCurrent: LatestTask.IsCurrent
     ) async {
         do {
             let context = try await useCase.prepareVideo(
@@ -369,7 +361,7 @@ public final class GuestVideoViewModel {
                 preferredCID: preferredCID
             )
             try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
+            guard isCurrent() else { return }
 
             presentedContext = context
             reconcileCollectionContext(context.detail.collection)
@@ -384,48 +376,19 @@ public final class GuestVideoViewModel {
             let intent = PlaybackLoadIntent()
             playbackIntent = intent
             state = .preparingPlayback(context)
-            try await playback.load(
-                context.playback,
-                identity: identity,
-                intent: intent
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            let startOutcome = await playback.beginPlayback(
-                identity: identity,
-                intent: intent,
-                initialPositionSeconds: context.resumePositionSeconds
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            if startOutcome == .preparationFailed {
-                throw PlaybackStartPreparationFailure()
-            }
-            applyResumeNotice(from: startOutcome)
+            guard
+                try await startPlayback(
+                    context,
+                    identity: identity,
+                    intent: intent,
+                    isCurrent: isCurrent
+                )
+            else { return }
             presentedPlaybackIdentity = requestedPlaybackIdentity
             state = .ready(context)
-        } catch is CancellationError {
-            guard generation == currentGeneration else { return }
-            clearCollectionEpisodeState()
-            clearResumeNotice()
-            presentedContext = nil
-            requestedPlaybackIdentity = nil
-            presentedPlaybackIdentity = nil
-            playbackIntent = nil
-            state = .idle
-        } catch let error as GuestApplicationError {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            recordAuthenticationInvalidationIfNeeded(error)
-            state = .failed(bvid: bvid, failure: .content(error))
         } catch {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            state = .failed(bvid: bvid, failure: .playback)
-        }
-
-        if generation == currentGeneration {
-            loadTask = nil
+            guard isCurrent() else { return }
+            handleLoadFailure(error) { .failed(bvid: bvid, failure: $0) }
         }
     }
 
@@ -433,7 +396,7 @@ public final class GuestVideoViewModel {
         context: GuestVideoContext,
         targetPage: VideoPage,
         intent: PlaybackLoadIntent,
-        generation currentGeneration: Int
+        isCurrent: LatestTask.IsCurrent
     ) async {
         do {
             let replacement = try await useCase.preparePage(
@@ -441,7 +404,7 @@ public final class GuestVideoViewModel {
                 cid: targetPage.cid
             )
             try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
+            guard isCurrent() else { return }
 
             presentedContext = replacement
             state = .preparingPlayback(replacement)
@@ -449,56 +412,71 @@ public final class GuestVideoViewModel {
                 bvid: replacement.detail.bvid,
                 cid: replacement.selectedPage.cid
             )
-            try await playback.load(
-                replacement.playback,
-                identity: identity,
-                intent: intent
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            let startOutcome = await playback.beginPlayback(
-                identity: identity,
-                intent: intent,
-                initialPositionSeconds: replacement.resumePositionSeconds
-            )
-            try Task.checkCancellation()
-            guard generation == currentGeneration else { return }
-            if startOutcome == .preparationFailed {
-                throw PlaybackStartPreparationFailure()
-            }
-            applyResumeNotice(from: startOutcome)
+            guard
+                try await startPlayback(
+                    replacement,
+                    identity: identity,
+                    intent: intent,
+                    isCurrent: isCurrent
+                )
+            else { return }
             presentedPlaybackIdentity = identity
             state = .ready(replacement)
-        } catch is CancellationError {
-            guard generation == currentGeneration else { return }
+        } catch {
+            guard isCurrent() else { return }
+            handleLoadFailure(error) {
+                .failedPage(context: context, targetPage: targetPage, failure: $0)
+            }
+        }
+    }
+
+    /// 安装并开播已准备好的 context；返回 false 表示意图已被取代，调用方不得再写状态。
+    private func startPlayback(
+        _ context: GuestVideoContext,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        isCurrent: LatestTask.IsCurrent
+    ) async throws -> Bool {
+        try await playback.load(
+            context.playback,
+            identity: identity,
+            intent: intent
+        )
+        try Task.checkCancellation()
+        guard isCurrent() else { return false }
+        let startOutcome = await playback.beginPlayback(
+            identity: identity,
+            intent: intent,
+            initialPositionSeconds: context.resumePositionSeconds
+        )
+        try Task.checkCancellation()
+        guard isCurrent() else { return false }
+        if startOutcome == .preparationFailed {
+            throw PlaybackStartPreparationFailure()
+        }
+        applyResumeNotice(from: startOutcome)
+        return true
+    }
+
+    /// 当前意图的准备失败：取消回到 idle，其余错误按调用方给出的失败形态呈现。
+    private func handleLoadFailure(
+        _ error: any Error,
+        failedState: (GuestVideoFailure) -> GuestVideoState
+    ) {
+        clearResumeNotice()
+        switch error {
+        case is CancellationError:
             clearCollectionEpisodeState()
-            clearResumeNotice()
+            presentedContext = nil
             requestedPlaybackIdentity = nil
             presentedPlaybackIdentity = nil
             playbackIntent = nil
             state = .idle
-            presentedContext = nil
-        } catch let error as GuestApplicationError {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
+        case let error as GuestApplicationError:
             recordAuthenticationInvalidationIfNeeded(error)
-            state = .failedPage(
-                context: context,
-                targetPage: targetPage,
-                failure: .content(error)
-            )
-        } catch {
-            guard generation == currentGeneration else { return }
-            clearResumeNotice()
-            state = .failedPage(
-                context: context,
-                targetPage: targetPage,
-                failure: .playback
-            )
-        }
-
-        if generation == currentGeneration {
-            loadTask = nil
+            state = failedState(.content(error))
+        default:
+            state = failedState(.playback)
         }
     }
 
@@ -520,9 +498,7 @@ public final class GuestVideoViewModel {
             })
         else { return }
 
-        generation += 1
-        loadTask?.cancel()
-        loadTask = nil
+        loadTask.cancel()
         playback.stop()
         clearResumeNotice()
         requestedPlaybackIdentity = event.identity
