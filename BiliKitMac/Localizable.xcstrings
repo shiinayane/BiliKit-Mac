@@ -57,6 +57,34 @@
         }
       }
     },
+    "%lld 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The %lld bilivideo mirror routes are experimental. They may stop working and may not fully support every video. Unavailable routes fall back to the server’s original candidates."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld本のbilivideoミラールートは実験的な機能です。利用できなくなる場合があり、すべての動画で完全に動作するとは限りません。利用できない場合は、サーバーが返した元の候補に戻ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 條 bilivideo 鏡像線路屬於實驗性功能，可能失效，且不保證每部影片都能完整使用；無法使用時仍會回復至服務端原始的完整候選。"
+          }
+        }
+      }
+    },
     "10 分钟以下" : {
       "localizations" : {
         "en" : {
@@ -109,34 +137,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "10–30 分鐘"
-          }
-        }
-      }
-    },
-    "18 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The 18 bilivideo mirror routes are experimental. They may stop working and may not fully support every video. Unavailable routes fall back to the server’s original candidates."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "18本のbilivideoミラールートは実験的な機能です。利用できなくなる場合があり、すべての動画で完全に動作するとは限りません。利用できない場合は、サーバーが返した元の候補に戻ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "18 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "18 條 bilivideo 鏡像線路屬於實驗性功能，可能失效，且不保證每部影片都能完整使用；無法使用時仍會回復至服務端原始的完整候選。"
           }
         }
       }
@@ -1037,30 +1037,30 @@
         }
       }
     },
-    "最多约 %llu MiB；每个样本对 1 条原始 Akamai 与 18 条实验 bilivideo 线路逐条串行测试。" : {
+    "最多约 %llu MiB；每个样本对 1 条原始 Akamai 与 %lld 条实验 bilivideo 线路逐条串行测试。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Up to about %llu MiB. Each sample tests one original Akamai route and 18 experimental bilivideo routes sequentially."
+            "value" : "Up to about %llu MiB. Each sample tests one original Akamai route and %lld experimental bilivideo routes sequentially."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最大約%llu MiB。各サンプルについて、元のAkamaiルート1本と実験的なbilivideoルート18本を順番にテストします。"
+            "value" : "最大約%llu MiB。各サンプルについて、元のAkamaiルート1本と実験的なbilivideoルート%lld本を順番にテストします。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最多约 %llu MiB；每个样本对 1 条原始 Akamai 与 18 条实验 bilivideo 线路逐条串行测试。"
+            "value" : "最多约 %llu MiB；每个样本对 1 条原始 Akamai 与 %lld 条实验 bilivideo 线路逐条串行测试。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最多約 %llu MiB；每個樣本會依序測試 1 條原始 Akamai 與 18 條實驗性 bilivideo 線路。"
+            "value" : "最多約 %llu MiB；每個樣本會依序測試 1 條原始 Akamai 與 %lld 條實驗性 bilivideo 線路。"
           }
         }
       }
