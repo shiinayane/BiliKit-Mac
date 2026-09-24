@@ -135,23 +135,10 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
         }
-        guard !audioTracks.isEmpty else {
-            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
-                audioTracks.count
-            )
-        }
-        let defaultAudioTracks = audioTracks.filter(\.track.isDefault)
-        guard defaultAudioTracks.count == 1,
-            defaultAudioTracks[0].track.role == .original,
-            defaultAudioTracks[0].track.isAutoselect
-        else {
-            throw DASHToHLSBridgeError.unsupportedAudioTrackCount(
-                defaultAudioTracks.count
-            )
-        }
-        var audioTrackIDs = Set<String>()
+        // 非空、ID 唯一、恰好一条默认轨与音频 representation 由 AVPlayerEngine 在释放旧 item 前验证；
+        // 这里只守住 bridge 自己的 HLS 角色约束。
         for selectedAudio in audioTracks {
-            guard audioTrackIDs.insert(selectedAudio.track.id).inserted,
+            guard
                 selectedAudio.track.representations.contains(
                     selectedAudio.representation
                 )
@@ -163,7 +150,9 @@ public struct DASHToHLSBridge: Sendable {
             }
             switch selectedAudio.track.role {
             case .original:
-                guard selectedAudio.track.isDefault else {
+                guard selectedAudio.track.isDefault,
+                    selectedAudio.track.isAutoselect
+                else {
                     throw DASHToHLSBridgeError.unsupportedAudioTrackRole(
                         selectedAudio.track.id
                     )
@@ -176,12 +165,6 @@ public struct DASHToHLSBridge: Sendable {
                         selectedAudio.track.id
                     )
                 }
-            }
-            guard selectedAudio.representation.kind == .audio else {
-                throw DASHToHLSBridgeError.invalidMediaKind(
-                    expected: .audio,
-                    actual: selectedAudio.representation.kind
-                )
             }
         }
 

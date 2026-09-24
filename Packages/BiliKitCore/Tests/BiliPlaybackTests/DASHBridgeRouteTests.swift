@@ -81,9 +81,7 @@ struct DASHBridgeRouteTests {
     }
 
     @Test
-    func bridgeRejectsUnsupportedAudioTrackCountsBeforeStartingServer()
-        async throws
-    {
+    func bridgeRejectsInvalidAudioRolesBeforeStartingServer() async throws {
         let video = try makeFixtureTrack(
             id: 80,
             kind: .video,
@@ -104,47 +102,61 @@ struct DASHBridgeRouteTests {
             serverFactory: { registry.create() }
         )
         let original = makeSelectedAudioTrack(representation: audio)
-        let alternate = makeSelectedAudioTrack(
-            trackID: "alternate",
-            representation: audio
-        )
+        let cases: [([SelectedPlaybackAudioTrack], DASHToHLSBridgeError)] = [
+            (
+                [SelectedPlaybackAudioTrack(track: original.track, representation: video)],
+                .invalidAudioTrackSelection(trackID: "original", representationID: video.id)
+            ),
+            (
+                [makeSelectedAudioTrack(isAutoselect: false, representation: audio)],
+                .unsupportedAudioTrackRole("original")
+            ),
+            (
+                [
+                    original,
+                    makeSelectedAudioTrack(
+                        trackID: "extra",
+                        isDefault: false,
+                        representation: audio
+                    )
+                ],
+                .unsupportedAudioTrackRole("extra")
+            ),
+            (
+                [
+                    original,
+                    makeSelectedAudioTrack(
+                        trackID: "machine-generated:en",
+                        role: .machineGenerated,
+                        isDefault: false,
+                        representation: audio
+                    )
+                ],
+                .unsupportedAudioTrackRole("machine-generated:en")
+            ),
+            (
+                [
+                    original,
+                    makeSelectedAudioTrack(
+                        trackID: "machine-generated:en",
+                        languageTag: "en",
+                        role: .machineGenerated,
+                        representation: audio
+                    )
+                ],
+                .unsupportedAudioTrackRole("machine-generated:en")
+            )
+        ]
 
-        await #expect(
-            throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
-        ) {
-            try await bridge.prepare(
-                videos: [video],
-                audioTracks: [],
-                headers: [:],
-                subtitleSource: nil
-            )
-        }
-        await #expect(
-            throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(2)
-        ) {
-            try await bridge.prepare(
-                videos: [video],
-                audioTracks: [original, alternate],
-                headers: [:],
-                subtitleSource: nil
-            )
-        }
-        let mismatched = SelectedPlaybackAudioTrack(
-            track: original.track,
-            representation: video
-        )
-        await #expect(
-            throws: DASHToHLSBridgeError.invalidAudioTrackSelection(
-                trackID: "original",
-                representationID: video.id
-            )
-        ) {
-            try await bridge.prepare(
-                videos: [video],
-                audioTracks: [mismatched],
-                headers: [:],
-                subtitleSource: nil
-            )
+        for (audioTracks, expectedError) in cases {
+            await #expect(throws: expectedError) {
+                try await bridge.prepare(
+                    videos: [video],
+                    audioTracks: audioTracks,
+                    headers: [:],
+                    subtitleSource: nil
+                )
+            }
         }
         #expect(registry.servers.isEmpty)
     }
