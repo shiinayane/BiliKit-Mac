@@ -978,53 +978,6 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.resumeNotice == nil)
     }
 
-    @Test(arguments: [0, 115_000, 120_000, 900_000])
-    func zeroCompletedAndOutOfRangeResumePositionsStartAtBeginning(
-        positionMilliseconds: Int64
-    ) async throws {
-        let fixture = GuestFixtures()
-        let metadata = try #require(
-            PlaybackResumeMetadata(
-                lastPlayedCID: 900_001,
-                positionMilliseconds: positionMilliseconds
-            )
-        )
-        let repository = VideoRepositoryStub(
-            fixture,
-            playback: { _, _ in fixture.playback(resuming: metadata) }
-        )
-
-        let context = try await GuestVideoUseCase(
-            repository: repository
-        ).prepareVideo(bvid: fixture.bvid)
-
-        #expect(context.selectedPage.cid == 900_001)
-        #expect(context.resumePositionSeconds == nil)
-    }
-
-    @Test
-    func explicitPartSelectionDoesNotBounceToServerRecordedPart() async throws {
-        let fixture = GuestFixtures()
-        let metadata = try #require(
-            PlaybackResumeMetadata(
-                lastPlayedCID: 900_002,
-                positionMilliseconds: 42_500
-            )
-        )
-        let repository = VideoRepositoryStub(
-            fixture,
-            pages: fixture.twoPages,
-            playback: { _, _ in fixture.playback(resuming: metadata) }
-        )
-        let useCase = GuestVideoUseCase(repository: repository)
-        let initial = try await useCase.prepareVideo(bvid: fixture.bvid)
-
-        let selected = try await useCase.preparePage(in: initial, cid: 900_002)
-
-        #expect(selected.selectedPage.cid == 900_002)
-        #expect(selected.resumePositionSeconds == nil)
-    }
-
     @Test
     @MainActor
     func playbackFailureRetainsTheNewPresentedContext() async {
