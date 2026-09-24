@@ -505,7 +505,7 @@ public final class BrowseViewModel {
             guard responsePage.continuation == requestedContinuation,
                 loadedPage.nextContinuation == requestedContinuation
             else { return nil }
-            let appended = uniqueVideos(responsePage.videos, after: loadedPage.videos, bvid: \.bvid)
+            let appended = responsePage.videos.uniquedByBVID(after: loadedPage.videos, \.bvid)
             let remainingCapacity = max(
                 0,
                 maximumRetainedRecommendationVideos - loadedPage.videos.count
@@ -534,7 +534,7 @@ public final class BrowseViewModel {
                 loadedPage.pageSize == requestedPageSize,
                 loadedPage.pageNumber + 1 == responsePage.pageNumber
             else { return nil }
-            let appended = uniqueVideos(responsePage.videos, after: loadedPage.videos, bvid: \.bvid)
+            let appended = responsePage.videos.uniquedByBVID(after: loadedPage.videos, \.bvid)
             return .popular(
                 PopularPage(
                     videos: loadedPage.videos + appended,
@@ -555,7 +555,7 @@ public final class BrowseViewModel {
                 loadedQuery == requestedRequest.criteria.query,
                 loadedPage.pageNumber + 1 == responsePage.pageNumber
             else { return nil }
-            let appended = uniqueVideos(responsePage.videos, after: loadedPage.videos, bvid: \.bvid)
+            let appended = responsePage.videos.uniquedByBVID(after: loadedPage.videos, \.bvid)
             return .search(
                 query: requestedRequest.criteria.query,
                 page: SearchPage(
@@ -571,16 +571,6 @@ public final class BrowseViewModel {
         default:
             return nil
         }
-    }
-
-    /// 按 BVID 去重：丢弃与 `existing` 或自身前文重复的视频，保持原顺序。
-    private static func uniqueVideos<Video>(
-        _ videos: [Video],
-        after existing: [Video] = [],
-        bvid: (Video) -> String
-    ) -> [Video] {
-        var seen = Set(existing.map(bvid))
-        return videos.filter { seen.insert(bvid($0)).inserted }
     }
 
     private func handleFailure(
@@ -630,7 +620,7 @@ public final class BrowseViewModel {
         switch content {
         case .recommendation(let page):
             let videos = Array(
-                Self.uniqueVideos(page.videos, bvid: \.bvid)
+                page.videos.uniquedByBVID(\.bvid)
                     .prefix(Self.maximumRetainedRecommendationVideos)
             )
             return .recommendation(
@@ -645,7 +635,7 @@ public final class BrowseViewModel {
                 )
             )
         case .popular(let page):
-            let videos = Self.uniqueVideos(page.videos, bvid: \.bvid)
+            let videos = page.videos.uniquedByBVID(\.bvid)
             return .popular(
                 PopularPage(
                     videos: videos,
@@ -655,7 +645,7 @@ public final class BrowseViewModel {
                 )
             )
         case .search(let query, let page):
-            let videos = Self.uniqueVideos(page.videos, bvid: \.bvid)
+            let videos = page.videos.uniquedByBVID(\.bvid)
             return .search(
                 query: query,
                 page: SearchPage(

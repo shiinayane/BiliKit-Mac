@@ -101,10 +101,7 @@ public final class WatchHistoryViewModel {
             do {
                 let page = try await useCase.load(after: continuation)
                 guard isCurrent() else { return }
-                var seen = Set(items.map(\.bvid))
-                let appended = page.items.filter {
-                    seen.insert($0.bvid).inserted
-                }
+                let appended = page.items.uniquedByBVID(after: items, \.bvid)
                 consumedContinuations.append(continuation)
                 let continuationLoops =
                     page.continuation.map {
