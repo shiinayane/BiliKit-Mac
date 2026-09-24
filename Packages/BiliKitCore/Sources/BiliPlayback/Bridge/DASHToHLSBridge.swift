@@ -42,7 +42,6 @@ public final class PreparedPlaybackAsset: @unchecked Sendable {
 ///
 /// Bridge 只构造内存 playlist 与按需代理，不下载完整媒体；任一步失败都会停止已启动 server。
 public struct DASHToHLSBridge: Sendable {
-    private let rangeClient: HTTPRangeClient
     private let indexLoader: RepresentationIndexLoader
     private let audioFormatLoader: AudioFormatMetadataLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
@@ -51,26 +50,25 @@ public struct DASHToHLSBridge: Sendable {
     private let masterPlaylistBuilder: HLSMasterPlaylistBuilder
     private let webVTTEncoder: WebVTTEncoder
     private let subtitleCatalogGrace: Duration
-    private let serverFactory: @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
+    private let serverFactory: @Sendable () -> LoopbackPlaybackServer
 
     public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
         self.init(
             rangeClient: rangeClient,
-            serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
+            serverFactory: { LoopbackPlaybackServer() }
         )
     }
 
-    /// 测试可注入 server（例如替换 progressive streamer）并缩短字幕目录等待。
+    /// 测试可注入 server（例如替换媒体 Range streamer）并缩短字幕目录等待。
     init(
         rangeClient: HTTPRangeClient,
         subtitleCatalogGrace: Duration = .seconds(2),
-        serverFactory: @escaping @Sendable (HTTPRangeClient) -> LoopbackPlaybackServer
+        serverFactory: @escaping @Sendable () -> LoopbackPlaybackServer
     ) {
         precondition(
             subtitleCatalogGrace > .zero,
             "Subtitle catalog grace must be positive"
         )
-        self.rangeClient = rangeClient
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
         audioFormatLoader = AudioFormatMetadataLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
@@ -101,7 +99,7 @@ public struct DASHToHLSBridge: Sendable {
         progressive source: ProgressivePlaybackSource,
         headers: [String: String] = [:]
     ) async throws -> PreparedPlaybackAsset {
-        let server = serverFactory(rangeClient)
+        let server = serverFactory()
         do {
             try await server.start()
             let resource = try LoopbackProgressiveResource(
@@ -244,7 +242,7 @@ public struct DASHToHLSBridge: Sendable {
                 )
         }
 
-        let server = serverFactory(rangeClient)
+        let server = serverFactory()
         do {
             try await server.start()
             let masterURL = try server.url(for: "master.m3u8")

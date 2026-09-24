@@ -299,7 +299,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let lock = NSLock()
-    private let rangeClient: HTTPRangeClient
     private let rangeStreamer: any HTTPRangeStreaming
     private let sessionToken: String
     private var listener: NWListener?
@@ -310,10 +309,8 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
     private var connectionTargets: [ObjectIdentifier: String] = [:]
 
     public init(
-        rangeClient: HTTPRangeClient = HTTPRangeClient(),
         rangeStreamer: any HTTPRangeStreaming = HTTPRangeStreamingClient()
     ) {
-        self.rangeClient = rangeClient
         self.rangeStreamer = rangeStreamer
         queue = DispatchQueue(label: "com.shiinayane.BiliKit.loopback-playback")
         sessionToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
@@ -692,14 +689,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
 
         let requestedRange: HTTPByteRange?
+        let requestedRangeHeader: String?
         switch parseRange(
             request.headers["range"],
             contentLength: resource.contentLength
         ) {
         case .ignored:
             requestedRange = nil
-        case .satisfiable(_, let range):
+            requestedRangeHeader = nil
+        case .satisfiable(let headerValue, let range):
             requestedRange = range
+            requestedRangeHeader = headerValue
         case .unsatisfiable:
             sendStatus(
                 416,
@@ -742,42 +742,31 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
             }
-            let result = try await rangeClient.fetch(
-                from: [remote.sourceURL],
-                range: requestedRange,
-                headers: remote.headers
-            )
-            try Task.checkCancellation()
-            sendResponse(
-                status: 206,
-                reason: "Partial Content",
-                headers: responseHeaders(
-                    for: resource,
-                    bodyLength: result.body.count,
-                    range: requestedRange,
-                    isHead: false
-                ),
-                body: result.body,
+            // DASH 分段只向 SIDX 成功的来源转发解析后的闭区间 Range。
+            try await streamRange(
+                requestedRange,
+                rangeHeader: requestedRange.headerValue,
+                of: resource,
+                sourceURLs: [remote.sourceURL],
+                headers: remote.headers,
+                allowedUpstreamContentTypes: nil,
+                selectSource: { _ in true },
                 on: connection
             )
         case .progressive(let progressive):
-            guard let requestedRange else {
+            guard let requestedRange, let requestedRangeHeader else {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
             }
-            guard
-                case .satisfiable(let rangeHeader, _) = parseRange(
-                    request.headers["range"],
-                    contentLength: resource.contentLength
-                )
-            else {
-                sendStatus(400, reason: "Bad Request", on: connection)
-                return
-            }
-            try await streamProgressive(
-                progressive,
-                rangeHeader: rangeHeader,
-                range: requestedRange,
+            // progressive 保留 AVPlayer 原始的单一 Range 头。
+            try await streamRange(
+                requestedRange,
+                rangeHeader: requestedRangeHeader,
+                of: resource,
+                sourceURLs: progressive.eligibleSourceURLs,
+                headers: progressive.headers,
+                allowedUpstreamContentTypes: progressive.allowedUpstreamContentTypes,
+                selectSource: progressive.select,
                 on: connection
             )
         case .generated:
@@ -785,14 +774,33 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
-    private func streamProgressive(
-        _ resource: LoopbackProgressiveResource,
+    /// 按候选顺序把上游 Range 逐 chunk 转发给 AVPlayer，每个 chunk 等待 send completion。
+    ///
+    /// 只有尚未发送响应头的候选失败才会尝试下一个来源；已发送 206 后失败只能断开连接。
+    private func streamRange(
+        _ range: HTTPByteRange,
         rangeHeader: String,
-        range: HTTPByteRange,
+        of resource: LoopbackPlaybackResource,
+        sourceURLs: [URL],
+        headers: [String: String],
+        allowedUpstreamContentTypes: Set<String>?,
+        selectSource: @escaping @Sendable (URL) -> Bool,
         on connection: NWConnection
     ) async throws {
+        var headHeaders = responseHeaders(
+            for: resource,
+            bodyLength: Int(range.length),
+            range: range,
+            isHead: false
+        )
+        headHeaders["Connection"] = "close"
+        let head = Self.responseHead(
+            status: 206,
+            reason: "Partial Content",
+            headers: headHeaders
+        )
         var lastError: (any Error)?
-        for sourceURL in resource.eligibleSourceURLs {
+        for sourceURL in sourceURLs {
             try Task.checkCancellation()
             let responseStarted = LockedFlag()
             do {
@@ -801,26 +809,13 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     rangeHeader: rangeHeader,
                     expectedRange: range,
                     expectedCompleteLength: resource.contentLength,
-                    headers: resource.headers,
-                    allowedContentTypes: resource.allowedUpstreamContentTypes,
+                    headers: headers,
+                    allowedContentTypes: allowedUpstreamContentTypes,
                     onResponse: { [weak connection] _ in
-                        guard resource.select(sourceURL), let connection else {
+                        guard selectSource(sourceURL), let connection else {
                             throw CancellationError()
                         }
-                        try await Self.sendHead(
-                            status: 206,
-                            reason: "Partial Content",
-                            headers: [
-                                "Accept-Ranges": "bytes",
-                                "Cache-Control": "no-store",
-                                "Connection": "close",
-                                "Content-Length": "\(range.length)",
-                                "Content-Range":
-                                    "bytes \(range.start)-\(range.endInclusive)/\(resource.contentLength)",
-                                "Content-Type": resource.contentType
-                            ],
-                            on: connection
-                        )
+                        try await Self.sendChunk(head, on: connection)
                         responseStarted.set()
                     },
                     onChunk: { [weak connection] chunk in
@@ -848,18 +843,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         throw lastError ?? LoopbackPlaybackServerError.invalidProgressiveSource
     }
 
-    private static func sendHead(
+    private static func responseHead(
         status: Int,
         reason: String,
-        headers: [String: String],
-        on connection: NWConnection
-    ) async throws {
+        headers: [String: String]
+    ) -> Data {
         let head =
             (["HTTP/1.1 \(status) \(reason)"]
             + headers.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
             + ["", ""])
             .joined(separator: "\r\n")
-        try await sendChunk(Data(head.utf8), on: connection)
+        return Data(head.utf8)
     }
 
     private static func sendChunk(
@@ -1003,12 +997,11 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         responseHeaders["Content-Length"] =
             responseHeaders["Content-Length"]
             ?? "\(body.count)"
-        let head =
-            (["HTTP/1.1 \(status) \(reason)"]
-            + responseHeaders.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
-            + ["", ""])
-            .joined(separator: "\r\n")
-        var response = Data(head.utf8)
+        var response = Self.responseHead(
+            status: status,
+            reason: reason,
+            headers: responseHeaders
+        )
         response.append(body)
 
         connection.send(

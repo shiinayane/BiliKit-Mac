@@ -44,11 +44,9 @@ struct DASHBridgeRouteTests {
             data: audioData,
             primaryURL: audioURL
         ).representation
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(
-                transport: FixtureRangeTransport(
-                    media: [videoURL: videoData, audioURL: audioData]
-                )
+        let bridge = makeFixtureBridge(
+            FixtureRangeTransport(
+                media: [videoURL: videoData, audioURL: audioData]
             )
         )
 
@@ -101,9 +99,7 @@ struct DASHBridgeRouteTests {
         let registry = LoopbackServerRegistry()
         let bridge = DASHToHLSBridge(
             rangeClient: HTTPRangeClient(),
-            serverFactory: { rangeClient in
-                registry.create(rangeClient: rangeClient)
-            }
+            serverFactory: { registry.create() }
         )
         let original = makeSelectedAudioTrack(representation: audio)
         let alternate = makeSelectedAudioTrack(
@@ -186,9 +182,7 @@ struct DASHBridgeRouteTests {
                 aiURL: audioData
             ]
         )
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport)
-        )
+        let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
             video: video,
@@ -227,9 +221,7 @@ struct DASHBridgeRouteTests {
             ],
             unknownLengthURLs: [aiURL]
         )
-        let fallbackBridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: fallbackTransport)
-        )
+        let fallbackBridge = makeFixtureBridge(fallbackTransport)
         let fallbackPrepared = try await fallbackBridge.prepare(
             video: video,
             audioTracks: [
@@ -296,15 +288,13 @@ struct DASHBridgeRouteTests {
             data: shiftedAIData,
             primaryURL: aiURL
         ).representation
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(
-                transport: FixtureRangeTransport(
-                    media: [
-                        videoURL: videoData,
-                        originalURL: originalData,
-                        aiURL: shiftedAIData
-                    ]
-                )
+        let bridge = makeFixtureBridge(
+            FixtureRangeTransport(
+                media: [
+                    videoURL: videoData,
+                    originalURL: originalData,
+                    aiURL: shiftedAIData
+                ]
             )
         )
 
@@ -377,9 +367,7 @@ struct DASHBridgeRouteTests {
                 backupAudioURL: audioData
             ]
         )
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport)
-        )
+        let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
             video: video,
@@ -430,9 +418,7 @@ struct DASHBridgeRouteTests {
             ],
             failingURLs: [primaryVideo, primaryAudio]
         )
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(transport: transport)
-        )
+        let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
             video: video,

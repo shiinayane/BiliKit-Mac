@@ -3,6 +3,7 @@ import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
+import Synchronization
 import Testing
 
 @testable import BiliPlayback
@@ -276,60 +277,56 @@ func resumeCountWaiters(_ waiters: inout [CountWaiter], reaching count: Int) {
     for waiter in reached { waiter.continuation.resume() }
 }
 
-/// BiliPlaybackTests 唯一的 `HTTPTransport` 替身。
+/// BiliPlaybackTests 唯一的媒体 Range 替身，同时服务 `HTTPTransport`（SIDX／音频格式读取）
+/// 与 `HTTPRangeStreaming`（loopback 媒体转发）。
 ///
-/// 按 URL 返回精确 206 Range；可让整个 URL 或指定 Range 头返回 403、隐藏完整长度，
-/// 或让某些 URL 除 SIDX index 以外的 Range 挂起到调用方取消。
-actor FixtureRangeTransport: HTTPTransport {
+/// 按 URL 返回精确 206 Range；可让整个 URL 或指定 Range 头失败、隐藏完整长度、在响应头后
+/// 截断正文，或让某些 URL 除 SIDX index 以外的 Range 挂起到调用方取消。
+actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
     private let media: [URL: Data]
     private let failingURLs: Set<URL>
     private let failingRangeHeaders: [URL: Set<String>]
     private let unknownLengthURLs: Set<URL>
+    private let truncatedBodyLengths: [URL: Int]
     private let blockingURLIndexRanges: [URL: MediaByteRange]
+    private let invalidation = Mutex(false)
     private(set) var requests: [HTTPRequest] = []
     private(set) var startedBlockedRequestCount = 0
     private(set) var cancelledBlockedRequestCount = 0
     private var blockedRequestWaiters: [CountWaiter] = []
+    private var cancelledRequestWaiters: [CountWaiter] = []
 
     init(
         media: [URL: Data],
         failingURLs: Set<URL> = [],
         failingRangeHeaders: [URL: Set<String>] = [:],
         unknownLengthURLs: Set<URL> = [],
+        truncatedBodyLengths: [URL: Int] = [:],
         blockingURLIndexRanges: [URL: MediaByteRange] = [:]
     ) {
         self.media = media
         self.failingURLs = failingURLs
         self.failingRangeHeaders = failingRangeHeaders
         self.unknownLengthURLs = unknownLengthURLs
+        self.truncatedBodyLengths = truncatedBodyLengths
         self.blockingURLIndexRanges = blockingURLIndexRanges
+    }
+
+    nonisolated var wasInvalidated: Bool {
+        invalidation.withLock { $0 }
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
-        let rangeHeader = request.headers.first(where: { name, _ in
-            name.caseInsensitiveCompare("Range") == .orderedSame
-        })?.value
-        if failingURLs.contains(request.url)
-            || rangeHeader.map({
-                failingRangeHeaders[request.url]?.contains($0) == true
-            }) == true
-        {
+        guard
+            let rangeHeader = request.headers.first(where: { name, _ in
+                name.caseInsensitiveCompare("Range") == .orderedSame
+            })?.value,
+            let range = Self.parseRange(rangeHeader),
+            let data = try await admit(request.url, rangeHeader: rangeHeader, range: range)
+        else {
             return HTTPResponse(statusCode: 403, body: Data())
         }
-        guard let data = media[request.url],
-            let rangeHeader,
-            let range = Self.parseRange(rangeHeader, contentLength: data.count)
-        else {
-            return HTTPResponse(statusCode: 400, body: Data())
-        }
-
-        if let indexRange = blockingURLIndexRanges[request.url],
-            range != indexRange
-        {
-            try await blockUntilCancelled()
-        }
-
         let completeLength =
             unknownLengthURLs.contains(request.url)
             ? "*" : String(data.count)
@@ -339,15 +336,99 @@ actor FixtureRangeTransport: HTTPTransport {
                 "Content-Range":
                     "bytes \(range.start)-\(range.endInclusive)/\(completeLength)"
             ],
-            body: data.subdata(
-                in: Int(range.start)..<(Int(range.endInclusive) + 1)
+            body: Self.slice(data, range)
+        )
+    }
+
+    /// 与真实 streamer 一样先确认完整长度再放行响应头，并把正文分两个 chunk 交给下游。
+    func stream(
+        from url: URL,
+        rangeHeader: String,
+        expectedRange: HTTPByteRange,
+        expectedCompleteLength: Int64,
+        headers: [String: String],
+        allowedContentTypes: Set<String>?,
+        onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
+        onChunk: @escaping @Sendable (Data) async throws -> Void
+    ) async throws -> HTTPRangeStreamResult {
+        var requestHeaders = headers
+        requestHeaders["Range"] = rangeHeader
+        requests.append(HTTPRequest(url: url, headers: requestHeaders))
+        let range = try MediaByteRange(
+            start: expectedRange.start,
+            endInclusive: expectedRange.endInclusive
+        )
+        guard let data = try await admit(url, rangeHeader: rangeHeader, range: range)
+        else {
+            throw HTTPRangeStreamingError.statusCode(403)
+        }
+        guard !unknownLengthURLs.contains(url) else {
+            throw HTTPRangeStreamingError.missingCompleteLength
+        }
+        guard Int64(data.count) == expectedCompleteLength else {
+            throw HTTPRangeStreamingError.mismatchedCompleteLength(
+                expected: expectedCompleteLength,
+                actual: Int64(data.count)
+            )
+        }
+        try await onResponse(
+            HTTPRangeStreamResponse(
+                contentRange: try HTTPContentRange(
+                    start: expectedRange.start,
+                    endInclusive: expectedRange.endInclusive,
+                    completeLength: expectedCompleteLength
+                ),
+                contentLength: expectedRange.length,
+                contentType: nil
             )
         )
+        let body = Self.slice(data, range)
+        if let truncatedLength = truncatedBodyLengths[url] {
+            if truncatedLength > 0 {
+                try await onChunk(body.prefix(truncatedLength))
+            }
+            throw HTTPRangeStreamingError.bodyLengthMismatch(
+                expected: expectedRange.length,
+                actual: UInt64(truncatedLength)
+            )
+        }
+        let midpoint = max(1, body.count / 2)
+        try await onChunk(body.prefix(midpoint))
+        if midpoint < body.count {
+            try await onChunk(body.suffix(from: body.startIndex + midpoint))
+        }
+        return HTTPRangeStreamResult(byteCount: UInt64(body.count))
+    }
+
+    nonisolated func invalidate() {
+        invalidation.withLock { $0 = true }
     }
 
     func waitForBlockedRequest() async {
         guard startedBlockedRequestCount == 0 else { return }
         await withCheckedContinuation { blockedRequestWaiters.append((1, $0)) }
+    }
+
+    func waitForCancelledBlockedRequests(_ count: Int) async {
+        guard cancelledBlockedRequestCount < count else { return }
+        await withCheckedContinuation { cancelledRequestWaiters.append((count, $0)) }
+    }
+
+    /// 返回可服务的完整媒体；nil 表示该请求被配置为失败或越界。
+    private func admit(
+        _ url: URL,
+        rangeHeader: String,
+        range: MediaByteRange
+    ) async throws -> Data? {
+        guard !failingURLs.contains(url),
+            failingRangeHeaders[url]?.contains(rangeHeader) != true,
+            let data = media[url],
+            range.endInclusive < Int64(data.count)
+        else { return nil }
+        if let indexRange = blockingURLIndexRanges[url], range != indexRange {
+            try await blockUntilCancelled()
+        }
+        return data
     }
 
     private func blockUntilCancelled() async throws {
@@ -360,14 +441,19 @@ actor FixtureRangeTransport: HTTPTransport {
             try await Task.sleep(for: .seconds(60))
         } catch is CancellationError {
             cancelledBlockedRequestCount += 1
+            resumeCountWaiters(
+                &cancelledRequestWaiters,
+                reaching: cancelledBlockedRequestCount
+            )
             throw CancellationError()
         }
     }
 
-    private static func parseRange(
-        _ value: String,
-        contentLength: Int
-    ) -> MediaByteRange? {
+    private static func slice(_ data: Data, _ range: MediaByteRange) -> Data {
+        data.subdata(in: Int(range.start)..<(Int(range.endInclusive) + 1))
+    }
+
+    private static func parseRange(_ value: String) -> MediaByteRange? {
         guard value.hasPrefix("bytes=") else { return nil }
         let bounds = value.dropFirst("bytes=".count).split(
             separator: "-",
@@ -376,13 +462,20 @@ actor FixtureRangeTransport: HTTPTransport {
         )
         guard bounds.count == 2,
             let start = Int64(bounds[0]),
-            let end = Int64(bounds[1]),
-            end < Int64(contentLength)
+            let end = Int64(bounds[1])
         else {
             return nil
         }
         return try? MediaByteRange(start: start, endInclusive: end)
     }
+}
+
+/// 用同一个 fixture 替身同时提供 SIDX 读取与 loopback 媒体转发的 bridge。
+func makeFixtureBridge(_ transport: FixtureRangeTransport) -> DASHToHLSBridge {
+    DASHToHLSBridge(
+        rangeClient: HTTPRangeClient(transport: transport),
+        serverFactory: { LoopbackPlaybackServer(rangeStreamer: transport) }
+    )
 }
 
 /// BiliPlaybackTests 唯一的 `SubtitleRepository` 替身。
@@ -471,8 +564,8 @@ final class LoopbackServerRegistry: @unchecked Sendable {
         lock.withLock { storage }
     }
 
-    func create(rangeClient: HTTPRangeClient) -> LoopbackPlaybackServer {
-        let server = LoopbackPlaybackServer(rangeClient: rangeClient)
+    func create() -> LoopbackPlaybackServer {
+        let server = LoopbackPlaybackServer()
         lock.withLock {
             storage.append(server)
         }

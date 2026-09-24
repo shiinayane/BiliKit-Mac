@@ -3,12 +3,12 @@ import Foundation
 public struct HTTPRangeStreamResponse: Sendable, Equatable {
     public let contentRange: HTTPContentRange
     public let contentLength: UInt64
-    public let contentType: String
+    public let contentType: String?
 
     public init(
         contentRange: HTTPContentRange,
         contentLength: UInt64,
-        contentType: String
+        contentType: String?
     ) {
         self.contentRange = contentRange
         self.contentLength = contentLength
@@ -43,13 +43,14 @@ public enum HTTPRangeStreamingError: Error, Sendable, Equatable {
 }
 
 public protocol HTTPRangeStreaming: Sendable {
+    /// `allowedContentTypes` 为 nil 时不限制上游 `Content-Type`，其余响应头仍逐项验证。
     func stream(
         from url: URL,
         rangeHeader: String,
         expectedRange: HTTPByteRange,
         expectedCompleteLength: Int64,
         headers: [String: String],
-        allowedContentTypes: Set<String>,
+        allowedContentTypes: Set<String>?,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult
@@ -61,7 +62,7 @@ extension HTTPRangeStreaming {
     public func invalidate() {}
 }
 
-/// 单来源 progressive 媒体 Range 流。
+/// 单来源媒体 Range 流。
 ///
 /// 响应头在正文放行前完成验证，正文按 URLSession
 /// chunk 交给下游；下游完成一个 chunk 后才恢复上游 task，避免把完整媒体积压在内存。
@@ -101,7 +102,7 @@ public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Send
         expectedRange: HTTPByteRange,
         expectedCompleteLength: Int64,
         headers: [String: String] = [:],
-        allowedContentTypes: Set<String>,
+        allowedContentTypes: Set<String>?,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult {
@@ -128,7 +129,7 @@ public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Send
             request,
             expectedRange: expectedRange,
             expectedCompleteLength: expectedCompleteLength,
-            allowedContentTypes: Set(allowedContentTypes.map { $0.lowercased() }),
+            allowedContentTypes: allowedContentTypes.map { Set($0.map { $0.lowercased() }) },
             onResponse: onResponse,
             onChunk: onChunk
         )
@@ -158,7 +159,7 @@ final class URLSessionRangeStreamingTransport: NSObject, URLSessionDataDelegate,
         _ request: URLRequest,
         expectedRange: HTTPByteRange,
         expectedCompleteLength: Int64,
-        allowedContentTypes: Set<String>,
+        allowedContentTypes: Set<String>?,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult {
@@ -258,7 +259,7 @@ private final class RangeStreamingOperation: @unchecked Sendable {
     private let lock = NSLock()
     private let expectedRange: HTTPByteRange
     private let expectedCompleteLength: Int64
-    private let allowedContentTypes: Set<String>
+    private let allowedContentTypes: Set<String>?
     private let onResponse: @Sendable (HTTPRangeStreamResponse) async throws -> Void
     private let onChunk: @Sendable (Data) async throws -> Void
     private var continuation: CheckedContinuation<HTTPRangeStreamResult, any Error>?
@@ -274,7 +275,7 @@ private final class RangeStreamingOperation: @unchecked Sendable {
     init(
         expectedRange: HTTPByteRange,
         expectedCompleteLength: Int64,
-        allowedContentTypes: Set<String>,
+        allowedContentTypes: Set<String>?,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) {
@@ -539,14 +540,18 @@ private final class RangeStreamingOperation: @unchecked Sendable {
                 actual: contentLength
             )
         }
-        guard let rawType = response.value(forHTTPHeaderField: "Content-Type") else {
-            throw HTTPRangeStreamingError.missingContentType
+        let contentType = response.value(forHTTPHeaderField: "Content-Type").map {
+            $0.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)[0]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
         }
-        let contentType = rawType.split(separator: ";", maxSplits: 1)[0]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard allowedContentTypes.contains(contentType) else {
-            throw HTTPRangeStreamingError.unsupportedContentType(contentType)
+        if let allowedContentTypes {
+            guard let contentType else {
+                throw HTTPRangeStreamingError.missingContentType
+            }
+            guard allowedContentTypes.contains(contentType) else {
+                throw HTTPRangeStreamingError.unsupportedContentType(contentType)
+            }
         }
         return HTTPRangeStreamResponse(
             contentRange: contentRange,

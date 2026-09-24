@@ -126,6 +126,32 @@ struct HTTPRangeStreamingClientTests {
         }
     }
 
+    @Test(arguments: [nil, "text/html", "application/octet-stream"] as [String?])
+    func unrestrictedContentTypeStillRequiresExactRangeAndLength(
+        contentType: String?
+    ) async throws {
+        var headers = ["Content-Range": "bytes 0-3/10", "Content-Length": "4"]
+        headers["Content-Type"] = contentType
+        RangeStreamURLProtocol.state.configure(
+            statusCode: 206,
+            headers: headers,
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        #expect(try await streamFourBytes(allowedContentTypes: nil).byteCount == 4)
+
+        headers["Content-Range"] = "bytes 0-3/11"
+        RangeStreamURLProtocol.state.configure(
+            statusCode: 206,
+            headers: headers,
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        await #expect(
+            throws: HTTPRangeStreamingError.mismatchedCompleteLength(expected: 10, actual: 11)
+        ) {
+            try await streamFourBytes(allowedContentTypes: nil)
+        }
+    }
+
     @Test
     func cancellationStopsTheUpstreamTask() async throws {
         RangeStreamURLProtocol.state.configure(
@@ -146,7 +172,8 @@ struct HTTPRangeStreamingClientTests {
     }
 
     private func streamFourBytes(
-        events: StreamEventRecorder? = nil
+        events: StreamEventRecorder? = nil,
+        allowedContentTypes: Set<String>? = ["video/mp4"]
     ) async throws -> HTTPRangeStreamResult {
         let url = try #require(URL(string: "https://cdn.example/video.mp4"))
         return try await makeClient().stream(
@@ -155,7 +182,7 @@ struct HTTPRangeStreamingClientTests {
             expectedRange: try HTTPByteRange(start: 0, endInclusive: 3),
             expectedCompleteLength: 10,
             headers: [:],
-            allowedContentTypes: ["video/mp4"],
+            allowedContentTypes: allowedContentTypes,
             onResponse: { _ in await events?.append("response") },
             onChunk: { data in await events?.append("chunk:\(data.count)") }
         )

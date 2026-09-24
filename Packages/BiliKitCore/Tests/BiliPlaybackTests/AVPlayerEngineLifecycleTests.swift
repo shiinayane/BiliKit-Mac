@@ -49,11 +49,9 @@ struct AVPlayerEngineLifecycleTests {
             primaryURL: audioURL
         ).representation
         let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(
-                    transport: FixtureRangeTransport(
-                        media: [videoURL: videoData, audioURL: audioData]
-                    )
+            bridge: makeFixtureBridge(
+                FixtureRangeTransport(
+                    media: [videoURL: videoData, audioURL: audioData]
                 )
             )
         )
@@ -184,11 +182,9 @@ struct AVPlayerEngineLifecycleTests {
             holdsReset: true
         )
         let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(
-                    transport: FixtureRangeTransport(
-                        media: fixture.media
-                    )
+            bridge: makeFixtureBridge(
+                FixtureRangeTransport(
+                    media: fixture.media
                 )
             ),
             subtitleUseCase: SubtitleUseCase(
@@ -248,11 +244,9 @@ struct AVPlayerEngineLifecycleTests {
         _ catalog: UnusableNativeSubtitleCatalog
     ) async throws {
         let fixture = try makeSimpleMedia(host: "media-only.example")
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(
-                transport: FixtureRangeTransport(
-                    media: fixture.media
-                )
+        let bridge = makeFixtureBridge(
+            FixtureRangeTransport(
+                media: fixture.media
             )
         )
 
@@ -289,14 +283,11 @@ struct AVPlayerEngineLifecycleTests {
                 )
             ])
         )
+        let transport = FixtureRangeTransport(media: fixture.media)
         let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(
-                transport: FixtureRangeTransport(
-                    media: fixture.media
-                )
-            ),
+            rangeClient: HTTPRangeClient(transport: transport),
             subtitleCatalogGrace: .milliseconds(20),
-            serverFactory: { LoopbackPlaybackServer(rangeClient: $0) }
+            serverFactory: { LoopbackPlaybackServer(rangeStreamer: transport) }
         )
         let source = NativeSubtitleSource(
             useCase: SubtitleUseCase(repository: repository),
@@ -349,9 +340,7 @@ struct AVPlayerEngineLifecycleTests {
             media: [videoURL: videoData, audioURL: audioData]
         )
         let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
-            )
+            bridge: makeFixtureBridge(transport)
         )
         engine.player.isMuted = true
         let identity = PlaybackItemIdentity(
@@ -517,9 +506,7 @@ struct AVPlayerEngineLifecycleTests {
             ]
         )
         let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
-            )
+            bridge: makeFixtureBridge(transport)
         )
         let failureRecorder = PlaybackFailureRecorder()
         let failureTask = Task {
@@ -619,9 +606,7 @@ struct AVPlayerEngineLifecycleTests {
             ]
         )
         let engine = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(transport: transport)
-            )
+            bridge: makeFixtureBridge(transport)
         )
         engine.player.isMuted = true
         let oldRequest = PlaybackRequest(
@@ -668,11 +653,9 @@ struct AVPlayerEngineLifecycleTests {
     func replacementAndReleaseStopEveryPreviousLoopbackSession() async throws {
         let fixture = try makeSimpleMedia(host: "fixture.example")
         var engine: AVPlayerEngine? = AVPlayerEngine(
-            bridge: DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(
-                    transport: FixtureRangeTransport(
-                        media: fixture.media
-                    )
+            bridge: makeFixtureBridge(
+                FixtureRangeTransport(
+                    media: fixture.media
                 )
             )
         )

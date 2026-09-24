@@ -107,7 +107,7 @@ struct LoopbackServerBoundaryTests {
             failingRangeHeaders: [primary: ["bytes=2-3"]]
         )
         let server = LoopbackPlaybackServer(
-            rangeClient: HTTPRangeClient(transport: transport)
+            rangeStreamer: transport
         )
         try await server.start()
         defer { server.stop() }
@@ -189,7 +189,7 @@ struct LoopbackServerBoundaryTests {
             media: [remoteURL: media]
         )
         let server = LoopbackPlaybackServer(
-            rangeClient: HTTPRangeClient(transport: transport)
+            rangeStreamer: transport
         )
         try await server.start()
         defer { server.stop() }
@@ -243,6 +243,73 @@ struct LoopbackServerBoundaryTests {
         let requests = await transport.requests
         #expect(requests.count == 1)
         #expect(requests[0].headers["Range"] == "bytes=3-4")
+    }
+
+    @Test
+    func remoteUpstreamWithUnverifiableLengthIsRejectedBeforeHead() async throws {
+        let remoteURL = try #require(
+            URL(string: "https://media.fixture.bilivideo.com/unknown-length.mp4")
+        )
+        let server = LoopbackPlaybackServer(
+            rangeStreamer: FixtureRangeTransport(
+                media: [remoteURL: Data([0, 1, 2, 3])],
+                unknownLengthURLs: [remoteURL]
+            )
+        )
+        try await server.start()
+        defer { server.stop() }
+        let url = try server.register(
+            .remote(
+                try LoopbackRemoteResource(
+                    sourceURL: remoteURL,
+                    contentLength: 4,
+                    contentType: "video/mp4"
+                )
+            ),
+            at: "unknown-length.mp4"
+        )
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+
+        let (body, response) = try await URLSession.shared.data(for: request)
+
+        #expect((response as? HTTPURLResponse)?.statusCode == 502)
+        #expect(body.isEmpty)
+    }
+
+    @Test
+    func stoppingServerCancelsInFlightRemoteRange() async throws {
+        let remoteURL = try #require(
+            URL(string: "https://media.fixture.bilivideo.com/stalled.mp4")
+        )
+        let transport = FixtureRangeTransport(
+            media: [remoteURL: Data(repeating: 0, count: 16)],
+            blockingURLIndexRanges: [
+                remoteURL: try MediaByteRange(start: 0, endInclusive: 0)
+            ]
+        )
+        let server = LoopbackPlaybackServer(rangeStreamer: transport)
+        try await server.start()
+        let url = try server.register(
+            .remote(
+                try LoopbackRemoteResource(
+                    sourceURL: remoteURL,
+                    contentLength: 16,
+                    contentType: "video/mp4"
+                )
+            ),
+            at: "stalled.mp4"
+        )
+        var request = URLRequest(url: url)
+        request.setValue("bytes=4-11", forHTTPHeaderField: "Range")
+        let pending = Task { try await URLSession.shared.data(for: request) }
+
+        await transport.waitForBlockedRequest()
+        server.stop()
+        await transport.waitForCancelledBlockedRequests(1)
+        _ = try? await pending.value
+
+        #expect(await transport.cancelledBlockedRequestCount == 1)
     }
 
     private func requestFiveByteResource(
