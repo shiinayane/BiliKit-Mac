@@ -26,96 +26,45 @@ struct VideoMetadataFormattingTests {
         #expect(counts.map { VideoMetadataFormatting.compactCount($0, locale: locale) } == expected)
     }
 
-    @Test
-    func publicationDateUsesHoursForTodayAndDatesForOlderItems() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(
-            TimeZone(identifier: "Asia/Tokyo")
-        )
-        let now = try #require(
-            calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 24,
-                    hour: 10,
-                    minute: 30
-                )
-            )
-        )
-
-        #expect(
-            VideoMetadataFormatting.publishedDate(
-                now.addingTimeInterval(-30 * 60),
-                relativeTo: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "\(1)小时前", bundle: BrowseFeatureStrings.bundle)
-        )
-        #expect(
-            VideoMetadataFormatting.publishedDate(
-                now.addingTimeInterval(-2 * 60 * 60),
-                relativeTo: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "\(2)小时前", bundle: BrowseFeatureStrings.bundle)
-        )
-        #expect(
-            VideoMetadataFormatting.publishedDate(
-                try date(
-                    year: 2026,
-                    month: 7,
-                    day: 23,
-                    calendar: calendar
-                ),
-                relativeTo: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "昨天", bundle: BrowseFeatureStrings.bundle)
-        )
-        #expect(
-            VideoMetadataFormatting.publishedDate(
-                try date(
-                    year: 2026,
-                    month: 7,
-                    day: 1,
-                    calendar: calendar
-                ),
-                relativeTo: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "\(7)月\(1)日", bundle: BrowseFeatureStrings.bundle)
-        )
-        #expect(
-            VideoMetadataFormatting.publishedDate(
-                try date(
-                    year: 2025,
-                    month: 12,
-                    day: 31,
-                    calendar: calendar
-                ),
-                relativeTo: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ).contains("2025")
-        )
-    }
-
-    private func date(
+    /// 东京时间 2026-07-24 10:30 为 now；同日按小时、前一日为“昨天”、同年省略年份。
+    @Test(arguments: [
+        (year: 2026, month: 7, day: 24, hour: 10, minute: 0, expected: localized("\(1)小时前")),
+        (year: 2026, month: 7, day: 24, hour: 8, minute: 30, expected: localized("\(2)小时前")),
+        (year: 2026, month: 7, day: 24, hour: 0, minute: 5, expected: localized("\(10)小时前")),
+        (year: 2026, month: 7, day: 23, hour: 23, minute: 59, expected: localized("昨天")),
+        (year: 2026, month: 7, day: 1, hour: 12, minute: 0, expected: localized("\(7)月\(1)日")),
+        (year: 2025, month: 12, day: 31, hour: 12, minute: 0, expected: "2025年12月31日")
+    ])
+    func publicationDateUsesCalendarDayBoundaries(
         year: Int,
         month: Int,
         day: Int,
-        calendar: Calendar
-    ) throws -> Date {
-        try #require(
+        hour: Int,
+        minute: Int,
+        expected: String
+    ) throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        let now = try #require(
+            calendar.date(from: DateComponents(year: 2026, month: 7, day: 24, hour: 10, minute: 30))
+        )
+        let published = try #require(
             calendar.date(
-                from: DateComponents(
-                    year: year,
-                    month: month,
-                    day: day,
-                    hour: 12
-                )
+                from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)
             )
         )
+
+        #expect(
+            VideoMetadataFormatting.publishedDate(
+                published,
+                relativeTo: now,
+                calendar: calendar,
+                locale: Locale(identifier: "zh-Hans")
+            ) == expected
+        )
     }
+}
+
+private func localized(_ key: String.LocalizationValue) -> String {
+    String(localized: key, bundle: BrowseFeatureStrings.bundle)
 }

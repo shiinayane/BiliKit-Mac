@@ -1,10 +1,3 @@
-//
-//  BiliKitMacTests.swift
-//  BiliKitMacTests
-//
-//  Created by shiinayane on 2026/07/21.
-//
-
 import BiliApplication
 import BiliModels
 import Foundation

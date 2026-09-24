@@ -4,146 +4,39 @@ import Testing
 
 @Suite
 struct SubtitleUseCaseTests {
+    @Test(arguments: [
+        (kind: SubtitleTrackKind.standard, name: " 中文 ", expected: "中文"),
+        (kind: .standard, name: "English", expected: "English"),
+        (kind: .automatic, name: "中文", expected: "中文（AI）"),
+        (kind: .automatic, name: "한국어", expected: "한국어（AI）"),
+        (kind: .automatic, name: "中文（AI）", expected: "中文（AI）"),
+        (kind: .unknown, name: "Français", expected: "Français")
+    ])
+    func displayPolicyMarksOnlyAutomaticTracks(
+        kind: SubtitleTrackKind,
+        name: String,
+        expected: String
+    ) {
+        let track = SubtitleTrack(id: "track", languageCode: "ai-xx", displayName: name, kind: kind)
+
+        #expect(SubtitleDisplayPolicy.options(for: [track]).map(\.label) == [expected])
+    }
+
     @Test
-    func displayPolicyMatchesVerifiedCatalogLabels() {
-        let tracks = [
+    func displayPolicyKeepsCatalogOrderWithoutInventingOrdinals() {
+        let tracks = ["unknown-1", "unknown-2", "automatic-zh"].map {
             SubtitleTrack(
-                id: "standard-zh",
-                languageCode: "zh",
-                displayName: " 中文 ",
-                kind: .standard
-            ),
-            SubtitleTrack(
-                id: "automatic-zh",
-                languageCode: "ai-zh",
-                displayName: "中文",
-                kind: .automatic
-            ),
-            SubtitleTrack(
-                id: "automatic-en",
-                languageCode: "ai-en",
-                displayName: "English",
-                kind: .automatic
-            ),
-            SubtitleTrack(
-                id: "automatic-ja",
-                languageCode: "ai-ja",
-                displayName: "日本語",
-                kind: .automatic
+                id: $0,
+                languageCode: "und",
+                displayName: "Unknown",
+                kind: $0.hasPrefix("automatic") ? .automatic : .unknown
             )
-        ]
+        }
 
         let options = SubtitleDisplayPolicy.options(for: tracks)
 
         #expect(options.map(\.trackID) == tracks.map(\.id))
-        #expect(
-            options.map(\.label) == [
-                "中文", "中文（AI）", "English（AI）", "日本語（AI）"
-            ]
-        )
-    }
-
-    @Test
-    func displayPolicyDoesNotInventOrdinalLabelsForUnknownTracks() {
-        let options = SubtitleDisplayPolicy.options(for: [
-            SubtitleTrack(
-                id: "unknown-1",
-                languageCode: "und-1",
-                displayName: "Unknown",
-                kind: .unknown
-            ),
-            SubtitleTrack(
-                id: "unknown-2",
-                languageCode: "und-2",
-                displayName: "Unknown",
-                kind: .unknown
-            )
-        ])
-
-        #expect(options.map(\.label) == ["Unknown", "Unknown"])
-    }
-
-    @Test
-    func displayPolicyKeepsLabelsStableAcrossCatalogCombinations() {
-        let automaticChinese = SubtitleTrack(
-            id: "automatic-zh",
-            languageCode: "ai-zh",
-            displayName: "中文",
-            kind: .automatic
-        )
-        let automaticEnglish = SubtitleTrack(
-            id: "automatic-en",
-            languageCode: "ai-en",
-            displayName: "English",
-            kind: .automatic
-        )
-
-        #expect(
-            SubtitleDisplayPolicy.options(for: [automaticChinese])
-                .map(\.label) == ["中文（AI）"]
-        )
-        #expect(
-            SubtitleDisplayPolicy.options(for: [
-                SubtitleTrack(
-                    id: "standard-zh",
-                    languageCode: "zh",
-                    displayName: "中文",
-                    kind: .standard
-                ),
-                automaticChinese
-            ]).map(\.label) == ["中文", "中文（AI）"]
-        )
-        #expect(
-            SubtitleDisplayPolicy.options(for: [
-                SubtitleTrack(
-                    id: "standard-en",
-                    languageCode: "en",
-                    displayName: "English",
-                    kind: .standard
-                ),
-                automaticEnglish
-            ]).map(\.label) == ["English", "English（AI）"]
-        )
-        #expect(
-            SubtitleDisplayPolicy.options(for: [
-                SubtitleTrack(
-                    id: "source-labeled-ai-zh",
-                    languageCode: "ai-zh",
-                    displayName: "中文（AI）",
-                    kind: .automatic
-                )
-            ]).map(\.label) == ["中文（AI）"]
-        )
-    }
-
-    @Test
-    func displayPolicyLabelsAutomaticTracksWithoutLanguageAllowlist() {
-        let options = SubtitleDisplayPolicy.options(for: [
-            SubtitleTrack(
-                id: "automatic-fr",
-                languageCode: "ai-fr",
-                displayName: "Français",
-                kind: .automatic
-            ),
-            SubtitleTrack(
-                id: "automatic-ko",
-                languageCode: "ai-ko",
-                displayName: "한국어",
-                kind: .automatic
-            ),
-            SubtitleTrack(
-                id: "unknown-fr",
-                languageCode: "ai-fr",
-                displayName: "Français",
-                kind: .unknown
-            )
-        ])
-
-        #expect(
-            options.map(\.label) == [
-                "Français（AI）", "한국어（AI）", "Français"
-            ]
-        )
+        #expect(options.map(\.label) == ["Unknown", "Unknown", "Unknown（AI）"])
     }
 
     @Test(
