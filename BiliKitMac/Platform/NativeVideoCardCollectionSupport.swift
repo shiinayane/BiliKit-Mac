@@ -192,7 +192,7 @@ class NativeVideoCardCollectionView: NSCollectionView {
     }
 }
 
-/// 网格与 shelf 的 Coordinator 共同持有的通知观察；reset 时一次性移除。
+/// 原生滚动视图 owner 持有的主线程通知观察；teardown 时一次性移除。
 @MainActor
 struct NativeVideoNotificationObservers {
     private var tokens: [(center: NotificationCenter, token: NSObjectProtocol)] = []

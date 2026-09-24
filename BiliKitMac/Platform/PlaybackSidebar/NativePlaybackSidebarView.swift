@@ -327,9 +327,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     private var snapshotApplicationsInFlight = 0
     private var pendingResetToTop = false
     private var pendingScrollToComments = false
-    private var scrollObservation: NSObjectProtocol?
-    private var liveScrollStartObservation: NSObjectProtocol?
-    private var liveScrollEndObservation: NSObjectProtocol?
+    private var observers = NativeVideoNotificationObservers()
     private var isTornDown = false
 
     init(
@@ -350,34 +348,22 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         rootView.commentsTopButton.target = self
         rootView.commentsTopButton.action = #selector(scrollCommentsToTop)
         rootView.scrollView.contentView.postsBoundsChangedNotifications = true
-        scrollObservation = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: rootView.scrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.viewportDidScroll()
-            }
+        observers.observeScrolling(of: rootView.scrollView) { [weak self] in
+            self?.viewportDidScroll()
         }
-        liveScrollStartObservation = NotificationCenter.default.addObserver(
-            forName: NSScrollView.willStartLiveScrollNotification,
-            object: rootView.scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isLiveScrolling = true
-                self?.commentsPagination.releaseBackpressure()
-                self?.scheduleNextCommentsPageIfNeeded()
-            }
+        observers.observe(
+            NSScrollView.willStartLiveScrollNotification,
+            object: rootView.scrollView
+        ) { [weak self] in
+            self?.isLiveScrolling = true
+            self?.commentsPagination.releaseBackpressure()
+            self?.scheduleNextCommentsPageIfNeeded()
         }
-        liveScrollEndObservation = NotificationCenter.default.addObserver(
-            forName: NSScrollView.didEndLiveScrollNotification,
-            object: rootView.scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isLiveScrolling = false
-            }
+        observers.observe(
+            NSScrollView.didEndLiveScrollNotification,
+            object: rootView.scrollView
+        ) { [weak self] in
+            self?.isLiveScrolling = false
         }
         rootView.viewportSizeDidChange = { [weak self] size in
             self?.viewportSizeDidChange(size)
@@ -470,18 +456,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         releaseCollectionFirstResponder()
         rootView.viewportSizeDidChange = nil
         rootView.scrollView.onContentInsetsChange = nil
-        if let scrollObservation {
-            NotificationCenter.default.removeObserver(scrollObservation)
-            self.scrollObservation = nil
-        }
-        if let liveScrollStartObservation {
-            NotificationCenter.default.removeObserver(liveScrollStartObservation)
-            self.liveScrollStartObservation = nil
-        }
-        if let liveScrollEndObservation {
-            NotificationCenter.default.removeObserver(liveScrollEndObservation)
-            self.liveScrollEndObservation = nil
-        }
+        observers.removeAll()
         for item in collectionView.visibleItems() {
             (item as? NativePlaybackSidebarUploaderItem)?.releaseOffscreenResources()
             (item as? NativePlaybackCommentThreadItem)?.releaseOffscreenResources()
