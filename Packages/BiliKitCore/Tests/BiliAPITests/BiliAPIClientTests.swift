@@ -508,6 +508,7 @@ struct BiliAPIClientTests {
 
     @Test(arguments: [
         jsonResponse(#"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#),
+        jsonResponse(#"{"code":0,"message":"0","ttl":1,"data":{"v_voucher":"voucher_fixture"}}"#),
         HTTPResponse(statusCode: 403, body: Data())
     ])
     func signatureRejectionRefreshesWBIKeyOnce(rejection: HTTPResponse) async throws {
@@ -613,6 +614,20 @@ struct BiliAPIClientTests {
                 URLQueryItem(name: "voice_balance", value: "1")
             ) == true
         )
+    }
+
+    @Test
+    func voucherBesideRealDataIsNotTreatedAsChallenge() async throws {
+        let response = try mutatedFixture("playurl") {
+            $0["v_voucher"] = "voucher_fixture"
+        }
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
+        )
+
+        let playback = try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+
+        #expect(playback.dashManifest != nil)
     }
 
     @Test

@@ -225,6 +225,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 message: status.message ?? ""
             )
         }
+        if Self.isRiskControlVoucher(response.body) {
+            throw BiliAPIError.riskControlVoucher
+        }
         let envelope: APIEnvelope<Payload>
         do {
             envelope = try decoder.decode(APIEnvelope<Payload>.self, from: response.body)
@@ -380,7 +383,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
-    /// WBI 签名请求被服务端以 -403（以及可选的 HTTP 403）拒绝时，强制刷新 WBI key 并只重试一次。
+    /// WBI 签名请求被服务端以 -403、`v_voucher` 挑战（以及可选的 HTTP 403）拒绝时，
+    /// 强制刷新 WBI key 并只重试一次。
     func withWBIKeyRefresh<Value>(
         retryingHTTPForbidden: Bool = true,
         _ request: (_ forceKeyRefresh: Bool) async throws -> Value
@@ -389,9 +393,20 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             return try await request(false)
         } catch BiliAPIError.apiRejected(let code, _) where code == -403 {
             return try await request(true)
+        } catch BiliAPIError.riskControlVoucher {
+            return try await request(true)
         } catch BiliAPIError.httpStatus(403) where retryingHTTPForbidden {
             return try await request(true)
         }
+    }
+
+    /// 只有 `data` 恰好是 `{"v_voucher": …}` 才算挑战；正常响应里并列的 `v_voucher` 不影响解码。
+    private static func isRiskControlVoucher(_ body: Data) -> Bool {
+        guard body.range(of: Data(#""v_voucher""#.utf8)) != nil,
+            let root = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+            let data = root["data"] as? [String: Any]
+        else { return false }
+        return data.count == 1 && data["v_voucher"] != nil
     }
 
     func requireAuthenticatedSessionEpoch(_ expected: UInt64) throws {
