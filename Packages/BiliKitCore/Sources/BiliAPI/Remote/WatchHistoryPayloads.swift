@@ -7,11 +7,7 @@ struct WatchHistoryPayload: Decodable, Sendable {
     let list: [WatchHistoryItemPayload]
 
     func model(pageSize: Int) throws -> WatchHistoryPage {
-        var seen = Set<String>()
-        let items: [WatchHistoryItem] = try list.compactMap { payload in
-            guard let item = try payload.model() else { return nil }
-            return seen.insert(item.bvid).inserted ? item : nil
-        }
+        let items = try list.compactMap { try $0.model() }.uniquedByBVID(\.bvid)
         let continuation: WatchHistoryContinuation?
         if list.count >= pageSize, let cursor {
             continuation = try cursor.continuation()
