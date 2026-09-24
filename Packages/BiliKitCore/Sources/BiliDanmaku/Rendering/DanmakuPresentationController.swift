@@ -22,16 +22,13 @@ struct DanmakuDensityAdmissionPolicy: Sendable, Equatable {
 }
 
 public struct DanmakuRendererStatistics: Sendable, Equatable {
-    public private(set) var admitted = 0
     public private(set) var droppedNoLane = 0
     public private(set) var droppedCapacity = 0
     public private(set) var active = 0
-    public private(set) var peakActive = 0
 
     public init() {}
 
     mutating func record(_ admission: DanmakuLaneAdmission) {
-        admitted += admission.admitted.count
         droppedNoLane += admission.dropCounts.noLane
         droppedCapacity += admission.dropCounts.capacity
     }
@@ -55,7 +52,6 @@ public struct DanmakuRendererStatistics: Sendable, Equatable {
 
     mutating func updateActive(_ count: Int) {
         active = count
-        peakActive = max(peakActive, count)
     }
 }
 
@@ -110,18 +106,6 @@ public final class DanmakuPresentationController:
             width: configuration.surfaceWidth,
             height: configuration.surfaceHeight,
             backingScale: backingScale
-        )
-    }
-
-    public convenience init(
-        backend: any DanmakuRenderingBackend,
-        configuration: DanmakuLaneConfiguration,
-        durations: DanmakuRendererDurations
-    ) {
-        self.init(
-            backend: backend,
-            configuration: configuration,
-            motionPolicy: DanmakuMotionPolicy(fixedDurations: durations)
         )
     }
 

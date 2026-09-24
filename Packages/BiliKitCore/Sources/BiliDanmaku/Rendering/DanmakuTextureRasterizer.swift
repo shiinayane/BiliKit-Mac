@@ -5,18 +5,13 @@ import CoreText
 import Foundation
 
 struct DanmakuTextureCacheKey: Hashable, Sendable {
-    static let algorithmVersion = 1
-
     let text: String
     let fontSize: Double
     let colorRGB: UInt32
-    let fontDescriptor: String
     let fontWeight: CoreAnimationDanmakuFontWeight
     let fontScale: Double
     let backingScale: Double
-    let outlineWidthPoints: Double
     let shadowRadiusPoints: Double
-    let algorithmVersion: Int
 }
 
 struct DanmakuTexturePayload: Sendable, Equatable {
@@ -69,13 +64,10 @@ enum DanmakuTextureRasterizer {
             text: event.text,
             fontSize: fontSize,
             colorRGB: event.colorRGB & 0x00FF_FFFF,
-            fontDescriptor: "system-\(style.fontWeight.rawValue)",
             fontWeight: style.fontWeight,
             fontScale: style.fontScale,
             backingScale: backingScale,
-            outlineWidthPoints: outlineWidthPoints,
-            shadowRadiusPoints: style.shadowBlurRadius,
-            algorithmVersion: DanmakuTextureCacheKey.algorithmVersion
+            shadowRadiusPoints: style.shadowBlurRadius
         )
     }
 
@@ -117,7 +109,7 @@ enum DanmakuTextureRasterizer {
             return nil
         }
 
-        let outlineRadiusPixels = key.outlineWidthPoints * key.backingScale
+        let outlineRadiusPixels = outlineWidthPoints * key.backingScale
         let shadowRadiusPixels =
             key.shadowRadiusPoints > 0
             ? max(
@@ -171,12 +163,10 @@ enum DanmakuTextureRasterizer {
             height: heightPixels,
             radiusPixels: outlineRadiusPixels
         )
-        let decorationIsLight =
-            relativeLuminance(components)
-            < lightInkRelativeLuminanceThreshold
+        let isLightDecoration = decorationIsLight(colorRGB: key.colorRGB)
         let ring = monochromePixels(
             alpha: ringAlpha,
-            isLight: decorationIsLight
+            isLight: isLightDecoration
         )
         let decorated = sourceOver(foreground: fill, background: ring)
         guard shadowRadiusPixels > 0 else {
@@ -196,7 +186,7 @@ enum DanmakuTextureRasterizer {
         )
         let shadow = monochromePixels(
             alpha: blurredAlpha,
-            isLight: decorationIsLight
+            isLight: isLightDecoration
         )
         let baked = sourceOver(foreground: decorated, background: shadow)
         return DanmakuTexturePayload(
@@ -356,7 +346,7 @@ enum DanmakuTextureRasterizer {
         return result
     }
 
-    static func decorationIsLight(colorRGB: UInt32) -> Bool {
+    private static func decorationIsLight(colorRGB: UInt32) -> Bool {
         relativeLuminance(rgbComponents(colorRGB))
             < lightInkRelativeLuminanceThreshold
     }
