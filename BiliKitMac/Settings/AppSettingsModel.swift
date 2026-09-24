@@ -1,3 +1,4 @@
+import BiliAPI
 import BiliPlayback
 import Foundation
 import Observation
@@ -27,6 +28,17 @@ enum PlaybackRouteBenchmarkAccess: Sendable, Equatable {
 
 enum PlaybackRouteBenchmarkOperationError: Error {
     case authenticationFailure
+
+    /// 样本发现阶段的 API 认证类失败统一收窄为测速登录失效；其他错误（含取消）原样传播。
+    static func mappingDiscoveryError(_ error: any Error) -> any Error {
+        guard let apiError = error as? BiliAPIError else { return error }
+        switch apiError {
+        case .authorizationRequired, .authenticationInvalid, .authorizationUnavailable:
+            return Self.authenticationFailure
+        default:
+            return apiError
+        }
+    }
 }
 
 @MainActor

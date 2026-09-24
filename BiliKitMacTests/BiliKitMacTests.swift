@@ -12,7 +12,9 @@ struct BiliKitMacTests {
         var owner: AppWindowOwner?
 
         do {
-            let environment = AppEnvironment.live()
+            let environment = AppEnvironment.live(
+                accountSessionCoordinator: AccountSessionCoordinator()
+            )
             weakController = environment.playbackPreferencesController
             owner = AppWindowOwner(environment: environment)
         }
