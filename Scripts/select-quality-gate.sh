@@ -2,23 +2,6 @@
 
 set -eu
 
-mode="static"
-saw_path=0
-
-while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    saw_path=1
-    case "$path" in
-        *.md) ;;
-        *)
-            mode="app"
-            break
-            ;;
-    esac
-done
-
-if [ "$saw_path" -eq 0 ]; then
-    mode="app"
-fi
-
-printf '%s\n' "$mode"
+# 从 stdin 读取变更路径：全部是 Markdown 时选 static，其余情况（含无变更）选 app。
+awk 'NF { seen = 1; if ($0 !~ /\.md$/) other = 1 }
+    END { print ((seen && !other) ? "static" : "app") }'

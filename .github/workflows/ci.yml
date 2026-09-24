@@ -64,13 +64,12 @@ jobs:
         id: quality-gate
         shell: bash
         env:
+          # 只有 PR 提供 base；push 与手动运行始终走完整 app Gate（发布依赖 main push 的三环境结果）。
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
           mode=app
-          if [[ "${{ github.event_name }}" == "pull_request" ]] &&
-             git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            mode=$(git diff --name-only "${BASE_SHA}"...HEAD |
-              sh Scripts/select-quality-gate.sh)
+          if [[ -n "$BASE_SHA" ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            mode=$(git diff --name-only "$BASE_SHA"...HEAD | sh Scripts/select-quality-gate.sh)
           fi
           echo "mode=${mode}" >>"$GITHUB_OUTPUT"
           echo "Selected quality gate: ${mode}"
@@ -92,6 +91,8 @@ jobs:
   test-macos-15:
     name: Build and test (macos-15)
     needs: build-and-test
+    # static 只检查文本与工程契约，两条矩阵已覆盖；跳过的 job 对 required check 视为通过。
+    if: needs.build-and-test.outputs.gate-mode != 'static'
     runs-on: macos-15
     timeout-minutes: 30
     env:
