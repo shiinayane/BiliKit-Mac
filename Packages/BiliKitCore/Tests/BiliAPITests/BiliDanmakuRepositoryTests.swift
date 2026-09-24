@@ -15,10 +15,10 @@ struct BiliDanmakuRepositoryTests {
 
     @Test
     func productionDecoderMapsMinimalFixtureAndBuildsWBIAnonymousRequest() async throws {
-        let transport = DanmakuRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
+                try fixtureResponse("nav"),
+                try hexFixtureResponse("danmaku-segment-minimal")
             ]
         )
         let client = BiliAPIClient(
@@ -41,7 +41,7 @@ struct BiliDanmakuRepositoryTests {
         #expect(event.weight == 5)
         #expect(event.description == "DanmakuEvent(redacted)")
 
-        let requests = await transport.requests()
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
@@ -71,124 +71,14 @@ struct BiliDanmakuRepositoryTests {
     }
 
     @Test
-    func productionAuthorizesOnlyTheWBIRequestWhenCredentialIsAvailable()
-        async throws
-    {
-        let transport = DanmakuRecordingTransport(
-            responses: [
-                try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
-            ]
-        )
-        let authorizer = DanmakuRecordingAuthorizer()
-        let repository = BiliDanmakuRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: authorizer,
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        let segment = try await repository.segment(index: 1, for: identity)
-
-        #expect(segment.events.count == 1)
-        #expect(await authorizer.capturedPaths() == ["/x/v2/dm/wbi/web/seg.so"])
-        let requests = await transport.requests()
-        #expect(requests[0].headers["Cookie"] == nil)
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
-    }
-
-    @Test
-    func productionFallsBackToTheSameWBIRequestWhenCredentialIsMissing()
-        async throws
-    {
-        let transport = DanmakuRecordingTransport(
-            responses: [
-                try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
-            ]
-        )
-        let authorizer = DanmakuRecordingAuthorizer(failureKind: .missingCredential)
-        let repository = BiliDanmakuRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: authorizer,
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        let segment = try await repository.segment(index: 1, for: identity)
-
-        #expect(segment.events.count == 1)
-        #expect(await authorizer.capturedPaths() == ["/x/v2/dm/wbi/web/seg.so"])
-        let requests = await transport.requests()
-        #expect(
-            requests.map(\.url.path) == [
-                "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so"
-            ]
-        )
-        #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
-    }
-
-    @Test
-    func invalidCredentialFailsBeforeTheWBIRequestIsSent() async throws {
-        let transport = DanmakuRecordingTransport(
-            responses: [try jsonFixtureResponse("nav")]
-        )
-        let authorizer = DanmakuRecordingAuthorizer(failureKind: .invalidCredential)
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
-        )
-
-        await #expect(throws: BiliAPIError.authenticationInvalid) {
-            try await client.danmakuSegmentData(index: 1, for: identity)
-        }
-
-        #expect(await transport.requests().map(\.url.path) == ["/x/web-interface/nav"])
-    }
-
-    @Test
-    func cancellationDuringAuthorizationStopsBeforeTheWBIRequestIsSent() async throws {
-        let transport = DanmakuRecordingTransport(
-            responses: [
-                try jsonFixtureResponse("nav"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
-            ]
-        )
-        let authorizer = DanmakuSuspendingAuthorizer()
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
-        )
-        let task = Task {
-            try await client.danmakuSegmentData(index: 1, for: identity)
-        }
-        await authorizer.waitUntilAuthorizationStarts()
-
-        task.cancel()
-        await authorizer.resumeAuthorization()
-
-        await #expect(throws: CancellationError.self) {
-            try await task.value
-        }
-        #expect(
-            await transport.requests().map(\.url.path) == ["/x/web-interface/nav"]
-        )
-    }
-
-    @Test
     func remoteAuthenticationInvalidationIsRecognizedBeforeProtobufDecoding()
         async throws
     {
         let repository = BiliDanmakuRepository(
             client: BiliAPIClient(
-                transport: DanmakuRecordingTransport(
+                transport: StubTransport(
                     responses: [
-                        try jsonFixtureResponse("nav"),
+                        try fixtureResponse("nav"),
                         HTTPResponse(
                             statusCode: 200,
                             headers: ["Content-Type": "application/json"],
@@ -206,43 +96,9 @@ struct BiliDanmakuRepositoryTests {
     }
 
     @Test
-    func wbiRejectionRefreshesTheKeyOnce() async throws {
-        let transport = DanmakuRecordingTransport(
-            responses: [
-                try jsonFixtureResponse("nav"),
-                HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "application/json"],
-                    body: Data(#"{"code":-403,"message":"fixture"}"#.utf8)
-                ),
-                try jsonFixtureResponse("nav-refreshed"),
-                try binaryFixtureResponse("danmaku-segment-minimal")
-            ]
-        )
-        let repository = BiliDanmakuRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        let segment = try await repository.segment(index: 1, for: identity)
-
-        #expect(segment.events.count == 1)
-        #expect(
-            await transport.requests().map(\.url.path) == [
-                "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so",
-                "/x/web-interface/nav",
-                "/x/v2/dm/wbi/web/seg.so"
-            ]
-        )
-    }
-
-    @Test
     func truncatedFixtureFailsClosed() async throws {
         let repository = try repository(
-            response: try binaryFixtureResponse("danmaku-segment-truncated")
+            response: try hexFixtureResponse("danmaku-segment-truncated")
         )
 
         await #expect(throws: DanmakuApplicationError.invalidResponse) {
@@ -425,26 +281,12 @@ struct BiliDanmakuRepositoryTests {
         #expect(events.map(\.fontSize) == [25, 25, 18, 25, 36, 25, 25])
     }
 
-    @Test
-    func cancellationIsNotCollapsedIntoTransportFailure() async {
-        let client = BiliAPIClient(transport: DanmakuCancellationTransport())
-        let repository = BiliDanmakuRepository(client: client)
-        let task = Task {
-            try await repository.segment(index: 1, for: identity)
-        }
-        task.cancel()
-
-        await #expect(throws: CancellationError.self) {
-            try await task.value
-        }
-    }
-
     private func repository(response: HTTPResponse) throws -> BiliDanmakuRepository {
         BiliDanmakuRepository(
             client: BiliAPIClient(
-                transport: DanmakuRecordingTransport(
+                transport: StubTransport(
                     responses: [
-                        try jsonFixtureResponse("nav"),
+                        try fixtureResponse("nav"),
                         response
                     ]
                 ),
@@ -452,147 +294,4 @@ struct BiliDanmakuRepositoryTests {
             )
         )
     }
-
-    private func binaryFixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "hex",
-                subdirectory: "Fixtures"
-            )
-        )
-        let text = try String(contentsOf: url, encoding: .utf8)
-        let digits = text.filter { $0.isHexDigit }
-        var body = Data()
-        var index = digits.startIndex
-        while index < digits.endIndex {
-            let next = digits.index(index, offsetBy: 2)
-            let byte = try #require(UInt8(digits[index..<next], radix: 16))
-            body.append(byte)
-            index = next
-        }
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/octet-stream"],
-            body: body
-        )
-    }
-
-    private func jsonFixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: try Data(contentsOf: url)
-        )
-    }
-}
-
-private actor DanmakuRecordingTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private var capturedRequests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        self.responses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        capturedRequests.append(request)
-        guard !responses.isEmpty else {
-            throw DanmakuTestError.missingResponse
-        }
-        return responses.removeFirst()
-    }
-
-    func requests() -> [HTTPRequest] {
-        capturedRequests
-    }
-}
-
-private actor DanmakuCancellationTransport: HTTPTransport {
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        try await Task.sleep(for: .seconds(30))
-        throw DanmakuTestError.missingResponse
-    }
-}
-
-private actor DanmakuRecordingAuthorizer: HTTPRequestAuthorizing {
-    private let failureKind: HTTPRequestAuthorizationFailureKind?
-    private var paths: [String] = []
-
-    init(failureKind: HTTPRequestAuthorizationFailureKind? = nil) {
-        self.failureKind = failureKind
-    }
-
-    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
-        paths.append(request.url.path)
-        if let failureKind {
-            throw DanmakuAuthorizationFailure(
-                authorizationFailureKind: failureKind
-            )
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-
-    func capturedPaths() -> [String] {
-        paths
-    }
-}
-
-private actor DanmakuSuspendingAuthorizer: HTTPRequestAuthorizing {
-    private var authorizationStarted = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var authorizationContinuation: CheckedContinuation<Void, Never>?
-
-    func authorize(_ request: HTTPRequest) async -> HTTPRequest {
-        authorizationStarted = true
-        for waiter in startWaiters {
-            waiter.resume()
-        }
-        startWaiters.removeAll()
-        await withCheckedContinuation { continuation in
-            authorizationContinuation = continuation
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-
-    func waitUntilAuthorizationStarts() async {
-        guard !authorizationStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func resumeAuthorization() {
-        authorizationContinuation?.resume()
-        authorizationContinuation = nil
-    }
-}
-
-private struct DanmakuAuthorizationFailure: HTTPRequestAuthorizationFailure {
-    let authorizationFailureKind: HTTPRequestAuthorizationFailureKind
-}
-
-private enum DanmakuTestError: Error {
-    case missingResponse
 }

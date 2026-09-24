@@ -7,64 +7,32 @@ import Testing
 struct BiliGuestRepositoryTests {
     @Test
     func mapsInvalidRequestAtAdapterBoundary() async {
+        let transport = StubTransport(responses: [])
         let repository = BiliGuestRepository(
-            client: BiliAPIClient(transport: UnexpectedTransport())
+            client: BiliAPIClient(transport: transport)
         )
 
         await #expect(throws: GuestApplicationError.invalidRequest) {
             try await repository.popular(page: 0, pageSize: 20)
         }
+        #expect(transport.capturedRequests().isEmpty)
     }
 
-    @Test(arguments: [403, 412])
-    func mapsRestrictedResponseAtAdapterBoundary(statusCode: Int) async {
+    @Test(arguments: [
+        (HTTPResponse(statusCode: 403, body: Data()), GuestApplicationError.requestRestricted),
+        (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted),
+        (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted),
+        (jsonResponse("{"), .invalidResponse)
+    ])
+    func mapsFailedPopularResponseAtAdapterBoundary(
+        response: HTTPResponse,
+        expected: GuestApplicationError
+    ) async {
         let repository = BiliGuestRepository(
-            client: BiliAPIClient(
-                transport: FixedResponseTransport(
-                    response: HTTPResponse(statusCode: statusCode, body: Data())
-                )
-            )
+            client: BiliAPIClient(transport: StubTransport(responses: [response]))
         )
 
-        await #expect(throws: GuestApplicationError.requestRestricted) {
-            try await repository.popular(page: 1, pageSize: 20)
-        }
-    }
-
-    @Test
-    func mapsRiskControlBusinessResponseAtAdapterBoundary() async {
-        let repository = BiliGuestRepository(
-            client: BiliAPIClient(
-                transport: FixedResponseTransport(
-                    response: HTTPResponse(
-                        statusCode: 200,
-                        headers: ["Content-Type": "application/json"],
-                        body: Data(#"{"code":-352,"message":"blocked"}"#.utf8)
-                    )
-                )
-            )
-        )
-
-        await #expect(throws: GuestApplicationError.requestRestricted) {
-            try await repository.popular(page: 1, pageSize: 20)
-        }
-    }
-
-    @Test
-    func mapsMalformedPayloadAtAdapterBoundary() async {
-        let repository = BiliGuestRepository(
-            client: BiliAPIClient(
-                transport: FixedResponseTransport(
-                    response: HTTPResponse(
-                        statusCode: 200,
-                        headers: ["Content-Type": "application/json"],
-                        body: Data("{".utf8)
-                    )
-                )
-            )
-        )
-
-        await #expect(throws: GuestApplicationError.invalidResponse) {
+        await #expect(throws: expected) {
             try await repository.popular(page: 1, pageSize: 20)
         }
     }
@@ -77,13 +45,13 @@ struct BiliGuestRepositoryTests {
             .replacingOccurrences(of: "avc1.64001f", with: "hev1.1.6.L120.90")
         let repository = BiliGuestRepository(
             client: BiliAPIClient(
-                transport: FixedResponseTransport(
-                    response: HTTPResponse(
+                transport: StubTransport(responses: [
+                    HTTPResponse(
                         statusCode: fixture.statusCode,
                         headers: fixture.headers,
                         body: Data(body.utf8)
                     )
-                )
+                ])
             )
         )
 
@@ -98,47 +66,11 @@ struct BiliGuestRepositoryTests {
     @Test
     func preservesCancellationAtAdapterBoundary() async {
         let repository = BiliGuestRepository(
-            client: BiliAPIClient(transport: CancellationTransport())
+            client: BiliAPIClient(transport: StubTransport([.cancellation]))
         )
 
         await #expect(throws: CancellationError.self) {
             try await repository.popular(page: 1, pageSize: 20)
         }
-    }
-
-    private func fixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json; charset=utf-8"],
-            body: try Data(contentsOf: url)
-        )
-    }
-}
-
-private struct FixedResponseTransport: HTTPTransport {
-    let response: HTTPResponse
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        response
-    }
-}
-
-private struct CancellationTransport: HTTPTransport {
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        throw CancellationError()
-    }
-}
-
-private struct UnexpectedTransport: HTTPTransport {
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        Issue.record("Invalid input should fail before transport")
-        throw CancellationError()
     }
 }

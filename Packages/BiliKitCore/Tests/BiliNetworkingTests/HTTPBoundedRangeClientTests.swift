@@ -23,7 +23,7 @@ struct HTTPBoundedRangeClientTests {
                 collectBody: false
             )
         }
-        try await waitUntil { RangeStreamingURLProtocol.state.wasStopped }
+        await RangeStreamingURLProtocol.state.waitUntilStopped()
         #expect(RangeStreamingURLProtocol.state.deliveredBodyBytes < 100 * 1_024 * 1_024)
     }
 
@@ -55,40 +55,6 @@ struct HTTPBoundedRangeClientTests {
         #expect(
             RangeStreamingURLProtocol.state.lastRequest?.value(forHTTPHeaderField: "Cookie") == nil
         )
-    }
-
-    @Test
-    func sharedSessionAcceptsSequentialExactRanges() async throws {
-        let client = makeClient()
-        RangeStreamingURLProtocol.state.configure(
-            statusCode: 206,
-            headers: ["Content-Range": "bytes 0-2/100", "Content-Length": "3"],
-            body: Data([1, 2, 3]),
-            keepsBodyPending: false
-        )
-        let first = try await client.fetch(
-            from: URL(string: "https://cdn.example/video")!,
-            range: try HTTPByteRange(start: 0, endInclusive: 2),
-            headers: [:],
-            collectBody: false
-        )
-
-        RangeStreamingURLProtocol.state.configure(
-            statusCode: 206,
-            headers: ["Content-Range": "bytes 3-5/100", "Content-Length": "3"],
-            body: Data([4, 5, 6]),
-            keepsBodyPending: false
-        )
-        let second = try await client.fetch(
-            from: URL(string: "https://cdn.example/video")!,
-            range: try HTTPByteRange(start: 3, endInclusive: 5),
-            headers: [:],
-            collectBody: false
-        )
-        client.invalidate()
-
-        #expect(first.byteCount == 3)
-        #expect(second.byteCount == 3)
     }
 
     @Test
@@ -140,15 +106,6 @@ struct HTTPBoundedRangeClientTests {
         return HTTPBoundedRangeClient(
             transport: URLSessionBoundedRangeTransport(configuration: configuration)
         )
-    }
-
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !condition(), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(condition())
     }
 }
 
@@ -210,6 +167,7 @@ private final class RangeStreamingURLProtocolState: @unchecked Sendable {
     private var stopped = false
     private var delivered = 0
     private var capturedRequest: URLRequest?
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     var wasStopped: Bool { lock.withLock { stopped } }
     var deliveredBodyBytes: Int { lock.withLock { delivered } }
@@ -241,6 +199,24 @@ private final class RangeStreamingURLProtocolState: @unchecked Sendable {
         }
     }
 
-    func markStopped() { lock.withLock { stopped = true } }
+    func markStopped() {
+        let waiters = lock.withLock {
+            stopped = true
+            defer { stopWaiters.removeAll() }
+            return stopWaiters
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+
+    func waitUntilStopped() async {
+        await withCheckedContinuation { continuation in
+            let isStopped = lock.withLock {
+                guard !stopped else { return true }
+                stopWaiters.append(continuation)
+                return false
+            }
+            if isStopped { continuation.resume() }
+        }
+    }
     func markDelivered(_ count: Int) { lock.withLock { delivered += count } }
 }

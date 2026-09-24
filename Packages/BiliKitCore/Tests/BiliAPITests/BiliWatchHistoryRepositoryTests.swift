@@ -83,7 +83,7 @@ struct MappingCase: Sendable, CustomTestStringConvertible {
     }
 }
 
-enum HistoryScenario: Sendable {
+enum HistoryScenario: Sendable, Equatable {
     case authorizationRequired
     case apiRejected(code: Int)
     case httpStatus(Int)
@@ -101,82 +101,23 @@ enum HistoryScenario: Sendable {
     }
 
     func repository() -> BiliWatchHistoryRepository {
-        let client: BiliAPIClient
-        switch self {
-        case .authorizationRequired:
-            client = BiliAPIClient(
-                transport: HistoryTransport(outcome: .unknownFailure)
+        // 空 reply 队列让 transport 抛出未知错误。
+        let replies: [StubTransport.Reply] =
+            switch self {
+            case .apiRejected(let code):
+                [.response(jsonResponse("{\"code\":\(code),\"message\":\"fixture\"}"))]
+            case .httpStatus(let status):
+                [.response(HTTPResponse(statusCode: status, body: Data()))]
+            case .cancellation:
+                [.cancellation]
+            case .authorizationRequired, .invalidRequest, .unknownTransportFailure:
+                []
+            }
+        return BiliWatchHistoryRepository(
+            client: BiliAPIClient(
+                transport: StubTransport(replies),
+                requestAuthorizer: self == .authorizationRequired ? nil : StubAuthorizer()
             )
-        case .apiRejected(let code):
-            client = authorizedClient(
-                outcome: .response(
-                    HTTPResponse(
-                        statusCode: 200,
-                        headers: [
-                            "Content-Type": "application/json; charset=utf-8"
-                        ],
-                        body: Data(
-                            """
-                            {"code":\(code),"message":"fixture"}
-                            """.utf8
-                        )
-                    )
-                )
-            )
-        case .httpStatus(let status):
-            client = authorizedClient(
-                outcome: .response(
-                    HTTPResponse(
-                        statusCode: status,
-                        body: Data()
-                    )
-                )
-            )
-        case .invalidRequest:
-            client = authorizedClient(outcome: .unknownFailure)
-        case .cancellation:
-            client = authorizedClient(outcome: .cancellation)
-        case .unknownTransportFailure:
-            client = authorizedClient(outcome: .unknownFailure)
-        }
-        return BiliWatchHistoryRepository(client: client)
-    }
-
-    private func authorizedClient(
-        outcome: HistoryTransport.Outcome
-    ) -> BiliAPIClient {
-        BiliAPIClient(
-            transport: HistoryTransport(outcome: outcome),
-            requestAuthorizer: HistoryRequestAuthorizer()
         )
     }
 }
-
-private struct HistoryRequestAuthorizer: HTTPRequestAuthorizing {
-    func authorize(_ request: HTTPRequest) -> HTTPRequest {
-        request
-    }
-}
-
-private struct HistoryTransport: HTTPTransport {
-    enum Outcome: Sendable {
-        case response(HTTPResponse)
-        case cancellation
-        case unknownFailure
-    }
-
-    let outcome: Outcome
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        switch outcome {
-        case .response(let response):
-            response
-        case .cancellation:
-            throw CancellationError()
-        case .unknownFailure:
-            throw HistoryTransportError()
-        }
-    }
-}
-
-private struct HistoryTransportError: Error {}

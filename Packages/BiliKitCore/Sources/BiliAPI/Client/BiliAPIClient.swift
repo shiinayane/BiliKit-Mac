@@ -58,7 +58,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let authorizationProvenance: AuthorizationProvenance
     }
 
-    public static let productionBaseURL: URL = {
+    private static let baseURL: URL = {
         guard let url = URL(string: "https://api.bilibili.com") else {
             preconditionFailure("Static API base URL must be valid")
         }
@@ -75,8 +75,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private let transportFactory: (@Sendable () -> any HTTPTransport)?
     private let requestAuthorizer: (any HTTPRequestAuthorizing)?
     private let historyWriteAuthorizer: (any HTTPRequestAuthorizing)?
-    private let baseURL: URL
-    private let userAgent: String
+    private let userAgent = HTTPUserAgent.browserCompatible
     private let decoder: JSONDecoder
     private let timestampProvider: @Sendable () -> Int64
     private let wbiSigner = WBISigner()
@@ -88,8 +87,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         transportFactory: (@Sendable () -> any HTTPTransport)? = nil,
-        baseURL: URL = BiliAPIClient.productionBaseURL,
-        userAgent: String = HTTPUserAgent.browserCompatible,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -100,8 +97,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         self.transportFactory = transportFactory
         self.requestAuthorizer = requestAuthorizer
         self.historyWriteAuthorizer = historyWriteAuthorizer
-        self.baseURL = baseURL
-        self.userAgent = userAgent
         self.timestampProvider = timestampProvider
         decoder = JSONDecoder()
     }
@@ -192,18 +187,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 forceKeyRefresh: forceKeyRefresh
             )
         }
-    }
-
-    public func searchVideos(
-        keyword: String,
-        page: Int = 1
-    ) async throws -> SearchPage {
-        try await searchVideos(
-            request: VideoSearchRequest(
-                criteria: VideoSearchCriteria(query: keyword),
-                page: page
-            )
-        )
     }
 
     public func searchVideos(
@@ -1339,7 +1322,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     ) throws -> URL {
         guard
             var components = URLComponents(
-                url: baseURL,
+                url: Self.baseURL,
                 resolvingAgainstBaseURL: false
             )
         else {
@@ -1359,7 +1342,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     ) throws -> URL {
         guard
             var components = URLComponents(
-                url: baseURL,
+                url: Self.baseURL,
                 resolvingAgainstBaseURL: false
             )
         else {
