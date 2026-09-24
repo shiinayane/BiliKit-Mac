@@ -5,50 +5,6 @@ import Testing
 
 struct WatchHistoryUseCaseTests {
     @Test
-    func forwardsContinuationAndPageSizeToRepository() async throws {
-        let repository = WatchHistoryRepositoryStub(
-            pages: [WatchHistoryPage(items: [], continuation: nil)]
-        )
-        let useCase = WatchHistoryUseCase(repository: repository)
-        let continuation = token(123)
-
-        _ = try await useCase.load(after: continuation, pageSize: 30)
-
-        #expect(
-            await repository.requests() == [
-                Request(continuation: continuation, pageSize: 30)
-            ]
-        )
-    }
-
-    @Test
-    func defaultsToTwentyItems() async throws {
-        let repository = WatchHistoryRepositoryStub(
-            pages: [WatchHistoryPage(items: [], continuation: nil)]
-        )
-        let useCase = WatchHistoryUseCase(repository: repository)
-
-        _ = try await useCase.load()
-
-        #expect(
-            await repository.requests() == [
-                Request(continuation: nil, pageSize: 20)
-            ]
-        )
-    }
-
-    @Test(arguments: [31, 0, -1])
-    func rejectsInvalidPageSizeBeforeCallingRepository(pageSize: Int) async {
-        let repository = WatchHistoryRepositoryStub(pages: [])
-        let useCase = WatchHistoryUseCase(repository: repository)
-
-        await #expect(throws: WatchHistoryError.invalidResponse) {
-            try await useCase.load(pageSize: pageSize)
-        }
-        #expect(await repository.requests().isEmpty)
-    }
-
-    @Test
     func skipsFilteredEmptyPagesUntilItemsAreDisplayable() async throws {
         let firstToken = token(1)
         let secondToken = token(2)

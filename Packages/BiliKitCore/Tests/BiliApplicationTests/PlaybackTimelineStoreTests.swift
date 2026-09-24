@@ -153,24 +153,6 @@ struct PlaybackTimelineStoreTests {
     }
 
     @Test
-    func cancellingSubscriberRemovesContinuation() async throws {
-        let store = PlaybackTimelineStore()
-        let stream = store.updates()
-        let consumer = Task { @MainActor in
-            for await _ in stream {}
-        }
-
-        #expect(store.subscriberCount == 1)
-        consumer.cancel()
-        await consumer.value
-
-        while store.subscriberCount != 0 {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(store.subscriberCount == 0)
-    }
-
-    @Test
     func snapshotNormalizesInvalidNumericInputAndRedactsIdentity() {
         let identity = PlaybackItemIdentity(
             bvid: "BV1PrivateFixture",

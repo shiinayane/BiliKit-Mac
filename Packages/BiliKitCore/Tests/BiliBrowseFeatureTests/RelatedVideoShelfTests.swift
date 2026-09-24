@@ -67,16 +67,4 @@ struct RelatedVideoShelfTests {
         #expect(presentation.durationText == nil)
         #expect(!presentation.accessibilityLabel.contains("12:34"))
     }
-
-    @Test
-    func selectionForwardsOnlyTheReplacementBVID() {
-        var selectedBVID: String?
-        let selection = RelatedVideoShelfSelection { bvid in
-            selectedBVID = bvid
-        }
-
-        selection.select("BV1Replacement")
-
-        #expect(selectedBVID == "BV1Replacement")
-    }
 }

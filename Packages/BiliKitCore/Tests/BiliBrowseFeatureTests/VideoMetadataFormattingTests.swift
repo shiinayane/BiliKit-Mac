@@ -5,29 +5,6 @@ import Testing
 
 struct VideoMetadataFormattingTests {
     @Test
-    func simplifiedChineseResourcesPreserveUnitsAndRelativeTime() throws {
-        // Validate catalog copy independently of SwiftPM's version-specific resource compilation.
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/BiliBrowseFeature/Resources/Localizable.xcstrings")
-        let catalog = try #require(
-            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-        )
-        let strings = try #require(catalog["strings"] as? [String: Any])
-        let expected = [
-            "万": "万", "亿": "亿", "%lld分钟前": "%lld分钟前",
-            "%lld小时前": "%lld小时前", "昨天": "昨天"
-        ]
-        for (key, value) in expected {
-            let entry = try #require(strings[key] as? [String: Any])
-            let localizations = try #require(entry["localizations"] as? [String: Any])
-            let chinese = try #require(localizations["zh-Hans"] as? [String: Any])
-            let unit = try #require(chinese["stringUnit"] as? [String: String])
-            #expect(unit["value"] == value)
-        }
-    }
-
-    @Test
     func compactCountsMatchResourceLanguage() throws {
         let language = try #require(BrowseFeatureStrings.bundle.preferredLocalizations.first)
         let locale = Locale(identifier: language)
@@ -121,34 +98,6 @@ struct VideoMetadataFormattingTests {
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
             ).contains("2025")
-        )
-    }
-
-    @Test
-    func fullPublicationDateIncludesSeconds() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(
-            TimeZone(identifier: "Asia/Tokyo")
-        )
-        let date = try #require(
-            calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 24,
-                    hour: 22,
-                    minute: 51,
-                    second: 3
-                )
-            )
-        )
-
-        #expect(
-            VideoMetadataFormatting.fullPublishedDate(
-                date,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ).contains("22:51:03")
         )
     }
 

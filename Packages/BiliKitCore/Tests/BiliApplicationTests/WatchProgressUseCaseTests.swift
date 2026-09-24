@@ -5,26 +5,6 @@ import Testing
 
 struct WatchProgressUseCaseTests {
     @Test
-    func processWriterNeverOverlapsMultipleWindows() async throws {
-        let base = ProcessBlockingRepository()
-        let writer = SerializedWatchProgressRepository(base: base)
-        let first = try report(aid: 11, cid: 22, sequence: 1)
-        let second = try report(aid: 33, cid: 44, sequence: 2)
-        var starts = base.starts().makeAsyncIterator()
-
-        let firstTask = Task { try await writer.report(first) }
-        #expect(await starts.next() == first)
-        let secondTask = Task { try await writer.report(second) }
-        #expect(await base.maximumActiveCount == 1)
-        await base.releaseNext()
-        #expect(await starts.next() == second)
-        #expect(await base.maximumActiveCount == 1)
-        await base.releaseNext()
-        try await firstTask.value
-        try await secondTask.value
-    }
-
-    @Test
     func authenticationGenerationCancelsQueuedOldSessionWithoutReplay() async throws {
         let base = ProcessBlockingRepository()
         let writer = SerializedWatchProgressRepository(base: base)

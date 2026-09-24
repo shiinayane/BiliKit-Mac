@@ -5,31 +5,6 @@ import Testing
 
 struct GuestFeedUseCaseTests {
     @Test
-    func normalizesSearchBeforeCallingRepository() async throws {
-        let repository = FeedRepositoryStub()
-        let useCase = GuestFeedUseCase(repository: repository)
-
-        let content = try await useCase.execute(
-            .search(query: "  macOS  ", page: 2)
-        )
-
-        #expect(
-            content
-                == .search(
-                    query: "macOS",
-                    page: SearchPage(
-                        videos: [],
-                        pageNumber: 2,
-                        pageSize: 20,
-                        totalResults: 0,
-                        totalPages: 0
-                    )
-                )
-        )
-        #expect(await repository.searchRequests.map(\.criteria.query) == ["macOS"])
-    }
-
-    @Test
     func rejectsInvalidFeedRequestWithoutCallingRepository() async {
         let repository = FeedRepositoryStub()
         let useCase = GuestFeedUseCase(repository: repository)

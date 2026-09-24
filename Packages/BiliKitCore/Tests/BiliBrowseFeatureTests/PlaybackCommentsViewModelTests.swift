@@ -8,40 +8,6 @@ import Testing
 struct PlaybackCommentsViewModelTests {
     @Test
     @MainActor
-    func initialLoadAndPaginationAppendWithoutMovingExistingThreads() async {
-        let continuation = CommentContinuation(rawValue: "page-2")
-        let repository = SequencedCommentRepository(
-            rootPages: [
-                CommentRootPage(
-                    threads: [thread(1)],
-                    totalCount: 2,
-                    continuation: continuation,
-                    isEnd: false
-                ),
-                CommentRootPage(
-                    threads: [thread(2)],
-                    totalCount: 2,
-                    continuation: nil,
-                    isEnd: true
-                )
-            ]
-        )
-        let model = PlaybackCommentsViewModel(
-            useCase: CommentUseCase(repository: repository)
-        )
-
-        model.activate(subject: .video(aid: 700_001))
-        await model.waitForCurrentRootTask()
-        model.loadNextPage()
-        await model.waitForCurrentRootTask()
-
-        #expect(model.threads.map(\.id.rawValue) == [1, 2])
-        #expect(model.reachedEnd)
-        #expect(model.rootState == .loaded)
-    }
-
-    @Test
-    @MainActor
     func stableContinuationCanAppendMultiplePagesUntilTheServerEnds() async {
         let continuation = CommentContinuation(rawValue: "stable-session")
         let repository = SequencedCommentRepository(

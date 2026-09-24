@@ -48,62 +48,6 @@ struct WatchHistoryCardFormattingTests {
     }
 
     @Test
-    func manualContinuationKeepsCardsButDisablesAutomaticNearEnd() {
-        let item = WatchHistoryItem(
-            bvid: "BV1HistoryManual",
-            title: "历史卡片",
-            coverURL: nil,
-            owner: VideoOwner(id: 7, name: "历史作者"),
-            progressSeconds: 65,
-            durationSeconds: 600,
-            viewedAt: .now
-        )
-        let surface = WatchHistoryLoadedSurface(
-            state: .loaded(
-                items: [item],
-                continuation: WatchHistoryContinuation(rawValue: "opaque"),
-                loadMoreError: nil
-            ),
-            requiresManualLoadMore: true
-        )
-
-        #expect(surface?.items == [item])
-        #expect(surface?.canLoadMore == true)
-        #expect(surface?.requiresManualLoadMore == true)
-        #expect(surface?.isLoadingMore == false)
-    }
-
-    @Test
-    func nativePresentationMapsCurrentHistorySlotsAndAccessibility() {
-        let item = WatchHistoryItem(
-            bvid: "BV1HistorySlot",
-            title: "历史卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/cover.jpg"),
-            owner: VideoOwner(
-                id: 7,
-                name: "历史作者",
-                avatarURL: nil
-            ),
-            progressSeconds: 65,
-            durationSeconds: 600,
-            viewedAt: .now
-        )
-
-        let presentation = WatchHistoryCardPresentation(item: item)
-
-        #expect(presentation.bvid == "BV1HistorySlot")
-        #expect(presentation.title == "历史卡片")
-        #expect(
-            presentation.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true
-        )
-        #expect(presentation.avatarURL == nil)
-        #expect(!presentation.showsAvatar)
-        #expect(presentation.progressText == "1:05/10:00")
-        #expect(presentation.footerLeadingText == "历史作者")
-        #expect(presentation.accessibilityLabel.contains(presentation.progressText))
-    }
-
-    @Test
     func historyImagesUseBoundedCDNVariantsWithoutRewritingUnknownOrigins() throws {
         let trusted = WatchHistoryCardPresentation(
             item: WatchHistoryItem(

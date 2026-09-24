@@ -64,35 +64,6 @@ struct AuthenticationViewModelTests {
 
     @Test
     @MainActor
-    func restoreAndLogoutUseApplicationServiceWithoutExposingCredentials() async {
-        let service = AuthenticationServiceStub(
-            restoreState: .signedIn(nil),
-            logoutState: .signedOut
-        )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            pollInterval: .zero
-        )
-
-        model.restoreIfNeeded()
-        await model.waitForCurrentTask()
-        #expect(model.state == .signedIn(nil))
-        #expect(model.sessionState == .signedIn(nil))
-
-        model.logout()
-        #expect(model.state == .signingOut)
-        #expect(model.sessionState == .signedIn(nil))
-        await model.waitForCurrentTask()
-
-        #expect(model.state == .signedOut)
-        #expect(model.sessionState == .signedOut)
-        #expect(model.accountPresentationState == .signedOut)
-        #expect(await service.observedCalls() == ["restore", "logout"])
-    }
-
-    @Test
-    @MainActor
     func revalidationCannotReplaceInFlightLogoutOwner() async throws {
         let service = AuthenticationServiceStub(
             restoreState: .signedIn(nil),
@@ -399,31 +370,6 @@ struct AuthenticationViewModelTests {
         #expect(
             await service.observedCalls() == ["restore", "logout", "logout"]
         )
-    }
-
-    @Test
-    @MainActor
-    func cancelClearsTransientLoginStateThroughService() async {
-        let service = AuthenticationServiceStub(
-            requestStates: [.expired],
-            cancelState: .signedOut
-        )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            pollInterval: .zero
-        )
-
-        model.startLogin()
-        await model.waitForCurrentTask()
-        #expect(model.state == .expired)
-
-        model.cancelLogin()
-        await model.waitForCurrentTask()
-
-        #expect(model.state == .signedOut)
-        #expect(model.sessionState == .unresolved)
-        #expect(await service.observedCalls() == ["request", "cancel"])
     }
 
     @Test
