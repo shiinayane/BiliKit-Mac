@@ -810,7 +810,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             access: .historyWrite,
             maximumResponseSize: 16 * 1_024
         )
-        guard Self.looksLikeJSON(authorizedResponse.response) else {
+        guard authorizedResponse.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
         }
         let status: APIStatusEnvelope
@@ -989,7 +989,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             access: access,
             maximumResponseSize: maximumResponseSize
         )
-        guard Self.looksLikeJSON(response.response) else {
+        guard response.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
         }
         return response
@@ -1404,25 +1404,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 URLQueryItem(name: "mid", value: String(ownerID)),
                 URLQueryItem(name: "photo", value: "false")
             ]
-    }
-
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        guard
-            let contentType = response.headers.first(where: {
-                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-            })?.value.lowercased(),
-            contentType.contains("json")
-        else {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B || firstByte == 0x5B
     }
 
     private static func looksLikeProtobuf(_ response: HTTPResponse) -> Bool {

@@ -24,6 +24,22 @@ public struct HTTPRequest: Sendable, Equatable {
     }
 }
 
+extension HTTPResponse {
+    /// 解码前拒绝 HTML 风控页等非 JSON 响应：Content-Type 必须声明 JSON，正文须以对象（或允许时数组）开头。
+    public func looksLikeJSON(allowsTopLevelArray: Bool = false) -> Bool {
+        guard
+            let contentType = headers.first(where: {
+                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+            })?.value.lowercased(),
+            contentType.contains("json"),
+            let firstByte = body.first(where: { ![9, 10, 13, 32].contains($0) })
+        else {
+            return false
+        }
+        return firstByte == 0x7B || (allowsTopLevelArray && firstByte == 0x5B)
+    }
+}
+
 public struct HTTPResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]

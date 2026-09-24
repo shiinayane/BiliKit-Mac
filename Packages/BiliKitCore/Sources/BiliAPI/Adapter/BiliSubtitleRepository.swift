@@ -106,7 +106,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             guard response.body.count <= Self.maximumBodySize else {
                 throw BiliAPIError.responseTooLarge(response.body.count)
             }
-            guard Self.looksLikeJSON(response) else {
+            guard response.looksLikeJSON() else {
                 throw BiliAPIError.nonJSONResponse
             }
             let payload: SubtitleBodyPayload
@@ -149,25 +149,6 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         guard generation == requestGeneration else { return }
         currentIdentity = nil
         resourceURLs.removeAll(keepingCapacity: false)
-    }
-
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        guard
-            let contentType = response.headers.first(where: {
-                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-            })?.value.lowercased(),
-            contentType.contains("json")
-        else {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
     }
 
     private static func applicationError(

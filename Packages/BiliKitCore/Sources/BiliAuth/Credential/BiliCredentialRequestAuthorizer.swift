@@ -152,7 +152,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             throw BiliRequestAuthorizationError.validationUnavailable
         }
         guard response.body.count <= Self.maximumResponseSize,
-            Self.looksLikeJSON(response),
+            response.looksLikeJSON(),
             let envelope = try? JSONDecoder().decode(
                 NavigationAuthenticationEnvelope.self,
                 from: response.body
@@ -203,24 +203,6 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         } catch {
             throw BiliRequestAuthorizationError.credentialStoreUnavailable
         }
-    }
-
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        if let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-            !contentType.contains("json")
-        {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
     }
 
     private static func makeProductionTransport() -> URLSessionTransport {

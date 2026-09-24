@@ -307,7 +307,7 @@ public actor WebQRLoginSession {
         guard response.body.count <= Self.maximumResponseSize else {
             throw WebQRLoginFailure.responseTooLarge
         }
-        guard Self.looksLikeJSON(response) else {
+        guard response.looksLikeJSON() else {
             throw WebQRLoginFailure.nonJSONResponse
         }
         return response
@@ -364,7 +364,7 @@ public actor WebQRLoginSession {
         guard response.body.count <= Self.maximumResponseSize else {
             throw WebQRLoginFailure.responseTooLarge
         }
-        guard Self.looksLikeJSON(response) else {
+        guard response.looksLikeJSON() else {
             throw WebQRLoginFailure.nonJSONResponse
         }
         return response
@@ -415,24 +415,6 @@ public actor WebQRLoginSession {
             && url.host?.lowercased() == qrCodeHost
             && url.user == nil
             && url.password == nil
-    }
-
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        if let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-            !contentType.contains("json")
-        {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
     }
 
     private static func safeObservation(
