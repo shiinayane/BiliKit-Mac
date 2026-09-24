@@ -125,14 +125,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
         criteria: VideoSearchCriteria?,
         page: SearchPage
     ) -> some View {
-        let pagination =
-            criteria.map(model.searchPagination(for:))
-            ?? SearchPaginationPresentation(
-                canLoadMore: false,
-                tailIdentity: nil,
-                isLoadingMore: false,
-                loadMoreError: nil
-            )
+        let pagination = criteria.map(model.searchPagination(for:)) ?? .unavailable
         return makeLoadedContent(
             LoadedFeedContent(
                 items: page.videos.map { SearchVideoCardPresentation(video: $0, locale: locale) },
