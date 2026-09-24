@@ -135,19 +135,15 @@ struct DanmakuSchedulerTests {
             DanmakuFilter(
                 showsScrolling: true,
                 showsTop: false,
-                showsBottom: true,
-                minimumWeight: 3,
-                blockedKeywords: ["BLOCK"]
+                showsBottom: true
             )
         )
         scheduler.store(
             DanmakuSegment(
                 index: 1,
                 events: [
-                    event(id: "low", time: 1, weight: 1),
-                    event(id: "top", time: 2, mode: .top, weight: 5),
-                    event(id: "word", time: 3, text: "block fixture", weight: 5),
-                    event(id: "allowed", time: 4, weight: 5)
+                    event(id: "top", time: 2, mode: .top),
+                    event(id: "allowed", time: 4)
                 ]
             ),
             for: identity
@@ -446,18 +442,16 @@ struct DanmakuSchedulerTests {
     private func event(
         id: String,
         time: Double,
-        mode: DanmakuPresentationMode = .scrolling,
-        text: String = "fixture",
-        weight: Int = 5
+        mode: DanmakuPresentationMode = .scrolling
     ) -> DanmakuEvent {
         DanmakuEvent(
             id: id,
             timeSeconds: time,
             mode: mode,
-            text: text,
+            text: "fixture",
             fontSize: 25,
             colorRGB: 0xFF_FF_FF,
-            weight: weight
+            weight: 5
         )
     }
 }

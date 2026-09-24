@@ -13,36 +13,16 @@ private let accountSessionValidationAllowedPaths: Set<String> = [
 struct BiliAuthenticationServiceTests {
     @Test
     func mapsQRCodeFlowAndCommitsOnlyAfterFinalValidation() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = navigationResponse(
-            isLogin: true,
-            includesIdentity: true
-        )
         let store = MemoryWebCredentialStore()
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(
+        let service = makeService(
+            store: store,
+            qrTransport: RecordingAuthTransport(
                 responses: [
                     try fixtureResponse("qr-generate"),
-                    success,
-                    navigation
+                    try successfulPollResponse(),
+                    navigationResponse(isLogin: true, includesIdentity: true)
                 ]
-            ),
-            credentialStore: store
-        )
-        let service = makeService(
-            session: session,
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport()
-            ),
-            store: store
+            )
         )
 
         #expect(await service.requestQRCode() == .awaitingScan)
@@ -58,31 +38,24 @@ struct BiliAuthenticationServiceTests {
     }
 
     @Test
-    func restoresStoredCredentialAsNonSecretSignedInState() async throws {
-        let store = MemoryWebCredentialStore(
-            credential: try makeFixtureCredential()
-        )
+    func unknownPollStatusMapsToInvalidResponse() async throws {
         let service = makeService(
-            session: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(
-                    responses: [
-                        navigationResponse(
-                            isLogin: true,
-                            includesIdentity: true
-                        )
-                    ]
-                )
-            ),
-            store: store
+            store: MemoryWebCredentialStore(),
+            qrTransport: RecordingAuthTransport(
+                responses: [
+                    try fixtureResponse("qr-generate"),
+                    HTTPResponse(
+                        statusCode: 200,
+                        headers: ["Content-Type": "application/json"],
+                        body: Data(#"{"code":0,"data":{"code":12345}}"#.utf8)
+                    )
+                ]
+            )
         )
 
-        #expect(await service.restore() == .signedIn(fixtureAccountIdentity))
+        #expect(await service.requestQRCode() == .awaitingScan)
+        #expect(await service.pollOnce() == .failed(.invalidResponse))
+        #expect(try await service.makeQRCodeImage(scale: 2) == nil)
     }
 
     @Test
@@ -91,16 +64,8 @@ struct BiliAuthenticationServiceTests {
             credential: try makeFixtureCredential()
         )
         let service = makeService(
-            session: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(errors: [CancellationError()])
-            ),
-            store: store
+            store: store,
+            validationTransport: RecordingAuthTransport(errors: [CancellationError()])
         )
 
         #expect(await service.restore() == .failed(.network))
@@ -109,205 +74,59 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.requestQRCode() == .failed(.network))
     }
 
-    @Test
-    func confirmedSessionBecomingSignedOutInvalidatesAuthenticatedAPIs() async throws {
-        let events = LogoutEventRecorder()
+    @Test(arguments: RestoreCase.allCases)
+    func restoreInvalidatesAuthenticatedAPIsOnlyForLocallyObservedSessionLoss(
+        _ restoreCase: RestoreCase
+    ) async throws {
+        let events = AuthEventRecorder()
         let store = MemoryWebCredentialStore(
-            credential: try makeFixtureCredential()
+            credential: restoreCase.hasStoredCredential
+                ? try makeFixtureCredential() : nil
         )
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: restoreCase.navigationLoginStates.map {
+                    navigationResponse(isLogin: $0)
+                }
             ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(
-                    responses: [
-                        navigationResponse(isLogin: true),
-                        navigationResponse(isLogin: false)
-                    ]
-                )
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
+            invalidators: [RecordingAuthenticatedSessionInvalidator(events: events)]
         )
 
-        #expect(await service.restore() == .signedIn(nil))
-        #expect(events.values().isEmpty)
+        var states: [AuthenticationState] = []
+        for _ in restoreCase.expectedStates {
+            states.append(
+                restoreCase.isExternalChange
+                    ? await service.restoreAfterExternalSessionChange()
+                    : await service.restore()
+            )
+        }
 
-        #expect(await service.restore() == .signedOut)
-        #expect(events.values() == ["api-invalidated"])
-        #expect(try store.load() == nil)
-    }
-
-    @Test
-    func initialSignedOutRestoreDoesNotInvalidateAnonymousAPIs() async {
-        let events = LogoutEventRecorder()
-        let store = MemoryWebCredentialStore()
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport()
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
-        )
-
-        #expect(await service.restore() == .signedOut)
-        #expect(events.values().isEmpty)
-    }
-
-    @Test
-    func initialInvalidStoredSessionInvalidatesAuthenticatedAPIs() async throws {
-        let events = LogoutEventRecorder()
-        let store = MemoryWebCredentialStore(
-            credential: try makeFixtureCredential()
-        )
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(
-                    responses: [navigationResponse(isLogin: false)]
-                )
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
-        )
-
-        #expect(await service.restore() == .signedOut)
-        #expect(events.values() == ["api-invalidated"])
-        #expect(try store.load() == nil)
-    }
-
-    @Test
-    func externalSessionChangeRestoreDoesNotRepeatGlobalInvalidation() async throws {
-        let events = LogoutEventRecorder()
-        let store = MemoryWebCredentialStore(
-            credential: try makeFixtureCredential()
-        )
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(
-                    responses: [navigationResponse(isLogin: false)]
-                )
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
-        )
-
-        #expect(await service.restoreAfterExternalSessionChange() == .signedOut)
-        #expect(events.values().isEmpty)
+        #expect(states == restoreCase.expectedStates)
+        #expect(events.values() == restoreCase.expectedEvents)
         #expect(try store.load() == nil)
     }
 
     @Test(.timeLimit(.minutes(1)))
     func logoutCancelsLateCredentialFinalizationBeforeDeletingStore() async throws {
         let store = MemoryWebCredentialStore()
-        let transport = SuspendingFinalizationTransport(
-            generateResponse: try fixtureResponse("qr-generate"),
-            pollResponse: try fixtureResponse(
-                "qr-poll-success",
-                headers: [
-                    "Content-Type": "application/json",
-                    "Set-Cookie": fixtureSetCookieHeader
-                ]
-            ),
-            validationResponse: navigationResponse(isLogin: true)
+        let qrTransport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                try successfulPollResponse(),
+                navigationResponse(isLogin: true)
+            ],
+            suspendingRequest: 3
         )
-        let service = makeService(
-            session: WebQRLoginSession(
-                transport: transport,
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport()
-            ),
-            store: store
-        )
+        let service = makeService(store: store, qrTransport: qrTransport)
 
         #expect(await service.requestQRCode() == .awaitingScan)
         #expect(await service.pollOnce() == .finalizing)
         let finalizeTask = Task { await service.finalizeLogin() }
-        await transport.waitUntilValidationStarts()
+        await qrTransport.waitForSuspendedRequest()
 
         #expect(await service.logout() == .signedOut)
-        await transport.resumeValidation()
+        await qrTransport.resumeSuspendedRequest()
         _ = await finalizeTask.value
 
         #expect(try store.load() == nil)
@@ -320,32 +139,12 @@ struct BiliAuthenticationServiceTests {
             credential: try makeFixtureCredential()
         )
         let invalidator = SuspendingAuthenticatedSessionInvalidator()
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: RecordingAuthTransport(),
-                credentialStore: store
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true)]
             ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: RecordingAuthTransport(
-                    responses: [navigationResponse(isLogin: true)]
-                )
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [invalidator]
+            invalidators: [invalidator]
         )
 
         #expect(await service.restore() == .signedIn(nil))
@@ -358,117 +157,39 @@ struct BiliAuthenticationServiceTests {
         #expect(try store.load() == nil)
     }
 
-    @Test
-    func logoutDeletesCredentialBeforeInvalidatingBothSessions() async throws {
-        let events = LogoutEventRecorder()
-        let store = EventCredentialStore(
+    @Test(arguments: [false, true])
+    func logoutDeletesCredentialBeforeInvalidatingSessionsAndReportsDeleteFailure(
+        deleteFails: Bool
+    ) async throws {
+        let events = AuthEventRecorder()
+        let store = MemoryWebCredentialStore(
             credential: try makeFixtureCredential(),
+            deleteError: deleteFails ? StubAuthError.storeUnavailable : nil,
             events: events
         )
-        let qrTransport = RecordingInvalidatingTransport(
-            name: "qr-invalidated",
-            events: events
-        )
-        let validationTransport = RecordingInvalidatingTransport(
-            name: "validation-invalidated",
-            responses: [navigationResponse(isLogin: true)],
-            events: events
-        )
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: qrTransport,
-                credentialStore: store
+        let service = makeService(
+            store: store,
+            qrTransport: RecordingAuthTransport(
+                invalidationEvent: (events, "qr-invalidated")
             ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: validationTransport
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true)],
+                invalidationEvent: (events, "validation-invalidated")
             ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
+            invalidators: [RecordingAuthenticatedSessionInvalidator(events: events)]
         )
+        let expectedState: AuthenticationState =
+            deleteFails ? .failed(.credentialUnavailable) : .signedOut
 
         #expect(await service.restore() == .signedIn(nil))
-        #expect(await service.logout() == .signedOut)
+        #expect(await service.logout() == expectedState)
+        // 删除失败后仍须先登出，取消登录不能把状态改成未登录。
+        #expect(await service.cancelLogin() == expectedState)
 
-        #expect(try store.load() == nil)
+        #expect((try store.load() == nil) == !deleteFails)
         #expect(
             events.values() == [
-                "credential-deleted",
-                "api-invalidated",
-                "qr-invalidated",
-                "validation-invalidated"
-            ]
-        )
-    }
-
-    @Test
-    func logoutFailureNeverPublishesSignedOutAndStillInvalidatesSessions() async throws {
-        let events = LogoutEventRecorder()
-        let store = EventCredentialStore(
-            credential: try makeFixtureCredential(),
-            deleteFails: true,
-            events: events
-        )
-        let qrTransport = RecordingInvalidatingTransport(
-            name: "qr-invalidated",
-            events: events
-        )
-        let validationTransport = RecordingInvalidatingTransport(
-            name: "validation-invalidated",
-            responses: [navigationResponse(isLogin: true)],
-            events: events
-        )
-        let service = BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
-                transport: qrTransport,
-                credentialStore: store
-            ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: validationTransport
-            ),
-            loginSessionFactory: {
-                WebQRLoginSession(
-                    transport: RecordingAuthTransport(),
-                    credentialStore: store
-                )
-            },
-            authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
-            },
-            additionalSessionInvalidators: [
-                RecordingAuthenticatedSessionInvalidator(events: events)
-            ]
-        )
-
-        #expect(await service.restore() == .signedIn(nil))
-        #expect(await service.logout() == .failed(.credentialUnavailable))
-        #expect(await service.cancelLogin() == .failed(.credentialUnavailable))
-
-        #expect(try store.load() != nil)
-        #expect(
-            events.values() == [
-                "credential-delete-failed",
+                deleteFails ? "credential-delete-failed" : "credential-deleted",
                 "api-invalidated",
                 "qr-invalidated",
                 "validation-invalidated"
@@ -477,13 +198,21 @@ struct BiliAuthenticationServiceTests {
     }
 
     private func makeService(
-        session: WebQRLoginSession,
-        authorizer: BiliCredentialRequestAuthorizer,
-        store: MemoryWebCredentialStore
+        store: MemoryWebCredentialStore,
+        qrTransport: RecordingAuthTransport = RecordingAuthTransport(),
+        validationTransport: RecordingAuthTransport = RecordingAuthTransport(),
+        invalidators: [any AuthenticatedSessionInvalidating] = []
     ) -> BiliAuthenticationService {
         BiliAuthenticationService(
-            loginSession: session,
-            authorizer: authorizer,
+            loginSession: WebQRLoginSession(
+                transport: qrTransport,
+                credentialStore: store
+            ),
+            authorizer: BiliCredentialRequestAuthorizer(
+                store: store,
+                allowedPaths: accountSessionValidationAllowedPaths,
+                transport: validationTransport
+            ),
             loginSessionFactory: {
                 WebQRLoginSession(
                     transport: RecordingAuthTransport(),
@@ -496,8 +225,47 @@ struct BiliAuthenticationServiceTests {
                     allowedPaths: accountSessionValidationAllowedPaths,
                     transport: RecordingAuthTransport()
                 )
-            }
+            },
+            additionalSessionInvalidators: invalidators
         )
+    }
+
+    enum RestoreCase: CaseIterable, Sendable {
+        case confirmedSessionBecomesSignedOut
+        case initialSignedOutWithoutCredential
+        case initialInvalidStoredCredential
+        case externalSessionChange
+
+        var hasStoredCredential: Bool {
+            self != .initialSignedOutWithoutCredential
+        }
+
+        var isExternalChange: Bool { self == .externalSessionChange }
+
+        var navigationLoginStates: [Bool] {
+            switch self {
+            case .confirmedSessionBecomesSignedOut: [true, false]
+            case .initialSignedOutWithoutCredential: []
+            case .initialInvalidStoredCredential, .externalSessionChange: [false]
+            }
+        }
+
+        var expectedStates: [AuthenticationState] {
+            switch self {
+            case .confirmedSessionBecomesSignedOut: [.signedIn(nil), .signedOut]
+            default: [.signedOut]
+            }
+        }
+
+        /// 只有本窗口发现的会话丢失才全局失效认证 API；外部变化已由来源窗口传播。
+        var expectedEvents: [String] {
+            switch self {
+            case .confirmedSessionBecomesSignedOut, .initialInvalidStoredCredential:
+                ["api-invalidated"]
+            case .initialSignedOutWithoutCredential, .externalSessionChange:
+                []
+            }
+        }
     }
 }
 
@@ -507,119 +275,12 @@ private let fixtureAccountIdentity = AccountIdentity(
     avatarURL: URL(string: "https://i0.hdslb.com/fixture/avatar.png")
 )
 
-private func navigationResponse(
-    isLogin: Bool,
-    includesIdentity: Bool = false
-) -> HTTPResponse {
-    let identityFields: String
-    if includesIdentity {
-        identityFields =
-            ",\"mid\":42,\"uname\":\"  Fixture Account  \""
-            + ",\"face\":\"//i0.hdslb.com/fixture/avatar.png\""
-    } else {
-        identityFields = ""
-    }
-    return HTTPResponse(
-        statusCode: 200,
-        headers: ["Content-Type": "application/json"],
-        body: Data(
-            "{\"code\":0,\"data\":{\"isLogin\":\(isLogin)\(identityFields)}}".utf8
-        )
-    )
-}
-
-private final class LogoutEventRecorder: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "BiliAuthenticationServiceTests.events")
-    private var storage: [String] = []
-
-    func append(_ event: String) {
-        queue.sync { storage.append(event) }
-    }
-
-    func values() -> [String] {
-        queue.sync { storage }
-    }
-}
-
-private final class EventCredentialStore: WebCredentialStoring,
-    @unchecked Sendable
-{
-    private let queue = DispatchQueue(label: "BiliAuthenticationServiceTests.store")
-    private var credential: WebCredential?
-    private let deleteFails: Bool
-    private let events: LogoutEventRecorder
-
-    init(
-        credential: WebCredential?,
-        deleteFails: Bool = false,
-        events: LogoutEventRecorder
-    ) {
-        self.credential = credential
-        self.deleteFails = deleteFails
-        self.events = events
-    }
-
-    func load() throws -> WebCredential? {
-        queue.sync { credential }
-    }
-
-    func save(_ credential: WebCredential) throws {
-        queue.sync { self.credential = credential }
-    }
-
-    func delete() throws {
-        try queue.sync {
-            if deleteFails {
-                events.append("credential-delete-failed")
-                throw EventStoreError.unavailable
-            }
-            credential = nil
-            events.append("credential-deleted")
-        }
-    }
-}
-
-private final class RecordingInvalidatingTransport: HTTPTransport,
-    HTTPTransportInvalidating, @unchecked Sendable
-{
-    private let queue = DispatchQueue(label: "BiliAuthenticationServiceTests.transport")
-    private let name: String
-    private var responses: [HTTPResponse]
-    private let events: LogoutEventRecorder
-
-    init(
-        name: String,
-        responses: [HTTPResponse] = [],
-        events: LogoutEventRecorder
-    ) {
-        self.name = name
-        self.responses = responses
-        self.events = events
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        try queue.sync {
-            guard !responses.isEmpty else { throw EventStoreError.missingResponse }
-            return responses.removeFirst()
-        }
-    }
-
-    func invalidateAndCancel() {
-        events.append(name)
-    }
-}
-
-private enum EventStoreError: Error {
-    case unavailable
-    case missingResponse
-}
-
 private actor RecordingAuthenticatedSessionInvalidator:
     AuthenticatedSessionInvalidating
 {
-    private let events: LogoutEventRecorder
+    private let events: AuthEventRecorder
 
-    init(events: LogoutEventRecorder) {
+    init(events: AuthEventRecorder) {
         self.events = events
     }
 
@@ -656,57 +317,5 @@ private actor SuspendingAuthenticatedSessionInvalidator:
     func resumeInvalidation() {
         invalidationContinuation?.resume()
         invalidationContinuation = nil
-    }
-}
-
-private actor SuspendingFinalizationTransport: HTTPTransport {
-    private let generateResponse: HTTPResponse
-    private let pollResponse: HTTPResponse
-    private let validationResponse: HTTPResponse
-    private var requestCount = 0
-    private var validationStarted = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var validationContinuation: CheckedContinuation<Void, Never>?
-
-    init(
-        generateResponse: HTTPResponse,
-        pollResponse: HTTPResponse,
-        validationResponse: HTTPResponse
-    ) {
-        self.generateResponse = generateResponse
-        self.pollResponse = pollResponse
-        self.validationResponse = validationResponse
-    }
-
-    func send(_ request: HTTPRequest) async -> HTTPResponse {
-        requestCount += 1
-        switch requestCount {
-        case 1:
-            return generateResponse
-        case 2:
-            return pollResponse
-        default:
-            validationStarted = true
-            for waiter in startWaiters {
-                waiter.resume()
-            }
-            startWaiters.removeAll()
-            await withCheckedContinuation { continuation in
-                validationContinuation = continuation
-            }
-            return validationResponse
-        }
-    }
-
-    func waitUntilValidationStarts() async {
-        guard !validationStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func resumeValidation() {
-        validationContinuation?.resume()
-        validationContinuation = nil
     }
 }

@@ -244,30 +244,12 @@ public final class CoreAnimationDanmakuRenderer:
         setPlaybackRate(0)
     }
 
-    func textLayer(forEventID eventID: String) -> CALayer? {
-        entries[eventID]?.layer
-    }
-
     func objectIdentity(forEventID eventID: String) -> UInt64? {
         entries[eventID]?.objectIdentity
     }
 
     var outstandingPreparationCount: Int {
         preparationOwner.outstandingRequestCount
-    }
-
-    var cachedTextureCount: Int { preparationOwner.cachedTextureCount }
-    var cachedTextureByteCost: Int { preparationOwner.cachedByteCost }
-    var cacheHitCount: Int { preparationOwner.cacheHitCount }
-    var cacheMissCount: Int { preparationOwner.cacheMissCount }
-    var cacheEvictionCount: Int { preparationOwner.cacheEvictionCount }
-    var rasterizationCount: Int { preparationOwner.rasterizationCount }
-    var maximumConcurrentPreparationCount: Int {
-        preparationOwner.maximumConcurrentOperationCount
-    }
-
-    func handleMemoryPressureForTesting() {
-        preparationOwner.handleMemoryPressureForTesting()
     }
 
     func completeAnimation(

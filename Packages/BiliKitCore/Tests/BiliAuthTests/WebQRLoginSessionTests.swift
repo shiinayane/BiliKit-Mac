@@ -17,7 +17,7 @@ struct WebQRLoginSessionTests {
             Issue.record("应进入等待扫码状态")
             return
         }
-        #expect(qrCode.host == "account.bilibili.com")
+        #expect(URL(string: qrCode.payload)?.host == "account.bilibili.com")
         #expect(qrCode.payload.contains("fixture=1"))
         #expect(state.description == "awaiting-scan")
         #expect(!state.description.contains("FIXTURE_QR_KEY"))
@@ -26,9 +26,6 @@ struct WebQRLoginSessionTests {
         var reflected = ""
         dump(qrCode, to: &reflected)
         #expect(!reflected.contains("fixture=1"))
-        let image = try qrCode.makeCGImage(scale: 2)
-        #expect(image.width > 0)
-        #expect(image.height > 0)
 
         let request = try #require(await transport.requests.first)
         #expect(request.url.path == "/x/passport-login/web/qrcode/generate")
@@ -36,12 +33,22 @@ struct WebQRLoginSessionTests {
         #expect(request.headers["Accept"] == "application/json")
     }
 
-    @Test
-    func keepsWaitingForObservedNotScannedStatus() async throws {
+    @Test(
+        arguments: [
+            ("qr-poll-not-scanned", "awaiting-scan", true),
+            ("qr-poll-awaiting-confirmation", "awaiting-confirmation", true),
+            ("qr-poll-expired", "expired", false)
+        ]
+    )
+    func mapsObservedPollStatus(
+        fixture: String,
+        expectedDescription: String,
+        challengeRemainsActive: Bool
+    ) async throws {
         let transport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-not-scanned")
+                try fixtureResponse(fixture)
             ]
         )
         let session = WebQRLoginSession(transport: transport)
@@ -49,9 +56,9 @@ struct WebQRLoginSessionTests {
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        #expect(state.description == "awaiting-scan")
-        let requests = await transport.requests
-        let pollRequest = try #require(requests.last)
+        #expect(state.description == expectedDescription)
+        #expect(!state.description.contains("FIXTURE_QR_KEY"))
+        let pollRequest = try #require(await transport.requests.last)
         #expect(pollRequest.url.path == "/x/passport-login/web/qrcode/poll")
         #expect(
             URLComponents(url: pollRequest.url, resolvingAgainstBaseURL: false)?
@@ -59,115 +66,53 @@ struct WebQRLoginSessionTests {
                 .first(where: { $0.name == "qrcode_key" })?
                 .value == "FIXTURE_QR_KEY_00000000000000000"
         )
-    }
 
-    @Test
-    func entersAwaitingConfirmationForObservedScannedStatus() async throws {
-        let transport = RecordingAuthTransport(
-            responses: [
-                try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-awaiting-confirmation")
-            ]
-        )
-        let session = WebQRLoginSession(transport: transport)
-
-        _ = try await session.requestQRCode()
-        let state = try await session.pollOnce()
-
-        guard case .awaitingConfirmation(let qrCode) = state else {
-            Issue.record("86090 应进入等待手机确认状态")
-            return
-        }
-        #expect(qrCode.host == "account.bilibili.com")
-        #expect(state.description == "awaiting-confirmation")
-        #expect(!state.description.contains("FIXTURE_QR_KEY"))
-    }
-
-    @Test
-    func entersExpiredForObservedExpiredStatus() async throws {
-        let transport = RecordingAuthTransport(
-            responses: [
-                try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-expired")
-            ]
-        )
-        let session = WebQRLoginSession(transport: transport)
-
-        _ = try await session.requestQRCode()
-        let state = try await session.pollOnce()
-
-        #expect(state == .expired)
-        #expect(state.description == "expired")
-        #expect(try await session.pollOnce() == .failed(.noActiveChallenge))
-    }
-
-    @Test
-    func successWaitsForCredentialValidationAndReportsOnlyNames() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let transport = RecordingAuthTransport(
-            responses: [try fixtureResponse("qr-generate"), success]
-        )
-        let session = WebQRLoginSession(transport: transport)
-
-        _ = try await session.requestQRCode()
-        let state = try await session.pollOnce()
-
-        guard case .awaitingCredentialValidation(let observation) = state else {
-            Issue.record("code=0 应等待登录态校验，不能直接视为已登录")
-            return
-        }
-        #expect(observation.code == 0)
-        #expect(observation.urlHost == "passport.biligame.com")
-        #expect(
-            observation.urlQueryNames == [
-                "DedeUserID", "Expires", "SESSDATA", "bili_jct", "first_domain", "gourl"
-            ]
-        )
-        #expect(observation.refreshTokenPresent)
-        #expect(
-            observation.cookieNames == [
-                "DedeUserID", "DedeUserID__ckMd5", "SESSDATA", "bili_jct", "sid",
-                "unknown_cookie"
-            ]
-        )
-        #expect(state.description == "awaiting-credential-validation")
-        #expect(!String(describing: observation).contains("FIXTURE_VALUE"))
-    }
-
-    @Test
-    func validatesAllowlistedSetCookieAgainstNavigationEndpoint() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
-        )
-        let transport = RecordingAuthTransport(
-            responses: [
-                try fixtureResponse("qr-generate"),
-                success,
-                navigation
-            ]
-        )
-        let session = WebQRLoginSession(transport: transport)
-
-        _ = try await session.requestQRCode()
+        // 过期后不再持有 challenge，下一次轮询不能再发请求。
         _ = try await session.pollOnce()
-        let isLoggedIn = try await session.validatePendingCredential()
+        #expect(await transport.requests.count == (challengeRemainsActive ? 3 : 2))
+    }
 
-        #expect(isLoggedIn)
+    @Test(
+        arguments: [
+            (true, false, .success(.signedIn(nil))),
+            (false, false, .success(.signedOut)),
+            (true, true, .failure(.credentialStoreUnavailable))
+        ] as [(Bool, Bool, Result<NavigationAuthenticationResult, WebQRLoginFailure>)]
+    )
+    func storesAllowlistedCredentialOnlyAfterSuccessfulNavigationValidation(
+        isLogin: Bool,
+        saveFails: Bool,
+        expected: Result<NavigationAuthenticationResult, WebQRLoginFailure>
+    ) async throws {
+        let transport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                try successfulPollResponse(),
+                navigationResponse(isLogin: isLogin)
+            ]
+        )
+        let store = MemoryWebCredentialStore(
+            saveError: saveFails ? StubAuthError.storeUnavailable : nil
+        )
+        let session = WebQRLoginSession(transport: transport, credentialStore: store)
+
+        _ = try await session.requestQRCode()
+        let polled = try await session.pollOnce()
+        #expect(polled == .awaitingCredentialValidation)
+        #expect(polled.description == "awaiting-credential-validation")
+        #expect(store.saveCount == 0)
+
+        let outcome: Result<NavigationAuthenticationResult, WebQRLoginFailure>
+        do {
+            outcome = .success(try await session.validateAndStorePendingCredential())
+        } catch let failure as WebQRLoginFailure {
+            outcome = .failure(failure)
+        }
+
+        #expect(outcome == expected)
+        let stored = outcome == .success(.signedIn(nil))
+        #expect(store.saveCount == (stored ? 1 : 0))
+        #expect(try store.load()?.cookies.count == (stored ? 5 : nil))
         let request = try #require(await transport.requests.last)
         #expect(request.url.absoluteString == "https://api.bilibili.com/x/web-interface/nav")
         let cookieHeader = try #require(request.headers["Cookie"])
@@ -177,135 +122,18 @@ struct WebQRLoginSessionTests {
     }
 
     @Test
-    func storesCompleteCredentialOnlyAfterSuccessfulNavigationValidation() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
-        )
-        let store = MemoryWebCredentialStore()
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(
-                responses: [
-                    try fixtureResponse("qr-generate"),
-                    success,
-                    navigation
-                ]
-            ),
-            credentialStore: store
-        )
-
-        _ = try await session.requestQRCode()
-        _ = try await session.pollOnce()
-        let stored = try await session.validateAndStorePendingCredential()
-
-        #expect(stored == .signedIn(nil))
-        #expect(store.saveCount == 1)
-        #expect(try store.load()?.cookies.count == 5)
-    }
-
-    @Test
-    func rejectedNavigationValidationDoesNotStoreCredential() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":{"isLogin":false}}"#.utf8)
-        )
-        let store = MemoryWebCredentialStore()
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(
-                responses: [
-                    try fixtureResponse("qr-generate"),
-                    success,
-                    navigation
-                ]
-            ),
-            credentialStore: store
-        )
-
-        _ = try await session.requestQRCode()
-        _ = try await session.pollOnce()
-        let stored = try await session.validateAndStorePendingCredential()
-
-        #expect(stored == .signedOut)
-        #expect(store.saveCount == 0)
-        #expect(try store.load() == nil)
-    }
-
-    @Test
-    func keychainFailureCannotReportPersistentLoginSuccess() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
-        )
-        let store = MemoryWebCredentialStore(
-            saveError: FixtureCredentialStoreError.unavailable
-        )
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(
-                responses: [
-                    try fixtureResponse("qr-generate"),
-                    success,
-                    navigation
-                ]
-            ),
-            credentialStore: store
-        )
-
-        _ = try await session.requestQRCode()
-        _ = try await session.pollOnce()
-        await #expect(throws: WebQRLoginFailure.credentialStoreUnavailable) {
-            try await session.validateAndStorePendingCredential()
-        }
-        #expect(store.saveCount == 0)
-    }
-
-    @Test
     func oldCredentialValidationCannotCompleteAfterNewQRCode() async throws {
-        let success = try fixtureResponse(
-            "qr-poll-success",
-            headers: [
-                "Content-Type": "application/json",
-                "Set-Cookie": fixtureSetCookieHeader
-            ]
-        )
-        let navigation = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":{"isLogin":true}}"#.utf8)
-        )
-        let transport = SupersedingValidationTransport(
-            generateResponse: try fixtureResponse("qr-generate"),
-            successResponse: success,
-            navigationResponse: navigation
+        let transport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                try successfulPollResponse(),
+                navigationResponse(isLogin: true),
+                try fixtureResponse("qr-generate")
+            ],
+            suspendingRequest: 3
         )
         let store = MemoryWebCredentialStore()
-        let session = WebQRLoginSession(
-            transport: transport,
-            credentialStore: store
-        )
+        let session = WebQRLoginSession(transport: transport, credentialStore: store)
 
         _ = try await session.requestQRCode()
         _ = try await session.pollOnce()
@@ -313,13 +141,11 @@ struct WebQRLoginSessionTests {
             try await session.validateAndStorePendingCredential()
         }
 
-        try await waitUntil {
-            await transport.validationStarted
-        }
+        await transport.waitForSuspendedRequest()
         let newState = try await session.requestQRCode()
         #expect(newState.description == "awaiting-scan")
 
-        await transport.completeValidation()
+        await transport.resumeSuspendedRequest()
         await #expect(throws: CancellationError.self) {
             try await validation.value
         }
@@ -328,127 +154,46 @@ struct WebQRLoginSessionTests {
     }
 
     @Test
-    func rejectsUnknownStatusWithoutLeakingPayload() async throws {
-        let transport = RecordingAuthTransport(
-            responses: [
-                try fixtureResponse("qr-generate"),
-                try fixtureResponse("qr-poll-unknown")
-            ]
-        )
-        let session = WebQRLoginSession(transport: transport)
-
-        _ = try await session.requestQRCode()
-        let state = try await session.pollOnce()
-
-        guard case .failed(.unsupportedStatus(let observation)) = state else {
-            Issue.record("未知状态应生成安全观察结果")
-            return
-        }
-        #expect(observation.code == 12_345)
-        #expect(
-            observation.dataFieldNames == [
-                "code", "message", "refresh_token", "timestamp", "url"
-            ]
-        )
-        #expect(observation.urlHost == nil)
-        #expect(observation.urlQueryNames.isEmpty)
-        #expect(observation.refreshTokenPresent)
-        #expect(observation.responseHeaderNames == ["content-type"])
-        #expect(observation.cookieNames.isEmpty)
-        #expect(state.description == "failed-unsupported-status-12345")
-        #expect(!state.description.contains("TOP_SECRET"))
-        #expect(!observation.description.contains("TOP_SECRET"))
-    }
-
-    @Test
-    func observationExposesCookieNamesAndAttributesButNotValues() async throws {
+    func unknownStatusFailsClosedWithoutLeakingPayload() async throws {
+        let secret = "TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS"
         let poll = HTTPResponse(
             statusCode: 200,
             headers: [
                 "Content-Type": "application/json",
-                "Set-Cookie":
-                    "fixture_cookie=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS; Path=/; Secure; HttpOnly"
+                "Set-Cookie": "fixture_cookie=\(secret); Path=/; Secure; HttpOnly"
             ],
             body: Data(
-                #"{"code":0,"data":{"url":"https://www.bilibili.com/?first_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS&second_name=TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","refresh_token":"TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS","timestamp":1700000001,"code":12345,"message":"fixture"}}"#
+                #"{"code":0,"data":{"url":"https://www.bilibili.com/?first_name=\#(secret)","refresh_token":"\#(secret)","timestamp":1700000001,"code":12345,"message":"\#(secret)"}}"#
                     .utf8
             )
         )
-        let transport = RecordingAuthTransport(
-            responses: [try fixtureResponse("qr-generate"), poll]
+        let session = WebQRLoginSession(
+            transport: RecordingAuthTransport(
+                responses: [try fixtureResponse("qr-generate"), poll]
+            )
         )
-        let session = WebQRLoginSession(transport: transport)
 
         _ = try await session.requestQRCode()
         let state = try await session.pollOnce()
 
-        guard case .failed(.unsupportedStatus(let observation)) = state else {
-            Issue.record("未知状态应生成安全观察结果")
-            return
-        }
-        #expect(observation.urlScheme == "https")
-        #expect(observation.urlHost == "www.bilibili.com")
-        #expect(observation.urlQueryNames == ["first_name", "second_name"])
-        #expect(observation.refreshTokenPresent)
-        #expect(observation.cookieNames == ["fixture_cookie"])
-        #expect(observation.cookieAttributeNames.contains("Name"))
-        #expect(observation.cookieAttributeNames.contains("Value"))
-
-        let diagnostics =
-            String(describing: observation)
-            + String(reflecting: observation)
-            + state.description
-        #expect(!diagnostics.contains("TOP_SECRET"))
+        #expect(state == .failed(.unsupportedStatus(12_345)))
+        #expect(state.description == "failed-unsupported-status-12345")
+        var dumped = ""
+        dump(state, to: &dumped)
+        #expect(!(String(reflecting: state) + dumped).contains(secret))
+        #expect(try await session.pollOnce() == .failed(.noActiveChallenge))
     }
 
-    @Test
-    func mapsNetworkFailureToSafeState() async throws {
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(errors: [StubAuthError.offline])
-        )
+    @Test(arguments: GenerateFailureCase.allCases)
+    func generateFailureMapsToSafeState(_ failureCase: GenerateFailureCase) async throws {
+        let session = WebQRLoginSession(transport: failureCase.transport())
 
-        let state = try await session.requestQRCode()
-
-        #expect(state == .failed(.network))
-    }
-
-    @Test
-    func rejectsHTMLBeforeDecoding() async throws {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "text/html"],
-            body: Data("<html>risk control</html>".utf8)
-        )
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(responses: [response])
-        )
-
-        let state = try await session.requestQRCode()
-
-        #expect(state == .failed(.nonJSONResponse))
-    }
-
-    @Test
-    func cancellationClearsStateAndPropagates() async throws {
-        let transport = BlockingAuthTransport()
-        let session = WebQRLoginSession(transport: transport)
-        let task = Task { try await session.requestQRCode() }
-
-        try await waitUntil {
-            await transport.hasStarted
-        }
-        task.cancel()
-
-        await #expect(throws: CancellationError.self) {
-            try await task.value
-        }
-        #expect(await session.state == .signedOut)
-        #expect(await transport.wasCancelled)
+        #expect(try await session.requestQRCode() == .failed(failureCase.expected))
     }
 
     @Test
     func pollingWithoutChallengeDoesNotSendRequest() async throws {
-        let transport = RecordingAuthTransport(responses: [])
+        let transport = RecordingAuthTransport()
         let session = WebQRLoginSession(transport: transport)
 
         let state = try await session.pollOnce()
@@ -458,42 +203,38 @@ struct WebQRLoginSessionTests {
     }
 
     @Test
-    func rejectsQRCodeURLOutsideExactHostAllowlist() async throws {
-        let body = Data(
-            #"{"code":0,"data":{"url":"https://account.bilibili.com.evil.invalid/login","qrcode_key":"FIXTURE_QR_KEY_00000000000000000"}}"#
-                .utf8
-        )
-        let session = WebQRLoginSession(
-            transport: RecordingAuthTransport(
-                responses: [
-                    HTTPResponse(
-                        statusCode: 200,
-                        headers: ["Content-Type": "application/json"],
-                        body: body
-                    )
-                ]
-            )
-        )
+    func cancellationClearsStateAndPropagates() async throws {
+        let transport = RecordingAuthTransport(suspendingRequest: 1)
+        let session = WebQRLoginSession(transport: transport)
+        let task = Task { try await session.requestQRCode() }
 
-        let state = try await session.requestQRCode()
+        await transport.waitForSuspendedRequest()
+        task.cancel()
 
-        #expect(state == .failed(.invalidResponse))
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(await session.state == .signedOut)
+        #expect(await transport.suspendedRequestWasCancelled)
     }
 
     @Test
     func olderQRCodeResultCannotOverwriteNewGeneration() async throws {
-        let response = try fixtureResponse("qr-generate")
-        let transport = SupersedingAuthTransport(response: response)
+        let transport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                try fixtureResponse("qr-generate")
+            ],
+            suspendingRequest: 1
+        )
         let session = WebQRLoginSession(transport: transport)
         let first = Task { try await session.requestQRCode() }
 
-        try await waitUntil {
-            await transport.firstRequestStarted
-        }
+        await transport.waitForSuspendedRequest()
         let secondState = try await session.requestQRCode()
         #expect(secondState.description == "awaiting-scan")
 
-        await transport.completeFirstRequest()
+        await transport.resumeSuspendedRequest()
         await #expect(throws: CancellationError.self) {
             try await first.value
         }
@@ -502,183 +243,72 @@ struct WebQRLoginSessionTests {
 
     @Test
     func olderPollCannotResetNewerPollState() async throws {
-        let generate = try fixtureResponse("qr-generate")
-        let notScanned = try fixtureResponse("qr-poll-not-scanned")
-        let transport = SupersedingPollTransport(
-            generateResponse: generate,
-            pollResponse: notScanned
+        let transport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                try fixtureResponse("qr-poll-not-scanned"),
+                try fixtureResponse("qr-poll-not-scanned")
+            ],
+            suspendingRequest: 2
         )
         let session = WebQRLoginSession(transport: transport)
         _ = try await session.requestQRCode()
         let firstPoll = Task { try await session.pollOnce() }
 
-        try await waitUntil {
-            await transport.firstPollStarted
-        }
+        await transport.waitForSuspendedRequest()
         let secondState = try await session.pollOnce()
         #expect(secondState.description == "awaiting-scan")
 
-        await transport.completeFirstPoll()
+        await transport.resumeSuspendedRequest()
         await #expect(throws: CancellationError.self) {
             try await firstPoll.value
         }
         #expect(await session.state.description == "awaiting-scan")
     }
 
-    private func waitUntil(
-        _ condition: () async -> Bool
-    ) async throws {
-        while !(await condition()) {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-    }
-}
+    enum GenerateFailureCase: CaseIterable, Sendable {
+        case offline
+        case htmlBody
+        case qrCodeHostOutsideAllowlist
 
-actor RecordingAuthTransport: HTTPTransport {
-    private var queuedResponses: [HTTPResponse]
-    private var queuedErrors: [any Error]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(
-        responses: [HTTPResponse] = [],
-        errors: [any Error] = []
-    ) {
-        queuedResponses = responses
-        queuedErrors = errors
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        if !queuedErrors.isEmpty {
-            throw queuedErrors.removeFirst()
-        }
-        guard !queuedResponses.isEmpty else {
-            throw StubAuthError.missingResponse
-        }
-        return queuedResponses.removeFirst()
-    }
-}
-
-private actor BlockingAuthTransport: HTTPTransport {
-    private(set) var hasStarted = false
-    private(set) var wasCancelled = false
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        hasStarted = true
-        do {
-            try await Task.sleep(for: .seconds(60))
-            throw StubAuthError.missingResponse
-        } catch is CancellationError {
-            wasCancelled = true
-            throw CancellationError()
-        }
-    }
-}
-
-private actor SupersedingAuthTransport: HTTPTransport {
-    private let response: HTTPResponse
-    private var requestCount = 0
-    private var firstContinuation: CheckedContinuation<HTTPResponse, any Error>?
-    private(set) var firstRequestStarted = false
-
-    init(response: HTTPResponse) {
-        self.response = response
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requestCount += 1
-        guard requestCount == 1 else { return response }
-        firstRequestStarted = true
-        return try await withCheckedThrowingContinuation { continuation in
-            firstContinuation = continuation
-        }
-    }
-
-    func completeFirstRequest() {
-        firstContinuation?.resume(returning: response)
-        firstContinuation = nil
-    }
-}
-
-private actor SupersedingPollTransport: HTTPTransport {
-    private let generateResponse: HTTPResponse
-    private let pollResponse: HTTPResponse
-    private var requestCount = 0
-    private var firstPollContinuation: CheckedContinuation<HTTPResponse, any Error>?
-    private(set) var firstPollStarted = false
-
-    init(
-        generateResponse: HTTPResponse,
-        pollResponse: HTTPResponse
-    ) {
-        self.generateResponse = generateResponse
-        self.pollResponse = pollResponse
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requestCount += 1
-        if requestCount == 1 { return generateResponse }
-        if requestCount > 2 { return pollResponse }
-        firstPollStarted = true
-        return try await withCheckedThrowingContinuation { continuation in
-            firstPollContinuation = continuation
-        }
-    }
-
-    func completeFirstPoll() {
-        firstPollContinuation?.resume(returning: pollResponse)
-        firstPollContinuation = nil
-    }
-}
-
-private actor SupersedingValidationTransport: HTTPTransport {
-    private let generateResponse: HTTPResponse
-    private let successResponse: HTTPResponse
-    private let navigationResponse: HTTPResponse
-    private var requestCount = 0
-    private var validationContinuation: CheckedContinuation<HTTPResponse, any Error>?
-    private(set) var validationStarted = false
-
-    init(
-        generateResponse: HTTPResponse,
-        successResponse: HTTPResponse,
-        navigationResponse: HTTPResponse
-    ) {
-        self.generateResponse = generateResponse
-        self.successResponse = successResponse
-        self.navigationResponse = navigationResponse
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requestCount += 1
-        switch requestCount {
-        case 1, 4:
-            return generateResponse
-        case 2:
-            return successResponse
-        case 3:
-            validationStarted = true
-            return try await withCheckedThrowingContinuation { continuation in
-                validationContinuation = continuation
+        var expected: WebQRLoginFailure {
+            switch self {
+            case .offline: .network
+            case .htmlBody: .nonJSONResponse
+            case .qrCodeHostOutsideAllowlist: .invalidResponse
             }
-        default:
-            throw StubAuthError.missingResponse
+        }
+
+        func transport() -> RecordingAuthTransport {
+            switch self {
+            case .offline:
+                RecordingAuthTransport(errors: [StubAuthError.offline])
+            case .htmlBody:
+                RecordingAuthTransport(
+                    responses: [
+                        HTTPResponse(
+                            statusCode: 200,
+                            headers: ["Content-Type": "text/html"],
+                            body: Data("<html>risk control</html>".utf8)
+                        )
+                    ]
+                )
+            case .qrCodeHostOutsideAllowlist:
+                RecordingAuthTransport(
+                    responses: [
+                        HTTPResponse(
+                            statusCode: 200,
+                            headers: ["Content-Type": "application/json"],
+                            body: Data(
+                                #"{"code":0,"data":{"url":"https://account.bilibili.com.evil.invalid/login","qrcode_key":"FIXTURE_QR_KEY_00000000000000000"}}"#
+                                    .utf8
+                            )
+                        )
+                    ]
+                )
+            }
         }
     }
-
-    func completeValidation() {
-        validationContinuation?.resume(returning: navigationResponse)
-        validationContinuation = nil
-    }
-}
-
-private enum StubAuthError: Error {
-    case offline
-    case missingResponse
-}
-
-private enum FixtureCredentialStoreError: Error {
-    case unavailable
 }
 
 let fixtureSetCookieHeader = [
@@ -689,6 +319,16 @@ let fixtureSetCookieHeader = [
     "sid=FIXTURE_SID_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
     "unknown_cookie=FIXTURE_UNKNOWN_VALUE; Domain=.bilibili.com; Path=/; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT"
 ].joined(separator: ", ")
+
+func successfulPollResponse() throws -> HTTPResponse {
+    try fixtureResponse(
+        "qr-poll-success",
+        headers: [
+            "Content-Type": "application/json",
+            "Set-Cookie": fixtureSetCookieHeader
+        ]
+    )
+}
 
 func fixtureResponse(
     _ name: String,
