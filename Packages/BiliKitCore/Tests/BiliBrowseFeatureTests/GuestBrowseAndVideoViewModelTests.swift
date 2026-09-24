@@ -24,7 +24,7 @@ struct GuestBrowseAndVideoViewModelTests {
                     playback: { _, _ in throw error }
                 )
             ),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixture.bvid)
@@ -680,7 +680,7 @@ struct GuestBrowseAndVideoViewModelTests {
             pages: fixture.twoPages,
             playback: { _, _ in fixture.playback(resuming: metadata) }
         )
-        let player = RecordingPlayerEngine(
+        let player = PlayerStub(
             startOutcome: .resumed(
                 positionSeconds: 42.5,
                 token: resumeToken,
@@ -718,7 +718,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func resumePreparationFailureUsesExistingPlaybackRetryState() async {
         let fixture = GuestFixtures()
-        let player = RecordingPlayerEngine(
+        let player = PlayerStub(
             startOutcome: .preparationFailed
         )
         let model = GuestVideoViewModel(
@@ -747,7 +747,7 @@ struct GuestBrowseAndVideoViewModelTests {
             title: "视频 B"
         )
         let repository = VideoRepositoryStub(fixtures: [first, replacement])
-        let player = SelectiveFailingPlayerEngine(
+        let player = PlayerStub(
             failingBVID: replacement.bvid
         )
         let model = GuestVideoViewModel(
@@ -783,7 +783,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(first.bvid)
@@ -803,7 +803,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func newerVideoLoadPreventsOldVideoFromLoadingPlayer() async throws {
         let slow = GuestFixtures(bvid: "BV1SlowFixture", title: "旧视频")
         let fast = GuestFixtures(bvid: "BV1FastFixture", title: "新视频")
-        let player = RecordingPlayerEngine()
+        let player = PlayerStub()
         let slowGate = TestGate()
         let repository = VideoRepositoryStub(
             detail: { bvid, _ in
@@ -858,7 +858,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func pageSelectionReplacesCIDAndResetClearsBothIdentities() async {
         let fixture = GuestFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
-        let player = RecordingPlayerEngine()
+        let player = PlayerStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -911,7 +911,7 @@ struct GuestBrowseAndVideoViewModelTests {
                 return fixture.playback
             }
         )
-        let player = RecordingPlayerEngine()
+        let player = PlayerStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -948,7 +948,7 @@ struct GuestBrowseAndVideoViewModelTests {
     {
         let fixture = GuestFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
-        let player = PostReadyFailurePlayer()
+        let player = PlayerStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -957,7 +957,7 @@ struct GuestBrowseAndVideoViewModelTests {
         await model.waitForCurrentTask()
         let identity = try #require(model.presentedPlaybackIdentity)
 
-        player.fail(identity)
+        await player.fail(identity)
         await player.waitForStopCallCount(1)
 
         guard case .failedPage(_, let targetPage, .playback) = model.state else {
@@ -981,7 +981,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func failureBeforeLoadReturnsCannotRestoreReadyState() async throws {
         let fixture = GuestFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
-        let player = FailureBeforeLoadReturnsPlayer()
+        let player = PlayerStub(failsFirstLoadUntilStopped: true)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -1016,7 +1016,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func delayedOldSameCIDFailureCannotStopNewABAIntent() async throws {
         let fixture = GuestFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
-        let player = DelayedABAPlayback()
+        let player = PlayerStub(heldLoad: 3)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -1033,7 +1033,7 @@ struct GuestBrowseAndVideoViewModelTests {
         model.selectPage(cid: 900_002)
         await model.waitForCurrentTask()
         model.selectPage(cid: 900_001)
-        await player.waitForThirdLoad()
+        await player.waitForLoadCount(3)
 
         await player.publishFailure(
             PlaybackFailureEvent(identity: firstIdentity, intent: oldIntent)
@@ -1045,7 +1045,7 @@ struct GuestBrowseAndVideoViewModelTests {
         }
         #expect(player.stopCallCount == 2)
 
-        player.releaseThirdLoad()
+        player.releaseHeldLoad()
         await model.waitForCurrentTask()
         await player.finishFailures()
 
@@ -1074,7 +1074,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
@@ -1109,7 +1109,7 @@ struct GuestBrowseAndVideoViewModelTests {
                 return fixture.playback
             }
         )
-        let player = RecordingPlayerEngine()
+        let player = PlayerStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
             playback: player
@@ -1138,28 +1138,28 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func relatedVideoABARejectsOldSameBVIDResult() async throws {
         let fixture = GuestFixtures()
-        let relatedRepository = RelatedVideoABARepositoryStub()
+        let relatedRepository = RelatedRepositoryStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             relatedVideoUseCase: RelatedVideoUseCase(
                 repository: relatedRepository
             )
         )
 
         model.loadVideo("BV1RelatedAA")
-        try await relatedRepository.waitForRequestCount(1)
+        await relatedRepository.waitForRequestCount(1)
         let oldA = try #require(model.relatedVideoTaskSnapshotForTesting())
         model.loadVideo("BV1RelatedBB")
-        try await relatedRepository.waitForRequestCount(2)
+        await relatedRepository.waitForRequestCount(2)
         model.loadVideo("BV1RelatedAA")
-        try await relatedRepository.waitForRequestCount(3)
+        await relatedRepository.waitForRequestCount(3)
 
         let newResult = RelatedVideo.testFixture(bvid: "BV1CurrentAA1")
         await relatedRepository.releaseRequest(2, videos: [newResult])
-        await model.waitForCurrentRelatedVideoTask()
+        await model.relatedVideoTaskSnapshotForTesting()?.value
         #expect(
             model.relatedVideoState
                 == .loaded(bvid: "BV1RelatedAA", videos: [newResult])
@@ -1182,8 +1182,13 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func relatedVideoFailureRetriesWithoutReloadingPlayback() async {
         let fixture = GuestFixtures()
-        let relatedRepository = RetryingRelatedVideoRepositoryStub()
-        let player = RecordingPlayerEngine()
+        let relatedRepository = RelatedRepositoryStub(
+            responses: [
+                .failure(.transportFailure),
+                .success([.testFixture(bvid: "BV1RetryVid1")])
+            ]
+        )
+        let player = PlayerStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture)
@@ -1196,14 +1201,14 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
-        await model.waitForCurrentRelatedVideoTask()
+        await model.relatedVideoTaskSnapshotForTesting()?.value
         #expect(
             model.relatedVideoState
                 == .failed(bvid: fixture.bvid, error: .transportFailure)
         )
 
         model.retryRelatedVideos()
-        await model.waitForCurrentRelatedVideoTask()
+        await model.relatedVideoTaskSnapshotForTesting()?.value
 
         #expect(
             model.relatedVideoState
@@ -1220,12 +1225,12 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func uploaderSignatureLoadsWithoutBlockingReadyDetail() async throws {
         let fixture = GuestFixtures()
-        let signatureRepository = SequencedUploaderSignatureRepository()
+        let signatureRepository = SignatureRepositoryStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: signatureRepository
             )
@@ -1233,13 +1238,13 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
-        try await signatureRepository.waitForRequestCount(1)
+        await signatureRepository.waitForRequestCount(1)
 
         #expect(model.presentedContext?.detail == fixture.detail)
         #expect(model.uploaderSignatureState == .loading)
 
         await signatureRepository.releaseRequest(0, signature: "公开签名")
-        await model.waitForCurrentUploaderSignatureTask()
+        await model.uploaderSignatureTaskSnapshotForTesting()?.value
 
         #expect(model.uploaderSignatureState == .loaded("公开签名"))
     }
@@ -1252,15 +1257,15 @@ struct GuestBrowseAndVideoViewModelTests {
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
-                repository: FailingUploaderSignatureRepository()
+                repository: SignatureRepositoryStub(immediate: .failure(.transportFailure))
             )
         )
 
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
-        await model.waitForCurrentUploaderSignatureTask()
+        await model.uploaderSignatureTaskSnapshotForTesting()?.value
 
         #expect(
             model.state
@@ -1280,12 +1285,12 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func pageSwitchDoesNotReloadUploaderSignature() async {
         let fixture = GuestFixtures()
-        let signatureRepository = CountingUploaderSignatureRepositoryStub()
+        let signatureRepository = SignatureRepositoryStub(immediate: .success("公开签名"))
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture, pages: fixture.twoPages)
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: signatureRepository
             )
@@ -1293,7 +1298,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
-        await model.waitForCurrentUploaderSignatureTask()
+        await model.uploaderSignatureTaskSnapshotForTesting()?.value
         model.selectPage(cid: 900_002)
         await model.waitForCurrentTask()
 
@@ -1306,12 +1311,12 @@ struct GuestBrowseAndVideoViewModelTests {
     func uploaderSignatureABARejectsOldSameOwnerResult() async throws {
         let first = GuestFixtures(bvid: "BV1SignatureA", title: "视频 A")
         let second = GuestFixtures(bvid: "BV1SignatureB", title: "视频 B")
-        let signatureRepository = SequencedUploaderSignatureRepository()
+        let signatureRepository = SignatureRepositoryStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixtures: [first, second])
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: signatureRepository
             )
@@ -1319,20 +1324,20 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(first.bvid)
         await model.waitForCurrentTask()
-        try await signatureRepository.waitForRequestCount(1)
+        await signatureRepository.waitForRequestCount(1)
         let oldA = try #require(
             model.uploaderSignatureTaskSnapshotForTesting()
         )
 
         model.loadVideo(second.bvid)
         await model.waitForCurrentTask()
-        try await signatureRepository.waitForRequestCount(2)
+        await signatureRepository.waitForRequestCount(2)
         model.loadVideo(first.bvid)
         await model.waitForCurrentTask()
-        try await signatureRepository.waitForRequestCount(3)
+        await signatureRepository.waitForRequestCount(3)
 
         await signatureRepository.releaseRequest(2, signature: "新 A 签名")
-        await model.waitForCurrentUploaderSignatureTask()
+        await model.uploaderSignatureTaskSnapshotForTesting()?.value
         await signatureRepository.releaseRequest(0, signature: "旧 A 签名")
         await oldA.value
         await signatureRepository.releaseRequest(1, signature: "旧 B 签名")
@@ -1345,12 +1350,12 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func resetCancelsAndIsolatesLateUploaderSignature() async throws {
         let fixture = GuestFixtures()
-        let signatureRepository = SequencedUploaderSignatureRepository()
+        let signatureRepository = SignatureRepositoryStub()
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
-            playback: RecordingPlayerEngine(),
+            playback: PlayerStub(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: signatureRepository
             )
@@ -1358,7 +1363,7 @@ struct GuestBrowseAndVideoViewModelTests {
 
         model.loadVideo(fixture.bvid)
         await model.waitForCurrentTask()
-        try await signatureRepository.waitForRequestCount(1)
+        await signatureRepository.waitForRequestCount(1)
         let cancelledTask = try #require(
             model.uploaderSignatureTaskSnapshotForTesting()
         )
@@ -1378,7 +1383,7 @@ struct GuestBrowseAndVideoViewModelTests {
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(
@@ -1406,7 +1411,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(
@@ -1435,7 +1440,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
@@ -1451,7 +1456,7 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(resolved.isEmpty)
 
         await repository.releaseEpisodeDetail()
-        await model.waitForCurrentCollectionEpisodeTask()
+        await model.collectionEpisodeTaskSnapshotForTesting()?.value
 
         #expect(resolved.count == 1)
         #expect(resolved.first?.0 == fixtures.episodeBVID)
@@ -1465,7 +1470,7 @@ struct GuestBrowseAndVideoViewModelTests {
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1492,7 +1497,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1501,7 +1506,7 @@ struct GuestBrowseAndVideoViewModelTests {
         model.selectCollectionEpisode(fixtures.duplicateLazyEpisode) { _, _ in }
         await repository.waitForEpisodeDetailRequest()
         await repository.releaseEpisodeDetail()
-        await model.waitForCurrentCollectionEpisodeTask()
+        await model.collectionEpisodeTaskSnapshotForTesting()?.value
 
         #expect(await repository.episodeDetailRequestCount() == 1)
         #expect(
@@ -1524,7 +1529,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1552,13 +1557,13 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
         await model.waitForCurrentTask()
         model.selectCollectionEpisode(fixtures.lazyEpisode) { _, _ in }
-        await model.waitForCurrentCollectionEpisodeTask()
+        await model.collectionEpisodeTaskSnapshotForTesting()?.value
 
         #expect(
             model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
@@ -1567,7 +1572,7 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.presentedContext?.detail.bvid == fixtures.rootBVID)
 
         model.retryCollectionEpisodePages(fixtures.lazyEpisode)
-        await model.waitForCurrentCollectionEpisodeTask()
+        await model.collectionEpisodeTaskSnapshotForTesting()?.value
 
         #expect(
             model.collectionEpisodePageStates[fixtures.lazyEpisode.id]
@@ -1586,7 +1591,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1616,7 +1621,7 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1631,7 +1636,7 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(model.collectionEpisodePageStates[fixtures.thirdLazyEpisode.id] == .loading)
 
         await repository.releaseEpisodeDetail()
-        await model.waitForCurrentCollectionEpisodeTask()
+        await model.collectionEpisodeTaskSnapshotForTesting()?.value
 
         #expect(await repository.episodeDetailRequestCount() == 2)
         #expect(
@@ -1650,7 +1655,7 @@ struct GuestBrowseAndVideoViewModelTests {
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
         let model = GuestVideoViewModel(
             useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -1687,7 +1692,7 @@ struct GuestBrowseAndVideoViewModelTests {
                     playback: { _, _ in fixtures.playback }
                 )
             ),
-            playback: RecordingPlayerEngine()
+            playback: PlayerStub()
         )
 
         model.loadVideo(fixtures.rootBVID)
@@ -2012,94 +2017,67 @@ private actor CollectionEpisodeRepositoryStub: GuestVideoRepository {
     }
 }
 
-private struct FailingUploaderSignatureRepository:
-    UploaderSignatureRepository
-{
-    func signature(for ownerID: Int64) async throws -> String? {
-        throw GuestApplicationError.transportFailure
-    }
-}
-
-private actor CountingUploaderSignatureRepositoryStub:
-    UploaderSignatureRepository
-{
+/// UploaderSignatureRepository 的唯一替身：`immediate` 为 nil 时每个请求挂起到测试按序号放行。
+private actor SignatureRepositoryStub: UploaderSignatureRepository {
+    private let immediate: Result<String?, GuestApplicationError>?
+    private var held: [CheckedContinuation<String?, Never>?] = []
+    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
+
+    init(immediate: Result<String?, GuestApplicationError>? = nil) {
+        self.immediate = immediate
+    }
 
     func signature(for ownerID: Int64) async throws -> String? {
         callCount += 1
-        return "公开签名"
-    }
-}
-
-private actor SequencedUploaderSignatureRepository:
-    UploaderSignatureRepository
-{
-    private var continuations: [CheckedContinuation<String?, Never>?] = []
-    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func signature(for ownerID: Int64) async throws -> String? {
-        await withCheckedContinuation { continuation in
-            continuations.append(continuation)
-            let waiters = requestWaiters
-            requestWaiters.removeAll()
-            for waiter in waiters {
-                waiter.resume()
-            }
+        if let immediate { return try immediate.get() }
+        return await withCheckedContinuation { continuation in
+            held.append(continuation)
+            let ready = requestWaiters.filter { held.count >= $0.0 }
+            requestWaiters.removeAll { held.count >= $0.0 }
+            for waiter in ready { waiter.1.resume() }
         }
     }
 
-    func waitForRequestCount(_ count: Int) async throws {
-        while continuations.count < count {
-            await withCheckedContinuation { continuation in
-                requestWaiters.append(continuation)
-            }
-        }
+    func waitForRequestCount(_ count: Int) async {
+        guard held.count < count else { return }
+        await withCheckedContinuation { requestWaiters.append((count, $0)) }
     }
 
     func releaseRequest(_ index: Int, signature: String?) {
-        continuations[index]?.resume(returning: signature)
-        continuations[index] = nil
+        held[index]?.resume(returning: signature)
+        held[index] = nil
     }
 }
 
-private actor RelatedVideoABARepositoryStub: RelatedVideoRepository {
-    private var continuations: [CheckedContinuation<[RelatedVideo], Never>?] = []
-    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
-        await withCheckedContinuation { continuation in
-            continuations.append(continuation)
-            let waiters = requestWaiters
-            requestWaiters.removeAll()
-            for waiter in waiters {
-                waiter.resume()
-            }
-        }
-    }
-
-    func waitForRequestCount(_ count: Int) async throws {
-        while continuations.count < count {
-            await withCheckedContinuation { continuation in
-                requestWaiters.append(continuation)
-            }
-        }
-    }
-
-    func releaseRequest(_ index: Int, videos: [RelatedVideo]) {
-        continuations[index]?.resume(returning: videos)
-        continuations[index] = nil
-    }
-}
-
-private actor RetryingRelatedVideoRepositoryStub: RelatedVideoRepository {
+/// RelatedVideoRepository 的唯一替身：按序消费 `responses`，用尽后挂起到测试按序号放行。
+private actor RelatedRepositoryStub: RelatedVideoRepository {
+    private var responses: [Result<[RelatedVideo], GuestApplicationError>]
+    private var held: [Int: CheckedContinuation<[RelatedVideo], Never>] = [:]
+    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
+
+    init(responses: [Result<[RelatedVideo], GuestApplicationError>] = []) {
+        self.responses = responses
+    }
 
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         callCount += 1
-        guard callCount > 1 else {
-            throw GuestApplicationError.transportFailure
-        }
-        return [.testFixture(bvid: "BV1RetryVid1")]
+        let index = callCount - 1
+        let ready = requestWaiters.filter { callCount >= $0.0 }
+        requestWaiters.removeAll { callCount >= $0.0 }
+        for waiter in ready { waiter.1.resume() }
+        if !responses.isEmpty { return try responses.removeFirst().get() }
+        return await withCheckedContinuation { held[index] = $0 }
+    }
+
+    func waitForRequestCount(_ count: Int) async {
+        guard callCount < count else { return }
+        await withCheckedContinuation { requestWaiters.append((count, $0)) }
+    }
+
+    func releaseRequest(_ index: Int, videos: [RelatedVideo]) {
+        held.removeValue(forKey: index)?.resume(returning: videos)
     }
 }
 
@@ -2501,29 +2479,51 @@ private actor TestEventCounter {
     }
 }
 
+/// 唯一的 PlaybackControlling 替身，记录 load、开播、重播与停止。
+///
+/// 可让指定 BVID 的 load 失败、让第 `heldLoad` 次 load 挂起到测试放行，
+/// 或让首个 load 先发布失败再等到 stop 才返回。失败事件经 `FailureEventSource` 发布，
+/// 测试可等 ViewModel 回来请求下一个事件。
 @MainActor
-private final class RecordingPlayerEngine: PlaybackControlling {
+private final class PlayerStub: PlaybackControlling {
+    private let startOutcome: PlaybackStartOutcome
+    private let restartSucceeds: Bool
+    private let failingBVID: String?
+    private let heldLoad: Int?
+    private let failsFirstLoadUntilStopped: Bool
+    private let failureSource = FailureEventSource()
+    private var heldLoadContinuation: CheckedContinuation<Void, Never>?
+    private var loadWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var stopWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var loadedPlaybacks: [VideoPlayback] = []
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
+    private(set) var loadedIntents: [PlaybackLoadIntent] = []
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var startedIntents: [PlaybackLoadIntent] = []
     private(set) var startedInitialPositions: [Double?] = []
     private(set) var restartTokens: [PlaybackResumeToken] = []
-    private(set) var pauseCallCount = 0
     private(set) var stopCallCount = 0
-    private let startOutcome: PlaybackStartOutcome
-    private let restartSucceeds: Bool
 
     init(
         startOutcome: PlaybackStartOutcome = .startedAtBeginning,
-        restartSucceeds: Bool = false
+        restartSucceeds: Bool = false,
+        failingBVID: String? = nil,
+        heldLoad: Int? = nil,
+        failsFirstLoadUntilStopped: Bool = false
     ) {
         self.startOutcome = startOutcome
         self.restartSucceeds = restartSucceeds
+        self.failingBVID = failingBVID
+        self.heldLoad = heldLoad
+        self.failsFirstLoadUntilStopped = failsFirstLoadUntilStopped
+    }
+
+    deinit {
+        Task { [failureSource] in await failureSource.finish() }
     }
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        finishedPlaybackFailureEvents()
+        AsyncStream(unfolding: { [failureSource] in await failureSource.next() })
     }
 
     func load(
@@ -2533,6 +2533,17 @@ private final class RecordingPlayerEngine: PlaybackControlling {
     ) async throws {
         loadedPlaybacks.append(playback)
         loadedIdentities.append(identity)
+        loadedIntents.append(intent)
+        Self.resume(&loadWaiters, reaching: loadedIdentities.count)
+        if identity.bvid == failingBVID {
+            throw PlayerStubFailure()
+        }
+        if failsFirstLoadUntilStopped, loadedIdentities.count == 1 {
+            await failureSource.send(PlaybackFailureEvent(identity: identity, intent: intent))
+            await withCheckedContinuation { heldLoadContinuation = $0 }
+        } else if loadedIdentities.count == heldLoad {
+            await withCheckedContinuation { heldLoadContinuation = $0 }
+        }
     }
 
     func beginPlayback(
@@ -2555,272 +2566,20 @@ private final class RecordingPlayerEngine: PlaybackControlling {
         return restartSucceeds
     }
 
-    func pause() {
-        pauseCallCount += 1
-    }
-
-    func stop() {
-        stopCallCount += 1
-    }
-}
-
-@MainActor
-private final class SelectiveFailingPlayerEngine: PlaybackControlling {
-    let failingBVID: String
-
-    init(failingBVID: String) {
-        self.failingBVID = failingBVID
-    }
-
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        finishedPlaybackFailureEvents()
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        if identity.bvid == failingBVID {
-            throw SelectivePlaybackFailure()
-        }
-    }
-
-    func beginPlayback(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        initialPositionSeconds: Double?
-    ) async -> PlaybackStartOutcome { .startedAtBeginning }
-
-    func restartFromBeginning(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        resumeToken: PlaybackResumeToken
-    ) async -> Bool { false }
-
-    func pause() {}
-
-    func stop() {}
-}
-
-@MainActor
-private final class PostReadyFailurePlayer: PlaybackControlling {
-    private struct StopWaiter {
-        let expectedCount: Int
-        let continuation: CheckedContinuation<Void, Never>
-    }
-
-    private let failures: AsyncStream<PlaybackFailureEvent>
-    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
-    private var stopWaiters: [StopWaiter] = []
-    private var loadedIntents: [PlaybackItemIdentity: PlaybackLoadIntent] = [:]
-    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
-    private(set) var stopCallCount = 0
-
-    init() {
-        let stream = AsyncStream<PlaybackFailureEvent>.makeStream()
-        failures = stream.stream
-        failureContinuation = stream.continuation
-    }
-
-    deinit {
-        failureContinuation.finish()
-    }
-
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        failures
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        loadedIdentities.append(identity)
-        loadedIntents[identity] = intent
-    }
-
-    func beginPlayback(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        initialPositionSeconds: Double?
-    ) async -> PlaybackStartOutcome { .startedAtBeginning }
-
-    func restartFromBeginning(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        resumeToken: PlaybackResumeToken
-    ) async -> Bool { false }
-
     func pause() {}
 
     func stop() {
         stopCallCount += 1
-        let ready = stopWaiters.filter {
-            stopCallCount >= $0.expectedCount
-        }
-        stopWaiters.removeAll {
-            stopCallCount >= $0.expectedCount
-        }
-        for waiter in ready {
-            waiter.continuation.resume()
+        Self.resume(&stopWaiters, reaching: stopCallCount)
+        if failsFirstLoadUntilStopped {
+            releaseHeldLoad()
         }
     }
 
-    func fail(_ identity: PlaybackItemIdentity) {
-        guard let intent = loadedIntents[identity] else { return }
-        failureContinuation.yield(
-            PlaybackFailureEvent(identity: identity, intent: intent)
-        )
-    }
-
-    func waitForStopCallCount(_ expectedCount: Int) async {
-        guard stopCallCount < expectedCount else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append(
-                StopWaiter(
-                    expectedCount: expectedCount,
-                    continuation: continuation
-                )
-            )
-        }
-    }
-}
-
-@MainActor
-private final class FailureBeforeLoadReturnsPlayer: PlaybackControlling {
-    private let failures: AsyncStream<PlaybackFailureEvent>
-    private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
-    private var blockedLoad: CheckedContinuation<Void, Never>?
-    private var shouldFailNextLoad = true
-    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
-    private(set) var stopCallCount = 0
-
-    init() {
-        let stream = AsyncStream<PlaybackFailureEvent>.makeStream()
-        failures = stream.stream
-        failureContinuation = stream.continuation
-    }
-
-    deinit {
-        failureContinuation.finish()
-    }
-
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        failures
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        loadedIdentities.append(identity)
-        guard shouldFailNextLoad else { return }
-        shouldFailNextLoad = false
-        failureContinuation.yield(
-            PlaybackFailureEvent(identity: identity, intent: intent)
-        )
-        await withCheckedContinuation { continuation in
-            blockedLoad = continuation
-        }
-    }
-
-    func beginPlayback(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        initialPositionSeconds: Double?
-    ) async -> PlaybackStartOutcome { .startedAtBeginning }
-
-    func restartFromBeginning(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        resumeToken: PlaybackResumeToken
-    ) async -> Bool { false }
-
-    func pause() {}
-
-    func stop() {
-        stopCallCount += 1
-        blockedLoad?.resume()
-        blockedLoad = nil
-    }
-}
-
-@MainActor
-private final class DelayedABAPlayback: PlaybackControlling {
-    private let failureSource: FailureEventSource
-    private let failures: AsyncStream<PlaybackFailureEvent>
-    private var thirdLoadContinuation: CheckedContinuation<Void, Never>?
-    private var thirdLoadWaiters: [CheckedContinuation<Void, Never>] = []
-    private(set) var loadedIdentities: [PlaybackItemIdentity] = []
-    private(set) var loadedIntents: [PlaybackLoadIntent] = []
-    private(set) var startedIdentities: [PlaybackItemIdentity] = []
-    private(set) var startedIntents: [PlaybackLoadIntent] = []
-    private(set) var stopCallCount = 0
-
-    init() {
-        let source = FailureEventSource()
-        failureSource = source
-        failures = AsyncStream(unfolding: {
-            await source.next()
-        })
-    }
-
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        failures
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        loadedIdentities.append(identity)
-        loadedIntents.append(intent)
-        guard loadedIdentities.count == 3 else { return }
-        let waiters = thirdLoadWaiters
-        thirdLoadWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
-        await withCheckedContinuation { continuation in
-            thirdLoadContinuation = continuation
-        }
-    }
-
-    func beginPlayback(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        initialPositionSeconds: Double?
-    ) async -> PlaybackStartOutcome {
-        startedIdentities.append(identity)
-        startedIntents.append(intent)
-        return .startedAtBeginning
-    }
-
-    func restartFromBeginning(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        resumeToken: PlaybackResumeToken
-    ) async -> Bool { false }
-
-    func pause() {}
-
-    func stop() {
-        stopCallCount += 1
-    }
-
-    func waitForThirdLoad() async {
-        guard loadedIdentities.count < 3 else { return }
-        await withCheckedContinuation { continuation in
-            thirdLoadWaiters.append(continuation)
-        }
-    }
-
-    func releaseThirdLoad() {
-        thirdLoadContinuation?.resume()
-        thirdLoadContinuation = nil
+    /// 以该 identity 最近一次 load 的 intent 发布 ready 后失败。
+    func fail(_ identity: PlaybackItemIdentity) async {
+        guard let index = loadedIdentities.lastIndex(of: identity) else { return }
+        await publishFailure(PlaybackFailureEvent(identity: identity, intent: loadedIntents[index]))
     }
 
     func publishFailure(_ event: PlaybackFailureEvent) async {
@@ -2833,6 +2592,32 @@ private final class DelayedABAPlayback: PlaybackControlling {
 
     func finishFailures() async {
         await failureSource.finish()
+    }
+
+    func waitForLoadCount(_ expectedCount: Int) async {
+        guard loadedIdentities.count < expectedCount else { return }
+        await withCheckedContinuation { loadWaiters.append((expectedCount, $0)) }
+    }
+
+    func releaseHeldLoad() {
+        heldLoadContinuation?.resume()
+        heldLoadContinuation = nil
+    }
+
+    func waitForStopCallCount(_ expectedCount: Int) async {
+        guard stopCallCount < expectedCount else { return }
+        await withCheckedContinuation { stopWaiters.append((expectedCount, $0)) }
+    }
+
+    private static func resume(
+        _ waiters: inout [(Int, CheckedContinuation<Void, Never>)],
+        reaching count: Int
+    ) {
+        let ready = waiters.filter { count >= $0.0 }
+        waiters.removeAll { count >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
     }
 }
 
@@ -2893,13 +2678,7 @@ private actor FailureEventSource {
     }
 }
 
-private struct SelectivePlaybackFailure: Error {}
-
-private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-    AsyncStream { continuation in
-        continuation.finish()
-    }
-}
+private struct PlayerStubFailure: Error {}
 
 /// 把推荐、热门与搜索三条 feed 的相同操作映射到各自 API，供结构相同的参数化测试共用。
 enum BrowseFeed: Sendable {
