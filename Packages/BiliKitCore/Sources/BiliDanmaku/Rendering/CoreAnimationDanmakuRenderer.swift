@@ -27,8 +27,8 @@ public final class CoreAnimationDanmakuRenderer:
     public let rootLayer: CALayer
     public let style: CoreAnimationDanmakuStyle
 
-    public private(set) var renderEpoch: UInt64 = 0
-    public var activeLayerCount: Int { entries.count }
+    private(set) var renderEpoch: UInt64 = 0
+    var activeLayerCount: Int { entries.count }
 
     private var backingScale: Double
     private var entries: [String: Entry] = [:]
