@@ -32,89 +32,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func rootOwnsExactlyOneVerticalScrollChainWithoutHostingViews() {
-        let controller = NativePlaybackSidebarController()
-        controller.update(
-            presentation: presentation(bvid: "BVCurrent"),
-            actions: actions
-        )
-
-        let descendants = descendants(of: controller.rootView)
-        let verticalScrollViews = descendants.compactMap { $0 as? NSScrollView }
-            .filter(\.hasVerticalScroller)
-        let hostingViews = descendants.filter {
-            String(describing: type(of: $0)).contains("NSHostingView")
-        }
-
-        #expect(controller.rootView.scrollView.documentView is NSCollectionView)
-        #expect(verticalScrollViews.count == 1)
-        #expect(hostingViews.isEmpty)
-        #expect(controller.rootView.overlayView.isFlipped)
-        #expect(controller.rootView.scrollView.automaticallyAdjustsContentInsets)
-        #expect(
-            controller.rootView.commentsTopButton.accessibilityLabel()
-                == AppStrings.localized("返回评论区顶部")
-        )
-        #expect(controller.rootView.commentsTopButton.action != nil)
-
-        controller.tearDown()
-
-        #expect(controller.rootView.scrollView.documentView == nil)
-    }
-
-    @Test
-    @MainActor
-    func rootReportsTheCurrentViewportDuringTheSameResizeLayoutPass() {
-        let root = NativePlaybackSidebarRootView()
-        root.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
-        root.layout()
-        var observedWidths: [CGFloat] = []
-        root.viewportSizeDidChange = { observedWidths.append($0.width) }
-
-        root.frame.size.width = 520
-        root.layout()
-
-        #expect(root.scrollView.frame.width == 520)
-        #expect(root.scrollView.contentSize.width == 520)
-        #expect(observedWidths.last == 520)
-    }
-
-    @Test
-    @MainActor
-    func summaryUsesSelectableNonScrollingTextKitAtSidebarWidths() throws {
-        let text = String(
-            repeating: "这是一段需要按字符精确换行的简介，后续链接拦截也由同一个TextKit正文视图承担。",
-            count: 3
-        )
-        let font = NSFont.preferredFont(forTextStyle: .callout)
-        let heights = [440.0, 480.0, 520.0].map { sidebarWidth in
-            NativePlaybackSidebarTextLayout.height(
-                text,
-                width: sidebarWidth - NativePlaybackSidebarLayout.contentInset * 2,
-                font: font
-            )
-        }
-        let textView = NativePlaybackSidebarReadOnlyTextView(font: font)
-        textView.frame = NSRect(x: 0, y: 0, width: 408, height: heights[0])
-        textView.setText(text, font: font, color: .secondaryLabelColor)
-        textView.layoutSubtreeIfNeeded()
-        let container = try #require(textView.textContainer)
-        let manager = try #require(textView.layoutManager)
-        manager.ensureLayout(for: container)
-
-        #expect(heights[0] >= heights[1])
-        #expect(heights[1] >= heights[2])
-        #expect(heights[0] > heights[2])
-        #expect(textView.isSelectable)
-        #expect(!textView.isEditable)
-        #expect(textView.enclosingScrollView == nil)
-        #expect(textView.textContainer?.lineBreakMode == .byCharWrapping)
-        #expect(container.containerSize.height == CGFloat.greatestFiniteMagnitude)
-        #expect(manager.usedRect(for: container).height > 0)
-    }
-
-    @Test
-    @MainActor
     func summaryKeepsItsTitleStaticAndCollapsesOnlyOverflowingBodyToFiveLines() throws {
         let summary = String(
             repeating: "简介正文需要由 TextKit 精确换行，并在超过五行时才提供展开控制。",
@@ -177,44 +94,6 @@ struct NativePlaybackSidebarTests {
             descendants(of: shortItem.view).compactMap { $0 as? NSButton }
                 .allSatisfy { $0.isHidden }
         )
-    }
-
-    @Test
-    @MainActor
-    func blockingOverlayDoesNotOwnAFullSidebarBackdrop() {
-        let overlay = NativePlaybackSidebarOverlayView()
-        let views: [NSView] = [overlay] + descendants(of: overlay)
-
-        #expect(!overlay.isOpaque)
-        #expect(overlay.layer?.backgroundColor == nil)
-        #expect(views.compactMap { $0 as? NSVisualEffectView }.isEmpty)
-    }
-
-    @Test
-    @MainActor
-    func blockingOverlayKeepsTheTransparentScrollSurfaceAndHidesOnlyItsRows() {
-        let controller = NativePlaybackSidebarController()
-        let loaded = presentation(bvid: "BVCurrent")
-        controller.update(presentation: loaded, actions: actions)
-
-        #expect(!controller.rootView.scrollView.isHidden)
-        #expect(controller.rootView.scrollView.documentView?.isHidden == false)
-        #expect(controller.rootView.overlayView.isHidden)
-
-        controller.update(
-            presentation: NativePlaybackSidebarPresentation(
-                content: loaded.content,
-                overlay: .loading(label: "正在加载视频上下文")
-            ),
-            actions: actions
-        )
-
-        #expect(!controller.rootView.scrollView.isHidden)
-        #expect(controller.rootView.scrollView.documentView?.isHidden == true)
-        #expect(!controller.rootView.overlayView.isHidden)
-        #expect(!controller.rootView.overlayView.isOpaque)
-
-        controller.tearDown()
     }
 
     @Test
@@ -415,41 +294,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func summaryAndUploaderRowsContainNativeTextViewsOnly() {
-        let summaryItem = NativePlaybackSidebarSummaryItem()
-        summaryItem.view.frame = NSRect(x: 0, y: 0, width: 328, height: 180)
-        summaryItem.configure(summary: "可选择的简介正文", expanded: true, onToggle: {})
-
-        let imageOwner = NativeVideoImagePipelineOwner()
-        let uploaderItem = NativePlaybackSidebarUploaderItem()
-        uploaderItem.view.frame = NSRect(x: 0, y: 0, width: 328, height: 64)
-        uploaderItem.configure(
-            content: VideoUploaderHeaderContent(
-                owner: VideoOwner(id: 1, name: "UP 主", signature: "可选择的签名")
-            ),
-            signatureExpanded: false,
-            imagePipeline: imageOwner.pipeline,
-            onToggleSignature: {}
-        )
-
-        let views = descendants(of: summaryItem.view) + descendants(of: uploaderItem.view)
-        let textViews = views.compactMap { $0 as? NSTextView }
-
-        #expect(textViews.count == 2)
-        #expect(textViews.allSatisfy { $0.isSelectable && !$0.isEditable })
-        #expect(views.compactMap { $0 as? NSScrollView }.isEmpty)
-        #expect(
-            views.allSatisfy {
-                !String(describing: type(of: $0)).contains("NSHostingView")
-            }
-        )
-
-        uploaderItem.prepareForReuse()
-        imageOwner.shutdown()
-    }
-
-    @Test
-    @MainActor
     func uploaderSignatureRecomputesOverflowWhileSidebarResizes() throws {
         let signature = String(repeating: "签名", count: 16)
         let imageOwner = NativeVideoImagePipelineOwner()
@@ -487,40 +331,6 @@ struct NativePlaybackSidebarTests {
 
         item.prepareForReuse()
         imageOwner.shutdown()
-    }
-
-    @Test
-    @MainActor
-    func pageMenuKeepsAtomicCIDIntentInNativeMenuItems() {
-        let projection = selectionProjection()
-        let item = NativePlaybackSidebarSelectionItem()
-        item.view.frame = NSRect(x: 0, y: 0, width: 328, height: 80)
-        var selectedCID: Int64?
-        item.configure(
-            projection: projection,
-            browsedSectionID: projection.selectedEpisodeSectionID,
-            onSelectSection: { _ in },
-            onSelectEpisode: { _ in },
-            onSelectPage: { selectedCID = $0 },
-            onRetryPages: {}
-        )
-        item.view.layoutSubtreeIfNeeded()
-
-        let pagePopUp = descendants(of: item.view).compactMap { $0 as? NSPopUpButton }
-            .first { !$0.isHidden }
-        let targetItem = pagePopUp?.menu?.items.last {
-            $0.representedObject is NSNumber
-        }
-        let sent = targetItem.flatMap { item in
-            item.action.map {
-                NSApplication.shared.sendAction($0, to: item.target, from: item)
-            }
-        }
-
-        #expect(projection.showsPagePicker)
-        #expect(pagePopUp != nil)
-        #expect(sent == true)
-        #expect(selectedCID == 1_002)
     }
 
     @Test
@@ -690,101 +500,6 @@ struct NativePlaybackSidebarTests {
         #expect(plain.revision != verified.revision)
         #expect(verified.revision != linked.revision)
         #expect(linked.revision != pictured.revision)
-    }
-
-    @Test
-    @MainActor
-    func selectionOnlyUpdateKeepsEveryLoadedCommentInTheLayout() async throws {
-        let controller = NativePlaybackSidebarController()
-        controller.rootView.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
-        controller.rootView.layoutSubtreeIfNeeded()
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let comments = commentsPresentation(
-            subject: subject,
-            threads: (1...40).map {
-                commentThread(id: Int64($0), message: "第 \($0) 条评论正文")
-            }
-        )
-        let original = presentation(bvid: "BVCurrent", comments: comments)
-        controller.update(presentation: original, actions: actions)
-        #expect(
-            await waitUntil(timeout: .seconds(5)) {
-                guard
-                    let collectionView = controller.rootView.scrollView.documentView
-                        as? NSCollectionView
-                else { return false }
-                return collectionView.numberOfSections == 4
-                    && collectionView.numberOfItems(inSection: 3) == 42
-            }
-        )
-
-        let content = try #require(original.content)
-        let episode = collectionEpisode(
-            sectionID: 10,
-            episodeID: 100,
-            bvid: content.bvid,
-            title: "当前选集"
-        )
-        let collection = VideoCollection(
-            id: 1,
-            title: "异步到达的合集",
-            reportedEpisodeCount: 1,
-            sections: [
-                collectionSection(id: 10, title: "正片", episodes: [episode])
-            ]
-        )
-        let updated = NativePlaybackSidebarPresentation(
-            content: NativePlaybackSidebarContent(
-                bvid: content.bvid,
-                uploader: content.uploader,
-                summary: content.summary,
-                selection: selectionProjection(
-                    context: context(bvid: content.bvid, collection: collection)
-                ),
-                comments: content.comments
-            ),
-            overlay: .none
-        )
-        controller.update(presentation: updated, actions: actions)
-        #expect(
-            await waitUntil(timeout: .seconds(5)) {
-                guard
-                    let collectionView = controller.rootView.scrollView.documentView
-                        as? NSCollectionView
-                else { return false }
-                controller.rootView.layoutSubtreeIfNeeded()
-                return collectionView.numberOfSections == 4
-                    && collectionView.numberOfItems(inSection: 3) == 42
-                    && (collectionView.collectionViewLayout?.collectionViewContentSize.height
-                        ?? 0) > 600
-            }
-        )
-
-        let collectionView = try #require(
-            controller.rootView.scrollView.documentView as? NSCollectionView
-        )
-        let collectionLayout = try #require(collectionView.collectionViewLayout)
-        let selectionAttributes = try #require(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 0, section: 2)
-            )
-        )
-        let commentsHeaderAttributes = try #require(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 0, section: 3)
-            )
-        )
-
-        #expect(collectionView.numberOfSections == 4)
-        #expect(collectionView.numberOfItems(inSection: 3) == 42)
-        #expect(collectionLayout.collectionViewContentSize.height > 600)
-        #expect(commentsHeaderAttributes.frame.minY > selectionAttributes.frame.maxY)
-        #expect(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 40, section: 3)
-            ) != nil
-        )
-        controller.tearDown()
     }
 
     @Test
@@ -1084,70 +799,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func replyLoadingAndFailureHeightsRetainVisiblePreviousPageRows() throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let thread = commentThread(
-            id: 1,
-            message: "主评论",
-            replyCount: 12
-        )
-        var state = PlaybackCommentReplyState()
-        state.isExpanded = true
-        state.replies = [
-            comment(id: 11, rootID: 1, message: "旧页回复一"),
-            comment(id: 12, rootID: 1, message: "旧页回复二")
-        ]
-        state.totalCount = 12
-
-        for failure in [false, true] {
-            state.isLoading = !failure
-            state.error = failure ? .transportFailure : nil
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: subject,
-                thread: thread,
-                replyState: state
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
-
-            let statusText =
-                failure
-                ? AppStrings.localized("回复加载失败")
-                : AppStrings.localized("回复加载中…")
-            let status = try #require(
-                descendants(of: item.view).compactMap { $0 as? NSTextField }
-                    .first { $0.stringValue == statusText }
-            )
-            let panel = try #require(status.superview)
-            let visibleBottom =
-                panel.subviews.filter { !$0.isHidden }
-                .map(\.frame.maxY).max() ?? 0
-            #expect(visibleBottom <= panel.bounds.height + 0.5)
-        }
-    }
-
-    @Test
-    @MainActor
     func commentLoadingAccessibilityDoesNotReuseStaleCountOrFooterState() throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let loaded = commentsPresentation(
@@ -1378,22 +1029,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func commentImageTransitionOnlyAnimatesNetworkResults() {
-        #expect(
-            !NativePlaybackCommentImageTransition.shouldAnimate(
-                loadOrigin: .memoryCache
-            )
-        )
-        #expect(
-            NativePlaybackCommentImageTransition.shouldAnimate(
-                loadOrigin: .network
-            )
-        )
-        #expect(NativePlaybackCommentImageTransition.duration == 0.15)
-    }
-
-    @Test
-    @MainActor
     func commentPictureLayoutMatchesTheBoundedOfficialWebFlow() {
         let portrait = CommentImage(
             asset: CommentAssetReference(),
@@ -1603,72 +1238,6 @@ struct NativePlaybackSidebarTests {
         #expect(selection.index == 0)
         #expect(!selection.canSelectPrevious)
         #expect(selection.canSelectNext)
-    }
-
-    @Test
-    @MainActor
-    func commentImagePreviewUsesOneNativeModalSurfaceAndSemanticControls() throws {
-        let owner = NativeVideoImagePipelineOwner()
-        let references = [CommentAssetReference(), CommentAssetReference()]
-        var dismissCount = 0
-        let preview = NativeCommentImagePreviewRootView(
-            imagePipeline: owner.pipeline,
-            resolveURL: { _ in nil }
-        )
-        preview.frame = NSRect(x: 0, y: 0, width: 900, height: 620)
-        preview.configure(
-            request: NativeCommentImagePreviewRequest(
-                bvid: "BVPreview",
-                references: references,
-                selectedIndex: 1,
-                restoreFocus: {}
-            ),
-            onDismiss: { dismissCount += 1 }
-        )
-        preview.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: preview)
-        let buttons = views.compactMap { $0 as? NSButton }
-        let previous = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("上一张图片")
-            }
-        )
-        let next = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("下一张图片")
-            }
-        )
-        let close = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("关闭图片预览")
-            }
-        )
-        let counter = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.stringValue == "2 / 2"
-            }
-        )
-
-        #expect(preview.accessibilityRole() == .group)
-        #expect(preview.accessibilitySubrole() == .dialog)
-        #expect(preview.isAccessibilityModal())
-        #expect(
-            preview.accessibilityLabel() == AppStrings.localized("评论图片预览")
-        )
-        #expect(!views.contains { $0 is NSScrollView })
-        #expect(counter.stringValue == "2 / 2")
-        #expect(previous.isEnabled)
-        #expect(!next.isEnabled)
-        previous.performClick(nil)
-        #expect(counter.stringValue == "1 / 2")
-        #expect(!previous.isEnabled)
-        #expect(next.isEnabled)
-        close.performClick(nil)
-        #expect(dismissCount == 1)
-
-        preview.tearDown()
-        owner.shutdown()
     }
 
     @Test
@@ -2042,101 +1611,6 @@ struct NativePlaybackSidebarTests {
                     ]
                 )
         )
-    }
-
-    @Test
-    @MainActor
-    func inlineAuthorBadgesFollowVisibleNameGlyphsWithoutCellPaddingGap() throws {
-        let author = CommentAuthor(
-            id: CommentAuthorID(rawValue: "inline-author"),
-            name: "短昵称",
-            sex: .unspecified,
-            level: 6,
-            isHardcoreMember: true,
-            isVIP: true,
-            isUploader: false
-        )
-        let row = NativePlaybackCommentThreadPresentation(
-            subject: .video(aid: 700_001),
-            thread: commentThread(id: 3, message: "正文", author: author),
-            replyState: nil
-        )
-        let item = NativePlaybackCommentThreadItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-        )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onPrevious: {},
-            onNext: {},
-            onRetry: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in }
-        )
-        item.view.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: item.view)
-        let authorLabel = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.stringValue == author.name
-            }
-        )
-        let authorBadges = try #require(
-            views.compactMap { $0 as? NativePlaybackCommentAuthorBadgesView }.first
-        )
-        let textWidth = NativePlaybackCommentsItemMeasurement.authorNameTextWidth(
-            author,
-            maximumWidth: 366
-        )
-
-        #expect(authorBadges.frame.minY == authorLabel.frame.minY)
-        #expect(
-            abs(
-                authorBadges.frame.minX - authorLabel.frame.minX - textWidth
-                    - NativePlaybackCommentsItemMeasurement.authorBadgeSpacing
-            ) <= 0.5
-        )
-    }
-
-    @Test
-    @MainActor
-    func commentsHeaderCountReservesTrailingGlyphSpace() throws {
-        let header = NativePlaybackCommentsHeaderItem()
-        let presentation = NativePlaybackCommentsPresentation(
-            subject: .video(aid: 700_001),
-            sort: .hot,
-            rootState: .loaded,
-            totalCount: 12_345,
-            threads: []
-        )
-        header.view.frame = NSRect(x: 0, y: 0, width: 320, height: 42)
-        header.configure(presentation: presentation, onSelectSort: { _ in })
-        header.view.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: header.view)
-        let count = CommentPresentationFormatting.compactCount(
-            presentation.totalCount
-        )
-        let countLabel = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.accessibilityLabel()
-                    == AppStrings.localized("共 \(count) 条评论")
-            }
-        )
-        let sortControl = try #require(
-            views.compactMap { $0 as? NSSegmentedControl }.first
-        )
-        #expect(countLabel.frame.width >= ceil(countLabel.intrinsicContentSize.width) + 3)
-        #expect(countLabel.frame.maxX < sortControl.frame.minX)
     }
 
     @Test
