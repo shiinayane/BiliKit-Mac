@@ -22,7 +22,7 @@ BiliAPI / BiliAuth / BiliPlayback ──> BiliNetworking    BiliDanmaku ──> 
 App（Composition、AppKit/AVKit 宿主）组装以上全部
 ```
 
-- Feature 不互相 import；跨页面协调在 App 层，具体 adapter 只在 `Composition/` 可见。
+- Feature 不互相 import；跨页面协调在 App 层，具体 adapter 只在 `Composition/`、`Platform/`、`Settings/` 可见。
 - `BiliApplication` 不出现 endpoint DTO、UI／播放框架、具体 client、Keychain 或 Cookie。
 - 没有真实边界时不新增 Package、target 或 `Common`／`Shared`／`Utils`。依赖方向由
   `Scripts/check-architecture.sh` 检查；`references/` 不进入产品或 fixture。
@@ -60,7 +60,7 @@ App（Composition、AppKit/AVKit 宿主）组装以上全部
 - 迭代时用定向测试。任务临时根由当前任务唯一创建，可在任务内复用，结束时删除：
 
 ```sh
-sh Scripts/run-targeted-tests.sh "$task_artifact_root" package 'GuestVideoViewModelTests'
+sh Scripts/run-targeted-tests.sh "$task_artifact_root" package 'BrowseAndVideoViewModelTests'
 sh Scripts/run-targeted-tests.sh "$task_artifact_root" app 'BiliKitMacTests/PlaybackSourceSettingsTests'
 ```
 

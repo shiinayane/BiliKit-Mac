@@ -19,9 +19,9 @@ final class CollectionEpisodePagesController {
     /// 请求确认凭据失效时通知 owner 协调账户重校验。
     @ObservationIgnored var onAuthenticationInvalid: (@MainActor () -> Void)?
 
-    @ObservationIgnored private let useCase: GuestVideoUseCase
+    @ObservationIgnored private let useCase: VideoUseCase
     /// 最近一次 reconcile 的视频 context；分 P 切换不改变其 detail 与 pages。
-    @ObservationIgnored private var context: GuestVideoContext?
+    @ObservationIgnored private var context: VideoContext?
     @ObservationIgnored private(set) var task: Task<Void, Never>?
     @ObservationIgnored private var activeRequest: PageRequest?
     @ObservationIgnored private var waitersByBVID: [String: Set<VideoCollectionEpisodeIdentity>] =
@@ -34,7 +34,7 @@ final class CollectionEpisodePagesController {
     @ObservationIgnored private var seasonID: Int64?
     @ObservationIgnored private var requestGeneration = 0
 
-    init(useCase: GuestVideoUseCase) {
+    init(useCase: VideoUseCase) {
         self.useCase = useCase
     }
 
@@ -72,7 +72,7 @@ final class CollectionEpisodePagesController {
     }
 
     /// 新视频 context 到达后对齐合集范围与当前 episode；`preferredCID` 是用户显式请求的分 P。
-    func reconcile(with context: GuestVideoContext, preferredCID: Int64?) {
+    func reconcile(with context: VideoContext, preferredCID: Int64?) {
         guard let collection = context.detail.collection else {
             clear()
             return
@@ -182,7 +182,7 @@ final class CollectionEpisodePagesController {
                     result = .success(pages)
                 } catch is CancellationError {
                     result = .cancelled
-                } catch let error as GuestApplicationError {
+                } catch let error as ContentApplicationError {
                     result = Task.isCancelled ? .cancelled : .failure(error)
                 } catch {
                     result = Task.isCancelled ? .cancelled : .failure(.unavailable)
@@ -205,7 +205,7 @@ final class CollectionEpisodePagesController {
                     pageStates[identity] = .loaded(bvid: request.bvid)
                 }
                 completeSelectionIfPossible()
-            } catch let error as GuestApplicationError {
+            } catch let error as ContentApplicationError {
                 for identity in waiters {
                     pageStates[identity] = .failed(error)
                 }
@@ -242,7 +242,7 @@ final class CollectionEpisodePagesController {
             storeInCache(resolved, for: bvid)
             pageStates[identity] = .loaded(bvid: bvid)
             completeSelectionIfPossible()
-        } catch let error as GuestApplicationError {
+        } catch let error as ContentApplicationError {
             pageStates[identity] = .failed(error)
         } catch {
             pageStates[identity] = .failed(.invalidResponse)
@@ -254,7 +254,7 @@ final class CollectionEpisodePagesController {
             Set(pages.map(\.cid)).count == pages.count,
             Set(pages.map(\.index)).count == pages.count
         else {
-            throw GuestApplicationError.invalidResponse
+            throw ContentApplicationError.invalidResponse
         }
         return pages.sorted(by: { $0.index < $1.index })
     }
@@ -404,6 +404,6 @@ private struct PageRequest: Sendable, Equatable {
 
 private enum PageResult: Sendable {
     case success([VideoPage])
-    case failure(GuestApplicationError)
+    case failure(ContentApplicationError)
     case cancelled
 }

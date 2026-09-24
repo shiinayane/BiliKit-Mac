@@ -7,7 +7,7 @@ import Foundation
 final class SystemNowPlayingWindowCoordinator {
     private let controller: SystemNowPlayingController
     private let connection: SystemNowPlayingPlaybackConnection
-    private let videoModel: GuestVideoViewModel
+    private let videoModel: VideoViewModel
     private let windowID: UUID
     private var observationTask: Task<Void, Never>?
     private var defaultRateObservation: SystemNowPlayingDefaultRateObservation?
@@ -18,7 +18,7 @@ final class SystemNowPlayingWindowCoordinator {
     init(
         controller: SystemNowPlayingController,
         connection: SystemNowPlayingPlaybackConnection,
-        videoModel: GuestVideoViewModel
+        videoModel: VideoViewModel
     ) {
         self.controller = controller
         self.connection = connection

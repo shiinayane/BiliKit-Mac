@@ -110,7 +110,7 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
     }
 
     public init(
-        context: GuestVideoContext,
+        context: VideoContext,
         selectedEpisodeID requestedEpisodeID: VideoCollectionEpisodeIdentity?,
         requestedBVID: String?,
         requestedCID: Int64?,

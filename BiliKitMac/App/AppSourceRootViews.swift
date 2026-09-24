@@ -4,7 +4,7 @@ import BiliLibraryFeature
 import SwiftUI
 
 struct RecommendedTabRoot: View {
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
     let imagePipeline: NativeVideoImagePipeline
@@ -29,7 +29,7 @@ struct RecommendedTabRoot: View {
 }
 
 struct PopularTabRoot: View {
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
     let imagePipeline: NativeVideoImagePipeline
@@ -55,7 +55,7 @@ struct PopularTabRoot: View {
 
 struct SearchTabRoot: View {
     @Binding var filterSelection: SearchFilterSelection
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var searchDraft: String
     let submittedSearchCriteria: VideoSearchCriteria?
     @Binding var scrollOffsetY: CGFloat

@@ -1,7 +1,7 @@
 import BiliModels
 
 /// 播放页一次准备所聚合的详情、分 P、选中分 P 与播放清单。
-public struct GuestVideoContext: Sendable, Equatable {
+public struct VideoContext: Sendable, Equatable {
     public let detail: VideoDetail
     public let pages: [VideoPage]
     public let selectedPage: VideoPage
@@ -53,21 +53,21 @@ public enum PlaybackAccessNotice: Sendable, Equatable {
 /// 优先使用详情响应自带的分 P；旧响应缺失时才回退到独立分 P endpoint。
 ///
 /// 用例不拥有播放器，也不保留可变状态；任何一个阶段取消都会阻止后续播放请求或结果返回。
-public struct GuestVideoUseCase: Sendable {
-    private let repository: any GuestVideoRepository
+public struct VideoUseCase: Sendable {
+    private let repository: any VideoRepository
 
-    public init(repository: any GuestVideoRepository) {
+    public init(repository: any VideoRepository) {
         self.repository = repository
     }
 
     public func prepareVideo(
         bvid: String,
         preferredCID: Int64? = nil
-    ) async throws -> GuestVideoContext {
+    ) async throws -> VideoContext {
         let resolvedDetail = try await repository.videoDetail(for: bvid)
         try Task.checkCancellation()
         guard resolvedDetail.bvid == bvid else {
-            throw GuestApplicationError.invalidResponse
+            throw ContentApplicationError.invalidResponse
         }
 
         let resolvedPages =
@@ -77,7 +77,7 @@ public struct GuestVideoUseCase: Sendable {
         try Task.checkCancellation()
         let sortedPages = resolvedPages.sorted(by: { $0.index < $1.index })
         guard let firstPage = sortedPages.first else {
-            throw GuestApplicationError.invalidResponse
+            throw ContentApplicationError.invalidResponse
         }
 
         if let preferredCID {
@@ -86,7 +86,7 @@ public struct GuestVideoUseCase: Sendable {
                     $0.cid == preferredCID
                 })
             else {
-                throw GuestApplicationError.invalidRequest
+                throw ContentApplicationError.invalidRequest
             }
             let playback = try await playback(
                 detail: resolvedDetail,
@@ -94,7 +94,7 @@ public struct GuestVideoUseCase: Sendable {
                 cid: selectedPage.cid
             )
             try Task.checkCancellation()
-            return GuestVideoContext(
+            return VideoContext(
                 detail: resolvedDetail,
                 pages: sortedPages,
                 selectedPage: selectedPage,
@@ -125,7 +125,7 @@ public struct GuestVideoUseCase: Sendable {
             try Task.checkCancellation()
         }
 
-        return GuestVideoContext(
+        return VideoContext(
             detail: resolvedDetail,
             pages: sortedPages,
             selectedPage: selectedPage,
@@ -142,7 +142,7 @@ public struct GuestVideoUseCase: Sendable {
         let detail = try await repository.videoDetail(for: bvid)
         try Task.checkCancellation()
         guard detail.bvid == bvid else {
-            throw GuestApplicationError.invalidResponse
+            throw ContentApplicationError.invalidResponse
         }
         let resolvedPages =
             detail.pages.isEmpty
@@ -154,12 +154,12 @@ public struct GuestVideoUseCase: Sendable {
 
     /// 复用同一视频已经取得的详情与分 P，只为指定 CID 重新取得播放清单。
     public func preparePage(
-        in context: GuestVideoContext,
+        in context: VideoContext,
         cid: Int64
-    ) async throws -> GuestVideoContext {
+    ) async throws -> VideoContext {
         guard let selectedPage = context.pages.first(where: { $0.cid == cid })
         else {
-            throw GuestApplicationError.invalidRequest
+            throw ContentApplicationError.invalidRequest
         }
         let playback = try await playback(
             detail: context.detail,
@@ -168,7 +168,7 @@ public struct GuestVideoUseCase: Sendable {
         )
         try Task.checkCancellation()
 
-        return GuestVideoContext(
+        return VideoContext(
             detail: context.detail,
             pages: context.pages,
             selectedPage: selectedPage,
@@ -183,13 +183,13 @@ public struct GuestVideoUseCase: Sendable {
     ) async throws -> VideoPlayback {
         do {
             return try await repository.playback(for: bvid, cid: cid)
-        } catch GuestApplicationError.serviceRejected(code: _)
+        } catch ContentApplicationError.serviceRejected(code: _)
             where detail.access.isUPowerExclusive == true
             && detail.access.isUPowerPlayable == false
             && detail.access.isUPowerPreviewAvailable == false
         {
             // 只有详情权益三态和 playurl 业务拒绝同时明确时才收窄为权益语义。
-            throw GuestApplicationError.fullViewingEntitlementRequired
+            throw ContentApplicationError.fullViewingEntitlementRequired
         }
     }
 

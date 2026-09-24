@@ -1,7 +1,7 @@
 import BiliApplication
 import BiliModels
 
-public struct BiliGuestRepository: GuestFeedRepository, GuestVideoRepository,
+public struct BiliContentRepository: FeedRepository, VideoRepository,
     RelatedVideoRepository, UploaderSignatureRepository
 {
     private let client: BiliAPIClient
@@ -85,7 +85,7 @@ public struct BiliGuestRepository: GuestFeedRepository, GuestVideoRepository,
         } catch {
             throw BiliAPIError.domainError(
                 for: error,
-                fallback: GuestApplicationError.unavailable,
+                fallback: ContentApplicationError.unavailable,
                 Self.applicationError
             )
         }
@@ -93,7 +93,7 @@ public struct BiliGuestRepository: GuestFeedRepository, GuestVideoRepository,
 
     private static func applicationError(
         _ failure: BiliAPIError.Failure
-    ) -> GuestApplicationError {
+    ) -> ContentApplicationError {
         switch failure {
         case .invalidRequest:
             .invalidRequest

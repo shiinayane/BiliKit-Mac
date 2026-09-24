@@ -4,22 +4,22 @@ import BiliNetworking
 import Foundation
 import Testing
 
-struct BiliGuestRepositoryTests {
+struct BiliContentRepositoryTests {
     @Test
     func mapsInvalidRequestAtAdapterBoundary() async {
         let transport = StubTransport(responses: [])
-        let repository = BiliGuestRepository(
+        let repository = BiliContentRepository(
             client: BiliAPIClient(transport: transport)
         )
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await repository.popular(page: 0, pageSize: 20)
         }
         #expect(transport.capturedRequests().isEmpty)
     }
 
     @Test(arguments: [
-        (HTTPResponse(statusCode: 403, body: Data()), GuestApplicationError.requestRestricted),
+        (HTTPResponse(statusCode: 403, body: Data()), ContentApplicationError.requestRestricted),
         (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted),
         (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted),
         (htmlRiskControlResponse(), .requestRestricted),
@@ -29,9 +29,9 @@ struct BiliGuestRepositoryTests {
     ])
     func mapsFailedPopularResponseAtAdapterBoundary(
         response: HTTPResponse,
-        expected: GuestApplicationError
+        expected: ContentApplicationError
     ) async {
-        let repository = BiliGuestRepository(
+        let repository = BiliContentRepository(
             client: BiliAPIClient(transport: StubTransport(responses: [response]))
         )
 
@@ -46,7 +46,7 @@ struct BiliGuestRepositoryTests {
         let body = String(decoding: fixture.body, as: UTF8.self)
             .replacingOccurrences(of: #""codecid": 7"#, with: #""codecid": 12"#)
             .replacingOccurrences(of: "avc1.64001f", with: "hev1.1.6.L120.90")
-        let repository = BiliGuestRepository(
+        let repository = BiliContentRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [
                     HTTPResponse(
@@ -58,7 +58,7 @@ struct BiliGuestRepositoryTests {
             )
         )
 
-        await #expect(throws: GuestApplicationError.unsupportedMedia) {
+        await #expect(throws: ContentApplicationError.unsupportedMedia) {
             try await repository.playback(
                 for: "BV1FixtureA1",
                 cid: 900_001
@@ -68,7 +68,7 @@ struct BiliGuestRepositoryTests {
 
     @Test
     func preservesCancellationAtAdapterBoundary() async {
-        let repository = BiliGuestRepository(
+        let repository = BiliContentRepository(
             client: BiliAPIClient(transport: StubTransport([.cancellation]))
         )
 

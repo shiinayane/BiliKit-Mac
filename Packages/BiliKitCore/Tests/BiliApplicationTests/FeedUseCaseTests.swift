@@ -3,13 +3,13 @@ import BiliModels
 import Foundation
 import Testing
 
-struct GuestFeedUseCaseTests {
+struct FeedUseCaseTests {
     @Test
     func rejectsInvalidFeedRequestWithoutCallingRepository() async {
         let repository = FeedRepositoryStub()
-        let useCase = GuestFeedUseCase(repository: repository)
+        let useCase = FeedUseCase(repository: repository)
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.execute(.search(query: "   ", page: 1))
         }
         #expect(await repository.searchRequests.isEmpty)
@@ -18,7 +18,7 @@ struct GuestFeedUseCaseTests {
     @Test
     func forwardsCompleteSearchCriteriaAndRejectsInvalidRange() async throws {
         let repository = FeedRepositoryStub()
-        let useCase = GuestFeedUseCase(repository: repository)
+        let useCase = FeedUseCase(repository: repository)
         let criteria = VideoSearchCriteria(
             query: "  macOS  ",
             order: .mostDanmaku,
@@ -44,7 +44,7 @@ struct GuestFeedUseCaseTests {
                 endTimestamp: 200
             )
         )
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.execute(
                 .search(VideoSearchRequest(criteria: invalid, page: 1))
             )
@@ -53,13 +53,13 @@ struct GuestFeedUseCaseTests {
     }
 }
 
-private actor FeedRepositoryStub: GuestFeedRepository {
+private actor FeedRepositoryStub: FeedRepository {
     private(set) var searchRequests: [VideoSearchRequest] = []
 
     func recommendations(
         after continuation: RecommendationContinuation?
     ) async throws -> RecommendationPage {
-        throw GuestApplicationError.unavailable
+        throw ContentApplicationError.unavailable
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {

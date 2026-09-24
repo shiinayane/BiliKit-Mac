@@ -3,11 +3,11 @@ import BiliModels
 import Foundation
 import Testing
 
-struct GuestVideoUseCaseTests {
+struct VideoUseCaseTests {
     @Test
     func resolvesDetailPagesAndPlaybackForFirstOrderedPage() async throws {
-        let repository = GuestRepositoryStub()
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub()
+        let useCase = VideoUseCase(repository: repository)
 
         let context = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
 
@@ -20,8 +20,8 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func usesPagesEmbeddedInDetailWithoutPagelistRequest() async throws {
-        let repository = GuestRepositoryStub(detailHasPages: true)
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub(detailHasPages: true)
+        let useCase = VideoUseCase(repository: repository)
 
         let context = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
 
@@ -31,8 +31,8 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func collectionEpisodePagesUseDetailBeforePagelistFallback() async throws {
-        let repository = GuestRepositoryStub(detailHasPages: true)
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub(detailHasPages: true)
+        let useCase = VideoUseCase(repository: repository)
 
         let pages = try await useCase.pagesForCollectionEpisode(
             bvid: "BV1FixtureA1"
@@ -44,10 +44,10 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func rejectsVideoWithoutPagesBeforeRequestingPlayback() async {
-        let repository = GuestRepositoryStub(hasPages: false)
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub(hasPages: false)
+        let useCase = VideoUseCase(repository: repository)
 
-        await #expect(throws: GuestApplicationError.invalidResponse) {
+        await #expect(throws: ContentApplicationError.invalidResponse) {
             try await useCase.prepareVideo(bvid: "BV1FixtureA1")
         }
         #expect(await repository.playbackCIDs().isEmpty)
@@ -55,8 +55,8 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func replacesOnlyTheSelectedCIDWithinPreparedContext() async throws {
-        let repository = GuestRepositoryStub()
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub()
+        let useCase = VideoUseCase(repository: repository)
         let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
 
         let replacement = try await useCase.preparePage(
@@ -72,11 +72,11 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func rejectsCIDOutsidePreparedPagesWithoutPlaybackRequest() async throws {
-        let repository = GuestRepositoryStub()
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub()
+        let useCase = VideoUseCase(repository: repository)
         let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.preparePage(in: initial, cid: 999_999)
         }
         #expect(await repository.playbackCIDs() == [900_001])
@@ -84,13 +84,13 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func explicitCIDRequestsOnlyTheValidatedTargetAndOverridesResume() async throws {
-        let repository = GuestRepositoryStub(
+        let repository = ContentRepositoryStub(
             resumeMetadata: PlaybackResumeMetadata(
                 lastPlayedCID: 900_001,
                 positionMilliseconds: 5_000
             )
         )
-        let useCase = GuestVideoUseCase(repository: repository)
+        let useCase = VideoUseCase(repository: repository)
 
         let context = try await useCase.prepareVideo(
             bvid: "BV1FixtureA1",
@@ -104,10 +104,10 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func invalidExplicitCIDNeverRequestsPlayback() async {
-        let repository = GuestRepositoryStub()
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub()
+        let useCase = VideoUseCase(repository: repository)
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.prepareVideo(
                 bvid: "BV1FixtureA1",
                 preferredCID: 999_999
@@ -119,8 +119,8 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func cancellationDuringPagelistFallbackPreventsPlayback() async throws {
-        let repository = GuestRepositoryStub(blocksPages: true)
-        let useCase = GuestVideoUseCase(repository: repository)
+        let repository = ContentRepositoryStub(blocksPages: true)
+        let useCase = VideoUseCase(repository: repository)
         let task = Task {
             try await useCase.prepareVideo(bvid: "BV1FixtureA1")
         }
@@ -139,14 +139,14 @@ struct GuestVideoUseCaseTests {
     func zeroCompletedAndOutOfRangeResumePositionsStartAtBeginning(
         positionMilliseconds: Int64
     ) async throws {
-        let repository = GuestRepositoryStub(
+        let repository = ContentRepositoryStub(
             resumeMetadata: PlaybackResumeMetadata(
                 lastPlayedCID: 900_001,
                 positionMilliseconds: positionMilliseconds
             )
         )
 
-        let context = try await GuestVideoUseCase(repository: repository)
+        let context = try await VideoUseCase(repository: repository)
             .prepareVideo(bvid: "BV1FixtureA1")
 
         #expect(context.selectedPage.cid == 900_001)
@@ -155,13 +155,13 @@ struct GuestVideoUseCaseTests {
 
     @Test
     func explicitPartSelectionDoesNotBounceToServerRecordedPart() async throws {
-        let repository = GuestRepositoryStub(
+        let repository = ContentRepositoryStub(
             resumeMetadata: PlaybackResumeMetadata(
                 lastPlayedCID: 900_002,
                 positionMilliseconds: 42_500
             )
         )
-        let useCase = GuestVideoUseCase(repository: repository)
+        let useCase = VideoUseCase(repository: repository)
         let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
         #expect(initial.selectedPage.cid == 900_002)
 
@@ -210,7 +210,7 @@ struct GuestVideoUseCaseTests {
                     )
                 }
         let page = VideoPage(cid: 900_001, index: 1, title: "P1", durationSeconds: pageDuration)
-        let context = GuestVideoContext(
+        let context = VideoContext(
             detail: makeAccessDetail(access: access),
             pages: [page],
             selectedPage: page,
@@ -222,15 +222,18 @@ struct GuestVideoUseCaseTests {
 
     @Test(
         arguments: [
-            (GuestApplicationError.serviceRejected(code: -10403), .fullViewingEntitlementRequired),
+            (
+                ContentApplicationError.serviceRejected(code: -10403),
+                .fullViewingEntitlementRequired
+            ),
             (.playbackUnavailable, .playbackUnavailable)
-        ] as [(GuestApplicationError, GuestApplicationError)]
+        ] as [(ContentApplicationError, ContentApplicationError)]
     )
     func explicitNoRightsMapsOnlyBusinessRejectionToEntitlementMessage(
-        playbackFailure: GuestApplicationError,
-        expected: GuestApplicationError
+        playbackFailure: ContentApplicationError,
+        expected: ContentApplicationError
     ) async {
-        let repository = GuestRepositoryStub(
+        let repository = ContentRepositoryStub(
             access: VideoAccess(
                 isUPowerExclusive: true,
                 isUPowerPreviewAvailable: false,
@@ -240,7 +243,7 @@ struct GuestVideoUseCaseTests {
         )
 
         await #expect(throws: expected) {
-            try await GuestVideoUseCase(repository: repository).prepareVideo(
+            try await VideoUseCase(repository: repository).prepareVideo(
                 bvid: "BV1FixtureA1"
             )
         }
@@ -274,12 +277,12 @@ struct GuestVideoUseCaseTests {
     }
 }
 
-private actor GuestRepositoryStub: GuestVideoRepository {
+private actor ContentRepositoryStub: VideoRepository {
     private let hasPages: Bool
     private let detailHasPages: Bool
     private let resumeMetadata: PlaybackResumeMetadata?
     private let access: VideoAccess
-    private let playbackFailure: GuestApplicationError?
+    private let playbackFailure: ContentApplicationError?
     private let blocksPages: Bool
     private var observedPlaybackCIDs: [Int64] = []
     private var observedPageRequestCount = 0
@@ -291,7 +294,7 @@ private actor GuestRepositoryStub: GuestVideoRepository {
         detailHasPages: Bool = false,
         resumeMetadata: PlaybackResumeMetadata? = nil,
         access: VideoAccess = VideoAccess(),
-        playbackFailure: GuestApplicationError? = nil,
+        playbackFailure: ContentApplicationError? = nil,
         blocksPages: Bool = false
     ) {
         self.hasPages = hasPages

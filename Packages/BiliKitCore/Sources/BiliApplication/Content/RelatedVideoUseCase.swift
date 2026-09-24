@@ -9,7 +9,7 @@ public struct RelatedVideoUseCase: Sendable {
 
     public func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         guard !bvid.isEmpty else {
-            throw GuestApplicationError.invalidRequest
+            throw ContentApplicationError.invalidRequest
         }
         let videos = try await repository.relatedVideos(to: bvid)
         try Task.checkCancellation()

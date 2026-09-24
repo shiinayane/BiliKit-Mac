@@ -3,17 +3,17 @@ import BiliModels
 import Foundation
 import Observation
 
-public enum GuestFeedState: Sendable, Equatable {
+public enum FeedState: Sendable, Equatable {
     case idle
-    case loading(GuestFeedRequest)
-    case loaded(GuestFeedContent)
-    case failed(request: GuestFeedRequest, error: GuestApplicationError)
+    case loading(FeedRequest)
+    case loaded(FeedContent)
+    case failed(request: FeedRequest, error: ContentApplicationError)
 }
 
-struct GuestFeedPresentation: Sendable, Equatable {
-    let state: GuestFeedState
+struct FeedPresentation: Sendable, Equatable {
+    let state: FeedState
     let isRefreshing: Bool
-    let refreshError: GuestApplicationError?
+    let refreshError: ContentApplicationError?
 }
 
 /// 推荐、热门与搜索共用的分页 footer 投影。
@@ -28,7 +28,7 @@ struct FeedPaginationPresentation: Sendable, Equatable {
     let canLoadMore: Bool
     let tailIdentity: String?
     let isLoadingMore: Bool
-    let loadMoreError: GuestApplicationError?
+    let loadMoreError: ContentApplicationError?
 }
 
 @MainActor
@@ -37,26 +37,26 @@ struct FeedPaginationPresentation: Sendable, Equatable {
 ///
 /// `LatestTask` 与 `activeRequestIdentity` 共同阻止已取消或已切路由的结果写回；进入播放页时
 /// 普通 deactivate 会保留当前三份工作集，`reset` 则清空它们；不同请求会替换对应工作集。
-public final class GuestBrowseViewModel {
+public final class BrowseViewModel {
     static let maximumRetainedRecommendationVideos = 1_000
 
-    public private(set) var state: GuestFeedState = .idle
+    public private(set) var state: FeedState = .idle
     public private(set) var authenticationRevalidationGeneration = 0
     public private(set) var recommendationSuccessfulRefreshGeneration: UInt64 = 0
     public private(set) var popularSuccessfulRefreshGeneration: UInt64 = 0
     public private(set) var searchSuccessfulRefreshGeneration: UInt64 = 0
-    private(set) var activeRequestIdentity: GuestFeedRequest?
+    private(set) var activeRequestIdentity: FeedRequest?
     private(set) var isRefreshing = false
-    private(set) var refreshError: GuestApplicationError?
+    private(set) var refreshError: ContentApplicationError?
 
-    @ObservationIgnored private let useCase: GuestFeedUseCase
+    @ObservationIgnored private let useCase: FeedUseCase
     @ObservationIgnored private let loadTask = LatestTask()
     @ObservationIgnored private var authenticationSessionGeneration: UInt64?
     private var recommendationWorkset = FeedWorkset()
     private var popularWorkset = FeedWorkset()
     private var searchWorkset = FeedWorkset()
 
-    public init(useCase: GuestFeedUseCase) {
+    public init(useCase: FeedUseCase) {
         self.useCase = useCase
     }
 
@@ -72,7 +72,7 @@ public final class GuestBrowseViewModel {
     }
 
     public func activateSearch(_ criteria: VideoSearchCriteria) {
-        let request = GuestFeedRequest.search(
+        let request = FeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
         )
         guard criteria.isValid else {
@@ -91,7 +91,7 @@ public final class GuestBrowseViewModel {
     }
 
     public func loadMoreRecommendations() {
-        let baseRequest = GuestFeedRequest.recommendation(continuation: nil)
+        let baseRequest = FeedRequest.recommendation(continuation: nil)
         guard
             activeRequestIdentity == baseRequest,
             case .loaded(.recommendation(let page)) = state,
@@ -142,7 +142,7 @@ public final class GuestBrowseViewModel {
     }
 
     public func search(_ criteria: VideoSearchCriteria) {
-        let request = GuestFeedRequest.search(
+        let request = FeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
         )
         guard criteria.isValid else {
@@ -211,7 +211,7 @@ public final class GuestBrowseViewModel {
         }
     }
 
-    func retry(_ request: GuestFeedRequest) {
+    func retry(_ request: FeedRequest) {
         guard
             case .failed(let failedRequest, _) =
                 presentation(for: request).state,
@@ -242,16 +242,16 @@ public final class GuestBrowseViewModel {
     }
 
     func presentation(
-        for request: GuestFeedRequest
-    ) -> GuestFeedPresentation {
+        for request: FeedRequest
+    ) -> FeedPresentation {
         guard let workset = workset(for: request) else {
-            return GuestFeedPresentation(
+            return FeedPresentation(
                 state: .idle,
                 isRefreshing: false,
                 refreshError: nil
             )
         }
-        return GuestFeedPresentation(
+        return FeedPresentation(
             state: workset.state,
             isRefreshing: workset.isRefreshing,
             refreshError: workset.refreshError
@@ -259,7 +259,7 @@ public final class GuestBrowseViewModel {
     }
 
     func popularPagination(
-        for request: GuestFeedRequest
+        for request: FeedRequest
     ) -> FeedPaginationPresentation {
         guard
             case .popular(let basePage, let pageSize) = request,
@@ -280,7 +280,7 @@ public final class GuestBrowseViewModel {
     }
 
     func recommendationPagination() -> FeedPaginationPresentation {
-        let request = GuestFeedRequest.recommendation(continuation: nil)
+        let request = FeedRequest.recommendation(continuation: nil)
         guard
             recommendationWorkset.request == request,
             case .loaded(.recommendation(let page)) = recommendationWorkset.state
@@ -299,7 +299,7 @@ public final class GuestBrowseViewModel {
     func searchPagination(
         for criteria: VideoSearchCriteria
     ) -> FeedPaginationPresentation {
-        let request = GuestFeedRequest.search(
+        let request = FeedRequest.search(
             VideoSearchRequest(criteria: criteria, page: 1)
         )
         guard
@@ -341,7 +341,7 @@ public final class GuestBrowseViewModel {
     }
 
     /// 相同请求沿用已保存的工作集，否则以新请求替换同类工作集后再切换路由。
-    private func activateWorkset(_ request: GuestFeedRequest) {
+    private func activateWorkset(_ request: FeedRequest) {
         let workset: FeedWorkset
         if let stored = self.workset(for: request) {
             workset = stored
@@ -364,7 +364,7 @@ public final class GuestBrowseViewModel {
         }
     }
 
-    private func refresh(_ request: GuestFeedRequest) {
+    private func refresh(_ request: FeedRequest) {
         if activeRequestIdentity != request {
             deactivateRoute()
             activeRequestIdentity = request
@@ -390,8 +390,8 @@ public final class GuestBrowseViewModel {
     }
 
     private func fail(
-        request: GuestFeedRequest,
-        error: GuestApplicationError
+        request: FeedRequest,
+        error: ContentApplicationError
     ) {
         deactivateRoute()
         activeRequestIdentity = request
@@ -400,7 +400,7 @@ public final class GuestBrowseViewModel {
     }
 
     private func performLoad(
-        _ request: GuestFeedRequest,
+        _ request: FeedRequest,
         isCurrent: LatestTask.IsCurrent
     ) async {
         do {
@@ -408,7 +408,7 @@ public final class GuestBrowseViewModel {
             try Task.checkCancellation()
             guard isCurrent(), activeRequestIdentity == request else { return }
             guard contentMatches(content, request: request) else {
-                throw GuestApplicationError.invalidResponse
+                throw ContentApplicationError.invalidResponse
             }
             let recordsSuccessfulRefresh = isRefreshing
             state = .loaded(normalizedContent(content))
@@ -429,7 +429,7 @@ public final class GuestBrowseViewModel {
             normalizeInterruptedLoad()
         } catch {
             guard isCurrent(), activeRequestIdentity == request else { return }
-            handleFailure(error as? GuestApplicationError ?? .unavailable, request: request)
+            handleFailure(error as? ContentApplicationError ?? .unavailable, request: request)
         }
 
         if isCurrent(), activeRequestIdentity == request {
@@ -438,8 +438,8 @@ public final class GuestBrowseViewModel {
     }
 
     private func startAppend(
-        _ request: GuestFeedRequest,
-        baseRequest: GuestFeedRequest
+        _ request: FeedRequest,
+        baseRequest: FeedRequest
     ) {
         updateWorkset(for: baseRequest) {
             $0.isLoadingMore = true
@@ -457,8 +457,8 @@ public final class GuestBrowseViewModel {
 
     /// 下一页只在仍属于当前路由、且与已加载页衔接时并入；否则按无效响应记为加载更多失败。
     private func performAppend(
-        _ request: GuestFeedRequest,
-        baseRequest: GuestFeedRequest,
+        _ request: FeedRequest,
+        baseRequest: FeedRequest,
         isCurrent: LatestTask.IsCurrent
     ) async {
         do {
@@ -470,7 +470,7 @@ public final class GuestBrowseViewModel {
                 case .loaded(let loaded) = state,
                 let appended = Self.appending(content, to: loaded, for: request)
             else {
-                throw GuestApplicationError.invalidResponse
+                throw ContentApplicationError.invalidResponse
             }
             state = .loaded(appended)
             updateWorkset(for: baseRequest) {
@@ -482,7 +482,7 @@ public final class GuestBrowseViewModel {
             updateWorkset(for: baseRequest) { $0.isLoadingMore = false }
         } catch {
             guard isCurrent(), activeRequestIdentity == baseRequest else { return }
-            let error = error as? GuestApplicationError ?? .unavailable
+            let error = error as? ContentApplicationError ?? .unavailable
             updateWorkset(for: baseRequest) {
                 $0.isLoadingMore = false
                 $0.loadMoreError = error
@@ -496,10 +496,10 @@ public final class GuestBrowseViewModel {
     }
 
     private static func appending(
-        _ response: GuestFeedContent,
-        to loaded: GuestFeedContent,
-        for request: GuestFeedRequest
-    ) -> GuestFeedContent? {
+        _ response: FeedContent,
+        to loaded: FeedContent,
+        for request: FeedRequest
+    ) -> FeedContent? {
         switch (request, response, loaded) {
         case (
             .recommendation(let requestedContinuation?),
@@ -588,8 +588,8 @@ public final class GuestBrowseViewModel {
     }
 
     private func handleFailure(
-        _ error: GuestApplicationError,
-        request: GuestFeedRequest
+        _ error: ContentApplicationError,
+        request: FeedRequest
     ) {
         recordAuthenticationInvalidationIfNeeded(error)
         if case .loaded = state {
@@ -601,8 +601,8 @@ public final class GuestBrowseViewModel {
     }
 
     private func contentMatches(
-        _ content: GuestFeedContent,
-        request: GuestFeedRequest
+        _ content: FeedContent,
+        request: FeedRequest
     ) -> Bool {
         switch (request, content) {
         case (
@@ -629,8 +629,8 @@ public final class GuestBrowseViewModel {
     }
 
     private func normalizedContent(
-        _ content: GuestFeedContent
-    ) -> GuestFeedContent {
+        _ content: FeedContent
+    ) -> FeedContent {
         switch content {
         case .recommendation(let page):
             let videos = Array(
@@ -685,7 +685,7 @@ public final class GuestBrowseViewModel {
     }
 
     private func recordAuthenticationInvalidationIfNeeded(
-        _ error: GuestApplicationError
+        _ error: ContentApplicationError
     ) {
         guard error == .authenticationInvalid else { return }
         authenticationRevalidationGeneration &+= 1
@@ -709,7 +709,7 @@ public final class GuestBrowseViewModel {
     }
 
     private func updateWorkset(
-        for request: GuestFeedRequest,
+        for request: FeedRequest,
         _ update: (inout FeedWorkset) -> Void
     ) {
         switch request {
@@ -722,7 +722,7 @@ public final class GuestBrowseViewModel {
         }
     }
 
-    private func workset(for request: GuestFeedRequest) -> FeedWorkset? {
+    private func workset(for request: FeedRequest) -> FeedWorkset? {
         switch request {
         case .recommendation:
             guard recommendationWorkset.request == request else { return nil }
@@ -748,10 +748,10 @@ extension VideoSearchCriteria {
 }
 
 private struct FeedWorkset {
-    var request: GuestFeedRequest?
-    var state: GuestFeedState = .idle
+    var request: FeedRequest?
+    var state: FeedState = .idle
     var isRefreshing = false
-    var refreshError: GuestApplicationError?
+    var refreshError: ContentApplicationError?
     var isLoadingMore = false
-    var loadMoreError: GuestApplicationError?
+    var loadMoreError: ContentApplicationError?
 }

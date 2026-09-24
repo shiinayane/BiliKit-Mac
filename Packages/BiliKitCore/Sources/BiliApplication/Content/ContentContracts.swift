@@ -1,6 +1,6 @@
 import BiliModels
 
-public enum GuestApplicationError: Error, Sendable, Equatable {
+public enum ContentApplicationError: Error, Sendable, Equatable {
     case invalidRequest
     case authenticationInvalid
     case authenticationUnavailable
@@ -15,7 +15,7 @@ public enum GuestApplicationError: Error, Sendable, Equatable {
 }
 
 /// 游客 Feed 用例所需的远端列表 port，不暴露 endpoint DTO 或具体网络 client。
-public protocol GuestFeedRepository: Sendable {
+public protocol FeedRepository: Sendable {
     func recommendations(
         after continuation: RecommendationContinuation?
     ) async throws -> RecommendationPage
@@ -24,7 +24,7 @@ public protocol GuestFeedRepository: Sendable {
 }
 
 /// 游客视频用例所需的详情、分 P 与播放地址 port。
-public protocol GuestVideoRepository: Sendable {
+public protocol VideoRepository: Sendable {
     func videoDetail(for bvid: String) async throws -> VideoDetail
     func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback

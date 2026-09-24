@@ -19,8 +19,8 @@ struct VideoDetailLifecycleTests {
     func playbackFailureStopsPresentationAndRetryStartsItAgain() async {
         let fixture = VideoDetailLifecycleFixture()
         let player = LifecyclePlayback(holdsLoads: true)
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: LifecycleVideoRepository(fixtures: [fixture])
             ),
             playback: player
@@ -90,8 +90,8 @@ struct VideoDetailLifecycleTests {
     {
         let fixture = VideoDetailLifecycleFixture()
         let signatureRepository = PendingLifecycleUploaderSignatureRepository()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: LifecycleVideoRepository(fixtures: [fixture])
             ),
             playback: LifecyclePlayback(),
@@ -132,11 +132,11 @@ struct VideoDetailLifecycleTests {
         let watchProgressProbe = WatchProgressConnectionProbe()
         let repository = LifecycleVideoRepository(fixtures: [fixture])
         let playback = LifecyclePlayback()
-        let browseModel = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: EmptyLifecycleFeedRepository())
+        let browseModel = BrowseViewModel(
+            useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
         )
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: playback
         )
         let danmakuModel = DanmakuControlsViewModel(
@@ -275,8 +275,8 @@ struct VideoDetailLifecycleTests {
             playbackError: source == .playback ? .authenticationInvalid : nil
         )
         let playback = LifecyclePlayback()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: playback
         )
         let commentsModel = PlaybackCommentsViewModel(
@@ -308,8 +308,8 @@ struct VideoDetailLifecycleTests {
         let hostingView = NSHostingView(
             rootView: AppRootView(
                 navigationCoordinator: coordinator,
-                browseModel: GuestBrowseViewModel(
-                    useCase: GuestFeedUseCase(repository: EmptyLifecycleFeedRepository())
+                browseModel: BrowseViewModel(
+                    useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
                 ),
                 videoModel: videoModel,
                 commentsModel: commentsModel,
@@ -364,13 +364,13 @@ struct VideoDetailLifecycleTests {
             pages: { _ in fixture.pages },
             playback: { _, cid in
                 if cid == fixture.failingPage.cid {
-                    throw GuestApplicationError.transportFailure
+                    throw ContentApplicationError.transportFailure
                 }
                 return fixture.playback
             }
         )
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: LifecyclePlayback()
         )
 
@@ -426,8 +426,8 @@ struct VideoDetailLifecycleTests {
             fixtures: [first, replacement]
         )
         let commentsRepository = LifecycleCommentRepository()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: LifecyclePlayback()
         )
         let commentsModel = PlaybackCommentsViewModel(
@@ -451,8 +451,8 @@ struct VideoDetailLifecycleTests {
         let hostingView = NSHostingView(
             rootView: AppRootView(
                 navigationCoordinator: coordinator,
-                browseModel: GuestBrowseViewModel(
-                    useCase: GuestFeedUseCase(repository: EmptyLifecycleFeedRepository())
+                browseModel: BrowseViewModel(
+                    useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
                 ),
                 videoModel: videoModel,
                 commentsModel: commentsModel,
@@ -606,7 +606,7 @@ private struct VideoDetailLifecycleFixture: Sendable {
 }
 
 /// 本文件共享的游客视频 port 替身：按闭包回答详情、分 P 与播放，并记录播放 CID。
-private actor LifecycleVideoRepository: GuestVideoRepository {
+private actor LifecycleVideoRepository: VideoRepository {
     private let detailResponse: @Sendable (String) throws -> VideoDetail
     private let pagesResponse: @Sendable (String) throws -> [VideoPage]
     private let playbackResponse: @Sendable (String, Int64) throws -> VideoPlayback
@@ -625,14 +625,14 @@ private actor LifecycleVideoRepository: GuestVideoRepository {
     /// 按 BVID 选择 fixture；`playbackError` 让每次播放请求都失败。
     init(
         fixtures: [VideoDetailLifecycleFixture],
-        playbackError: GuestApplicationError? = nil
+        playbackError: ContentApplicationError? = nil
     ) {
         let fixturesByBVID = Dictionary(
             uniqueKeysWithValues: fixtures.map { ($0.bvid, $0) }
         )
         let fixture: @Sendable (String) throws -> VideoDetailLifecycleFixture = {
             guard let fixture = fixturesByBVID[$0] else {
-                throw GuestApplicationError.invalidRequest
+                throw ContentApplicationError.invalidRequest
             }
             return fixture
         }
@@ -661,11 +661,11 @@ private actor LifecycleVideoRepository: GuestVideoRepository {
 }
 
 /// App 根视图会激活浏览页；本文件只验证播放生命周期，因此 Feed 恒为空。
-private struct EmptyLifecycleFeedRepository: GuestFeedRepository {
+private struct EmptyLifecycleFeedRepository: FeedRepository {
     func recommendations(
         after continuation: RecommendationContinuation?
     ) async throws -> RecommendationPage {
-        throw GuestApplicationError.unavailable
+        throw ContentApplicationError.unavailable
     }
 
     func popular(page: Int, pageSize: Int) async throws -> PopularPage {

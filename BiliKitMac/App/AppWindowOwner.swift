@@ -11,8 +11,8 @@ import SwiftUI
 final class AppWindowOwner {
     let benchmarkAuthenticationOwnerID = UUID()
     let navigationCoordinator: AppNavigationCoordinator
-    let browseModel: GuestBrowseViewModel
-    let videoModel: GuestVideoViewModel
+    let browseModel: BrowseViewModel
+    let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
@@ -82,7 +82,7 @@ final class AppWindowOwner {
 
     static func handlePlaybackSelection(
         _ intent: PlaybackSelectionIntent,
-        with videoModel: GuestVideoViewModel
+        with videoModel: VideoViewModel
     ) {
         guard videoModel.presentedBVID == intent.bvid,
             let preferredCID = intent.preferredCID
@@ -102,8 +102,8 @@ final class AppWindowOwner {
 
     init(
         navigationCoordinator: AppNavigationCoordinator,
-        browseModel: GuestBrowseViewModel,
-        videoModel: GuestVideoViewModel,
+        browseModel: BrowseViewModel,
+        videoModel: VideoViewModel,
         commentsModel: PlaybackCommentsViewModel? = nil,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,

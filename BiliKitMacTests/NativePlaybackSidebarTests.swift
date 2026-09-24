@@ -154,7 +154,7 @@ struct NativePlaybackSidebarTests {
     @MainActor
     func retainedFailedPageKeepsSelectionAvailableAsARecoveryPath() {
         let context = context(bvid: "BVCurrent")
-        let failure = GuestVideoFailure.playback
+        let failure = VideoLoadFailure.playback
 
         #expect(
             NativePlaybackSidebarOverlay.resolve(
@@ -1905,7 +1905,7 @@ struct NativePlaybackSidebarTests {
 
     @MainActor
     private func selectionProjection(
-        context: GuestVideoContext? = nil
+        context: VideoContext? = nil
     ) -> PlaybackSelectionProjection {
         let context = context ?? self.context(bvid: "BVCurrent")
         return PlaybackSelectionProjection(
@@ -1922,12 +1922,12 @@ struct NativePlaybackSidebarTests {
     private func context(
         bvid: String,
         collection: VideoCollection? = nil
-    ) -> GuestVideoContext {
+    ) -> VideoContext {
         let pages = [
             VideoPage(cid: 1_001, index: 1, title: "第一部分", durationSeconds: 61),
             VideoPage(cid: 1_002, index: 2, title: "第二部分", durationSeconds: 122)
         ]
-        return GuestVideoContext(
+        return VideoContext(
             detail: VideoDetail(
                 bvid: bvid,
                 title: "当前视频",

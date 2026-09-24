@@ -25,8 +25,8 @@ typealias CommentLinkURLResolver = @Sendable (CommentLinkTarget) -> URL?
 struct AppEnvironment {
     private let playerEngine: AVPlayerEngine
     let playbackPreferencesController: PlaybackPreferencesController
-    private let guestFeedRepository: any GuestFeedRepository
-    private let guestVideoRepository: any GuestVideoRepository
+    private let feedRepository: any FeedRepository
+    private let videoRepository: any VideoRepository
     private let relatedVideoRepository: any RelatedVideoRepository
     private let uploaderSignatureRepository: any UploaderSignatureRepository
     private let commentRepository: any CommentRepository
@@ -45,8 +45,8 @@ struct AppEnvironment {
     let close: @MainActor @Sendable () -> Void
 
     init(
-        guestFeedRepository: any GuestFeedRepository,
-        guestVideoRepository: any GuestVideoRepository,
+        feedRepository: any FeedRepository,
+        videoRepository: any VideoRepository,
         relatedVideoRepository: any RelatedVideoRepository,
         uploaderSignatureRepository: any UploaderSignatureRepository,
         commentRepository: any CommentRepository,
@@ -68,8 +68,8 @@ struct AppEnvironment {
             playerEngine.nativeSubtitlesEnabled,
             "AVPlayerEngine must own native subtitle presentation"
         )
-        self.guestFeedRepository = guestFeedRepository
-        self.guestVideoRepository = guestVideoRepository
+        self.feedRepository = feedRepository
+        self.videoRepository = videoRepository
         self.relatedVideoRepository = relatedVideoRepository
         self.uploaderSignatureRepository = uploaderSignatureRepository
         self.commentRepository = commentRepository
@@ -105,15 +105,15 @@ struct AppEnvironment {
         .live(engine: playerEngine)
     }
 
-    func makeBrowseViewModel() -> GuestBrowseViewModel {
-        GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: guestFeedRepository)
+    func makeBrowseViewModel() -> BrowseViewModel {
+        BrowseViewModel(
+            useCase: FeedUseCase(repository: feedRepository)
         )
     }
 
-    func makeVideoViewModel() -> GuestVideoViewModel {
-        GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: guestVideoRepository),
+    func makeVideoViewModel() -> VideoViewModel {
+        VideoViewModel(
+            useCase: VideoUseCase(repository: videoRepository),
             playback: playerEngine,
             relatedVideoUseCase: RelatedVideoUseCase(
                 repository: relatedVideoRepository
@@ -154,7 +154,7 @@ struct AppEnvironment {
     }
 
     func makePlayerView(
-        videoModel: GuestVideoViewModel,
+        videoModel: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel
     ) -> AnyView {
         AnyView(
@@ -205,7 +205,7 @@ struct AppEnvironment {
     }
 
     func makeWatchProgressConnection(
-        videoModel: GuestVideoViewModel
+        videoModel: VideoViewModel
     ) -> WatchProgressWindowConnection? {
         watchProgressRepository.map {
             .live(repository: $0, timeline: playerEngine, videoModel: videoModel)
@@ -301,14 +301,14 @@ struct AppEnvironment {
                 }
             }
         )
-        let guestRepository = BiliGuestRepository(client: api)
+        let contentRepository = BiliContentRepository(client: api)
         let commentAssetResolver = BiliCommentAssetResolver()
         let commentLinkResolver = BiliCommentLinkResolver()
         return AppEnvironment(
-            guestFeedRepository: guestRepository,
-            guestVideoRepository: guestRepository,
-            relatedVideoRepository: guestRepository,
-            uploaderSignatureRepository: guestRepository,
+            feedRepository: contentRepository,
+            videoRepository: contentRepository,
+            relatedVideoRepository: contentRepository,
+            uploaderSignatureRepository: contentRepository,
             commentRepository: BiliCommentRepository(client: api),
             commentAssetURLResolver: { reference in
                 commentAssetResolver.imageURL(for: reference)

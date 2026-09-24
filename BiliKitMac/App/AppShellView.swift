@@ -10,8 +10,8 @@ import SwiftUI
 struct AppShellView: View {
     @Environment(\.openURL) private var openURL
     let navigationCoordinator: AppNavigationCoordinator
-    let browseModel: GuestBrowseViewModel
-    let videoModel: GuestVideoViewModel
+    let browseModel: BrowseViewModel
+    let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
@@ -314,7 +314,7 @@ struct AppShellView: View {
 }
 
 private struct PlaybackDestinationView: View {
-    let model: GuestVideoViewModel
+    let model: VideoViewModel
     let danmakuModel: DanmakuControlsViewModel
     let playerContent: AnyView
     let imagePipeline: NativeVideoImagePipeline

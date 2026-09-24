@@ -54,8 +54,8 @@ struct AppRootView: View {
 
     init(
         navigationCoordinator: AppNavigationCoordinator,
-        browseModel: GuestBrowseViewModel,
-        videoModel: GuestVideoViewModel,
+        browseModel: BrowseViewModel,
+        videoModel: VideoViewModel,
         commentsModel: PlaybackCommentsViewModel? = nil,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
@@ -208,11 +208,11 @@ struct AppRootView: View {
         windowOwner.navigationCoordinator
     }
 
-    private var browseModel: GuestBrowseViewModel {
+    private var browseModel: BrowseViewModel {
         windowOwner.browseModel
     }
 
-    private var videoModel: GuestVideoViewModel {
+    private var videoModel: VideoViewModel {
         windowOwner.videoModel
     }
 
@@ -344,7 +344,7 @@ struct AppRootView: View {
             browseModel.activateRecommendation()
             await browseModel.waitForCurrentTask()
         case .popular:
-            browseModel.activatePopular(pageSize: GuestBrowseViewModel.popularPageSize)
+            browseModel.activatePopular(pageSize: BrowseViewModel.popularPageSize)
             await browseModel.waitForCurrentTask()
         case .search(nil), .inactive:
             browseModel.deactivateRoute()

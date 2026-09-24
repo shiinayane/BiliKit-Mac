@@ -16,7 +16,7 @@ struct PlayerHostView: View {
     let player: AVPlayer
     let danmakuRenderer: CoreAnimationDanmakuRenderer
     let danmakuController: DanmakuPresentationController
-    let videoModel: GuestVideoViewModel?
+    let videoModel: VideoViewModel?
     let beginMomentaryPlaybackRate: ((Float) -> UUID?)?
     let endMomentaryPlaybackRate: ((UUID) -> Void)?
     let seekByTransportOffset: ((Double) -> Bool)?
@@ -30,7 +30,7 @@ struct PlayerHostView: View {
         player: AVPlayer,
         danmakuRenderer: CoreAnimationDanmakuRenderer,
         danmakuController: DanmakuPresentationController,
-        videoModel: GuestVideoViewModel? = nil,
+        videoModel: VideoViewModel? = nil,
         beginMomentaryPlaybackRate: ((Float) -> UUID?)? = nil,
         endMomentaryPlaybackRate: ((UUID) -> Void)? = nil,
         seekByTransportOffset: ((Double) -> Bool)? = nil,

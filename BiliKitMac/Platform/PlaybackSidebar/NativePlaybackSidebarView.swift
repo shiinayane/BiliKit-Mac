@@ -5,7 +5,7 @@ import BiliModels
 import SwiftUI
 
 struct NativePlaybackSidebarView: View {
-    let model: GuestVideoViewModel
+    let model: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentImagePipeline: NativeVideoImagePipeline
@@ -64,7 +64,7 @@ struct NativePlaybackSidebarView: View {
     }
 
     private func commentsPresentation(
-        _ context: GuestVideoContext
+        _ context: VideoContext
     ) -> NativePlaybackCommentsPresentation {
         guard let aid = context.detail.aid,
             commentsModel?.subject == .video(aid: aid)
@@ -75,7 +75,7 @@ struct NativePlaybackSidebarView: View {
     }
 
     private func selectionProjection(
-        _ context: GuestVideoContext
+        _ context: VideoContext
     ) -> PlaybackSelectionProjection {
         let episodes = context.detail.collection?.sections.flatMap(\.episodes) ?? []
         let pagesByEpisode = Dictionary(

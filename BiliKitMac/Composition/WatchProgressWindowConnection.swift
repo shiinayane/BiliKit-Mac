@@ -16,7 +16,7 @@ extension WatchProgressWindowConnection {
     static func live(
         repository: any WatchProgressRepository,
         timeline: any PlaybackTimelineProviding,
-        videoModel: GuestVideoViewModel
+        videoModel: VideoViewModel
     ) -> WatchProgressWindowConnection {
         let session = WatchProgressSession(
             useCase: WatchProgressUseCase(repository: repository),

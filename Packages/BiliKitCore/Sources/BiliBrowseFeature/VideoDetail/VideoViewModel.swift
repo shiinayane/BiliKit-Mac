@@ -2,22 +2,22 @@ import BiliApplication
 import BiliModels
 import Observation
 
-public enum GuestVideoFailure: Sendable, Equatable {
-    case content(GuestApplicationError)
+public enum VideoLoadFailure: Sendable, Equatable {
+    case content(ContentApplicationError)
     case playback
 }
 
-public enum GuestVideoState: Sendable, Equatable {
+public enum VideoLoadState: Sendable, Equatable {
     case idle
     case loading(bvid: String)
-    case loadingPage(context: GuestVideoContext, targetPage: VideoPage)
-    case preparingPlayback(GuestVideoContext)
-    case ready(GuestVideoContext)
-    case failed(bvid: String, failure: GuestVideoFailure)
+    case loadingPage(context: VideoContext, targetPage: VideoPage)
+    case preparingPlayback(VideoContext)
+    case ready(VideoContext)
+    case failed(bvid: String, failure: VideoLoadFailure)
     case failedPage(
-        context: GuestVideoContext,
+        context: VideoContext,
         targetPage: VideoPage,
-        failure: GuestVideoFailure
+        failure: VideoLoadFailure
     )
 }
 
@@ -26,14 +26,14 @@ public enum RelatedVideoState: Sendable, Equatable {
     case loading(bvid: String)
     case loaded(bvid: String, videos: [RelatedVideo])
     case empty(bvid: String)
-    case failed(bvid: String, error: GuestApplicationError)
+    case failed(bvid: String, error: ContentApplicationError)
 }
 
 public enum CollectionEpisodePagesState: Sendable, Equatable {
     case idle
     case loading
     case loaded(bvid: String)
-    case failed(GuestApplicationError)
+    case failed(ContentApplicationError)
 }
 
 public struct PlaybackResumeNotice: Sendable, Equatable {
@@ -53,8 +53,8 @@ private struct PlaybackStartPreparationFailure: Error {}
 /// 拥有单个视频准备意图，并把内容准备与播放器安装串成同一个可替换的 Task。
 ///
 /// 新视频、重试或 reset 都使旧任务失效；旧任务即使忽略取消，也不能覆盖当前状态。
-public final class GuestVideoViewModel {
-    public private(set) var state: GuestVideoState = .idle
+public final class VideoViewModel {
+    public private(set) var state: VideoLoadState = .idle
     public var failedPageCID: Int64? {
         guard case .failedPage(_, let targetPage, _) = state else { return nil }
         return targetPage.cid
@@ -66,7 +66,7 @@ public final class GuestVideoViewModel {
     ///
     /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
     /// context 后原子替换，最终 reset 或当前请求取消回到 idle 时清空。
-    public private(set) var presentedContext: GuestVideoContext?
+    public private(set) var presentedContext: VideoContext?
     /// App 层只用这个稳定身份协调详情 surface 的滚动重置，不需要跨越 Feature 边界读取模型。
     public var presentedBVID: String? { presentedContext?.detail.bvid }
     /// App 层只用稳定的视频 subject 协调评论；分 P/CID 切换不重置同一视频评论。
@@ -98,7 +98,7 @@ public final class GuestVideoViewModel {
     /// 只在当前 item 已完成首次定位并开始播放后出现。
     public private(set) var resumeNotice: PlaybackResumeNotice?
 
-    @ObservationIgnored private let useCase: GuestVideoUseCase
+    @ObservationIgnored private let useCase: VideoUseCase
     @ObservationIgnored private let playback: any PlaybackControlling
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase?
     @ObservationIgnored private let uploaderSignatureUseCase: UploaderSignatureUseCase?
@@ -111,7 +111,7 @@ public final class GuestVideoViewModel {
     @ObservationIgnored private let collectionEpisodes: CollectionEpisodePagesController
 
     public init(
-        useCase: GuestVideoUseCase,
+        useCase: VideoUseCase,
         playback: any PlaybackControlling,
         relatedVideoUseCase: RelatedVideoUseCase? = nil,
         uploaderSignatureUseCase: UploaderSignatureUseCase? = nil
@@ -320,7 +320,7 @@ public final class GuestVideoViewModel {
                     : .loaded(bvid: bvid, videos: videos)
             } catch is CancellationError {
                 nextState = .idle
-            } catch let error as GuestApplicationError {
+            } catch let error as ContentApplicationError {
                 nextState = .failed(bvid: bvid, error: error)
             } catch {
                 nextState = .failed(bvid: bvid, error: .unavailable)
@@ -376,7 +376,7 @@ public final class GuestVideoViewModel {
     }
 
     private func performPageLoad(
-        context: GuestVideoContext,
+        context: VideoContext,
         targetPage: VideoPage,
         intent: PlaybackLoadIntent,
         isCurrent: LatestTask.IsCurrent
@@ -415,7 +415,7 @@ public final class GuestVideoViewModel {
 
     /// 安装并开播已准备好的 context；返回 false 表示意图已被取代，调用方不得再写状态。
     private func startPlayback(
-        _ context: GuestVideoContext,
+        _ context: VideoContext,
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent,
         isCurrent: LatestTask.IsCurrent
@@ -444,7 +444,7 @@ public final class GuestVideoViewModel {
     /// 当前意图的准备失败：取消回到 idle，其余错误按调用方给出的失败形态呈现。
     private func handleLoadFailure(
         _ error: any Error,
-        failedState: (GuestVideoFailure) -> GuestVideoState
+        failedState: (VideoLoadFailure) -> VideoLoadState
     ) {
         clearResumeNotice()
         switch error {
@@ -455,7 +455,7 @@ public final class GuestVideoViewModel {
             presentedPlaybackIdentity = nil
             playbackIntent = nil
             state = .idle
-        case let error as GuestApplicationError:
+        case let error as ContentApplicationError:
             recordAuthenticationInvalidationIfNeeded(error)
             state = failedState(.content(error))
         default:
@@ -494,7 +494,7 @@ public final class GuestVideoViewModel {
     }
 
     private func recordAuthenticationInvalidationIfNeeded(
-        _ error: GuestApplicationError
+        _ error: ContentApplicationError
     ) {
         guard error == .authenticationInvalid else { return }
         authenticationRevalidationGeneration += 1

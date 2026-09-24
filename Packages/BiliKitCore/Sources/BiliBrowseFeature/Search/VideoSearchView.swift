@@ -6,7 +6,7 @@ import SwiftUI
 public struct VideoSearchView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
-    private let model: GuestBrowseViewModel
+    private let model: BrowseViewModel
     private let submittedSearchCriteria: VideoSearchCriteria?
     private let hasActiveFilters: Bool
     private let makeLoadedContent: (LoadedFeedContent<SearchVideoCardPresentation>) -> LoadedContent
@@ -14,7 +14,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
     private let onClearFilters: () -> Void
 
     public init(
-        model: GuestBrowseViewModel,
+        model: BrowseViewModel,
         submittedSearchCriteria: VideoSearchCriteria?,
         hasActiveFilters: Bool,
         makeLoadedContent:
@@ -43,7 +43,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
 
     private var visualPhase: LoadingVisualPhase {
         guard let submittedSearchCriteria else { return .idle }
-        let request = GuestFeedRequest.search(
+        let request = FeedRequest.search(
             VideoSearchRequest(criteria: submittedSearchCriteria, page: 1)
         )
         switch model.presentation(for: request).state {
@@ -63,7 +63,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
     @ViewBuilder
     private var results: some View {
         if let submittedSearchCriteria {
-            let request = GuestFeedRequest.search(
+            let request = FeedRequest.search(
                 VideoSearchRequest(criteria: submittedSearchCriteria, page: 1)
             )
             searchResults(for: request)
@@ -73,7 +73,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
     }
 
     @ViewBuilder
-    private func searchResults(for request: GuestFeedRequest) -> some View {
+    private func searchResults(for request: FeedRequest) -> some View {
         let presentation = model.presentation(for: request)
         switch presentation.state {
         case .idle, .loading:
@@ -104,7 +104,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
                                 )
                             )
                     } else if let error = presentation.refreshError {
-                        Text(error.guestMessage)
+                        Text(error.displayMessage)
                             .font(.caption)
                             .padding(8)
                             .background(.regularMaterial, in: Capsule())
@@ -112,8 +112,8 @@ public struct VideoSearchView<LoadedContent: View>: View {
                 }
         case .failed(request: .search, let error):
             BrowseFailureView(
-                title: error.guestTitle,
-                message: error.guestMessage,
+                title: error.displayTitle,
+                message: error.displayMessage,
                 retry: { model.retry(request) }
             )
         default:
@@ -147,7 +147,7 @@ public struct VideoSearchView<LoadedContent: View>: View {
                     )
             } else if let error = pagination.loadMoreError {
                 HStack(spacing: 8) {
-                    Text(error.guestMessage)
+                    Text(error.displayMessage)
                         .lineLimit(2)
                     Button(BrowseFeatureStrings.localized("重试", locale: locale)) {
                         model.retrySearchLoadMore()
@@ -181,7 +181,7 @@ private struct SearchResultsSkeleton: View {
     }
 }
 
-extension GuestFeedRequest {
+extension FeedRequest {
     fileprivate var searchQuery: String? {
         searchCriteria?.query
     }

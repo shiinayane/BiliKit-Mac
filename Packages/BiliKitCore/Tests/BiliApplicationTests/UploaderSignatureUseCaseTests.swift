@@ -26,7 +26,7 @@ struct UploaderSignatureUseCaseTests {
         let repository = UploaderSignatureRepositoryStub(result: nil)
         let useCase = UploaderSignatureUseCase(repository: repository)
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.signature(for: 0)
         }
         #expect(await repository.callCount == 0)

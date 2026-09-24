@@ -3,10 +3,10 @@ import BiliUI
 import Foundation
 import SwiftUI
 
-struct GuestVideoDetailView<PlayerContent: View, RelatedContent: View>: View {
+struct VideoDetailView<PlayerContent: View, RelatedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
-    let context: GuestVideoContext
+    let context: VideoContext
     let isPreparingPlayback: Bool
     let danmakuModel: DanmakuControlsViewModel
     let relatedVideoState: RelatedVideoState

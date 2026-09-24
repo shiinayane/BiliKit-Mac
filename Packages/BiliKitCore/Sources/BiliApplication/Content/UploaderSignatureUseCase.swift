@@ -10,7 +10,7 @@ public struct UploaderSignatureUseCase: Sendable {
 
     public func signature(for ownerID: Int64) async throws -> String? {
         guard ownerID > 0 else {
-            throw GuestApplicationError.invalidRequest
+            throw ContentApplicationError.invalidRequest
         }
         let signature = try await repository.signature(for: ownerID)
         try Task.checkCancellation()

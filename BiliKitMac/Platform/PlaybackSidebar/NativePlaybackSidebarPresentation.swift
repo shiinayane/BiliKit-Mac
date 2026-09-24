@@ -23,7 +23,7 @@ enum NativePlaybackSidebarOverlay: Equatable {
 
 extension NativePlaybackSidebarOverlay {
     static func resolve(
-        state: GuestVideoState,
+        state: VideoLoadState,
         hasPresentedContent: Bool
     ) -> Self {
         if hasPresentedContent {

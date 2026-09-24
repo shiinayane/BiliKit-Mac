@@ -6,19 +6,19 @@ import Testing
 @testable import BiliBrowseFeature
 
 @Suite(.timeLimit(.minutes(1)))
-struct GuestBrowseAndVideoViewModelTests {
+struct BrowseAndVideoViewModelTests {
     @Test(arguments: [
-        GuestApplicationError.authenticationInvalid,
+        ContentApplicationError.authenticationInvalid,
         .authenticationUnavailable,
         .requestRestricted
     ])
     @MainActor
     func onlyInvalidAuthenticationRequestsAppRevalidation(
-        error: GuestApplicationError
+        error: ContentApplicationError
     ) async {
-        let fixture = GuestFixtures()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let fixture = ContentFixtures()
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(
                     fixture,
                     playback: { _, _ in throw error }
@@ -36,9 +36,9 @@ struct GuestBrowseAndVideoViewModelTests {
         )
         #expect(
             model.state
-                == GuestVideoState.failed(
+                == VideoLoadState.failed(
                     bvid: fixture.bvid,
-                    failure: GuestVideoFailure.content(error)
+                    failure: VideoLoadFailure.content(error)
                 )
         )
     }
@@ -46,7 +46,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerPopularRequestPreventsOldSearchFromOverwritingFeed() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let searchGate = TestGate()
         let repository = FeedRepositoryStub(
             popular: { request, _ in fixture.popularPage(request) },
@@ -55,8 +55,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 return fixture.searchPage(page: request.page)
             }
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(
                 repository: repository
             )
         )
@@ -86,8 +86,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func recommendationBatchesAppendDeduplicateAndStopWithoutProgress() async {
-        let first = GuestFixtures(bvid: "BV1RcmdOneA", title: "推荐一")
-        let second = GuestFixtures(bvid: "BV1RcmdTwoB", title: "推荐二")
+        let first = ContentFixtures(bvid: "BV1RcmdOneA", title: "推荐一")
+        let second = ContentFixtures(bvid: "BV1RcmdTwoB", title: "推荐二")
         let repository = FeedRepositoryStub(recommendations: { continuation, _ in
             let freshIndex = continuation?.freshIndex ?? 1
             let videos: [RecommendedVideo]
@@ -95,7 +95,7 @@ struct GuestBrowseAndVideoViewModelTests {
             case 1: videos = [first.recommendedVideo, first.recommendedVideo]
             case 2: videos = [first.recommendedVideo, second.recommendedVideo]
             case 3: videos = [second.recommendedVideo]
-            default: throw GuestApplicationError.invalidRequest
+            default: throw ContentApplicationError.invalidRequest
             }
             return RecommendationPage(
                 videos: videos,
@@ -103,8 +103,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 nextContinuation: RecommendationContinuation(freshIndex: freshIndex + 1)
             )
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activateRecommendation()
@@ -140,7 +140,7 @@ struct GuestBrowseAndVideoViewModelTests {
             let range = freshIndex == 1 ? 0..<999 : 999..<1_004
             return RecommendationPage(
                 videos: range.map { index in
-                    GuestFixtures(
+                    ContentFixtures(
                         bvid: "BV-capacity-\(index)",
                         title: "推荐 \(index)"
                     ).recommendedVideo
@@ -149,8 +149,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 nextContinuation: RecommendationContinuation(freshIndex: freshIndex + 1)
             )
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activateRecommendation()
@@ -164,7 +164,7 @@ struct GuestBrowseAndVideoViewModelTests {
         }
         #expect(
             page.videos.count
-                == GuestBrowseViewModel.maximumRetainedRecommendationVideos
+                == BrowseViewModel.maximumRetainedRecommendationVideos
         )
         #expect(page.nextContinuation == nil)
         #expect(!model.recommendationPagination().canLoadMore)
@@ -174,10 +174,10 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func recommendationAuthenticationFailureRequestsRevalidation() async {
         let repository = FeedRepositoryStub(recommendations: { _, _ in
-            throw GuestApplicationError.authenticationInvalid
+            throw ContentApplicationError.authenticationInvalid
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activateRecommendation()
@@ -196,15 +196,15 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func recommendationTailAuthenticationFailureKeepsCardsAndRequestsRevalidation() async {
-        let fixture = GuestFixtures(bvid: "BV1AuthRcmd1", title: "认证推荐")
+        let fixture = ContentFixtures(bvid: "BV1AuthRcmd1", title: "认证推荐")
         let repository = FeedRepositoryStub(recommendations: { continuation, _ in
             guard continuation == nil else {
-                throw GuestApplicationError.authenticationInvalid
+                throw ContentApplicationError.authenticationInvalid
             }
             return fixture.recommendationPage
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activateRecommendation()
@@ -224,11 +224,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func popularAndSearchTailAuthenticationFailuresRequestRevalidation() async {
-        let fixture = GuestFixtures(bvid: "BV1AuthTail1", title: "认证追加")
+        let fixture = ContentFixtures(bvid: "BV1AuthTail1", title: "认证追加")
         let repository = FeedRepositoryStub(
             popular: { request, _ in
                 guard request.page == 1 else {
-                    throw GuestApplicationError.authenticationInvalid
+                    throw ContentApplicationError.authenticationInvalid
                 }
                 return PopularPage(
                     videos: [fixture.popularVideo],
@@ -239,7 +239,7 @@ struct GuestBrowseAndVideoViewModelTests {
             },
             search: { request, _ in
                 guard request.page == 1 else {
-                    throw GuestApplicationError.authenticationInvalid
+                    throw ContentApplicationError.authenticationInvalid
                 }
                 return SearchPage(
                     videos: [fixture.searchVideo],
@@ -250,8 +250,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 )
             }
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activatePopular(pageSize: 50)
@@ -270,14 +270,14 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func duplicateOnlyPopularPageStopsNonProgressingPagination() async {
-        let fixture = GuestFixtures(bvid: "BV1PopularE5", title: "重复热门卡片")
+        let fixture = ContentFixtures(bvid: "BV1PopularE5", title: "重复热门卡片")
         let repository = FeedRepositoryStub(popular: { request, _ in
             fixture.popularPage(request, hasMore: true)
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
-        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
+        let request = FeedRequest.popular(page: 1, pageSize: 50)
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
@@ -298,8 +298,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func popularRefreshCancelsAndRejectsLateAppend() async throws {
-        let old = GuestFixtures(bvid: "BV1PopularF6", title: "旧热门榜单")
-        let fresh = GuestFixtures(bvid: "BV1PopularG7", title: "刷新热门榜单")
+        let old = ContentFixtures(bvid: "BV1PopularF6", title: "旧热门榜单")
+        let fresh = ContentFixtures(bvid: "BV1PopularG7", title: "刷新热门榜单")
         let appendGate = TestGate()
         let repository = FeedRepositoryStub(popular: { request, attempt in
             if request.page == 2 {
@@ -311,8 +311,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 hasMore: attempt == 1
             )
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activatePopular(pageSize: 50)
@@ -339,12 +339,12 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func failedSearchRetriesItsOriginalRequest() async {
-        let fixture = GuestFixtures()
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(
+        let fixture = ContentFixtures()
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(
                 repository: FeedRepositoryStub(search: { request, attempt in
                     if attempt == 1 {
-                        throw GuestApplicationError.requestRestricted
+                        throw ContentApplicationError.requestRestricted
                     }
                     return fixture.searchPage(page: request.page)
                 })
@@ -383,11 +383,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(arguments: [BrowseFeed.popular, .search])
     @MainActor
     func nearEndAppendsDeduplicatesAndBackpressuresSameTail(_ feed: BrowseFeed) async {
-        let first = GuestFixtures(bvid: "BV1PagedA1", title: "第一页")
-        let second = GuestFixtures(bvid: "BV1PagedB2", title: "第二页")
+        let first = ContentFixtures(bvid: "BV1PagedA1", title: "第一页")
+        let second = ContentFixtures(bvid: "BV1PagedB2", title: "第二页")
         let repository = FeedRepositoryStub.pagination(feed, first: first, second: second)
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         feed.activate(model)
@@ -408,16 +408,16 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(arguments: [BrowseFeed.popular, .search])
     @MainActor
     func failedAppendKeepsCardsAndRetriesOnlyNextPage(_ feed: BrowseFeed) async {
-        let first = GuestFixtures(bvid: "BV1PagedC3", title: "保留卡片")
-        let second = GuestFixtures(bvid: "BV1PagedD4", title: "重试追加")
+        let first = ContentFixtures(bvid: "BV1PagedC3", title: "保留卡片")
+        let second = ContentFixtures(bvid: "BV1PagedD4", title: "重试追加")
         let repository = FeedRepositoryStub.pagination(
             feed,
             first: first,
             second: second,
             failsFirstSecondPage: true
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         feed.activate(model)
@@ -452,8 +452,8 @@ struct GuestBrowseAndVideoViewModelTests {
             keepsQuery
             ? VideoSearchCriteria(query: "macOS", order: .mostPlayed, duration: .underTenMinutes)
             : VideoSearchCriteria(query: "新查询")
-        let old = GuestFixtures(bvid: "BV1SearchOld", title: "旧条件")
-        let fresh = GuestFixtures(bvid: "BV1SearchNew", title: "新条件")
+        let old = ContentFixtures(bvid: "BV1SearchOld", title: "旧条件")
+        let fresh = ContentFixtures(bvid: "BV1SearchNew", title: "新条件")
         let oldCriteria = VideoSearchCriteria(query: "macOS")
         let oldAppendGate = TestGate()
         let repository = FeedRepositoryStub(search: { request, _ in
@@ -469,8 +469,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 totalPages: isOld ? 2 : 1
             )
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.search(oldCriteria)
@@ -501,8 +501,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)), arguments: [BrowseFeed.recommendation, .popular, .search])
     @MainActor
     func authenticationEpochRestartsFeedAndRejectsLateOldResult(_ feed: BrowseFeed) async throws {
-        let old = GuestFixtures(bvid: "BV1EpochOld", title: "旧账户结果")
-        let fresh = GuestFixtures(bvid: "BV1EpochNew", title: "新账户结果")
+        let old = ContentFixtures(bvid: "BV1EpochOld", title: "旧账户结果")
+        let fresh = ContentFixtures(bvid: "BV1EpochNew", title: "新账户结果")
         let gates = [TestGate(), TestGate()]
         let repository = FeedRepositoryStub(
             recommendations: { _, attempt in
@@ -518,8 +518,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 return (attempt == 1 ? old : fresh).searchPage(page: request.page)
             }
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         feed.activate(model)
@@ -542,9 +542,9 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func tabRoundTripPreservesPopularAndSearchWorksetsWithoutNewRequests() async {
-        let first = GuestFixtures(bvid: "BV1PopularH8", title: "热门第一页")
-        let second = GuestFixtures(bvid: "BV1PopularJ9", title: "热门第二页")
-        let searchFixture = GuestFixtures()
+        let first = ContentFixtures(bvid: "BV1PopularH8", title: "热门第一页")
+        let second = ContentFixtures(bvid: "BV1PopularJ9", title: "热门第二页")
+        let searchFixture = ContentFixtures()
         let repository = FeedRepositoryStub(
             popular: { request, _ in
                 request.page == 1
@@ -553,8 +553,8 @@ struct GuestBrowseAndVideoViewModelTests {
             },
             search: { request, _ in searchFixture.searchPage(page: request.page) }
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activatePopular(pageSize: 50)
@@ -578,13 +578,13 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func failedRefreshKeepsMatchingLoadedContentVisible() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(popular: { request, attempt in
-            if attempt == 2 { throw GuestApplicationError.requestRestricted }
+            if attempt == 2 { throw ContentApplicationError.requestRestricted }
             return fixture.popularPage(request)
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.activatePopular(pageSize: 50)
@@ -611,13 +611,13 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func onlySuccessfulSameQueryRefreshAdvancesSearchGeneration() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(search: { request, attempt in
-            if attempt == 3 { throw GuestApplicationError.requestRestricted }
+            if attempt == 3 { throw ContentApplicationError.requestRestricted }
             return fixture.searchPage(page: request.page)
         })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
 
         model.search(VideoSearchCriteria(query: "macOS"))
@@ -640,13 +640,13 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func resetClearsWorksetsAndRequiresANewLoad() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(
             popular: { request, _ in fixture.popularPage(request) },
             search: { request, _ in fixture.searchPage(page: request.page) }
         )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let model = BrowseViewModel(
+            useCase: FeedUseCase(repository: repository)
         )
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
@@ -667,7 +667,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func authenticatedResumeSelectsRecordedPartBeforeStartingAndCanRestart()
         async throws
     {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let resumeToken = PlaybackResumeToken()
         let metadata = try #require(
             PlaybackResumeMetadata(
@@ -688,8 +688,8 @@ struct GuestBrowseAndVideoViewModelTests {
             ),
             restartSucceeds: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
 
@@ -717,7 +717,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func supersededRestartCannotClearNoticeOrNewerRestart() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let resumeToken = PlaybackResumeToken()
         let metadata = try #require(
             PlaybackResumeMetadata(
@@ -738,8 +738,8 @@ struct GuestBrowseAndVideoViewModelTests {
             restartSucceeds: true,
             holdsRestarts: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
         model.loadVideo(fixture.bvid)
@@ -766,12 +766,12 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func resumePreparationFailureUsesExistingPlaybackRetryState() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let player = PlayerStub(
             startOutcome: .preparationFailed
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: player
@@ -790,8 +790,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func playbackFailureRetainsTheNewPresentedContext() async {
-        let first = GuestFixtures(bvid: "BV1PresentedA", title: "视频 A")
-        let replacement = GuestFixtures(
+        let first = ContentFixtures(bvid: "BV1PresentedA", title: "视频 A")
+        let replacement = ContentFixtures(
             bvid: "BV1PresentedB",
             title: "视频 B"
         )
@@ -799,8 +799,8 @@ struct GuestBrowseAndVideoViewModelTests {
         let player = PlayerStub(
             failingBVID: replacement.bvid
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
 
@@ -824,14 +824,14 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func currentCancellationClearsPresentedContextWhenReturningToIdle() async {
-        let first = GuestFixtures(bvid: "BV1CancelA", title: "视频 A")
-        let cancelled = GuestFixtures(bvid: "BV1CancelB", title: "视频 B")
+        let first = ContentFixtures(bvid: "BV1CancelA", title: "视频 A")
+        let cancelled = ContentFixtures(bvid: "BV1CancelB", title: "视频 B")
         let repository = VideoRepositoryStub(
             fixtures: [first, cancelled],
             cancelledBVID: cancelled.bvid
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -850,8 +850,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func newerVideoLoadPreventsOldVideoFromLoadingPlayer() async throws {
-        let slow = GuestFixtures(bvid: "BV1SlowFixture", title: "旧视频")
-        let fast = GuestFixtures(bvid: "BV1FastFixture", title: "新视频")
+        let slow = ContentFixtures(bvid: "BV1SlowFixture", title: "旧视频")
+        let fast = ContentFixtures(bvid: "BV1FastFixture", title: "新视频")
         let player = PlayerStub()
         let slowGate = TestGate()
         let repository = VideoRepositoryStub(
@@ -869,8 +869,8 @@ struct GuestBrowseAndVideoViewModelTests {
                 identity.bvid == slow.bvid ? slow.playback : fast.playback
             }
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: repository
             ),
             playback: player
@@ -905,11 +905,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func pageSelectionReplacesCIDAndResetClearsBothIdentities() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
         let player = PlayerStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
 
@@ -949,20 +949,20 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func failedPageSelectionRetriesOnlyTheTargetCID() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(
             fixture,
             pages: fixture.twoPages,
             playback: { identity, attempt in
                 if identity.cid == 900_002, attempt == 1 {
-                    throw GuestApplicationError.transportFailure
+                    throw ContentApplicationError.transportFailure
                 }
                 return fixture.playback
             }
         )
         let player = PlayerStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
         model.loadVideo(fixture.bvid)
@@ -995,11 +995,11 @@ struct GuestBrowseAndVideoViewModelTests {
     func postReadyFailureClearsPresentedIdentityAndRetriesCurrentCID()
         async throws
     {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
         let player = PlayerStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
         model.loadVideo(fixture.bvid)
@@ -1028,11 +1028,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func failureBeforeLoadReturnsCannotRestoreReadyState() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
         let player = PlayerStub(failsFirstLoadUntilStopped: true)
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
 
@@ -1063,11 +1063,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func delayedOldSameCIDFailureCannotStopNewABAIntent() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
         let player = PlayerStub(heldLoad: 3)
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
 
@@ -1110,7 +1110,7 @@ struct GuestBrowseAndVideoViewModelTests {
     func lateSupersededAuthenticationFailureCannotRequestRevalidation()
         async throws
     {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let secondPageGate = TestGate()
         let repository = VideoRepositoryStub(
             fixture,
@@ -1118,11 +1118,11 @@ struct GuestBrowseAndVideoViewModelTests {
             playback: { identity, _ in
                 guard identity.cid == 900_002 else { return fixture.playback }
                 await secondPageGate.pass()
-                throw GuestApplicationError.authenticationInvalid
+                throw ContentApplicationError.authenticationInvalid
             }
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
         model.loadVideo(fixture.bvid)
@@ -1143,7 +1143,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func rapidPageABARejectsTheLateSupersededResult() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let firstPageGate = TestGate()
         let secondPageGate = TestGate()
         let repository = VideoRepositoryStub(
@@ -1159,8 +1159,8 @@ struct GuestBrowseAndVideoViewModelTests {
             }
         )
         let player = PlayerStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: player
         )
         model.loadVideo(fixture.bvid)
@@ -1186,10 +1186,10 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func relatedVideoABARejectsOldSameBVIDResult() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let relatedRepository = RelatedRepositoryStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: PlayerStub(),
@@ -1230,7 +1230,7 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func relatedVideoFailureRetriesWithoutReloadingPlayback() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let relatedRepository = RelatedRepositoryStub(
             responses: [
                 .failure(.transportFailure),
@@ -1238,8 +1238,8 @@ struct GuestBrowseAndVideoViewModelTests {
             ]
         )
         let player = PlayerStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: player,
@@ -1273,10 +1273,10 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func uploaderSignatureLoadsWithoutBlockingReadyDetail() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let signatureRepository = SignatureRepositoryStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: PlayerStub(),
@@ -1301,9 +1301,9 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func uploaderSignatureFailureHidesOnlyEnhancement() async {
-        let fixture = GuestFixtures()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let fixture = ContentFixtures()
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: PlayerStub(),
@@ -1319,7 +1319,7 @@ struct GuestBrowseAndVideoViewModelTests {
         #expect(
             model.state
                 == .ready(
-                    GuestVideoContext(
+                    VideoContext(
                         detail: fixture.detail,
                         pages: [fixture.page],
                         selectedPage: fixture.page,
@@ -1333,10 +1333,10 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test
     @MainActor
     func pageSwitchDoesNotReloadUploaderSignature() async {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let signatureRepository = SignatureRepositoryStub(immediate: .success("公开签名"))
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture, pages: fixture.twoPages)
             ),
             playback: PlayerStub(),
@@ -1358,11 +1358,11 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func uploaderSignatureABARejectsOldSameOwnerResult() async throws {
-        let first = GuestFixtures(bvid: "BV1SignatureA", title: "视频 A")
-        let second = GuestFixtures(bvid: "BV1SignatureB", title: "视频 B")
+        let first = ContentFixtures(bvid: "BV1SignatureA", title: "视频 A")
+        let second = ContentFixtures(bvid: "BV1SignatureB", title: "视频 B")
         let signatureRepository = SignatureRepositoryStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixtures: [first, second])
             ),
             playback: PlayerStub(),
@@ -1398,10 +1398,10 @@ struct GuestBrowseAndVideoViewModelTests {
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func resetCancelsAndIsolatesLateUploaderSignature() async throws {
-        let fixture = GuestFixtures()
+        let fixture = ContentFixtures()
         let signatureRepository = SignatureRepositoryStub()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(fixture)
             ),
             playback: PlayerStub(),
@@ -1430,8 +1430,8 @@ struct GuestBrowseAndVideoViewModelTests {
     func crossBVIDExplicitCIDLoadsOnlyTheAtomicTarget() async {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1458,8 +1458,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             failsFirstEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1487,8 +1487,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             blocksEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
         model.loadVideo(fixtures.rootBVID)
@@ -1517,8 +1517,8 @@ struct GuestBrowseAndVideoViewModelTests {
     func explicitDuplicateBVIDOccurrenceSurvivesContextReconciliation() async {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1544,8 +1544,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             blocksEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1576,8 +1576,8 @@ struct GuestBrowseAndVideoViewModelTests {
             blocksEpisodeDetail: true,
             episodeFailureAfterRelease: .authenticationInvalid
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1604,8 +1604,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             failsFirstEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1638,8 +1638,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             blocksEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1668,8 +1668,8 @@ struct GuestBrowseAndVideoViewModelTests {
             fixtures: fixtures,
             blocksEpisodeDetail: true
         )
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1702,8 +1702,8 @@ struct GuestBrowseAndVideoViewModelTests {
     func knownEpisodePagesResolveSelectionsWithoutRemoteDetail() async {
         let fixtures = CollectionFixtures()
         let repository = CollectionEpisodeRepositoryStub(fixtures: fixtures)
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let model = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: PlayerStub()
         )
 
@@ -1733,8 +1733,8 @@ struct GuestBrowseAndVideoViewModelTests {
     @MainActor
     func episodePageCacheEvictsAndReleasesTheThirteenthBVID() async {
         let fixtures = BoundedCollectionCacheFixtures()
-        let model = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
+        let model = VideoViewModel(
+            useCase: VideoUseCase(
                 repository: VideoRepositoryStub(
                     detail: { _, _ in fixtures.detail },
                     pages: { _, _ in fixtures.detail.pages },
@@ -1987,10 +1987,10 @@ private struct CollectionFixtures: Sendable {
     }
 }
 
-private actor CollectionEpisodeRepositoryStub: GuestVideoRepository {
+private actor CollectionEpisodeRepositoryStub: VideoRepository {
     let fixtures: CollectionFixtures
     let blocksEpisodeDetail: Bool
-    let episodeFailureAfterRelease: GuestApplicationError?
+    let episodeFailureAfterRelease: ContentApplicationError?
     var failsFirstEpisodeDetail: Bool
     private var episodeRequests = 0
     private var observedPlaybackRequests: [(String, Int64)] = []
@@ -2001,7 +2001,7 @@ private actor CollectionEpisodeRepositoryStub: GuestVideoRepository {
         fixtures: CollectionFixtures,
         blocksEpisodeDetail: Bool = false,
         failsFirstEpisodeDetail: Bool = false,
-        episodeFailureAfterRelease: GuestApplicationError? = nil
+        episodeFailureAfterRelease: ContentApplicationError? = nil
     ) {
         self.fixtures = fixtures
         self.blocksEpisodeDetail = blocksEpisodeDetail
@@ -2017,7 +2017,7 @@ private actor CollectionEpisodeRepositoryStub: GuestVideoRepository {
         await episodeRequestEvents.signal()
         if failsFirstEpisodeDetail {
             failsFirstEpisodeDetail = false
-            throw GuestApplicationError.transportFailure
+            throw ContentApplicationError.transportFailure
         }
         if blocksEpisodeDetail {
             await withCheckedContinuation { continuation in
@@ -2068,12 +2068,12 @@ private actor CollectionEpisodeRepositoryStub: GuestVideoRepository {
 
 /// UploaderSignatureRepository 的唯一替身：`immediate` 为 nil 时每个请求挂起到测试按序号放行。
 private actor SignatureRepositoryStub: UploaderSignatureRepository {
-    private let immediate: Result<String?, GuestApplicationError>?
+    private let immediate: Result<String?, ContentApplicationError>?
     private var held: [CheckedContinuation<String?, Never>?] = []
     private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
 
-    init(immediate: Result<String?, GuestApplicationError>? = nil) {
+    init(immediate: Result<String?, ContentApplicationError>? = nil) {
         self.immediate = immediate
     }
 
@@ -2101,12 +2101,12 @@ private actor SignatureRepositoryStub: UploaderSignatureRepository {
 
 /// RelatedVideoRepository 的唯一替身：按序消费 `responses`，用尽后挂起到测试按序号放行。
 private actor RelatedRepositoryStub: RelatedVideoRepository {
-    private var responses: [Result<[RelatedVideo], GuestApplicationError>]
+    private var responses: [Result<[RelatedVideo], ContentApplicationError>]
     private var held: [Int: CheckedContinuation<[RelatedVideo], Never>] = [:]
     private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
 
-    init(responses: [Result<[RelatedVideo], GuestApplicationError>] = []) {
+    init(responses: [Result<[RelatedVideo], ContentApplicationError>] = []) {
         self.responses = responses
     }
 
@@ -2144,7 +2144,7 @@ extension RelatedVideo {
     }
 }
 
-private struct GuestFixtures: Sendable {
+private struct ContentFixtures: Sendable {
     let bvid: String
     let title: String
     let owner = VideoOwner(id: 10_001, name: "测试 UP 主")
@@ -2273,7 +2273,7 @@ private struct GuestFixtures: Sendable {
 /// 游客 Feed port 的共享替身：每个方法由闭包回答，并按到达顺序记录请求。
 ///
 /// 闭包的 `attempt` 是同一请求第几次到达（从 1 开始），用于表达“首次失败、重试成功”。
-private actor FeedRepositoryStub: GuestFeedRepository {
+private actor FeedRepositoryStub: FeedRepository {
     typealias Response<Request, Value> =
         @Sendable (Request, _ attempt: Int) async throws -> Value
     typealias PopularRequest = (page: Int, pageSize: Int)
@@ -2292,7 +2292,7 @@ private actor FeedRepositoryStub: GuestFeedRepository {
         search: Response<VideoSearchRequest, SearchPage>? = nil
     ) {
         recommendationResponse =
-            recommendations ?? { _, _ in throw GuestApplicationError.unavailable }
+            recommendations ?? { _, _ in throw ContentApplicationError.unavailable }
         popularResponse =
             popular ?? { request, _ in
                 PopularPage(videos: [], pageNumber: request.page, pageSize: request.pageSize)
@@ -2334,19 +2334,19 @@ extension FeedRepositoryStub {
     /// 两页热门或搜索：第 1 页含重复卡片，第 2 页补上 `second`，可让第 2 页首次失败。
     static func pagination(
         _ feed: BrowseFeed,
-        first: GuestFixtures,
-        second: GuestFixtures,
+        first: ContentFixtures,
+        second: ContentFixtures,
         failsFirstSecondPage: Bool = false
     ) -> FeedRepositoryStub {
-        let pageVideos: @Sendable (Int, Int) throws -> [GuestFixtures] = { page, attempt in
+        let pageVideos: @Sendable (Int, Int) throws -> [ContentFixtures] = { page, attempt in
             switch page {
             case 1: return [first, first]
             case 2:
                 if failsFirstSecondPage, attempt == 1 {
-                    throw GuestApplicationError.transportFailure
+                    throw ContentApplicationError.transportFailure
                 }
                 return [first, second]
-            default: throw GuestApplicationError.invalidRequest
+            default: throw ContentApplicationError.invalidRequest
             }
         }
         switch feed {
@@ -2376,7 +2376,7 @@ extension FeedRepositoryStub {
 }
 
 /// 游客视频 port 的共享替身；`attempt` 语义与 `FeedRepositoryStub` 相同。
-private actor VideoRepositoryStub: GuestVideoRepository {
+private actor VideoRepositoryStub: VideoRepository {
     typealias Response<Request, Value> = FeedRepositoryStub.Response<Request, Value>
 
     private let detailResponse: Response<String, VideoDetail>
@@ -2398,7 +2398,7 @@ private actor VideoRepositoryStub: GuestVideoRepository {
 
     /// 所有请求都由同一个 fixture 回答；默认只有一个分 P。
     init(
-        _ fixture: GuestFixtures,
+        _ fixture: ContentFixtures,
         pages: [VideoPage]? = nil,
         playback: Response<PlaybackItemIdentity, VideoPlayback>? = nil
     ) {
@@ -2410,13 +2410,13 @@ private actor VideoRepositoryStub: GuestVideoRepository {
     }
 
     /// 按 BVID 选择 fixture；未知 BVID 视为无效响应，`cancelledBVID` 的详情请求被取消。
-    init(fixtures: [GuestFixtures], cancelledBVID: String? = nil) {
+    init(fixtures: [ContentFixtures], cancelledBVID: String? = nil) {
         let fixturesByBVID = Dictionary(
             uniqueKeysWithValues: fixtures.map { ($0.bvid, $0) }
         )
-        let fixture: @Sendable (String) throws -> GuestFixtures = { bvid in
+        let fixture: @Sendable (String) throws -> ContentFixtures = { bvid in
             guard let fixture = fixturesByBVID[bvid] else {
-                throw GuestApplicationError.invalidResponse
+                throw ContentApplicationError.invalidResponse
             }
             return fixture
         }
@@ -2760,10 +2760,10 @@ enum BrowseFeed: Sendable {
         duration: .thirtyToSixtyMinutes,
         publicationRange: VideoPublicationTimeRange(beginTimestamp: 100, endTimestamp: 200)
     )
-    private static let popularRequest = GuestFeedRequest.popular(page: 1, pageSize: 50)
+    private static let popularRequest = FeedRequest.popular(page: 1, pageSize: 50)
 
     @MainActor
-    func activate(_ model: GuestBrowseViewModel) {
+    func activate(_ model: BrowseViewModel) {
         switch self {
         case .recommendation: model.activateRecommendation()
         case .popular: model.activatePopular(pageSize: 50)
@@ -2772,7 +2772,7 @@ enum BrowseFeed: Sendable {
     }
 
     @MainActor
-    func loadMore(_ model: GuestBrowseViewModel) {
+    func loadMore(_ model: BrowseViewModel) {
         switch self {
         case .recommendation: model.loadMoreRecommendations()
         case .popular: model.loadMorePopular()
@@ -2781,7 +2781,7 @@ enum BrowseFeed: Sendable {
     }
 
     @MainActor
-    func retryLoadMore(_ model: GuestBrowseViewModel) {
+    func retryLoadMore(_ model: BrowseViewModel) {
         switch self {
         case .recommendation: model.retryRecommendationLoadMore()
         case .popular: model.retryPopularLoadMore()
@@ -2791,8 +2791,8 @@ enum BrowseFeed: Sendable {
 
     @MainActor
     func pagination(
-        _ model: GuestBrowseViewModel
-    ) -> (canLoadMore: Bool, tailIdentity: String?, loadMoreError: GuestApplicationError?) {
+        _ model: BrowseViewModel
+    ) -> (canLoadMore: Bool, tailIdentity: String?, loadMoreError: ContentApplicationError?) {
         switch self {
         case .recommendation:
             let pagination = model.recommendationPagination()
@@ -2807,7 +2807,7 @@ enum BrowseFeed: Sendable {
     }
 
     @MainActor
-    func loadedBVIDs(_ model: GuestBrowseViewModel) -> [String] {
+    func loadedBVIDs(_ model: BrowseViewModel) -> [String] {
         switch (self, model.state) {
         case (.recommendation, .loaded(.recommendation(let page))): page.videos.map(\.bvid)
         case (.popular, .loaded(.popular(let page))): page.videos.map(\.bvid)
