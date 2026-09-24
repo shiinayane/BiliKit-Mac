@@ -63,54 +63,10 @@ else
 fi
 
 cd "$repository_root"
-developer_dir="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-if [ ! -x "$developer_dir/usr/bin/xcodebuild" ]; then
-    echo "需要完整 Xcode：$developer_dir" >&2
-    exit 1
-fi
-export DEVELOPER_DIR="$developer_dir"
-task_tmp="$artifact_root/tmp"
-module_cache="$artifact_root/ModuleCache.noindex"
-mkdir -p "$task_tmp" "$module_cache"
+. Scripts/isolated-toolchain.sh
 
 if [ "$mode" = "package" ]; then
-    swiftpm_home="$artifact_root/swiftpm-home"
-    mkdir -p "$swiftpm_home"
-    HOME="$swiftpm_home" \
-    CFFIXED_USER_HOME="$swiftpm_home" \
-    XDG_CACHE_HOME="$swiftpm_home/.cache" \
-    TMPDIR="$task_tmp" \
-    CLANG_MODULE_CACHE_PATH="$module_cache" \
-    SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-    xcrun swift test \
-        --package-path Packages/BiliKitCore \
-        --scratch-path "$artifact_root/swiftpm" \
-        --cache-path "$artifact_root/swiftpm-cache" \
-        --config-path "$artifact_root/swiftpm-config" \
-        --security-path "$artifact_root/swiftpm-security" \
-        --filter "$test_filter"
-    exit 0
+    package_test --filter "$test_filter"
+else
+    app_xcodebuild test -only-testing:"$test_filter"
 fi
-
-xcode_home="$artifact_root/xcode-home"
-derived_data="$artifact_root/DerivedData"
-packages="$artifact_root/SourcePackages"
-mkdir -p "$xcode_home"
-HOME="$xcode_home" \
-CFFIXED_USER_HOME="$xcode_home" \
-XDG_CACHE_HOME="$xcode_home/.cache" \
-TMPDIR="$task_tmp" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
-SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-xcodebuild \
-    -quiet \
-    -project BiliKitMac.xcodeproj \
-    -scheme BiliKitMac \
-    -configuration Debug \
-    -destination 'platform=macOS' \
-    -derivedDataPath "$derived_data" \
-    -clonedSourcePackagesDirPath "$packages" \
-    CODE_SIGNING_ALLOWED=NO \
-    SWIFT_ENABLE_EXPLICIT_MODULES=NO \
-    test \
-    -only-testing:"$test_filter"

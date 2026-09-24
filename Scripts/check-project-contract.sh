@@ -78,12 +78,14 @@ deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/
 set -- $deployment
 [ "$1" -gt 0 ] && [ "$2" -eq 0 ] || fail "Xcode target 必须统一支持 macOS 15"
 expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
-expect_count 1 'DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer' "$ci_workflow" "CI 必须按矩阵选择 Xcode"
+grep -Fq '/Applications/Xcode_${{ matrix.xcode }}.app/' "$ci_workflow" \
+    || fail "CI 必须按矩阵选择 Xcode"
 expect_count 0 '#if compiler(>=6.2)' "$app_source_roots" "搜索栏不得为旧 SDK 保留编译期回退"
 expect_count 0 '#if compiler(>=6.2)' "$player_host" "播放器提示不得为旧 SDK 保留编译期回退"
 
-sh -n Scripts/run-quality-gates.sh || fail "质量 Gate 脚本语法无效"
-sh -n Scripts/run-targeted-tests.sh || fail "定向测试脚本语法无效"
+for script in Scripts/*.sh; do
+    sh -n "$script" || fail "脚本语法无效：$script"
+done
 
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:0' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spks' ] || fail "Sparkle status mach lookup 不一致"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:1' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spki' ] || fail "Sparkle installer mach lookup 不一致"
