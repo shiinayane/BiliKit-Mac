@@ -51,8 +51,10 @@ struct DASHBridgeRouteTests {
         )
 
         let prepared = try await bridge.prepare(
-            video: videoFixture.representation,
-            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+            videos: [videoFixture.representation],
+            audioTracks: [makeSelectedAudioTrack(representation: audio)],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { prepared.stop() }
         let master = try await fetchText(prepared.url)
@@ -110,14 +112,21 @@ struct DASHBridgeRouteTests {
         await #expect(
             throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
         ) {
-            try await bridge.prepare(video: video, audioTracks: [])
+            try await bridge.prepare(
+                videos: [video],
+                audioTracks: [],
+                headers: [:],
+                subtitleSource: nil
+            )
         }
         await #expect(
             throws: DASHToHLSBridgeError.unsupportedAudioTrackCount(2)
         ) {
             try await bridge.prepare(
-                video: video,
-                audioTracks: [original, alternate]
+                videos: [video],
+                audioTracks: [original, alternate],
+                headers: [:],
+                subtitleSource: nil
             )
         }
         let mismatched = SelectedPlaybackAudioTrack(
@@ -131,8 +140,10 @@ struct DASHBridgeRouteTests {
             )
         ) {
             try await bridge.prepare(
-                video: video,
-                audioTracks: [mismatched]
+                videos: [video],
+                audioTracks: [mismatched],
+                headers: [:],
+                subtitleSource: nil
             )
         }
         #expect(registry.servers.isEmpty)
@@ -185,7 +196,7 @@ struct DASHBridgeRouteTests {
         let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
-            video: video,
+            videos: [video],
             audioTracks: [
                 makeSelectedAudioTrack(representation: original),
                 makeSelectedAudioTrack(
@@ -196,7 +207,9 @@ struct DASHBridgeRouteTests {
                     isDefault: false,
                     representation: ai
                 )
-            ]
+            ],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { prepared.stop() }
         let masterData = try await URLSession.shared.data(from: prepared.url).0
@@ -223,7 +236,7 @@ struct DASHBridgeRouteTests {
         )
         let fallbackBridge = makeFixtureBridge(fallbackTransport)
         let fallbackPrepared = try await fallbackBridge.prepare(
-            video: video,
+            videos: [video],
             audioTracks: [
                 makeSelectedAudioTrack(representation: original),
                 makeSelectedAudioTrack(
@@ -234,7 +247,9 @@ struct DASHBridgeRouteTests {
                     isDefault: false,
                     representation: ai
                 )
-            ]
+            ],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { fallbackPrepared.stop() }
         let fallbackData = try await URLSession.shared.data(
@@ -299,7 +314,7 @@ struct DASHBridgeRouteTests {
         )
 
         let prepared = try await bridge.prepare(
-            video: video,
+            videos: [video],
             audioTracks: [
                 makeSelectedAudioTrack(representation: original),
                 makeSelectedAudioTrack(
@@ -310,7 +325,9 @@ struct DASHBridgeRouteTests {
                     isDefault: false,
                     representation: ai
                 )
-            ]
+            ],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { prepared.stop() }
         let masterData = try await URLSession.shared.data(from: prepared.url).0
@@ -370,8 +387,10 @@ struct DASHBridgeRouteTests {
         let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
-            video: video,
-            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+            videos: [video],
+            audioTracks: [makeSelectedAudioTrack(representation: audio)],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { prepared.stop() }
         let masterData = try await URLSession.shared.data(from: prepared.url).0
@@ -421,8 +440,10 @@ struct DASHBridgeRouteTests {
         let bridge = makeFixtureBridge(transport)
 
         let prepared = try await bridge.prepare(
-            video: video,
-            audioTracks: [makeSelectedAudioTrack(representation: audio)]
+            videos: [video],
+            audioTracks: [makeSelectedAudioTrack(representation: audio)],
+            headers: [:],
+            subtitleSource: nil
         )
         defer { prepared.stop() }
         let preparationRequestCount = await transport.requests.count

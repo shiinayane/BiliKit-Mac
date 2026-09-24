@@ -101,7 +101,12 @@ struct AVPlayerEngineLifecycleTests {
         engine.stop()
         let seekedIntent = PlaybackLoadIntent()
         try await engine.load(request, identity: identity, intent: seekedIntent)
-        try await engine.seek(to: .milliseconds(100))
+        let loadedGeneration = engine.currentTimelineSnapshot.discontinuityGeneration
+        #expect(engine.requestSeek(to: .milliseconds(100)))
+        try await waitForTimeline(of: engine) { snapshot in
+            snapshot.discontinuityGeneration > loadedGeneration
+                && abs(snapshot.positionSeconds - 0.1) < 0.05
+        }
         #expect(
             await engine.beginPlayback(
                 identity: identity,
@@ -418,8 +423,13 @@ struct AVPlayerEngineLifecycleTests {
         #expect(!engine.requestSeek(to: .seconds(10)))
         engine.play()
 
-        try await engine.seek(to: .seconds(0.7))
-        #expect(engine.currentTimelineSnapshot.positionSeconds >= 0.65)
+        let playingSeekGeneration = engine.currentTimelineSnapshot
+            .discontinuityGeneration
+        #expect(engine.requestSeek(to: .seconds(0.7)))
+        try await waitForTimeline(of: engine) { snapshot in
+            snapshot.discontinuityGeneration > playingSeekGeneration
+                && snapshot.positionSeconds >= 0.65
+        }
         #expect(
             engine.currentTimelineSnapshot.discontinuityGeneration
                 > loadGeneration

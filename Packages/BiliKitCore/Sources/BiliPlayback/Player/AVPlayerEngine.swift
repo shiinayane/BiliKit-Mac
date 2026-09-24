@@ -18,7 +18,6 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
     )
     case itemFailed(errorType: String)
     case invalidPlaybackRate
-    case seekFailed
 }
 
 public enum NativeSubtitleToggleResult: Sendable, Equatable {
@@ -326,19 +325,6 @@ public final class AVPlayerEngine:
                 self?.cancelLoad(generation: generation)
             }
         }
-    }
-
-    public func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity
-    ) async throws {
-        try await load(
-            PlaybackRequest(
-                media: playback.media,
-                mediaHeaders: playback.mediaHeaders
-            ),
-            identity: identity
-        )
     }
 
     public func load(
@@ -783,44 +769,6 @@ public final class AVPlayerEngine:
         return true
     }
 
-    /// 执行精确 seek，并只为一次用户 seek 发布一个 discontinuity generation。
-    public func seek(to time: Duration) async throws {
-        guard let item = player.currentItem else {
-            throw AVPlayerEngineError.seekFailed
-        }
-        let generation = loadGeneration
-        let operation = UUID()
-        restartOperation = nil
-        supersedeTransportSeek()
-        activeSeekOperationID = operation
-        let components = time.components
-        let seconds =
-            Double(components.seconds)
-            + Double(components.attoseconds) / 1_000_000_000_000_000_000
-        timeline.prepareExplicitSeek(operationID: operation, to: seconds)
-        let didSeek = await player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
-        guard activeSeekOperationID == operation,
-            loadGeneration == generation,
-            player.currentItem === item
-        else {
-            if !didSeek {
-                timeline.discardStaleSeekLanding(operationID: operation)
-            }
-            throw CancellationError()
-        }
-        guard didSeek else {
-            timeline.explicitSeekFailed(operationID: operation)
-            activeSeekOperationID = nil
-            throw AVPlayerEngineError.seekFailed
-        }
-        timeline.explicitSeekCompleted(operationID: operation, at: seconds)
-        activeSeekOperationID = nil
-    }
-
     /// 同步接受当前 item 上的精确 seek，并在 engine 内完成 generation-safe 的异步收尾。
     ///
     /// 返回 `true` 表示 AVPlayer 已经收到请求；系统远程命令的同步 handler 无法等待完成回调。
@@ -1091,15 +1039,6 @@ public final class AVPlayerEngine:
                 representation: representation
             )
         }
-    }
-
-    func selectedAudioTracks(
-        for request: PlaybackRequest
-    ) throws -> [SelectedPlaybackAudioTrack] {
-        guard case .dash(let manifest) = request.media else {
-            throw AVPlayerEngineError.missingAudioRepresentation
-        }
-        return try selectedAudioTracks(in: manifest, request: request)
     }
 
     private func handleCurrentItemFailure() {

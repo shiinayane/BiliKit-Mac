@@ -80,19 +80,6 @@ public struct DASHToHLSBridge: Sendable {
         self.serverFactory = serverFactory
     }
 
-    public func prepare(
-        video: MediaRepresentation,
-        audioTracks: [SelectedPlaybackAudioTrack],
-        headers: [String: String] = [:]
-    ) async throws -> PreparedPlaybackAsset {
-        try await prepare(
-            videos: [video],
-            audioTracks: audioTracks,
-            headers: headers,
-            subtitleSource: nil
-        )
-    }
-
     /// 在同一个 loopback owner 中登记 progressive MP4；正文由 server 按 AVPlayer 的单 Range
     /// 逐块转发，不在 bridge 或 server 中缓存完整媒体。
     public func prepare(
@@ -125,19 +112,6 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
-    public func prepare(
-        videos: [MediaRepresentation],
-        audioTracks: [SelectedPlaybackAudioTrack],
-        headers: [String: String] = [:]
-    ) async throws -> PreparedPlaybackAsset {
-        try await prepare(
-            videos: videos,
-            audioTracks: audioTracks,
-            headers: headers,
-            subtitleSource: nil
-        )
-    }
-
     func prepare(
         videos: [MediaRepresentation],
         audioTracks: [SelectedPlaybackAudioTrack],
