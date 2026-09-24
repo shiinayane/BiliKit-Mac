@@ -145,6 +145,9 @@ private struct NativeCommentImagePreviewContent: View {
                     .padding(.horizontal, min(96, max(56, geometry.size.width * 0.08)))
                     .padding(.vertical, min(86, max(54, geometry.size.height * 0.08)))
             }
+            // 只有背景与图片区域点击关闭；导航按钮不在该手势内，禁用时点击也不会穿透关闭。
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onDismiss)
             .overlay(alignment: .topTrailing) {
                 iconButton(
                     "xmark",
@@ -156,8 +159,6 @@ private struct NativeCommentImagePreviewContent: View {
             }
             .overlay { navigation }
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onDismiss)
         .focusable()
         .focusEffectDisabled()
         .focused($focus, equals: .surface)
