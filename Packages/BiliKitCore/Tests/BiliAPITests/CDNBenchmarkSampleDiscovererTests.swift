@@ -20,7 +20,10 @@ struct CDNBenchmarkSampleDiscovererTests {
         var candidate = Self.candidateA
         candidate.play = #""120""#
         let transport = StubTransport(
-            responses: [rank(popular, candidate), detail(candidate), try playURL()]
+            responses: [
+                rank(popular, candidate), detail(candidate), try fixtureResponse("nav"),
+                try playURL()
+            ]
         )
 
         let samples = try await discoverer(transport).discover()
@@ -36,10 +39,11 @@ struct CDNBenchmarkSampleDiscovererTests {
             requests.map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl"
+                "/x/web-interface/nav",
+                "/x/player/wbi/playurl"
             ]
         )
-        #expect(requests.map { $0.headers["Cookie"] } == [nil, nil, StubAuthorizer.cookie])
+        #expect(requests.map { $0.headers["Cookie"] } == [nil, nil, nil, StubAuthorizer.cookie])
         #expect(requests.allSatisfy { $0.headers["Authorization"] == nil })
         let query = try #require(
             URLComponents(url: requests[0].url, resolvingAgainstBaseURL: false)?.queryItems
@@ -71,7 +75,8 @@ struct CDNBenchmarkSampleDiscovererTests {
         let rank = rank(Self.candidateA)
         let detail = detail(Self.candidateA)
         let transport = StubTransport([
-            .response(rank), .response(detail), .cancellingCaller(try playURL()),
+            .response(rank), .response(detail), .response(try fixtureResponse("nav")),
+            .cancellingCaller(try playURL()),
             .response(rank), .response(detail), .response(try playURL())
         ])
         let discoverer = discoverer(transport)
@@ -90,6 +95,7 @@ struct CDNBenchmarkSampleDiscovererTests {
                 rank(Self.candidateA, Self.candidateB),
                 detail(mismatched),
                 detail(Self.candidateB),
+                try fixtureResponse("nav"),
                 try playURL()
             ]
         )
@@ -102,7 +108,8 @@ struct CDNBenchmarkSampleDiscovererTests {
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
                 "/x/web-interface/view",
-                "/x/player/playurl"
+                "/x/web-interface/nav",
+                "/x/player/wbi/playurl"
             ]
         )
     }
@@ -113,6 +120,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             responses: [
                 rank(Self.candidateA, Self.candidateB),
                 detail(Self.candidateA),
+                try fixtureResponse("nav"),
                 try playURL(),
                 rank()
             ]
@@ -125,7 +133,8 @@ struct CDNBenchmarkSampleDiscovererTests {
             transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl"
+                "/x/web-interface/nav",
+                "/x/player/wbi/playurl"
             ]
         )
     }
@@ -136,6 +145,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             responses: [
                 rank(Self.candidateA),
                 detail(Self.candidateA),
+                try fixtureResponse("nav"),
                 try playURL(removesAudio: true)
             ]
         )
@@ -154,6 +164,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             responses: [
                 rank(Self.candidateA),
                 detail(Self.candidateA),
+                try fixtureResponse("nav"),
                 try playURL(),
                 rank(secondRegion),
                 detail(secondRegion),
@@ -169,10 +180,11 @@ struct CDNBenchmarkSampleDiscovererTests {
             transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl",
+                "/x/web-interface/nav",
+                "/x/player/wbi/playurl",
                 "/x/web-interface/newlist_rank",
                 "/x/web-interface/view",
-                "/x/player/playurl"
+                "/x/player/wbi/playurl"
             ]
         )
     }
@@ -181,7 +193,8 @@ struct CDNBenchmarkSampleDiscovererTests {
     func resettingDiscoveryLifecycleAllowsTheSameAnonymousCandidateAgain() async throws {
         let transport = StubTransport(
             responses: [
-                rank(Self.candidateA), detail(Self.candidateA), try playURL(),
+                rank(Self.candidateA), detail(Self.candidateA), try fixtureResponse("nav"),
+                try playURL(),
                 rank(Self.candidateA), detail(Self.candidateA), try playURL()
             ]
         )
@@ -190,7 +203,7 @@ struct CDNBenchmarkSampleDiscovererTests {
         #expect(try await discoverer.discover().count == 1)
         await discoverer.resetSeenSamples()
         #expect(try await discoverer.discover().count == 1)
-        #expect(transport.capturedRequests().count == 6)
+        #expect(transport.capturedRequests().count == 7)
     }
 
     @Test
@@ -199,6 +212,7 @@ struct CDNBenchmarkSampleDiscovererTests {
             responses: [
                 rank(Self.candidateA),
                 detail(Self.candidateA),
+                try fixtureResponse("nav"),
                 try playURL(promotesAVCToHighQuality: false)
             ]
         )
@@ -206,13 +220,16 @@ struct CDNBenchmarkSampleDiscovererTests {
         let samples = try await discoverer(transport).discover()
 
         #expect(samples.isEmpty)
-        #expect(transport.capturedRequests().count == 3)
+        #expect(transport.capturedRequests().count == 4)
     }
 
     @Test
     func missingCredentialDoesNotFallBackToAnonymousPlayURL() async throws {
         let transport = StubTransport(
-            responses: [rank(Self.candidateA), detail(Self.candidateA), try playURL()]
+            responses: [
+                rank(Self.candidateA), detail(Self.candidateA), try fixtureResponse("nav"),
+                try playURL()
+            ]
         )
 
         await #expect(throws: BiliAPIError.authorizationRequired) {
@@ -221,7 +238,8 @@ struct CDNBenchmarkSampleDiscovererTests {
         #expect(
             transport.capturedRequests().map(\.url.path) == [
                 "/x/web-interface/newlist_rank",
-                "/x/web-interface/view"
+                "/x/web-interface/view",
+                "/x/web-interface/nav"
             ]
         )
     }

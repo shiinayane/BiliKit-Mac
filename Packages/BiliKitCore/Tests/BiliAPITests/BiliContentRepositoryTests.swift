@@ -49,6 +49,7 @@ struct BiliContentRepositoryTests {
         let repository = BiliContentRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [
+                    try fixtureResponse("nav"),
                     HTTPResponse(
                         statusCode: fixture.statusCode,
                         headers: fixture.headers,

@@ -4,96 +4,58 @@ import BiliNetworking
 import Foundation
 
 /// playurl：DASH／progressive 选择、AI 配音音轨与线路测速样本。
+///
+/// 三处调用共用同一个 WBI 签名管线；只有本地明确无凭据的播放请求才带游客参数。
 extension BiliAPIClient {
+    private static let playURLPath = "/x/player/wbi/playurl"
+    /// 与 Web 播放页一致的固定参数；fnval 976 只请求本项目能消费的 DASH 形状。
+    private static let playURLBaseParameters = [
+        "fnval": "976",
+        "fnver": "0",
+        "fourk": "1",
+        "web_location": "1315873"
+    ]
+    /// 文档：`gaia_source` 在带 SESSDATA 时不需要；Web 客户端游客请求带这组参数。
+    private static let guestPlayURLParameters = [
+        "gaia_source": "pre-load",
+        "isGaiaAvoided": "true"
+    ]
+
     /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
     public func playback(
         for bvid: String,
         cid: Int64,
         quality: Int = 120
     ) async throws -> VideoPlayback {
-        try await playback(
-            for: bvid,
-            cid: cid,
-            quality: quality,
-            missingCredential: .useAnonymousRequest,
-            includesMachineGeneratedAudio: true
-        )
-    }
-
-    /// 测速样本必须来自当前账户可消费的 playurl；没有凭据时失败而不匿名降级。
-    func authenticatedPlaybackForCDNBenchmark(
-        for bvid: String,
-        cid: Int64,
-        quality: Int = 120
-    ) async throws -> CDNBenchmarkPlayback {
         guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
             throw BiliAPIError.invalidRequest
         }
         let playbackSessionEpoch = authenticatedSessionEpoch
         let referer = Self.videoReferer(bvid)
-        let resolved: AuthorizedResponse<CDNBenchmarkPlayURLPayload> =
-            try await getWithAuthorizationProvenance(
-                path: "/x/player/playurl",
-                queryItems: [
-                    URLQueryItem(name: "bvid", value: bvid),
-                    URLQueryItem(name: "cid", value: String(cid)),
-                    URLQueryItem(name: "qn", value: String(quality)),
-                    URLQueryItem(name: "fnval", value: "976"),
-                    URLQueryItem(name: "fnver", value: "0"),
-                    URLQueryItem(name: "fourk", value: "1")
-                ],
-                referer: referer,
+        let parameters = ["voice_balance": "1"]
+        let resolved: AuthorizedResponse<PlayURLPayload>
+        do {
+            resolved = try await signedPlayURL(
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                parameters: parameters,
                 access: .accountRead(
                     missingCredential: .fail,
                     mapsAuthenticationInvalidation: true
                 )
             )
-        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
-        let video = try resolved.payload.dash.video
-            .filter(\.isAVCVideo)
-            .map { try $0.model(kind: .video) }
-        guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
-        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
-        return CDNBenchmarkPlayback(
-            videoRepresentations: video,
-            mediaHeaders: [
-                "Referer": referer,
-                "User-Agent": userAgent
-            ]
-        )
-    }
-
-    private func playback(
-        for bvid: String,
-        cid: Int64,
-        quality: Int,
-        missingCredential: MissingCredentialBehavior,
-        includesMachineGeneratedAudio: Bool
-    ) async throws -> VideoPlayback {
-        guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
-            throw BiliAPIError.invalidRequest
-        }
-        let playbackSessionEpoch = authenticatedSessionEpoch
-        let referer = Self.videoReferer(bvid)
-        let queryItems = [
-            URLQueryItem(name: "bvid", value: bvid),
-            URLQueryItem(name: "cid", value: String(cid)),
-            URLQueryItem(name: "qn", value: String(quality)),
-            URLQueryItem(name: "fnval", value: "976"),
-            URLQueryItem(name: "fnver", value: "0"),
-            URLQueryItem(name: "fourk", value: "1"),
-            URLQueryItem(name: "voice_balance", value: "1")
-        ]
-        let resolved: AuthorizedResponse<PlayURLPayload> =
-            try await getWithAuthorizationProvenance(
-                path: "/x/player/playurl",
-                queryItems: queryItems,
-                referer: referer,
-                access: .accountRead(
-                    missingCredential: missingCredential,
-                    mapsAuthenticationInvalidation: true
-                )
+        } catch BiliAPIError.authorizationRequired {
+            // 本地明确无凭据：同一 endpoint 匿名请求，并且只有这里带游客参数。
+            resolved = try await signedPlayURL(
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                parameters: parameters.merging(Self.guestPlayURLParameters) { $1 },
+                access: .anonymous
             )
+            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        }
         let payload = resolved.payload
 
         if let dash = payload.dash {
@@ -105,8 +67,7 @@ extension BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 quality: quality,
-                referer: referer,
-                includesMachineGeneratedAudio: includesMachineGeneratedAudio
+                referer: referer
             )
         }
 
@@ -140,6 +101,70 @@ extension BiliAPIClient {
         )
     }
 
+    /// 测速样本必须来自当前账户可消费的 playurl；没有凭据时失败而不匿名降级。
+    func authenticatedPlaybackForCDNBenchmark(
+        for bvid: String,
+        cid: Int64,
+        quality: Int = 120
+    ) async throws -> CDNBenchmarkPlayback {
+        guard Self.isValidBVID(bvid), cid > 0, quality > 0 else {
+            throw BiliAPIError.invalidRequest
+        }
+        let playbackSessionEpoch = authenticatedSessionEpoch
+        let resolved: AuthorizedResponse<CDNBenchmarkPlayURLPayload> =
+            try await signedPlayURL(
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                parameters: [:],
+                access: .accountRead(
+                    missingCredential: .fail,
+                    mapsAuthenticationInvalidation: true
+                )
+            )
+        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        let video = try resolved.payload.dash.video
+            .filter(\.isAVCVideo)
+            .map { try $0.model(kind: .video) }
+        guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
+        try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        return CDNBenchmarkPlayback(
+            videoRepresentations: video,
+            mediaHeaders: [
+                "Referer": Self.videoReferer(bvid),
+                "User-Agent": userAgent
+            ]
+        )
+    }
+
+    /// 每次尝试都用当前 WBI key 重新签名；签名被拒时刷新 key 并只重试一次。
+    private func signedPlayURL<Payload: Decodable & Sendable>(
+        bvid: String,
+        cid: Int64,
+        quality: Int,
+        parameters: [String: String],
+        access: RequestAccess
+    ) async throws -> AuthorizedResponse<Payload> {
+        var signedParameters = Self.playURLBaseParameters
+        signedParameters["bvid"] = bvid
+        signedParameters["cid"] = String(cid)
+        signedParameters["qn"] = String(quality)
+        signedParameters.merge(parameters) { $1 }
+        return try await withWBIKeyRefresh(retryingHTTPForbidden: false) { forceKeyRefresh in
+            let keys = try await wbiKey(forceRefresh: forceKeyRefresh)
+            let query = try wbiSigner.sign(
+                parameters: signedParameters,
+                keys: keys,
+                timestamp: timestampProvider()
+            )
+            return try await getWithAuthorizationProvenance(
+                url: try endpoint(path: Self.playURLPath, percentEncodedQuery: query),
+                referer: Self.videoReferer(bvid),
+                access: access
+            )
+        }
+    }
+
     private func dashPlayback(
         payload: PlayURLPayload,
         dash: DASHPayload,
@@ -148,8 +173,7 @@ extension BiliAPIClient {
         bvid: String,
         cid: Int64,
         quality: Int,
-        referer: String,
-        includesMachineGeneratedAudio: Bool
+        referer: String
     ) async throws -> VideoPlayback {
         let video = try dash.video
             .filter(\.isAVCVideo)
@@ -173,17 +197,14 @@ extension BiliAPIClient {
         ]
         if authorizationProvenance == .authenticated {
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
-            if includesMachineGeneratedAudio {
-                audioTracks += try await machineGeneratedAudioTracks(
-                    catalog: payload.languageCatalog,
-                    originalAudio: audio,
-                    bvid: bvid,
-                    cid: cid,
-                    quality: quality,
-                    referer: referer,
-                    sessionEpoch: playbackSessionEpoch
-                )
-            }
+            audioTracks += try await machineGeneratedAudioTracks(
+                catalog: payload.languageCatalog,
+                originalAudio: audio,
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                sessionEpoch: playbackSessionEpoch
+            )
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
         }
 
@@ -210,7 +231,6 @@ extension BiliAPIClient {
         bvid: String,
         cid: Int64,
         quality: Int,
-        referer: String,
         sessionEpoch: UInt64
     ) async throws -> [PlaybackAudioTrack] {
         let items = catalog?.validatedMachineGeneratedItems() ?? []
@@ -227,24 +247,19 @@ extension BiliAPIClient {
             else {
                 continue
             }
-            let payload: PlayURLPayload = try await get(
-                path: "/x/player/playurl",
-                queryItems: [
-                    URLQueryItem(name: "bvid", value: bvid),
-                    URLQueryItem(name: "cid", value: String(cid)),
-                    URLQueryItem(name: "qn", value: String(quality)),
-                    URLQueryItem(name: "fnval", value: "976"),
-                    URLQueryItem(name: "fnver", value: "0"),
-                    URLQueryItem(name: "fourk", value: "1"),
-                    URLQueryItem(name: "cur_language", value: languageTag),
-                    URLQueryItem(name: "voice_balance", value: "1")
+            let payload: PlayURLPayload = try await signedPlayURL(
+                bvid: bvid,
+                cid: cid,
+                quality: quality,
+                parameters: [
+                    "cur_language": languageTag,
+                    "voice_balance": "1"
                 ],
-                referer: referer,
                 access: .accountRead(
                     missingCredential: .fail,
                     mapsAuthenticationInvalidation: true
                 )
-            )
+            ).payload
             try requireAuthenticatedSessionEpoch(sessionEpoch)
             guard let dash = payload.dash,
                 payload.currentLanguage == languageTag,

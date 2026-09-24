@@ -535,7 +535,9 @@ struct BiliAPIClientTests {
 
     @Test
     func playURLMapsOnlyAVCAndAACRepresentationsWithAnonymousMediaHeaders() async throws {
-        let transport = StubTransport(responses: [try fixtureResponse("playurl")])
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), try fixtureResponse("playurl")]
+        )
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: StubAuthorizer()
@@ -571,12 +573,17 @@ struct BiliAPIClientTests {
         // playurl 请求可带账户凭据，交给 CDN 的媒体 header 不得带。
         #expect(Set(playback.mediaHeaders.keys) == ["Referer", "User-Agent"])
 
-        let request = try #require(transport.capturedRequests().first)
-        #expect(request.url.path == "/x/player/playurl")
+        let request = try #require(playURLRequests(transport).first)
+        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
         let queryItems = URLComponents(
             url: request.url,
             resolvingAgainstBaseURL: false
         )?.queryItems
+        #expect(queryItems?.contains(URLQueryItem(name: "web_location", value: "1315873")) == true)
+        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
+        // 游客参数只属于本地无凭据的匿名请求。
+        #expect(queryItems?.contains { $0.name == "gaia_source" } == false)
+        #expect(queryItems?.contains { $0.name == "isGaiaAvoided" } == false)
         #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
@@ -592,7 +599,10 @@ struct BiliAPIClientTests {
     func playURLMapsSingleSafeDURLAsProgressiveMedia() async throws {
         let client = BiliAPIClient(
             transport: StubTransport(
-                responses: [try ProgressiveShape.singleSafeSegment.response()]
+                responses: [
+                    try fixtureResponse("nav"),
+                    try ProgressiveShape.singleSafeSegment.response()
+                ]
             )
         )
 
@@ -619,7 +629,7 @@ struct BiliAPIClientTests {
             $0["durl"] = [["unexpected": true]]
         }
         let client = BiliAPIClient(
-            transport: StubTransport(responses: [response])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         let playback = try await client.playback(
@@ -645,7 +655,7 @@ struct BiliAPIClientTests {
         expected: ProgressiveMediaFailure
     ) async throws {
         let client = BiliAPIClient(
-            transport: StubTransport(responses: [try shape.response()])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), try shape.response()])
         )
 
         await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(expected)) {
@@ -659,6 +669,7 @@ struct BiliAPIClientTests {
         let aiVolume = loudnessVolume(measuredI: -11, measuredTP: -0.5)
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: [
@@ -710,7 +721,8 @@ struct BiliAPIClientTests {
         #expect(englishAI.loudnessMetadata?.measuredIntegratedLUFS == -11)
         #expect(japaneseAI.loudnessMetadata == nil)
         #expect(original.loudnessMetadata != englishAI.loudnessMetadata)
-        let requests = transport.capturedRequests()
+        let requests = playURLRequests(transport)
+        #expect(requests.count == 3)
         #expect(
             requests.allSatisfy { request in
                 URLComponents(
@@ -767,6 +779,7 @@ struct BiliAPIClientTests {
     func authenticatedPlayURLMapsVerifiedAIAudioAsSemanticTrack() async throws {
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -801,7 +814,7 @@ struct BiliAPIClientTests {
         #expect(!ai.isDefault)
         #expect(ai.isAutoselect)
         #expect(ai.representations.map(\.id) == [30_280])
-        let requests = transport.capturedRequests()
+        let requests = playURLRequests(transport)
         #expect(requests.count == 2)
         #expect(
             URLComponents(
@@ -820,6 +833,7 @@ struct BiliAPIClientTests {
     ) async throws {
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -842,7 +856,7 @@ struct BiliAPIClientTests {
         )
 
         #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
-        #expect(transport.capturedRequests().count == 2)
+        #expect(playURLRequests(transport).count == 2)
     }
 
     @Test(arguments: [true, false])
@@ -854,7 +868,7 @@ struct BiliAPIClientTests {
             $0["last_play_time"] = 42_500
         }
         let client = BiliAPIClient(
-            transport: StubTransport(responses: [response]),
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response]),
             requestAuthorizer: authenticated ? StubAuthorizer() : nil
         )
 
@@ -874,6 +888,7 @@ struct BiliAPIClientTests {
     func anonymousFallbackDoesNotRequestAdvertisedAIAudio() async throws {
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -892,7 +907,16 @@ struct BiliAPIClientTests {
 
         #expect(playback.dashManifest?.audioTracks.count == 1)
         #expect(playback.dashManifest?.audioTracks[0].role == .original)
-        #expect(transport.capturedRequests().count == 1)
+        let request = try #require(playURLRequests(transport).first)
+        #expect(playURLRequests(transport).count == 1)
+        #expect(request.headers["Cookie"] == nil)
+        let queryItems = URLComponents(
+            url: request.url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
+        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
     }
 
     @Test
@@ -902,6 +926,7 @@ struct BiliAPIClientTests {
         let authorizer = StubAuthorizer(.fail(.missingCredential), .authorize)
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -920,7 +945,7 @@ struct BiliAPIClientTests {
 
         #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
         #expect(await authorizer.authorizationCount == 1)
-        #expect(transport.capturedRequests().count == 1)
+        #expect(playURLRequests(transport).count == 1)
     }
 
     @Test(
@@ -950,7 +975,9 @@ struct BiliAPIClientTests {
             audioPath: "original-audio.m4s",
             languageCatalog: machineGeneratedEnglishCatalog
         )
-        let transport = StubTransport(responses: [base] + [aiResponse].compactMap { $0 })
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), base] + [aiResponse].compactMap { $0 }
+        )
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: StubAuthorizer()
@@ -959,13 +986,14 @@ struct BiliAPIClientTests {
         await #expect(throws: expected) {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(transport.capturedRequests().count == 2)
+        #expect(playURLRequests(transport).count == 2)
     }
 
     @Test
     func unsafeAIAudioTitleIsOmittedBeforeSecondRequest() async throws {
         let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: [
@@ -992,7 +1020,7 @@ struct BiliAPIClientTests {
         )
 
         #expect(playback.dashManifest?.audioTracks.count == 1)
-        #expect(transport.capturedRequests().count == 1)
+        #expect(playURLRequests(transport).count == 1)
     }
 
     @Test(arguments: [
@@ -1006,8 +1034,8 @@ struct BiliAPIClientTests {
     func authenticatedRejectionDoesNotRetryAnonymously(
         response: HTTPResponse,
         expected: BiliAPIError
-    ) async {
-        let transport = StubTransport(responses: [response])
+    ) async throws {
+        let transport = StubTransport(responses: [try fixtureResponse("nav"), response])
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: StubAuthorizer()
@@ -1017,15 +1045,15 @@ struct BiliAPIClientTests {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
         #expect(
-            transport.capturedRequests().map { $0.headers["Cookie"] }
+            playURLRequests(transport).map { $0.headers["Cookie"] }
                 == [StubAuthorizer.cookie]
         )
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async {
+    func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async throws {
         let authorizer = StubAuthorizer(.fail(.missingCredential), suspendingCall: 1)
-        let transport = StubTransport(responses: [])
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: authorizer
@@ -1041,13 +1069,13 @@ struct BiliAPIClientTests {
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(transport.capturedRequests().isEmpty)
+        #expect(playURLRequests(transport).isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func missingCredentialResolutionCannotCrossSessionInvalidationBoundary() async {
+    func missingCredentialResolutionCannotCrossSessionInvalidationBoundary() async throws {
         let authorizer = StubAuthorizer(.fail(.missingCredential), suspendingCall: 1)
-        let transport = StubTransport(responses: [])
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: authorizer
@@ -1063,14 +1091,14 @@ struct BiliAPIClientTests {
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(transport.capturedRequests().isEmpty)
+        #expect(playURLRequests(transport).isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))
     func authenticatedRequestCannotCrossSessionInvalidationBoundary() async throws {
         let authorizer = StubAuthorizer(suspendingCall: 1)
         let response = try fixtureResponse("playurl")
-        let firstTransport = StubTransport(responses: [response])
+        let firstTransport = StubTransport(responses: [try fixtureResponse("nav"), response])
         let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
@@ -1091,7 +1119,7 @@ struct BiliAPIClientTests {
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(firstTransport.capturedRequests().isEmpty)
+        #expect(playURLRequests(firstTransport).isEmpty)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1099,7 +1127,9 @@ struct BiliAPIClientTests {
     @Test(.timeLimit(.minutes(1)))
     func authenticatedResponseCannotWriteBackAfterSessionInvalidation() async throws {
         let response = try fixtureResponse("playurl")
-        let firstTransport = StubTransport([.suspended(response)])
+        let firstTransport = StubTransport([
+            .response(try fixtureResponse("nav")), .suspended(response)
+        ])
         let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
@@ -1112,7 +1142,7 @@ struct BiliAPIClientTests {
         let playbackTask = Task {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        await firstTransport.waitForRequests(1)
+        await firstTransport.waitForRequests(2)
 
         await client.invalidateAuthenticatedSession()
         firstTransport.resumeSuspendedRequest()
@@ -1120,7 +1150,7 @@ struct BiliAPIClientTests {
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(firstTransport.capturedRequests().count == 1)
+        #expect(playURLRequests(firstTransport).count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1134,7 +1164,7 @@ struct BiliAPIClientTests {
             languageCatalog: machineGeneratedEnglishCatalog
         )
         let authorizer = StubAuthorizer(suspendingCall: 2)
-        let firstTransport = StubTransport(responses: [response])
+        let firstTransport = StubTransport(responses: [try fixtureResponse("nav"), response])
         let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
@@ -1154,7 +1184,7 @@ struct BiliAPIClientTests {
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(firstTransport.capturedRequests().count == 1)
+        #expect(playURLRequests(firstTransport).count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1173,7 +1203,7 @@ struct BiliAPIClientTests {
             body: Data(invalidBody.utf8)
         )
         let client = BiliAPIClient(
-            transport: StubTransport(responses: [response])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         let playback = try await client.playback(
@@ -1199,7 +1229,7 @@ struct BiliAPIClientTests {
             body: Data(unsafeBody.utf8)
         )
         let client = BiliAPIClient(
-            transport: StubTransport(responses: [response])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         await #expect(throws: BiliAPIError.invalidMediaData) {
@@ -1402,6 +1432,11 @@ struct BiliAPIClientTests {
         #expect(transport.capturedRequests().isEmpty)
     }
 
+    /// 去掉 WBI key 的 nav 请求，只留下 playurl。
+    private func playURLRequests(_ transport: StubTransport) -> [HTTPRequest] {
+        transport.capturedRequests().filter { $0.url.path == "/x/player/wbi/playurl" }
+    }
+
     private func search(
         _ client: BiliAPIClient,
         _ query: String = "macOS"
@@ -1579,8 +1614,8 @@ struct AccountReadCase: Sendable, CustomTestStringConvertible {
             call: { _ = try await $0.uploaderSignature(for: 10_001) }
         ),
         AccountReadCase(
-            path: "/x/player/playurl",
-            responses: { [try fixtureResponse("playurl")] },
+            path: "/x/player/wbi/playurl",
+            responses: { [try fixtureResponse("nav"), try fixtureResponse("playurl")] },
             call: { _ = try await $0.playback(for: "BV1FixtureA1", cid: 900_001) }
         ),
         AccountReadCase(
