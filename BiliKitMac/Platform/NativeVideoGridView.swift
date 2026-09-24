@@ -1087,6 +1087,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         ) {
             guard let item = item as? NativeVideoCollectionItem else { return }
             guard collectionView.indexPath(for: item) == nil else { return }
+            if hoveredItem === item { hoveredItem = nil }
             item.invalidateImageRequests()
             item.clearHover()
         }
