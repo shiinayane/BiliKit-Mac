@@ -8,7 +8,7 @@ struct HTTPClientTests {
     func rejectsUnexpectedStatusCode() async throws {
         let client = HTTPClient(
             transport: StubTransport(
-                response: HTTPResponse(statusCode: 403, body: Data())
+                responses: [HTTPResponse(statusCode: 403, body: Data())]
             )
         )
         let request = HTTPRequest(url: try #require(URL(string: "https://example.com")))
@@ -46,13 +46,5 @@ struct HTTPClientTests {
             }
         }
         session.invalidateAndCancel()
-    }
-}
-
-private struct StubTransport: HTTPTransport {
-    let response: HTTPResponse
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        response
     }
 }

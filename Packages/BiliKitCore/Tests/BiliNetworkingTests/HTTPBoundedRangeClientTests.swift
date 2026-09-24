@@ -23,7 +23,7 @@ struct HTTPBoundedRangeClientTests {
                 collectBody: false
             )
         }
-        try await waitUntil { RangeStreamingURLProtocol.state.wasStopped }
+        await RangeStreamingURLProtocol.state.waitUntilStopped()
         #expect(RangeStreamingURLProtocol.state.deliveredBodyBytes < 100 * 1_024 * 1_024)
     }
 
@@ -107,15 +107,6 @@ struct HTTPBoundedRangeClientTests {
             transport: URLSessionBoundedRangeTransport(configuration: configuration)
         )
     }
-
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !condition(), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(condition())
-    }
 }
 
 private final class RangeStreamingURLProtocol: URLProtocol, @unchecked Sendable {
@@ -176,6 +167,7 @@ private final class RangeStreamingURLProtocolState: @unchecked Sendable {
     private var stopped = false
     private var delivered = 0
     private var capturedRequest: URLRequest?
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 
     var wasStopped: Bool { lock.withLock { stopped } }
     var deliveredBodyBytes: Int { lock.withLock { delivered } }
@@ -207,6 +199,24 @@ private final class RangeStreamingURLProtocolState: @unchecked Sendable {
         }
     }
 
-    func markStopped() { lock.withLock { stopped = true } }
+    func markStopped() {
+        let waiters = lock.withLock {
+            stopped = true
+            defer { stopWaiters.removeAll() }
+            return stopWaiters
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+
+    func waitUntilStopped() async {
+        await withCheckedContinuation { continuation in
+            let isStopped = lock.withLock {
+                guard !stopped else { return true }
+                stopWaiters.append(continuation)
+                return false
+            }
+            if isStopped { continuation.resume() }
+        }
+    }
     func markDelivered(_ count: Int) { lock.withLock { delivered += count } }
 }

@@ -8,7 +8,7 @@ struct HTTPRangeClientTests {
     @Test
     func sendsRangeHeaderAndAcceptsMatchingPartialResponse() async throws {
         let url = try #require(URL(string: "https://cdn.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(
                     statusCode: 206,
@@ -39,7 +39,7 @@ struct HTTPRangeClientTests {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
         let third = try #require(URL(string: "https://third.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(statusCode: 403, body: Data()),
                 HTTPResponse(
@@ -69,7 +69,7 @@ struct HTTPRangeClientTests {
     func reportsAllCandidateFailuresWithoutResponseBodies() async throws {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(statusCode: 403, body: Data("secret-page".utf8)),
                 HTTPResponse(
@@ -102,16 +102,14 @@ struct HTTPRangeClientTests {
     func cancellationStopsTheActiveRequestWithoutTryingBackup() async throws {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
-        let transport = CancellationObservingTransport()
+        let transport = StubTransport(hangsWhenExhausted: true)
         let client = HTTPRangeClient(transport: transport)
         let range = try HTTPByteRange(start: 0, endInclusive: 2)
 
         let task = Task {
             try await client.fetch(from: [first, second], range: range)
         }
-        try await waitUntil {
-            await transport.hasStarted
-        }
+        await transport.waitForFirstRequest()
         task.cancel()
 
         await #expect(throws: CancellationError.self) {
@@ -129,7 +127,7 @@ struct HTTPRangeClientTests {
         let hexadecimalLocal = try #require(URL(string: "https://0x7f000001/media"))
         let plaintext = try #require(URL(string: "http://cdn.example/media"))
         let safe = try #require(URL(string: "https://cdn.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(
                     statusCode: 206,
@@ -155,55 +153,4 @@ struct HTTPRangeClientTests {
         #expect(result.sourceURL == safe)
         #expect(await transport.requests.map(\.url) == [safe])
     }
-
-    private func waitUntil(
-        _ condition: () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !(await condition()), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(await condition())
-    }
-}
-
-private actor RangeStubTransport: HTTPTransport {
-    private var queuedResponses: [HTTPResponse]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        queuedResponses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        guard !queuedResponses.isEmpty else {
-            throw RangeStubError.noResponse
-        }
-        return queuedResponses.removeFirst()
-    }
-}
-
-private actor CancellationObservingTransport: HTTPTransport {
-    private(set) var requests: [HTTPRequest] = []
-    private(set) var hasStarted = false
-    private(set) var wasCancelled = false
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        hasStarted = true
-
-        do {
-            try await Task.sleep(for: .seconds(60))
-            return HTTPResponse(statusCode: 500, body: Data())
-        } catch is CancellationError {
-            wasCancelled = true
-            throw CancellationError()
-        }
-    }
-}
-
-private enum RangeStubError: Error {
-    case noResponse
 }
