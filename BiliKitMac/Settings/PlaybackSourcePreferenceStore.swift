@@ -42,7 +42,7 @@ enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identif
 extension PlaybackRouteTarget {
     var appDisplayName: String {
         switch self {
-        case .serverAkamai: PlaybackRouteTarget.serverAkamai.appDisplayName
+        case .serverAkamai: AppStrings.localized("Akamai（服务端原始）")
         case .bilivideo(let route): route.appDisplayName
         }
     }

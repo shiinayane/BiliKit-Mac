@@ -8,6 +8,20 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackSourceSettingsTests {
+    @Test
+    func everySelectionAndBenchmarkTargetHasADisplayName() {
+        for selection in PlaybackSourceSelection.allCases {
+            #expect(!selection.displayName.isEmpty)
+        }
+        for target in PlaybackRouteTarget.allCases {
+            #expect(!target.appDisplayName.isEmpty)
+        }
+        #expect(
+            PlaybackSourceSelection.serverAkamai.displayName
+                == PlaybackRouteTarget.serverAkamai.appDisplayName
+        )
+    }
+
     @Test @MainActor
     func storePersistsKnownManualRouteAndFallsBackOnDamage() {
         withIsolatedDefaults { defaults in
