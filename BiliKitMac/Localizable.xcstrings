@@ -225,6 +225,34 @@
         }
       }
     },
+    "B 站暂时限制了测速请求，请稍后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilibili is temporarily limiting speed test requests. Please try again later."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilibili が速度テストのリクエストを一時的に制限しています。しばらくしてから再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "B 站暂时限制了测速请求，请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "B 站暫時限制了測速請求，請稍後再試。"
+          }
+        }
+      }
+    },
     "B 站服务端默认" : {
       "localizations" : {
         "en" : {
@@ -4817,30 +4845,30 @@
         }
       }
     },
-    "网络或远端协议未能完成测速，未暴露样本或网络详情。" : {
+    "网络或服务器响应异常，测速未能完成，请稍后重试。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The speed test could not complete because of the network or remote protocol. No sample or network details were exposed."
+            "value" : "The speed test could not finish because of a network or server error. Please try again later."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ネットワークまたはリモートプロトコルの問題で速度テストを完了できませんでした。サンプルやネットワークの詳細は表示していません。"
+            "value" : "ネットワークまたはサーバーの応答に問題があり、速度テストを完了できませんでした。しばらくしてから再試行してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "网络或远端协议未能完成测速，未暴露样本或网络详情。"
+            "value" : "网络或服务器响应异常，测速未能完成，请稍后重试。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "網路或遠端協定未能完成測速；未顯示樣本或網路詳細資訊。"
+            "value" : "網路或伺服器回應異常，測速未能完成，請稍後再試。"
           }
         }
       }

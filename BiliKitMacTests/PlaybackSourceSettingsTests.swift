@@ -1,3 +1,4 @@
+import BiliAPI
 import BiliAuthFeature
 import BiliModels
 import BiliPlayback
@@ -213,8 +214,8 @@ struct PlaybackSourceSettingsTests {
         let model = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             discover: { _ in
-                if failure == .authentication {
-                    throw PlaybackRouteBenchmarkOperationError.authenticationFailure
+                if let discoveryError = failure.discoveryError {
+                    throw PlaybackRouteBenchmarkOperationError.mappingDiscoveryError(discoveryError)
                 }
                 return [try Self.sample()]
             },
@@ -367,11 +368,24 @@ private enum BenchmarkTestError: Error {
 enum SettingsBenchmarkFailureFixture: CaseIterable, Sendable {
     case transport
     case authentication
+    case riskControlStatus
+    case riskControlVoucher
+
+    /// 样本发现阶段抛出的 API 错误；nil 表示发现成功、测速运行失败。
+    var discoveryError: BiliAPIError? {
+        switch self {
+        case .transport: nil
+        case .authentication: .authenticationInvalid
+        case .riskControlStatus: .httpStatus(412)
+        case .riskControlVoucher: .riskControlVoucher
+        }
+    }
 
     var expectedState: PlaybackRouteBenchmarkState {
         switch self {
         case .transport: .networkOrProtocolFailure
         case .authentication: .authenticationFailure
+        case .riskControlStatus, .riskControlVoucher: .restricted
         }
     }
 }

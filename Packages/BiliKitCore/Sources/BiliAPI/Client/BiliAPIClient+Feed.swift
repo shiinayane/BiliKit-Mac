@@ -69,6 +69,7 @@ extension BiliAPIClient {
         return Array((payload.result ?? []).prefix(pageSize))
     }
 
+    /// 与主客户端的详情请求一样按账户读取：不带 Cookie 的连续匿名 view 会被 HTTP 412 风控。
     func recentSubmissionDetail(
         for bvid: String
     ) async throws -> RecentSubmissionDetailPayload {
@@ -78,7 +79,11 @@ extension BiliAPIClient {
                 path: "/x/web-interface/view",
                 queryItems: [URLQueryItem(name: "bvid", value: bvid)]
             ),
-            referer: Self.videoReferer(bvid)
+            referer: Self.videoReferer(bvid),
+            access: .accountRead(
+                missingCredential: .fail,
+                mapsAuthenticationInvalidation: true
+            )
         )
     }
 

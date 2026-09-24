@@ -149,6 +149,9 @@ extension BiliAPIError {
         }
     }
 
+    /// 远端风控或限流；供没有 Application 错误域的 App 流程（线路测速）区分提示。
+    public var isRiskControlRestriction: Bool { failure == .restricted }
+
     /// 把 adapter 捕获的错误映射为领域错误：取消原样传播，`BiliAPIError` 按 `failure` 交给
     /// 领域映射，其余错误一律为该领域的 `fallback`。
     static func domainError<DomainError: Error>(

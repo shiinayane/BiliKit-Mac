@@ -11,6 +11,7 @@ enum PlaybackRouteBenchmarkState: Sendable, Equatable {
     case cancelled
     case sampleUnavailable
     case authenticationFailure
+    case restricted
     case networkOrProtocolFailure
 
     var isRunning: Bool {
@@ -28,15 +29,16 @@ enum PlaybackRouteBenchmarkAccess: Sendable, Equatable {
 
 enum PlaybackRouteBenchmarkOperationError: Error {
     case authenticationFailure
+    case restricted
 
-    /// 样本发现阶段的 API 认证类失败统一收窄为测速登录失效；其他错误（含取消）原样传播。
+    /// 样本发现阶段的 API 认证类失败收窄为测速登录失效、风控收窄为受限；其他错误（含取消）原样传播。
     static func mappingDiscoveryError(_ error: any Error) -> any Error {
         guard let apiError = error as? BiliAPIError else { return error }
         switch apiError {
         case .authorizationRequired, .authenticationInvalid, .authorizationUnavailable:
             return Self.authenticationFailure
         default:
-            return apiError
+            return apiError.isRiskControlRestriction ? Self.restricted : apiError
         }
     }
 }
@@ -216,6 +218,8 @@ final class AppSettingsModel {
                     .authenticationFailure,
                     generation: currentGeneration
                 )
+            } catch PlaybackRouteBenchmarkOperationError.restricted {
+                self?.applyFailure(.restricted, generation: currentGeneration)
             } catch {
                 self?.applyFailure(
                     .networkOrProtocolFailure,

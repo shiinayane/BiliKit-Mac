@@ -15,7 +15,7 @@ struct CDNBenchmarkSampleDiscovererTests {
     )
 
     @Test
-    func usesAuthenticationOnlyForHighQualityPlayURLAndKeepsDiscoveryBounded() async throws {
+    func authenticatesOnlyDetailAndPlayURLAndKeepsDiscoveryBounded() async throws {
         let popular = Candidate(bvid: "BV1FixtureB2", mid: 20_002, duration: 600, play: #""50000""#)
         var candidate = Self.candidateA
         candidate.play = #""120""#
@@ -43,7 +43,12 @@ struct CDNBenchmarkSampleDiscovererTests {
                 "/x/player/wbi/playurl"
             ]
         )
-        #expect(requests.map { $0.headers["Cookie"] } == [nil, nil, nil, StubAuthorizer.cookie])
+        // 近期列表与 WBI nav 保持匿名；view 与 playurl 按账户读取。
+        #expect(
+            requests.map { $0.headers["Cookie"] } == [
+                nil, StubAuthorizer.cookie, nil, StubAuthorizer.cookie
+            ]
+        )
         #expect(requests.allSatisfy { $0.headers["Authorization"] == nil })
         let query = try #require(
             URLComponents(url: requests[0].url, resolvingAgainstBaseURL: false)?.queryItems
@@ -224,7 +229,7 @@ struct CDNBenchmarkSampleDiscovererTests {
     }
 
     @Test
-    func missingCredentialDoesNotFallBackToAnonymousPlayURL() async throws {
+    func missingCredentialDoesNotFallBackToAnonymousDetail() async throws {
         let transport = StubTransport(
             responses: [
                 rank(Self.candidateA), detail(Self.candidateA), try fixtureResponse("nav"),
@@ -237,9 +242,7 @@ struct CDNBenchmarkSampleDiscovererTests {
         }
         #expect(
             transport.capturedRequests().map(\.url.path) == [
-                "/x/web-interface/newlist_rank",
-                "/x/web-interface/view",
-                "/x/web-interface/nav"
+                "/x/web-interface/newlist_rank"
             ]
         )
     }

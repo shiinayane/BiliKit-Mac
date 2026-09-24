@@ -154,8 +154,10 @@ struct PlaybackSourceSettingsView: View {
             return AppStrings.localized("暂时找不到合格样本，请稍后重试。")
         case .authenticationFailure:
             return AppStrings.localized("登录状态已失效或暂时不可用，请重新登录后再试。")
+        case .restricted:
+            return AppStrings.localized("B 站暂时限制了测速请求，请稍后再试。")
         case .networkOrProtocolFailure:
-            return AppStrings.localized("网络或远端协议未能完成测速，未暴露样本或网络详情。")
+            return AppStrings.localized("网络或服务器响应异常，测速未能完成，请稍后重试。")
         }
     }
 

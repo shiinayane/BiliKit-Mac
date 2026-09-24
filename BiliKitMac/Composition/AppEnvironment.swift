@@ -360,7 +360,8 @@ struct AppEnvironment {
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [
-        "/x/player/wbi/playurl"
+        "/x/player/wbi/playurl",
+        "/x/web-interface/view"
     ]
 
     static let watchProgressAccountReadAllowedPaths: Set<String>? = nil
