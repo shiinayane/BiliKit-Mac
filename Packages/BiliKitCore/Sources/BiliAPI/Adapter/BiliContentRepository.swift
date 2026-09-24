@@ -36,12 +36,6 @@ public struct BiliContentRepository: FeedRepository, VideoRepository,
         }
     }
 
-    public func pages(for bvid: String) async throws -> [VideoPage] {
-        try await mapError {
-            try await client.pages(for: bvid)
-        }
-    }
-
     public func relatedVideos(to bvid: String) async throws -> [RelatedVideo] {
         try await mapError {
             try await client.relatedVideos(to: bvid)

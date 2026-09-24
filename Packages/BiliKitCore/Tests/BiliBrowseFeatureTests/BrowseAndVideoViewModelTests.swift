@@ -877,7 +877,7 @@ struct BrowseAndVideoViewModelTests {
         )
 
         model.loadVideo(slow.detail.bvid)
-        // `/view` 先返回后才决定是否需要 pagelist，因此旧请求此时只有 detail 在飞行。
+        // 旧请求停在自带分 P 的 `/view` 上，此时只有 detail 在飞行。
         try await slowGate.waitForEntries(1)
         let supersededTask = try #require(model.taskSnapshotForTesting())
         model.loadVideo(fast.detail.bvid)
@@ -2032,10 +2032,6 @@ private actor CollectionEpisodeRepositoryStub: VideoRepository {
             : fixtures.thirdDetail
     }
 
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        bvid == fixtures.rootBVID ? fixtures.rootPages : fixtures.episodePages
-    }
-
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
         observedPlaybackRequests.append((bvid, cid))
         return fixtures.playback
@@ -2191,7 +2187,8 @@ private struct ContentFixtures: Sendable {
             owner: owner,
             statistics: popularVideo.statistics,
             durationSeconds: popularVideo.durationSeconds,
-            publishedAt: popularVideo.publishedAt
+            publishedAt: popularVideo.publishedAt,
+            pages: [page]
         )
     }
 
@@ -2383,7 +2380,6 @@ private actor VideoRepositoryStub: VideoRepository {
     private let pagesResponse: Response<String, [VideoPage]>
     private let playbackResponse: Response<PlaybackItemIdentity, VideoPlayback>
     private var detailRequests: [String] = []
-    private var pageRequests: [String] = []
     private(set) var playbackRequests: [PlaybackItemIdentity] = []
 
     init(
@@ -2430,14 +2426,26 @@ private actor VideoRepositoryStub: VideoRepository {
         )
     }
 
+    /// `/view` 响应自带分 P：详情脚本给出其余字段，分 P 脚本给出 `pages`。
     func videoDetail(for bvid: String) async throws -> VideoDetail {
         detailRequests.append(bvid)
-        return try await detailResponse(bvid, detailRequests.filter { $0 == bvid }.count)
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        pageRequests.append(bvid)
-        return try await pagesResponse(bvid, pageRequests.filter { $0 == bvid }.count)
+        let attempt = detailRequests.filter { $0 == bvid }.count
+        let detail = try await detailResponse(bvid, attempt)
+        return VideoDetail(
+            bvid: detail.bvid,
+            title: detail.title,
+            summary: detail.summary,
+            coverURL: detail.coverURL,
+            owner: detail.owner,
+            statistics: detail.statistics,
+            durationSeconds: detail.durationSeconds,
+            publishedAt: detail.publishedAt,
+            dimension: detail.dimension,
+            aid: detail.aid,
+            pages: try await pagesResponse(bvid, attempt),
+            collection: detail.collection,
+            access: detail.access
+        )
     }
 
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {

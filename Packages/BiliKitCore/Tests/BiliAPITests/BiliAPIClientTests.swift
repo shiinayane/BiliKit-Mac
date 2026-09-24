@@ -120,7 +120,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func videoDetailAndPageListRejectDuplicatePageIdentity() async {
+    func videoDetailRejectsDuplicatePageIdentity() async {
         let pages =
             #"[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]"#
         let client = BiliAPIClient(
@@ -128,16 +128,12 @@ struct BiliAPIClientTests {
                 jsonResponse(
                     #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":"#
                         + pages + "}}"
-                ),
-                jsonResponse(#"{"code":0,"data":"# + pages + "}")
+                )
             ])
         )
 
         await #expect(throws: BiliAPIError.decodingFailed) {
             try await client.videoDetail(for: "BV1FixtureA1")
-        }
-        await #expect(throws: BiliAPIError.decodingFailed) {
-            try await client.pages(for: "BV1FixtureA1")
         }
     }
 
@@ -1453,7 +1449,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(transport: StubTransport([.cancellation]))
 
         await #expect(throws: CancellationError.self) {
-            try await client.pages(for: "BV1FixtureA1")
+            try await client.videoDetail(for: "BV1FixtureA1")
         }
     }
 
@@ -1463,7 +1459,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(transport: transport)
 
         await #expect(throws: BiliAPIError.invalidRequest) {
-            try await client.pages(for: "not-a-bvid")
+            try await client.videoDetail(for: "not-a-bvid")
         }
         #expect(transport.capturedRequests().isEmpty)
     }
@@ -1633,11 +1629,6 @@ struct AccountReadCase: Sendable, CustomTestStringConvertible {
             path: "/x/web-interface/view",
             responses: { [try fixtureResponse("view")] },
             call: { _ = try await $0.videoDetail(for: "BV1FixtureA1") }
-        ),
-        AccountReadCase(
-            path: "/x/player/pagelist",
-            responses: { [try fixtureResponse("pagelist")] },
-            call: { _ = try await $0.pages(for: "BV1FixtureA1") }
         ),
         AccountReadCase(
             path: "/x/web-interface/archive/related",

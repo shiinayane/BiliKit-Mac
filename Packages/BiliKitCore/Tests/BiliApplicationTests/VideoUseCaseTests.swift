@@ -19,27 +19,23 @@ struct VideoUseCaseTests {
     }
 
     @Test
-    func usesPagesEmbeddedInDetailWithoutPagelistRequest() async throws {
-        let repository = ContentRepositoryStub(detailHasPages: true)
-        let useCase = VideoUseCase(repository: repository)
-
-        let context = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
-
-        #expect(context.pages.map(\.cid) == [900_001, 900_002])
-        #expect(await repository.pageRequestCount() == 0)
-    }
-
-    @Test
-    func collectionEpisodePagesUseDetailBeforePagelistFallback() async throws {
-        let repository = ContentRepositoryStub(detailHasPages: true)
-        let useCase = VideoUseCase(repository: repository)
+    func collectionEpisodePagesAreOrderedDetailPages() async throws {
+        let useCase = VideoUseCase(repository: ContentRepositoryStub())
 
         let pages = try await useCase.pagesForCollectionEpisode(
             bvid: "BV1FixtureA1"
         )
 
         #expect(pages.map(\.cid) == [900_001, 900_002])
-        #expect(await repository.pageRequestCount() == 0)
+    }
+
+    @Test
+    func collectionEpisodeWithoutDetailPagesIsInvalidResponse() async {
+        let useCase = VideoUseCase(repository: ContentRepositoryStub(hasPages: false))
+
+        await #expect(throws: ContentApplicationError.invalidResponse) {
+            try await useCase.pagesForCollectionEpisode(bvid: "BV1FixtureA1")
+        }
     }
 
     @Test
@@ -118,16 +114,16 @@ struct VideoUseCaseTests {
     }
 
     @Test
-    func cancellationDuringPagelistFallbackPreventsPlayback() async throws {
-        let repository = ContentRepositoryStub(blocksPages: true)
+    func cancellationDuringDetailRequestPreventsPlayback() async throws {
+        let repository = ContentRepositoryStub(blocksDetail: true)
         let useCase = VideoUseCase(repository: repository)
         let task = Task {
             try await useCase.prepareVideo(bvid: "BV1FixtureA1")
         }
 
-        await repository.waitForPagesRequest()
+        await repository.waitForDetailRequest()
         task.cancel()
-        await repository.releasePages()
+        await repository.releaseDetail()
 
         await #expect(throws: CancellationError.self) {
             try await task.value
@@ -279,63 +275,51 @@ struct VideoUseCaseTests {
 
 private actor ContentRepositoryStub: VideoRepository {
     private let hasPages: Bool
-    private let detailHasPages: Bool
     private let resumeMetadata: PlaybackResumeMetadata?
     private let access: VideoAccess
     private let playbackFailure: ContentApplicationError?
-    private let blocksPages: Bool
+    private let blocksDetail: Bool
     private var observedPlaybackCIDs: [Int64] = []
-    private var observedPageRequestCount = 0
-    private var pageRequestWaiters: [CheckedContinuation<Void, Never>] = []
-    private var pageReleases: [CheckedContinuation<Void, Never>] = []
+    private var observedDetailRequestCount = 0
+    private var detailRequestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var detailReleases: [CheckedContinuation<Void, Never>] = []
 
     init(
         hasPages: Bool = true,
-        detailHasPages: Bool = false,
         resumeMetadata: PlaybackResumeMetadata? = nil,
         access: VideoAccess = VideoAccess(),
         playbackFailure: ContentApplicationError? = nil,
-        blocksPages: Bool = false
+        blocksDetail: Bool = false
     ) {
         self.hasPages = hasPages
-        self.detailHasPages = detailHasPages
         self.resumeMetadata = resumeMetadata
         self.access = access
         self.playbackFailure = playbackFailure
-        self.blocksPages = blocksPages
+        self.blocksDetail = blocksDetail
     }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
-        makeDetail(bvid: bvid)
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        observedPageRequestCount += 1
-        for waiter in pageRequestWaiters {
+        observedDetailRequestCount += 1
+        for waiter in detailRequestWaiters {
             waiter.resume()
         }
-        pageRequestWaiters.removeAll()
-        if blocksPages {
-            await withCheckedContinuation { pageReleases.append($0) }
+        detailRequestWaiters.removeAll()
+        if blocksDetail {
+            await withCheckedContinuation { detailReleases.append($0) }
         }
-        guard hasPages else { return [] }
-        return fixturePages
+        return makeDetail(bvid: bvid)
     }
 
-    func pageRequestCount() -> Int {
-        observedPageRequestCount
+    func waitForDetailRequest() async {
+        guard observedDetailRequestCount == 0 else { return }
+        await withCheckedContinuation { detailRequestWaiters.append($0) }
     }
 
-    func waitForPagesRequest() async {
-        guard observedPageRequestCount == 0 else { return }
-        await withCheckedContinuation { pageRequestWaiters.append($0) }
-    }
-
-    func releasePages() {
-        for release in pageReleases {
+    func releaseDetail() {
+        for release in detailReleases {
             release.resume()
         }
-        pageReleases.removeAll()
+        detailReleases.removeAll()
     }
 
     private var fixturePages: [VideoPage] {
@@ -382,7 +366,7 @@ private actor ContentRepositoryStub: VideoRepository {
             ),
             durationSeconds: 360,
             publishedAt: Date(timeIntervalSince1970: 1_720_000_000),
-            pages: detailHasPages ? fixturePages : [],
+            pages: hasPages ? fixturePages : [],
             access: access
         )
     }

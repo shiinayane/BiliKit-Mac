@@ -26,7 +26,6 @@ public protocol FeedRepository: Sendable {
 /// 游客视频用例所需的详情、分 P 与播放地址 port。
 public protocol VideoRepository: Sendable {
     func videoDetail(for bvid: String) async throws -> VideoDetail
-    func pages(for bvid: String) async throws -> [VideoPage]
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
 }
 

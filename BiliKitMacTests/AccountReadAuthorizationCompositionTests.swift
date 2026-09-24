@@ -16,7 +16,6 @@ struct AccountReadAuthorizationCompositionTests {
         )
         #expect(
             AppEnvironment.mainAccountReadAllowedPaths == [
-                "/x/player/pagelist",
                 "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
                 "/x/v2/dm/wbi/web/seg.so",

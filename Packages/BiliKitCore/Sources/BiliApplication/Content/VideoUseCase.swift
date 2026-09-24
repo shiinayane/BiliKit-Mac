@@ -50,7 +50,7 @@ public enum PlaybackAccessNotice: Sendable, Equatable {
     )
 }
 
-/// 优先使用详情响应自带的分 P；旧响应缺失时才回退到独立分 P endpoint。
+/// 分 P 只来自详情响应；缺失时视为无效响应，不再另行请求分 P。
 ///
 /// 用例不拥有播放器，也不保留可变状态；任何一个阶段取消都会阻止后续播放请求或结果返回。
 public struct VideoUseCase: Sendable {
@@ -70,12 +70,7 @@ public struct VideoUseCase: Sendable {
             throw ContentApplicationError.invalidResponse
         }
 
-        let resolvedPages =
-            resolvedDetail.pages.isEmpty
-            ? try await repository.pages(for: bvid)
-            : resolvedDetail.pages
-        try Task.checkCancellation()
-        let sortedPages = resolvedPages.sorted(by: { $0.index < $1.index })
+        let sortedPages = resolvedDetail.pages.sorted(by: { $0.index < $1.index })
         guard let firstPage = sortedPages.first else {
             throw ContentApplicationError.invalidResponse
         }
@@ -137,19 +132,14 @@ public struct VideoUseCase: Sendable {
         )
     }
 
-    /// 取得合集 episode 的分 P；详情已含 pages 时不重复请求独立 pagelist。
+    /// 取得合集 episode 的分 P；详情必须自带至少一个分 P。
     public func pagesForCollectionEpisode(bvid: String) async throws -> [VideoPage] {
         let detail = try await repository.videoDetail(for: bvid)
         try Task.checkCancellation()
-        guard detail.bvid == bvid else {
+        guard detail.bvid == bvid, !detail.pages.isEmpty else {
             throw ContentApplicationError.invalidResponse
         }
-        let resolvedPages =
-            detail.pages.isEmpty
-            ? try await repository.pages(for: bvid)
-            : detail.pages
-        try Task.checkCancellation()
-        return resolvedPages.sorted(by: { $0.index < $1.index })
+        return detail.pages.sorted(by: { $0.index < $1.index })
     }
 
     /// 复用同一视频已经取得的详情与分 P，只为指定 CID 重新取得播放清单。

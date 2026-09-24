@@ -361,7 +361,6 @@ struct VideoDetailLifecycleTests {
         let fixture = PageSelectionRoutingFixture()
         let repository = LifecycleVideoRepository(
             detail: { _ in fixture.detail },
-            pages: { _ in fixture.pages },
             playback: { _, cid in
                 if cid == fixture.failingPage.cid {
                     throw ContentApplicationError.transportFailure
@@ -590,7 +589,8 @@ private struct VideoDetailLifecycleFixture: Sendable {
             ),
             durationSeconds: 120,
             publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            aid: aid
+            aid: aid,
+            pages: [page]
         )
     }
 
@@ -605,20 +605,17 @@ private struct VideoDetailLifecycleFixture: Sendable {
     }
 }
 
-/// 本文件共享的游客视频 port 替身：按闭包回答详情、分 P 与播放，并记录播放 CID。
+/// 本文件共享的游客视频 port 替身：按闭包回答详情（含分 P）与播放，并记录播放 CID。
 private actor LifecycleVideoRepository: VideoRepository {
     private let detailResponse: @Sendable (String) throws -> VideoDetail
-    private let pagesResponse: @Sendable (String) throws -> [VideoPage]
     private let playbackResponse: @Sendable (String, Int64) throws -> VideoPlayback
     private(set) var playbackCIDs: [Int64] = []
 
     init(
         detail: @escaping @Sendable (String) throws -> VideoDetail,
-        pages: @escaping @Sendable (String) throws -> [VideoPage],
         playback: @escaping @Sendable (String, Int64) throws -> VideoPlayback
     ) {
         detailResponse = detail
-        pagesResponse = pages
         playbackResponse = playback
     }
 
@@ -638,7 +635,6 @@ private actor LifecycleVideoRepository: VideoRepository {
         }
         self.init(
             detail: { try fixture($0).detail },
-            pages: { [try fixture($0).page] },
             playback: { bvid, _ in
                 if let playbackError { throw playbackError }
                 return try fixture(bvid).playback
@@ -648,10 +644,6 @@ private actor LifecycleVideoRepository: VideoRepository {
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
         try detailResponse(bvid)
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        try pagesResponse(bvid)
     }
 
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {

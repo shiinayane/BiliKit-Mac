@@ -3,7 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-/// 视频详情、分 P、相关推荐与 UP 主签名。
+/// 视频详情（含分 P）、相关推荐与 UP 主签名。
 extension BiliAPIClient {
     public func videoDetail(for bvid: String) async throws -> VideoDetail {
         guard Self.isValidBVID(bvid) else {
@@ -73,22 +73,6 @@ extension BiliAPIClient {
             throw BiliAPIError.decodingFailed
         }
         return payload.card.sign
-    }
-
-    public func pages(for bvid: String) async throws -> [VideoPage] {
-        guard Self.isValidBVID(bvid) else {
-            throw BiliAPIError.invalidRequest
-        }
-        let payload: [PagePayload] = try await get(
-            path: "/x/player/pagelist",
-            queryItems: [URLQueryItem(name: "bvid", value: bvid)],
-            referer: Self.videoReferer(bvid),
-            access: .accountRead(
-                missingCredential: .useAnonymousRequest,
-                mapsAuthenticationInvalidation: true
-            )
-        )
-        return try validatedPageModels(payload)
     }
 
     private static func isExactUploaderCardEndpoint(
