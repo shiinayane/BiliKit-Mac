@@ -278,10 +278,6 @@ public final class AuthenticationViewModel {
         await operationTask.wait()
     }
 
-    func taskSnapshotForTesting() -> Task<Void, Never>? {
-        operationTask.task
-    }
-
     private func begin(
         state initialState: AuthenticationState,
         operation: @escaping @MainActor (_ isCurrent: @escaping LatestTask.IsCurrent) async -> Void

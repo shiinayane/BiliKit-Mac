@@ -181,15 +181,6 @@ public final class PlaybackCommentsViewModel {
         await rootTask.wait()
     }
 
-    func rootTaskSnapshotForTesting() -> Task<Void, Never>? {
-        rootTask.task
-    }
-
-    func replyTaskSnapshotForTesting(rootID: CommentID) -> Task<Void, Never>? {
-        guard let requestID = replyRequestIDs[rootID] else { return nil }
-        return activeReplyTasks[requestID]
-    }
-
     private func replaceRootWorkset(
         subject newSubject: CommentSubjectIdentity,
         sort newSort: CommentSort

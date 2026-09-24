@@ -25,8 +25,7 @@ struct DanmakuSessionTests {
         #expect(await repository.requestedIndices(for: identity).sorted() == [1, 2])
         #expect(await repository.maximumActiveRequests() == 2)
         await repository.release(identity)
-        await waitForLoads(session)
-        #expect(session.state == .ready(identity))
+        #expect(await waitUntil { session.state == .ready(identity) })
     }
 
     @Test
@@ -43,23 +42,14 @@ struct DanmakuSessionTests {
         session.start(for: first)
         timeline.publish(snapshot(identity: first, position: 0, generation: 1))
         try await repository.waitForRequestCount(2, identity: first)
-        let supersededTasks = session.loadTaskSnapshotForTesting()
-        guard supersededTasks.count == 2 else {
-            await repository.releaseAll()
-            Issue.record("首个 identity 未捕获到两项预取 Task")
-            return
-        }
         session.start(for: second)
+        try await repository.waitForCancellationCount(2, identity: first)
         timeline.publish(snapshot(identity: second, position: 0, generation: 2))
         try await repository.waitForRequestCount(2, identity: second)
         await repository.release(second)
-        await waitForLoads(session)
+        #expect(await waitUntil { session.state == .ready(second) })
 
-        #expect(session.state == .ready(second))
         await repository.release(first)
-        for task in supersededTasks {
-            await task.value
-        }
         #expect(session.state == .ready(second))
         session.stop()
         #expect(session.state == .idle)
@@ -159,7 +149,7 @@ struct DanmakuSessionTests {
             )
         )
         try await repository.waitForRequestCount(2, identity: identity)
-        await waitForLoads(session)
+        #expect(await waitUntil { session.state == .failed(identity, .unavailable) })
 
         for ordinal in 2...updateCount {
             timeline.publish(
@@ -200,18 +190,19 @@ struct DanmakuSessionTests {
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
         try await repository.waitForRequestCount(2, identity: identity)
-        await waitForLoads(session)
-
+        #expect(
+            await waitUntil {
+                session.state == .failed(identity, .authenticationInvalid)
+            }
+        )
         #expect(invalidationCount == 1)
-        #expect(session.state == .failed(identity, .authenticationInvalid))
 
         session.stop()
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 2))
         try await repository.waitForRequestCount(4, identity: identity)
-        await waitForLoads(session)
 
-        #expect(invalidationCount == 2)
+        #expect(await waitUntil { invalidationCount == 2 })
     }
 
     @Test
@@ -234,12 +225,12 @@ struct DanmakuSessionTests {
         session.start(for: first)
         timeline.publish(snapshot(identity: first, position: 0, generation: 1))
         try await repository.waitForRequestCount(2, identity: first)
-        await waitForLoads(session)
+        #expect(await waitUntil { session.state == .failed(first, .unavailable) })
 
         session.start(for: second)
         timeline.publish(snapshot(identity: second, position: 0, generation: 2))
         try await repository.waitForRequestCount(2, identity: second)
-        await waitForLoads(session)
+        #expect(await waitUntil { session.state == .failed(second, .unavailable) })
 
         #expect(await repository.requestCount(for: first) == 2)
         #expect(await repository.requestCount(for: second) == 2)
@@ -268,23 +259,29 @@ struct DanmakuSessionTests {
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
         try await repository.waitForRequestCount(2, identity: identity)
-        await waitForLoads(session)
-        #expect(session.state == .failed(identity, .unavailable))
+        #expect(await waitUntil { session.state == .failed(identity, .unavailable) })
 
         session.stop()
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: 0, generation: 2))
         try await repository.waitForRequestCount(4, identity: identity)
-        await waitForLoads(session)
 
+        #expect(await waitUntil { session.state == .ready(identity) })
         #expect(await repository.requestCount(for: identity) == 4)
-        #expect(session.state == .ready(identity))
     }
 
-    private func waitForLoads(_ session: DanmakuSession) async {
-        for task in session.loadTaskSnapshotForTesting() {
-            await task.value
+    /// `DanmakuSession` 不可观察；只让出 main actor 给分段加载的续体，不按固定时长轮询。
+    private func waitUntil(
+        timeout: Duration = .seconds(5),
+        _ condition: () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            await Task.yield()
         }
+        return true
     }
 
     private func snapshot(
@@ -461,6 +458,7 @@ private actor StubDanmakuRepository: DanmakuSegmentRepository {
     private var releasesAll = false
     private var releaseWaiters: [PlaybackItemIdentity: [CheckedContinuation<Void, Never>]] = [:]
     private var requestEvents: [PlaybackItemIdentity: TestEventCounter] = [:]
+    private var cancellationEvents: [PlaybackItemIdentity: TestEventCounter] = [:]
 
     init(_ behavior: Behavior = .succeed) {
         self.behavior = behavior
@@ -476,7 +474,7 @@ private actor StubDanmakuRepository: DanmakuSegmentRepository {
         active += 1
         maximumActive = max(maximumActive, active)
         defer { active -= 1 }
-        await requestCounter(for: identity).signal()
+        await counter(for: identity, in: &requestEvents).signal()
 
         switch behavior {
         case .succeed:
@@ -486,12 +484,17 @@ private actor StubDanmakuRepository: DanmakuSegmentRepository {
         case .failFirstAttemptPerSegment:
             if isFirstAttempt { throw DanmakuApplicationError.unavailable }
         case .holdUntilReleased:
-            await withCheckedContinuation { continuation in
-                if releasesAll || releasedIdentities.contains(identity) {
-                    continuation.resume()
-                } else {
-                    releaseWaiters[identity, default: []].append(continuation)
+            // 挂起期间忽略取消以模拟迟到结果，但记录取消事件供测试确认旧会话已取消加载。
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    if releasesAll || releasedIdentities.contains(identity) {
+                        continuation.resume()
+                    } else {
+                        releaseWaiters[identity, default: []].append(continuation)
+                    }
                 }
+            } onCancel: {
+                Task { await self.recordCancellation(identity) }
             }
         }
         return DanmakuSegment(index: index, events: [])
@@ -512,7 +515,19 @@ private actor StubDanmakuRepository: DanmakuSegmentRepository {
         identity: PlaybackItemIdentity
     ) async throws {
         do {
-            try await requestCounter(for: identity).wait(until: expectedCount)
+            try await counter(for: identity, in: &requestEvents).wait(until: expectedCount)
+        } catch {
+            releaseAll()
+            throw error
+        }
+    }
+
+    func waitForCancellationCount(
+        _ expectedCount: Int,
+        identity: PlaybackItemIdentity
+    ) async throws {
+        do {
+            try await counter(for: identity, in: &cancellationEvents).wait(until: expectedCount)
         } catch {
             releaseAll()
             throw error
@@ -535,14 +550,19 @@ private actor StubDanmakuRepository: DanmakuSegmentRepository {
         }
     }
 
-    private func requestCounter(
-        for identity: PlaybackItemIdentity
+    private func recordCancellation(_ identity: PlaybackItemIdentity) async {
+        await counter(for: identity, in: &cancellationEvents).signal()
+    }
+
+    private func counter(
+        for identity: PlaybackItemIdentity,
+        in events: inout [PlaybackItemIdentity: TestEventCounter]
     ) -> TestEventCounter {
-        if let counter = requestEvents[identity] {
+        if let counter = events[identity] {
             return counter
         }
         let counter = TestEventCounter()
-        requestEvents[identity] = counter
+        events[identity] = counter
         return counter
     }
 }

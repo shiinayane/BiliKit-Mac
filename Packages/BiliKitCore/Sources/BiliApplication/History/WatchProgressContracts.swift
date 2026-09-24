@@ -134,7 +134,6 @@ public actor SerializedWatchProgressRepository: WatchProgressRepository,
     private let base: any WatchProgressRepository
     private var tail: Task<Void, Never>?
     private var operations: [UUID: Task<Void, Error>] = [:]
-    private var operationCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var authenticationGeneration: UInt64 = 0
 
     public init(base: any WatchProgressRepository) {
@@ -142,11 +141,22 @@ public actor SerializedWatchProgressRepository: WatchProgressRepository,
     }
 
     public func report(_ progress: WatchProgressReport) async throws {
+        let operation = enqueue(progress)
+        try await withTaskCancellationHandler {
+            try await operation.value
+        } onCancel: {
+            operation.cancel()
+        }
+    }
+
+    /// 在任何挂起点之前登记写入并排到队尾；认证代次失效会取消所有已登记的写入。
+    func enqueue(_ progress: WatchProgressReport) -> Task<Void, Error> {
         let operationID = UUID()
         let predecessor = tail
         let expectedGeneration = authenticationGeneration
         let base = base
         let operation = Task {
+            defer { operations[operationID] = nil }
             if let predecessor {
                 await predecessor.value
             }
@@ -156,20 +166,8 @@ public actor SerializedWatchProgressRepository: WatchProgressRepository,
             try self.requireAuthenticationGeneration(expectedGeneration)
         }
         operations[operationID] = operation
-        resumeOperationCountWaiters()
         tail = Task { _ = try? await operation.value }
-
-        do {
-            try await withTaskCancellationHandler {
-                try await operation.value
-            } onCancel: {
-                operation.cancel()
-            }
-            operations[operationID] = nil
-        } catch {
-            operations[operationID] = nil
-            throw error
-        }
+        return operation
     }
 
     public func invalidateAuthenticatedSession() {
@@ -182,21 +180,6 @@ public actor SerializedWatchProgressRepository: WatchProgressRepository,
     private func requireAuthenticationGeneration(_ expected: UInt64) throws {
         guard expected == authenticationGeneration else {
             throw CancellationError()
-        }
-    }
-
-    func waitForOperationCountForTesting(_ expected: Int) async {
-        if operations.count >= expected { return }
-        await withCheckedContinuation {
-            operationCountWaiters.append((expected, $0))
-        }
-    }
-
-    private func resumeOperationCountWaiters() {
-        let ready = operationCountWaiters.filter { operations.count >= $0.0 }
-        operationCountWaiters.removeAll { operations.count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
         }
     }
 }

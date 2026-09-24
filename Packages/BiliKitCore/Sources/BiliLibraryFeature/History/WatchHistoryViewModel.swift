@@ -173,10 +173,6 @@ public final class WatchHistoryViewModel {
         state = .failed(.transportFailure)
     }
 
-    func taskSnapshotForTesting() -> Task<Void, Never>? {
-        loadTask.task
-    }
-
     private func begin(
         state initialState: WatchHistoryState,
         operation: @escaping @MainActor (_ isCurrent: @escaping LatestTask.IsCurrent) async -> Void

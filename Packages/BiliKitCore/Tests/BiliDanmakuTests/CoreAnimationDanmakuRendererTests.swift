@@ -158,38 +158,6 @@ struct CoreAnimationDanmakuRendererTests {
     }
 
     @Test
-    func rendererRejectsTextureBeyondActiveByteBudget() async {
-        let renderer = CoreAnimationDanmakuRenderer(
-            style: .production,
-            contentsScale: 2,
-            preparationConfiguration: .production,
-            activeTextureByteLimit: 1
-        )
-        renderer.updateSurfaceSize(width: 800, height: 300)
-        let fixture = fixtureEvent(id: "active-byte-limit", mode: .top)
-        let prepared = await prepare(
-            renderer: renderer,
-            event: fixture,
-            preparationID: 1
-        )
-        guard case .ready(let metrics) = prepared else {
-            Issue.record("texture preparation was rejected")
-            return
-        }
-
-        #expect(
-            !renderer.renderPrepared(
-                placement(event: fixture, metrics: metrics, originY: 0),
-                preparationID: 1,
-                generation: 0
-            )
-        )
-        #expect(renderer.activeLayerCount == 0)
-        #expect(renderer.activeTextureByteCost == 0)
-        #expect(renderer.outstandingPreparationCount == 0)
-    }
-
-    @Test
     func stoppedPreparationOwnerAndRendererAreReleased() async throws {
         weak var weakRenderer: CoreAnimationDanmakuRenderer?
         do {

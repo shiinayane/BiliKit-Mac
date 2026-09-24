@@ -10,10 +10,9 @@ struct WatchProgressUseCaseTests {
         let writer = SerializedWatchProgressRepository(base: base)
         let first = try report(aid: 11, cid: 22, sequence: 1)
         let queued = try report(aid: 33, cid: 44, sequence: 2)
-        let firstTask = Task { try await writer.report(first) }
+        let firstTask = await writer.enqueue(first)
         #expect(await base.nextReport() == first)
-        let queuedTask = Task { try await writer.report(queued) }
-        await writer.waitForOperationCountForTesting(2)
+        let queuedTask = await writer.enqueue(queued)
 
         await writer.invalidateAuthenticatedSession()
         await base.releaseNext()

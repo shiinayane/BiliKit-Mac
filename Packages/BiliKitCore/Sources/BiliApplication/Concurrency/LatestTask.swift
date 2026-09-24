@@ -6,7 +6,7 @@
 package final class LatestTask {
     package typealias IsCurrent = @MainActor () -> Bool
 
-    package private(set) var task: Task<Void, Never>?
+    private var task: Task<Void, Never>?
     private var token = 0
 
     package init() {}

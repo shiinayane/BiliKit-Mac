@@ -322,10 +322,6 @@ public final class BrowseViewModel {
         await loadTask.wait()
     }
 
-    func taskSnapshotForTesting() -> Task<Void, Never>? {
-        loadTask.task
-    }
-
     private func pagination(
         of workset: FeedWorkset,
         hasMore: Bool,

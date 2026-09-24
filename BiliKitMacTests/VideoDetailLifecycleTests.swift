@@ -6,7 +6,6 @@ import BiliDanmaku
 import BiliLibraryFeature
 import BiliModels
 import CoreGraphics
-import Observation
 import SwiftUI
 import Testing
 
@@ -60,7 +59,7 @@ struct VideoDetailLifecycleTests {
         #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
         player.failPendingLoad()
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await presentation.waitForStopCount(baselineStopCount + 1)
         #expect(presentation.stopCount == baselineStopCount + 1)
         guard case .failed = videoModel.state else {
@@ -76,7 +75,7 @@ struct VideoDetailLifecycleTests {
         #expect(presentation.startedIdentities.count == 2)
 
         player.failPendingLoad()
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await presentation.waitForStopCount(baselineStopCount + 2)
         #expect(presentation.stopCount == baselineStopCount + 2)
 
@@ -112,7 +111,7 @@ struct VideoDetailLifecycleTests {
         )
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         try await signatureRepository.waitForRequest()
         #expect(videoModel.uploaderSignatureState == .loading)
 
@@ -193,7 +192,7 @@ struct VideoDetailLifecycleTests {
         #expect(watchProgressProbe.accessValues == [false])
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(playback.loadedIdentities == [fixture.identity])
         #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
@@ -223,7 +222,7 @@ struct VideoDetailLifecycleTests {
         #expect(playback.stopCallCount == stopCountBeforeIdentity + 1)
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
 
         let stopCountBeforeLogout = playback.stopCallCount
@@ -237,7 +236,7 @@ struct VideoDetailLifecycleTests {
         #expect(watchProgressProbe.accessValues.last == false)
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(
             playback.loadedIdentities == [
                 fixture.identity,
@@ -337,7 +336,7 @@ struct VideoDetailLifecycleTests {
 
         await authenticationService.setRestoreState(.signedOut)
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await authenticationService.waitForRestoreCallCount(2)
         await authenticationModel.waitForCurrentTask()
         await playback.waitForStopCallCount(1)
@@ -378,9 +377,9 @@ struct VideoDetailLifecycleTests {
             fixture.bvid,
             preferredCID: fixture.initialPage.cid
         )
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         videoModel.selectPage(cid: fixture.failingPage.cid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         guard case .failedPage(_, let failedPage, _) = videoModel.state else {
             Issue.record("切换失败后应保留失败的分 P 目标")
             return
@@ -394,7 +393,7 @@ struct VideoDetailLifecycleTests {
             ),
             with: videoModel
         )
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
 
         #expect(videoModel.requestedPreferredCID == fixture.replacementPage.cid)
         #expect(videoModel.presentedPlaybackIdentity?.cid == fixture.replacementPage.cid)
@@ -479,14 +478,14 @@ struct VideoDetailLifecycleTests {
         window.layoutIfNeeded()
 
         coordinator.openPlayback(first.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await commentsRepository.waitForRequestCount(1)
         await commentsModel.waitForCurrentRootTask()
         #expect(commentsModel.subject == .video(aid: first.aid))
         #expect(commentsModel.rootState == .empty)
 
         coordinator.openPlayback(replacement.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await commentsRepository.waitForRequestCount(2)
         await commentsModel.waitForCurrentRootTask()
         #expect(commentsModel.subject == .video(aid: replacement.aid))
@@ -507,46 +506,11 @@ struct VideoDetailLifecycleTests {
         #expect(videoModel.state == .idle)
         window.contentView = NSView()
     }
-
-    @MainActor
-    private func waitForObservedState(
-        _ condition: @MainActor @escaping () -> Bool
-    ) async {
-        while !condition() {
-            await withCheckedContinuation { continuation in
-                let gate = ObservationContinuationGate(continuation)
-                let isAlreadySatisfied = withObservationTracking {
-                    condition()
-                } onChange: {
-                    gate.resume()
-                }
-                if isAlreadySatisfied { gate.resume() }
-            }
-        }
-    }
 }
 
 enum VideoDetailCredentialFailureSource: CaseIterable, Sendable {
     case playback
     case comments
-}
-
-private final class ObservationContinuationGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
-
-    init(_ continuation: CheckedContinuation<Void, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume() {
-        let continuation = lock.withLock {
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume()
-    }
 }
 
 private struct VideoDetailLifecycleFixture: Sendable {

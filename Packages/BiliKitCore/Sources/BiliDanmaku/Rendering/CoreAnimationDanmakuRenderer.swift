@@ -35,35 +35,15 @@ public final class CoreAnimationDanmakuRenderer:
     private var nextObjectIdentity: UInt64 = 0
     private var surfaceSize = CGSize.zero
     private let preparationOwner: DanmakuTexturePreparationOwner
-    private let activeTextureByteLimit: Int
     private(set) var activeTextureByteCost = 0
 
-    public convenience init(
+    public init(
         style: CoreAnimationDanmakuStyle = .production,
         contentsScale: Double = 2
     ) {
-        self.init(
-            style: style,
-            contentsScale: contentsScale,
-            preparationConfiguration: .production,
-            activeTextureByteLimit: Self.maximumActiveTextureByteCost
-        )
-    }
-
-    init(
-        style: CoreAnimationDanmakuStyle,
-        contentsScale: Double,
-        preparationConfiguration: DanmakuTexturePreparationOwner.Configuration,
-        activeTextureByteLimit: Int = CoreAnimationDanmakuRenderer
-            .maximumActiveTextureByteCost
-    ) {
-        precondition(activeTextureByteLimit > 0)
         self.style = style
-        self.activeTextureByteLimit = activeTextureByteLimit
         backingScale = Self.normalizedBackingScale(contentsScale)
-        preparationOwner = DanmakuTexturePreparationOwner(
-            configuration: preparationConfiguration
-        )
+        preparationOwner = DanmakuTexturePreparationOwner()
         rootLayer = CALayer()
         rootLayer.anchorPoint = .zero
         rootLayer.isGeometryFlipped = true
@@ -122,7 +102,7 @@ public final class CoreAnimationDanmakuRenderer:
             return false
         }
         let remainingTextureBytes = max(
-            activeTextureByteLimit - activeTextureByteCost,
+            Self.maximumActiveTextureByteCost - activeTextureByteCost,
             0
         )
         guard payload.byteCost <= remainingTextureBytes,

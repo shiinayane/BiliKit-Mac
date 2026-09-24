@@ -52,11 +52,10 @@ struct AuthenticationViewModelTests {
 
         model.startLogin()
         try await service.waitForFirstImageStart()
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.startLogin()
+        try await service.waitForFirstImageCancellation()
         await model.waitForCurrentTask()
         await service.releaseFirstImage()
-        await supersededTask.value
 
         #expect(model.state == .expired)
         #expect(model.qrCodeImage == nil)
@@ -80,7 +79,6 @@ struct AuthenticationViewModelTests {
         await model.waitForCurrentTask()
         model.logout()
         try await service.waitForFirstLogoutStart()
-        _ = try #require(model.taskSnapshotForTesting())
 
         model.revalidate()
         model.logout()
@@ -243,11 +241,10 @@ struct AuthenticationViewModelTests {
 
         model.startLogin()
         try await service.waitForFirstImageStart()
-        let presentedTask = try #require(model.taskSnapshotForTesting())
         model.cancelPresentedLoginWork()
+        try await service.waitForFirstImageCancellation()
         await model.waitForCurrentTask()
         await service.releaseFirstImage()
-        await presentedTask.value
 
         #expect(model.state == .signedOut)
         #expect(model.qrCodeImage == nil)
@@ -424,6 +421,7 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     private var firstImageReleased = false
     private var firstRestoreReleased = false
     private let firstImageEvents = TestEventCounter()
+    private let firstImageCancellations = TestEventCounter()
     private let firstRestoreEvents = TestEventCounter()
     private let firstFinalizeEvents = TestEventCounter()
     private let firstLogoutEvents = TestEventCounter()
@@ -513,12 +511,17 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
             return nil
         }
         await firstImageEvents.signal()
-        await withCheckedContinuation { continuation in
-            if firstImageReleased {
-                continuation.resume()
-            } else {
-                imageReleaseWaiters.append(continuation)
+        // 挂起期间忽略取消以模拟迟到结果，但记录取消事件供测试确认旧意图已被取代。
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if firstImageReleased {
+                    continuation.resume()
+                } else {
+                    imageReleaseWaiters.append(continuation)
+                }
             }
+        } onCancel: {
+            Task { await self.firstImageCancellations.signal() }
         }
         switch suspendedFirstImageCompletion {
         case .image:
@@ -555,6 +558,15 @@ private actor AuthenticationServiceStub: AuthenticationServicing,
     func waitForFirstImageStart() async throws {
         do {
             try await firstImageEvents.wait(until: 1)
+        } catch {
+            releaseFirstImage()
+            throw error
+        }
+    }
+
+    func waitForFirstImageCancellation() async throws {
+        do {
+            try await firstImageCancellations.wait(until: 1)
         } catch {
             releaseFirstImage()
             throw error

@@ -325,11 +325,10 @@ struct WatchHistoryViewModelTests {
 
         model.reload()
         try await repository.waitUntilCallCount(1)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.reload()
+        try await repository.waitUntilCancellationCount(1)
         await model.waitForCurrentTask()
         await repository.releaseCall(1)
-        await supersededTask.value
 
         guard case .loaded(let items, _, _) = model.state else {
             Issue.record("历史状态不是 loaded")
@@ -405,12 +404,11 @@ struct WatchHistoryViewModelTests {
         await model.waitForCurrentTask()
         model.loadMore()
         try await repository.waitUntilCallCount(2)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         model.reset()
+        try await repository.waitUntilCancellationCount(1)
         model.reload()
         await model.waitForCurrentTask()
         await repository.releaseCall(2)
-        await supersededTask.value
         model.loadMore()
         await model.waitForCurrentTask()
 
@@ -468,14 +466,13 @@ struct WatchHistoryViewModelTests {
             model.loadMore()
         }
         try await repository.waitUntilCallCount(prefix.count + 1)
-        let supersededTask = try #require(model.taskSnapshotForTesting())
         if interruption == .resetInitialLoad {
             model.reset()
         } else {
             model.deactivateRoute()
         }
+        try await repository.waitUntilCancellationCount(1)
         await repository.releaseCall(prefix.count + 1)
-        await supersededTask.value
 
         switch interruption {
         case .resetInitialLoad, .deactivateInitialLoad:
@@ -536,6 +533,7 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
     private var callCount = 0
     private var continuations: [WatchHistoryContinuation?] = []
     private let callEvents = TestEventCounter()
+    private let cancellationEvents = TestEventCounter()
     private var releaseWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var releasedCalls: Set<Int> = []
 
@@ -558,8 +556,13 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
         guard !results.isEmpty else { throw WatchHistoryError.invalidResponse }
         let result = results.removeFirst()
         if suspendedCalls.contains(currentCall), !releasedCalls.contains(currentCall) {
-            await withCheckedContinuation {
-                releaseWaiters[currentCall, default: []].append($0)
+            // 挂起期间忽略取消以模拟迟到结果，但记录取消事件供测试确认旧请求已被取消。
+            await withTaskCancellationHandler {
+                await withCheckedContinuation {
+                    releaseWaiters[currentCall, default: []].append($0)
+                }
+            } onCancel: {
+                Task { await self.cancellationEvents.signal() }
             }
         }
         return try result.get()
@@ -572,6 +575,15 @@ private actor HistoryRepositoryStub: WatchHistoryRepository {
     func waitUntilCallCount(_ expectedCount: Int) async throws {
         do {
             try await callEvents.wait(until: expectedCount)
+        } catch {
+            releaseAllCalls()
+            throw error
+        }
+    }
+
+    func waitUntilCancellationCount(_ expectedCount: Int) async throws {
+        do {
+            try await cancellationEvents.wait(until: expectedCount)
         } catch {
             releaseAllCalls()
             throw error

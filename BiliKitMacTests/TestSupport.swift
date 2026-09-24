@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliBrowseFeature
 import Observation
 
 /// App 测试 target 共用的等待与记录替身；各测试文件不再各自复制。
@@ -28,6 +29,19 @@ func waitForObservedState(_ condition: @escaping @MainActor () -> Bool) async {
             } onChange: {
                 continuation.resume()
             }
+        }
+    }
+}
+
+/// 等到当前视频意图写回终态；内容准备与播放器安装期间的状态都不算完成。
+@MainActor
+func waitUntilSettled(_ model: VideoViewModel) async {
+    await waitForObservedState {
+        switch model.state {
+        case .idle, .ready, .failed, .failedPage:
+            true
+        case .loading, .loadingPage, .preparingPlayback:
+            false
         }
     }
 }
