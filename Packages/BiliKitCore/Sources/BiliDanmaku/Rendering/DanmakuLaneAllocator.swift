@@ -28,7 +28,6 @@ public struct DanmakuLaneAllocator: Sendable {
     private var fixedLaneOccupants: [LaneSlotKey: ActivePlacement] = [:]
     private var scrollingLaneTails: [LaneSlotKey: ActivePlacement] = [:]
     private var activeLaneCounts: [LaneKey: Int] = [:]
-    public private(set) var peakActiveCount = 0
 
     public init(configuration: DanmakuLaneConfiguration) {
         self.configuration = configuration
@@ -253,7 +252,6 @@ public struct DanmakuLaneAllocator: Sendable {
                 fixedLaneOccupants[slotKey] = activePlacement
             }
         }
-        peakActiveCount = max(peakActiveCount, active.count)
         return placement
     }
 
