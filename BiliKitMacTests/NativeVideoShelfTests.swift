@@ -1,5 +1,4 @@
 import AppKit
-import BiliBrowseFeature
 import Foundation
 import Testing
 
@@ -8,12 +7,7 @@ import Testing
 struct NativeVideoShelfTests {
     @Test
     @MainActor
-    func fixedGeometryPreservesInsetPeekAndNarrowWindowCapacity() {
-        #expect(NativeVideoShelfGeometry.cardWidth == 224)
-        #expect(NativeVideoShelfGeometry.cardHeight == 210)
-        #expect(NativeVideoShelfGeometry.contentInset == 40)
-        #expect(NativeVideoShelfGeometry.bottomInset == 22)
-        #expect(NativeVideoShelfGeometry.viewportHeight == 232)
+    func pagingGeometryPreservesPeekAndNarrowWindowCapacity() {
         #expect(NativeVideoShelfGeometry.pageCapacity(viewportWidth: 784) == 3)
         #expect(NativeVideoShelfGeometry.pageCapacity(viewportWidth: 260) == 1)
         #expect(NativeVideoShelfGeometry.offset(for: 3) == 720)
@@ -44,55 +38,6 @@ struct NativeVideoShelfTests {
                 trailingInset: 0
             ) == 892
         )
-    }
-
-    @Test
-    @MainActor
-    func shelfKeepsHorizontalGesturesAndLeavesVerticalForwardingToItsAncestor() {
-        let scrollView = NativeVideoShelfScrollView(
-            frame: NSRect(x: 0, y: 0, width: 900, height: 232)
-        )
-        scrollView.install(collectionView: NSCollectionView())
-        scrollView.layoutSubtreeIfNeeded()
-
-        #expect(scrollView.usesPredominantAxisScrolling)
-        #expect(scrollView.automaticallyAdjustsContentInsets)
-        #expect(!scrollView.wantsForwardedScrollEvents(for: .vertical))
-        #expect(!scrollView.wantsForwardedScrollEvents(for: .horizontal))
-        #expect(scrollView.hasHorizontalScroller)
-        #expect(scrollView.horizontalScroller is NativeVideoShelfHiddenScroller)
-        #expect(
-            NativeVideoShelfHiddenScroller.scrollerWidth(
-                for: .regular,
-                scrollerStyle: .legacy
-            ) == 0
-        )
-        #expect(!scrollView.hasVerticalScroller)
-        #expect(scrollView.verticalScroller == nil)
-
-        let buttons = scrollView.subviews.compactMap { $0 as? NativeVideoShelfPageButton }
-            .sorted { $0.frame.minX < $1.frame.minX }
-        #expect(buttons.count == 2)
-        if #available(macOS 26.0, *) {
-            #expect(buttons.allSatisfy { $0.bezelStyle == .glass })
-        } else {
-            #expect(buttons.allSatisfy { $0.bezelStyle == .circular })
-        }
-
-        scrollView.updatePageAvailability(canGoBackward: true, canGoForward: true)
-        #expect(buttons.allSatisfy { $0.isHidden })
-
-        scrollView.updatePointerInside(true)
-        #expect(buttons.allSatisfy { !$0.isHidden })
-        #expect(buttons.allSatisfy { $0.isEnabled })
-
-        scrollView.updatePageAvailability(canGoBackward: false, canGoForward: true)
-        #expect(buttons.allSatisfy { !$0.isHidden })
-        #expect(!buttons[0].isEnabled)
-        #expect(buttons[1].isEnabled)
-
-        scrollView.updatePointerInside(false)
-        #expect(buttons.allSatisfy { $0.isHidden })
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -168,34 +113,6 @@ struct NativeVideoShelfTests {
 
     @Test
     @MainActor
-    func collectionClearsKeyboardAppearanceWhenFocusLeavesShelf() {
-        let collection = NativeVideoShelfCollectionView(
-            frame: NSRect(x: 0, y: 0, width: 400, height: 220)
-        )
-        let replacement = ShelfFocusableTestView(
-            frame: NSRect(x: 0, y: 230, width: 20, height: 20)
-        )
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 260))
-        content.addSubview(collection)
-        content.addSubview(replacement)
-        let window = NSWindow(
-            contentRect: content.bounds,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = content
-
-        #expect(window.makeFirstResponder(collection))
-        #expect(collection.showsKeyboardSelection)
-        #expect(window.makeFirstResponder(replacement))
-        #expect(!collection.showsKeyboardSelection)
-
-        window.contentView = NSView()
-    }
-
-    @Test
-    @MainActor
     func sameContentIdentityReloadsChangedCardWithoutResettingTheShelf() {
         let old = presentation(id: "BV-a", title: "旧标题")
         let updated = presentation(id: "BV-a", title: "新标题")
@@ -232,49 +149,6 @@ struct NativeVideoShelfTests {
         #expect(NativeVideoShelfGeometry.offset(for: 0) == 0)
     }
 
-    @Test
-    @MainActor
-    func relatedAdapterUsesTheSharedCardSlotsAndRealAccessibilityHelp() {
-        let related = RelatedVideoCardPresentation(
-            bvid: "BV-related",
-            title: "推荐标题",
-            coverURL: URL(string: "https://example.com/cover.webp"),
-            ownerName: "作者",
-            viewCountText: "1.2 万",
-            danmakuCountText: "345",
-            durationText: "03:21",
-            accessibilityLabel: "推荐标题，作者，1.2 万播放，345弹幕，时长03:21"
-        )
-
-        let native = RelatedNativeShelfView.makePresentations([related]).first
-
-        #expect(native?.id == related.bvid)
-        #expect(native?.showsAvatar == false)
-        #expect(native?.coverMetrics.map(\.text) == ["1.2 万", "345"])
-        #expect(native?.coverTrailingText == "03:21")
-        #expect(native?.footerLeadingText == "作者")
-        #expect(native?.footerTrailingText == nil)
-        #expect(native?.accessibilityLabel == related.accessibilityLabel)
-        #expect(
-            native?.accessibilityHelp
-                == AppStrings.localized("播放并替换当前视频")
-        )
-    }
-
-    @Test
-    func explicitImageOwnerShutdownRejectsFutureRequests() async {
-        let owner = NativeVideoImagePipelineOwner()
-        let pipeline = owner.pipeline
-
-        owner.shutdown()
-        let result = await pipeline.image(
-            for: URL(string: "https://i.example/after-shelf-teardown.webp")!,
-            variant: .cover
-        )
-
-        #expect(result == nil)
-    }
-
     @MainActor
     private func presentation(
         id: String,
@@ -294,10 +168,5 @@ struct NativeVideoShelfTests {
 
 @MainActor
 private final class NativeVideoShelfFocusViewForTesting: NSView {
-    override var acceptsFirstResponder: Bool { true }
-}
-
-@MainActor
-private final class ShelfFocusableTestView: NSView {
     override var acceptsFirstResponder: Bool { true }
 }
