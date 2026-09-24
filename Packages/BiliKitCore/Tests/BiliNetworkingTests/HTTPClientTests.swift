@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliNetworking
 
+@Suite(.timeLimit(.minutes(1)))
 struct HTTPClientTests {
     @Test
     func rejectsUnexpectedStatusCode() async throws {

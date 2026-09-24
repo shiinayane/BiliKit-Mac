@@ -81,21 +81,20 @@ struct HTTPRangeClientTests {
         )
         let client = HTTPRangeClient(transport: transport)
 
-        do {
-            _ = try await client.fetch(
+        let error = await #expect(throws: HTTPRangeClientError.self) {
+            try await client.fetch(
                 from: [first, second],
                 range: try HTTPByteRange(start: 0, endInclusive: 2)
             )
-            Issue.record("Expected every CDN candidate to fail")
-        } catch HTTPRangeClientError.allCandidatesFailed(let attempts) {
-            #expect(
-                attempts == [
+        }
+        #expect(
+            error
+                == .allCandidatesFailed([
                     HTTPRangeAttempt(url: first, failure: .statusCode(403)),
                     HTTPRangeAttempt(url: second, failure: .missingContentRange)
-                ]
-            )
-            #expect(!String(describing: attempts).contains("secret-page"))
-        }
+                ])
+        )
+        #expect(!String(describing: error).contains("secret-page"))
     }
 
     @Test
