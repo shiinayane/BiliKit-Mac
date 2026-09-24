@@ -1,325 +1,6 @@
 import AppKit
+import BiliUI
 import SwiftUI
-
-struct NativeVideoGridTailState: Equatable {
-    let canLoadMore: Bool
-    let tailIdentity: String?
-    let isLoading: Bool
-
-    static let end = Self(
-        canLoadMore: false,
-        tailIdentity: nil,
-        isLoading: false
-    )
-}
-
-struct NativeVideoGridUpdatePlan: Equatable {
-    let identityChanged: Bool
-    let insertedIDs: [String]
-    let removedIDs: [String]
-    let changedExistingIDs: Set<String>
-    let isStrictTailAppend: Bool
-
-    var animatesDifferences: Bool { identityChanged && !isStrictTailAppend }
-    var restoresViewportAnchor: Bool { identityChanged && !isStrictTailAppend }
-
-    init<Content: Equatable>(
-        previousIDs: [String],
-        previousContents: [String: Content],
-        updatedIDs: [String],
-        updatedContents: [String: Content]
-    ) {
-        identityChanged = previousIDs != updatedIDs
-        let previousSet = Set(previousIDs)
-        let updatedSet = Set(updatedIDs)
-        insertedIDs = updatedIDs.filter { !previousSet.contains($0) }
-        removedIDs = previousIDs.filter { !updatedSet.contains($0) }
-        changedExistingIDs = Set(
-            updatedIDs.filter {
-                previousSet.contains($0) && previousContents[$0] != updatedContents[$0]
-            }
-        )
-        isStrictTailAppend =
-            updatedIDs.count > previousIDs.count
-            && Array(updatedIDs.prefix(previousIDs.count)) == previousIDs
-            && removedIDs.isEmpty
-            && insertedIDs == Array(updatedIDs.dropFirst(previousIDs.count))
-    }
-}
-
-struct NativeVideoGridNearEndGate {
-    private(set) var tailIdentity: String?
-    private(set) var wasInsideThreshold = false
-    private(set) var triggeredTailIdentity: String?
-
-    mutating func update(
-        isInsideThreshold: Bool,
-        state: NativeVideoGridTailState
-    ) -> Bool {
-        if state.tailIdentity != tailIdentity {
-            let changedWhileStillInside =
-                tailIdentity != nil && state.tailIdentity != nil
-                && wasInsideThreshold && isInsideThreshold
-            tailIdentity = state.tailIdentity
-            triggeredTailIdentity = nil
-            if changedWhileStillInside {
-                wasInsideThreshold = true
-                return false
-            }
-            wasInsideThreshold = false
-        }
-        guard state.canLoadMore, state.tailIdentity != nil else {
-            wasInsideThreshold = false
-            return false
-        }
-        defer { wasInsideThreshold = isInsideThreshold }
-        guard isInsideThreshold,
-            !wasInsideThreshold,
-            !state.isLoading,
-            triggeredTailIdentity != state.tailIdentity
-        else {
-            return false
-        }
-        triggeredTailIdentity = state.tailIdentity
-        return true
-    }
-
-    mutating func reset() {
-        tailIdentity = nil
-        wasInsideThreshold = false
-        triggeredTailIdentity = nil
-    }
-}
-
-struct NativeVideoGridLiveScrollBackpressure {
-    private(set) var requiresNewGesture = false
-
-    var permitsAutomaticLoad: Bool { !requiresNewGesture }
-
-    mutating func beginLiveScroll() {
-        requiresNewGesture = false
-    }
-
-    mutating func recordTrigger(isLiveScrolling: Bool) {
-        if isLiveScrolling {
-            requiresNewGesture = true
-        }
-    }
-}
-
-struct NativeVideoGridScrollResetGate {
-    private var requestID: UInt64
-
-    init(initialRequestID: UInt64) {
-        requestID = initialRequestID
-    }
-
-    mutating func consume(_ candidateRequestID: UInt64) -> Bool {
-        guard candidateRequestID != requestID else { return false }
-        requestID = candidateRequestID
-        return true
-    }
-}
-
-struct NativeVideoGridScrollResetState: Equatable {
-    private(set) var requestID: UInt64 = 0
-    var acknowledgedRequestID: UInt64 = 0
-
-    mutating func request() {
-        requestID &+= 1
-    }
-}
-
-struct NativeVideoGridViewportAnchor: Equatable {
-    let id: String
-    let offsetFromViewportTop: CGFloat
-}
-
-enum NativeVideoGridAnchorRetention {
-    static func targetOffsetY(
-        itemOriginY: CGFloat,
-        offsetFromViewportTop: CGFloat,
-        minimumOffsetY: CGFloat = 0,
-        maximumOffsetY: CGFloat
-    ) -> CGFloat {
-        min(
-            max(minimumOffsetY, maximumOffsetY),
-            max(minimumOffsetY, itemOriginY - offsetFromViewportTop)
-        )
-    }
-}
-
-enum NativeVideoScrollCoordinateSpace {
-    static func logicalOffsetY(
-        physicalOffsetY: CGFloat,
-        topInset: CGFloat
-    ) -> CGFloat {
-        max(0, physicalOffsetY + max(0, topInset))
-    }
-
-    static func physicalOffsetY(
-        logicalOffsetY: CGFloat,
-        topInset: CGFloat
-    ) -> CGFloat {
-        max(0, logicalOffsetY) - max(0, topInset)
-    }
-
-    static func maximumLogicalOffsetY(
-        documentHeight: CGFloat,
-        viewportHeight: CGFloat,
-        topInset: CGFloat,
-        bottomInset: CGFloat
-    ) -> CGFloat {
-        max(
-            0,
-            documentHeight - viewportHeight
-                + max(0, topInset)
-                + max(0, bottomInset)
-        )
-    }
-}
-
-struct NativeVideoScrollOffsetRetention {
-    private(set) var offsetY: CGFloat
-    private var persistedOffsetY: CGFloat
-
-    init(initialOffsetY: CGFloat) {
-        offsetY = max(0, initialOffsetY)
-        persistedOffsetY = offsetY
-    }
-
-    mutating func record(_ offsetY: CGFloat) {
-        self.offsetY = max(0, offsetY)
-    }
-
-    mutating func takePendingPersistence() -> CGFloat? {
-        guard abs(offsetY - persistedOffsetY) > 0.5 else { return nil }
-        persistedOffsetY = offsetY
-        return offsetY
-    }
-
-    mutating func markPersisted(_ offsetY: CGFloat) {
-        record(offsetY)
-        persistedOffsetY = self.offsetY
-    }
-}
-
-struct NativeVideoScrollBindingBridge {
-    private(set) var synchronizedOffsetY: CGFloat
-
-    init(initialOffsetY: CGFloat) {
-        synchronizedOffsetY = max(0, initialOffsetY)
-    }
-
-    mutating func takeExternalRequest(_ offsetY: CGFloat) -> CGFloat? {
-        let requestedOffsetY = max(0, offsetY)
-        guard abs(requestedOffsetY - synchronizedOffsetY) > 0.5 else {
-            return nil
-        }
-        synchronizedOffsetY = requestedOffsetY
-        return requestedOffsetY
-    }
-
-    mutating func markSynchronized(_ offsetY: CGFloat) {
-        synchronizedOffsetY = max(0, offsetY)
-    }
-}
-
-struct NativeVideoGridOperationEpoch {
-    private(set) var value: UInt64 = 0
-
-    mutating func advance() -> UInt64 {
-        value &+= 1
-        return value
-    }
-
-    func accepts(_ candidate: UInt64) -> Bool {
-        candidate == value
-    }
-}
-
-enum NativeVideoGridGeometry {
-    static let horizontalSpacing: CGFloat = 20
-    static let verticalSpacing: CGFloat = 28
-    static let contentPadding: CGFloat = 24
-    static let topContentPadding: CGFloat = 0
-    /// 列数按“卡片至少这么宽”自然计算，再夹在最小／最大列数之间。
-    static let minimumCardWidth: CGFloat = 240
-    static let minimumColumnCount = 2
-    static let maximumColumnCount = 5
-    /// 卡片高度 = 16:9 封面 + 标题、UP 主与统计信息区。
-    static let coverAspectWidth: CGFloat = 16
-    static let coverAspectHeight: CGFloat = 9
-    static let cardTextAreaHeight: CGFloat = 84
-    static let minimumRenderableWidth = contentPadding * 2 + horizontalSpacing + 2
-
-    static func isRenderableViewport(width: CGFloat) -> Bool {
-        width.isFinite && width >= minimumRenderableWidth
-    }
-
-    static func columnCount(for width: CGFloat) -> Int {
-        let usableWidth = max(0, width - contentPadding * 2)
-        let naturalCount = Int(
-            (usableWidth + horizontalSpacing) / (minimumCardWidth + horizontalSpacing)
-        )
-        return min(maximumColumnCount, max(minimumColumnCount, naturalCount))
-    }
-
-    static func itemSize(for width: CGFloat) -> NSSize {
-        let usableWidth = max(1, width - contentPadding * 2)
-        let count = columnCount(for: width)
-        let spacing = CGFloat(count - 1) * horizontalSpacing
-        let cardWidth = max(
-            1,
-            floor((usableWidth - spacing) / CGFloat(count))
-        )
-        let coverHeight = floor(cardWidth * coverAspectHeight / coverAspectWidth)
-        return NSSize(width: cardWidth, height: coverHeight + cardTextAreaHeight)
-    }
-
-    static func contentHeight(for width: CGFloat, itemCount: Int) -> CGFloat {
-        guard itemCount > 0 else { return 0 }
-        let columns = columnCount(for: width)
-        let rows = (itemCount + columns - 1) / columns
-        return topContentPadding
-            + CGFloat(rows) * itemSize(for: width).height
-            + CGFloat(rows - 1) * verticalSpacing
-            + contentPadding
-    }
-
-    static func nearEndTriggerIndex(
-        itemCount: Int,
-        width: CGFloat,
-        prefetchRows: Int = 2
-    ) -> Int? {
-        guard itemCount > 0 else { return nil }
-        let count = columnCount(for: width)
-        return max(0, itemCount - count * max(1, prefetchRows))
-    }
-
-    static func isNearEnd(
-        itemCount: Int,
-        width: CGFloat,
-        visibleMaximumY: CGFloat,
-        prefetchRows: Int = 2
-    ) -> Bool {
-        guard
-            isRenderableViewport(width: width),
-            visibleMaximumY.isFinite,
-            let triggerIndex = nearEndTriggerIndex(
-                itemCount: itemCount,
-                width: width,
-                prefetchRows: prefetchRows
-            )
-        else { return false }
-        let columns = columnCount(for: width)
-        let triggerRow = triggerIndex / columns
-        let triggerOriginY =
-            topContentPadding
-            + CGFloat(triggerRow) * (itemSize(for: width).height + verticalSpacing)
-        return visibleMaximumY > triggerOriginY
-    }
-}
 
 struct NativeVideoGridView: NSViewRepresentable {
     let items: [NativeVideoCardPresentation]
@@ -387,7 +68,7 @@ struct NativeVideoGridView: NSViewRepresentable {
         private var accessibilityLabel: String
         private var tailState: NativeVideoGridTailState
         private var scrollResetGate: NativeVideoGridScrollResetGate
-        private var nearEndGate = NativeVideoGridNearEndGate()
+        private var nearEndPagination = NearEndPagination<String>()
         private var onScroll: (CGFloat) -> Void
         private var onAcknowledgeScrollReset: (UInt64) -> Void
         private var onNearEnd: () -> Void
@@ -406,7 +87,6 @@ struct NativeVideoGridView: NSViewRepresentable {
         private var scrollGeneration: UInt64 = 0
         private var isApplyingRestoration = false
         private var isLiveScrolling = false
-        private var liveScrollBackpressure = NativeVideoGridLiveScrollBackpressure()
         private var isResizingDocument = false
         private var isReset = false
 
@@ -509,7 +189,7 @@ struct NativeVideoGridView: NSViewRepresentable {
                 object: scrollView
             ) { [weak self] in
                 self?.isLiveScrolling = true
-                self?.liveScrollBackpressure.beginLiveScroll()
+                self?.nearEndPagination.releaseBackpressure()
             }
             observers.observeAccessibilityDisplayOptions { [weak collectionView] in
                 collectionView?.refreshVisibleCardAppearance()
@@ -577,6 +257,10 @@ struct NativeVideoGridView: NSViewRepresentable {
             }
             contents = updatedContents
 
+            if updatePlan.identityChanged, !updatePlan.isStrictTailAppend {
+                // 内容整体替换后，旧手势留下的背压不再适用。
+                nearEndPagination.releaseBackpressure()
+            }
             if updatePlan.identityChanged {
                 let operationGeneration = updateEpoch.advance()
                 let capturedScrollGeneration = scrollGeneration
@@ -595,17 +279,17 @@ struct NativeVideoGridView: NSViewRepresentable {
                     self.pendingViewportAnchor = nil
                     self.pendingAnchorScrollGeneration = nil
                     if self.pendingRestoreOffsetY != nil {
-                        self.resizeDocumentWithoutRestoringViewport()
+                        self.resizeDocument(restoringViewport: false)
                         self.restorePendingOffsetIfPossible()
                     } else if anchor != nil,
                         !self.isLiveScrolling,
                         self.scrollGeneration
                             == (anchorScrollGeneration ?? capturedScrollGeneration)
                     {
-                        self.resizeDocument(restoring: anchor)
+                        self.resizeDocument(anchor: anchor)
                         self.restorePendingOffsetIfPossible()
                     } else {
-                        self.resizeDocumentWithoutRestoringViewport()
+                        self.resizeDocument(restoringViewport: false)
                     }
                     self.evaluateNearEnd()
                 }
@@ -640,7 +324,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             onSelect = { _ in }
             lastViewportSize = nil
             contents = NativeVideoCardContents()
-            nearEndGate.reset()
+            nearEndPagination.reset()
             pendingViewportAnchor = nil
             pendingAnchorScrollGeneration = nil
         }
@@ -681,8 +365,10 @@ struct NativeVideoGridView: NSViewRepresentable {
             )
         }
 
+        /// `restoringViewport` 为 false 时无条件重排 document，且不恢复语义 anchor。
         private func resizeDocument(
-            restoring suppliedAnchor: NativeVideoGridViewportAnchor? = nil
+            restoringViewport: Bool = true,
+            anchor suppliedAnchor: NativeVideoGridViewportAnchor? = nil
         ) {
             guard !isReset, !isResizingDocument else { return }
             let viewportSize = scrollView.contentSize
@@ -694,7 +380,7 @@ struct NativeVideoGridView: NSViewRepresentable {
             }
             isResizingDocument = true
             defer { isResizingDocument = false }
-            let anchor = suppliedAnchor ?? captureViewportAnchor()
+            let anchor = restoringViewport ? suppliedAnchor ?? captureViewportAnchor() : nil
             let width = viewportSize.width
             let widthChanged =
                 lastViewportSize.map {
@@ -704,7 +390,8 @@ struct NativeVideoGridView: NSViewRepresentable {
                 lastViewportSize.map {
                     abs($0.height - viewportSize.height) > 0.5
                 } ?? true
-            let shouldInvalidateLayout = documentLayoutNeedsInvalidation || widthChanged
+            let shouldInvalidateLayout =
+                !restoringViewport || documentLayoutNeedsInvalidation || widthChanged
             guard shouldInvalidateLayout || heightChanged else { return }
 
             lastViewportSize = viewportSize
@@ -721,35 +408,10 @@ struct NativeVideoGridView: NSViewRepresentable {
             restore(anchor)
         }
 
-        private func resizeDocumentWithoutRestoringViewport() {
-            guard !isReset, !isResizingDocument else { return }
-            let viewportSize = scrollView.contentSize
-            guard NativeVideoGridGeometry.isRenderableViewport(width: viewportSize.width)
-            else {
-                lastViewportSize = nil
-                documentLayoutNeedsInvalidation = true
-                return
-            }
-            isResizingDocument = true
-            defer { isResizingDocument = false }
-            let width = viewportSize.width
-            lastViewportSize = viewportSize
-            documentLayoutNeedsInvalidation = false
-            let contentHeight = NativeVideoGridGeometry.contentHeight(
-                for: width,
-                itemCount: contents.orderedIDs.count
-            )
-            collectionView.setFrameSize(
-                NSSize(width: width, height: max(viewportSize.height, contentHeight))
-            )
-            layout.invalidateLayout()
-            collectionView.layoutSubtreeIfNeeded()
-        }
-
         private var currentScrollOffsetY: CGFloat {
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: scrollView.contentView.bounds.origin.y,
-                topInset: scrollView.contentInsets.top
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: scrollView.contentView.bounds.origin.y,
+                leadingInset: scrollView.contentInsets.top
             )
         }
 
@@ -758,18 +420,18 @@ struct NativeVideoGridView: NSViewRepresentable {
         }
 
         private var maximumLogicalScrollOffsetY: CGFloat {
-            NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
-                documentHeight: collectionView.frame.height,
-                viewportHeight: scrollView.contentSize.height,
-                topInset: scrollView.contentInsets.top,
-                bottomInset: scrollView.contentInsets.bottom
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: collectionView.frame.height,
+                viewportLength: scrollView.contentSize.height,
+                leadingInset: scrollView.contentInsets.top,
+                trailingInset: scrollView.contentInsets.bottom
             )
         }
 
         private var maximumPhysicalScrollOffsetY: CGFloat {
-            NativeVideoScrollCoordinateSpace.physicalOffsetY(
-                logicalOffsetY: maximumLogicalScrollOffsetY,
-                topInset: scrollView.contentInsets.top
+            NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: maximumLogicalScrollOffsetY,
+                leadingInset: scrollView.contentInsets.top
             )
         }
 
@@ -817,9 +479,9 @@ struct NativeVideoGridView: NSViewRepresentable {
                 restorePendingOffsetIfPossible()
                 return
             }
-            let logicalOffset = NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: scrollView.contentView.bounds.origin.y,
-                topInset: oldInsets.top
+            let logicalOffset = NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: scrollView.contentView.bounds.origin.y,
+                leadingInset: oldInsets.top
             )
             applyLogicalScrollOffset(logicalOffset, synchronizingBinding: false)
             retainedScrollOffset.markPersisted(logicalOffset)
@@ -892,9 +554,9 @@ struct NativeVideoGridView: NSViewRepresentable {
             synchronizingBinding: Bool
         ) {
             let logicalTarget = min(max(0, target), maximumLogicalScrollOffsetY)
-            let physicalTarget = NativeVideoScrollCoordinateSpace.physicalOffsetY(
-                logicalOffsetY: logicalTarget,
-                topInset: scrollView.contentInsets.top
+            let physicalTarget = NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: logicalTarget,
+                leadingInset: scrollView.contentInsets.top
             )
             applyPhysicalScrollOffset(physicalTarget)
             retainedScrollOffset.markPersisted(logicalTarget)
@@ -908,8 +570,7 @@ struct NativeVideoGridView: NSViewRepresentable {
 
         private func applyPhysicalScrollOffset(_ target: CGFloat) {
             isApplyingRestoration = true
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: target))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
+            scrollView.scrollVertically(toPhysicalOffset: target)
             isApplyingRestoration = false
         }
 
@@ -921,32 +582,18 @@ struct NativeVideoGridView: NSViewRepresentable {
                     width: collectionView.bounds.width
                 )
             else { return }
-            guard tailState.canLoadMore, tailState.tailIdentity != nil else {
-                _ = nearEndGate.update(
-                    isInsideThreshold: false,
-                    state: tailState
+            let isInside =
+                tailState.canLoadMore && tailState.tailIdentity != nil
+                && NativeVideoGridGeometry.isNearEnd(
+                    itemCount: contents.orderedIDs.count,
+                    width: collectionView.bounds.width,
+                    visibleMaximumY: collectionView.visibleRect.maxY
                 )
-                return
-            }
-            let isInside = NativeVideoGridGeometry.isNearEnd(
-                itemCount: contents.orderedIDs.count,
-                width: collectionView.bounds.width,
-                visibleMaximumY: collectionView.visibleRect.maxY
-            )
-            if !liveScrollBackpressure.permitsAutomaticLoad {
-                _ = nearEndGate.update(
-                    isInsideThreshold: false,
-                    state: tailState
-                )
-                return
-            }
-            if nearEndGate.update(
+            if nearEndPagination.shouldLoadMore(
                 isInsideThreshold: isInside,
-                state: tailState
+                state: tailState,
+                isLiveScrolling: isLiveScrolling
             ) {
-                liveScrollBackpressure.recordTrigger(
-                    isLiveScrolling: isLiveScrolling
-                )
                 onNearEnd()
             }
         }
@@ -983,41 +630,22 @@ struct NativeVideoGridView: NSViewRepresentable {
 private final class NativeVideoGridScrollView: NSScrollView {
     var onViewportLayout: (() -> Void)?
     var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
-    private var lastViewportSize: NSSize?
-    private var lastContentInsets = NSEdgeInsetsZero
+    private var viewportTracker = NativeScrollViewportTracker()
 
     override func layout() {
         super.layout()
-        let viewportSize = contentSize
-        let contentInsetsChanged =
-            abs(contentInsets.top - lastContentInsets.top) > 0.5
-            || abs(contentInsets.left - lastContentInsets.left) > 0.5
-            || abs(contentInsets.bottom - lastContentInsets.bottom) > 0.5
-            || abs(contentInsets.right - lastContentInsets.right) > 0.5
-        if contentInsetsChanged {
-            let oldInsets = lastContentInsets
-            lastContentInsets = contentInsets
-            onContentInsetsChange?(oldInsets, contentInsets)
+        let change = viewportTracker.update(for: self)
+        if let previousInsets = change.previousInsets {
+            onContentInsetsChange?(previousInsets, contentInsets)
         }
-        guard
-            lastViewportSize.map({
-                abs($0.width - viewportSize.width) > 0.5
-                    || abs($0.height - viewportSize.height) > 0.5
-            }) ?? true
-        else { return }
-        lastViewportSize = viewportSize
-        onViewportLayout?()
+        if change.sizeChanged { onViewportLayout?() }
     }
 }
 
 @MainActor
-private final class NativeVideoCollectionView: NSCollectionView {
-    var onActivateSelection: ((String) -> Void)?
-    private(set) var showsKeyboardSelection = false
-
+private final class NativeVideoCollectionView: NativeVideoCardCollectionView {
     override func mouseDown(with event: NSEvent) {
-        showsKeyboardSelection = false
-        updateVisibleKeyboardSelection(showsKeyboardSelection: false)
+        setShowsKeyboardSelection(false)
         let point = convert(event.locationInWindow, from: nil)
         let clickedIndexPath = indexPathForItem(at: point)
         super.mouseDown(with: event)
@@ -1036,31 +664,15 @@ private final class NativeVideoCollectionView: NSCollectionView {
             onActivateSelection?(id)
             return
         }
-        let delta = NativeVideoCollectionKeys.selectionDelta(
+        if let delta = NativeVideoCollectionKeys.selectionDelta(
             for: event,
             rowLength: NativeVideoGridGeometry.columnCount(for: bounds.width)
-        )
-        if let delta, moveSelection(by: delta) { return }
-        super.keyDown(with: event)
-    }
-
-    private func moveSelection(by delta: Int) -> Bool {
-        let itemCount = numberOfItems(inSection: 0)
-        guard itemCount > 0 else { return false }
-        let visibleStart = indexPathsForVisibleItems().map(\.item).min() ?? 0
-        let current = selectionIndexPaths.first?.item ?? visibleStart
-        let target = min(itemCount - 1, max(0, current + delta))
-        let targetPath = IndexPath(item: target, section: 0)
-        showsKeyboardSelection = true
-        selectionIndexPaths = [targetPath]
-        updateVisibleKeyboardSelection(showsKeyboardSelection: true)
-        scrollToItems(at: [targetPath], scrollPosition: .nearestVerticalEdge)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.updateVisibleKeyboardSelection(
-                showsKeyboardSelection: self.showsKeyboardSelection
-            )
+        ), numberOfItems(inSection: 0) > 0 {
+            let visibleStart = indexPathsForVisibleItems().map(\.item).min() ?? 0
+            let current = selectionIndexPaths.first?.item ?? visibleStart
+            selectWithKeyboard(itemAt: current + delta, scrollPosition: .nearestVerticalEdge)
+            return
         }
-        return true
+        super.keyDown(with: event)
     }
 }

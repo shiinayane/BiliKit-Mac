@@ -1,6 +1,7 @@
 import AppKit
 import BiliBrowseFeature
 import BiliModels
+import BiliUI
 import CoreGraphics
 import Foundation
 import Testing
@@ -84,109 +85,6 @@ struct PopularNativeGridTests {
     }
 
     @Test
-    func responsiveGeometryPreservesPopularGridContract() {
-        #expect(NativeVideoGridGeometry.columnCount(for: 760) == 2)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_080) == 4)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_600) == 5)
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 0))
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 69))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 70))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 760))
-
-        let size = NativeVideoGridGeometry.itemSize(for: 1_080)
-        #expect(size.width == 243)
-        #expect(size.height == 220)
-        #expect(
-            NativeVideoGridGeometry.contentHeight(
-                for: 1_080,
-                itemCount: 50
-            ) == 3_220
-        )
-
-        for provisionalWidth in [CGFloat.zero, 1, 48, 67] {
-            let provisionalSize = NativeVideoGridGeometry.itemSize(
-                for: provisionalWidth
-            )
-            #expect(provisionalSize.width >= 1)
-            #expect(provisionalSize.height >= 84)
-        }
-    }
-
-    @Test
-    func nearEndGateRequiresThresholdExitBeforeRearmingNewTail() {
-        var gate = NativeVideoGridNearEndGate()
-        let first = NativeVideoGridTailState(
-            canLoadMore: true,
-            tailIdentity: "tail-1",
-            isLoading: false
-        )
-
-        let outside = gate.update(isInsideThreshold: false, state: first)
-        let firstEntry = gate.update(isInsideThreshold: true, state: first)
-        let repeatedEntry = gate.update(isInsideThreshold: true, state: first)
-        let leftThreshold = gate.update(isInsideThreshold: false, state: first)
-        let sameTailReentry = gate.update(isInsideThreshold: true, state: first)
-        let loading = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-1",
-                isLoading: true
-            )
-        )
-        let changedTailWhileInside = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let leftNewTailThreshold = gate.update(
-            isInsideThreshold: false,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let rearmed = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let ended = gate.update(isInsideThreshold: true, state: .end)
-
-        #expect(!outside)
-        #expect(firstEntry)
-        #expect(!repeatedEntry)
-        #expect(!leftThreshold)
-        #expect(!sameTailReentry)
-        #expect(!loading)
-        #expect(!changedTailWhileInside)
-        #expect(!leftNewTailThreshold)
-        #expect(rearmed)
-        #expect(!ended)
-    }
-
-    @Test
-    func liveScrollBackpressureAllowsOnlyOneAutomaticPagePerGesture() {
-        var backpressure = NativeVideoGridLiveScrollBackpressure()
-
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: true)
-        #expect(!backpressure.permitsAutomaticLoad)
-
-        backpressure.beginLiveScroll()
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: false)
-        #expect(backpressure.permitsAutomaticLoad)
-    }
-
-    @Test
     func scrollResetGateConsumesEachRequestIdentityOnlyOnce() {
         var gate = NativeVideoGridScrollResetGate(initialRequestID: 7)
 
@@ -253,33 +151,47 @@ struct PopularNativeGridTests {
         )
     }
 
+    /// 纵向 toolbar inset（网格）与横向侧栏 inset（shelf）共用同一逻辑坐标换算。
+    @Test(arguments: [
+        (physical: CGFloat(-52), inset: CGFloat(52), logical: CGFloat(0)),
+        (physical: 0, inset: 52, logical: 52),
+        (physical: -320, inset: 320, logical: 0),
+        (physical: 160, inset: 320, logical: 480)
+    ])
+    func logicalScrollOffsetIncludesLeadingInset(
+        _ sample: (physical: CGFloat, inset: CGFloat, logical: CGFloat)
+    ) {
+        #expect(
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: sample.physical,
+                leadingInset: sample.inset
+            ) == sample.logical
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: sample.logical,
+                leadingInset: sample.inset
+            ) == sample.physical
+        )
+    }
+
     @Test
-    func logicalScrollOffsetIncludesAutomaticToolbarInset() {
+    func maximumLogicalScrollOffsetIncludesBothInsets() {
         #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: -52,
-                topInset: 52
-            ) == 0
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: 0,
-                topInset: 52
-            ) == 52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.physicalOffsetY(
-                logicalOffsetY: 0,
-                topInset: 52
-            ) == -52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
-                documentHeight: 2_686,
-                viewportHeight: 1_050,
-                topInset: 52,
-                bottomInset: 0
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 2_686,
+                viewportLength: 1_050,
+                leadingInset: 52,
+                trailingInset: 0
             ) == 1_688
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 1_472,
+                viewportLength: 900,
+                leadingInset: 320,
+                trailingInset: 0
+            ) == 892
         )
     }
 

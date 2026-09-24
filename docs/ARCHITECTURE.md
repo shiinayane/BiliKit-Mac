@@ -39,7 +39,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速、响度 tap | `BiliAPI`、`BiliAuth` |
 | `BiliDanmaku` | 弹幕会话、按媒体时间调度、lane 分配、Core Animation renderer | `BiliAPI`、`BiliAuth`、`BiliNetworking`、`BiliPlayback`、Feature、SwiftUI |
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel；Browse（Feed/Search/VideoDetail）、Library（History）、Auth | adapter target、其他 Feature、AppKit/AVKit/AVFoundation |
-| `BiliUI` | Browse 与 Library 共用、无业务语义的卡片布局、网格、骨架、加载过渡与时长格式化；`package` 访问级别，无 library product | 除 Foundation、SwiftUI 外的任何模块 |
+| `BiliUI` | Browse、Library 与 App 原生网格共用、无业务语义的卡片几何、网格、骨架、加载过渡与时长格式化；默认 `package` 访问级别，App 直接使用的卡片几何与时长格式化为 `public`，无 library product | 除 Foundation、SwiftUI 外的任何模块 |
 | App `BiliKitMac` | composition root、导航协调、窗口 owner、`AVPlayerView` 宿主、原生网格／侧栏、Settings、Now Playing、Sparkle | `App/` 目录不直接 import adapter、Application 或平台框架，具体实现只在 `Composition/`、`Platform/`、`Settings/` 出现 |
 
 补充规则：

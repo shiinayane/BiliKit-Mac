@@ -202,7 +202,8 @@ final class NativePlaybackDetailRootView: NSView {
         scrollView.allowsMagnification = false
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.onContentInsetsChange = { [weak self] oldInsets, newInsets in
-            self?.contentInsetsDidChange(from: oldInsets, to: newInsets)
+            guard let self, !self.isReset else { return }
+            self.scrollView.preserveLogicalVerticalOffset(from: oldInsets, to: newInsets)
         }
         scrollView.documentView = documentView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -326,34 +327,12 @@ final class NativePlaybackDetailRootView: NSView {
 
     func scrollToLeading() {
         guard !isReset else { return }
-        let leadingOffset = NativeVideoScrollCoordinateSpace.physicalOffsetY(
-            logicalOffsetY: 0,
-            topInset: scrollView.contentInsets.top
-        )
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: leadingOffset))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-    }
-
-    private func contentInsetsDidChange(
-        from oldInsets: NSEdgeInsets,
-        to newInsets: NSEdgeInsets
-    ) {
-        guard !isReset else { return }
-        let logicalOffset = NativeVideoScrollCoordinateSpace.logicalOffsetY(
-            physicalOffsetY: scrollView.contentView.bounds.origin.y,
-            topInset: oldInsets.top
-        )
-        let physicalOffset = NativeVideoScrollCoordinateSpace.physicalOffsetY(
-            logicalOffsetY: logicalOffset,
-            topInset: newInsets.top
-        )
-        scrollView.contentView.scroll(
-            to: NSPoint(
-                x: 0,
-                y: physicalOffset
+        scrollView.scrollVertically(
+            toPhysicalOffset: NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: 0,
+                leadingInset: scrollView.contentInsets.top
             )
         )
-        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     func reset() {
@@ -377,19 +356,12 @@ final class NativePlaybackDetailRootView: NSView {
 @MainActor
 final class NativePlaybackDetailScrollView: NSScrollView {
     var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
-    private var lastContentInsets = NSEdgeInsetsZero
+    private var viewportTracker = NativeScrollViewportTracker()
 
     override func layout() {
         super.layout()
-        let changed =
-            abs(contentInsets.top - lastContentInsets.top) > 0.5
-            || abs(contentInsets.left - lastContentInsets.left) > 0.5
-            || abs(contentInsets.bottom - lastContentInsets.bottom) > 0.5
-            || abs(contentInsets.right - lastContentInsets.right) > 0.5
-        guard changed else { return }
-        let oldInsets = lastContentInsets
-        lastContentInsets = contentInsets
-        onContentInsetsChange?(oldInsets, contentInsets)
+        guard let previousInsets = viewportTracker.update(for: self).previousInsets else { return }
+        onContentInsetsChange?(previousInsets, contentInsets)
     }
 
     override func wantsForwardedScrollEvents(for axis: NSEvent.GestureAxis) -> Bool {
