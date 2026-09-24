@@ -385,9 +385,7 @@ final class NativeCommentImagePreviewRootView: NSView, PlayerKeyboardFocusOwner 
             }
             self.apply(
                 result.image,
-                animated: NativePlaybackCommentImageTransition.shouldAnimate(
-                    loadOrigin: result.origin
-                )
+                animated: result.origin.shouldAnimate
             )
         }
     }

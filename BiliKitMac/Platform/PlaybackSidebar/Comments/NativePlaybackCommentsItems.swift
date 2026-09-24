@@ -1164,7 +1164,7 @@ private final class NativePlaybackCommentRowView: NSView {
 final class NativePlaybackCommentAuthorBadgesView: NSView {
     override var isFlipped: Bool { true }
 
-    private struct Segment {
+    struct Segment {
         let text: String
         let foreground: NSColor
         let background: NSColor?
@@ -1204,7 +1204,6 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
 
     private var segments: [RenderedSegment] = []
     private var cachedPreferredWidth: CGFloat = 0
-    private(set) var displayedTexts: [String] = []
 
     var preferredWidth: CGFloat { cachedPreferredWidth }
 
@@ -1227,12 +1226,11 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
             RenderedSegment($0, font: font)
         }
         cachedPreferredWidth = Self.preferredWidth(segments: segments)
-        displayedTexts = segments.map(\.text)
         isHidden = segments.isEmpty
         needsDisplay = true
     }
 
-    private static func segments(for author: CommentAuthor) -> [Segment] {
+    static func segments(for author: CommentAuthor) -> [Segment] {
         var result: [Segment] = []
         switch author.sex {
         case .male:
@@ -1302,7 +1300,6 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
     func reset() {
         segments.removeAll(keepingCapacity: true)
         cachedPreferredWidth = 0
-        displayedTexts.removeAll(keepingCapacity: true)
         isHidden = true
         needsDisplay = true
     }
@@ -1657,10 +1654,6 @@ private final class NativePlaybackCommentTextView: NSTextView, NSTextViewDelegat
 
 enum NativePlaybackCommentImageTransition {
     static let duration: CFTimeInterval = 0.15
-
-    static func shouldAnimate(loadOrigin: NativeVideoImageLoadOrigin) -> Bool {
-        loadOrigin.shouldAnimate
-    }
 }
 
 @MainActor
@@ -1732,9 +1725,7 @@ private final class NativePlaybackCommentAvatarView: NSView {
                     guard let result else { return }
                     self.apply(
                         result.image,
-                        animated: NativePlaybackCommentImageTransition.shouldAnimate(
-                            loadOrigin: result.origin
-                        )
+                        animated: result.origin.shouldAnimate
                     )
                 }
             }
@@ -2179,9 +2170,7 @@ private final class NativePlaybackCommentPictureTileView: NSButton {
             guard let result else { return }
             self.apply(
                 result.image,
-                animated: NativePlaybackCommentImageTransition.shouldAnimate(
-                    loadOrigin: result.origin
-                )
+                animated: result.origin.shouldAnimate
             )
         }
     }
