@@ -61,7 +61,7 @@ struct GuestBrowseAndVideoViewModelTests {
             )
         )
 
-        model.search("旧搜索")
+        model.search(VideoSearchCriteria(query: "旧搜索"))
         try await searchGate.waitForEntries()
         let supersededTask = try #require(model.taskSnapshotForTesting())
         model.refreshPopular()
@@ -81,41 +81,6 @@ struct GuestBrowseAndVideoViewModelTests {
                     )
                 )
         )
-    }
-
-    @Test
-    @MainActor
-    func popularNearEndAppendsDeduplicatesAndBackpressuresSameTail() async {
-        let first = GuestFixtures(bvid: "BV1PopularA1", title: "热门第一页")
-        let second = GuestFixtures(bvid: "BV1PopularB2", title: "热门第二页")
-        let repository = FeedRepositoryStub.popularPagination(
-            first: first,
-            second: second
-        )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
-
-        model.activatePopular(pageSize: 50)
-        await model.waitForCurrentTask()
-        let firstTail = model.popularPagination(for: request)
-        #expect(firstTail.canLoadMore)
-        #expect(firstTail.tailIdentity?.contains("|1|") == true)
-
-        model.loadMorePopular()
-        model.loadMorePopular()
-        await model.waitForCurrentTask()
-
-        guard case .loaded(.popular(let page)) = model.state else {
-            Issue.record("热门结果应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
-        #expect(page.pageNumber == 2)
-        #expect(!page.hasMore)
-        #expect(await repository.popularPages.count == 2)
-        #expect(!model.popularPagination(for: request).canLoadMore)
     }
 
     @Test
@@ -304,45 +269,6 @@ struct GuestBrowseAndVideoViewModelTests {
 
     @Test
     @MainActor
-    func failedPopularAppendKeepsCardsAndRetriesOnlyNextPage() async {
-        let first = GuestFixtures(bvid: "BV1PopularC3", title: "保留热门卡片")
-        let second = GuestFixtures(bvid: "BV1PopularD4", title: "重试热门追加")
-        let repository = FeedRepositoryStub.popularPagination(
-            first: first,
-            second: second,
-            failsFirstSecondPage: true
-        )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-        let request = GuestFeedRequest.popular(page: 1, pageSize: 50)
-
-        model.activatePopular(pageSize: 50)
-        await model.waitForCurrentTask()
-        let loadedState = model.state
-
-        model.loadMorePopular()
-        await model.waitForCurrentTask()
-        #expect(model.state == loadedState)
-        #expect(
-            model.popularPagination(for: request).loadMoreError
-                == .requestRestricted
-        )
-        #expect(!model.popularPagination(for: request).canLoadMore)
-        #expect(model.popularPagination(for: request).tailIdentity == nil)
-
-        model.retryPopularLoadMore()
-        await model.waitForCurrentTask()
-        guard case .loaded(.popular(let page)) = model.state else {
-            Issue.record("热门重试后应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
-        #expect(await repository.popularPages.count == 3)
-    }
-
-    @Test
-    @MainActor
     func duplicateOnlyPopularPageStopsNonProgressingPagination() async {
         let fixture = GuestFixtures(bvid: "BV1PopularE5", title: "重复热门卡片")
         let repository = FeedRepositoryStub(popular: { request, _ in
@@ -425,7 +351,7 @@ struct GuestBrowseAndVideoViewModelTests {
             )
         )
 
-        model.search("macOS")
+        model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
         #expect(
             model.state
@@ -454,45 +380,38 @@ struct GuestBrowseAndVideoViewModelTests {
         )
     }
 
-    @Test
+    @Test(arguments: [BrowseFeed.popular, .search])
     @MainActor
-    func searchNearEndAppendsDeduplicatesAndBackpressuresSameTail() async {
-        let first = GuestFixtures(bvid: "BV1SearchA01", title: "第一页")
-        let second = GuestFixtures(bvid: "BV1SearchB02", title: "第二页")
-        let repository = FeedRepositoryStub.searchPagination(
-            first: first,
-            second: second
-        )
+    func nearEndAppendsDeduplicatesAndBackpressuresSameTail(_ feed: BrowseFeed) async {
+        let first = GuestFixtures(bvid: "BV1PagedA1", title: "第一页")
+        let second = GuestFixtures(bvid: "BV1PagedB2", title: "第二页")
+        let repository = FeedRepositoryStub.pagination(feed, first: first, second: second)
         let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
 
-        model.search("macOS")
+        feed.activate(model)
         await model.waitForCurrentTask()
-        let firstTail = model.searchPagination(for: "macOS")
+        let firstTail = feed.pagination(model)
         #expect(firstTail.canLoadMore)
         #expect(firstTail.tailIdentity?.contains("|1|") == true)
 
-        model.loadMoreSearch()
-        model.loadMoreSearch()
+        feed.loadMore(model)
+        feed.loadMore(model)
         await model.waitForCurrentTask()
 
-        guard case .loaded(.search(_, let page)) = model.state else {
-            Issue.record("搜索结果应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
-        #expect(page.pageNumber == 2)
-        #expect(await repository.searchRequests.count == 2)
-        #expect(!model.searchPagination(for: "macOS").canLoadMore)
+        #expect(feed.loadedBVIDs(model) == [first.bvid, second.bvid])
+        #expect(await repository.requestedPages(feed) == [1, 2])
+        #expect(!feed.pagination(model).canLoadMore)
     }
 
-    @Test
+    @Test(arguments: [BrowseFeed.popular, .search])
     @MainActor
-    func failedSearchAppendKeepsCardsAndRetriesOnlyNextPage() async {
-        let first = GuestFixtures(bvid: "BV1SearchC03", title: "保留卡片")
-        let second = GuestFixtures(bvid: "BV1SearchD04", title: "重试追加")
-        let repository = FeedRepositoryStub.searchPagination(
+    func failedAppendKeepsCardsAndRetriesOnlyNextPage(_ feed: BrowseFeed) async {
+        let first = GuestFixtures(bvid: "BV1PagedC3", title: "保留卡片")
+        let second = GuestFixtures(bvid: "BV1PagedD4", title: "重试追加")
+        let repository = FeedRepositoryStub.pagination(
+            feed,
             first: first,
             second: second,
             failsFirstSecondPage: true
@@ -500,102 +419,58 @@ struct GuestBrowseAndVideoViewModelTests {
         let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
-        let criteria = VideoSearchCriteria(
-            query: "Swift",
-            order: .mostFavorited,
-            duration: .thirtyToSixtyMinutes,
-            publicationRange: VideoPublicationTimeRange(
-                beginTimestamp: 100,
-                endTimestamp: 200
-            )
-        )
 
-        model.search(criteria)
+        feed.activate(model)
         await model.waitForCurrentTask()
         let loadedState = model.state
 
-        model.loadMoreSearch()
+        feed.loadMore(model)
         await model.waitForCurrentTask()
+        let failed = feed.pagination(model)
         #expect(model.state == loadedState)
-        #expect(
-            model.searchPagination(for: criteria).loadMoreError
-                == .transportFailure
-        )
-        #expect(!model.searchPagination(for: criteria).canLoadMore)
-        #expect(model.searchPagination(for: criteria).tailIdentity == nil)
+        #expect(failed.loadMoreError == .transportFailure)
+        #expect(!failed.canLoadMore)
+        #expect(failed.tailIdentity == nil)
 
-        model.retrySearchLoadMore()
+        feed.retryLoadMore(model)
         await model.waitForCurrentTask()
-        guard case .loaded(.search(_, let page)) = model.state else {
-            Issue.record("重试后搜索结果应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
-        #expect(await repository.searchRequests.count == 3)
+
+        #expect(feed.loadedBVIDs(model) == [first.bvid, second.bvid])
+        #expect(await repository.requestedPages(feed) == [1, 2, 2])
         #expect(
-            await repository.searchRequests
-                == [
-                    VideoSearchRequest(criteria: criteria, page: 1),
-                    VideoSearchRequest(criteria: criteria, page: 2),
-                    VideoSearchRequest(criteria: criteria, page: 2)
-                ]
+            await repository.searchRequests.allSatisfy { $0.criteria == BrowseFeed.searchCriteria }
         )
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    /// 新关键词与同关键词换筛选条件都开启新的第 1 页工作集。
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
     @MainActor
-    func newQueryCancelsAndRejectsLateSearchAppend() async throws {
-        let old = GuestFixtures(bvid: "BV1SearchE05", title: "旧查询")
-        let fresh = GuestFixtures(bvid: "BV1SearchF06", title: "新查询")
-        let oldAppendGate = TestGate()
-        let repository = FeedRepositoryStub.blockingSearchAppend(
-            old: old,
-            fresh: fresh,
-            oldAppendGate: oldAppendGate
-        )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-
-        model.search("旧查询")
-        await model.waitForCurrentTask()
-        model.loadMoreSearch()
-        try await oldAppendGate.waitForEntries()
-        let oldAppendTask = try #require(model.taskSnapshotForTesting())
-
-        model.search("新查询")
-        await model.waitForCurrentTask()
-        await oldAppendGate.open()
-        await oldAppendTask.value
-
-        guard case .loaded(.search(let query, let page)) = model.state else {
-            Issue.record("新查询应保持 loaded")
-            return
-        }
-        #expect(query == "新查询")
-        #expect(page.videos.map(\.bvid) == [fresh.bvid])
-        #expect(page.pageNumber == 1)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func criteriaChangeCancelsAppendAndStartsANewPageOneWorkset() async throws {
-        let old = GuestFixtures(bvid: "BV1SearchCriteriaOld", title: "旧条件")
-        let fresh = GuestFixtures(bvid: "BV1SearchCriteriaNew", title: "新条件")
-        let oldAppendGate = TestGate()
-        let repository = FeedRepositoryStub.blockingSearchAppend(
-            old: old,
-            fresh: fresh,
-            oldAppendGate: oldAppendGate
-        )
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
+    func newSearchCancelsAppendAndStartsANewPageOneWorkset(
+        keepsQuery: Bool
+    ) async throws {
+        let newCriteria =
+            keepsQuery
+            ? VideoSearchCriteria(query: "macOS", order: .mostPlayed, duration: .underTenMinutes)
+            : VideoSearchCriteria(query: "新查询")
+        let old = GuestFixtures(bvid: "BV1SearchOld", title: "旧条件")
+        let fresh = GuestFixtures(bvid: "BV1SearchNew", title: "新条件")
         let oldCriteria = VideoSearchCriteria(query: "macOS")
-        let newCriteria = VideoSearchCriteria(
-            query: "macOS",
-            order: .mostPlayed,
-            duration: .underTenMinutes
+        let oldAppendGate = TestGate()
+        let repository = FeedRepositoryStub(search: { request, _ in
+            let isOld = request.criteria == oldCriteria
+            if isOld, request.page == 2 {
+                await oldAppendGate.pass()
+            }
+            return SearchPage(
+                videos: [(isOld ? old : fresh).searchVideo],
+                pageNumber: request.page,
+                pageSize: 20,
+                totalResults: isOld ? 2 : 1,
+                totalPages: isOld ? 2 : 1
+            )
+        })
+        let model = GuestBrowseViewModel(
+            useCase: GuestFeedUseCase(repository: repository)
         )
 
         model.search(oldCriteria)
@@ -610,187 +485,73 @@ struct GuestBrowseAndVideoViewModelTests {
         await oldAppendTask.value
 
         guard case .loaded(.search(let query, let page)) = model.state else {
-            Issue.record("新条件应保持 loaded")
+            Issue.record("新搜索应保持 loaded")
             return
         }
-        #expect(query == "macOS")
+        #expect(query == newCriteria.query)
         #expect(page.pageNumber == 1)
         #expect(page.videos.map(\.bvid) == [fresh.bvid])
         #expect(
             model.activeRequestIdentity
-                == .search(
-                    VideoSearchRequest(criteria: newCriteria, page: 1)
-                )
+                == .search(VideoSearchRequest(criteria: newCriteria, page: 1))
         )
         #expect(model.searchPagination(for: newCriteria).loadMoreError == nil)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(1)), arguments: [BrowseFeed.recommendation, .popular, .search])
     @MainActor
-    func authenticationEpochRestartsSearchAndRejectsLateOldResult() async throws {
-        let old = GuestFixtures(bvid: "BV1SearchG07", title: "旧账户结果")
-        let fresh = GuestFixtures(bvid: "BV1SearchH08", title: "新账户结果")
+    func authenticationEpochRestartsFeedAndRejectsLateOldResult(_ feed: BrowseFeed) async throws {
+        let old = GuestFixtures(bvid: "BV1EpochOld", title: "旧账户结果")
+        let fresh = GuestFixtures(bvid: "BV1EpochNew", title: "新账户结果")
         let gates = [TestGate(), TestGate()]
-        let repository = FeedRepositoryStub(search: { _, attempt in
-            await gates[attempt - 1].pass()
-            return (attempt == 1 ? old : fresh).searchPage()
-        })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-
-        model.search("macOS")
-        try await gates[0].waitForEntries()
-        let oldTask = try #require(model.taskSnapshotForTesting())
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        try await gates[1].waitForEntries()
-        await gates[1].open()
-        await model.waitForCurrentTask()
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        await gates[0].open()
-        await oldTask.value
-
-        guard case .loaded(.search(let query, let page)) = model.state else {
-            Issue.record("账户切换后的搜索结果应保持 loaded")
-            return
-        }
-        #expect(query == "macOS")
-        #expect(page.videos.map(\.bvid) == [fresh.bvid])
-        #expect(await repository.searchRequests.count == 2)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func authenticationEpochRestartsPopularAndRejectsLateOldResult() async throws {
-        let old = GuestFixtures(bvid: "BV1PopularOld", title: "旧账户热门")
-        let fresh = GuestFixtures(bvid: "BV1PopularNew", title: "新账户热门")
-        let gates = [TestGate(), TestGate()]
-        let repository = FeedRepositoryStub(popular: { request, attempt in
-            await gates[attempt - 1].pass()
-            return (attempt == 1 ? old : fresh).popularPage(request)
-        })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-
-        model.activatePopular(pageSize: 50)
-        try await gates[0].waitForEntries()
-        let oldTask = try #require(model.taskSnapshotForTesting())
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        try await gates[1].waitForEntries()
-        await gates[1].open()
-        await model.waitForCurrentTask()
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        await gates[0].open()
-        await oldTask.value
-
-        guard case .loaded(.popular(let page)) = model.state else {
-            Issue.record("账户切换后的热门结果应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [fresh.bvid])
-        #expect(await repository.popularPages.count == 2)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func authenticationEpochRestartsRecommendationAndRejectsLateOldResult() async throws {
-        let old = GuestFixtures(bvid: "BV1RcmdOld01", title: "旧账户推荐")
-        let fresh = GuestFixtures(bvid: "BV1RcmdNew02", title: "新账户推荐")
-        let gates = [TestGate(), TestGate()]
-        let repository = FeedRepositoryStub(recommendations: { _, attempt in
-            await gates[attempt - 1].pass()
-            return (attempt == 1 ? old : fresh).recommendationPage
-        })
-        let model = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
-        )
-
-        model.activateRecommendation()
-        try await gates[0].waitForEntries()
-        let oldTask = try #require(model.taskSnapshotForTesting())
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        try await gates[1].waitForEntries()
-        await gates[1].open()
-        await model.waitForCurrentTask()
-
-        model.synchronizeAuthenticationSession(generation: 1)
-        await gates[0].open()
-        await oldTask.value
-
-        guard case .loaded(.recommendation(let page)) = model.state else {
-            Issue.record("账户切换后的首页推荐应保持 loaded")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [fresh.bvid])
-        #expect(await repository.recommendationRequests.count == 2)
-    }
-
-    @Test
-    @MainActor
-    func tabRoundTripReusesPopularAndSearchWorksetsWithoutNewRequests() async {
-        let fixture = GuestFixtures()
         let repository = FeedRepositoryStub(
-            popular: { request, _ in fixture.popularPage(request) },
-            search: { request, _ in fixture.searchPage(page: request.page) }
+            recommendations: { _, attempt in
+                await gates[attempt - 1].pass()
+                return (attempt == 1 ? old : fresh).recommendationPage
+            },
+            popular: { request, attempt in
+                await gates[attempt - 1].pass()
+                return (attempt == 1 ? old : fresh).popularPage(request)
+            },
+            search: { request, attempt in
+                await gates[attempt - 1].pass()
+                return (attempt == 1 ? old : fresh).searchPage(page: request.page)
+            }
         )
         let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
         )
-        let searchRequest = GuestFeedRequest.search(query: "macOS", page: 1)
 
-        model.activatePopular(pageSize: 50)
+        feed.activate(model)
+        try await gates[0].waitForEntries()
+        let oldTask = try #require(model.taskSnapshotForTesting())
+
+        model.synchronizeAuthenticationSession(generation: 1)
+        try await gates[1].waitForEntries()
+        await gates[1].open()
         await model.waitForCurrentTask()
 
-        model.activateSearch("macOS")
-        await model.waitForCurrentTask()
-        model.activatePopular(pageSize: 50)
-        await model.waitForCurrentTask()
+        model.synchronizeAuthenticationSession(generation: 1)
+        await gates[0].open()
+        await oldTask.value
 
-        #expect(await repository.popularPages.count == 1)
-        #expect(await repository.searchRequests.count == 1)
-        #expect(
-            model.presentation(for: searchRequest).state
-                == .loaded(
-                    .search(
-                        query: "macOS",
-                        page: SearchPage(
-                            videos: [fixture.searchVideo],
-                            pageNumber: 1,
-                            pageSize: 20,
-                            totalResults: 1,
-                            totalPages: 1
-                        )
-                    )
-                )
-        )
-        #expect(
-            model.state
-                == .loaded(
-                    .popular(
-                        PopularPage(
-                            videos: [fixture.popularVideo],
-                            pageNumber: 1,
-                            pageSize: 50
-                        )
-                    )
-                )
-        )
+        #expect(feed.loadedBVIDs(model) == [fresh.bvid])
+        #expect(await repository.requestedPages(feed).count == 2)
     }
 
     @Test
     @MainActor
-    func tabRoundTripPreservesAppendedPopularWorkset() async {
+    func tabRoundTripPreservesPopularAndSearchWorksetsWithoutNewRequests() async {
         let first = GuestFixtures(bvid: "BV1PopularH8", title: "热门第一页")
         let second = GuestFixtures(bvid: "BV1PopularJ9", title: "热门第二页")
-        let repository = FeedRepositoryStub.popularPagination(
-            first: first,
-            second: second
+        let searchFixture = GuestFixtures()
+        let repository = FeedRepositoryStub(
+            popular: { request, _ in
+                request.page == 1
+                    ? first.popularPage(request, hasMore: true)
+                    : second.popularPage(request)
+            },
+            search: { request, _ in searchFixture.searchPage(page: request.page) }
         )
         let model = GuestBrowseViewModel(
             useCase: GuestFeedUseCase(repository: repository)
@@ -800,19 +561,18 @@ struct GuestBrowseAndVideoViewModelTests {
         await model.waitForCurrentTask()
         model.loadMorePopular()
         await model.waitForCurrentTask()
-
-        model.activateSearch("macOS")
+        model.activateSearch(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
 
-        guard case .loaded(.popular(let page)) = model.state else {
-            Issue.record("返回热门时应恢复已追加工作集")
-            return
-        }
-        #expect(page.videos.map(\.bvid) == [first.bvid, second.bvid])
-        #expect(page.pageNumber == 2)
-        #expect(await repository.popularPages.count == 2)
+        #expect(BrowseFeed.popular.loadedBVIDs(model) == [first.bvid, second.bvid])
+        #expect(await repository.popularPages == [1, 2])
+        #expect(await repository.searchRequests.count == 1)
+        #expect(
+            model.presentation(for: .search(query: "macOS", page: 1)).state
+                == .loaded(.search(query: "macOS", page: searchFixture.searchPage()))
+        )
     }
 
     @Test
@@ -860,15 +620,15 @@ struct GuestBrowseAndVideoViewModelTests {
             useCase: GuestFeedUseCase(repository: repository)
         )
 
-        model.search("macOS")
+        model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
         #expect(model.searchSuccessfulRefreshGeneration == 0)
 
-        model.search("macOS")
+        model.search(VideoSearchCriteria(query: "macOS"))
         await model.waitForCurrentTask()
         #expect(model.searchSuccessfulRefreshGeneration == 1)
 
-        model.search("macOS")
+        model.search(VideoSearchCriteria(query: "macOS"))
         #expect(model.isRefreshing)
         await model.waitForCurrentTask()
 
@@ -2544,101 +2304,47 @@ private actor FeedRepositoryStub: GuestFeedRepository {
 }
 
 extension FeedRepositoryStub {
-    /// 两页热门：第 1 页含重复卡片，第 2 页补上 `second`。
-    static func popularPagination(
+    /// 两页热门或搜索：第 1 页含重复卡片，第 2 页补上 `second`，可让第 2 页首次失败。
+    static func pagination(
+        _ feed: BrowseFeed,
         first: GuestFixtures,
         second: GuestFixtures,
         failsFirstSecondPage: Bool = false
     ) -> FeedRepositoryStub {
-        FeedRepositoryStub(popular: { request, attempt in
-            switch request.page {
-            case 1:
-                return PopularPage(
-                    videos: [first.popularVideo, first.popularVideo],
-                    pageNumber: 1,
-                    pageSize: request.pageSize,
-                    hasMore: true
-                )
-            case 2:
-                if failsFirstSecondPage, attempt == 1 {
-                    throw GuestApplicationError.requestRestricted
-                }
-                return PopularPage(
-                    videos: [first.popularVideo, second.popularVideo],
-                    pageNumber: 2,
-                    pageSize: request.pageSize,
-                    hasMore: false
-                )
-            default:
-                throw GuestApplicationError.invalidRequest
-            }
-        })
-    }
-
-    /// 两页搜索：第 1 页含重复卡片，第 2 页补上 `second`。
-    static func searchPagination(
-        first: GuestFixtures,
-        second: GuestFixtures,
-        failsFirstSecondPage: Bool = false
-    ) -> FeedRepositoryStub {
-        FeedRepositoryStub(search: { request, attempt in
-            switch request.page {
-            case 1:
-                return SearchPage(
-                    videos: [first.searchVideo, first.searchVideo],
-                    pageNumber: 1,
-                    pageSize: 20,
-                    totalResults: 2,
-                    totalPages: 2
-                )
+        let pageVideos: @Sendable (Int, Int) throws -> [GuestFixtures] = { page, attempt in
+            switch page {
+            case 1: return [first, first]
             case 2:
                 if failsFirstSecondPage, attempt == 1 {
                     throw GuestApplicationError.transportFailure
                 }
-                return SearchPage(
-                    videos: [first.searchVideo, second.searchVideo],
-                    pageNumber: 2,
+                return [first, second]
+            default: throw GuestApplicationError.invalidRequest
+            }
+        }
+        switch feed {
+        case .recommendation:
+            preconditionFailure("推荐使用 continuation 分页")
+        case .popular:
+            return FeedRepositoryStub(popular: { request, attempt in
+                PopularPage(
+                    videos: try pageVideos(request.page, attempt).map(\.popularVideo),
+                    pageNumber: request.page,
+                    pageSize: request.pageSize,
+                    hasMore: request.page == 1
+                )
+            })
+        case .search:
+            return FeedRepositoryStub(search: { request, attempt in
+                SearchPage(
+                    videos: try pageVideos(request.page, attempt).map(\.searchVideo),
+                    pageNumber: request.page,
                     pageSize: 20,
                     totalResults: 2,
                     totalPages: 2
                 )
-            default:
-                throw GuestApplicationError.invalidRequest
-            }
-        })
-    }
-
-    /// 旧查询或旧条件的第 2 页在 `oldAppendGate` 放行前挂起；其余请求立即返回第 1 页。
-    static func blockingSearchAppend(
-        old: GuestFixtures,
-        fresh: GuestFixtures,
-        oldAppendGate: TestGate
-    ) -> FeedRepositoryStub {
-        FeedRepositoryStub(search: { request, _ in
-            let keyword = request.criteria.query
-            let isOldCriteria = request.criteria.order == .relevance
-            if keyword == "旧查询" || keyword == "macOS", request.page == 2,
-                isOldCriteria
-            {
-                await oldAppendGate.pass()
-                return SearchPage(
-                    videos: [old.searchVideo],
-                    pageNumber: 2,
-                    pageSize: 20,
-                    totalResults: 2,
-                    totalPages: 2
-                )
-            }
-            let usesOldResult =
-                keyword == "旧查询" || (keyword == "macOS" && isOldCriteria)
-            return SearchPage(
-                videos: [(usesOldResult ? old : fresh).searchVideo],
-                pageNumber: 1,
-                pageSize: 20,
-                totalResults: usesOldResult ? 2 : 1,
-                totalPages: usesOldResult ? 2 : 1
-            )
-        })
+            })
+        }
     }
 }
 
@@ -3192,5 +2898,85 @@ private struct SelectivePlaybackFailure: Error {}
 private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
     AsyncStream { continuation in
         continuation.finish()
+    }
+}
+
+/// 把推荐、热门与搜索三条 feed 的相同操作映射到各自 API，供结构相同的参数化测试共用。
+enum BrowseFeed: Sendable {
+    case recommendation
+    case popular
+    case search
+
+    static let searchCriteria = VideoSearchCriteria(
+        query: "Swift",
+        order: .mostFavorited,
+        duration: .thirtyToSixtyMinutes,
+        publicationRange: VideoPublicationTimeRange(beginTimestamp: 100, endTimestamp: 200)
+    )
+    private static let popularRequest = GuestFeedRequest.popular(page: 1, pageSize: 50)
+
+    @MainActor
+    func activate(_ model: GuestBrowseViewModel) {
+        switch self {
+        case .recommendation: model.activateRecommendation()
+        case .popular: model.activatePopular(pageSize: 50)
+        case .search: model.activateSearch(Self.searchCriteria)
+        }
+    }
+
+    @MainActor
+    func loadMore(_ model: GuestBrowseViewModel) {
+        switch self {
+        case .recommendation: model.loadMoreRecommendations()
+        case .popular: model.loadMorePopular()
+        case .search: model.loadMoreSearch()
+        }
+    }
+
+    @MainActor
+    func retryLoadMore(_ model: GuestBrowseViewModel) {
+        switch self {
+        case .recommendation: model.retryRecommendationLoadMore()
+        case .popular: model.retryPopularLoadMore()
+        case .search: model.retrySearchLoadMore()
+        }
+    }
+
+    @MainActor
+    func pagination(
+        _ model: GuestBrowseViewModel
+    ) -> (canLoadMore: Bool, tailIdentity: String?, loadMoreError: GuestApplicationError?) {
+        switch self {
+        case .recommendation:
+            let pagination = model.recommendationPagination()
+            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
+        case .popular:
+            let pagination = model.popularPagination(for: Self.popularRequest)
+            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
+        case .search:
+            let pagination = model.searchPagination(for: Self.searchCriteria)
+            return (pagination.canLoadMore, pagination.tailIdentity, pagination.loadMoreError)
+        }
+    }
+
+    @MainActor
+    func loadedBVIDs(_ model: GuestBrowseViewModel) -> [String] {
+        switch (self, model.state) {
+        case (.recommendation, .loaded(.recommendation(let page))): page.videos.map(\.bvid)
+        case (.popular, .loaded(.popular(let page))): page.videos.map(\.bvid)
+        case (.search, .loaded(.search(_, let page))): page.videos.map(\.bvid)
+        default: []
+        }
+    }
+}
+
+extension FeedRepositoryStub {
+    /// 推荐没有页码，按请求序号计数。
+    func requestedPages(_ feed: BrowseFeed) -> [Int] {
+        switch feed {
+        case .recommendation: recommendationRequests.indices.map { $0 + 1 }
+        case .popular: popularPages
+        case .search: searchRequests.map(\.page)
+        }
     }
 }
