@@ -247,14 +247,15 @@ private final class SystemNowPlayingArtworkImageBox: @unchecked Sendable {
 final class SystemNowPlayingController {
     private let center: any SystemNowPlayingCenterWriting
     private let remoteCommands: any SystemRemoteCommandManaging
-    private let artworkLoader: (@Sendable (URL) async -> CGImage?)?
+    private let artworkLoader: @Sendable (URL) async -> CGImage?
+    /// 进程级封面管线：随 controller 存活，只在 `close()`／`deinit` 关闭，换曲目只取消等待者。
+    private let artworkPipelineOwner: NativeVideoImagePipelineOwner?
     private var sessions: [UUID: SystemNowPlayingSession] = [:]
     private var selectionClock: UInt64 = 0
     private var publishedIdentity: SystemNowPlayingPublicationIdentity?
     private var publishedFingerprint: SystemNowPlayingTimelineFingerprint?
     private var publishedArtwork: MPMediaItemArtwork?
     private var artworkTask: Task<Void, Never>?
-    private var artworkPipelineOwner: NativeVideoImagePipelineOwner?
     private var isClosed = false
 
     init(
@@ -265,7 +266,16 @@ final class SystemNowPlayingController {
         self.center = center ?? DefaultSystemNowPlayingCenter()
         self.remoteCommands =
             remoteCommands ?? DefaultSystemRemoteCommandManager()
-        self.artworkLoader = artworkLoader
+        if let artworkLoader {
+            self.artworkLoader = artworkLoader
+            artworkPipelineOwner = nil
+        } else {
+            let owner = NativeVideoImagePipelineOwner()
+            self.artworkLoader = { [pipeline = owner.pipeline] url in
+                await pipeline.image(for: url, variant: .cover)?.image
+            }
+            artworkPipelineOwner = owner
+        }
         self.remoteCommands.install { [weak self] command in
             guard let self else { return .noSuchContent }
             return self.handleFromAnyThread(command)
@@ -349,6 +359,7 @@ final class SystemNowPlayingController {
         isClosed = true
         sessions.removeAll()
         clearPublishedSession()
+        artworkPipelineOwner?.shutdown()
         remoteCommands.removeHandlers()
     }
 
@@ -529,22 +540,11 @@ final class SystemNowPlayingController {
         from url: URL,
         for identity: SystemNowPlayingPublicationIdentity
     ) {
-        if let artworkLoader {
-            artworkTask = Task { [weak self] in
-                guard let image = await artworkLoader(url),
-                    !Task.isCancelled
-                else { return }
-                self?.acceptArtwork(image, for: identity)
-            }
-            return
-        }
-        let owner = NativeVideoImagePipelineOwner()
-        artworkPipelineOwner = owner
-        artworkTask = Task { [weak self, pipeline = owner.pipeline] in
-            guard let result = await pipeline.image(for: url, variant: .cover),
+        artworkTask = Task { [weak self, artworkLoader] in
+            guard let image = await artworkLoader(url),
                 !Task.isCancelled
             else { return }
-            self?.acceptArtwork(result.image, for: identity)
+            self?.acceptArtwork(image, for: identity)
         }
     }
 
@@ -579,8 +579,6 @@ final class SystemNowPlayingController {
     private func cancelArtworkLoad() {
         artworkTask?.cancel()
         artworkTask = nil
-        artworkPipelineOwner?.shutdown()
-        artworkPipelineOwner = nil
     }
 
     private func clearPublishedSession() {
