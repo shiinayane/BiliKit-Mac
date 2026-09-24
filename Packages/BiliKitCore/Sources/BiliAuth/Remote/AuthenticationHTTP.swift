@@ -22,11 +22,7 @@ enum AuthenticationHTTP {
 
     /// 无 Cookie storage、无 URL cache、拒绝 redirect 的 ephemeral transport。
     static func makeProductionTransport() -> URLSessionTransport {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let configuration = URLSessionConfiguration.credentialFreeEphemeral()
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
         return URLSessionTransport(

@@ -119,11 +119,8 @@ public actor CDNBenchmarkSampleDiscoverer {
                             detail.bvid,
                             CDNBenchmarkDiscoveredSample(
                                 videoRepresentation: video,
-                                mediaHeaders: playback.mediaHeaders.filter {
-                                    $0.key.caseInsensitiveCompare("Cookie") != .orderedSame
-                                        && $0.key.caseInsensitiveCompare("Authorization")
-                                            != .orderedSame
-                                }
+                                mediaHeaders: playback.mediaHeaders
+                                    .removingCredentialAndRangeHeaders()
                             )
                         )
                     )

@@ -19,11 +19,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
     private var resourceURLs: [String: URL] = [:]
 
     public init(client: BiliAPIClient) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let configuration = URLSessionConfiguration.credentialFreeEphemeral()
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
         self.init(
