@@ -1040,8 +1040,7 @@ final class PlayerScrollWheelCaptureView: NSView {
     private var keyboardMonitor: Any?
     private var keyboardInputEnabled = true
     private var keyboardState = PlayerKeyboardInputState()
-    private var scrollWheelRouting = PlayerScrollWheelRouting()
-    private var pendingScrollWheelEvents: [NSEvent] = []
+    private var scrollWheelRouter = PlayerScrollWheelRouter<NSEvent>()
     private var keyboardLongPressTask: Task<Void, Never>?
     private var keyboardLongPressID: UUID?
     private var subtitleToggleTask: Task<Void, Never>?
@@ -1081,27 +1080,10 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     func handleScrollWheel(_ event: NSEvent) {
-        let route = scrollWheelRouting.route(
-            deltaX: event.scrollingDeltaX,
-            deltaY: event.scrollingDeltaY,
-            phase: event.phase,
-            momentumPhase: event.momentumPhase
-        )
-        switch route {
-        case .pending:
-            pendingScrollWheelEvents.append(event)
-        case .ignore:
-            pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-        case .outerScroll:
-            guard let scrollView = detailScrollViewAncestor else {
-                pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-                return
-            }
-            for pendingEvent in pendingScrollWheelEvents {
-                scrollView.scrollWheel(with: pendingEvent)
-            }
-            pendingScrollWheelEvents.removeAll(keepingCapacity: true)
-            scrollView.scrollWheel(with: event)
+        let released = scrollWheelRouter.route(event)
+        guard !released.isEmpty, let scrollView = detailScrollViewAncestor else { return }
+        for releasedEvent in released {
+            scrollView.scrollWheel(with: releasedEvent)
         }
     }
 
@@ -1130,8 +1112,7 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     func cancelInputSession() {
-        scrollWheelRouting.cancel()
-        pendingScrollWheelEvents.removeAll(keepingCapacity: true)
+        scrollWheelRouter.cancel()
         cancelKeyboardInputSession()
     }
 
@@ -1525,123 +1506,140 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 }
 
-struct PlayerScrollWheelRouting {
-    enum Route: Equatable {
-        case pending
-        case outerScroll
-        case ignore
+/// 路由器需要的滚轮输入字段；`NSEvent` 原生满足，测试可用假事件。
+protocol PlayerScrollWheelInput {
+    var scrollingDeltaX: CGFloat { get }
+    var scrollingDeltaY: CGFloat { get }
+    var phase: NSEvent.Phase { get }
+    var momentumPhase: NSEvent.Phase { get }
+}
+
+extension NSEvent: PlayerScrollWheelInput {}
+
+/// 播放器表面与详情滚动视图共用的轴向规则：横向严格占优的滚轮不滚动详情页。
+///
+/// 相等（包括 began／ended 等零位移阶段事件）按纵向处理，外层 `NSScrollView` 才能收到完整阶段。
+enum PlayerScrollWheelAxisRule {
+    static func scrollsVertically(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        abs(deltaX) <= abs(deltaY)
+    }
+}
+
+/// 播放器表面滚轮的手势级路由：纵向手势按原顺序交给外层详情滚动，横向手势整体丢弃。
+///
+/// 触控板手势在轴向确定前暂存事件，确定后一次性投递或丢弃；惯性阶段沿用手势的决定。
+/// 无阶段的鼠标滚轮逐个事件判断。`cancel()` 之后直到下一次手势开始前的残余事件都丢弃。
+struct PlayerScrollWheelRouter<Event: PlayerScrollWheelInput> {
+    private enum Decision {
+        case forward
+        case discard
     }
 
-    private static let minimumAxisTravel: CGFloat = 1
-    private static let minimumAxisLead: CGFloat = 0.5
+    private static var minimumAxisTravel: CGFloat { 1 }
+    private static var minimumAxisLead: CGFloat { 0.5 }
 
-    private var directRoute: Route?
-    private var completedRoute: Route?
+    private var pendingEvents: [Event] = []
+    private var lockedDecision: Decision?
+    private var gestureIsActive = false
     private var accumulatedDeltaX: CGFloat = 0
     private var accumulatedDeltaY: CGFloat = 0
-    private var directGestureIsActive = false
     private var discardsCancelledRemainder = false
 
-    mutating func route(
-        deltaX: CGFloat,
-        deltaY: CGFloat,
-        phase: NSEvent.Phase,
-        momentumPhase: NSEvent.Phase
-    ) -> Route {
-        let startsDirectGesture =
-            phase.contains(.mayBegin) || phase.contains(.began)
-        let isUnphasedInput = phase.isEmpty && momentumPhase.isEmpty
+    /// 返回应立即按顺序交给外层滚动视图的事件；轴向未定或被丢弃时返回空数组。
+    mutating func route(_ event: Event) -> [Event] {
+        guard let decision = decide(event) else {
+            pendingEvents.append(event)
+            return []
+        }
+        let released = pendingEvents + [event]
+        pendingEvents.removeAll(keepingCapacity: true)
+        return decision == .forward ? released : []
+    }
+
+    mutating func cancel() {
+        pendingEvents.removeAll(keepingCapacity: true)
+        reset()
+        discardsCancelledRemainder = true
+    }
+
+    private mutating func decide(_ event: Event) -> Decision? {
+        let phase = event.phase
+        let momentumPhase = event.momentumPhase
+        let startsGesture = phase.contains(.mayBegin) || phase.contains(.began)
 
         if discardsCancelledRemainder {
-            guard startsDirectGesture || isUnphasedInput else {
-                return .ignore
+            guard startsGesture || (phase.isEmpty && momentumPhase.isEmpty) else {
+                return .discard
             }
             discardsCancelledRemainder = false
         }
 
         if !momentumPhase.isEmpty {
-            let route =
-                directRoute
-                ?? completedRoute
-                ?? dominantRoute(deltaX: deltaX, deltaY: deltaY)
-            if momentumPhase.contains(.ended)
-                || momentumPhase.contains(.cancelled)
-            {
+            let decision = lockedDecision ?? Self.dominantDecision(of: event)
+            if momentumPhase.contains(.ended) || momentumPhase.contains(.cancelled) {
                 reset()
             }
-            return route
+            return decision
         }
 
         if phase.isEmpty {
-            completedRoute = nil
-            return dominantRoute(deltaX: deltaX, deltaY: deltaY)
+            if !gestureIsActive { lockedDecision = nil }
+            return Self.dominantDecision(of: event)
         }
 
-        if startsDirectGesture {
+        if startsGesture {
             reset()
-            directGestureIsActive = true
-        } else if !directGestureIsActive {
-            guard phase.contains(.changed) else { return .ignore }
-            directGestureIsActive = true
-            directRoute = dominantRoute(deltaX: deltaX, deltaY: deltaY)
+            gestureIsActive = true
+        } else if !gestureIsActive {
+            // 没有见到开始阶段的手势（例如取消后恢复）按首个事件立即决定。
+            guard phase.contains(.changed) else { return .discard }
+            gestureIsActive = true
+            lockedDecision = Self.dominantDecision(of: event)
         }
 
-        if directRoute == nil {
-            accumulatedDeltaX += deltaX
-            accumulatedDeltaY += deltaY
-            directRoute = accumulatedRoute()
+        if lockedDecision == nil {
+            accumulatedDeltaX += event.scrollingDeltaX
+            accumulatedDeltaY += event.scrollingDeltaY
+            lockedDecision = accumulatedDecision()
         }
 
-        let resolvedRoute: Route
         if phase.contains(.ended) || phase.contains(.cancelled) {
-            resolvedRoute =
-                directRoute
-                ?? dominantRoute(
-                    deltaX: accumulatedDeltaX,
-                    deltaY: accumulatedDeltaY
-                )
+            let decision =
+                lockedDecision
+                ?? Self.decision(deltaX: accumulatedDeltaX, deltaY: accumulatedDeltaY)
+            reset()
             if phase.contains(.ended) {
-                completedRoute = resolvedRoute
-                resetDirectGesture()
-            } else {
-                reset()
+                // 手指抬起后的惯性阶段沿用本次手势的决定。
+                lockedDecision = decision
             }
-        } else {
-            resolvedRoute = directRoute ?? .pending
+            return decision
         }
-        return resolvedRoute
+        return lockedDecision
     }
 
-    mutating func cancel() {
-        reset()
-        discardsCancelledRemainder = true
-    }
-
-    private func accumulatedRoute() -> Route? {
+    private func accumulatedDecision() -> Decision? {
         let horizontalMagnitude = abs(accumulatedDeltaX)
         let verticalMagnitude = abs(accumulatedDeltaY)
         guard
-            max(horizontalMagnitude, verticalMagnitude)
-                >= Self.minimumAxisTravel,
-            abs(verticalMagnitude - horizontalMagnitude)
-                >= Self.minimumAxisLead
+            max(horizontalMagnitude, verticalMagnitude) >= Self.minimumAxisTravel,
+            abs(verticalMagnitude - horizontalMagnitude) >= Self.minimumAxisLead
         else { return nil }
-        return verticalMagnitude > horizontalMagnitude ? .outerScroll : .ignore
+        return Self.decision(deltaX: accumulatedDeltaX, deltaY: accumulatedDeltaY)
     }
 
-    private func dominantRoute(deltaX: CGFloat, deltaY: CGFloat) -> Route {
-        abs(deltaY) > abs(deltaX) ? .outerScroll : .ignore
+    private static func dominantDecision(of event: Event) -> Decision {
+        decision(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
     }
 
-    private mutating func resetDirectGesture() {
-        directRoute = nil
-        accumulatedDeltaX = 0
-        accumulatedDeltaY = 0
-        directGestureIsActive = false
+    private static func decision(deltaX: CGFloat, deltaY: CGFloat) -> Decision {
+        PlayerScrollWheelAxisRule.scrollsVertically(deltaX: deltaX, deltaY: deltaY)
+            ? .forward : .discard
     }
 
     private mutating func reset() {
-        resetDirectGesture()
-        completedRoute = nil
+        lockedDecision = nil
+        gestureIsActive = false
+        accumulatedDeltaX = 0
+        accumulatedDeltaY = 0
     }
 }
