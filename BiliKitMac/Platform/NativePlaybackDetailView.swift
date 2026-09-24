@@ -397,9 +397,12 @@ final class NativePlaybackDetailScrollView: NSScrollView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        let horizontalMagnitude = abs(event.scrollingDeltaX)
-        let verticalMagnitude = abs(event.scrollingDeltaY)
-        guard horizontalMagnitude <= verticalMagnitude else { return }
+        guard
+            PlayerScrollWheelAxisRule.scrollsVertically(
+                deltaX: event.scrollingDeltaX,
+                deltaY: event.scrollingDeltaY
+            )
+        else { return }
         super.scrollWheel(with: event)
     }
 }

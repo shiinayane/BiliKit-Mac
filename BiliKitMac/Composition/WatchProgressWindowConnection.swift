@@ -73,7 +73,7 @@ enum WatchProgressTargetResolution {
 private final class WatchProgressSleepObservation {
     private let suspend: () -> Void
     private let resume: () -> Void
-    private var observers: [NSObjectProtocol] = []
+    private var observers = NativeVideoNotificationObservers()
 
     init(suspend: @escaping () -> Void, resume: @escaping () -> Void) {
         self.suspend = suspend
@@ -81,31 +81,17 @@ private final class WatchProgressSleepObservation {
     }
 
     func start() {
-        guard observers.isEmpty else { return }
         let center = NSWorkspace.shared.notificationCenter
-        observers = [
-            center.addObserver(
-                forName: NSWorkspace.willSleepNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.suspend() }
-            },
-            center.addObserver(
-                forName: NSWorkspace.didWakeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.resume() }
-            }
-        ]
+        observers.removeAll()
+        observers.observe(NSWorkspace.willSleepNotification, object: nil, center: center) {
+            [weak self] in self?.suspend()
+        }
+        observers.observe(NSWorkspace.didWakeNotification, object: nil, center: center) {
+            [weak self] in self?.resume()
+        }
     }
 
     func stop() {
-        let center = NSWorkspace.shared.notificationCenter
-        for observer in observers {
-            center.removeObserver(observer)
-        }
-        observers.removeAll(keepingCapacity: false)
+        observers.removeAll()
     }
 }
