@@ -94,7 +94,7 @@ private final class BoundedRangeOperation: URLSessionRangeOperation, @unchecked 
     private let expectedRange: HTTPByteRange
     private let collectBody: Bool
     private let clock = ContinuousClock()
-    private var continuation: CheckedContinuation<HTTPBoundedRangeResult, any Error>?
+    private let outcome = OneShotResult<HTTPBoundedRangeResult>()
     private var task: URLSessionDataTask?
     private var onFinish: (@Sendable () -> Void)?
     private var startedAt: ContinuousClock.Instant?
@@ -118,23 +118,20 @@ private final class BoundedRangeOperation: URLSessionRangeOperation, @unchecked 
         _ task: URLSessionDataTask,
         onFinish: @escaping @Sendable () -> Void
     ) async throws -> HTTPBoundedRangeResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let shouldStart = lock.withLock {
-                guard !finished else { return false }
-                self.continuation = continuation
-                self.task = task
-                self.onFinish = onFinish
-                startedAt = clock.now
-                return true
-            }
-            if shouldStart {
-                task.resume()
-            } else {
-                task.cancel()
-                continuation.resume(throwing: CancellationError())
-                onFinish()
-            }
+        let shouldStart = lock.withLock {
+            guard !finished else { return false }
+            self.task = task
+            self.onFinish = onFinish
+            startedAt = clock.now
+            return true
         }
+        if shouldStart {
+            task.resume()
+        } else {
+            task.cancel()
+            onFinish()
+        }
+        return try await outcome.value()
     }
 
     func cancel() {
@@ -221,23 +218,22 @@ private final class BoundedRangeOperation: URLSessionRangeOperation, @unchecked 
         let resources = lock.withLock {
             guard !finished else {
                 return (
-                    nil as CheckedContinuation<HTTPBoundedRangeResult, any Error>?,
+                    false,
                     nil as URLSessionDataTask?,
                     nil as (@Sendable () -> Void)?
                 )
             }
             finished = true
-            let continuation = self.continuation
-            self.continuation = nil
             let task = self.task
             self.task = nil
             let onFinish = self.onFinish
             self.onFinish = nil
-            return (continuation, task, onFinish)
+            return (true, task, onFinish)
         }
+        guard resources.0 else { return }
         resources.1?.cancel()
         resources.2?()
-        resources.0?.resume(with: result)
+        outcome.resolve(result)
     }
 
     private func durationSeconds(_ duration: Duration) -> Double {

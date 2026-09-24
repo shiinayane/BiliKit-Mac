@@ -1,6 +1,7 @@
 import BiliNetworking
 import Foundation
 @preconcurrency import Network
+import Synchronization
 
 private struct LoopbackResponseAlreadyStartedError: Error {}
 
@@ -337,14 +338,16 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             )
         }
 
-        let startBox = StartContinuationBox()
+        let started = OneShotResult<Void>()
         listener.stateUpdateHandler = { [weak self, weak listener] state in
             switch state {
             case .ready:
                 guard let self, let boundPort = listener?.port else {
-                    startBox.resume(
-                        throwing: LoopbackPlaybackServerError.listenerFailed(
-                            "Listener became ready without a port"
+                    started.resolve(
+                        .failure(
+                            LoopbackPlaybackServerError.listenerFailed(
+                                "Listener became ready without a port"
+                            )
                         )
                     )
                     return
@@ -352,17 +355,21 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 self.lock.withLock {
                     self.port = boundPort
                 }
-                startBox.resume()
+                started.resolve(.success(()))
             case .failed(let error):
-                startBox.resume(
-                    throwing: LoopbackPlaybackServerError.listenerFailed(
-                        String(describing: error)
+                started.resolve(
+                    .failure(
+                        LoopbackPlaybackServerError.listenerFailed(
+                            String(describing: error)
+                        )
                     )
                 )
             case .cancelled:
-                startBox.resume(
-                    throwing: LoopbackPlaybackServerError.listenerFailed(
-                        "Listener cancelled before becoming ready"
+                started.resolve(
+                    .failure(
+                        LoopbackPlaybackServerError.listenerFailed(
+                            "Listener cancelled before becoming ready"
+                        )
                     )
                 )
             default:
@@ -378,13 +385,11 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
 
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            try await withCheckedThrowingContinuation { continuation in
-                startBox.install(continuation)
-                listener.start(queue: queue)
-            }
+            listener.start(queue: queue)
+            try await started.value()
             try Task.checkCancellation()
         } onCancel: {
-            startBox.resume(throwing: CancellationError())
+            started.resolve(.failure(CancellationError()))
             self.cancelStart(listener)
         }
     }
@@ -1087,52 +1092,13 @@ private struct LoopbackHTTPRequest: Sendable {
     }
 }
 
-private final class StartContinuationBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, any Error>?
-    private var result: Result<Void, any Error>?
+private final class LockedFlag: Sendable {
+    private let storage = Atomic(false)
 
-    func install(_ continuation: CheckedContinuation<Void, any Error>) {
-        let pendingResult = lock.withLock { () -> Result<Void, any Error>? in
-            if let result {
-                return result
-            }
-            self.continuation = continuation
-            return nil
-        }
-        if let pendingResult {
-            continuation.resume(with: pendingResult)
-        }
-    }
-
-    func resume() {
-        resume(with: .success(()))
-    }
-
-    func resume(throwing error: any Error) {
-        resume(with: .failure(error))
-    }
-
-    private func resume(with result: Result<Void, any Error>) {
-        let continuation = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
-            guard self.result == nil else { return nil }
-            self.result = result
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume(with: result)
-    }
-}
-
-private final class LockedFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = false
-
-    var value: Bool { lock.withLock { storage } }
+    var value: Bool { storage.load(ordering: .acquiring) }
 
     func set() {
-        lock.withLock { storage = true }
+        storage.store(true, ordering: .releasing)
     }
 }
 

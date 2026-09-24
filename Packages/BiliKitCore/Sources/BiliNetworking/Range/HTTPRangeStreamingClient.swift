@@ -120,7 +120,7 @@ private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecke
     private let expectedRange: HTTPByteRange
     private let onResponse: @Sendable (HTTPRangeStreamResponse) async throws -> Void
     private let onChunk: @Sendable (Data) async throws -> Void
-    private var continuation: CheckedContinuation<HTTPRangeStreamResult, any Error>?
+    private let outcome = OneShotResult<HTTPRangeStreamResult>()
     private var task: URLSessionDataTask?
     private var onFinish: (@Sendable () -> Void)?
     private var received: UInt64 = 0
@@ -145,22 +145,19 @@ private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecke
         _ task: URLSessionDataTask,
         onFinish: @escaping @Sendable () -> Void
     ) async throws -> HTTPRangeStreamResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let shouldStart = lock.withLock {
-                guard !finished else { return false }
-                self.continuation = continuation
-                self.task = task
-                self.onFinish = onFinish
-                return true
-            }
-            if shouldStart {
-                task.resume()
-            } else {
-                task.cancel()
-                continuation.resume(throwing: CancellationError())
-                onFinish()
-            }
+        let shouldStart = lock.withLock {
+            guard !finished else { return false }
+            self.task = task
+            self.onFinish = onFinish
+            return true
         }
+        if shouldStart {
+            task.resume()
+        } else {
+            task.cancel()
+            onFinish()
+        }
+        return try await outcome.value()
     }
 
     func cancel() {
@@ -314,7 +311,6 @@ private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecke
         let resources = lock.withLock {
             guard !finished else {
                 return (
-                    nil as CheckedContinuation<HTTPRangeStreamResult, any Error>?,
                     nil as Result<HTTPRangeStreamResult, any Error>?,
                     nil as URLSessionDataTask?,
                     nil as (@Sendable () -> Void)?
@@ -333,19 +329,16 @@ private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecke
                 finalResult = result
             }
             finished = true
-            let continuation = self.continuation
-            self.continuation = nil
             let task = self.task
             self.task = nil
             let onFinish = self.onFinish
             self.onFinish = nil
-            return (continuation, finalResult, task, onFinish)
+            return (finalResult, task, onFinish)
         }
-        resources.2?.cancel()
-        resources.3?()
-        if let continuation = resources.0, let result = resources.1 {
-            continuation.resume(with: result)
-        }
+        guard let finalResult = resources.0 else { return }
+        resources.1?.cancel()
+        resources.2?()
+        outcome.resolve(finalResult)
     }
 }
 

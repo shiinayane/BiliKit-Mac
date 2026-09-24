@@ -604,7 +604,7 @@ public struct DASHToHLSBridge: Sendable {
         _ catalogTask: Task<[NativeSubtitleCatalogEntry], any Error>?
     ) async throws -> [NativeSubtitleCatalogEntry] {
         guard let catalogTask else { return [] }
-        let relay = CatalogResultRelay<[NativeSubtitleCatalogEntry]>()
+        let relay = OneShotResult<[NativeSubtitleCatalogEntry]>()
         let observer = Task {
             do {
                 relay.resolve(.success(try await catalogTask.value))
@@ -783,37 +783,4 @@ private struct LoadedAudioRendition: Sendable {
     let selectedTrack: SelectedPlaybackAudioTrack
     let index: LoadedSegmentIndex
     let format: AudioFormatMetadata?
-}
-
-private final class CatalogResultRelay<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Result<Value, any Error>, Never>?
-    private var result: Result<Value, any Error>?
-
-    func value() async throws -> Value {
-        let result: Result<Value, any Error> = await withCheckedContinuation {
-            continuation in
-            let pending = lock.withLock { () -> Result<Value, any Error>? in
-                if let storedResult = self.result { return storedResult }
-                self.continuation = continuation
-                return nil
-            }
-            if let pending {
-                continuation.resume(returning: pending)
-            }
-        }
-        return try result.get()
-    }
-
-    func resolve(_ result: Result<Value, any Error>) {
-        let continuation = lock.withLock {
-            () -> CheckedContinuation<Result<Value, any Error>, Never>? in
-            guard self.result == nil else { return nil }
-            self.result = result
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume(returning: result)
-    }
 }
