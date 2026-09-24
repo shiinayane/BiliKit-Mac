@@ -10,25 +10,6 @@ import Testing
 @Suite(.serialized)
 struct PlayerHostViewIdentityTests {
     @Test
-    func resumeNoticeDismissalOnlyAppliesToTheScheduledToken() {
-        let scheduledToken = PlaybackResumeToken()
-        let replacementToken = PlaybackResumeToken()
-
-        #expect(
-            PlayerResumeNoticeDismissalPolicy.shouldDismiss(
-                displayedToken: scheduledToken,
-                scheduledToken: scheduledToken
-            )
-        )
-        #expect(
-            !PlayerResumeNoticeDismissalPolicy.shouldDismiss(
-                displayedToken: replacementToken,
-                scheduledToken: scheduledToken
-            )
-        )
-    }
-
-    @Test
     @MainActor
     func nativePlayerViewLeavesNowPlayingOwnershipToProcessController() {
         let renderer = CoreAnimationDanmakuRenderer()

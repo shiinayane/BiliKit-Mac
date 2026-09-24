@@ -143,33 +143,6 @@ struct PlayerKeyboardInputStateTests {
         #expect(!ownsKeys(NSView()))
         #expect(!ownsKeys(nil))
     }
-
-    @Test
-    func feedbackDismissalUsesStaleIdentityGuardAndRespectsReduceMotion() {
-        let identity = UUID()
-        #expect(
-            PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
-                reduceMotion: false
-            )
-        )
-        #expect(
-            !PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
-                reduceMotion: true
-            )
-        )
-        #expect(
-            PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
-                displayedID: identity,
-                scheduledID: identity
-            )
-        )
-        #expect(
-            !PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
-                displayedID: UUID(),
-                scheduledID: identity
-            )
-        )
-    }
 }
 
 @MainActor

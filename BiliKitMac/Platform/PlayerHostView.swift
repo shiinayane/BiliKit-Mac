@@ -287,14 +287,6 @@ enum PlayerShortcutFeedback: Equatable {
 enum PlayerShortcutFeedbackDismissalPolicy {
     static let delay: Duration = .milliseconds(800)
     static let fadeDuration: TimeInterval = 0.16
-
-    static func shouldDismiss(displayedID: UUID?, scheduledID: UUID) -> Bool {
-        displayedID == scheduledID
-    }
-
-    static func shouldAnimate(reduceMotion: Bool) -> Bool {
-        !reduceMotion
-    }
 }
 
 private struct PlayerShortcutFeedbackBadge: View {
@@ -336,8 +328,9 @@ private struct PlayerGlassCapsuleBackground: ViewModifier {
     }
 }
 
-struct PlayerResumeNoticeLayout {
-    static let leadingInset: CGFloat = 20
+/// 播放器浮层相对 content overlay 的位置；底部留出原生控制条的高度。
+enum PlayerOverlayLayout {
+    static let edgeInset: CGFloat = 20
     static let bottomInset: CGFloat = 64
 }
 
@@ -348,13 +341,8 @@ enum PlayerResumeNoticePresentation {
 enum PlayerResumeNoticeDismissalPolicy {
     static let delay: Duration = .seconds(5)
     static let fadeDurationSeconds: TimeInterval = 0.2
-
-    static func shouldDismiss(
-        displayedToken: PlaybackResumeToken?,
-        scheduledToken: PlaybackResumeToken
-    ) -> Bool {
-        displayedToken == scheduledToken
-    }
+    /// 时间跳转后离续播位置超过该秒数即视为用户已自行定位，收起“从头播放”。
+    static let positionToleranceSeconds: Double = 0.5
 }
 
 enum PlayerPlaybackPreparationPolicy {
@@ -418,10 +406,183 @@ private struct PlayerPreviewEndedBadge: View {
     }
 }
 
-/// 只显示、不接收鼠标事件的播放器浮层徽章。
+/// 默认不接收鼠标事件的浮层 hosting view。
+///
+/// `interactiveFrame` 返回本视图坐标（左上原点）中的可交互区域时，只有该区域照常命中 SwiftUI 内容；
+/// 其余点击、拖动与悬停穿透给下方的 AVKit 视图。
 @MainActor
-private final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    var interactiveFrame: () -> CGRect? = { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let frame = interactiveFrame(),
+            frame.contains(convert(point, from: superview))
+        else { return nil }
+        return super.hitTest(point)
+    }
+}
+
+/// 播放器 content overlay 上的全部临时提示：快捷键反馈、“从头播放”按钮与试看结束徽章。
+///
+/// 自动消失的计时由 `PlayerOverlayView` 的 `.task(id:)` 持有；这里只保存状态与 identity 规则。
+@MainActor
+@Observable
+final class PlayerOverlayModel {
+    struct Feedback: Equatable {
+        let id = UUID()
+        let content: PlayerShortcutFeedback
+        /// 临时倍速在按住期间保持显示；其他反馈到时自动消失。
+        let dismissesAutomatically: Bool
+    }
+
+    private(set) var feedback: Feedback?
+    private(set) var resumeNotice: PlaybackResumeNotice?
+    private(set) var previewEndedMessage: String?
+    @ObservationIgnored private(set) var restartFromBeginning: () -> Void = {}
+    @ObservationIgnored private var dismissedResumeToken: PlaybackResumeToken?
+    @ObservationIgnored fileprivate var resumeButtonFrame: CGRect?
+
+    /// 只有“从头播放”按钮接收鼠标；坐标为 overlay 根视图空间。
+    var interactiveFrame: CGRect? {
+        resumeNotice == nil ? nil : resumeButtonFrame
+    }
+
+    func showFeedback(_ content: PlayerShortcutFeedback) {
+        feedback = Feedback(content: content, dismissesAutomatically: true)
+    }
+
+    func showMomentaryRate(_ rate: PlayerMomentaryRate) {
+        feedback = Feedback(content: .momentaryRate(rate), dismissesAutomatically: false)
+    }
+
+    func endMomentaryRate() {
+        guard case .momentaryRate = feedback?.content else { return }
+        fadeOutFeedback()
+    }
+
+    func expireFeedback(id: UUID) {
+        guard feedback?.id == id else { return }
+        fadeOutFeedback()
+    }
+
+    func clearFeedback() {
+        feedback = nil
+    }
+
+    func setResumeNotice(
+        _ notice: PlaybackResumeNotice?,
+        restartFromBeginning: @escaping () -> Void
+    ) {
+        self.restartFromBeginning = restartFromBeginning
+        guard let notice else {
+            clearResumeNotice(markDismissed: false)
+            dismissedResumeToken = nil
+            return
+        }
+        guard notice.token != dismissedResumeToken,
+            notice.token != resumeNotice?.token
+        else { return }
+        resumeNotice = notice
+    }
+
+    /// 自动消失：淡出并记住 token，同一次续播不再出现。
+    func expireResumeNotice(token: PlaybackResumeToken) {
+        guard resumeNotice?.token == token else { return }
+        withAnimation(
+            .easeInOut(duration: PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds)
+        ) {
+            clearResumeNotice(markDismissed: true)
+        }
+    }
+
+    /// 播放项目时间跳转后离开续播位置即收起提示；位置未知时同样收起。
+    func observeTimeJump(toSeconds seconds: Double) {
+        guard let resumeNotice,
+            !seconds.isFinite
+                || abs(seconds - resumeNotice.positionSeconds)
+                    > PlayerResumeNoticeDismissalPolicy.positionToleranceSeconds
+        else { return }
+        clearResumeNotice(markDismissed: true)
+    }
+
+    func clearResumeNotice(markDismissed: Bool) {
+        if markDismissed {
+            dismissedResumeToken = resumeNotice?.token
+        }
+        guard resumeNotice != nil else { return }
+        resumeNotice = nil
+    }
+
+    func setPreviewEndedMessage(_ message: String?) {
+        guard previewEndedMessage != message else { return }
+        previewEndedMessage = message
+    }
+
+    private func fadeOutFeedback() {
+        withAnimation(.easeInOut(duration: PlayerShortcutFeedbackDismissalPolicy.fadeDuration)) {
+            feedback = nil
+        }
+    }
+}
+
+/// 所有播放器浮层共用的一棵 SwiftUI 树，铺满 content overlay。
+struct PlayerOverlayView: View {
+    private static let coordinateSpace = "PlayerOverlay"
+
+    let model: PlayerOverlayModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Color.clear
+            .overlay(alignment: .top) { feedbackBadge }
+            .overlay(alignment: .bottomLeading) { resumeButton }
+            .overlay(alignment: .bottom) { previewEndedBadge }
+            .coordinateSpace(.named(Self.coordinateSpace))
+    }
+
+    @ViewBuilder
+    private var feedbackBadge: some View {
+        if let feedback = model.feedback {
+            PlayerShortcutFeedbackBadge(feedback: feedback.content)
+                .padding(.top, PlayerOverlayLayout.edgeInset)
+                .transition(reduceMotion ? .identity : .opacity)
+                .task(id: feedback.id) {
+                    guard feedback.dismissesAutomatically else { return }
+                    try? await Task.sleep(for: PlayerShortcutFeedbackDismissalPolicy.delay)
+                    guard !Task.isCancelled else { return }
+                    model.expireFeedback(id: feedback.id)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var resumeButton: some View {
+        if let notice = model.resumeNotice {
+            PlayerResumeButton { model.restartFromBeginning() }
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(Self.coordinateSpace))
+                } action: { frame in
+                    model.resumeButtonFrame = frame
+                }
+                .padding(.leading, PlayerOverlayLayout.edgeInset)
+                .padding(.bottom, PlayerOverlayLayout.bottomInset)
+                .transition(.opacity)
+                .task(id: notice.token) {
+                    try? await Task.sleep(for: PlayerResumeNoticeDismissalPolicy.delay)
+                    guard !Task.isCancelled else { return }
+                    model.expireResumeNotice(token: notice.token)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var previewEndedBadge: some View {
+        if let message = model.previewEndedMessage {
+            PlayerPreviewEndedBadge(message: message)
+                .padding(.horizontal, PlayerOverlayLayout.edgeInset)
+                .padding(.bottom, PlayerOverlayLayout.bottomInset)
+        }
+    }
 }
 
 /// 打开时独占方向键等按键的浮层；播放器快捷键不会越过它。
@@ -433,6 +594,8 @@ final class DanmakuPlayerView: AVPlayerView {
     let danmakuOverlay: DanmakuOverlayView
     private let scrollWheelCaptureView = PlayerScrollWheelCaptureView()
     private let windowScrollWheelShieldView = PlayerScrollWheelShieldView()
+    private let overlayModel = PlayerOverlayModel()
+    private let overlayHostingView: PassthroughHostingView<PlayerOverlayView>
     private var installedDanmakuOverlay = false
     private var installedWindowScrollWheelShield = false
     private var momentaryRateSessionID: UUID?
@@ -441,13 +604,6 @@ final class DanmakuPlayerView: AVPlayerView {
     private var playerItemObservation: NSKeyValueObservation?
     private var playerTimeControlObservation: NSKeyValueObservation?
     private var playerItemTimeJumpObserver: NSObjectProtocol?
-    private var resumeButtonHostingView: NSHostingView<PlayerResumeButton>?
-    private var previewEndedHostingView: PassthroughHostingView<PlayerPreviewEndedBadge>?
-    private var displayedPreviewEndedNotice: String?
-    private var displayedResumeNotice: PlaybackResumeNotice?
-    private var dismissedResumeToken: PlaybackResumeToken?
-    private var resumeRestartAction: (() -> Void)?
-    private var resumeNoticeDismissTask: Task<Void, Never>?
     private var blocksNativePlaybackInteraction = false
     private var lastInitialFocusIdentity: String?
     private var pendingInitialFocusIdentity: String?
@@ -483,8 +639,16 @@ final class DanmakuPlayerView: AVPlayerView {
         self.togglePlayback = togglePlayback
         self.toggleDanmaku = toggleDanmaku
         self.toggleSubtitles = toggleSubtitles
+        overlayHostingView = PassthroughHostingView(
+            rootView: PlayerOverlayView(model: overlayModel)
+        )
         super.init(frame: .zero)
         updatesNowPlayingInfoCenter = false
+        overlayHostingView.sizingOptions = []
+        overlayHostingView.interactiveFrame = { [overlayModel] in
+            overlayModel.interactiveFrame
+        }
+        scrollWheelCaptureView.feedbackPresenter = overlayModel
         scrollWheelCaptureView.onKeyboardMomentaryRateBegan = {
             [weak self] rate, pressID in
             self?.beginMomentaryPlaybackRate(rate, pressID: pressID)
@@ -556,62 +720,11 @@ final class DanmakuPlayerView: AVPlayerView {
         _ notice: PlaybackResumeNotice?,
         restartFromBeginning: @escaping () -> Void
     ) {
-        resumeRestartAction = restartFromBeginning
-        guard let notice else {
-            clearResumeNotice(markDismissed: false)
-            dismissedResumeToken = nil
-            return
-        }
-        guard dismissedResumeToken != notice.token else { return }
-        if displayedResumeNotice?.token == notice.token,
-            let resumeButtonHostingView
-        {
-            resumeButtonHostingView.rootView = makeResumeButton(
-                restartFromBeginning: restartFromBeginning
-            )
-            return
-        }
-        clearResumeNotice(markDismissed: false)
-        displayedResumeNotice = notice
-        installResumeButtonIfPossible(
-            notice: notice,
-            restartFromBeginning: restartFromBeginning
-        )
+        overlayModel.setResumeNotice(notice, restartFromBeginning: restartFromBeginning)
     }
 
     func setPreviewEndedNotice(_ message: String?) {
-        displayedPreviewEndedNotice = message
-        guard let message else {
-            previewEndedHostingView?.removeFromSuperview()
-            previewEndedHostingView = nil
-            return
-        }
-        if let previewEndedHostingView {
-            previewEndedHostingView.rootView = PlayerPreviewEndedBadge(message: message)
-            return
-        }
-        guard let contentOverlayView else { return }
-        let hostingView = PassthroughHostingView(
-            rootView: PlayerPreviewEndedBadge(message: message)
-        )
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        contentOverlayView.addSubview(hostingView, positioned: .above, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            hostingView.centerXAnchor.constraint(equalTo: contentOverlayView.centerXAnchor),
-            hostingView.bottomAnchor.constraint(
-                equalTo: contentOverlayView.bottomAnchor,
-                constant: -64
-            ),
-            hostingView.leadingAnchor.constraint(
-                greaterThanOrEqualTo: contentOverlayView.leadingAnchor,
-                constant: 20
-            ),
-            hostingView.trailingAnchor.constraint(
-                lessThanOrEqualTo: contentOverlayView.trailingAnchor,
-                constant: -20
-            )
-        ])
-        previewEndedHostingView = hostingView
+        overlayModel.setPreviewEndedMessage(message)
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -628,20 +741,6 @@ final class DanmakuPlayerView: AVPlayerView {
         installWindowScrollWheelShield()
         startObservingFocusLoss()
         applyPendingInitialKeyboardFocus()
-        if let displayedResumeNotice,
-            resumeButtonHostingView == nil,
-            let resumeRestartAction
-        {
-            installResumeButtonIfPossible(
-                notice: displayedResumeNotice,
-                restartFromBeginning: resumeRestartAction
-            )
-        }
-        if previewEndedHostingView == nil,
-            let message = displayedPreviewEndedNotice
-        {
-            setPreviewEndedNotice(message)
-        }
     }
 
     override func layout() {
@@ -711,7 +810,7 @@ final class DanmakuPlayerView: AVPlayerView {
             [weak self] _, _ in
             Task { @MainActor in
                 self?.cancelMomentaryPlaybackRate()
-                self?.clearResumeNotice(markDismissed: true)
+                self?.overlayModel.clearResumeNotice(markDismissed: true)
                 self?.startObservingCurrentItemTimeJumps()
             }
         }
@@ -740,16 +839,9 @@ final class DanmakuPlayerView: AVPlayerView {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self,
-                    self.player?.currentItem != nil,
-                    let notice = self.displayedResumeNotice
+                guard let self, let player = self.player, player.currentItem != nil
                 else { return }
-                let currentSeconds = self.player?.currentTime().seconds ?? .nan
-                guard
-                    !currentSeconds.isFinite
-                        || abs(currentSeconds - notice.positionSeconds) > 0.5
-                else { return }
-                self.clearResumeNotice(markDismissed: true)
+                self.overlayModel.observeTimeJump(toSeconds: player.currentTime().seconds)
             }
         }
     }
@@ -781,7 +873,25 @@ final class DanmakuPlayerView: AVPlayerView {
             positioned: .above,
             relativeTo: danmakuOverlay
         )
+        overlayHostingView.translatesAutoresizingMaskIntoConstraints = false
+        contentOverlayView.addSubview(
+            overlayHostingView,
+            positioned: .above,
+            relativeTo: scrollWheelCaptureView
+        )
         NSLayoutConstraint.activate([
+            overlayHostingView.leadingAnchor.constraint(
+                equalTo: contentOverlayView.leadingAnchor
+            ),
+            overlayHostingView.trailingAnchor.constraint(
+                equalTo: contentOverlayView.trailingAnchor
+            ),
+            overlayHostingView.topAnchor.constraint(
+                equalTo: contentOverlayView.topAnchor
+            ),
+            overlayHostingView.bottomAnchor.constraint(
+                equalTo: contentOverlayView.bottomAnchor
+            ),
             scrollWheelCaptureView.leadingAnchor.constraint(
                 equalTo: contentOverlayView.leadingAnchor
             ),
@@ -809,96 +919,6 @@ final class DanmakuPlayerView: AVPlayerView {
         ])
     }
 
-    private func installResumeButtonIfPossible(
-        notice: PlaybackResumeNotice,
-        restartFromBeginning: @escaping () -> Void
-    ) {
-        guard let contentOverlayView else { return }
-        let hostingView = NSHostingView(
-            rootView: makeResumeButton(
-                restartFromBeginning: restartFromBeginning
-            )
-        )
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        contentOverlayView.addSubview(
-            hostingView,
-            positioned: .above,
-            relativeTo: nil
-        )
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(
-                equalTo: contentOverlayView.leadingAnchor,
-                constant: PlayerResumeNoticeLayout.leadingInset
-            ),
-            hostingView.bottomAnchor.constraint(
-                equalTo: contentOverlayView.bottomAnchor,
-                constant: -PlayerResumeNoticeLayout.bottomInset
-            )
-        ])
-        resumeButtonHostingView = hostingView
-        scheduleResumeNoticeDismissal(for: notice.token)
-    }
-
-    private func makeResumeButton(
-        restartFromBeginning: @escaping () -> Void
-    ) -> PlayerResumeButton {
-        PlayerResumeButton {
-            restartFromBeginning()
-        }
-    }
-
-    private func scheduleResumeNoticeDismissal(
-        for token: PlaybackResumeToken
-    ) {
-        resumeNoticeDismissTask?.cancel()
-        resumeNoticeDismissTask = Task { [weak self] in
-            do {
-                try await Task.sleep(
-                    for: PlayerResumeNoticeDismissalPolicy.delay
-                )
-            } catch {
-                return
-            }
-            guard let self,
-                PlayerResumeNoticeDismissalPolicy.shouldDismiss(
-                    displayedToken: self.displayedResumeNotice?.token,
-                    scheduledToken: token
-                )
-            else { return }
-            guard let hostingView = self.resumeButtonHostingView else {
-                self.resumeNoticeDismissTask = nil
-                self.clearResumeNotice(markDismissed: true)
-                return
-            }
-            await NSAnimationContext.runAnimationGroup { context in
-                context.duration =
-                    PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds
-                hostingView.animator().alphaValue = 0
-            }
-            guard
-                !Task.isCancelled,
-                PlayerResumeNoticeDismissalPolicy.shouldDismiss(
-                    displayedToken: self.displayedResumeNotice?.token,
-                    scheduledToken: token
-                ),
-                self.resumeButtonHostingView === hostingView
-            else { return }
-            self.resumeNoticeDismissTask = nil
-            self.clearResumeNotice(markDismissed: true)
-        }
-    }
-
-    private func clearResumeNotice(markDismissed: Bool) {
-        resumeNoticeDismissTask?.cancel()
-        resumeNoticeDismissTask = nil
-        if markDismissed {
-            dismissedResumeToken = displayedResumeNotice?.token
-        }
-        displayedResumeNotice = nil
-        resumeButtonHostingView?.removeFromSuperview()
-        resumeButtonHostingView = nil
-    }
-
     private func beginMomentaryPlaybackRate(
         _ rate: PlayerMomentaryRate,
         pressID: UUID
@@ -917,7 +937,7 @@ final class DanmakuPlayerView: AVPlayerView {
         }
         momentaryRateSessionID = sessionID
         momentaryRatePressID = pressID
-        scrollWheelCaptureView.showMomentaryRateBadge(rate)
+        overlayModel.showMomentaryRate(rate)
     }
 
     private func endMomentaryPlaybackRate(ifPressID pressID: UUID) {
@@ -935,7 +955,7 @@ final class DanmakuPlayerView: AVPlayerView {
     private func clearMomentaryPlaybackRate() {
         momentaryRateSessionID = nil
         momentaryRatePressID = nil
-        scrollWheelCaptureView.clearMomentaryRateBadge()
+        overlayModel.endMomentaryRate()
     }
 
     private func startObservingFocusLoss() {
@@ -1044,11 +1064,7 @@ final class PlayerScrollWheelCaptureView: NSView {
     private var keyboardLongPressTask: Task<Void, Never>?
     private var keyboardLongPressID: UUID?
     private var subtitleToggleTask: Task<Void, Never>?
-    private var feedbackBadge: NSView?
-    private var displayedFeedback: PlayerShortcutFeedback?
-    private var feedbackDismissTask: Task<Void, Never>?
-    private var feedbackFadeTask: Task<Void, Never>?
-    private var feedbackID: UUID?
+    weak var feedbackPresenter: PlayerOverlayModel?
     var onKeyboardMomentaryRateBegan: (PlayerMomentaryRate, UUID) -> Void = {
         _,
         _ in
@@ -1131,19 +1147,7 @@ final class PlayerScrollWheelCaptureView: NSView {
         keyboardLongPressID = nil
         subtitleToggleTask?.cancel()
         subtitleToggleTask = nil
-        clearFeedback()
-    }
-
-    func showMomentaryRateBadge(_ rate: PlayerMomentaryRate) {
-        feedbackDismissTask?.cancel()
-        feedbackDismissTask = nil
-        feedbackID = nil
-        showFeedback(.momentaryRate(rate))
-    }
-
-    func clearMomentaryRateBadge() {
-        guard case .momentaryRate = displayedFeedback else { return }
-        dismissFeedbackAnimated()
+        feedbackPresenter?.clearFeedback()
     }
 
     func startKeyboardMonitoring() {
@@ -1265,23 +1269,23 @@ final class PlayerScrollWheelCaptureView: NSView {
                 onKeyboardMomentaryRateEnded(pressID)
             case .seekBy(let seconds):
                 if onRelativeSeek(seconds) {
-                    showTransientFeedback(
+                    feedbackPresenter?.showFeedback(
                         .relativeSeek(Int(seconds.rounded()))
                     )
                 }
             case .adjustVolume(let offset):
                 if let volume = onVolumeStep(offset) {
-                    showTransientFeedback(
+                    feedbackPresenter?.showFeedback(
                         .volume(Int((volume * 100).rounded()))
                     )
                 }
             case .togglePlayback:
                 if let isPlaying = onTogglePlayback() {
-                    showTransientFeedback(.playback(isPlaying))
+                    feedbackPresenter?.showFeedback(.playback(isPlaying))
                 }
             case .toggleDanmaku:
                 if let enabled = onToggleDanmaku() {
-                    showTransientFeedback(.danmaku(enabled))
+                    feedbackPresenter?.showFeedback(.danmaku(enabled))
                 }
             case .toggleSubtitles:
                 subtitleToggleTask?.cancel()
@@ -1290,107 +1294,10 @@ final class PlayerScrollWheelCaptureView: NSView {
                     let result = await self.onToggleSubtitles()
                     guard !Task.isCancelled else { return }
                     self.subtitleToggleTask = nil
-                    self.showTransientFeedback(.subtitles(result))
+                    self.feedbackPresenter?.showFeedback(.subtitles(result))
                 }
             }
         }
-    }
-
-    private func showTransientFeedback(_ feedback: PlayerShortcutFeedback) {
-        feedbackDismissTask?.cancel()
-        let identity = UUID()
-        feedbackID = identity
-        showFeedback(feedback)
-        feedbackDismissTask = Task { [weak self] in
-            do {
-                try await Task.sleep(
-                    for: PlayerShortcutFeedbackDismissalPolicy.delay
-                )
-            } catch {
-                return
-            }
-            guard let self,
-                PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
-                    displayedID: self.feedbackID,
-                    scheduledID: identity
-                )
-            else { return }
-            self.dismissFeedbackAnimated()
-        }
-    }
-
-    private func showFeedback(_ feedback: PlayerShortcutFeedback) {
-        feedbackFadeTask?.cancel()
-        feedbackFadeTask = nil
-        feedbackBadge?.removeFromSuperview()
-        let badge = PassthroughHostingView(
-            rootView: PlayerShortcutFeedbackBadge(feedback: feedback)
-        )
-        badge.alphaValue = 1
-        badge.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(badge)
-        NSLayoutConstraint.activate([
-            badge.centerXAnchor.constraint(equalTo: centerXAnchor),
-            badge.topAnchor.constraint(equalTo: topAnchor, constant: 20)
-        ])
-        feedbackBadge = badge
-        displayedFeedback = feedback
-    }
-
-    private func dismissFeedbackAnimated() {
-        feedbackDismissTask?.cancel()
-        feedbackDismissTask = nil
-        feedbackID = nil
-        feedbackFadeTask?.cancel()
-        feedbackFadeTask = nil
-        guard let badge = feedbackBadge else {
-            displayedFeedback = nil
-            return
-        }
-        guard
-            PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
-                reduceMotion: NSWorkspace.shared
-                    .accessibilityDisplayShouldReduceMotion
-            )
-        else {
-            clearFeedback()
-            return
-        }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = PlayerShortcutFeedbackDismissalPolicy.fadeDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            badge.animator().alphaValue = 0
-        }
-        feedbackFadeTask = Task { [weak self, weak badge] in
-            do {
-                try await Task.sleep(
-                    for: .seconds(
-                        PlayerShortcutFeedbackDismissalPolicy.fadeDuration
-                    )
-                )
-            } catch {
-                return
-            }
-            guard let self, let badge, self.feedbackBadge === badge else {
-                return
-            }
-            self.feedbackFadeTask = nil
-            badge.removeFromSuperview()
-            self.feedbackBadge = nil
-            self.displayedFeedback = nil
-        }
-    }
-
-    private func clearFeedback() {
-        feedbackDismissTask?.cancel()
-        feedbackDismissTask = nil
-        feedbackFadeTask?.cancel()
-        feedbackFadeTask = nil
-        feedbackID = nil
-        feedbackBadge?.removeFromSuperview()
-        feedbackBadge = nil
-        displayedFeedback = nil
     }
 
     private func cancelIfEditableResponder() {
