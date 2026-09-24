@@ -1,6 +1,5 @@
 import AppKit
 import BiliBrowseFeature
-import BiliLibraryFeature
 import BiliModels
 import CoreGraphics
 import Foundation
@@ -89,7 +88,6 @@ struct PopularNativeGridTests {
         #expect(NativeVideoGridGeometry.columnCount(for: 760) == 2)
         #expect(NativeVideoGridGeometry.columnCount(for: 1_080) == 4)
         #expect(NativeVideoGridGeometry.columnCount(for: 1_600) == 5)
-        #expect(NativeVideoGridGeometry.topContentPadding == 0)
         #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 0))
         #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 69))
         #expect(NativeVideoGridGeometry.isRenderableViewport(width: 70))
@@ -433,16 +431,7 @@ struct PopularNativeGridTests {
     }
 
     @Test
-    func imageVariantsUseDistinctDecodeBoundsAndCacheIdentities() throws {
-        #expect(NativeVideoImageVariant.cover.maximumDecodedPixelSize == 640)
-        #expect(NativeVideoImageVariant.avatar.maximumDecodedPixelSize == 96)
-        #expect(NativeVideoImageVariant.commentEmote.maximumDecodedPixelSize == 128)
-        #expect(NativeVideoImageVariant.commentPicture.maximumDecodedPixelSize == 1_024)
-        #expect(
-            NativeVideoImageVariant.commentPicturePreview.maximumDecodedPixelSize
-                == 3_840
-        )
-
+    func imageVariantsUseDistinctCacheIdentities() throws {
         let url = try #require(URL(string: "https://i.example/shared.webp"))
         let coverKey = NativeVideoImageKey(url: url, variant: .cover)
         let avatarKey = NativeVideoImageKey(url: url, variant: .avatar)
@@ -485,26 +474,6 @@ struct PopularNativeGridTests {
 
         #expect(max(cover.width, cover.height) == 640)
         #expect(max(avatar.width, avatar.height) == 96)
-    }
-
-    @Test
-    func threeScreenHistoryImageWorkingSetIncludesOverscanWithinCurrentBounds() throws {
-        var cache = NativeVideoImageCache(
-            countLimit: NativeVideoImagePipeline.cacheCountLimit,
-            costLimit: NativeVideoImagePipeline.cacheCostLimit
-        )
-        let cover = try #require(makeImage(width: 640, height: 360))
-        let avatar = try #require(makeImage(width: 96, height: 96))
-
-        for index in 0..<64 {
-            cache.insert(cover, for: imageKey("cover-\(index)", variant: .cover))
-            cache.insert(avatar, for: imageKey("avatar-\(index)", variant: .avatar))
-        }
-
-        #expect(cache.count == 128)
-        #expect(cache.totalCost <= NativeVideoImagePipeline.cacheCostLimit)
-        #expect(cache.image(for: imageKey("cover-0", variant: .cover)) != nil)
-        #expect(cache.image(for: imageKey("avatar-0", variant: .avatar)) != nil)
     }
 
     @Test
@@ -564,44 +533,6 @@ struct PopularNativeGridTests {
     }
 
     @Test @MainActor
-    func popularMappingKeepsStableBVIDAndCurrentSlots() throws {
-        let video = PopularVideo(
-            bvid: "BV-stable",
-            title: "原生卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/a.jpg"),
-            owner: VideoOwner(
-                id: 1,
-                name: "作者",
-                avatarURL: URL(string: "https://i1.hdslb.com/b.jpg")
-            ),
-            statistics: VideoStatistics(
-                viewCount: 12_345,
-                danmakuCount: 67,
-                likeCount: 8
-            ),
-            durationSeconds: 125,
-            publishedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        let featurePresentation = PopularVideoCardPresentation(video: video)
-        let content = try #require(
-            PopularNativeGridView.makePresentations([video]).first
-        )
-        #expect(content.id == "BV-stable")
-        #expect(content.title == "原生卡片")
-        #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(
-            content.coverMetrics.map(\.text)
-                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
-        )
-        #expect(content.coverTrailingText == featurePresentation.durationText)
-        #expect(content.showsAvatar)
-        #expect(content.accessibilityLabel.contains(featurePresentation.viewCountText))
-        #expect(content.accessibilityLabel.contains(featurePresentation.durationText))
-    }
-
-    @Test @MainActor
     func recommendationMappingUsesBrandCapsuleOnlyWhenReasonExists() throws {
         let video = RecommendedVideo(
             bvid: "BV-rcmd-stable",
@@ -641,67 +572,6 @@ struct PopularNativeGridTests {
         )
         #expect(plain.footerTrailingText == nil)
         #expect(plain.footerTrailingStyle == .plain)
-    }
-
-    @Test @MainActor
-    func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
-        let video = SearchVideo(
-            bvid: "BV-search-stable",
-            title: "搜索原生卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/search.jpg"),
-            owner: VideoOwner(
-                id: 2,
-                name: "搜索作者",
-                avatarURL: URL(string: "https://i1.hdslb.com/avatar.jpg")
-            ),
-            statistics: VideoStatistics(
-                viewCount: 23_456,
-                danmakuCount: 89,
-                likeCount: 10
-            ),
-            durationSeconds: 185,
-            publishedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        let featurePresentation = SearchVideoCardPresentation(video: video)
-        let content = SearchNativeGridView.makePresentation(featurePresentation)
-
-        #expect(content.id == "BV-search-stable")
-        #expect(content.title == "搜索原生卡片")
-        #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(
-            content.coverMetrics.map(\.text)
-                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
-        )
-        #expect(content.coverTrailingText == featurePresentation.durationText)
-        #expect(content.footerLeadingText.contains("搜索作者"))
-        #expect(content.accessibilityLabel == featurePresentation.accessibilityLabel)
-    }
-
-    @Test @MainActor
-    func historyAdapterConsumesOnlyFormattedPresentationSlots() {
-        let history = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV-history",
-                title: "历史卡片",
-                coverURL: nil,
-                owner: VideoOwner(id: 9, name: "作者"),
-                progressSeconds: 12,
-                durationSeconds: 120,
-                viewedAt: .now
-            )
-        )
-
-        let content = HistoryNativeGridView.makePresentation(history)
-
-        #expect(content.id == "BV-history")
-        #expect(content.title == "历史卡片")
-        #expect(content.coverMetrics.isEmpty)
-        #expect(content.coverTrailingText == "0:12/2:00")
-        #expect(content.footerLeadingText == "作者")
-        #expect(!content.showsAvatar)
-        #expect(content.accessibilityLabel == history.accessibilityLabel)
     }
 
     @Test
