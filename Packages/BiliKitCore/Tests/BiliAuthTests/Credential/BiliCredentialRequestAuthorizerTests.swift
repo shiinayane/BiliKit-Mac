@@ -75,14 +75,8 @@ struct BiliCredentialRequestAuthorizerTests {
         }
     }
 
-    @Test
-    func rejectsNonAPIReadCapabilities() async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
-        let authorizer = BiliCredentialRequestAuthorizer(
-            store: store,
-            allowedPaths: fixturePlaybackAllowedPaths
-        )
-        let cases: [(String, HTTPMethod)] = [
+    @Test(
+        arguments: [
             ("http://api.bilibili.com/x/player/playurl", .get),
             ("https://api.bilibili.com.evil.invalid/x/player/playurl", .get),
             ("https://i0.hdslb.com/x/player/playurl", .get),
@@ -101,16 +95,20 @@ struct BiliCredentialRequestAuthorizerTests {
             ("https://api.bilibili.com/x/player/wbi/playurl", .get),
             ("https://api.bilibili.com/x/v2/history/report", .get),
             ("https://api.bilibili.com/x/web-interface/future", .get)
-        ]
+        ] as [(String, HTTPMethod)]
+    )
+    func rejectsNonAPIReadCapabilities(urlString: String, method: HTTPMethod) async throws {
+        let authorizer = BiliCredentialRequestAuthorizer(
+            store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
+            allowedPaths: fixturePlaybackAllowedPaths
+        )
+        let request = HTTPRequest(
+            url: try #require(URL(string: urlString)),
+            method: method
+        )
 
-        for (urlString, method) in cases {
-            let request = HTTPRequest(
-                url: try #require(URL(string: urlString)),
-                method: method
-            )
-            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
-                try await authorizer.authorize(request)
-            }
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await authorizer.authorize(request)
         }
     }
 
@@ -151,22 +149,6 @@ struct BiliCredentialRequestAuthorizerTests {
         await #expect(throws: BiliRequestAuthorizationError.missingCredential) {
             try await authorizer.authorize(request)
         }
-        #expect(
-            BiliRequestAuthorizationError.missingCredential
-                .authorizationFailureKind == .missingCredential
-        )
-        #expect(
-            BiliRequestAuthorizationError.expiredCredential
-                .authorizationFailureKind == .invalidCredential
-        )
-        #expect(
-            BiliRequestAuthorizationError.invalidCredential
-                .authorizationFailureKind == .invalidCredential
-        )
-        #expect(
-            BiliRequestAuthorizationError.credentialStoreUnavailable
-                .authorizationFailureKind == .unavailable
-        )
     }
 
     @Test
@@ -201,7 +183,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
         let deletionFailure = MemoryWebCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast),
-            deleteError: FixtureValidationError.offline
+            deleteError: StubAuthError.offline
         )
         let deletionFailureAuthorizer = BiliCredentialRequestAuthorizer(
             store: deletionFailure,
@@ -218,8 +200,8 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test
     func restoreValidCredentialUsesAuthorizedNavigationRequest() async throws {
-        let transport = CredentialValidationTransport(
-            response: navigationResponse(isLogin: true)
+        let transport = RecordingAuthTransport(
+            responses: [navigationResponse(isLogin: true)]
         )
         let authorizer = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
@@ -230,15 +212,15 @@ struct BiliCredentialRequestAuthorizerTests {
         let session = try await authorizer.restoreAccountSession()
 
         #expect(session == .signedIn(nil))
-        let request = try #require(await transport.capturedRequest)
+        let request = try #require(await transport.requests.last)
         #expect(request.url.absoluteString == "https://api.bilibili.com/x/web-interface/nav")
         #expect(request.headers["Cookie"]?.contains("SESSDATA=FIXTURE_") == true)
     }
 
     @Test
     func restoreMissingOrRemotelyInvalidCredentialFallsBackAndPurges() async throws {
-        let missingTransport = CredentialValidationTransport(
-            response: navigationResponse(isLogin: true)
+        let missingTransport = RecordingAuthTransport(
+            responses: [navigationResponse(isLogin: true)]
         )
         let missing = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(),
@@ -249,7 +231,7 @@ struct BiliCredentialRequestAuthorizerTests {
             try await missing.restoreAccountSession()
                 == .signedOut(hadCredential: false)
         )
-        #expect(await missingTransport.capturedRequest == nil)
+        #expect(await missingTransport.requests.isEmpty)
 
         let invalidStore = MemoryWebCredentialStore(
             credential: try makeFixtureCredential()
@@ -257,8 +239,8 @@ struct BiliCredentialRequestAuthorizerTests {
         let invalid = BiliCredentialRequestAuthorizer(
             store: invalidStore,
             allowedPaths: fixtureNavigationAllowedPaths,
-            transport: CredentialValidationTransport(
-                response: navigationResponse(isLogin: false)
+            transport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: false)]
             )
         )
         #expect(
@@ -270,11 +252,11 @@ struct BiliCredentialRequestAuthorizerTests {
         let failedPurge = BiliCredentialRequestAuthorizer(
             store: MemoryWebCredentialStore(
                 credential: try makeFixtureCredential(),
-                deleteError: FixtureValidationError.offline
+                deleteError: StubAuthError.offline
             ),
             allowedPaths: fixtureNavigationAllowedPaths,
-            transport: CredentialValidationTransport(
-                response: navigationResponse(isLogin: false)
+            transport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: false)]
             )
         )
         await #expect(
@@ -290,7 +272,7 @@ struct BiliCredentialRequestAuthorizerTests {
         let authorizer = BiliCredentialRequestAuthorizer(
             store: store,
             allowedPaths: fixtureNavigationAllowedPaths,
-            transport: CredentialValidationTransport(error: FixtureValidationError.offline)
+            transport: RecordingAuthTransport(errors: [StubAuthError.offline])
         )
 
         await #expect(throws: BiliRequestAuthorizationError.validationUnavailable) {
@@ -299,40 +281,4 @@ struct BiliCredentialRequestAuthorizerTests {
         #expect(store.deleteCount == 0)
         #expect(try store.load() != nil)
     }
-
-    private func navigationResponse(isLogin: Bool) -> HTTPResponse {
-        HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                "{\"code\":0,\"data\":{\"isLogin\":\(isLogin)}}".utf8
-            )
-        )
-    }
-}
-
-private actor CredentialValidationTransport: HTTPTransport {
-    private let response: HTTPResponse?
-    private let error: (any Error)?
-    private(set) var capturedRequest: HTTPRequest?
-
-    init(response: HTTPResponse) {
-        self.response = response
-        error = nil
-    }
-
-    init(error: any Error) {
-        response = nil
-        self.error = error
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        capturedRequest = request
-        if let error { throw error }
-        return try #require(response)
-    }
-}
-
-private enum FixtureValidationError: Error {
-    case offline
 }

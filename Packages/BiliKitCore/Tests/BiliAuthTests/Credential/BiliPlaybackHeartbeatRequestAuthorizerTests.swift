@@ -57,7 +57,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
 
         for header in ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"] {
             let request = try heartbeatRequest(additionalHeader: header)
-            await #expect(throws: (any Error).self) {
+            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
                 try await authorizer.authorize(request)
             }
         }
