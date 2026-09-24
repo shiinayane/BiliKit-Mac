@@ -603,12 +603,11 @@ final class DanmakuPlayerView: AVPlayerView {
     private weak var observedPlayer: AVPlayer?
     private var playerItemObservation: NSKeyValueObservation?
     private var playerTimeControlObservation: NSKeyValueObservation?
-    private var playerItemTimeJumpObserver: NSObjectProtocol?
+    private var playerItemTimeJumpObservers = NativeVideoNotificationObservers()
     private var blocksNativePlaybackInteraction = false
     private var lastInitialFocusIdentity: String?
     private var pendingInitialFocusIdentity: String?
-    private var appResignObserver: NSObjectProtocol?
-    private var windowResignObserver: NSObjectProtocol?
+    private var focusLossObservers = NativeVideoNotificationObservers()
     var requestMomentaryPlaybackRate: ((Float) -> UUID?)?
     var finishMomentaryPlaybackRate: ((UUID) -> Void)?
     var seekByTransportOffset: ((Double) -> Bool)?
@@ -828,21 +827,15 @@ final class DanmakuPlayerView: AVPlayerView {
     }
 
     private func startObservingCurrentItemTimeJumps() {
-        if let playerItemTimeJumpObserver {
-            NotificationCenter.default.removeObserver(playerItemTimeJumpObserver)
-            self.playerItemTimeJumpObserver = nil
-        }
+        playerItemTimeJumpObservers.removeAll()
         guard let item = player?.currentItem else { return }
-        playerItemTimeJumpObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.timeJumpedNotification,
-            object: item,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let player = self.player, player.currentItem != nil
-                else { return }
-                self.overlayModel.observeTimeJump(toSeconds: player.currentTime().seconds)
-            }
+        playerItemTimeJumpObservers.observe(
+            AVPlayerItem.timeJumpedNotification,
+            object: item
+        ) { [weak self] in
+            guard let self, let player = self.player, player.currentItem != nil
+            else { return }
+            self.overlayModel.observeTimeJump(toSeconds: player.currentTime().seconds)
         }
     }
 
@@ -851,10 +844,7 @@ final class DanmakuPlayerView: AVPlayerView {
         playerItemObservation = nil
         playerTimeControlObservation?.invalidate()
         playerTimeControlObservation = nil
-        if let playerItemTimeJumpObserver {
-            NotificationCenter.default.removeObserver(playerItemTimeJumpObserver)
-            self.playerItemTimeJumpObserver = nil
-        }
+        playerItemTimeJumpObservers.removeAll()
         observedPlayer = nil
     }
 
@@ -959,43 +949,29 @@ final class DanmakuPlayerView: AVPlayerView {
     }
 
     private func startObservingFocusLoss() {
+        focusLossObservers.removeAll()
         guard requestMomentaryPlaybackRate != nil,
             finishMomentaryPlaybackRate != nil,
-            let window,
-            appResignObserver == nil,
-            windowResignObserver == nil
+            let window
         else {
             return
         }
-        appResignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.cancelMomentaryPlaybackRate()
-            }
+        focusLossObservers.observe(
+            NSApplication.didResignActiveNotification,
+            object: nil
+        ) { [weak self] in
+            self?.cancelMomentaryPlaybackRate()
         }
-        windowResignObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.cancelMomentaryPlaybackRate()
-            }
+        focusLossObservers.observe(
+            NSWindow.didResignKeyNotification,
+            object: window
+        ) { [weak self] in
+            self?.cancelMomentaryPlaybackRate()
         }
     }
 
     func stopObservingFocusLoss() {
-        if let appResignObserver {
-            NotificationCenter.default.removeObserver(appResignObserver)
-            self.appResignObserver = nil
-        }
-        if let windowResignObserver {
-            NotificationCenter.default.removeObserver(windowResignObserver)
-            self.windowResignObserver = nil
-        }
+        focusLossObservers.removeAll()
     }
 
     func stopKeyboardMonitoring() {
@@ -1056,7 +1032,7 @@ final class PlayerScrollWheelCaptureView: NSView {
         let windowNumber: Int
     }
 
-    private var windowResignObserver: NSObjectProtocol?
+    private var windowResignObservers = NativeVideoNotificationObservers()
     private var keyboardMonitor: Any?
     private var keyboardInputEnabled = true
     private var keyboardState = PlayerKeyboardInputState()
@@ -1115,15 +1091,12 @@ final class PlayerScrollWheelCaptureView: NSView {
         super.viewDidMoveToWindow()
         guard let window else { return }
         startKeyboardMonitoring()
-        guard windowResignObserver == nil else { return }
-        windowResignObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.cancelInputSession()
-            }
+        windowResignObservers.removeAll()
+        windowResignObservers.observe(
+            NSWindow.didResignKeyNotification,
+            object: window
+        ) { [weak self] in
+            self?.cancelInputSession()
         }
     }
 
@@ -1401,10 +1374,7 @@ final class PlayerScrollWheelCaptureView: NSView {
     }
 
     private func stopObservingWindowFocusLoss() {
-        if let windowResignObserver {
-            NotificationCenter.default.removeObserver(windowResignObserver)
-            self.windowResignObserver = nil
-        }
+        windowResignObservers.removeAll()
     }
 
     @available(*, unavailable)
