@@ -33,30 +33,6 @@ enum NativeVideoShelfGeometry {
     }
 }
 
-enum NativeVideoShelfScrollCoordinates {
-    static func logicalOffsetX(physicalOffsetX: CGFloat, leadingInset: CGFloat) -> CGFloat {
-        max(0, physicalOffsetX + max(0, leadingInset))
-    }
-
-    static func physicalOffsetX(logicalOffsetX: CGFloat, leadingInset: CGFloat) -> CGFloat {
-        max(0, logicalOffsetX) - max(0, leadingInset)
-    }
-
-    static func maximumLogicalOffsetX(
-        documentWidth: CGFloat,
-        viewportWidth: CGFloat,
-        leadingInset: CGFloat,
-        trailingInset: CGFloat
-    ) -> CGFloat {
-        max(
-            0,
-            documentWidth - viewportWidth
-                + max(0, leadingInset)
-                + max(0, trailingInset)
-        )
-    }
-}
-
 struct NativeVideoShelfUpdatePlan: Equatable {
     let identityChanged: Bool
     let changedExistingIDs: Set<String>
@@ -418,18 +394,18 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private var currentLogicalOffsetX: CGFloat {
-            NativeVideoShelfScrollCoordinates.logicalOffsetX(
-                physicalOffsetX: scrollView.contentView.bounds.origin.x,
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: scrollView.contentView.bounds.origin.x,
                 leadingInset: scrollView.contentInsets.left
             )
         }
 
         private var maximumLogicalOffsetX: CGFloat {
-            NativeVideoShelfScrollCoordinates.maximumLogicalOffsetX(
-                documentWidth: NativeVideoShelfGeometry.documentWidth(
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: NativeVideoShelfGeometry.documentWidth(
                     itemCount: contents.orderedIDs.count
                 ),
-                viewportWidth: scrollView.contentSize.width,
+                viewportLength: scrollView.contentSize.width,
                 leadingInset: scrollView.contentInsets.left,
                 trailingInset: scrollView.contentInsets.right
             )
@@ -466,8 +442,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
         private func applyLogicalScrollOffset(_ requested: CGFloat, animated: Bool) {
             let logicalTarget = min(max(0, requested), maximumLogicalOffsetX)
-            let physicalTarget = NativeVideoShelfScrollCoordinates.physicalOffsetX(
-                logicalOffsetX: logicalTarget,
+            let physicalTarget = NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: logicalTarget,
                 leadingInset: scrollView.contentInsets.left
             )
             scrollView.scrollHorizontally(to: physicalTarget, animated: animated)
@@ -547,8 +523,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
     private var isPointerInside = false
     private var canGoBackward = false
     private var canGoForward = false
-    private var lastViewportSize: NSSize?
-    private var lastContentInsets = NSEdgeInsetsZero
+    private var viewportTracker = NativeScrollViewportTracker()
     private var viewportUpdateScheduled = false
     private var focusUpdateScheduled = false
     private var isInteractionEnabled = true
@@ -623,20 +598,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
         )
         updatePointerInsideFromWindow()
 
-        let viewportSize = contentSize
-        let viewportChanged =
-            lastViewportSize.map {
-                abs($0.width - viewportSize.width) > 0.5
-                    || abs($0.height - viewportSize.height) > 0.5
-            } ?? true
-        let insetsChanged =
-            abs(lastContentInsets.left - contentInsets.left) > 0.5
-            || abs(lastContentInsets.right - contentInsets.right) > 0.5
-            || abs(lastContentInsets.top - contentInsets.top) > 0.5
-            || abs(lastContentInsets.bottom - contentInsets.bottom) > 0.5
-        guard viewportChanged || insetsChanged else { return }
-        lastViewportSize = viewportSize
-        lastContentInsets = contentInsets
+        let change = viewportTracker.update(for: self)
+        guard change.sizeChanged || change.previousInsets != nil else { return }
         scheduleViewportUpdate()
     }
 
@@ -834,11 +797,9 @@ final class NativeVideoShelfHiddenScroller: NSScroller {
 }
 
 @MainActor
-final class NativeVideoShelfCollectionView: NSCollectionView {
-    var onActivateSelection: ((String) -> Void)?
+final class NativeVideoShelfCollectionView: NativeVideoCardCollectionView {
     var itemIDAtIndex: ((Int) -> String?)?
     var onFocusChange: (() -> Void)?
-    private(set) var showsKeyboardSelection = false
     var isInteractionEnabled = true
 
     override func becomeFirstResponder() -> Bool {
@@ -848,8 +809,7 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
             if selectionIndexPaths.isEmpty, let first = firstVisibleIndexPath {
                 selectionIndexPaths = [first]
             }
-            showsKeyboardSelection = true
-            updateVisibleKeyboardSelection(showsKeyboardSelection: true)
+            setShowsKeyboardSelection(true)
             onFocusChange?()
         }
         return accepted
@@ -903,8 +863,7 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
 
     func hideKeyboardSelectionAppearance() {
         guard showsKeyboardSelection else { return }
-        showsKeyboardSelection = false
-        updateVisibleKeyboardSelection(showsKeyboardSelection: false)
+        setShowsKeyboardSelection(false)
         onFocusChange?()
     }
 
@@ -941,18 +900,7 @@ final class NativeVideoShelfCollectionView: NSCollectionView {
         } else {
             current = delta < 0 ? 1 : -1
         }
-        let target = min(itemCount - 1, max(0, current + delta))
-        showsKeyboardSelection = true
-        let targetPath = IndexPath(item: target, section: 0)
-        selectionIndexPaths = [targetPath]
-        updateVisibleKeyboardSelection(showsKeyboardSelection: true)
-        scrollToItems(at: [targetPath], scrollPosition: .nearestHorizontalEdge)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.updateVisibleKeyboardSelection(
-                showsKeyboardSelection: self.showsKeyboardSelection
-            )
-        }
+        selectWithKeyboard(itemAt: current + delta, scrollPosition: .nearestHorizontalEdge)
         return true
     }
 }

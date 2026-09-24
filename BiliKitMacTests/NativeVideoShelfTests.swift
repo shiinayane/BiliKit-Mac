@@ -16,30 +16,6 @@ struct NativeVideoShelfTests {
         #expect(NativeVideoShelfGeometry.documentWidth(itemCount: 3) == 784)
     }
 
-    @Test
-    func insetAwareScrollCoordinatesPreserveLogicalPosition() {
-        #expect(
-            NativeVideoShelfScrollCoordinates.logicalOffsetX(
-                physicalOffsetX: -320,
-                leadingInset: 320
-            ) == 0
-        )
-        #expect(
-            NativeVideoShelfScrollCoordinates.physicalOffsetX(
-                logicalOffsetX: 480,
-                leadingInset: 320
-            ) == 160
-        )
-        #expect(
-            NativeVideoShelfScrollCoordinates.maximumLogicalOffsetX(
-                documentWidth: 1_472,
-                viewportWidth: 900,
-                leadingInset: 320,
-                trailingInset: 0
-            ) == 892
-        )
-    }
-
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func viewportAndInsetNotificationsAreDeferredBeyondTheCurrentLayoutPass() async {

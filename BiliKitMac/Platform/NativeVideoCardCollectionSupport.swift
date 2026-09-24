@@ -159,6 +159,39 @@ enum NativeVideoCollectionKeys {
     }
 }
 
+/// 网格与 shelf 的集合视图基类：激活回调与键盘选择框状态。
+@MainActor
+class NativeVideoCardCollectionView: NSCollectionView {
+    var onActivateSelection: ((String) -> Void)?
+    private(set) var showsKeyboardSelection = false
+
+    func setShowsKeyboardSelection(_ shows: Bool) {
+        showsKeyboardSelection = shows
+        updateVisibleKeyboardSelection(showsKeyboardSelection: shows)
+    }
+
+    /// 键盘导航：单选移动到 `index`（夹在有效范围内），显示选择框并滚动到可见。
+    func selectWithKeyboard(
+        itemAt index: Int,
+        scrollPosition: NSCollectionView.ScrollPosition
+    ) {
+        let itemCount = numberOfItems(inSection: 0)
+        guard itemCount > 0 else { return }
+        let targetPath = IndexPath(item: min(itemCount - 1, max(0, index)), section: 0)
+        showsKeyboardSelection = true
+        selectionIndexPaths = [targetPath]
+        updateVisibleKeyboardSelection(showsKeyboardSelection: true)
+        scrollToItems(at: [targetPath], scrollPosition: scrollPosition)
+        // 滚动后新出现的卡片在下一轮 runloop 才可见，再同步一次选择框。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateVisibleKeyboardSelection(
+                showsKeyboardSelection: self.showsKeyboardSelection
+            )
+        }
+    }
+}
+
 /// 网格与 shelf 的 Coordinator 共同持有的通知观察；reset 时一次性移除。
 @MainActor
 struct NativeVideoNotificationObservers {

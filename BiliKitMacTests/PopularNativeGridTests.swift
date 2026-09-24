@@ -179,33 +179,47 @@ struct PopularNativeGridTests {
         )
     }
 
+    /// 纵向 toolbar inset（网格）与横向侧栏 inset（shelf）共用同一逻辑坐标换算。
+    @Test(arguments: [
+        (physical: CGFloat(-52), inset: CGFloat(52), logical: CGFloat(0)),
+        (physical: 0, inset: 52, logical: 52),
+        (physical: -320, inset: 320, logical: 0),
+        (physical: 160, inset: 320, logical: 480)
+    ])
+    func logicalScrollOffsetIncludesLeadingInset(
+        _ sample: (physical: CGFloat, inset: CGFloat, logical: CGFloat)
+    ) {
+        #expect(
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: sample.physical,
+                leadingInset: sample.inset
+            ) == sample.logical
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: sample.logical,
+                leadingInset: sample.inset
+            ) == sample.physical
+        )
+    }
+
     @Test
-    func logicalScrollOffsetIncludesAutomaticToolbarInset() {
+    func maximumLogicalScrollOffsetIncludesBothInsets() {
         #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: -52,
-                topInset: 52
-            ) == 0
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: 0,
-                topInset: 52
-            ) == 52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.physicalOffsetY(
-                logicalOffsetY: 0,
-                topInset: 52
-            ) == -52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
-                documentHeight: 2_686,
-                viewportHeight: 1_050,
-                topInset: 52,
-                bottomInset: 0
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 2_686,
+                viewportLength: 1_050,
+                leadingInset: 52,
+                trailingInset: 0
             ) == 1_688
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 1_472,
+                viewportLength: 900,
+                leadingInset: 320,
+                trailingInset: 0
+            ) == 892
         )
     }
 

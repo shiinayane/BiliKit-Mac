@@ -237,7 +237,7 @@ final class NativePlaybackSidebarScrollView: NSScrollView {
         action: nil
     )
     var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
-    private var lastContentInsets = NSEdgeInsetsZero
+    private var viewportTracker = NativeScrollViewportTracker()
 
     override func layout() {
         super.layout()
@@ -250,15 +250,8 @@ final class NativePlaybackSidebarScrollView: NSScrollView {
             width: 44,
             height: 44
         )
-        let changed =
-            abs(contentInsets.top - lastContentInsets.top) > 0.5
-            || abs(contentInsets.left - lastContentInsets.left) > 0.5
-            || abs(contentInsets.bottom - lastContentInsets.bottom) > 0.5
-            || abs(contentInsets.right - lastContentInsets.right) > 0.5
-        guard changed else { return }
-        let oldInsets = lastContentInsets
-        lastContentInsets = contentInsets
-        onContentInsetsChange?(oldInsets, contentInsets)
+        guard let previousInsets = viewportTracker.update(for: self).previousInsets else { return }
+        onContentInsetsChange?(previousInsets, contentInsets)
     }
 }
 
@@ -390,7 +383,8 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             self?.viewportSizeDidChange(size)
         }
         rootView.scrollView.onContentInsetsChange = { [weak self] oldInsets, newInsets in
-            self?.contentInsetsDidChange(from: oldInsets, to: newInsets)
+            guard let self, !self.isTornDown else { return }
+            self.rootView.scrollView.preserveLogicalVerticalOffset(from: oldInsets, to: newInsets)
         }
     }
 
@@ -949,25 +943,6 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         scheduleRefinement()
     }
 
-    private func contentInsetsDidChange(
-        from oldInsets: NSEdgeInsets,
-        to newInsets: NSEdgeInsets
-    ) {
-        guard !isTornDown else { return }
-        let logicalOffset = NativeVideoScrollCoordinateSpace.logicalOffsetY(
-            physicalOffsetY: rootView.scrollView.contentView.bounds.origin.y,
-            topInset: oldInsets.top
-        )
-        let physicalOffset = NativeVideoScrollCoordinateSpace.physicalOffsetY(
-            logicalOffsetY: logicalOffset,
-            topInset: newInsets.top
-        )
-        rootView.scrollView.contentView.scroll(
-            to: NSPoint(x: 0, y: physicalOffset)
-        )
-        rootView.scrollView.reflectScrolledClipView(rootView.scrollView.contentView)
-    }
-
     private func toggleSummary() {
         mutateItem(.summary(bvid: presentation.content?.bvid ?? "")) {
             summaryExpanded.toggle()
@@ -1093,9 +1068,9 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         else { return }
         let physicalOffset = attributes.frame.minY - anchor.relativeY
         scroll(
-            to: NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: physicalOffset,
-                topInset: rootView.scrollView.contentInsets.top
+            to: NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: physicalOffset,
+                leadingInset: rootView.scrollView.contentInsets.top
             )
         )
     }
@@ -1203,21 +1178,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
 
     func scroll(to y: CGFloat) {
         synchronizeDocumentFrame()
-        let maximumY = NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
-            documentHeight: layout.collectionViewContentSize.height,
-            viewportHeight: rootView.scrollView.contentSize.height,
-            topInset: rootView.scrollView.contentInsets.top,
-            bottomInset: rootView.scrollView.contentInsets.bottom
+        let maximumY = NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+            documentLength: layout.collectionViewContentSize.height,
+            viewportLength: rootView.scrollView.contentSize.height,
+            leadingInset: rootView.scrollView.contentInsets.top,
+            trailingInset: rootView.scrollView.contentInsets.bottom
         )
         let logicalTarget = min(max(0, y), maximumY)
-        let physicalTarget = NativeVideoScrollCoordinateSpace.physicalOffsetY(
-            logicalOffsetY: logicalTarget,
-            topInset: rootView.scrollView.contentInsets.top
+        rootView.scrollView.scrollVertically(
+            toPhysicalOffset: NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: logicalTarget,
+                leadingInset: rootView.scrollView.contentInsets.top
+            )
         )
-        rootView.scrollView.contentView.scroll(
-            to: NSPoint(x: 0, y: physicalTarget)
-        )
-        rootView.scrollView.reflectScrolledClipView(rootView.scrollView.contentView)
     }
 
     private func updateOverlay() {
