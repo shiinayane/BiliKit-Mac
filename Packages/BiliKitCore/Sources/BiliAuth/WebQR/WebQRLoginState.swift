@@ -4,7 +4,7 @@ public enum WebQRLoginState: Sendable, Equatable, CustomStringConvertible {
     case requestingQRCode
     case awaitingScan(WebQRCode)
     case awaitingConfirmation(WebQRCode)
-    case awaitingCredentialValidation(WebQRStatusObservation)
+    case awaitingCredentialValidation
     case expired
     case failed(WebQRLoginFailure)
 
@@ -38,7 +38,7 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
     case incompleteCredential
     case credentialStoreUnavailable
     case serviceRejected(Int)
-    case unsupportedStatus(WebQRStatusObservation)
+    case unsupportedStatus(Int)
 
     public var description: String {
         switch self {
@@ -60,42 +60,8 @@ public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertib
             "credential-store-unavailable"
         case .serviceRejected(let code):
             "service-rejected-\(code)"
-        case .unsupportedStatus(let observation):
-            "unsupported-status-\(observation.code)"
+        case .unsupportedStatus(let code):
+            "unsupported-status-\(code)"
         }
     }
-}
-
-/// 只保留协议形状的脱敏观察，用于审计未知状态，不保存任何字段值。
-public struct WebQRStatusObservation: Sendable, Equatable,
-    CustomStringConvertible, CustomDebugStringConvertible
-{
-    public let code: Int
-    public let dataFieldNames: [String]
-    public let urlScheme: String?
-    public let urlHost: String?
-    public let urlQueryNames: [String]
-    public let refreshTokenPresent: Bool
-    public let responseHeaderNames: [String]
-    public let cookieNames: [String]
-    public let cookieAttributeNames: [String]
-    public let cookies: [WebQRCookieObservation]
-
-    public var description: String {
-        "<web-qr-status-\(code)-observation>"
-    }
-
-    public var debugDescription: String {
-        description
-    }
-}
-
-public struct WebQRCookieObservation: Sendable, Equatable {
-    public let name: String
-    public let domain: String
-    public let path: String
-    public let isSecure: Bool
-    public let isHTTPOnly: Bool
-    public let isSessionOnly: Bool
-    public let hasExpiry: Bool
 }

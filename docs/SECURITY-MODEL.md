@@ -9,7 +9,7 @@
 | --- | --- |
 | Web Cookie | 只接受 QR 成功响应 `Set-Cookie` 中的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`；未知 Cookie 丢弃 |
 | `qrcode_key`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `WebQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `refresh_token` | 只记录是否存在，不保存、不使用，不实现自动刷新 |
+| `refresh_token` | 轮询响应只解码状态码，不读取、不保存、不使用该字段，不实现自动刷新 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
 - 持久秘密只存 Keychain：Security.framework generic-password、固定 service/account、

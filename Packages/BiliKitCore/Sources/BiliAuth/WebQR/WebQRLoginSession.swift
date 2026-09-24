@@ -157,16 +157,12 @@ public actor WebQRLoginSession {
 
             switch data.code {
             case 0:
-                let observation = Self.safeObservation(
-                    data: data,
-                    response: response
-                )
                 pendingCredential = Self.pendingCredential(
                     from: response,
                     generation: challenge.generation
                 )
                 activeChallenge = nil
-                state = .awaitingCredentialValidation(observation)
+                state = .awaitingCredentialValidation
                 return state
             case 86_101:
                 state = .awaitingScan(challenge.qrCode)
@@ -180,9 +176,7 @@ public actor WebQRLoginSession {
                 return state
             default:
                 return fail(
-                    .unsupportedStatus(
-                        Self.safeObservation(data: data, response: response)
-                    ),
+                    .unsupportedStatus(data.code),
                     generation: challenge.generation
                 )
             }
@@ -210,15 +204,6 @@ public actor WebQRLoginSession {
     public func invalidateSession() {
         cancel()
         transportInvalidator?()
-    }
-
-    public func validatePendingCredential() async throws -> Bool {
-        let pendingCredential = try takePendingCredential()
-        let result = try await validate(pendingCredential)
-        if case .signedIn = result {
-            return true
-        }
-        return false
     }
 
     /// 一次性消费候选凭据，验证登录态与有效期后才提交 Keychain。
@@ -417,52 +402,6 @@ public actor WebQRLoginSession {
             && url.password == nil
     }
 
-    private static func safeObservation(
-        data: PollData,
-        response: HTTPResponse
-    ) -> WebQRStatusObservation {
-        let components = data.url.flatMap {
-            URLComponents(string: $0)
-        }
-        let cookies = HTTPCookie.cookies(
-            withResponseHeaderFields: response.headers,
-            for: productionBaseURL
-        )
-        let cookieAttributeNames = Set(
-            cookies.flatMap { cookie in
-                cookie.properties?.keys.map(\.rawValue) ?? []
-            }
-        )
-        let cookieObservations = cookies.map {
-            WebQRCookieObservation(
-                name: $0.name,
-                domain: $0.domain,
-                path: $0.path,
-                isSecure: $0.isSecure,
-                isHTTPOnly: $0.isHTTPOnly,
-                isSessionOnly: $0.isSessionOnly,
-                hasExpiry: $0.expiresDate != nil
-            )
-        }.sorted { $0.name < $1.name }
-
-        return WebQRStatusObservation(
-            code: data.code,
-            dataFieldNames: data.fieldNames.sorted(),
-            urlScheme: components?.scheme,
-            urlHost: components?.host,
-            urlQueryNames: Array(
-                Set(components?.queryItems?.map(\.name) ?? [])
-            ).sorted(),
-            refreshTokenPresent: !(data.refreshToken ?? "").isEmpty,
-            responseHeaderNames: response.headers.keys
-                .map { $0.lowercased() }
-                .sorted(),
-            cookieNames: Array(Set(cookies.map(\.name))).sorted(),
-            cookieAttributeNames: cookieAttributeNames.sorted(),
-            cookies: cookieObservations
-        )
-    }
-
     private static func pendingCredential(
         from response: HTTPResponse,
         generation: UInt64
@@ -550,40 +489,7 @@ private struct PollEnvelope: Decodable, Sendable {
     let data: PollData?
 }
 
+/// 只解码状态码；URL、refresh_token 与 message 不进入内存模型。
 private struct PollData: Decodable, Sendable {
     let code: Int
-    let url: String?
-    let refreshToken: String?
-    let fieldNames: [String]
-
-    private enum CodingKeys: String, CodingKey {
-        case code
-        case url
-        case refreshToken = "refresh_token"
-    }
-
-    private struct FieldKey: CodingKey {
-        let stringValue: String
-        let intValue: Int? = nil
-
-        init?(stringValue: String) {
-            self.stringValue = stringValue
-        }
-
-        init?(intValue: Int) {
-            return nil
-        }
-    }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        code = try container.decode(Int.self, forKey: .code)
-        url = try container.decodeIfPresent(String.self, forKey: .url)
-        refreshToken = try container.decodeIfPresent(
-            String.self,
-            forKey: .refreshToken
-        )
-        let allFields = try decoder.container(keyedBy: FieldKey.self)
-        fieldNames = allFields.allKeys.map(\.stringValue)
-    }
 }

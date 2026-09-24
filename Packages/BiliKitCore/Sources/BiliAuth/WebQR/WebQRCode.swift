@@ -3,7 +3,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
 
-/// 封装不可公开读取的完整二维码 payload，只允许在内存中渲染或读取已审计的 host。
+/// 封装不可公开读取的完整二维码 payload，只允许在内存中渲染。
 public struct WebQRCode: Sendable, Equatable, CustomStringConvertible,
     CustomDebugStringConvertible, CustomReflectable
 {
@@ -11,10 +11,6 @@ public struct WebQRCode: Sendable, Equatable, CustomStringConvertible,
 
     init(payload: String) {
         self.payload = payload
-    }
-
-    public var host: String {
-        URL(string: payload)?.host ?? ""
     }
 
     public var description: String {
