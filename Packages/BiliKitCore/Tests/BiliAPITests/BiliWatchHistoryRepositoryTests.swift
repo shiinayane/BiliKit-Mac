@@ -26,6 +26,22 @@ struct BiliWatchHistoryRepositoryTests {
                 expected: .requestRestricted
             ),
             MappingCase(
+                scenario: .apiRejected(code: -352),
+                expected: .requestRestricted
+            ),
+            MappingCase(
+                scenario: .httpStatus(403),
+                expected: .requestRestricted
+            ),
+            MappingCase(
+                scenario: .httpStatus(412),
+                expected: .requestRestricted
+            ),
+            MappingCase(
+                scenario: .htmlRiskControlPage,
+                expected: .requestRestricted
+            ),
+            MappingCase(
                 scenario: .apiRejected(code: -500),
                 expected: .serviceRejected(code: -500)
             ),
@@ -87,6 +103,7 @@ enum HistoryScenario: Sendable, Equatable {
     case authorizationRequired
     case apiRejected(code: Int)
     case httpStatus(Int)
+    case htmlRiskControlPage
     case invalidRequest
     case cancellation
     case unknownTransportFailure
@@ -108,6 +125,8 @@ enum HistoryScenario: Sendable, Equatable {
                 [.response(jsonResponse("{\"code\":\(code),\"message\":\"fixture\"}"))]
             case .httpStatus(let status):
                 [.response(HTTPResponse(statusCode: status, body: Data()))]
+            case .htmlRiskControlPage:
+                [.response(htmlRiskControlResponse())]
             case .cancellation:
                 [.cancellation]
             case .authorizationRequired, .invalidRequest, .unknownTransportFailure:

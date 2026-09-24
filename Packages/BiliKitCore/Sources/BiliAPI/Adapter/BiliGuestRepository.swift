@@ -82,45 +82,39 @@ public struct BiliGuestRepository: GuestFeedRepository, GuestVideoRepository,
     ) async throws -> Value {
         do {
             return try await operation()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as BiliAPIError {
-            throw error.applicationError
         } catch {
-            throw GuestApplicationError.unavailable
+            throw BiliAPIError.domainError(
+                for: error,
+                fallback: GuestApplicationError.unavailable,
+                Self.applicationError
+            )
         }
     }
-}
 
-extension BiliAPIError {
-    fileprivate var applicationError: GuestApplicationError {
-        switch self {
+    private static func applicationError(
+        _ failure: BiliAPIError.Failure
+    ) -> GuestApplicationError {
+        switch failure {
         case .invalidRequest:
             .invalidRequest
         case .authorizationRequired, .authenticationInvalid:
             .authenticationInvalid
         case .authorizationUnavailable:
             .authenticationUnavailable
-        case .transportFailure:
+        case .transport:
             .transportFailure
-        case .httpStatus(403), .httpStatus(412), .nonJSONResponse,
-            .apiRejected(code: -352, _), .apiRejected(code: -403, _),
-            .apiRejected(code: -412, _):
+        case .unexpectedHTTPStatus:
+            .unavailable
+        case .restricted:
             .requestRestricted
-        case .apiRejected(let code, _):
+        case .rejected(let code):
             .serviceRejected(code: code)
-        case .noAVCVideo, .noAACAudio:
+        case .unsupportedMedia:
             .unsupportedMedia
         case .noPlayableMedia:
             .playbackUnavailable
-        case .responseTooLarge, .decodingFailed, .missingData,
-            .invalidWBIKey, .signingFailed, .invalidMediaData,
-            .unsupportedProgressiveMedia,
-            .invalidSubtitleData, .untrustedSubtitleOrigin,
-            .nonProtobufResponse, .invalidDanmakuData:
+        case .invalidResponse:
             .invalidResponse
-        case .httpStatus:
-            .unavailable
         }
     }
 }

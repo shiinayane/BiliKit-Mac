@@ -132,6 +132,36 @@ struct BiliDanmakuRepositoryTests {
         }
     }
 
+    static let failureCases: [(StubAuthorizer.Outcome, HTTPResponse, DanmakuApplicationError)] = [
+        (.authorize, jsonResponse("", statusCode: 412), .requestRestricted),
+        (.authorize, jsonResponse(#"{"code":-352,"message":"fixture"}"#), .requestRestricted),
+        (.authorize, htmlRiskControlResponse(), .requestRestricted),
+        (.authorize, jsonResponse("", statusCode: 500), .unavailable),
+        (.authorize, jsonResponse(#"{"code":-500,"message":"fixture"}"#), .unavailable),
+        (.fail(.unavailable), jsonResponse("{}"), .unavailable)
+    ]
+
+    @Test(arguments: failureCases)
+    func segmentFailuresMapToDanmakuApplicationError(
+        authorization: StubAuthorizer.Outcome,
+        response: HTTPResponse,
+        expected: DanmakuApplicationError
+    ) async throws {
+        let repository = BiliDanmakuRepository(
+            client: BiliAPIClient(
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
+                ),
+                requestAuthorizer: StubAuthorizer(authorization),
+                timestampProvider: { 1_700_000_000 }
+            )
+        )
+
+        await #expect(throws: expected) {
+            try await repository.segment(index: 1, for: identity)
+        }
+    }
+
     @Test
     func validProtobufLengthByteThatLooksLikeJSONIsAccepted() async throws {
         var element = Bilikit_Danmaku_Element()

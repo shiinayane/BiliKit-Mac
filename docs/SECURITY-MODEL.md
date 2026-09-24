@@ -45,7 +45,8 @@
 - 只允许 `https://api.bilibili.com`、端口缺省或 443、GET、无 userinfo／fragment、路径编码规范，
   且 path 在 `AppEnvironment` 声明的 allowlist 内（主客户端、测速客户端、会话校验各一组）。
 - 调用方已带 `Cookie`、`Authorization` 或 `X-CSRF-Token` 时拒绝；每次授权生成新请求，不缓存 header。
-- `BiliAPI` 私有 builder 逐请求决定匿名或账户读取，并独占 path/query schema；授权器不复制业务规则。
+- `BiliAPIClient` 的 endpoint 扩展逐请求决定匿名或账户读取，并独占 path/query schema；请求 builder
+  只在 `BiliAPI` 内部可见，adapter 不构造 `RequestAccess`；授权器不复制业务规则。
 - 本地明确无凭据时匿名请求同一 endpoint；凭据损坏、过期、Keychain 不可用、403/412、业务拒绝、
   非 JSON、redirect 一律失败关闭，不自动匿名重试。
 - WBI key 的 nav 请求保持匿名。

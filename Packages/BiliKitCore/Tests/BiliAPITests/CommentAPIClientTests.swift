@@ -229,6 +229,32 @@ struct CommentAPIClientTests {
         #expect(transport.capturedRequests().count == 2)
     }
 
+    @Test(arguments: [
+        (htmlRiskControlResponse(), CommentReadError.requestRestricted),
+        (jsonResponse("", statusCode: 412), .requestRestricted),
+        (jsonResponse(#"{"code":-412,"message":"fixture"}"#), .requestRestricted),
+        (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
+        (jsonResponse("", statusCode: 500), .unavailable),
+        (jsonResponse("{"), .invalidResponse)
+    ])
+    func replyFailuresMapToCommentReadError(
+        response: HTTPResponse,
+        expected: CommentReadError
+    ) async {
+        let repository = BiliCommentRepository(
+            client: BiliAPIClient(transport: StubTransport(responses: [response]))
+        )
+
+        await #expect(throws: expected) {
+            try await repository.replies(
+                for: .video(aid: 700_001),
+                rootID: CommentID(rawValue: 102),
+                page: 1,
+                pageSize: 10
+            )
+        }
+    }
+
     @Test
     func topRepliesRemainInServerOrderWithoutInventingProvenance() async throws {
         let response = try mutatedFixture("comment-main") { data in

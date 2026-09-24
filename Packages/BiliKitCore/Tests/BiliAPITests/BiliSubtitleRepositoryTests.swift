@@ -208,6 +208,50 @@ struct BiliSubtitleRepositoryTests {
         }
     }
 
+    enum Stage: Sendable {
+        case catalog
+        case body
+    }
+
+    /// 目录与正文使用同一映射；`nil` 表示 transport 没有响应（抛出非 API 错误）。
+    static let failureCases: [(Stage, HTTPResponse?, SubtitleApplicationError)] = [
+        (.catalog, jsonResponse("", statusCode: 412), .requestRestricted),
+        (.catalog, jsonResponse(#"{"code":-352,"message":"fixture"}"#), .requestRestricted),
+        (.catalog, nil, .transportFailure),
+        (.body, jsonResponse("", statusCode: 412), .requestRestricted),
+        (.body, jsonResponse("", statusCode: 500), .unavailable),
+        (.body, nil, .transportFailure)
+    ]
+
+    @Test(arguments: failureCases)
+    func failuresMapToSubtitleApplicationError(
+        stage: Stage,
+        response: HTTPResponse?,
+        expected: SubtitleApplicationError
+    ) async throws {
+        switch stage {
+        case .catalog:
+            let repository = BiliSubtitleRepository(
+                client: BiliAPIClient(
+                    transport: StubTransport(
+                        responses: [try fixtureResponse("nav")] + [response].compactMap { $0 }
+                    ),
+                    requestAuthorizer: StubAuthorizer(),
+                    timestampProvider: { 1_700_000_000 }
+                ),
+                bodyTransport: StubTransport(responses: [])
+            )
+            await #expect(throws: expected) {
+                try await repository.tracks(for: identity)
+            }
+        case .body:
+            let (repository, track) = try await repository(bodyResponse: response)
+            await #expect(throws: expected) {
+                try await repository.cues(for: track.id, identity: identity)
+            }
+        }
+    }
+
     @Test
     func bodyRejectsNonmonotonicAndOutOfBoundsCues() async throws {
         let fixture = try fixtureResponse("subtitle-body")
@@ -329,7 +373,7 @@ struct BiliSubtitleRepositoryTests {
     }
 
     private func repository(
-        bodyResponse: HTTPResponse
+        bodyResponse: HTTPResponse?
     ) async throws -> (BiliSubtitleRepository, SubtitleTrack) {
         let repository = BiliSubtitleRepository(
             client: BiliAPIClient(
@@ -343,7 +387,7 @@ struct BiliSubtitleRepositoryTests {
                 timestampProvider: { 1_700_000_000 }
             ),
             bodyTransport: StubTransport(
-                responses: [bodyResponse]
+                responses: [bodyResponse].compactMap { $0 }
             )
         )
         let track = try #require(
