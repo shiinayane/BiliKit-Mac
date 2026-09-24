@@ -3,9 +3,8 @@ import Testing
 @testable import BiliAPI
 
 struct RemoteVideoTitleNormalizerTests {
-    @Test
-    func plainTextDecodesNamedDecimalAndHexEntitiesOnce() {
-        let cases = [
+    @Test(
+        arguments: [
             ("Tom&#x27;s", "Tom's"),
             ("A &lt; B &gt; C", "A < B > C"),
             ("A &amp; B &quot;C&quot; &apos;D&apos;", "A & B \"C\" 'D'"),
@@ -13,15 +12,13 @@ struct RemoteVideoTitleNormalizerTests {
             ("A&nbsp;B", "A\u{00A0}B"),
             ("&amp;lt;", "&lt;")
         ]
-
-        for (input, expected) in cases {
-            #expect(RemoteVideoTitleNormalizer.plainText(input) == expected)
-        }
+    )
+    func plainTextDecodesNamedDecimalAndHexEntitiesOnce(input: String, expected: String) {
+        #expect(RemoteVideoTitleNormalizer.plainText(input) == expected)
     }
 
-    @Test
-    func malformedAndUnknownEntitiesRemainLiteral() {
-        let cases = [
+    @Test(
+        arguments: [
             "&unknown;",
             "&amp",
             "&#;",
@@ -31,10 +28,9 @@ struct RemoteVideoTitleNormalizerTests {
             "&#0;",
             "&#10;"
         ]
-
-        for value in cases {
-            #expect(RemoteVideoTitleNormalizer.plainText(value) == value)
-        }
+    )
+    func malformedAndUnknownEntitiesRemainLiteral(value: String) {
+        #expect(RemoteVideoTitleNormalizer.plainText(value) == value)
     }
 
     @Test

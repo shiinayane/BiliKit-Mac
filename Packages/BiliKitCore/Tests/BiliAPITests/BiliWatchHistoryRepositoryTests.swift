@@ -4,7 +4,7 @@ import BiliNetworking
 import Foundation
 import Testing
 
-@Suite
+@Suite(.timeLimit(.minutes(1)))
 struct BiliWatchHistoryRepositoryTests {
     @Test(
         "API failures retain their application-level category",
@@ -58,16 +58,11 @@ struct BiliWatchHistoryRepositoryTests {
     func mapsAPIFailure(testCase: MappingCase) async {
         let repository = testCase.scenario.repository()
 
-        do {
-            _ = try await repository.watchHistory(
+        await #expect(throws: testCase.expected) {
+            try await repository.watchHistory(
                 after: nil,
                 pageSize: testCase.scenario.pageSize
             )
-            Issue.record("Expected repository to throw")
-        } catch let error as WatchHistoryError {
-            #expect(error == testCase.expected)
-        } catch {
-            Issue.record("Unexpected error type: \(type(of: error))")
         }
     }
 
