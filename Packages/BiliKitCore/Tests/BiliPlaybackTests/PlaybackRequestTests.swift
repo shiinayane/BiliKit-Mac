@@ -6,7 +6,6 @@ import Testing
 
 struct PlaybackRequestTests {
     @Test
-    @MainActor
     func selectsPreferredRepresentationWithinEachSemanticTrack() throws {
         let originalLow = try makeRepresentation(id: 30_216, kind: .audio)
         let originalHigh = try makeRepresentation(id: 30_280, kind: .audio)
@@ -39,7 +38,6 @@ struct PlaybackRequestTests {
     }
 
     @Test
-    @MainActor
     func rejectsInvalidSemanticAudioTrackContracts() throws {
         let audio = try makeRepresentation(id: 30_216, kind: .audio)
         let otherAudio = try makeRepresentation(id: 30_280, kind: .audio)
@@ -171,14 +169,10 @@ struct PlaybackRequestTests {
         }
     }
 
-    @MainActor
     private func selectAudio(
         _ request: PlaybackRequest
     ) throws -> [SelectedPlaybackAudioTrack] {
-        try AVPlayerEngine().selectedAudioTracks(
-            in: try #require(request.dashManifest),
-            request: request
-        )
+        try request.selectedAudioTracks(in: try #require(request.dashManifest))
     }
 
     private func makeRequest(
