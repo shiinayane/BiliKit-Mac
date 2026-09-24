@@ -332,12 +332,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             {
                 throw CancellationError()
             }
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw BiliAPIError.httpStatus(status)
-            case .nonHTTPResponse:
-                throw BiliAPIError.transportFailure
-            }
+            throw BiliAPIError(error)
         } catch {
             if let requestSessionEpoch,
                 requestSessionEpoch != authenticatedSessionEpoch

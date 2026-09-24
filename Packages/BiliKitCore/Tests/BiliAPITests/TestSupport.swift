@@ -49,6 +49,15 @@ func jsonResponse(_ source: String, statusCode: Int = 200) -> HTTPResponse {
     )
 }
 
+/// 以 2xx 返回的 HTML 风控页；各域都应视为请求受限，而不是解析失败。
+func htmlRiskControlResponse() -> HTTPResponse {
+    HTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "text/html; charset=utf-8"],
+        body: Data("<!doctype html><title>fixture</title>".utf8)
+    )
+}
+
 /// 修改 fixture 顶层 `data` 对象后重新编码，保持其余字段不变。
 func mutatedFixture(
     _ name: String,

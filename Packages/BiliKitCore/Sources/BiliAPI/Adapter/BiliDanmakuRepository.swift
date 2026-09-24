@@ -19,38 +19,33 @@ public struct BiliDanmakuRepository: DanmakuSegmentRepository, Sendable {
             )
             let events = try DanmakuPayloadDecoder.events(from: data)
             return DanmakuSegment(index: index, events: events)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as BiliAPIError {
-            throw Self.map(error)
         } catch {
-            throw DanmakuApplicationError.unavailable
+            throw BiliAPIError.domainError(
+                for: error,
+                fallback: DanmakuApplicationError.unavailable,
+                Self.map
+            )
         }
     }
 
+    /// 弹幕没有独立的“认证不可用”状态：本地授权不可用归入 `unavailable`，会话对它与服务端
+    /// 不可用一样只让该分段失败关闭；只有 `authenticationInvalid` 会触发账户复核。
     private static func map(
-        _ error: BiliAPIError
+        _ failure: BiliAPIError.Failure
     ) -> DanmakuApplicationError {
-        switch error {
+        switch failure {
         case .invalidRequest:
             .invalidRequest
-        case .transportFailure:
-            .transportFailure
-        case .httpStatus(403), .nonProtobufResponse,
-            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
-            .requestRestricted
-        case .responseTooLarge, .decodingFailed, .missingData,
-            .invalidDanmakuData:
-            .invalidResponse
-        case .httpStatus, .apiRejected:
-            .unavailable
         case .authenticationInvalid:
             .authenticationInvalid
+        case .restricted:
+            .requestRestricted
+        case .transport:
+            .transportFailure
         case .authorizationRequired, .authorizationUnavailable,
-            .nonJSONResponse, .invalidWBIKey,
-            .signingFailed, .invalidMediaData, .invalidSubtitleData,
-            .untrustedSubtitleOrigin, .noAVCVideo, .noAACAudio,
-            .unsupportedProgressiveMedia, .noPlayableMedia:
+            .unexpectedHTTPStatus, .rejected:
+            .unavailable
+        case .unsupportedMedia, .noPlayableMedia, .invalidResponse:
             .invalidResponse
         }
     }

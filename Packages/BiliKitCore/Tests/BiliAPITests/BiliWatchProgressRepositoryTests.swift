@@ -101,32 +101,29 @@ struct BiliWatchProgressRepositoryTests {
         #expect(transport.capturedRequests().isEmpty)
     }
 
-    @Test(arguments: [403, 412])
-    func mapsHTTPRiskControlToRequestRestricted(status: Int) async throws {
+    @Test(arguments: [
+        (403, 0, WatchProgressError.requestRestricted),
+        (412, 0, .requestRestricted),
+        (200, -352, .requestRestricted),
+        (200, -101, .authenticationInvalid),
+        (200, -111, .authenticationInvalid),
+        (200, -500, .serviceRejected(code: -500)),
+        (500, 0, .unavailable)
+    ])
+    func mapsHeartbeatFailure(
+        status: Int,
+        code: Int,
+        expected: WatchProgressError
+    ) async throws {
         let repository = BiliWatchProgressRepository(
             client: BiliAPIClient(
-                transport: try heartbeatTransport(status: status),
+                transport: try heartbeatTransport(status: status, code: code),
                 historyWriteAuthorizer: StubAuthorizer(),
                 timestampProvider: { 1_777_777_777 }
             )
         )
 
-        await #expect(throws: WatchProgressError.requestRestricted) {
-            try await repository.report(try report(event: .periodic))
-        }
-    }
-
-    @Test(arguments: [-101, -111])
-    func mapsCredentialBusinessFailureToAuthenticationInvalid(code: Int) async throws {
-        let repository = BiliWatchProgressRepository(
-            client: BiliAPIClient(
-                transport: try heartbeatTransport(code: code),
-                historyWriteAuthorizer: StubAuthorizer(),
-                timestampProvider: { 1_777_777_777 }
-            )
-        )
-
-        await #expect(throws: WatchProgressError.authenticationInvalid) {
+        await #expect(throws: expected) {
             try await repository.report(try report(event: .periodic))
         }
     }

@@ -63,15 +63,9 @@ public actor BiliSubtitleRepository: SubtitleRepository {
                 uniqueKeysWithValues: resources.map { ($0.track.id, $0.url) }
             )
             return resources.map(\.track)
-        } catch is CancellationError {
-            clearIfCurrent(generation: requestGeneration)
-            throw CancellationError()
-        } catch let error as BiliAPIError {
-            clearIfCurrent(generation: requestGeneration)
-            throw Self.applicationError(error)
         } catch {
             clearIfCurrent(generation: requestGeneration)
-            throw SubtitleApplicationError.unavailable
+            throw Self.applicationError(error)
         }
     }
 
@@ -96,7 +90,12 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         )
 
         do {
-            let response = try await bodyClient.send(request)
+            let response: HTTPResponse
+            do {
+                response = try await bodyClient.send(request)
+            } catch let error as HTTPClientError {
+                throw BiliAPIError(error)
+            }
             try Task.checkCancellation()
             guard generation == requestGeneration,
                 currentIdentity == identity
@@ -119,21 +118,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
                 throw BiliAPIError.decodingFailed
             }
             return try payload.cues()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HTTPClientError {
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw Self.applicationError(.httpStatus(status))
-            case .nonHTTPResponse:
-                throw SubtitleApplicationError.transportFailure
-            }
-        } catch let error as BiliAPIError {
-            throw Self.applicationError(error)
-        } catch let error as SubtitleApplicationError {
-            throw error
         } catch {
-            throw SubtitleApplicationError.transportFailure
+            throw Self.applicationError(error)
         }
     }
 
@@ -151,30 +137,27 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         resourceURLs.removeAll(keepingCapacity: false)
     }
 
-    private static func applicationError(
-        _ error: BiliAPIError
-    ) -> SubtitleApplicationError {
-        switch error {
-        case .invalidRequest:
-            .invalidRequest
-        case .authorizationRequired, .authenticationInvalid,
-            .authorizationUnavailable:
-            .authenticationRequired
-        case .transportFailure:
-            .transportFailure
-        case .httpStatus(403), .nonJSONResponse,
-            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
-            .requestRestricted
-        case .responseTooLarge, .decodingFailed, .missingData,
-            .invalidSubtitleData, .untrustedSubtitleOrigin,
-            .nonProtobufResponse, .invalidDanmakuData:
-            .invalidResponse
-        case .httpStatus, .apiRejected:
-            .unavailable
-        case .invalidWBIKey, .signingFailed, .invalidMediaData,
-            .noAVCVideo, .noAACAudio, .unsupportedProgressiveMedia,
-            .noPlayableMedia:
-            .invalidResponse
+    /// 目录与正文共用同一映射；两者的非 API 错误都来自 transport，因此 fallback 为传输失败。
+    private static func applicationError(_ error: any Error) -> any Error {
+        BiliAPIError.domainError(
+            for: error,
+            fallback: SubtitleApplicationError.transportFailure
+        ) { failure in
+            switch failure {
+            case .invalidRequest:
+                .invalidRequest
+            case .authorizationRequired, .authenticationInvalid,
+                .authorizationUnavailable:
+                .authenticationRequired
+            case .restricted:
+                .requestRestricted
+            case .transport:
+                .transportFailure
+            case .unexpectedHTTPStatus, .rejected:
+                .unavailable
+            case .unsupportedMedia, .noPlayableMedia, .invalidResponse:
+                .invalidResponse
+            }
         }
     }
 }

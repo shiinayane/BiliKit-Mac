@@ -22,6 +22,9 @@ struct BiliGuestRepositoryTests {
         (HTTPResponse(statusCode: 403, body: Data()), GuestApplicationError.requestRestricted),
         (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted),
         (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted),
+        (htmlRiskControlResponse(), .requestRestricted),
+        (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
+        (HTTPResponse(statusCode: 500, body: Data()), .unavailable),
         (jsonResponse("{"), .invalidResponse)
     ])
     func mapsFailedPopularResponseAtAdapterBoundary(

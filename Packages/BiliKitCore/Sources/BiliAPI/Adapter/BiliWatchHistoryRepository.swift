@@ -17,35 +17,29 @@ public struct BiliWatchHistoryRepository: WatchHistoryRepository {
                 after: continuation,
                 pageSize: pageSize
             )
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as BiliAPIError {
-            throw Self.map(error)
         } catch {
-            throw WatchHistoryError.transportFailure
+            throw BiliAPIError.domainError(
+                for: error,
+                fallback: WatchHistoryError.transportFailure,
+                Self.map
+            )
         }
     }
 
-    private static func map(_ error: BiliAPIError) -> WatchHistoryError {
-        switch error {
+    /// 历史读取请求不在 client 内把业务 -101 映射为认证失效，因此在这里视为需要重新登录。
+    private static func map(_ failure: BiliAPIError.Failure) -> WatchHistoryError {
+        switch failure {
         case .authorizationRequired, .authenticationInvalid,
-            .authorizationUnavailable,
-            .apiRejected(code: -101, message: _):
+            .authorizationUnavailable, .rejected(code: -101):
             .authenticationRequired
-        case .apiRejected(code: -412, message: _),
-            .apiRejected(code: -403, message: _),
-            .nonJSONResponse:
+        case .restricted:
             .requestRestricted
-        case .apiRejected(let code, _):
+        case .rejected(let code):
             .serviceRejected(code: code)
-        case .transportFailure, .httpStatus:
+        case .transport, .unexpectedHTTPStatus:
             .transportFailure
-        case .invalidRequest, .responseTooLarge, .decodingFailed,
-            .missingData, .invalidWBIKey, .signingFailed,
-            .invalidMediaData, .invalidSubtitleData,
-            .untrustedSubtitleOrigin, .nonProtobufResponse,
-            .invalidDanmakuData, .noAVCVideo, .noAACAudio,
-            .unsupportedProgressiveMedia, .noPlayableMedia:
+        case .invalidRequest, .unsupportedMedia, .noPlayableMedia,
+            .invalidResponse:
             .invalidResponse
         }
     }
