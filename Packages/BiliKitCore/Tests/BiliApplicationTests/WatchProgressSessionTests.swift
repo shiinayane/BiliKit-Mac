@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliApplication
 
+@Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct WatchProgressSessionTests {
     @Test
@@ -115,32 +116,30 @@ struct WatchProgressSessionTests {
     func reportingFailureClosesOnlyHeartbeatSession(
         error: WatchProgressError
     ) async throws {
-        let fixture = try makeFixture(error: error)
+        let fixture = try makeFixture(repository: ProgressRepositoryStub(firstFailure: error))
         fixture.session.start()
         fixture.session.setReportingAccess(signedIn: true)
         fixture.timeline.send(fixture.snapshot(state: .playing))
         _ = await fixture.repository.nextReport()
-        await fixture.session.waitForCurrentReportForTesting()
+        await fixture.ticks.waitForTermination(1)
 
         fixture.time.value = 15
         fixture.ticks.tick()
         fixture.timeline.send(fixture.snapshot(position: 15, state: .playing))
-        await fixture.resolutions.wait(for: 2)
 
         #expect(await fixture.repository.reportCount == 1)
+        #expect(fixture.ticks.intervals == [15])
         #expect(fixture.timeline.currentTimelineSnapshot.state == .playing)
     }
 
     @Test
     func slowStartedStillPreservesFinalExitWhenBoundariesSaturate() async throws {
-        let repository = BlockingProgressRepository()
+        let repository = ProgressRepositoryStub(blocking: .all)
         let fixture = try makeFixture(repository: repository)
         fixture.session.start()
         fixture.session.setReportingAccess(signedIn: true)
         fixture.timeline.send(fixture.snapshot(state: .playing))
-        var attempts = repository.startedReports().makeAsyncIterator()
-        let started = await attempts.next()
-        #expect(started?.event == .started)
+        #expect(await repository.nextReport().event == .started)
 
         var resolutionTarget = 1
         for index in 1...24 {
@@ -158,8 +157,8 @@ struct WatchProgressSessionTests {
         await repository.releaseNext()
         var terminal: WatchProgressReport?
         while terminal == nil {
-            let next = await attempts.next()
-            if next?.event == .ended {
+            let next = await repository.nextReport()
+            if next.event == .ended {
                 terminal = next
             }
             await repository.releaseNext()
@@ -169,44 +168,42 @@ struct WatchProgressSessionTests {
 
     @Test
     func periodicCoalescesBeforeBoundariesAndFinalEndRemainsLast() async throws {
-        let repository = BlockingProgressRepository()
+        let repository = ProgressRepositoryStub(blocking: .all)
         let fixture = try makeFixture(repository: repository)
         fixture.session.start()
         fixture.session.setReportingAccess(signedIn: true)
         fixture.timeline.send(fixture.snapshot(state: .playing))
-        var attempts = repository.startedReports().makeAsyncIterator()
-        #expect(await attempts.next()?.event == .started)
+        #expect(await repository.nextReport().event == .started)
 
-        for position in [5.0, 10.0, 15.0] {
+        // started 仍在途时，三次 tick 只保留同会话最新的 periodic。
+        for (index, position) in [5.0, 10.0, 15.0].enumerated() {
             fixture.time.value = position
-            fixture.timeline.send(
-                fixture.snapshot(position: position, state: .playing)
-            )
-            fixture.session.sendPeriodicHeartbeatForTesting()
+            fixture.timeline.send(fixture.snapshot(position: position, state: .playing))
+            fixture.ticks.tick()
+            await fixture.ticks.waitForDemand(index + 2)
         }
-        let coalesced = fixture.session.pendingReportsForTesting()
-        #expect(coalesced.count == 1)
-        #expect(coalesced.first?.event == .periodic)
-        #expect(coalesced.first?.positionSeconds == 15)
+        await repository.releaseNext()
+        let periodic = await repository.nextReport()
+        #expect(periodic.event == .periodic)
+        #expect(periodic.positionSeconds == 15)
 
+        // periodic 在途时再排队的 periodic 被后续边界挤掉；ended 最后且完成。
+        fixture.ticks.tick()
+        await fixture.ticks.waitForDemand(5)
         fixture.timeline.send(fixture.snapshot(position: 16, state: .paused))
         fixture.timeline.send(fixture.snapshot(position: 16, state: .playing))
         fixture.timeline.send(fixture.snapshot(position: 18, state: .ended))
 
-        let finalPending = fixture.session.pendingReportsForTesting()
-        #expect(finalPending.map(\.event) == [.paused, .resumed, .ended])
-        #expect(finalPending.count <= 8)
-        #expect(finalPending.last?.positionSeconds == 18)
-        #expect(finalPending.last?.completed == true)
-
-        await repository.releaseNext()
-        for expectedEvent in [
-            WatchProgressEvent.paused, .resumed, .ended
-        ] {
-            #expect(await attempts.next()?.event == expectedEvent)
+        var boundaries: [WatchProgressReport] = []
+        for _ in 0..<3 {
             await repository.releaseNext()
+            boundaries.append(await repository.nextReport())
         }
-        await fixture.session.waitForCurrentReportForTesting()
+        await repository.releaseNext()
+        #expect(boundaries.map(\.event) == [.paused, .resumed, .ended])
+        #expect(boundaries.last?.positionSeconds == 18)
+        #expect(boundaries.last?.completed == true)
+        #expect(await repository.reportCount == 5)
     }
 
     @Test
@@ -234,7 +231,8 @@ struct WatchProgressSessionTests {
     @Test
     func productionTimelinePreservesSameTurnBoundariesAndNaturalEnd() async throws {
         let timeline = StoreProgressTimeline()
-        let repository = ProgressRecordingRepository()
+        let repository = ProgressRepositoryStub()
+        let resolutions = ResolutionProbe()
         let identity = PlaybackItemIdentity(bvid: "BV1STORETIMELINE", cid: 22)
         let loadIntent = PlaybackLoadIntent()
         let target = try #require(
@@ -244,7 +242,8 @@ struct WatchProgressSessionTests {
             useCase: WatchProgressUseCase(repository: repository),
             timeline: timeline,
             resolveTarget: { candidateIdentity, candidateIntent in
-                candidateIdentity == identity && candidateIntent == loadIntent
+                resolutions.observe()
+                return candidateIdentity == identity && candidateIntent == loadIntent
                     ? target : nil
             },
             timestampProvider: { 1_777_777_700 },
@@ -271,10 +270,12 @@ struct WatchProgressSessionTests {
         #expect(reports.map(\.event) == [.started, .paused, .resumed, .ended])
         #expect(reports.last?.completed == true)
         #expect(reports.last?.positionSeconds == 20)
-        #expect(timeline.store.observerCount == 1)
 
+        // stop 之后 session 不再消费时间线，也就不会再解析写入目标。
         session.stop()
-        #expect(timeline.store.observerCount == 0)
+        let resolvedBeforeStop = resolutions.count
+        timeline.store.beginItem(identity: identity, loadIntent: loadIntent)
+        #expect(resolutions.count == resolvedBeforeStop)
     }
 
     @Test(arguments: [
@@ -285,7 +286,7 @@ struct WatchProgressSessionTests {
         firstError: WatchProgressError
     ) async throws {
         let timeline = ProgressTimeline()
-        let repository = DelayedFirstProgressRepository(firstError: firstError)
+        let repository = ProgressRepositoryStub(firstFailure: firstError, blocking: .first)
         let resolutions = ResolutionProbe()
         let identityA = PlaybackItemIdentity(bvid: "BV1FIXTUREA", cid: 22)
         let identityB = PlaybackItemIdentity(bvid: "BV1FIXTUREB", cid: 44)
@@ -317,20 +318,19 @@ struct WatchProgressSessionTests {
         session.start()
         session.setReportingAccess(signedIn: true)
         timeline.send(snapshot(identity: identityA, intent: intentA1, state: .playing))
-        var attempts = repository.attempts().makeAsyncIterator()
-        #expect(await attempts.next()?.target.loadIntent == intentA1)
+        #expect(await repository.nextReport().target.loadIntent == intentA1)
 
         timeline.send(snapshot(identity: identityB, intent: intentB, state: .playing))
         timeline.send(snapshot(identity: identityA, intent: intentA2, state: .playing))
         await resolutions.wait(for: 3)
-        await repository.releaseFirst()
+        await repository.releaseNext()
 
         var replacementStarted = false
         while !replacementStarted {
-            let report = await attempts.next()
+            let report = await repository.nextReport()
             replacementStarted =
-                report?.event == .started
-                && report?.target.loadIntent == intentA2
+                report.event == .started
+                && report.target.loadIntent == intentA2
         }
         #expect(replacementStarted)
         #expect(timeline.currentTimelineSnapshot.state == .playing)
@@ -353,12 +353,9 @@ struct WatchProgressSessionTests {
     }
 
     private func makeFixture(
-        error: WatchProgressError? = nil,
-        repository suppliedRepository: (any WatchProgressRepository)? = nil
+        repository: ProgressRepositoryStub = ProgressRepositoryStub()
     ) throws -> ProgressFixture {
         let timeline = ProgressTimeline()
-        let recording = ProgressRecordingRepository(error: error)
-        let repository = suppliedRepository ?? recording
         let ticks = ManualProgressTicks()
         let time = TestMonotonicTime()
         let identity = PlaybackItemIdentity(bvid: "BV1FIXTURE", cid: 22)
@@ -386,7 +383,7 @@ struct WatchProgressSessionTests {
         )
         return ProgressFixture(
             timeline: timeline,
-            repository: recording,
+            repository: repository,
             ticks: ticks,
             time: time,
             identity: identity,
@@ -400,7 +397,7 @@ struct WatchProgressSessionTests {
 @MainActor
 private struct ProgressFixture {
     let timeline: ProgressTimeline
-    let repository: ProgressRecordingRepository
+    let repository: ProgressRepositoryStub
     let ticks: ManualProgressTicks
     let time: TestMonotonicTime
     let identity: PlaybackItemIdentity
@@ -429,82 +426,6 @@ private struct ProgressFixture {
 private final class TestMonotonicTime { var value = 0.0 }
 
 @MainActor
-private final class ResolutionProbe {
-    private var count = 0
-    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-    func observe() {
-        count += 1
-        let ready = waiters.filter { count >= $0.0 }
-        waiters.removeAll { count >= $0.0 }
-        for waiter in ready {
-            waiter.1.resume()
-        }
-    }
-
-    func wait(for target: Int) async {
-        if count >= target { return }
-        await withCheckedContinuation { waiters.append((target, $0)) }
-    }
-}
-
-@MainActor
-private final class ManualProgressTicks {
-    private var continuations: [AsyncStream<Void>.Continuation] = []
-    private(set) var intervals: [Double] = []
-
-    func stream(every interval: Double) -> AsyncStream<Void> {
-        intervals.append(interval)
-        let stream = AsyncStream<Void>.makeStream()
-        continuations.append(stream.continuation)
-        return stream.stream
-    }
-
-    func tick() {
-        for continuation in continuations {
-            continuation.yield(())
-        }
-    }
-}
-
-@MainActor
-private final class ProgressTimeline: PlaybackTimelineProviding {
-    private(set) var currentTimelineSnapshot = PlaybackTimelineSnapshot.idle
-    private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
-    private var observers: [UUID: @MainActor (PlaybackTimelineSnapshot) -> Void] = [:]
-
-    func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
-        let id = UUID()
-        let stream = AsyncStream<PlaybackTimelineSnapshot>.makeStream()
-        continuations[id] = stream.continuation
-        stream.continuation.yield(currentTimelineSnapshot)
-        stream.continuation.onTermination = { [weak self] _ in
-            Task { @MainActor in self?.continuations[id] = nil }
-        }
-        return stream.stream
-    }
-
-    func observeTimeline(
-        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
-    ) -> @MainActor @Sendable () -> Void {
-        let id = UUID()
-        observers[id] = observer
-        observer(currentTimelineSnapshot)
-        return { [weak self] in self?.observers[id] = nil }
-    }
-
-    func send(_ snapshot: PlaybackTimelineSnapshot) {
-        currentTimelineSnapshot = snapshot
-        for observer in Array(observers.values) {
-            observer(snapshot)
-        }
-        for continuation in continuations.values {
-            continuation.yield(snapshot)
-        }
-    }
-}
-
-@MainActor
 private final class StoreProgressTimeline: PlaybackTimelineProviding {
     let store = PlaybackTimelineStore()
 
@@ -520,84 +441,5 @@ private final class StoreProgressTimeline: PlaybackTimelineProviding {
         _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
     ) -> @MainActor @Sendable () -> Void {
         store.observe(observer)
-    }
-}
-
-private actor ProgressRecordingRepository: WatchProgressRepository {
-    private let error: WatchProgressError?
-    private var reports: [WatchProgressReport] = []
-    private var queued: [WatchProgressReport] = []
-    private var waiters: [CheckedContinuation<WatchProgressReport, Never>] = []
-
-    init(error: WatchProgressError? = nil) { self.error = error }
-    var reportCount: Int { reports.count }
-
-    func report(_ progress: WatchProgressReport) async throws {
-        reports.append(progress)
-        if !waiters.isEmpty {
-            waiters.removeFirst().resume(returning: progress)
-        } else {
-            queued.append(progress)
-        }
-        if let error { throw error }
-    }
-
-    func nextReport() async -> WatchProgressReport {
-        if !queued.isEmpty { return queued.removeFirst() }
-        return await withCheckedContinuation { waiters.append($0) }
-    }
-}
-
-private actor BlockingProgressRepository: WatchProgressRepository {
-    private let stream: AsyncStream<WatchProgressReport>
-    private let continuation: AsyncStream<WatchProgressReport>.Continuation
-    private var releases: [CheckedContinuation<Void, Never>] = []
-
-    init() {
-        let pair = AsyncStream<WatchProgressReport>.makeStream()
-        stream = pair.stream
-        continuation = pair.continuation
-    }
-
-    nonisolated func startedReports() -> AsyncStream<WatchProgressReport> { stream }
-
-    func report(_ progress: WatchProgressReport) async {
-        continuation.yield(progress)
-        await withCheckedContinuation { releases.append($0) }
-    }
-
-    func releaseNext() {
-        guard !releases.isEmpty else { return }
-        releases.removeFirst().resume()
-    }
-}
-
-private actor DelayedFirstProgressRepository: WatchProgressRepository {
-    private let firstError: WatchProgressError
-    private let stream: AsyncStream<WatchProgressReport>
-    private let continuation: AsyncStream<WatchProgressReport>.Continuation
-    private var firstRelease: CheckedContinuation<Void, Never>?
-    private var isFirst = true
-
-    init(firstError: WatchProgressError) {
-        self.firstError = firstError
-        let pair = AsyncStream<WatchProgressReport>.makeStream()
-        stream = pair.stream
-        continuation = pair.continuation
-    }
-
-    nonisolated func attempts() -> AsyncStream<WatchProgressReport> { stream }
-
-    func report(_ progress: WatchProgressReport) async throws {
-        continuation.yield(progress)
-        guard isFirst else { return }
-        isFirst = false
-        await withCheckedContinuation { firstRelease = $0 }
-        throw firstError
-    }
-
-    func releaseFirst() {
-        firstRelease?.resume()
-        firstRelease = nil
     }
 }
