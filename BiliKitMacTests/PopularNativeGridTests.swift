@@ -1,6 +1,7 @@
 import AppKit
 import BiliBrowseFeature
 import BiliModels
+import BiliUI
 import CoreGraphics
 import Foundation
 import Testing
@@ -81,35 +82,6 @@ struct PopularNativeGridTests {
         #expect(!reorder.isStrictTailAppend)
         #expect(reorder.animatesDifferences)
         #expect(reorder.restoresViewportAnchor)
-    }
-
-    @Test
-    func responsiveGeometryPreservesPopularGridContract() {
-        #expect(NativeVideoGridGeometry.columnCount(for: 760) == 2)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_080) == 4)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_600) == 5)
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 0))
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 69))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 70))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 760))
-
-        let size = NativeVideoGridGeometry.itemSize(for: 1_080)
-        #expect(size.width == 243)
-        #expect(size.height == 220)
-        #expect(
-            NativeVideoGridGeometry.contentHeight(
-                for: 1_080,
-                itemCount: 50
-            ) == 3_220
-        )
-
-        for provisionalWidth in [CGFloat.zero, 1, 48, 67] {
-            let provisionalSize = NativeVideoGridGeometry.itemSize(
-                for: provisionalWidth
-            )
-            #expect(provisionalSize.width >= 1)
-            #expect(provisionalSize.height >= 84)
-        }
     }
 
     @Test

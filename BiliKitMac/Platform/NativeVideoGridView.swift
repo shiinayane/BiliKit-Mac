@@ -1,4 +1,5 @@
 import AppKit
+import BiliUI
 import SwiftUI
 
 typealias NativeVideoGridTailState = NearEndTailState<String>
@@ -138,55 +139,10 @@ struct NativeVideoGridOperationEpoch {
     }
 }
 
-enum NativeVideoGridGeometry {
-    static let horizontalSpacing: CGFloat = 20
-    static let verticalSpacing: CGFloat = 28
-    static let contentPadding: CGFloat = 24
-    static let topContentPadding: CGFloat = 0
-    /// 列数按“卡片至少这么宽”自然计算，再夹在最小／最大列数之间。
-    static let minimumCardWidth: CGFloat = 240
-    static let minimumColumnCount = 2
-    static let maximumColumnCount = 5
-    /// 卡片高度 = 16:9 封面 + 标题、UP 主与统计信息区。
-    static let coverAspectWidth: CGFloat = 16
-    static let coverAspectHeight: CGFloat = 9
-    static let cardTextAreaHeight: CGFloat = 84
-    static let minimumRenderableWidth = contentPadding * 2 + horizontalSpacing + 2
+/// 网格几何来自 BiliUI，与加载骨架共用；近尾部判断只属于原生网格。
+typealias NativeVideoGridGeometry = VideoCardGridGeometry
 
-    static func isRenderableViewport(width: CGFloat) -> Bool {
-        width.isFinite && width >= minimumRenderableWidth
-    }
-
-    static func columnCount(for width: CGFloat) -> Int {
-        let usableWidth = max(0, width - contentPadding * 2)
-        let naturalCount = Int(
-            (usableWidth + horizontalSpacing) / (minimumCardWidth + horizontalSpacing)
-        )
-        return min(maximumColumnCount, max(minimumColumnCount, naturalCount))
-    }
-
-    static func itemSize(for width: CGFloat) -> NSSize {
-        let usableWidth = max(1, width - contentPadding * 2)
-        let count = columnCount(for: width)
-        let spacing = CGFloat(count - 1) * horizontalSpacing
-        let cardWidth = max(
-            1,
-            floor((usableWidth - spacing) / CGFloat(count))
-        )
-        let coverHeight = floor(cardWidth * coverAspectHeight / coverAspectWidth)
-        return NSSize(width: cardWidth, height: coverHeight + cardTextAreaHeight)
-    }
-
-    static func contentHeight(for width: CGFloat, itemCount: Int) -> CGFloat {
-        guard itemCount > 0 else { return 0 }
-        let columns = columnCount(for: width)
-        let rows = (itemCount + columns - 1) / columns
-        return topContentPadding
-            + CGFloat(rows) * itemSize(for: width).height
-            + CGFloat(rows - 1) * verticalSpacing
-            + contentPadding
-    }
-
+extension VideoCardGridGeometry {
     static func nearEndTriggerIndex(
         itemCount: Int,
         width: CGFloat,

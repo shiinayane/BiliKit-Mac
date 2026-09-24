@@ -1,4 +1,5 @@
 import AppKit
+import BiliUI
 import CoreGraphics
 import QuartzCore
 
@@ -452,18 +453,21 @@ final class NativeVideoCardView: NSView {
 
     override func layout() {
         super.layout()
-        let coverHeight = floor(bounds.width * 9 / 16)
+        let coverHeight = VideoCardGeometry.coverHeight(forWidth: bounds.width)
         cover.frame = NSRect(x: 0, y: 0, width: bounds.width, height: coverHeight)
-        let textX: CGFloat = showsAvatar ? 44 : 0
-        avatar.frame = NSRect(x: 0, y: coverHeight + 10, width: 34, height: 34)
-        avatar.layer?.cornerRadius = 17
+        let textX = VideoCardGeometry.textLeadingInset(showsAvatar: showsAvatar)
+        let textY = coverHeight + VideoCardGeometry.textTopSpacing
+        let avatarSize = VideoCardGeometry.avatarSize
+        avatar.frame = NSRect(x: 0, y: textY, width: avatarSize, height: avatarSize)
+        avatar.layer?.cornerRadius = avatarSize / 2
         let titleFrame = NSRect(
             x: textX,
-            y: coverHeight + 10,
+            y: textY,
             width: max(1, bounds.width - textX),
-            height: 47
+            height: VideoCardGeometry.titleHeight
         )
-        let footerY = coverHeight + 63
+        let footerY = coverHeight + VideoCardGeometry.footerTopOffset
+        let footerHeight = VideoCardGeometry.footerHeight
         let showsFooterTrailing = textRenderer.showsFooterTrailing
         let trailingWidth = textRenderer.trailingWidth(font: footerFont)
         let contentsScale =
@@ -482,7 +486,7 @@ final class NativeVideoCardView: NSView {
                 NSRect(
                     x: textX,
                     y: footerY
-                        + (21 - NativeVideoCardTextLayout.recommendationCapsuleHeight) / 2
+                        + (footerHeight - NativeVideoCardTextLayout.recommendationCapsuleHeight) / 2
                         + NativeVideoCardTextLayout.recommendationCapsuleVerticalAdjustment,
                     width: footerWidths.trailing,
                     height: NativeVideoCardTextLayout.recommendationCapsuleHeight
@@ -496,7 +500,7 @@ final class NativeVideoCardView: NSView {
                 x: leadingX,
                 y: footerY,
                 width: footerWidths.leading,
-                height: 21
+                height: footerHeight
             )
         } else {
             let footerWidths = NativeVideoCardLayout.footerWidths(
@@ -509,13 +513,13 @@ final class NativeVideoCardView: NSView {
                 x: textX,
                 y: footerY,
                 width: footerWidths.leading,
-                height: 21
+                height: footerHeight
             )
             footerTrailingFrame = NSRect(
                 x: max(textX, bounds.width - footerWidths.trailing),
                 y: footerY,
                 width: footerWidths.trailing,
-                height: 21
+                height: footerHeight
             )
         }
         textRenderer.layout(
@@ -812,7 +816,7 @@ private final class NativeVideoMergedCoverView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = VideoCardGeometry.coverCornerRadius
         layer?.masksToBounds = true
         layer?.backgroundColor = Self.backgroundColor
 

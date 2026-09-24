@@ -1,9 +1,10 @@
 import AppKit
+import BiliUI
 import SwiftUI
 
 enum NativeVideoShelfGeometry {
     static let cardWidth: CGFloat = 224
-    static let cardHeight: CGFloat = 210
+    static let cardHeight = VideoCardGeometry.height(forWidth: cardWidth)
     static let spacing: CGFloat = 16
     static let contentInset: CGFloat = 40
     static let bottomInset: CGFloat = 22
