@@ -95,6 +95,7 @@ final class ScriptedRangeURLProtocolState: @unchecked Sendable {
 
     func begin(request: URLRequest) -> RangeURLProtocolScript {
         let (script, waiters) = lock.withLock {
+            () -> (RangeURLProtocolScript, [CheckedContinuation<Void, Never>]) in
             capturedRequest = request
             defer { startWaiters.removeAll() }
             return (script, startWaiters)

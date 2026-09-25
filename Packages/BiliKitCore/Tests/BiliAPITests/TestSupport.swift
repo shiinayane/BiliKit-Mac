@@ -115,6 +115,7 @@ final class StubTransport: HTTPTransport, HTTPTransportInvalidating, @unchecked 
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let (reply, ready) = lock.withLock {
+            () -> (Reply?, [CheckedContinuation<Void, Never>]) in
             requests.append(request)
             let count = requests.count
             let ready = requestWaiters.filter { $0.count <= count }.map(\.continuation)
