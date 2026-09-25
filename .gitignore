@@ -25,3 +25,9 @@ DerivedData/
 # Personal project-learning notes. They describe one local checkout and are not
 # a project contract or release input.
 /docs/_local/
+
+# Local AI agent state and personal tool config: worktrees, local settings and
+# per-developer agent configuration are not project inputs.
+/.claude/worktrees/
+/.claude/settings.local.json
+/.codex/
