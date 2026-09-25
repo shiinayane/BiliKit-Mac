@@ -55,8 +55,8 @@ python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-U
 同名 Release 已存在则拒绝；上传中断时先核对远端 digest，不用 `--clobber`。
 
 维护者根据当前候选的实际验证作出 go / no-go。建议记录（不自动阻止发布）：浏览器下载的 quarantine
-与 Gatekeeper 首启、fresh／覆盖升级／不同用户／删除重装、Apple Silicon macOS 15 与当前 macOS 的
-最小产品路径、签名 Keychain 登录恢复与登出、loopback 播放／seek／字幕／弹幕／退出清理、Sparkle
+与 Gatekeeper 首启、fresh／覆盖升级／不同用户／删除重装、当前 macOS 的最小产品路径（macOS 15
+只依赖 CI 的启动冒烟，不做实机验收）、签名 Keychain 登录恢复与登出、loopback 播放／seek／字幕／弹幕／退出清理、Sparkle
 失败矩阵（损坏／错误签名／旧 build／离线／中断／磁盘不足）。人工记录模板见 [`MANIFEST.md`](MANIFEST.md)。
 
 验收写入候选目录的 `acceptance.json`：

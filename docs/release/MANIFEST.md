@@ -44,7 +44,7 @@
 
 - HTTPS quarantine／Gatekeeper／离线 ticket：`待填写`
 - fresh／upgrade／duplicate／different-user／删除重装：`待填写`
-- Apple Silicon macOS 15／当前 macOS：`待填写`
+- 当前 macOS 实机；macOS 15 引用同一提交 CI 的启动冒烟：`待填写`
 - 登录／Keychain／loopback／字幕／弹幕／退出清理：`待填写`
 - 未验证边界：`待填写`
 - Go／No-Go 与复核人：`待填写`
