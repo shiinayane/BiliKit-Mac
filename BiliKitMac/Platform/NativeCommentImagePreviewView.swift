@@ -68,9 +68,17 @@ struct NativeCommentImagePreviewSelection: Equatable {
 final class NativeCommentImagePreviewHostingView<Content: View>: NSHostingView<Content>,
     PlayerKeyboardFocusOwner
 {
+    override var acceptsFirstResponder: Bool { true }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
+        guard window != nil else { return }
+        // 与原 AppKit 实现一样延后一轮：等 SwiftUI 建好焦点树后再接管第一响应者。
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
     }
 }
 
@@ -163,6 +171,11 @@ private struct NativeCommentImagePreviewContent: View {
         .focusEffectDisabled()
         .focused($focus, equals: .surface)
         .defaultFocus($focus, .close)
+        .task {
+            // 未开启全键盘访问时关闭按钮不可聚焦，默认焦点落空；退到预览表面，保证 ←／→／Esc 可用。
+            await Task.yield()
+            if focus == nil { focus = .surface }
+        }
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
             guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift])
             else { return .ignored }
