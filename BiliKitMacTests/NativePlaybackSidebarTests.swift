@@ -1169,7 +1169,7 @@ struct NativePlaybackSidebarTests {
 
         renderer.retainFailureScopes(Set(scopes))
         for scope in scopes {
-            renderer.markUnavailable(asset, in: scope)
+            #expect(renderer.markUnavailable(asset, in: scope))
         }
 
         #expect(renderer.render(content, scope: scopes[0]).pendingAssets.count == 1)

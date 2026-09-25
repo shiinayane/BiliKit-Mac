@@ -139,6 +139,8 @@ private struct PlayerGlassCapsuleBackground: ViewModifier {
 enum PlayerOverlayLayout {
     static let edgeInset: CGFloat = 20
     static let bottomInset: CGFloat = 64
+    /// 浮层命名坐标空间；非隔离常量，可在 `onGeometryChange` 的 Sendable 闭包中引用。
+    static let coordinateSpace = "PlayerOverlay"
 }
 
 enum PlayerResumeNoticePresentation {
@@ -326,7 +328,6 @@ final class PlayerOverlayModel {
 
 /// 所有播放器浮层共用的一棵 SwiftUI 树，铺满 content overlay。
 struct PlayerOverlayView: View {
-    private static let coordinateSpace = "PlayerOverlay"
 
     let model: PlayerOverlayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -336,7 +337,7 @@ struct PlayerOverlayView: View {
             .overlay(alignment: .top) { feedbackBadge }
             .overlay(alignment: .bottomLeading) { resumeButton }
             .overlay(alignment: .bottom) { previewEndedBadge }
-            .coordinateSpace(.named(Self.coordinateSpace))
+            .coordinateSpace(.named(PlayerOverlayLayout.coordinateSpace))
     }
 
     @ViewBuilder
@@ -359,7 +360,7 @@ struct PlayerOverlayView: View {
         if let notice = model.resumeNotice {
             PlayerResumeButton { model.restartFromBeginning() }
                 .onGeometryChange(for: CGRect.self) { proxy in
-                    proxy.frame(in: .named(Self.coordinateSpace))
+                    proxy.frame(in: .named(PlayerOverlayLayout.coordinateSpace))
                 } action: { frame in
                     model.resumeButtonFrame = frame
                 }
