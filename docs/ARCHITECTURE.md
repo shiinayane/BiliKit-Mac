@@ -102,6 +102,10 @@ generation。消费者不自建 wall-clock timer，也不接触 `AVPlayer`／`CM
   `NSCollectionView` + 复用的原生卡片。热门 50 卡 A/B 表明 SwiftUI `LazyVGrid`/AttributeGraph
   是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer` 后，同样约 20 秒滚动
   cycles 下降约 39%，0 hitch。SwiftUI Feature 保留 loading／empty／failure 等状态所有权。
+- **播放详情页滚动容器**：SwiftUI 详情内容挂在 AppKit `NSScrollView` 里：纵向安全区投影为滚动
+  inset，横向安全区交给正文避让，只有相关推荐 shelf 延伸到侧栏下且首卡仍与正文对齐。SwiftUI
+  `ScrollView` 延伸进安全区后不再向内容传递横向安全区、横向内容边距也不含安全区，只能靠测量
+  frame 模拟，因此保留 AppKit。
 - 封面、头像与评论图片由 `AppWindowOwner` 持有的窗口级匿名、有界 `NativeVideoImagePipeline`
   加载（Now Playing 封面另有进程级实例）；cell 离屏、复用和 teardown 取消等待者。
 
