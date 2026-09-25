@@ -55,7 +55,6 @@ final class URLSessionRangeTransport: NSObject, URLSessionDataDelegate, @uncheck
 
     func invalidate() {
         let (pending, session) = lock.withLock {
-            () -> ([any URLSessionRangeOperation], URLSession?) in
             isInvalidated = true
             let pending = Array(operations.values)
             operations.removeAll()
