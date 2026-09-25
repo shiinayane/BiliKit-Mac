@@ -17,8 +17,12 @@ public struct DanmakuFilter: Sendable, Equatable {
         self.showsBottom = showsBottom
     }
 
+    /// 负权重的弹幕不显示，与删除可配置 `minimumWeight`（默认 0）之前的行为一致。
+    private static let minimumWeight = 0
+
     func allows(_ event: DanmakuEvent) -> Bool {
-        switch event.mode {
+        guard event.weight >= Self.minimumWeight else { return false }
+        return switch event.mode {
         case .scrolling: showsScrolling
         case .top: showsTop
         case .bottom: showsBottom

@@ -143,7 +143,9 @@ struct DanmakuSchedulerTests {
                 index: 1,
                 events: [
                     event(id: "top", time: 2, mode: .top),
-                    event(id: "allowed", time: 4)
+                    event(id: "negative-weight", time: 3, weight: -1),
+                    event(id: "allowed", time: 4),
+                    event(id: "zero-weight", time: 4.5, weight: 0)
                 ]
             ),
             for: identity
@@ -153,7 +155,7 @@ struct DanmakuSchedulerTests {
             snapshot(position: 5, rate: 1, generation: 1)
         )
         let batch = try #require(batchValue)
-        #expect(batch.events.map(\.id) == ["allowed"])
+        #expect(batch.events.map(\.id) == ["allowed", "zero-weight"])
 
         scheduler.setEnabled(false)
         #expect(scheduler.retainedDeliveredIDCount == 0)
@@ -442,7 +444,8 @@ struct DanmakuSchedulerTests {
     private func event(
         id: String,
         time: Double,
-        mode: DanmakuPresentationMode = .scrolling
+        mode: DanmakuPresentationMode = .scrolling,
+        weight: Int = 5
     ) -> DanmakuEvent {
         DanmakuEvent(
             id: id,
@@ -451,7 +454,7 @@ struct DanmakuSchedulerTests {
             text: "fixture",
             fontSize: 25,
             colorRGB: 0xFF_FF_FF,
-            weight: 5
+            weight: weight
         )
     }
 }
