@@ -8,6 +8,9 @@ on:
     branches:
       - main
   workflow_dispatch:
+  # 每周跑一次完整 Gate，提前发现 runner 镜像或 Xcode 路径变化。
+  schedule:
+    - cron: '17 3 * * 1'
 
 permissions:
   contents: read
@@ -74,13 +77,24 @@ jobs:
           echo "mode=${mode}" >>"$GITHUB_OUTPUT"
           echo "Selected quality gate: ${mode}"
 
+      # Xcode 27 是发布工具链；它构建的 App 测试产物交给 macOS 15 运行。
       - name: Run selected quality gate (includes strict Swift format lint)
         env:
-          BILIKIT_TEST_PRODUCTS_OUTPUT: ${{ matrix.os == 'macos-26' && format('{0}/app-tests.tar', runner.temp) || '' }}
+          BILIKIT_TEST_PRODUCTS_OUTPUT: ${{ matrix.os == 'macos-27' && format('{0}/app-tests.tar', runner.temp) || '' }}
+          BILIKIT_FAILURE_OUTPUT: ${{ runner.temp }}/gate-failure
         run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"
 
+      - name: Upload gate failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate-failure-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gate-failure
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Share app test products for macOS 15
-        if: matrix.os == 'macos-26' && steps.quality-gate.outputs.mode == 'app'
+        if: matrix.os == 'macos-27' && steps.quality-gate.outputs.mode == 'app'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: app-tests-${{ github.sha }}
@@ -114,9 +128,19 @@ jobs:
           name: app-tests-${{ github.sha }}
           path: ${{ runner.temp }}/app-tests
 
-      # Compile Package tests locally; run the same App binaries built on macOS 26.
+      # Compile Package tests locally; run the App binaries built by Xcode 27 (the release toolchain).
       # Icon Composer's asset compiler crashes on the macOS 15 ARM runner.
       - name: Run quality gate with prebuilt app tests
         env:
           BILIKIT_TEST_PRODUCTS_INPUT: ${{ runner.temp }}/app-tests/app-tests.tar
+          BILIKIT_FAILURE_OUTPUT: ${{ runner.temp }}/gate-failure
         run: sh Scripts/run-quality-gates.sh "${{ needs.build-and-test.outputs.gate-mode }}"
+
+      - name: Upload gate failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate-failure-macos-15-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gate-failure
+          if-no-files-found: ignore
+          retention-days: 7

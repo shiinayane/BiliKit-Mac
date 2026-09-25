@@ -17,8 +17,24 @@ repository_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd -P)
 cd "$repository_root"
 
 artifact_root=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-quality-gate.XXXXXX")
+# 失败时把构建日志与测试结果包留到 BILIKIT_FAILURE_OUTPUT（CI 上传为 artifact），其余一律清理。
+save_failure_evidence() {
+    [ -n "${BILIKIT_FAILURE_OUTPUT:-}" ] || return 0
+    mkdir -p "$BILIKIT_FAILURE_OUTPUT"
+    for log in "$artifact_root"/*.log; do
+        [ -f "$log" ] && cp "$log" "$BILIKIT_FAILURE_OUTPUT/"
+    done
+    for bundle in "$artifact_root"/DerivedData/Logs/Test/*.xcresult; do
+        [ -d "$bundle" ] && cp -R "$bundle" "$BILIKIT_FAILURE_OUTPUT/"
+    done
+    return 0
+}
+
 cleanup() {
     status=$?
+    if [ "$status" -ne 0 ]; then
+        save_failure_evidence || echo "[Gate] warning: 未能保存失败现场" >&2
+    fi
     if ! rm -rf -- "$artifact_root" 2>/dev/null; then
         echo "[Gate] warning: 未能完整清理临时产物：$artifact_root" >&2
     fi
@@ -42,12 +58,12 @@ run_logged() {
 }
 
 # 仓库内 Swift 源码的编译警告视为 Gate 失败；远程依赖不在仓库目录下，不参与检查。
-# SwiftPM 写入文件时仍带 ANSI 颜色，`warning:` 前可能夹着一段 ESC 序列。
+# SwiftPM 写入文件时仍带 ANSI 颜色与 OSC 8 链接，`warning:` 前可能夹着 ESC 序列；输出前去除。
 fail_on_swift_warnings() {
     warnings=$(
         LC_ALL=C grep -E '\.swift:[0-9]+:[0-9]+: (.\[[0-9;]*m)?warning:' "$1" \
             | grep -F "$repository_root/" \
-            | perl -pe 's/\e\[[0-9;]*m//g' \
+            | perl -pe 's/\e\[[0-9;]*m//g; s/\e\]8;;.*?\e\\//g' \
             | sort -u
     ) || true
     [ -z "$warnings" ] && return 0
