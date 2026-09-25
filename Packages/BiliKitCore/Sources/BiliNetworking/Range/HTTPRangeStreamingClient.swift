@@ -25,7 +25,8 @@ public struct HTTPRangeStreamResult: Sendable, Equatable {
 }
 
 public protocol HTTPRangeStreaming: Sendable {
-    /// `allowedContentTypes` 为 nil 时不限制上游 `Content-Type`，其余响应头仍逐项验证。
+    /// `allowedContentTypes` 为 nil 时不限制上游 `Content-Type`；`requiresContentLength` 为 false
+    /// 时允许上游省略 `Content-Length`（正文长度仍按实际字节精确核对）。其余响应头逐项验证。
     func stream(
         from url: URL,
         rangeHeader: String,
@@ -33,6 +34,7 @@ public protocol HTTPRangeStreaming: Sendable {
         expectedCompleteLength: Int64,
         headers: [String: String],
         allowedContentTypes: Set<String>?,
+        requiresContentLength: Bool,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult
@@ -80,6 +82,7 @@ public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Send
         expectedCompleteLength: Int64,
         headers: [String: String] = [:],
         allowedContentTypes: Set<String>?,
+        requiresContentLength: Bool = true,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult {
@@ -98,7 +101,7 @@ public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Send
                 validator: HTTPRangeResponseValidator(
                     expectedRange: expectedRange,
                     expectedCompleteLength: expectedCompleteLength,
-                    requiresContentLength: true,
+                    requiresContentLength: requiresContentLength,
                     allowedContentTypes: allowedContentTypes.map {
                         Set($0.map { $0.lowercased() })
                     }

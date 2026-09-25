@@ -747,7 +747,8 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
             }
-            // DASH 分段只向 SIDX 成功的来源转发解析后的闭区间 Range。
+            // DASH 分段只向 SIDX 成功的来源转发解析后的闭区间 Range；部分 CDN／HTTP/2 省略
+            // Content-Length，正文长度由逐字节计数保证，因此不强制该头。
             try await streamRange(
                 requestedRange,
                 rangeHeader: requestedRange.headerValue,
@@ -755,6 +756,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 sourceURLs: [remote.sourceURL],
                 headers: remote.headers,
                 allowedUpstreamContentTypes: nil,
+                requiresUpstreamContentLength: false,
                 selectSource: { _ in true },
                 on: connection
             )
@@ -771,6 +773,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 sourceURLs: progressive.eligibleSourceURLs,
                 headers: progressive.headers,
                 allowedUpstreamContentTypes: progressive.allowedUpstreamContentTypes,
+                requiresUpstreamContentLength: true,
                 selectSource: progressive.select,
                 on: connection
             )
@@ -789,6 +792,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         sourceURLs: [URL],
         headers: [String: String],
         allowedUpstreamContentTypes: Set<String>?,
+        requiresUpstreamContentLength: Bool,
         selectSource: @escaping @Sendable (URL) -> Bool,
         on connection: NWConnection
     ) async throws {
@@ -816,6 +820,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     expectedCompleteLength: resource.contentLength,
                     headers: headers,
                     allowedContentTypes: allowedUpstreamContentTypes,
+                    requiresContentLength: requiresUpstreamContentLength,
                     onResponse: { [weak connection] _ in
                         guard selectSource(sourceURL), let connection else {
                             throw CancellationError()

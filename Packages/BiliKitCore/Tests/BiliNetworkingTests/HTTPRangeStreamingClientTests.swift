@@ -152,6 +152,74 @@ struct HTTPRangeStreamingClientTests {
         }
     }
 
+    /// 只有要求时才拒绝缺少 Content-Length 的响应。
+    ///
+    /// DASH 分段允许上游省略该头，progressive 仍要求；两者都按实际字节核对正文长度。
+    @Test(arguments: [true, false])
+    func missingContentLengthIsRejectedOnlyWhenRequired(requiresContentLength: Bool) async throws {
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: ["Content-Range": "bytes 0-3/10", "Content-Type": "video/mp4"],
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        if requiresContentLength {
+            await #expect(throws: HTTPRangeResponseError.missingContentLength) {
+                try await streamFourBytes(requiresContentLength: true)
+            }
+        } else {
+            #expect(try await streamFourBytes(requiresContentLength: false).byteCount == 4)
+        }
+
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: ["Content-Range": "bytes 0-3/10", "Content-Type": "video/mp4"],
+            chunks: [Data([1, 2, 3])]
+        )
+        await #expect(
+            throws: HTTPRangeResponseError.bodyLengthMismatch(expected: 4, actual: 3)
+        ) {
+            try await streamFourBytes(requiresContentLength: false)
+        }
+    }
+
+    /// 下游阻塞期间上游继续送达：最多暂存一个 chunk，回调串行执行，正文完整且有序。
+    @Test
+    func blockedDownstreamReceivesCompleteOrderedBodyOneCallbackAtATime() async throws {
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: [
+                "Content-Range": "bytes 0-3/10",
+                "Content-Length": "4",
+                "Content-Type": "video/mp4"
+            ],
+            chunks: [Data([1, 2]), Data([3, 4])]
+        )
+        let consumer = GatedChunkConsumer()
+        let url = try #require(URL(string: "https://cdn.example/video.mp4"))
+        let range = try HTTPByteRange(start: 0, endInclusive: 3)
+        let client = makeClient()
+        let stream = Task {
+            try await client.stream(
+                from: url,
+                rangeHeader: "bytes=0-3",
+                expectedRange: range,
+                expectedCompleteLength: 10,
+                headers: [:],
+                allowedContentTypes: ["video/mp4"],
+                onResponse: { _ in },
+                onChunk: { data in await consumer.consume(data) }
+            )
+        }
+
+        await StreamingRangeURLProtocol.state.waitUntilDelivered(bytes: 4)
+        await consumer.release()
+        let result = try await stream.value
+
+        #expect(result.byteCount == 4)
+        #expect(await consumer.received == Data([1, 2, 3, 4]))
+        #expect(await consumer.maximumConcurrentCallbacks == 1)
+    }
+
     @Test
     func cancellationStopsTheUpstreamTask() async throws {
         StreamingRangeURLProtocol.state.configure(
@@ -173,7 +241,8 @@ struct HTTPRangeStreamingClientTests {
 
     private func streamFourBytes(
         events: StreamEventRecorder? = nil,
-        allowedContentTypes: Set<String>? = ["video/mp4"]
+        allowedContentTypes: Set<String>? = ["video/mp4"],
+        requiresContentLength: Bool = true
     ) async throws -> HTTPRangeStreamResult {
         let url = try #require(URL(string: "https://cdn.example/video.mp4"))
         return try await makeClient().stream(
@@ -183,6 +252,7 @@ struct HTTPRangeStreamingClientTests {
             expectedCompleteLength: 10,
             headers: [:],
             allowedContentTypes: allowedContentTypes,
+            requiresContentLength: requiresContentLength,
             onResponse: { _ in await events?.append("response") },
             onChunk: { data in await events?.append("chunk:\(data.count)") }
         )
@@ -194,6 +264,31 @@ struct HTTPRangeStreamingClientTests {
         return HTTPRangeStreamingClient(
             transport: URLSessionRangeTransport(configuration: configuration)
         )
+    }
+}
+
+/// 第一个 chunk 的回调被挡住直到 `release()`，同时记录并发回调的峰值。
+private actor GatedChunkConsumer {
+    private(set) var received = Data()
+    private(set) var maximumConcurrentCallbacks = 0
+    private var activeCallbacks = 0
+    private var isReleased = false
+    private var gate: CheckedContinuation<Void, Never>?
+
+    func consume(_ data: Data) async {
+        activeCallbacks += 1
+        maximumConcurrentCallbacks = max(maximumConcurrentCallbacks, activeCallbacks)
+        if !isReleased {
+            await withCheckedContinuation { gate = $0 }
+        }
+        received.append(data)
+        activeCallbacks -= 1
+    }
+
+    func release() {
+        isReleased = true
+        gate?.resume()
+        gate = nil
     }
 }
 

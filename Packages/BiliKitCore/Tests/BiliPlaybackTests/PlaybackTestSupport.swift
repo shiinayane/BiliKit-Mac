@@ -376,6 +376,7 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
         expectedCompleteLength: Int64,
         headers: [String: String],
         allowedContentTypes: Set<String>?,
+        requiresContentLength: Bool,
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult {

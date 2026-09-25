@@ -69,6 +69,7 @@ final class ScriptedRangeURLProtocolState: @unchecked Sendable {
     private var capturedRequest: URLRequest?
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var deliveryWaiters: [(bytes: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     var wasStopped: Bool { lock.withLock { stopped } }
     var deliveredBodyBytes: Int { lock.withLock { delivered } }
@@ -134,5 +135,25 @@ final class ScriptedRangeURLProtocolState: @unchecked Sendable {
         }
     }
 
-    func markDelivered(_ count: Int) { lock.withLock { delivered += count } }
+    func markDelivered(_ count: Int) {
+        let ready = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            delivered += count
+            let ready = deliveryWaiters.filter { $0.bytes <= delivered }.map(\.continuation)
+            deliveryWaiters.removeAll { $0.bytes <= delivered }
+            return ready
+        }
+        for waiter in ready { waiter.resume() }
+    }
+
+    /// 等到脚本已向 URLSession 交付至少 `bytes` 字节正文。
+    func waitUntilDelivered(bytes: Int) async {
+        await withCheckedContinuation { continuation in
+            let isDelivered = lock.withLock {
+                guard delivered < bytes else { return true }
+                deliveryWaiters.append((bytes, continuation))
+                return false
+            }
+            if isDelivered { continuation.resume() }
+        }
+    }
 }
