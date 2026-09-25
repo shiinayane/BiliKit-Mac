@@ -4,11 +4,12 @@ import BiliNetworking
 import Foundation
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliWatchProgressRepositoryTests {
     @Test
     func buildsOnlyCurrentWBIHeartbeatContract() async throws {
-        let transport = WatchProgressTransport()
-        let authorizer = RecordingWriteAuthorizer()
+        let transport = try heartbeatTransport()
+        let authorizer = StubAuthorizer()
         let client = BiliAPIClient(
             transport: transport,
             historyWriteAuthorizer: authorizer,
@@ -17,7 +18,7 @@ struct BiliWatchProgressRepositoryTests {
 
         try await client.reportWatchProgress(try report(event: .paused))
 
-        let request = try #require(await authorizer.request)
+        let request = try #require(await authorizer.capturedRequests().last)
         let components = try #require(
             URLComponents(url: request.url, resolvingAgainstBaseURL: false)
         )
@@ -33,7 +34,7 @@ struct BiliWatchProgressRepositoryTests {
             Set(query.keys) == [
                 "w_start_ts", "w_aid", "w_dt", "w_realtime", "w_played_time",
                 "w_real_played_time", "w_video_duration",
-                "w_last_play_progress_time", "web_location", "wts", "w_rid",
+                "w_last_play_progress_time", "web_location", "wts", "w_rid"
             ]
         )
         #expect(query["w_start_ts"] == "1777777700")
@@ -59,20 +60,20 @@ struct BiliWatchProgressRepositoryTests {
                 "start_ts", "aid", "cid", "type", "sub_type", "dt", "play_type",
                 "realtime", "played_time", "real_played_time", "refer_url",
                 "video_duration", "last_play_progress_time", "max_play_progress_time",
-                "outer", "mobi_app", "device", "platform", "session",
+                "outer", "mobi_app", "device", "platform", "session"
             ]
         )
         #expect(fields["play_type"] == "2")
         #expect(fields["max_play_progress_time"] == "33")
         #expect(fields["refer_url"] == request.headers["Referer"])
-        #expect(await transport.requestCount == 2)
+        #expect(transport.capturedRequests().count == 2)
     }
 
     @Test
     func naturalCompletionUsesFinishedSentinel() async throws {
-        let authorizer = RecordingWriteAuthorizer()
+        let authorizer = StubAuthorizer()
         let client = BiliAPIClient(
-            transport: WatchProgressTransport(),
+            transport: try heartbeatTransport(),
             historyWriteAuthorizer: authorizer,
             timestampProvider: { 1_777_777_777 }
         )
@@ -81,7 +82,7 @@ struct BiliWatchProgressRepositoryTests {
             try report(event: .ended, completed: true)
         )
 
-        let request = try #require(await authorizer.request)
+        let request = try #require(await authorizer.capturedRequests().last)
         let body = try #require(request.body.flatMap { String(data: $0, encoding: .utf8) })
         #expect(Self.decodedFields(body)?["played_time"] == "-1")
         let query = try #require(
@@ -92,43 +93,50 @@ struct BiliWatchProgressRepositoryTests {
 
     @Test
     func missingAuthorizerDoesNotFetchWBIOrTouchTransport() async throws {
-        let transport = WatchProgressTransport()
+        let transport = StubTransport(responses: [])
         let client = BiliAPIClient(transport: transport)
 
         await #expect(throws: BiliAPIError.authorizationRequired) {
             try await client.reportWatchProgress(try report(event: .started))
         }
-        #expect(await transport.requestCount == 0)
+        #expect(transport.capturedRequests().isEmpty)
     }
 
-    @Test(arguments: [403, 412])
-    func mapsHTTPRiskControlToRequestRestricted(status: Int) async throws {
+    @Test(arguments: [
+        (403, 0, WatchProgressError.requestRestricted),
+        (412, 0, .requestRestricted),
+        (200, -352, .requestRestricted),
+        (200, -101, .authenticationInvalid),
+        (200, -111, .authenticationInvalid),
+        (200, -500, .serviceRejected(code: -500)),
+        (500, 0, .unavailable)
+    ])
+    func mapsHeartbeatFailure(
+        status: Int,
+        code: Int,
+        expected: WatchProgressError
+    ) async throws {
         let repository = BiliWatchProgressRepository(
             client: BiliAPIClient(
-                transport: WatchProgressTransport(heartbeatStatus: status),
-                historyWriteAuthorizer: RecordingWriteAuthorizer(),
+                transport: try heartbeatTransport(status: status, code: code),
+                historyWriteAuthorizer: StubAuthorizer(),
                 timestampProvider: { 1_777_777_777 }
             )
         )
 
-        await #expect(throws: WatchProgressError.requestRestricted) {
+        await #expect(throws: expected) {
             try await repository.report(try report(event: .periodic))
         }
     }
 
-    @Test(arguments: [-101, -111])
-    func mapsCredentialBusinessFailureToAuthenticationInvalid(code: Int) async throws {
-        let repository = BiliWatchProgressRepository(
-            client: BiliAPIClient(
-                transport: WatchProgressTransport(heartbeatCode: code),
-                historyWriteAuthorizer: RecordingWriteAuthorizer(),
-                timestampProvider: { 1_777_777_777 }
-            )
-        )
-
-        await #expect(throws: WatchProgressError.authenticationInvalid) {
-            try await repository.report(try report(event: .periodic))
-        }
+    private func heartbeatTransport(
+        status: Int = 200,
+        code: Int = 0
+    ) throws -> StubTransport {
+        StubTransport(responses: [
+            try fixtureResponse("nav"),
+            jsonResponse("{\"code\":\(code),\"message\":\"fixture\"}", statusCode: status)
+        ])
     }
 
     private func report(
@@ -166,45 +174,5 @@ struct BiliWatchProgressRepositoryTests {
         components.percentEncodedQuery = value
         guard let items = components.queryItems else { return nil }
         return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-    }
-}
-
-private actor WatchProgressTransport: HTTPTransport {
-    private let heartbeatStatus: Int
-    private let heartbeatCode: Int
-    private(set) var requestCount = 0
-
-    init(heartbeatStatus: Int = 200, heartbeatCode: Int = 0) {
-        self.heartbeatStatus = heartbeatStatus
-        self.heartbeatCode = heartbeatCode
-    }
-
-    func send(_ request: HTTPRequest) async -> HTTPResponse {
-        requestCount += 1
-        if request.url.path == "/x/web-interface/nav" {
-            return HTTPResponse(
-                statusCode: 200,
-                headers: ["Content-Type": "application/json"],
-                body: Data(
-                    """
-                    {"code":0,"data":{"wbi_img":{"img_url":"https://i0.hdslb.com/bfs/wbi/0123456789abcdef0123456789abcdef.png","sub_url":"https://i0.hdslb.com/bfs/wbi/fedcba9876543210fedcba9876543210.png"}}}
-                    """.utf8
-                )
-            )
-        }
-        return HTTPResponse(
-            statusCode: heartbeatStatus,
-            headers: ["Content-Type": "application/json"],
-            body: Data("{\"code\":\(heartbeatCode),\"message\":\"fixture\"}".utf8)
-        )
-    }
-}
-
-private actor RecordingWriteAuthorizer: HTTPRequestAuthorizing {
-    private(set) var request: HTTPRequest?
-
-    func authorize(_ request: HTTPRequest) -> HTTPRequest {
-        self.request = request
-        return request
     }
 }

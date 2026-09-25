@@ -12,19 +12,7 @@ public actor WebQRLoginSession {
         }
         return url
     }()
-    private static let navigationValidationURL: URL = {
-        guard
-            let url = URL(
-                string: "https://api.bilibili.com/x/web-interface/nav"
-            )
-        else {
-            preconditionFailure("Static navigation validation URL must be valid")
-        }
-        return url
-    }()
-
     private static let qrCodeHost = "account.bilibili.com"
-    private static let maximumResponseSize = 256 * 1_024
 
     public private(set) var state: WebQRLoginState = .signedOut
 
@@ -39,7 +27,7 @@ public actor WebQRLoginSession {
     private var latestPollID: UInt64 = 0
 
     public init() {
-        let transport = Self.makeProductionTransport()
+        let transport = AuthenticationHTTP.makeProductionTransport()
         httpClient = HTTPClient(transport: transport)
         baseURL = Self.productionBaseURL
         credentialStore = KeychainWebCredentialStore()
@@ -157,16 +145,12 @@ public actor WebQRLoginSession {
 
             switch data.code {
             case 0:
-                let observation = Self.safeObservation(
-                    data: data,
-                    response: response
-                )
                 pendingCredential = Self.pendingCredential(
                     from: response,
                     generation: challenge.generation
                 )
                 activeChallenge = nil
-                state = .awaitingCredentialValidation(observation)
+                state = .awaitingCredentialValidation
                 return state
             case 86_101:
                 state = .awaitingScan(challenge.qrCode)
@@ -180,9 +164,7 @@ public actor WebQRLoginSession {
                 return state
             default:
                 return fail(
-                    .unsupportedStatus(
-                        Self.safeObservation(data: data, response: response)
-                    ),
+                    .unsupportedStatus(data.code),
                     generation: challenge.generation
                 )
             }
@@ -210,15 +192,6 @@ public actor WebQRLoginSession {
     public func invalidateSession() {
         cancel()
         transportInvalidator?()
-    }
-
-    public func validatePendingCredential() async throws -> Bool {
-        let pendingCredential = try takePendingCredential()
-        let result = try await validate(pendingCredential)
-        if case .signedIn = result {
-            return true
-        }
-        return false
     }
 
     /// 一次性消费候选凭据，验证登录态与有效期后才提交 Keychain。
@@ -253,44 +226,41 @@ public actor WebQRLoginSession {
     private func validate(
         _ pendingCredential: PendingCredential
     ) async throws -> NavigationAuthenticationResult {
-        let response = try await sendNavigationValidation(
-            cookieHeader: pendingCredential.credential.cookieHeader
+        let response = try await send(
+            AuthenticationHTTP.navigationValidationRequest(
+                cookieHeader: pendingCredential.credential.cookieHeader
+            )
         )
         try Task.checkCancellation()
         guard generation == pendingCredential.generation else {
             throw CancellationError()
         }
-        let envelope: NavigationAuthenticationEnvelope
         do {
-            envelope = try decoder.decode(
-                NavigationAuthenticationEnvelope.self,
-                from: response.body
-            )
+            return try AuthenticationHTTP.navigationResult(from: response)
         } catch {
             throw WebQRLoginFailure.invalidResponse
         }
-        guard envelope.code == 0, let data = envelope.data else {
-            throw WebQRLoginFailure.invalidResponse
-        }
-        return data.authenticationResult
     }
 
     private func send(
         path: String,
         queryItems: [URLQueryItem] = []
     ) async throws -> HTTPResponse {
-        let url = try endpoint(path: path, queryItems: queryItems)
+        try await send(
+            HTTPRequest(
+                url: try endpoint(path: path, queryItems: queryItems),
+                headers: [
+                    "Accept": "application/json",
+                    "User-Agent": HTTPUserAgent.short
+                ]
+            )
+        )
+    }
+
+    private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let response: HTTPResponse
         do {
-            response = try await httpClient.send(
-                HTTPRequest(
-                    url: url,
-                    headers: [
-                        "Accept": "application/json",
-                        "User-Agent": "BiliKitMac/0.1",
-                    ]
-                )
-            )
+            response = try await httpClient.send(request)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as HTTPClientError {
@@ -304,10 +274,10 @@ public actor WebQRLoginSession {
             throw WebQRLoginFailure.network
         }
 
-        guard response.body.count <= Self.maximumResponseSize else {
+        guard response.body.count <= AuthenticationHTTP.maximumResponseSize else {
             throw WebQRLoginFailure.responseTooLarge
         }
-        guard Self.looksLikeJSON(response) else {
+        guard response.looksLikeJSON() else {
             throw WebQRLoginFailure.nonJSONResponse
         }
         return response
@@ -331,43 +301,6 @@ public actor WebQRLoginSession {
             throw WebQRLoginFailure.invalidResponse
         }
         return url
-    }
-
-    private func sendNavigationValidation(
-        cookieHeader: String
-    ) async throws -> HTTPResponse {
-        let response: HTTPResponse
-        do {
-            response = try await httpClient.send(
-                HTTPRequest(
-                    url: Self.navigationValidationURL,
-                    headers: [
-                        "Accept": "application/json",
-                        "Cookie": cookieHeader,
-                        "Referer": "https://www.bilibili.com/",
-                        "User-Agent": "BiliKitMac/0.1",
-                    ]
-                )
-            )
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HTTPClientError {
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw WebQRLoginFailure.httpStatus(status)
-            case .nonHTTPResponse:
-                throw WebQRLoginFailure.network
-            }
-        } catch {
-            throw WebQRLoginFailure.network
-        }
-        guard response.body.count <= Self.maximumResponseSize else {
-            throw WebQRLoginFailure.responseTooLarge
-        }
-        guard Self.looksLikeJSON(response) else {
-            throw WebQRLoginFailure.nonJSONResponse
-        }
-        return response
     }
 
     private func requireCurrentGeneration(_ expected: UInt64) throws {
@@ -417,70 +350,6 @@ public actor WebQRLoginSession {
             && url.password == nil
     }
 
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        if let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-            !contentType.contains("json")
-        {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
-    }
-
-    private static func safeObservation(
-        data: PollData,
-        response: HTTPResponse
-    ) -> WebQRStatusObservation {
-        let components = data.url.flatMap {
-            URLComponents(string: $0)
-        }
-        let cookies = HTTPCookie.cookies(
-            withResponseHeaderFields: response.headers,
-            for: productionBaseURL
-        )
-        let cookieAttributeNames = Set(
-            cookies.flatMap { cookie in
-                cookie.properties?.keys.map(\.rawValue) ?? []
-            }
-        )
-        let cookieObservations = cookies.map {
-            WebQRCookieObservation(
-                name: $0.name,
-                domain: $0.domain,
-                path: $0.path,
-                isSecure: $0.isSecure,
-                isHTTPOnly: $0.isHTTPOnly,
-                isSessionOnly: $0.isSessionOnly,
-                hasExpiry: $0.expiresDate != nil
-            )
-        }.sorted { $0.name < $1.name }
-
-        return WebQRStatusObservation(
-            code: data.code,
-            dataFieldNames: data.fieldNames.sorted(),
-            urlScheme: components?.scheme,
-            urlHost: components?.host,
-            urlQueryNames: Array(
-                Set(components?.queryItems?.map(\.name) ?? [])
-            ).sorted(),
-            refreshTokenPresent: !(data.refreshToken ?? "").isEmpty,
-            responseHeaderNames: response.headers.keys
-                .map { $0.lowercased() }
-                .sorted(),
-            cookieNames: Array(Set(cookies.map(\.name))).sorted(),
-            cookieAttributeNames: cookieAttributeNames.sorted(),
-            cookies: cookieObservations
-        )
-    }
-
     private static func pendingCredential(
         from response: HTTPResponse,
         generation: UInt64
@@ -519,20 +388,6 @@ public actor WebQRLoginSession {
             credential: credential
         )
     }
-
-    private static func makeProductionTransport() -> URLSessionTransport {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 30
-        return URLSessionTransport(
-            configuration: configuration,
-            redirectPolicy: .reject
-        )
-    }
 }
 
 private struct ActiveChallenge: Sendable {
@@ -568,40 +423,7 @@ private struct PollEnvelope: Decodable, Sendable {
     let data: PollData?
 }
 
+/// 只解码状态码；URL、refresh_token 与 message 不进入内存模型。
 private struct PollData: Decodable, Sendable {
     let code: Int
-    let url: String?
-    let refreshToken: String?
-    let fieldNames: [String]
-
-    private enum CodingKeys: String, CodingKey {
-        case code
-        case url
-        case refreshToken = "refresh_token"
-    }
-
-    private struct FieldKey: CodingKey {
-        let stringValue: String
-        let intValue: Int? = nil
-
-        init?(stringValue: String) {
-            self.stringValue = stringValue
-        }
-
-        init?(intValue: Int) {
-            return nil
-        }
-    }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        code = try container.decode(Int.self, forKey: .code)
-        url = try container.decodeIfPresent(String.self, forKey: .url)
-        refreshToken = try container.decodeIfPresent(
-            String.self,
-            forKey: .refreshToken
-        )
-        let allFields = try decoder.container(keyedBy: FieldKey.self)
-        fieldNames = allFields.allKeys.map(\.stringValue)
-    }
 }

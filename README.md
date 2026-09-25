@@ -73,8 +73,7 @@ BiliKit 1.0.0 已正式发布。首页个性推荐、热门、搜索、二维码
 视频播放、字幕、弹幕、分 P、只读评论和相关推荐连续观看已经接入，应用内更新使用 Sparkle。
 安装包已完成 Developer ID 签名与 Apple 公证。
 
-具体完成证据、当前阶段和未覆盖边界以[路线图](docs/ROADMAP.md)为准。路线图中的候选能力
-不代表已经实现或承诺进入某个版本。
+当前阶段与后续候选见[路线图](docs/ROADMAP.md)。候选能力不代表已经实现或承诺进入某个版本。
 
 ## 获取 BiliKit
 
@@ -100,9 +99,7 @@ BiliKit 1.0.0 已正式发布。首页个性推荐、热门、搜索、二维码
 - macOS 15 或更高版本
 - 支持 Swift 6 的完整版 Xcode
 
-使用 Xcode 打开 `BiliKitMac.xcworkspace`：日常开发选择 `BiliKitMac` scheme 和 “My Mac”
-运行目标；弹幕实验与性能校准选择独立的 `DanmakuLab` scheme。`DanmakuLab` 不进入正式
-App target、归档或分发物。
+使用 Xcode 打开 `BiliKitMac.xcodeproj`，选择 `BiliKitMac` scheme 和 “My Mac” 运行目标。
 
 仓库完整质量检查：
 
@@ -139,16 +136,13 @@ v1 聚焦浏览、搜索、登录、观看历史和连续播放。以下能力�
 
 ## 开发与设计
 
-- [产品愿景与 v1 截线](docs/product/PRODUCT-VISION.md)
-- [UI/UX 产品蓝图](docs/product/UIUX-VISION.md)
-- [路线图](docs/ROADMAP.md)
-- [质量检查与验证边界](docs/development/QUALITY-GATES.md)
+- [路线图与产品范围](docs/ROADMAP.md)
+- [架构](docs/ARCHITECTURE.md)
+- [安全模型](docs/SECURITY-MODEL.md)
+- [发布流程](docs/release/README.md)
 - [分发说明](DISTRIBUTION.md)
 - [隐私说明](PRIVACY.md)
 - [安全问题报告](SECURITY.md)
-- [架构决策](docs/adr/)
-- [安全边界](docs/security/)
-- [真实行为验证记录](docs/validation/)
 - [App Icon 设计源文件](Design/AppIcon/v1/)
 - [宣传截图与规格](Design/Marketing/v1/)
 
@@ -160,24 +154,23 @@ BiliKitMac/                 App 入口、Composition Root、平台宿主与构�
 Packages/BiliKitCore/       核心模型、Application、Feature 与 adapter 模块
 BiliKitMacTests/            App composition 集成测试
 Design/                     可追踪的品牌与设计源文件
-docs/                       产品、路线图、ADR、安全与验证记录
+docs/                       路线图、架构、安全模型与发布流程
 Scripts/                    架构、秘密、格式、质量检查与本机发布流水线
-Tools/                      不进入产品的独立开发工具
 ```
 
 核心依赖方向：
 
 ```text
 Bili*Feature -> BiliApplication -> BiliModels
-                       ^ ports
-           BiliAPI / BiliAuth / BiliPlayback
-                       -> BiliNetworking
+     |                  ^ ports
+     v                  |
+  BiliUI    BiliAPI / BiliAuth / BiliPlayback / BiliDanmaku
+                        |（BiliDanmaku 除外）
+                        v
+                  BiliNetworking
 ```
 
-模块职责、Feature 准入和复用边界分别见
-[ADR 0004](docs/adr/0004-mvvm-clean-architecture.md)、
-[ADR 0006](docs/adr/0006-product-domain-feature-targets.md) 与
-[ADR 0009](docs/adr/0009-narrow-biliui-video-card-boundary.md)。
+模块职责、依赖规则和关键技术决策见[架构](docs/ARCHITECTURE.md)。
 
 </details>
 

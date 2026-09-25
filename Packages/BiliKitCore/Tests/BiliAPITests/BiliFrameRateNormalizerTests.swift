@@ -13,7 +13,7 @@ struct BiliFrameRateNormalizerTests {
         FrameRateCase(rawValue: "30", expected: 30),
         FrameRateCase(rawValue: "50", expected: 50),
         FrameRateCase(rawValue: "60", expected: 60),
-        FrameRateCase(rawValue: "120", expected: 120),
+        FrameRateCase(rawValue: "120", expected: 120)
     ])
     func preservesExplicitStandardRates(testCase: FrameRateCase) {
         #expect(
@@ -38,7 +38,7 @@ struct BiliFrameRateNormalizerTests {
         FrameRateCase(rawValue: "58.824", expected: 60),
         FrameRateCase(rawValue: "62.500", expected: 60),
         FrameRateCase(rawValue: "111.111", expected: 120),
-        FrameRateCase(rawValue: "125.000", expected: 120),
+        FrameRateCase(rawValue: "125.000", expected: 120)
     ])
     func normalizesBiliTimescaleBuckets(testCase: FrameRateCase) {
         #expect(
@@ -55,7 +55,7 @@ struct BiliFrameRateNormalizerTests {
         FrameRateCase(rawValue: "60.001", expected: 60),
         FrameRateCase(rawValue: "60.150", expected: 60),
         FrameRateCase(rawValue: "119.880", expected: 120_000.0 / 1_001.0),
-        FrameRateCase(rawValue: "120.150", expected: 120),
+        FrameRateCase(rawValue: "120.150", expected: 120)
     ])
     func normalizesSmallReportedDrift(testCase: FrameRateCase) {
         #expect(
@@ -84,7 +84,7 @@ struct BiliFrameRateNormalizerTests {
             "60/0",
             "60/",
             "37.2",
-            "240",
+            "240"
         ] as [String?]
     )
     func rejectsUnreliableValues(rawValue: String?) {

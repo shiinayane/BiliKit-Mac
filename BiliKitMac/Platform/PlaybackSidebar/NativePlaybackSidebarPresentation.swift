@@ -1,5 +1,6 @@
 import BiliBrowseFeature
 import BiliModels
+import CoreGraphics
 import Foundation
 
 struct NativePlaybackSidebarContent: Equatable {
@@ -23,7 +24,7 @@ enum NativePlaybackSidebarOverlay: Equatable {
 
 extension NativePlaybackSidebarOverlay {
     static func resolve(
-        state: GuestVideoState,
+        state: VideoLoadState,
         hasPresentedContent: Bool
     ) -> Self {
         if hasPresentedContent {
@@ -244,5 +245,45 @@ extension NativePlaybackSidebarPresentation {
             changed.insert(.commentsFooter(subject: subject))
         }
         return changed
+    }
+}
+
+enum NativePlaybackSidebarIdentityPolicy {
+    static func resetsToTop(
+        previousBVID: String?,
+        nextBVID: String?
+    ) -> Bool {
+        nextBVID != nil && previousBVID != nextBVID
+    }
+}
+
+enum NativePlaybackCommentsAnchorPolicy {
+    static func preservesRelativePosition(
+        previous: NativePlaybackCommentsPresentation?,
+        next: NativePlaybackCommentsPresentation?
+    ) -> Bool {
+        guard let previous, let next, previous.subject != nil,
+            previous.subject == next.subject, previous.sort == next.sort,
+            previous.rootState == .loaded, next.rootState == .loaded
+        else { return false }
+
+        if previous.footer != next.footer { return true }
+        let previousIDs = previous.threads.map { $0.thread.id }
+        let nextIDs = next.threads.map { $0.thread.id }
+        return nextIDs.count > previousIDs.count
+            && Array(nextIDs.prefix(previousIDs.count)) == previousIDs
+    }
+}
+
+enum NativePlaybackSidebarAnchorPolicy {
+    private static let bottomTolerance: CGFloat = 2
+
+    static func isBottomPinned(
+        contentHeight: CGFloat,
+        viewport: NSRect
+    ) -> Bool {
+        let maximumY = max(0, contentHeight - viewport.height)
+        guard maximumY > bottomTolerance else { return false }
+        return maximumY - viewport.minY <= bottomTolerance
     }
 }

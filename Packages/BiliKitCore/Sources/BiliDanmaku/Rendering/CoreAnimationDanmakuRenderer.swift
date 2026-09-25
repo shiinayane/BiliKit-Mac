@@ -25,58 +25,25 @@ public final class CoreAnimationDanmakuRenderer:
 
     public weak var delegate: (any DanmakuRenderingBackendDelegate)?
     public let rootLayer: CALayer
-    public let style: CoreAnimationDanmakuStyle
 
-    public private(set) var renderEpoch: UInt64 = 0
-    public var activeLayerCount: Int { entries.count }
+    private(set) var renderEpoch: UInt64 = 0
+    var activeLayerCount: Int { entries.count }
 
     private var backingScale: Double
     private var entries: [String: Entry] = [:]
     private var nextObjectIdentity: UInt64 = 0
     private var surfaceSize = CGSize.zero
     private let preparationOwner: DanmakuTexturePreparationOwner
-    private let activeTextureByteLimit: Int
     private(set) var activeTextureByteCost = 0
 
-    public convenience init(
-        style: CoreAnimationDanmakuStyle = .production,
-        contentsScale: Double = 2
-    ) {
-        self.init(
-            style: style,
-            contentsScale: contentsScale,
-            preparationConfiguration: .production,
-            activeTextureByteLimit: Self.maximumActiveTextureByteCost
-        )
-    }
-
-    init(
-        style: CoreAnimationDanmakuStyle,
-        contentsScale: Double,
-        preparationConfiguration: DanmakuTexturePreparationOwner.Configuration,
-        activeTextureByteLimit: Int = CoreAnimationDanmakuRenderer
-            .maximumActiveTextureByteCost
-    ) {
-        precondition(activeTextureByteLimit > 0)
-        self.style = style
-        self.activeTextureByteLimit = activeTextureByteLimit
+    public init(contentsScale: Double = 2) {
         backingScale = Self.normalizedBackingScale(contentsScale)
-        preparationOwner = DanmakuTexturePreparationOwner(
-            configuration: preparationConfiguration
-        )
+        preparationOwner = DanmakuTexturePreparationOwner()
         rootLayer = CALayer()
         rootLayer.anchorPoint = .zero
         rootLayer.isGeometryFlipped = true
         rootLayer.masksToBounds = true
     }
-
-    /// 同步接口只为旧 Lab backend 的协议兼容保留；生产 renderer 必须走 `prepare`。
-    public func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics {
-        DanmakuTextMetrics(width: 0, height: 0)
-    }
-
-    /// 同步接口在生产 renderer 中 fail closed，防止恢复 MainActor 栅格化路径。
-    public func render(_ placement: DanmakuLanePlacement) {}
 
     public func prepare(
         _ event: DanmakuEvent,
@@ -95,7 +62,6 @@ public final class CoreAnimationDanmakuRenderer:
         }
         preparationOwner.prepare(
             event: event,
-            style: style,
             backingScale: normalizedScale,
             preparationID: preparationID,
             generation: generation,
@@ -117,7 +83,6 @@ public final class CoreAnimationDanmakuRenderer:
             surfaceSize.height > 0,
             let key = DanmakuTextureRasterizer.key(
                 event: event,
-                style: style,
                 backingScale: backingScale
             ),
             let payload = preparationOwner.consume(
@@ -130,7 +95,7 @@ public final class CoreAnimationDanmakuRenderer:
             return false
         }
         let remainingTextureBytes = max(
-            activeTextureByteLimit - activeTextureByteCost,
+            Self.maximumActiveTextureByteCost - activeTextureByteCost,
             0
         )
         guard payload.byteCost <= remainingTextureBytes,
@@ -252,30 +217,12 @@ public final class CoreAnimationDanmakuRenderer:
         setPlaybackRate(0)
     }
 
-    func textLayer(forEventID eventID: String) -> CALayer? {
-        entries[eventID]?.layer
-    }
-
     func objectIdentity(forEventID eventID: String) -> UInt64? {
         entries[eventID]?.objectIdentity
     }
 
     var outstandingPreparationCount: Int {
         preparationOwner.outstandingRequestCount
-    }
-
-    var cachedTextureCount: Int { preparationOwner.cachedTextureCount }
-    var cachedTextureByteCost: Int { preparationOwner.cachedByteCost }
-    var cacheHitCount: Int { preparationOwner.cacheHitCount }
-    var cacheMissCount: Int { preparationOwner.cacheMissCount }
-    var cacheEvictionCount: Int { preparationOwner.cacheEvictionCount }
-    var rasterizationCount: Int { preparationOwner.rasterizationCount }
-    var maximumConcurrentPreparationCount: Int {
-        preparationOwner.maximumConcurrentOperationCount
-    }
-
-    func handleMemoryPressureForTesting() {
-        preparationOwner.handleMemoryPressureForTesting()
     }
 
     func completeAnimation(

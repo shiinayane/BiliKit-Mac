@@ -19,9 +19,15 @@ DerivedData/
 
 # Complete third-party or research checkouts. These are neither project source
 # nor redistribution inputs, and the directory is intentionally absent from the
-# Xcode project. See docs/README.md for the policy.
+# Xcode project and must never be copied into product code or fixtures.
 /references/
 
 # Personal project-learning notes. They describe one local checkout and are not
 # a project contract or release input.
 /docs/_local/
+
+# Local AI agent state and personal tool config: worktrees, local settings and
+# per-developer agent configuration are not project inputs.
+/.claude/worktrees/
+/.claude/settings.local.json
+/.codex/

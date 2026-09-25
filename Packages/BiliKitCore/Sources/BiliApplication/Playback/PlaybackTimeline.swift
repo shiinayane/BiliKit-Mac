@@ -164,8 +164,6 @@ package struct PlaybackTimelineItemToken: Sendable, Equatable {
 /// 以不可复用 item token 拒绝旧 AVPlayer observer 写回的时间线状态容器。
 package final class PlaybackTimelineStore {
     package private(set) var currentSnapshot = PlaybackTimelineSnapshot.idle
-    package var subscriberCount: Int { continuations.count }
-    package var observerCount: Int { observers.count }
 
     private var currentToken: PlaybackTimelineItemToken?
     private var continuations: [UUID: AsyncStream<PlaybackTimelineSnapshot>.Continuation] = [:]
@@ -333,5 +331,18 @@ package final class PlaybackTimelineStore {
         for continuation in continuations.values {
             continuation.yield(snapshot)
         }
+    }
+}
+
+/// 播放器接受的倍速范围；偏好恢复、键盘临时倍速与 AVPlayer 写入共用。
+public enum PlaybackRate {
+    public static let supported: ClosedRange<Double> = 0.25...4
+
+    public static func isSupported(_ rate: Double) -> Bool {
+        rate.isFinite && supported.contains(rate)
+    }
+
+    public static func isSupported(_ rate: Float) -> Bool {
+        isSupported(Double(rate))
     }
 }

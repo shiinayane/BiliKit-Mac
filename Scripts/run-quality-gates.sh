@@ -16,19 +16,22 @@ esac
 repository_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd -P)
 cd "$repository_root"
 
-developer_dir="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-if [ ! -x "$developer_dir/usr/bin/xcodebuild" ]; then
-    echo "需要完整 Xcode：$developer_dir" >&2
-    exit 1
-fi
-export DEVELOPER_DIR="$developer_dir"
-
 artifact_root=$(mktemp -d "${TMPDIR:-/tmp}/BiliKit-quality-gate.XXXXXX")
-task_tmp="$artifact_root/tmp"
-module_cache="$artifact_root/ModuleCache.noindex"
-mkdir -p "$task_tmp" "$module_cache"
+# 失败时把测试结果包留到 BILIKIT_FAILURE_OUTPUT（CI 上传为 artifact），其余一律清理。
+save_failure_evidence() {
+    [ -n "${BILIKIT_FAILURE_OUTPUT:-}" ] || return 0
+    mkdir -p "$BILIKIT_FAILURE_OUTPUT"
+    for bundle in "$artifact_root"/DerivedData/Logs/Test/*.xcresult; do
+        [ -d "$bundle" ] && cp -R "$bundle" "$BILIKIT_FAILURE_OUTPUT/"
+    done
+    return 0
+}
+
 cleanup() {
     status=$?
+    if [ "$status" -ne 0 ]; then
+        save_failure_evidence || echo "[Gate] warning: 未能保存失败现场" >&2
+    fi
     if ! rm -rf -- "$artifact_root" 2>/dev/null; then
         echo "[Gate] warning: 未能完整清理临时产物：$artifact_root" >&2
     fi
@@ -38,6 +41,8 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+. Scripts/isolated-toolchain.sh
 
 echo "[Gate] static"
 sh Scripts/check-architecture.sh
@@ -55,82 +60,34 @@ if [ "$mode" = "static" ]; then
     exit 0
 fi
 
-swiftpm_home="$artifact_root/swiftpm-home"
-mkdir -p "$swiftpm_home"
 echo "[Gate] package"
-HOME="$swiftpm_home" \
-CFFIXED_USER_HOME="$swiftpm_home" \
-XDG_CACHE_HOME="$swiftpm_home/.cache" \
-TMPDIR="$task_tmp" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
-SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-xcrun swift test \
-    --quiet \
-    --package-path Packages/BiliKitCore \
-    --scratch-path "$artifact_root/swiftpm" \
-    --cache-path "$artifact_root/swiftpm-cache" \
-    --config-path "$artifact_root/swiftpm-config" \
-    --security-path "$artifact_root/swiftpm-security"
+package_test --quiet
 
 if [ "$mode" = "package" ]; then
     exit 0
 fi
 
-xcode_home="$artifact_root/xcode-home"
-derived_data="$artifact_root/DerivedData"
-packages="$artifact_root/SourcePackages"
-mkdir -p "$xcode_home"
-
-if [ -n "${BILIKIT_TEST_PRODUCTS_INPUT:-}" ]; then
-    echo "[Gate] import app test products"
-    mkdir -p "$derived_data/Build/Products"
-    tar -xf "$BILIKIT_TEST_PRODUCTS_INPUT" -C "$derived_data/Build/Products"
-else
-    echo "[Gate] app build-for-testing"
-    # Xcode 26 misdiagnoses explicit local-package edges during build-for-testing.
-    HOME="$xcode_home" \
-    CFFIXED_USER_HOME="$xcode_home" \
-    XDG_CACHE_HOME="$xcode_home/.cache" \
-    TMPDIR="$task_tmp" \
-    CLANG_MODULE_CACHE_PATH="$module_cache" \
-    SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-    xcodebuild \
-        -quiet \
-        -project BiliKitMac.xcodeproj \
-        -scheme BiliKitMac \
-        -configuration Debug \
-        -destination 'platform=macOS' \
-        -derivedDataPath "$derived_data" \
-        -clonedSourcePackagesDirPath "$packages" \
-        CODE_SIGNING_ALLOWED=NO \
-        SWIFT_ENABLE_EXPLICIT_MODULES=NO \
-        build-for-testing
-fi
+echo "[Gate] app build-for-testing"
+app_xcodebuild build-for-testing
 
 set -- "$derived_data"/Build/Products/*.xctestrun
 [ "$#" -eq 1 ] && [ -f "$1" ] || {
     echo "需要唯一的 App 测试运行配置" >&2
     exit 1
 }
-test_run="$1"
 
 echo "[Gate] app tests"
-HOME="$xcode_home" \
-CFFIXED_USER_HOME="$xcode_home" \
-XDG_CACHE_HOME="$xcode_home/.cache" \
-TMPDIR="$task_tmp" \
-CLANG_MODULE_CACHE_PATH="$module_cache" \
-SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-xcodebuild \
+isolated xcode-home xcodebuild \
     -quiet \
-    -xctestrun "$test_run" \
+    -xctestrun "$1" \
     -destination 'platform=macOS' \
     -derivedDataPath "$derived_data" \
     test-without-building \
     -only-testing:BiliKitMacTests
 
-if [ -n "${BILIKIT_TEST_PRODUCTS_OUTPUT:-}" ]; then
-    tar -cf "$BILIKIT_TEST_PRODUCTS_OUTPUT" -C "$derived_data/Build/Products" .
+# CI 把发布工具链构建的 App 交给较旧系统做启动冒烟（Scripts/smoke-launch-app.sh）。
+if [ -n "${BILIKIT_APP_OUTPUT:-}" ]; then
+    tar -cf "$BILIKIT_APP_OUTPUT" -C "$derived_data/Build/Products/Debug" BiliKit.app
 fi
 
 echo "[Gate] app passed"

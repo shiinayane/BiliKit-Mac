@@ -4,31 +4,26 @@ import Foundation
 import SwiftUI
 
 struct PopularNativeGridView: View {
-    @State private var imageOwner = NativeVideoImagePipelineOwner()
     @Environment(\.locale) private var locale
-    let videos: [PopularVideo]
+    let content: LoadedFeedContent<PopularVideo>
     @Binding var scrollOffsetY: CGFloat
-    let canLoadMore: Bool
-    let tailIdentity: String?
-    let isLoading: Bool
     @Binding var scrollReset: NativeVideoGridScrollResetState
-    let onNearEnd: () -> Void
-    let onSelect: (String) -> Void
+    let imagePipeline: NativeVideoImagePipeline
 
     var body: some View {
         NativeVideoGridView(
-            items: Self.makePresentations(videos, locale: locale),
+            items: Self.makePresentations(content.items, locale: locale),
             scrollOffsetY: $scrollOffsetY,
             accessibilityLabel: AppStrings.localized("热门视频", locale: locale),
             tailState: NativeVideoGridTailState(
-                canLoadMore: canLoadMore,
-                tailIdentity: tailIdentity,
-                isLoading: isLoading
+                canLoadMore: content.canLoadMore,
+                tailIdentity: content.tailIdentity,
+                isLoading: content.isLoadingMore
             ),
             scrollReset: $scrollReset,
-            imagePipeline: imageOwner.pipeline,
-            onNearEnd: onNearEnd,
-            onSelect: onSelect
+            imagePipeline: imagePipeline,
+            onNearEnd: content.loadMore,
+            onSelect: content.select
         )
     }
 
@@ -54,7 +49,7 @@ struct PopularNativeGridView: View {
                     NativeVideoCardMetric(
                         text: presentation.danmakuCountText,
                         systemImage: "text.bubble.fill"
-                    ),
+                    )
                 ],
                 coverTrailingText: presentation.durationText,
                 footerLeadingText: presentation.footerText,
@@ -64,7 +59,7 @@ struct PopularNativeGridView: View {
                         presentation.ownerName,
                         AppStrings.localized("播放 \(presentation.viewCountText)", locale: locale),
                         AppStrings.localized("弹幕 \(presentation.danmakuCountText)", locale: locale),
-                        AppStrings.localized("时长 \(presentation.durationText)", locale: locale),
+                        AppStrings.localized("时长 \(presentation.durationText)", locale: locale)
                     ]
                 )
             )

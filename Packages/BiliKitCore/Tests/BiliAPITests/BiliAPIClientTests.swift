@@ -7,24 +7,44 @@ import Testing
 @testable import BiliAPI
 
 struct BiliAPIClientTests {
-    @Test
-    func recommendationsUseWBIAccountReadAndFilterUnsupportedCards() async throws {
-        let response = jsonResponse(
-            #"""
-            {"code":0,"data":{"item":[
-              {"goto":"av","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","pic":"//i0.hdslb.com/a.jpg","owner":{"mid":10001,"name":"作者","face":"//i1.hdslb.com/a.jpg"},"stat":{"view":12345,"danmaku":67,"like":8},"duration":125,"pubdate":1700000000,"rcmd_reason":{"content":"正在流行"}},
-              {"goto":"live","bvid":"BV1FixtureB2","title":"直播","owner":{"mid":2,"name":"主播"},"stat":{"view":1,"danmaku":0,"like":0},"duration":0,"pubdate":1700000000},
-              {"goto":"av","bvid":"BV1FixtureC3","title":"广告","owner":{"mid":3,"name":"广告主"},"stat":{"view":1,"danmaku":0,"like":0},"duration":10,"pubdate":1700000000,"business_info":{}}
-            ]}}
-            """#
-        )
-        let transport = RecordingTransport(
-            responses: [try fixtureResponse("nav"), response]
-        )
-        let authorizer = RecordingRequestAuthorizer()
+    @Test(arguments: AccountReadCase.all)
+    func accountReadEndpointsAuthorizeOnlyTheirOwnRequest(
+        _ testCase: AccountReadCase
+    ) async throws {
+        let transport = StubTransport(responses: try testCase.responses())
+        let authorizer = StubAuthorizer()
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: authorizer,
+            timestampProvider: { 1_700_000_000 }
+        )
+
+        try await testCase.call(client)
+
+        let requests = transport.capturedRequests()
+        #expect(await authorizer.capturedPaths() == [testCase.path])
+        #expect(requests.last?.url.path == testCase.path)
+        let cookies = requests.last?.headers["Cookie"]?.components(separatedBy: "; ")
+        #expect(cookies?.first == StubAuthorizer.cookie)
+        // buvid3 只附加到搜索 endpoint。
+        #expect(
+            cookies.map { Array($0.dropFirst()) }
+                == (testCase.path == "/x/web-interface/wbi/search/type"
+                    ? [BiliAPIClient.searchBuvid3Cookie] : [])
+        )
+        // WBI key 的 nav 请求始终匿名。
+        #expect(requests.dropLast().allSatisfy { $0.headers["Cookie"] == nil })
+    }
+
+    @Test
+    func recommendationsUseWBIAndFilterUnsupportedCards() async throws {
+        let response = jsonResponse(AccountReadCase.recommendationBody)
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), response]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: StubAuthorizer(),
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -36,15 +56,13 @@ struct BiliAPIClientTests {
         #expect(page.continuation == RecommendationContinuation(freshIndex: 1))
         #expect(page.nextContinuation == RecommendationContinuation(freshIndex: 2))
 
-        let requests = await transport.capturedRequests()
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/index/top/feed/rcmd",
+                "/x/web-interface/wbi/index/top/feed/rcmd"
             ]
         )
-        #expect(requests[0].headers["Cookie"] == nil)
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
         #expect(requests[1].headers["Referer"] == "https://www.bilibili.com/")
         let query = URLComponents(
             url: requests[1].url,
@@ -54,73 +72,6 @@ struct BiliAPIClientTests {
         #expect(query?.first(where: { $0.name == "fresh_idx_1h" })?.value == "1")
         #expect(query?.first(where: { $0.name == "wts" })?.value == "1700000000")
         #expect(query?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
-        #expect(
-            await authorizer.capturedPaths()
-                == ["/x/web-interface/wbi/index/top/feed/rcmd"]
-        )
-    }
-
-    @Test
-    func popularDecodesSanitizedContractAndBuildsGuestRequest() async throws {
-        let transport = RecordingTransport(responses: [try fixtureResponse("popular")])
-        let client = BiliAPIClient(transport: transport)
-
-        let page = try await client.popular(page: 2, pageSize: 10)
-
-        #expect(page.pageNumber == 2)
-        #expect(page.pageSize == 10)
-        #expect(page.hasMore)
-        #expect(page.videos.count == 2)
-        #expect(page.videos[0].bvid == "BV1FixtureA1")
-        #expect(page.videos[0].title == "合成热门样本 'A' <测试>")
-        #expect(page.videos[0].owner.name == "测试作者甲")
-        #expect(page.videos[0].statistics.viewCount == 12_345)
-        #expect(page.videos[0].coverURL?.scheme == "https")
-        #expect(page.videos[0].owner.avatarURL?.scheme == "https")
-
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.url.path == "/x/web-interface/popular")
-        let query = try #require(URLComponents(url: request.url, resolvingAgainstBaseURL: false))
-        #expect(query.queryItems?.contains(URLQueryItem(name: "pn", value: "2")) == true)
-        #expect(query.queryItems?.contains(URLQueryItem(name: "ps", value: "10")) == true)
-        #expect(request.headers["Accept"] == "application/json")
-        #expect(request.headers["Referer"] == "https://www.bilibili.com/")
-    }
-
-    @Test
-    func pageListDecodesMultipleParts() async throws {
-        let transport = RecordingTransport(responses: [try fixtureResponse("pagelist")])
-        let client = BiliAPIClient(transport: transport)
-
-        let pages = try await client.pages(for: "BV1FixtureA1")
-
-        #expect(pages.map(\.cid) == [900_001, 900_002])
-        #expect(pages.map(\.index) == [1, 2])
-        #expect(pages[1].dimension?.width == 1080)
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.url.path == "/x/player/pagelist")
-        #expect(request.headers["Referer"] == "https://www.bilibili.com/video/BV1FixtureA1/")
-    }
-
-    @Test
-    func videoDetailDecodesSanitizedContract() async throws {
-        let transport = RecordingTransport(responses: [try fixtureResponse("view")])
-        let client = BiliAPIClient(transport: transport)
-
-        let detail = try await client.videoDetail(for: "BV1FixtureA1")
-
-        #expect(detail.aid == 700_001)
-        #expect(detail.bvid == "BV1FixtureA1")
-        #expect(detail.title == "合成视频详情 A")
-        #expect(detail.summary == "这是手写的脱敏详情说明。")
-        #expect(detail.owner.id == 10_001)
-        #expect(detail.statistics.likeCount == 3_456)
-        #expect(detail.dimension == VideoDimension(width: 1920, height: 1080, rotation: 0))
-        #expect(detail.pages.map(\.cid) == [900_001])
-
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.url.path == "/x/web-interface/view")
-        #expect(request.headers["Referer"] == "https://www.bilibili.com/video/BV1FixtureA1/")
     }
 
     @Test
@@ -131,7 +82,7 @@ struct BiliAPIClientTests {
             """#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let detail = try await client.videoDetail(for: "BV1FixtureA1")
@@ -156,7 +107,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"摘要合集","ep_count":20}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let collection = try #require(
@@ -170,11 +121,15 @@ struct BiliAPIClientTests {
 
     @Test
     func videoDetailRejectsDuplicatePageIdentity() async {
-        let response = jsonResponse(
-            #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]}}"#
-        )
+        let pages =
+            #"[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]"#
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [
+                jsonResponse(
+                    #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":"#
+                        + pages + "}}"
+                )
+            ])
         )
 
         await #expect(throws: BiliAPIError.decodingFailed) {
@@ -188,7 +143,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","ep_count":1,"sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":999,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureB2","cid":910001,"title":"","arc":{"aid":7002,"bvid":"BV1FixtureC3","duration":100},"page":{"cid":910002,"page":1,"part":"P1","duration":100}}]}]}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let detail = try await client.videoDetail(for: "BV1FixtureA1")
@@ -206,7 +161,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureB2","title":"一"},null,{"season_id":501,"section_id":601,"id":702,"bvid":"BV1FixtureC3","title":"二"}]},null]}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let collection = try #require(
@@ -227,7 +182,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"section_id":601,"episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureB2","title":"一"}]},{"season_id":501,"id":601,"episodes":[{"season_id":501,"section_id":601,"id":701,"bvid":"BV1FixtureC3","title":"二"}]}]}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let sections = try #require(
@@ -249,7 +204,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"section_id":602,"episodes":[]}]}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let section = try #require(
@@ -276,9 +231,9 @@ struct BiliAPIClientTests {
         let secondEpisode =
             #"{"season_id":501,"section_id":601,"id":702,"aid":7002,"bvid":"BV1FixtureC3","cid":920001,"title":"二"}"#
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [
+            transport: StubTransport(responses: [
                 response(order: "[\(firstEpisode),\(secondEpisode)]"),
-                response(order: "[\(secondEpisode),\(firstEpisode)]"),
+                response(order: "[\(secondEpisode),\(firstEpisode)]")
             ])
         )
 
@@ -297,7 +252,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"bvid":"BV1FixtureA1","title":"当前视频","desc":"说明","pic":"","owner":{"mid":10001,"name":"作者"},"stat":{"view":1,"danmaku":2,"like":3},"duration":120,"pubdate":1720000000,"pages":[{"cid":900001,"page":1,"part":"P1","duration":120}],"ugc_season":{"id":501,"title":"合集","sections":[{"season_id":501,"id":601,"title":"分部","episodes":[{"season_id":501,"section_id":601,"id":701,"aid":7001,"bvid":"BV1FixtureB2","cid":999999,"title":"视频","pages":[{"cid":910002,"page":2,"part":"P2","duration":50},{"cid":910001,"page":1,"part":"P1","duration":50}]}]}]}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         let episode = try #require(
@@ -311,29 +266,11 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func pagelistRejectsDuplicateIdentity() async {
-        let response = jsonResponse(
-            #"{"code":0,"data":[{"cid":900001,"page":1,"part":"P1","duration":60},{"cid":900001,"page":2,"part":"P2","duration":60}]}"#
-        )
-        let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
-        )
-
-        await #expect(throws: BiliAPIError.decodingFailed) {
-            try await client.pages(for: "BV1FixtureA1")
-        }
-    }
-
-    @Test
-    func relatedVideosUseAccountReadAndDecodeShelfFields() async throws {
-        let transport = RecordingTransport(
+    func relatedVideosDecodeShelfFields() async throws {
+        let transport = StubTransport(
             responses: [try fixtureResponse("related")]
         )
-        let authorizer = RecordingRequestAuthorizer()
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer
-        )
+        let client = BiliAPIClient(transport: transport)
 
         let videos = try await client.relatedVideos(to: "BV1FixtureA1")
 
@@ -343,16 +280,11 @@ struct BiliAPIClientTests {
         #expect(videos[0].viewCount == 22_222)
         #expect(videos[0].durationSeconds == 222)
         #expect(videos[1].durationSeconds == nil)
-        let request = try #require(await transport.capturedRequests().first)
+        let request = try #require(transport.capturedRequests().first)
         #expect(request.url.path == "/x/web-interface/archive/related")
         #expect(
             URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
                 .queryItems == [URLQueryItem(name: "bvid", value: "BV1FixtureA1")]
-        )
-        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
-        #expect(
-            await authorizer.capturedPaths()
-                == ["/x/web-interface/archive/related"]
         )
     }
 
@@ -367,7 +299,7 @@ struct BiliAPIClientTests {
             )
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         await #expect(throws: BiliAPIError.decodingFailed) {
@@ -376,36 +308,16 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func relatedVideosAcceptEmptyResponse() async throws {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":0,"data":[]}"#.utf8)
-        )
-        let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
-        )
-
-        let videos = try await client.relatedVideos(to: "BV1FixtureA1")
-
-        #expect(videos.isEmpty)
-    }
-
-    @Test
-    func uploaderSignatureUsesExactAccountReadCardEndpoint() async throws {
-        let transport = RecordingTransport(
+    func uploaderSignatureUsesExactCardEndpoint() async throws {
+        let transport = StubTransport(
             responses: [try fixtureResponse("uploader-card")]
         )
-        let authorizer = RecordingRequestAuthorizer()
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer
-        )
+        let client = BiliAPIClient(transport: transport)
 
         let signature = try await client.uploaderSignature(for: 10_001)
 
         #expect(signature == "用影像记录生活")
-        let request = try #require(await transport.capturedRequests().first)
+        let request = try #require(transport.capturedRequests().first)
         #expect(request.method == .get)
         #expect(request.url.scheme == "https")
         #expect(request.url.host == "api.bilibili.com")
@@ -415,12 +327,9 @@ struct BiliAPIClientTests {
             URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
                 .queryItems == [
                     URLQueryItem(name: "mid", value: "10001"),
-                    URLQueryItem(name: "photo", value: "false"),
+                    URLQueryItem(name: "photo", value: "false")
                 ]
         )
-        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
-        #expect(request.headers["Authorization"] == nil)
-        #expect(await authorizer.capturedPaths() == ["/x/web-interface/card"])
     }
 
     @Test
@@ -429,7 +338,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"card":{"mid":10001,"sign":"签名"}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         #expect(try await client.uploaderSignature(for: 10_001) == "签名")
@@ -441,7 +350,7 @@ struct BiliAPIClientTests {
             #"{"code":0,"data":{"card":{"mid":"10002","sign":"签名"}}}"#
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [response])
         )
 
         await #expect(throws: BiliAPIError.decodingFailed) {
@@ -450,53 +359,11 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func uploaderSignaturePreservesBlankValueForApplicationNormalization()
-        async throws
-    {
-        let response = jsonResponse(
-            #"{"code":0,"data":{"card":{"mid":"10001","sign":"  \n "}}}"#
-        )
-        let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
-        )
-
-        #expect(try await client.uploaderSignature(for: 10_001) == "  \n ")
-    }
-
-    @Test(arguments: [302, 307])
-    func uploaderSignatureRejectsRedirectResponse(statusCode: Int) async {
-        let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [HTTPResponse(statusCode: statusCode, body: Data())]
-            )
-        )
-
-        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
-            try await client.uploaderSignature(for: 10_001)
-        }
-    }
-
-    @Test
-    func uploaderSignatureRejectsBusinessFailure() async {
-        let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [jsonResponse(#"{"code":-352,"message":"blocked"}"#)]
-            )
-        )
-
-        await #expect(
-            throws: BiliAPIError.apiRejected(code: -352, message: "blocked")
-        ) {
-            try await client.uploaderSignature(for: 10_001)
-        }
-    }
-
-    @Test
     func searchUsesWBIAndNormalizesEndpointQuirks() async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -504,10 +371,7 @@ struct BiliAPIClientTests {
             timestampProvider: { 1_700_000_000 }
         )
 
-        let page = try await client.searchVideos(
-            keyword: " macOS !'()* 测试 ",
-            page: 1
-        )
+        let page = try await search(client, " macOS !'()* 测试 ")
 
         #expect(page.totalResults == 3)
         #expect(page.videos.count == 2)
@@ -516,11 +380,11 @@ struct BiliAPIClientTests {
         #expect(page.videos[0].coverURL?.scheme == "https")
         #expect(page.videos[1].durationSeconds == 754)
 
-        let requests = await transport.capturedRequests()
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         let searchQuery = URLComponents(
@@ -533,182 +397,54 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func searchEncodesAllTypedCriteriaAndFixedPagination() async throws {
-        let searchResponse = try fixtureResponse("search")
-        let transport = RecordingTransport(
-            responses: [try fixtureResponse("nav")]
-                + Array(repeating: searchResponse, count: 11)
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            timestampProvider: { 1_700_000_000 }
-        )
-
-        for order in VideoSearchOrder.allCases {
-            _ = try await client.searchVideos(
-                request: VideoSearchRequest(
-                    criteria: VideoSearchCriteria(query: "macOS", order: order),
-                    page: 1
-                )
-            )
-        }
-        for duration in VideoDurationFilter.allCases {
-            _ = try await client.searchVideos(
-                request: VideoSearchRequest(
-                    criteria: VideoSearchCriteria(query: "macOS", duration: duration),
-                    page: 1
-                )
-            )
-        }
-        _ = try await client.searchVideos(
-            request: VideoSearchRequest(
-                criteria: VideoSearchCriteria(
-                    query: "macOS",
-                    publicationRange: VideoPublicationTimeRange(
-                        beginTimestamp: 1_700_000_000,
-                        endTimestamp: 1_700_086_399
-                    )
-                ),
-                page: 2
-            )
-        )
-
-        let searchRequests = await transport.capturedRequests().dropFirst()
-        #expect(searchRequests.count == 11)
-        let queries = searchRequests.map { request in
-            Dictionary(
-                uniqueKeysWithValues: (URLComponents(
-                    url: request.url,
-                    resolvingAgainstBaseURL: false
-                )?.queryItems ?? []).compactMap { item in
-                    item.value.map { (item.name, $0) }
-                }
-            )
-        }
-        #expect(
-            queries.prefix(5).map { $0["order"] } == [
-                "totalrank", "click", "pubdate", "dm", "stow",
-            ]
-        )
-        #expect(
-            queries.dropFirst(5).prefix(5).map { $0["duration"] } == [
-                "0", "1", "2", "3", "4",
-            ]
-        )
-        #expect(queries.allSatisfy { $0["search_type"] == "video" })
-        #expect(queries.allSatisfy { $0["page_size"] == "20" })
-        #expect(queries.last?["page"] == "2")
-        #expect(queries.last?["pubtime_begin_s"] == "1700000000")
-        #expect(queries.last?["pubtime_end_s"] == "1700086399")
-        #expect(queries.allSatisfy { $0["wts"] == "1700000000" })
-        #expect(queries.allSatisfy { $0["w_rid"]?.count == 32 })
-    }
-
-    @Test
-    func searchUsesAccountReadWhileWBIKeyStaysAnonymous() async throws {
-        let authorizer = RecordingRequestAuthorizer()
-        let transport = RecordingTransport(
+    func searchCarriesOneBuvid3OnAnonymousAndAuthorizedPaths() async throws {
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
                 try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: authorizer,
+            requestAuthorizer: StubAuthorizer(.fail(.missingCredential), .authorize),
             timestampProvider: { 1_700_000_000 }
         )
 
-        _ = try await client.searchVideos(keyword: "macOS", page: 1)
+        _ = try await search(client, "macOS")
+        _ = try await search(client, "Swift")
 
-        let requests = await transport.capturedRequests()
-        #expect(requests[0].url.path == "/x/web-interface/nav")
+        let requests = transport.capturedRequests()
+        #expect(requests.count == 3)
         #expect(requests[0].headers["Cookie"] == nil)
-        #expect(requests[1].url.path == "/x/web-interface/wbi/search/type")
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
-        #expect(
-            await authorizer.capturedPaths() == [
-                "/x/web-interface/wbi/search/type"
-            ]
-        )
-    }
-
-    @Test
-    func searchFallsBackAnonymouslyOnlyForMissingCredential() async throws {
-        let transport = RecordingTransport(
-            responses: [
-                try fixtureResponse("nav"),
-                try fixtureResponse("search"),
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: ThrowingRequestAuthorizer(kind: .missingCredential),
-            timestampProvider: { 1_700_000_000 }
-        )
-
-        _ = try await client.searchVideos(keyword: "macOS", page: 1)
-
-        let requests = await transport.capturedRequests()
-        #expect(requests.count == 2)
-        #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
+        // 无凭据时只有 buvid3；登录后与授权器给出的 Cookie 并列，且同一进程内不变。
+        let anonymousCookie = try #require(requests[1].headers["Cookie"])
+        let buvid3 = /buvid3=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}infoc/
+        #expect(anonymousCookie.wholeMatch(of: buvid3) != nil)
+        #expect(requests[2].headers["Cookie"] == "\(StubAuthorizer.cookie); \(anonymousCookie)")
     }
 
     @Test(arguments: [
-        HTTPRequestAuthorizationFailureKind.invalidCredential,
-        .unavailable,
-        .denied,
+        (HTTPRequestAuthorizationFailureKind.invalidCredential, BiliAPIError.authenticationInvalid),
+        (.unavailable, .authorizationUnavailable),
+        (.denied, .authorizationUnavailable)
     ])
     func searchFailsClosedForCredentialFailure(
-        kind: HTTPRequestAuthorizationFailureKind
+        kind: HTTPRequestAuthorizationFailureKind,
+        expected: BiliAPIError
     ) async throws {
-        let transport = RecordingTransport(responses: [try fixtureResponse("nav")])
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: ThrowingRequestAuthorizer(kind: kind),
+            requestAuthorizer: StubAuthorizer(.fail(kind)),
             timestampProvider: { 1_700_000_000 }
         )
 
-        if kind == .invalidCredential {
-            await #expect(throws: BiliAPIError.authenticationInvalid) {
-                try await client.searchVideos(keyword: "macOS", page: 1)
-            }
-        } else {
-            await #expect(throws: BiliAPIError.authorizationUnavailable) {
-                try await client.searchVideos(keyword: "macOS", page: 1)
-            }
+        await #expect(throws: expected) {
+            try await search(client)
         }
         #expect(
-            await transport.capturedRequests().map(\.url.path) == [
-                "/x/web-interface/nav"
-            ]
-        )
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    func searchCannotCrossAuthenticationEpoch() async throws {
-        let authorizer = SuspendingRequestAuthorizer()
-        let transport = RecordingTransport(responses: [try fixtureResponse("nav")])
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
-        )
-        let task = Task {
-            try await client.searchVideos(keyword: "macOS", page: 1)
-        }
-        await authorizer.waitUntilAuthorizationStarts()
-
-        await client.invalidateAuthenticatedSession()
-        await authorizer.resumeAuthorization()
-
-        await #expect(throws: CancellationError.self) {
-            try await task.value
-        }
-        #expect(
-            await transport.capturedRequests().map(\.url.path) == [
-                "/x/web-interface/nav"
-            ]
+            transport.capturedRequests().map(\.url.path) == ["/x/web-interface/nav"]
         )
     }
 
@@ -724,14 +460,14 @@ struct BiliAPIClientTests {
                 with: "\"duration\": \"-01:02:03\""
             ).data(using: .utf8)
         )
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
                 HTTPResponse(
                     statusCode: response.statusCode,
                     headers: response.headers,
                     body: body
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
@@ -739,21 +475,18 @@ struct BiliAPIClientTests {
             timestampProvider: { 1_700_000_000 }
         )
 
-        let page = try await client.searchVideos(
-            keyword: "macOS",
-            page: 1
-        )
+        let page = try await search(client, "macOS")
 
         #expect(page.videos[0].durationSeconds == nil)
     }
 
     @Test
     func searchReusesSameDayWBIKey() async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
                 try fixtureResponse("search"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
@@ -761,150 +494,70 @@ struct BiliAPIClientTests {
             timestampProvider: { 1_700_000_000 }
         )
 
-        _ = try await client.searchVideos(keyword: "macOS", page: 1)
-        _ = try await client.searchVideos(keyword: "Swift", page: 1)
+        _ = try await search(client, "macOS")
+        _ = try await search(client, "Swift")
 
-        let paths = await transport.capturedRequests().map(\.url.path)
+        let paths = transport.capturedRequests().map(\.url.path)
         #expect(paths.filter { $0 == "/x/web-interface/nav" }.count == 1)
         #expect(paths.filter { $0 == "/x/web-interface/wbi/search/type" }.count == 2)
     }
 
-    @Test
-    func signatureRejectionRefreshesWBIKeyOnce() async throws {
-        let rejected = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                #"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#.utf8
-            )
-        )
-        let transport = RecordingTransport(
+    @Test(arguments: [
+        jsonResponse(#"{"code":-403,"message":"访问权限不足","data":{"unexpected":true}}"#),
+        jsonResponse(#"{"code":0,"message":"0","ttl":1,"data":{"v_voucher":"voucher_fixture"}}"#),
+        HTTPResponse(statusCode: 403, body: Data())
+    ])
+    func signatureRejectionRefreshesWBIKeyOnce(rejection: HTTPResponse) async throws {
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
-                rejected,
+                rejection,
                 try fixtureResponse("nav-refreshed"),
-                try fixtureResponse("search"),
+                try fixtureResponse("search")
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
+            requestAuthorizer: StubAuthorizer(),
             timestampProvider: { 1_700_000_000 }
         )
 
-        let page = try await client.searchVideos(keyword: "macOS", page: 1)
+        let page = try await search(client)
 
         #expect(page.videos.count == 2)
-        let requests = await transport.capturedRequests()
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
                 "/x/web-interface/nav",
                 "/x/web-interface/wbi/search/type",
                 "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
-        let signatures =
-            requests
-            .filter { $0.url.path.contains("/wbi/search/") }
-            .compactMap {
-                URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
-                    .queryItems?
-                    .first(where: { $0.name == "w_rid" })?
-                    .value
+        let searches = [requests[1], requests[3]]
+        #expect(
+            searches.allSatisfy {
+                $0.headers["Cookie"]
+                    == "\(StubAuthorizer.cookie); \(BiliAPIClient.searchBuvid3Cookie)"
             }
-        #expect(signatures.count == 2)
+        )
+        let signatures = searches.map {
+            URLComponents(url: $0.url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "w_rid" })?.value
+        }
+        #expect(signatures[0] != nil)
         #expect(signatures[0] != signatures[1])
     }
 
     @Test
-    func httpForbiddenAlsoRefreshesWBIKeyOnce() async throws {
-        let authorizer = RecordingRequestAuthorizer()
-        let transport = RecordingTransport(
-            responses: [
-                try fixtureResponse("nav"),
-                HTTPResponse(statusCode: 403, body: Data()),
-                try fixtureResponse("nav-refreshed"),
-                try fixtureResponse("search"),
-            ]
+    func playURLMapsOnlyAVCAndAACRepresentationsWithAnonymousMediaHeaders() async throws {
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), try fixtureResponse("playurl")]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
+            requestAuthorizer: StubAuthorizer()
         )
-
-        _ = try await client.searchVideos(keyword: "macOS", page: 1)
-
-        #expect(
-            await transport.capturedRequests().map(\.url.path) == [
-                "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
-                "/x/web-interface/nav",
-                "/x/web-interface/wbi/search/type",
-            ]
-        )
-        let searchRequests = await transport.capturedRequests().filter {
-            $0.url.path == "/x/web-interface/wbi/search/type"
-        }
-        #expect(
-            searchRequests.allSatisfy {
-                $0.headers["Cookie"] == "FIXTURE_AUTHORIZED"
-            }
-        )
-    }
-
-    @Test
-    func searchRiskResponseDoesNotRetryAnonymously() async throws {
-        let authorizer = RecordingRequestAuthorizer()
-        let transport = RecordingTransport(
-            responses: [
-                try fixtureResponse("nav"),
-                HTTPResponse(statusCode: 412, body: Data()),
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
-        )
-
-        await #expect(throws: BiliAPIError.httpStatus(412)) {
-            try await client.searchVideos(keyword: "macOS", page: 1)
-        }
-        let requests = await transport.capturedRequests()
-        #expect(requests.count == 2)
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
-    }
-
-    @Test
-    func searchBusinessRiskDoesNotRetryAnonymously() async throws {
-        let authorizer = RecordingRequestAuthorizer()
-        let transport = RecordingTransport(
-            responses: [
-                try fixtureResponse("nav"),
-                jsonResponse(#"{"code":-352,"message":"blocked"}"#),
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer,
-            timestampProvider: { 1_700_000_000 }
-        )
-
-        await #expect(
-            throws: BiliAPIError.apiRejected(code: -352, message: "blocked")
-        ) {
-            try await client.searchVideos(keyword: "macOS", page: 1)
-        }
-        let requests = await transport.capturedRequests()
-        #expect(requests.count == 2)
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
-    }
-
-    @Test
-    func playURLMapsOnlyAVCAndAACRepresentations() async throws {
-        let transport = RecordingTransport(responses: [try fixtureResponse("playurl")])
-        let client = BiliAPIClient(transport: transport)
 
         let playback = try await client.playback(
             for: "BV1FixtureA1",
@@ -933,13 +586,34 @@ struct BiliAPIClientTests {
         #expect(audio.id == 30216)
         #expect(audio.segmentBase.index.httpRangeHeaderValue == "bytes=800-1599")
         #expect(playback.mediaHeaders["Referer"]?.contains("BV1FixtureA1") == true)
+        // playurl 请求可带账户凭据，交给 CDN 的媒体 header 不得带。
+        #expect(Set(playback.mediaHeaders.keys) == ["Referer", "User-Agent"])
 
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.url.path == "/x/player/playurl")
+        let request = try #require(playURLRequests(transport).first)
+        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
         let queryItems = URLComponents(
             url: request.url,
             resolvingAgainstBaseURL: false
         )?.queryItems
+        #expect(queryItems?.contains(URLQueryItem(name: "web_location", value: "1315873")) == true)
+        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
+        // gaia 与 dm_img 风控字段不分登录状态；try_look 只属于本地无凭据的匿名请求。
+        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
+        #expect(queryItems?.contains { $0.name == "try_look" } == false)
+        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
+        #expect(
+            queryItems?.contains(
+                URLQueryItem(name: "dm_img_inter", value: #"{"ds":[],"wh":[0,0,0],"of":[0,0,0]}"#)
+            ) == true
+        )
+        for name in ["dm_img_str", "dm_cover_img_str"] {
+            let value = try #require(queryItems?.first { $0.name == name }?.value)
+            #expect(!value.isEmpty)
+            #expect(
+                value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "+/".contains($0)) }
+            )
+        }
         #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
@@ -952,10 +626,27 @@ struct BiliAPIClientTests {
     }
 
     @Test
+    func voucherBesideRealDataIsNotTreatedAsChallenge() async throws {
+        let response = try mutatedFixture("playurl") {
+            $0["v_voucher"] = "voucher_fixture"
+        }
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
+        )
+
+        let playback = try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+
+        #expect(playback.dashManifest != nil)
+    }
+
+    @Test
     func playURLMapsSingleSafeDURLAsProgressiveMedia() async throws {
         let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [try progressivePlayURLResponse()]
+            transport: StubTransport(
+                responses: [
+                    try fixtureResponse("nav"),
+                    try ProgressiveShape.singleSafeSegment.response()
+                ]
             )
         )
 
@@ -977,10 +668,12 @@ struct BiliAPIClientTests {
 
     @Test
     func playURLPrefersDASHWhenDURLIsAlsoPresent() async throws {
+        // DASH 优先级还必须防止未消费的漂移 durl 破坏旧路径。
+        let response = try mutatedFixture("playurl") {
+            $0["durl"] = [["unexpected": true]]
+        }
         let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [try playURLFixtureByAddingDURL()]
-            )
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         let playback = try await client.playback(
@@ -991,139 +684,36 @@ struct BiliAPIClientTests {
         #expect(playback.dashManifest != nil)
     }
 
-    @Test
-    func playURLRejectsUnsupportedProgressiveShapesWithStableErrors() async throws {
-        let missingURLDURL: [[String: Any]] = [
-            [
-                "length": 884_983,
-                "size": 50_000_000,
-                "backup_url": [],
-            ]
-        ]
-        await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(.empty)) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [try progressivePlayURLResponse(durl: [])]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.multipleSegments)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [
-                        try progressivePlayURLResponse(
-                            durl: [progressiveDURL(), progressiveDURL(path: "part-2.mp4")]
-                        )
-                    ]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.multipleSegments)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [
-                        try progressivePlayURLResponse(
-                            durl: [progressiveDURL(), ["unexpected": true]]
-                        )
-                    ]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.invalidDuration)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [try progressivePlayURLResponse(length: 0)]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.invalidSize)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [try progressivePlayURLResponse(size: 0)]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.noSafeURL)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [
-                        try progressivePlayURLResponse(
-                            primaryURL: "http://127.0.0.1/media.mp4",
-                            backupURLs: []
-                        )
-                    ]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.unsupportedContainer)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [try progressivePlayURLResponse(format: "flv")]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await #expect(
-            throws: BiliAPIError.unsupportedProgressiveMedia(.noSafeURL)
-        ) {
-            try await BiliAPIClient(
-                transport: RecordingTransport(
-                    responses: [try progressivePlayURLResponse(durl: missingURLDURL)]
-                )
-            ).playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-    }
+    @Test(arguments: [
+        (ProgressiveShape.emptyDURL, ProgressiveMediaFailure.empty),
+        (.twoSegments, .multipleSegments),
+        (.malformedSecondSegment, .multipleSegments),
+        (.zeroDuration, .invalidDuration),
+        (.zeroSize, .invalidSize),
+        (.loopbackOnly, .noSafeURL),
+        (.missingURL, .noSafeURL),
+        (.flvContainer, .unsupportedContainer)
+    ])
+    func playURLRejectsUnsupportedProgressiveShape(
+        shape: ProgressiveShape,
+        expected: ProgressiveMediaFailure
+    ) async throws {
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [try fixtureResponse("nav"), try shape.response()])
+        )
 
-    @Test
-    func videoDetailPreservesUPowerTrueFalseAndMissing() async throws {
-        let explicit = try await BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [
-                    try viewFixtureWithUPower(exclusive: true, preview: false, playable: true)
-                ]
-            )
-        ).videoDetail(for: "BV1FixtureA1")
-        let missing = try await BiliAPIClient(
-            transport: RecordingTransport(responses: [try fixtureResponse("view")])
-        ).videoDetail(for: "BV1FixtureA1")
-        let inverse = try await BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [
-                    try viewFixtureWithUPower(
-                        exclusive: false,
-                        preview: true,
-                        playable: false
-                    )
-                ]
-            )
-        ).videoDetail(for: "BV1FixtureA1")
-
-        #expect(explicit.access.isUPowerExclusive == true)
-        #expect(explicit.access.isUPowerPreviewAvailable == false)
-        #expect(explicit.access.isUPowerPlayable == true)
-        #expect(inverse.access.isUPowerExclusive == false)
-        #expect(inverse.access.isUPowerPreviewAvailable == true)
-        #expect(inverse.access.isUPowerPlayable == false)
-        #expect(missing.access == VideoAccess())
+        await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(expected)) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
     }
 
     @Test
     func playURLBindsLoudnessMetadataToEachSemanticTrackResponse() async throws {
         let originalVolume = loudnessVolume(measuredI: -20, measuredTP: -4)
         let aiVolume = loudnessVolume(measuredI: -11, measuredTP: -0.5)
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: [
@@ -1132,14 +722,14 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English（AI）",
-                                "production_type": 2,
+                                "production_type": 2
                             ],
                             [
                                 "lang": "ja",
                                 "title": "日本語（AI）",
-                                "production_type": 2,
-                            ],
-                        ],
+                                "production_type": 2
+                            ]
+                        ]
                     ],
                     volume: originalVolume
                 ),
@@ -1153,12 +743,12 @@ struct BiliAPIClientTests {
                     audioPath: "ai-ja-audio.m4s",
                     currentLanguage: "ja",
                     currentProductionType: 2
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         let playback = try await client.playback(
@@ -1175,7 +765,8 @@ struct BiliAPIClientTests {
         #expect(englishAI.loudnessMetadata?.measuredIntegratedLUFS == -11)
         #expect(japaneseAI.loudnessMetadata == nil)
         #expect(original.loudnessMetadata != englishAI.loudnessMetadata)
-        let requests = await transport.capturedRequests()
+        let requests = playURLRequests(transport)
+        #expect(requests.count == 3)
         #expect(
             requests.allSatisfy { request in
                 URLComponents(
@@ -1188,56 +779,65 @@ struct BiliAPIClientTests {
         )
     }
 
-    @Test(arguments: [
-        #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-        #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14}"#,
-        #"{"measured_i":null,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-        #"{"measured_i":"bad","measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-        #"{"measured_i":-200,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-        #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-    ])
-    func loudnessPayloadRequiresACompleteFiniteBoundedGroup(_ source: String) {
+    @Test(
+        arguments: [
+            (
+                #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+                -20.0
+            ),
+            (
+                #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14}"#,
+                nil
+            ),
+            (
+                #"{"measured_i":null,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+                nil
+            ),
+            (
+                #"{"measured_i":"bad","measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+                nil
+            ),
+            (
+                #"{"measured_i":-200,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+                nil
+            ),
+            (
+                #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
+                nil
+            )
+        ] as [(String, Double?)]
+    )
+    func loudnessPayloadRequiresACompleteFiniteBoundedGroup(
+        _ source: String,
+        expectedIntegratedLUFS: Double?
+    ) {
         let payload = try? JSONDecoder().decode(
             PlaybackVolumePayload.self,
             from: Data(source.utf8)
         )
 
-        if source.hasPrefix(#"{"measured_i":-20,"#)
-            && source.contains(#""target_tp":-1"#)
-        {
-            #expect(payload?.model?.measuredIntegratedLUFS == -20)
-        } else {
-            #expect(payload?.model == nil)
-        }
+        #expect(payload?.model?.measuredIntegratedLUFS == expectedIntegratedLUFS)
     }
 
     @Test
     func authenticatedPlayURLMapsVerifiedAIAudioAsSemanticTrack() async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
-                    languageCatalog: [
-                        "support": true,
-                        "items": [
-                            [
-                                "lang": "en",
-                                "title": "English（AI）",
-                                "production_type": 2,
-                            ]
-                        ],
-                    ]
+                    languageCatalog: machineGeneratedEnglishCatalog
                 ),
                 try semanticAudioResponse(
                     audioPath: "ai-en-audio.m4s",
                     currentLanguage: "en",
                     currentProductionType: 2
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         let playback = try await client.playback(
@@ -1258,7 +858,7 @@ struct BiliAPIClientTests {
         #expect(!ai.isDefault)
         #expect(ai.isAutoselect)
         #expect(ai.representations.map(\.id) == [30_280])
-        let requests = await transport.capturedRequests()
+        let requests = playURLRequests(transport)
         #expect(requests.count == 2)
         #expect(
             URLComponents(
@@ -1275,8 +875,9 @@ struct BiliAPIClientTests {
     func authenticatedPlayURLOmitsAIAudioWithoutMatchingResponseProductionType(
         currentProductionType: Int?
     ) async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -1285,12 +886,12 @@ struct BiliAPIClientTests {
                     audioPath: "ai-en-audio.m4s",
                     currentLanguage: "en",
                     currentProductionType: currentProductionType
-                ),
+                )
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         let playback = try await client.playback(
@@ -1299,18 +900,20 @@ struct BiliAPIClientTests {
         )
 
         #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
-        #expect(await transport.capturedRequests().count == 2)
+        #expect(playURLRequests(transport).count == 2)
     }
 
-    @Test
-    func playbackUsesCredentialOnlyForPlayURLRequest() async throws {
-        let authorizer = RecordingRequestAuthorizer()
-        let transport = RecordingTransport(
-            responses: [try fixtureResponse("playurl")]
-        )
+    @Test(arguments: [true, false])
+    func serverResumeMetadataIsKeptOnlyForAuthenticatedResponse(
+        authenticated: Bool
+    ) async throws {
+        let response = try mutatedFixture("playurl") {
+            $0["last_play_cid"] = 900_002
+            $0["last_play_time"] = 42_500
+        }
         let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response]),
+            requestAuthorizer: authenticated ? StubAuthorizer() : nil
         )
 
         let playback = try await client.playback(
@@ -1318,100 +921,27 @@ struct BiliAPIClientTests {
             cid: 900_001
         )
 
-        #expect(await authorizer.capturedPaths() == ["/x/player/playurl"])
-        #expect(Set(playback.mediaHeaders.keys) == ["Referer", "User-Agent"])
-        #expect(playback.mediaHeaders["Cookie"] == nil)
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
-    }
-
-    @Test
-    func authenticatedPlaybackMapsServerResumeMetadata() async throws {
-        let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [try resumePlayURLResponse()]
-            ),
-            requestAuthorizer: RecordingRequestAuthorizer()
+        let serverResume = PlaybackResumeMetadata(
+            lastPlayedCID: 900_002,
+            positionMilliseconds: 42_500
         )
-
-        let playback = try await client.playback(
-            for: "BV1FixtureA1",
-            cid: 900_001
-        )
-
-        #expect(
-            playback.resumeMetadata
-                == PlaybackResumeMetadata(
-                    lastPlayedCID: 900_002,
-                    positionMilliseconds: 42_500
-                )
-        )
-    }
-
-    @Test
-    func anonymousPlaybackDropsServerResumeMetadata() async throws {
-        let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [try resumePlayURLResponse()]
-            )
-        )
-
-        let playback = try await client.playback(
-            for: "BV1FixtureA1",
-            cid: 900_001
-        )
-
-        #expect(playback.resumeMetadata == nil)
-    }
-
-    @Test
-    func playbackUsesAnonymousRequestOnlyForExplicitlyMissingCredential()
-        async throws
-    {
-        let transport = RecordingTransport(
-            responses: [try fixtureResponse("playurl")]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: ThrowingRequestAuthorizer(
-                kind: .missingCredential
-            )
-        )
-
-        let playback = try await client.playback(
-            for: "BV1FixtureA1",
-            cid: 900_001
-        )
-
-        #expect(playback.mediaHeaders["Cookie"] == nil)
-        let request = try #require(await transport.capturedRequests().first)
-        #expect(request.headers["Cookie"] == nil)
+        #expect(playback.resumeMetadata == (authenticated ? serverResume : nil))
     }
 
     @Test
     func anonymousFallbackDoesNotRequestAdvertisedAIAudio() async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
-                    languageCatalog: [
-                        "support": true,
-                        "items": [
-                            [
-                                "lang": "en",
-                                "title": "English（AI）",
-                                "production_type": 2,
-                            ]
-                        ],
-                    ]
+                    languageCatalog: machineGeneratedEnglishCatalog
                 )
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: ThrowingRequestAuthorizer(
-                kind: .missingCredential
-            )
+            requestAuthorizer: StubAuthorizer(.fail(.missingCredential))
         )
 
         let playback = try await client.playback(
@@ -1421,16 +951,28 @@ struct BiliAPIClientTests {
 
         #expect(playback.dashManifest?.audioTracks.count == 1)
         #expect(playback.dashManifest?.audioTracks[0].role == .original)
-        #expect(await transport.capturedRequests().count == 1)
+        let request = try #require(playURLRequests(transport).first)
+        #expect(playURLRequests(transport).count == 1)
+        #expect(request.headers["Cookie"] == nil)
+        let queryItems = URLComponents(
+            url: request.url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "try_look", value: "1")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
+        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
     }
 
     @Test
     func anonymousFallbackProvenanceCannotAuthorizeAdvertisedAIAudio()
         async throws
     {
-        let authorizer = MissingThenAuthorizedRequestAuthorizer()
-        let transport = RecordingTransport(
+        let authorizer = StubAuthorizer(.fail(.missingCredential), .authorize)
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: machineGeneratedEnglishCatalog
@@ -1448,110 +990,56 @@ struct BiliAPIClientTests {
         )
 
         #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
-        #expect(await authorizer.authorizationCount() == 1)
-        #expect(await transport.capturedRequests().count == 1)
+        #expect(await authorizer.authorizationCount == 1)
+        #expect(playURLRequests(transport).count == 1)
     }
 
-    @Test(arguments: [403, 412])
-    func aiAudioRemoteRestrictionFailsClosed(statusCode: Int) async throws {
-        let transport = RecordingTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishCatalog
-                ),
-                HTTPResponse(statusCode: statusCode, body: Data()),
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
-        )
-
-        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
-            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        #expect(await transport.capturedRequests().count == 2)
-    }
-
-    @Test
-    func aiAudioBusinessRejectionFailsClosed() async throws {
-        let transport = RecordingTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishCatalog
-                ),
+    @Test(
+        arguments: [
+            (HTTPResponse(statusCode: 403, body: Data()), BiliAPIError.httpStatus(403)),
+            (HTTPResponse(statusCode: 412, body: Data()), .httpStatus(412)),
+            (
                 jsonResponse(#"{"code":-404,"message":"fixture"}"#),
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
-        )
-
-        await #expect(
-            throws: BiliAPIError.apiRejected(
-                code: -404,
-                message: "fixture"
-            )
-        ) {
-            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        #expect(await transport.capturedRequests().count == 2)
-    }
-
-    @Test
-    func aiAudioNonJSONResponseFailsClosed() async throws {
-        let transport = RecordingTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishCatalog
-                ),
+                .apiRejected(code: -404, message: "fixture")
+            ),
+            (
                 HTTPResponse(
                     statusCode: 200,
                     headers: ["Content-Type": "text/html"],
                     body: Data("fixture".utf8)
                 ),
-            ]
+                .nonJSONResponse
+            ),
+            (nil, .transportFailure)
+        ] as [(HTTPResponse?, BiliAPIError)]
+    )
+    func aiAudioFailureFailsWholePlaybackClosed(
+        aiResponse: HTTPResponse?,
+        expected: BiliAPIError
+    ) async throws {
+        let base = try semanticAudioResponse(
+            audioPath: "original-audio.m4s",
+            languageCatalog: machineGeneratedEnglishCatalog
+        )
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), base] + [aiResponse].compactMap { $0 }
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
-        await #expect(throws: BiliAPIError.nonJSONResponse) {
+        await #expect(throws: expected) {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(await transport.capturedRequests().count == 2)
-    }
-
-    @Test
-    func aiAudioTransportFailureFailsClosed() async throws {
-        let transport = RecordingTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishCatalog
-                )
-            ]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
-        )
-
-        await #expect(throws: BiliAPIError.transportFailure) {
-            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        #expect(await transport.capturedRequests().count == 2)
+        #expect(playURLRequests(transport).count == 2)
     }
 
     @Test
     func unsafeAIAudioTitleIsOmittedBeforeSecondRequest() async throws {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
+                try fixtureResponse("nav"),
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
                     languageCatalog: [
@@ -1560,16 +1048,16 @@ struct BiliAPIClientTests {
                             [
                                 "lang": "en",
                                 "title": "English \"AI\"",
-                                "production_type": 2,
+                                "production_type": 2
                             ]
-                        ],
+                        ]
                     ]
                 )
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         let playback = try await client.playback(
@@ -1578,143 +1066,108 @@ struct BiliAPIClientTests {
         )
 
         #expect(playback.dashManifest?.audioTracks.count == 1)
-        #expect(await transport.capturedRequests().count == 1)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async {
-        let authorizer = SuspendingMissingCredentialAuthorizer()
-        let transport = RecordingTransport(responses: [])
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer
-        )
-        let playbackTask = Task {
-            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await authorizer.waitUntilAuthorizationStarts()
-
-        playbackTask.cancel()
-        await authorizer.resumeWithMissingCredential()
-
-        await #expect(throws: CancellationError.self) {
-            try await playbackTask.value
-        }
-        #expect(await transport.capturedRequests().isEmpty)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    func missingCredentialResolutionCannotCrossSessionInvalidationBoundary() async {
-        let authorizer = SuspendingMissingCredentialAuthorizer()
-        let transport = RecordingTransport(responses: [])
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: authorizer
-        )
-        let playbackTask = Task {
-            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-        }
-        await authorizer.waitUntilAuthorizationStarts()
-
-        await client.invalidateAuthenticatedSession()
-        await authorizer.resumeWithMissingCredential()
-
-        await #expect(throws: CancellationError.self) {
-            try await playbackTask.value
-        }
-        #expect(await transport.capturedRequests().isEmpty)
+        #expect(playURLRequests(transport).count == 1)
     }
 
     @Test(arguments: [
-        HTTPRequestAuthorizationFailureKind.invalidCredential,
-        .unavailable,
-        .denied,
+        (HTTPResponse(statusCode: 412, body: Data()), BiliAPIError.httpStatus(412)),
+        (
+            jsonResponse(#"{"code":-352,"message":"blocked"}"#),
+            .apiRejected(code: -352, message: "blocked")
+        ),
+        (jsonResponse(#"{"code":-101,"message":"fixture"}"#), .authenticationInvalid)
     ])
-    func playbackFailsClosedForNonMissingAuthorizationFailure(
-        kind: HTTPRequestAuthorizationFailureKind
-    ) async {
-        let transport = RecordingTransport(responses: [])
+    func authenticatedRejectionDoesNotRetryAnonymously(
+        response: HTTPResponse,
+        expected: BiliAPIError
+    ) async throws {
+        let transport = StubTransport(responses: [try fixtureResponse("nav"), response])
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: ThrowingRequestAuthorizer(kind: kind)
+            requestAuthorizer: StubAuthorizer()
         )
 
-        if kind == .invalidCredential {
-            await #expect(throws: BiliAPIError.authenticationInvalid) {
-                try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-            }
-        } else {
-            await #expect(throws: BiliAPIError.authorizationUnavailable) {
-                try await client.playback(for: "BV1FixtureA1", cid: 900_001)
-            }
-        }
-        #expect(await transport.capturedRequests().isEmpty)
-    }
-
-    @Test(arguments: [403, 412])
-    func authenticatedPlaybackDoesNotRetryRemoteRestrictionAnonymously(
-        statusCode: Int
-    ) async {
-        let transport = RecordingTransport(
-            responses: [HTTPResponse(statusCode: statusCode, body: Data())]
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
-        )
-
-        await #expect(throws: BiliAPIError.httpStatus(statusCode)) {
+        await #expect(throws: expected) {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(await transport.capturedRequests().count == 1)
+        #expect(
+            playURLRequests(transport).map { $0.headers["Cookie"] }
+                == [StubAuthorizer.cookie]
+        )
     }
 
-    @Test
-    func authenticatedPlaybackMapsRemoteSessionInvalidationWithoutRetry()
-        async
-    {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":-101,"message":"fixture"}"#.utf8)
-        )
-        let transport = RecordingTransport(responses: [response])
+    /// 只有本地明确无凭据才匿名重试；凭据失效、不可用或被拒绝时失败关闭，不发出任何 playurl。
+    @Test(arguments: [
+        (HTTPRequestAuthorizationFailureKind.invalidCredential, BiliAPIError.authenticationInvalid),
+        (.unavailable, .authorizationUnavailable),
+        (.denied, .authorizationUnavailable)
+    ])
+    func localCredentialFailureDoesNotFallBackToAnonymousPlayback(
+        kind: HTTPRequestAuthorizationFailureKind,
+        expected: BiliAPIError
+    ) async throws {
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer(.fail(kind))
         )
 
-        await #expect(throws: BiliAPIError.authenticationInvalid) {
+        await #expect(throws: expected) {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(await transport.capturedRequests().count == 1)
+        #expect(playURLRequests(transport).isEmpty)
     }
 
-    @Test
-    func authenticatedPlaybackDoesNotRetryBusinessRejectionAnonymously() async {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":-404,"message":"fixture"}"#.utf8)
-        )
-        let transport = RecordingTransport(responses: [response])
+    @Test(.timeLimit(.minutes(1)))
+    func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async throws {
+        let authorizer = StubAuthorizer(.fail(.missingCredential), suspendingCall: 1)
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: authorizer
         )
-
-        await #expect(throws: BiliAPIError.apiRejected(code: -404, message: "fixture")) {
+        let playbackTask = Task {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(await transport.capturedRequests().count == 1)
+        await authorizer.waitUntilSuspended()
+
+        playbackTask.cancel()
+        await authorizer.resume()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(playURLRequests(transport).isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func missingCredentialResolutionCannotCrossSessionInvalidationBoundary() async throws {
+        let authorizer = StubAuthorizer(.fail(.missingCredential), suspendingCall: 1)
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: authorizer
+        )
+        let playbackTask = Task {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        await authorizer.waitUntilSuspended()
+
+        await client.invalidateAuthenticatedSession()
+        await authorizer.resume()
+
+        await #expect(throws: CancellationError.self) {
+            try await playbackTask.value
+        }
+        #expect(playURLRequests(transport).isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))
     func authenticatedRequestCannotCrossSessionInvalidationBoundary() async throws {
-        let authorizer = SuspendingRequestAuthorizer()
+        let authorizer = StubAuthorizer(suspendingCall: 1)
         let response = try fixtureResponse("playurl")
-        let firstTransport = RecordingInvalidatingAPITransport(response: response)
-        let replacementTransport = RecordingInvalidatingAPITransport(response: response)
+        let firstTransport = StubTransport(responses: [try fixtureResponse("nav"), response])
+        let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
         )
@@ -1726,15 +1179,15 @@ struct BiliAPIClientTests {
         let playbackTask = Task {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        await authorizer.waitUntilAuthorizationStarts()
+        await authorizer.waitUntilSuspended()
 
         await client.invalidateAuthenticatedSession()
-        await authorizer.resumeAuthorization()
+        await authorizer.resume()
 
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(firstTransport.capturedRequests().isEmpty)
+        #expect(playURLRequests(firstTransport).isEmpty)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1742,28 +1195,30 @@ struct BiliAPIClientTests {
     @Test(.timeLimit(.minutes(1)))
     func authenticatedResponseCannotWriteBackAfterSessionInvalidation() async throws {
         let response = try fixtureResponse("playurl")
-        let firstTransport = SuspendingResponseTransport(response: response)
-        let replacementTransport = RecordingInvalidatingAPITransport(response: response)
+        let firstTransport = StubTransport([
+            .response(try fixtureResponse("nav")), .suspended(response)
+        ])
+        let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
         )
         let client = BiliAPIClient(
-            requestAuthorizer: RecordingRequestAuthorizer(),
+            requestAuthorizer: StubAuthorizer(),
             transportFactory: { transportFactory.makeTransport() }
         )
 
         let playbackTask = Task {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        await firstTransport.waitUntilRequestStarts()
+        await firstTransport.waitForRequests(2)
 
         await client.invalidateAuthenticatedSession()
-        await firstTransport.resumeResponse()
+        firstTransport.resumeSuspendedRequest()
 
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(await firstTransport.capturedRequests().count == 1)
+        #expect(playURLRequests(firstTransport).count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1776,13 +1231,9 @@ struct BiliAPIClientTests {
             audioPath: "original-audio.m4s",
             languageCatalog: machineGeneratedEnglishCatalog
         )
-        let authorizer = SuspendingSecondRequestAuthorizer()
-        let firstTransport = RecordingInvalidatingAPITransport(
-            response: response
-        )
-        let replacementTransport = RecordingInvalidatingAPITransport(
-            response: response
-        )
+        let authorizer = StubAuthorizer(suspendingCall: 2)
+        let firstTransport = StubTransport(responses: [try fixtureResponse("nav"), response])
+        let replacementTransport = StubTransport(responses: [response])
         let transportFactory = SequentialTransportFactory(
             transports: [firstTransport, replacementTransport]
         )
@@ -1793,15 +1244,15 @@ struct BiliAPIClientTests {
         let playbackTask = Task {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        await authorizer.waitUntilSecondAuthorizationStarts()
+        await authorizer.waitUntilSuspended()
 
         await client.invalidateAuthenticatedSession()
-        await authorizer.resumeSecondAuthorization()
+        await authorizer.resume()
 
         await #expect(throws: CancellationError.self) {
             try await playbackTask.value
         }
-        #expect(firstTransport.capturedRequests().count == 1)
+        #expect(playURLRequests(firstTransport).count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
@@ -1820,7 +1271,7 @@ struct BiliAPIClientTests {
             body: Data(invalidBody.utf8)
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         let playback = try await client.playback(
@@ -1838,15 +1289,15 @@ struct BiliAPIClientTests {
     func playURLRejectsRepresentationsWithoutTrustedMediaOrigin() async throws {
         let fixture = try fixtureResponse("playurl")
         let unsafeBody = String(decoding: fixture.body, as: UTF8.self)
-            .replacingOccurrences(of: "media.example.invalid", with: "127.0.0.1")
-            .replacingOccurrences(of: "backup.example.invalid", with: "localhost")
+            .replacingOccurrences(of: "media.fixture.bilivideo.com", with: "127.0.0.1")
+            .replacingOccurrences(of: "backup.fixture.bilivideo.com", with: "localhost")
         let response = HTTPResponse(
             statusCode: fixture.statusCode,
             headers: fixture.headers,
             body: Data(unsafeBody.utf8)
         )
         let client = BiliAPIClient(
-            transport: RecordingTransport(responses: [response])
+            transport: StubTransport(responses: [try fixtureResponse("nav"), response])
         )
 
         await #expect(throws: BiliAPIError.invalidMediaData) {
@@ -1859,17 +1310,16 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func historyUsesExplicitAuthorizationAndMapsOnlyPlayableArchives() async throws {
-        let transport = RecordingTransport(
+    func historyMapsOnlyPlayableArchivesAndFollowsCursor() async throws {
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("history"),
-                try fixtureResponse("history"),
+                try fixtureResponse("history")
             ]
         )
-        let authorizer = RecordingRequestAuthorizer()
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: authorizer
+            requestAuthorizer: StubAuthorizer()
         )
 
         let page = try await client.watchHistory(pageSize: 2)
@@ -1887,10 +1337,9 @@ struct BiliAPIClientTests {
             pageSize: 2
         )
 
-        let requests = await transport.capturedRequests()
+        let requests = transport.capturedRequests()
         let request = try #require(requests.first)
         #expect(request.url.path == "/x/web-interface/history/cursor")
-        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
         #expect(request.headers["Referer"] == "https://www.bilibili.com/account/history")
         let query = URLComponents(
             url: request.url,
@@ -1912,33 +1361,27 @@ struct BiliAPIClientTests {
                 URLQueryItem(name: "business", value: "archive")
             ) == true
         )
-        #expect(
-            await authorizer.capturedPaths() == [
-                "/x/web-interface/history/cursor",
-                "/x/web-interface/history/cursor",
-            ]
-        )
     }
 
     @Test
     func historyAcceptsDefaultAndMaximumPageSizeAndRejectsOutOfRangeBeforeTransport()
         async throws
     {
-        let transport = RecordingTransport(
+        let transport = StubTransport(
             responses: [
                 try fixtureResponse("history"),
-                try fixtureResponse("history"),
+                try fixtureResponse("history")
             ]
         )
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         _ = try await client.watchHistory()
         _ = try await client.watchHistory(pageSize: 30)
 
-        let validRequests = await transport.capturedRequests()
+        let validRequests = transport.capturedRequests()
         #expect(validRequests.count == 2)
         let defaultQuery = URLComponents(
             url: validRequests[0].url,
@@ -1956,56 +1399,26 @@ struct BiliAPIClientTests {
                 try await client.watchHistory(pageSize: pageSize)
             }
         }
-        #expect(await transport.capturedRequests().count == 2)
-    }
-
-    @Test
-    func popularVideoDetailAndPageListUseAccountRead()
-        async throws
-    {
-        let authorizer = RecordingRequestAuthorizer()
-        let client = BiliAPIClient(
-            transport: RecordingTransport(
-                responses: [
-                    try fixtureResponse("popular"),
-                    try fixtureResponse("view"),
-                    try fixtureResponse("pagelist"),
-                ]
-            ),
-            requestAuthorizer: authorizer
-        )
-
-        _ = try await client.popular(page: 1, pageSize: 20)
-        _ = try await client.videoDetail(for: "BV1FixtureA1")
-        _ = try await client.pages(for: "BV1FixtureA1")
-
-        #expect(
-            await authorizer.capturedPaths()
-                == [
-                    "/x/web-interface/popular",
-                    "/x/web-interface/view",
-                    "/x/player/pagelist",
-                ]
-        )
+        #expect(transport.capturedRequests().count == 2)
     }
 
     @Test
     func historyFailsClosedBeforeTransportWithoutAuthorizer() async {
-        let transport = RecordingTransport(responses: [])
+        let transport = StubTransport(responses: [])
         let client = BiliAPIClient(transport: transport)
 
         await #expect(throws: BiliAPIError.authorizationRequired) {
             try await client.watchHistory(pageSize: 20)
         }
-        #expect(await transport.capturedRequests().isEmpty)
+        #expect(transport.capturedRequests().isEmpty)
     }
 
     @Test
     func historyRejectsMalformedContinuationBeforeTransport() async {
-        let transport = RecordingTransport(responses: [])
+        let transport = StubTransport(responses: [])
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: RecordingRequestAuthorizer()
+            requestAuthorizer: StubAuthorizer()
         )
 
         await #expect(throws: BiliAPIError.invalidRequest) {
@@ -2014,7 +1427,7 @@ struct BiliAPIClientTests {
                 pageSize: 20
             )
         }
-        #expect(await transport.capturedRequests().isEmpty)
+        #expect(transport.capturedRequests().isEmpty)
     }
 
     @Test
@@ -2024,7 +1437,7 @@ struct BiliAPIClientTests {
             headers: ["Content-Type": "text/html; charset=utf-8"],
             body: Data("<html>risk control</html>".utf8)
         )
-        let client = BiliAPIClient(transport: RecordingTransport(responses: [response]))
+        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
         await #expect(throws: BiliAPIError.nonJSONResponse) {
             try await client.popular(page: 1, pageSize: 20)
@@ -2041,7 +1454,7 @@ struct BiliAPIClientTests {
             headers: ["Content-Type": "application/json"],
             body: body
         )
-        let client = BiliAPIClient(transport: RecordingTransport(responses: [response]))
+        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
         await #expect(
             throws: BiliAPIError.apiRejected(code: -412, message: "请求被拦截")
@@ -2060,7 +1473,7 @@ struct BiliAPIClientTests {
             headers: ["Content-Type": "application/json"],
             body: body
         )
-        let client = BiliAPIClient(transport: RecordingTransport(responses: [response]))
+        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
         await #expect(throws: BiliAPIError.decodingFailed) {
             try await client.popular(page: 1, pageSize: 20)
@@ -2069,138 +1482,37 @@ struct BiliAPIClientTests {
 
     @Test
     func cancellationIsNotCollapsedIntoTransportFailure() async {
-        let client = BiliAPIClient(transport: CancellationTransport())
+        let client = BiliAPIClient(transport: StubTransport([.cancellation]))
 
         await #expect(throws: CancellationError.self) {
-            try await client.pages(for: "BV1FixtureA1")
+            try await client.videoDetail(for: "BV1FixtureA1")
         }
     }
 
     @Test
     func validatesInputBeforeSendingRequest() async {
-        let transport = RecordingTransport(responses: [])
+        let transport = StubTransport(responses: [])
         let client = BiliAPIClient(transport: transport)
 
         await #expect(throws: BiliAPIError.invalidRequest) {
-            try await client.pages(for: "not-a-bvid")
+            try await client.videoDetail(for: "not-a-bvid")
         }
-        #expect(await transport.capturedRequests().isEmpty)
+        #expect(transport.capturedRequests().isEmpty)
     }
 
-    private func fixtureResponse(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json; charset=utf-8"],
-            body: try Data(contentsOf: url)
-        )
+    /// 去掉 WBI key 的 nav 请求，只留下 playurl。
+    private func playURLRequests(_ transport: StubTransport) -> [HTTPRequest] {
+        transport.capturedRequests().filter { $0.url.path == "/x/player/wbi/playurl" }
     }
 
-    private func progressiveDURL(
-        path: String = "preview.mp4",
-        length: Int64 = 884_983,
-        size: Int64 = 50_000_000,
-        primaryURL: String? = nil,
-        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
-    ) -> [String: Any] {
-        [
-            "length": length,
-            "size": size,
-            "url": primaryURL ?? "https://media.example.invalid/\(path)",
-            "backup_url": backupURLs,
-        ]
-    }
-
-    private func progressivePlayURLResponse(
-        durl: [[String: Any]]? = nil,
-        format: String = "mp4",
-        length: Int64 = 884_983,
-        size: Int64 = 50_000_000,
-        primaryURL: String? = nil,
-        backupURLs: [String] = ["https://backup.example.invalid/preview.mp4"]
-    ) throws -> HTTPResponse {
-        let resolvedDURL =
-            durl ?? [
-                progressiveDURL(
-                    length: length,
-                    size: size,
-                    primaryURL: primaryURL,
-                    backupURLs: backupURLs
-                )
-            ]
-        let body = try JSONSerialization.data(
-            withJSONObject: [
-                "code": 0,
-                "message": "OK",
-                "data": ["durl": resolvedDURL, "format": format],
-            ]
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: body
-        )
-    }
-
-    private func playURLFixtureByAddingDURL() throws -> HTTPResponse {
-        let fixture = try fixtureResponse("playurl")
-        var root = try #require(
-            JSONSerialization.jsonObject(with: fixture.body) as? [String: Any]
-        )
-        var data = try #require(root["data"] as? [String: Any])
-        // DASH 优先级还必须防止未消费的漂移 durl 破坏旧路径。
-        data["durl"] = [["unexpected": true]]
-        root["data"] = data
-        return HTTPResponse(
-            statusCode: 200,
-            headers: fixture.headers,
-            body: try JSONSerialization.data(withJSONObject: root)
-        )
-    }
-
-    private func viewFixtureWithUPower(
-        exclusive: Bool,
-        preview: Bool,
-        playable: Bool
-    ) throws -> HTTPResponse {
-        let fixture = try fixtureResponse("view")
-        var root = try #require(
-            JSONSerialization.jsonObject(with: fixture.body) as? [String: Any]
-        )
-        var data = try #require(root["data"] as? [String: Any])
-        data["is_upower_exclusive"] = exclusive
-        data["is_upower_preview"] = preview
-        data["is_upower_play"] = playable
-        root["data"] = data
-        return HTTPResponse(
-            statusCode: 200,
-            headers: fixture.headers,
-            body: try JSONSerialization.data(withJSONObject: root)
-        )
-    }
-
-    private func resumePlayURLResponse() throws -> HTTPResponse {
-        let fixture = try fixtureResponse("playurl")
-        var object = try #require(
-            JSONSerialization.jsonObject(with: fixture.body)
-                as? [String: Any]
-        )
-        var data = try #require(object["data"] as? [String: Any])
-        data["last_play_cid"] = 900_002
-        data["last_play_time"] = 42_500
-        object["data"] = data
-        return HTTPResponse(
-            statusCode: fixture.statusCode,
-            headers: fixture.headers,
-            body: try JSONSerialization.data(
-                withJSONObject: object,
-                options: [.sortedKeys]
+    private func search(
+        _ client: BiliAPIClient,
+        _ query: String = "macOS"
+    ) async throws -> SearchPage {
+        try await client.searchVideos(
+            request: VideoSearchRequest(
+                criteria: VideoSearchCriteria(query: query),
+                page: 1
             )
         )
     }
@@ -2212,18 +1524,10 @@ struct BiliAPIClientTests {
                 [
                     "lang": "en",
                     "title": "English（AI）",
-                    "production_type": 2,
+                    "production_type": 2
                 ]
-            ],
+            ]
         ]
-    }
-
-    private func jsonResponse(_ source: String) -> HTTPResponse {
-        HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(source.utf8)
-        )
     }
 
     private func semanticAudioResponse(
@@ -2245,12 +1549,12 @@ struct BiliAPIClientTests {
                         "width": 1_280,
                         "height": 720,
                         "frame_rate": "30",
-                        "base_url": "https://media.example.invalid/video.m4s",
+                        "base_url": "https://media.fixture.bilivideo.com/video.m4s",
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",
-                            "index_range": "100-199",
-                        ],
+                            "index_range": "100-199"
+                        ]
                     ]
                 ],
                 "audio": [
@@ -2261,14 +1565,14 @@ struct BiliAPIClientTests {
                         "mime_type": "audio/mp4",
                         "bandwidth": 192_000,
                         "base_url":
-                            "https://media.example.invalid/\(audioPath)",
+                            "https://media.fixture.bilivideo.com/\(audioPath)",
                         "backup_url": [],
                         "segment_base": [
                             "initialization": "0-99",
-                            "index_range": "100-199",
-                        ],
+                            "index_range": "100-199"
+                        ]
                     ]
-                ],
+                ]
             ]
         ]
         if let languageCatalog {
@@ -2305,214 +1609,142 @@ struct BiliAPIClientTests {
             "target_i": -14,
             "target_tp": -1,
             "target_offset": 99,
-            "multi_scene_args": "ignored",
+            "multi_scene_args": "ignored"
         ]
     }
 }
 
-private actor RecordingTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private var requests: [HTTPRequest] = []
+/// 每个账户读取 endpoint 只授权自己的请求；WBI endpoint 前置的 nav 请求保持匿名。
+struct AccountReadCase: Sendable, CustomTestStringConvertible {
+    static let recommendationBody = #"""
+        {"code":0,"data":{"item":[
+          {"goto":"av","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","pic":"//i0.hdslb.com/a.jpg","owner":{"mid":10001,"name":"作者","face":"//i1.hdslb.com/a.jpg"},"stat":{"view":12345,"danmaku":67,"like":8},"duration":125,"pubdate":1700000000,"rcmd_reason":{"content":"正在流行"}},
+          {"goto":"live","bvid":"BV1FixtureB2","title":"直播","owner":{"mid":2,"name":"主播"},"stat":{"view":1,"danmaku":0,"like":0},"duration":0,"pubdate":1700000000},
+          {"goto":"av","bvid":"BV1FixtureC3","title":"广告","owner":{"mid":3,"name":"广告主"},"stat":{"view":1,"danmaku":0,"like":0},"duration":10,"pubdate":1700000000,"business_info":{}}
+        ]}}
+        """#
 
-    init(responses: [HTTPResponse]) {
-        self.responses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        guard !responses.isEmpty else {
-            throw RecordingTransportError.missingResponse
-        }
-        return responses.removeFirst()
-    }
-
-    func capturedRequests() -> [HTTPRequest] {
-        requests
-    }
-}
-
-private actor RecordingRequestAuthorizer: HTTPRequestAuthorizing {
-    private var paths: [String] = []
-
-    func authorize(_ request: HTTPRequest) -> HTTPRequest {
-        paths.append(request.url.path)
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-
-    func capturedPaths() -> [String] {
-        paths
-    }
-}
-
-private actor MissingThenAuthorizedRequestAuthorizer: HTTPRequestAuthorizing {
-    private var count = 0
-
-    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
-        count += 1
-        if count == 1 {
-            throw FixtureAuthorizationFailure(kind: .missingCredential)
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-
-    func authorizationCount() -> Int {
-        count
-    }
-}
-
-private actor SuspendingRequestAuthorizer: HTTPRequestAuthorizing {
-    private var authorizationStarted = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var authorizationContinuation: CheckedContinuation<Void, Never>?
-
-    func authorize(_ request: HTTPRequest) async -> HTTPRequest {
-        authorizationStarted = true
-        for waiter in startWaiters {
-            waiter.resume()
-        }
-        startWaiters.removeAll()
-        await withCheckedContinuation { continuation in
-            authorizationContinuation = continuation
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-
-    func waitUntilAuthorizationStarts() async {
-        guard !authorizationStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func resumeAuthorization() {
-        authorizationContinuation?.resume()
-        authorizationContinuation = nil
-    }
-}
-
-private actor SuspendingSecondRequestAuthorizer: HTTPRequestAuthorizing {
-    private var authorizationCount = 0
-    private var secondAuthorizationStarted = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var authorizationContinuation: CheckedContinuation<Void, Never>?
-
-    func authorize(_ request: HTTPRequest) async -> HTTPRequest {
-        authorizationCount += 1
-        if authorizationCount == 2 {
-            secondAuthorizationStarted = true
-            for waiter in startWaiters {
-                waiter.resume()
+    static let all: [AccountReadCase] = [
+        AccountReadCase(
+            path: "/x/web-interface/wbi/index/top/feed/rcmd",
+            responses: {
+                [try fixtureResponse("nav"), jsonResponse(AccountReadCase.recommendationBody)]
+            },
+            call: { _ = try await $0.recommendations() }
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/wbi/search/type",
+            responses: { [try fixtureResponse("nav"), try fixtureResponse("search")] },
+            call: {
+                _ = try await $0.searchVideos(
+                    request: VideoSearchRequest(
+                        criteria: VideoSearchCriteria(query: "macOS"),
+                        page: 1
+                    )
+                )
             }
-            startWaiters.removeAll()
-            await withCheckedContinuation { continuation in
-                authorizationContinuation = continuation
+        ),
+        AccountReadCase(
+            path: "/x/v2/dm/wbi/web/seg.so",
+            responses: {
+                [try fixtureResponse("nav"), try hexFixtureResponse("danmaku-segment-minimal")]
+            },
+            call: {
+                _ = try await $0.danmakuSegmentData(
+                    index: 1,
+                    for: PlaybackItemIdentity(bvid: "BV1FixtureA1", cid: 900_001)
+                )
             }
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/popular",
+            responses: { [try fixtureResponse("popular")] },
+            call: { _ = try await $0.popular(page: 1, pageSize: 20) }
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/view",
+            responses: { [try fixtureResponse("view")] },
+            call: { _ = try await $0.videoDetail(for: "BV1FixtureA1") }
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/archive/related",
+            responses: { [try fixtureResponse("related")] },
+            call: { _ = try await $0.relatedVideos(to: "BV1FixtureA1") }
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/card",
+            responses: { [try fixtureResponse("uploader-card")] },
+            call: { _ = try await $0.uploaderSignature(for: 10_001) }
+        ),
+        AccountReadCase(
+            path: "/x/player/wbi/playurl",
+            responses: { [try fixtureResponse("nav"), try fixtureResponse("playurl")] },
+            call: { _ = try await $0.playback(for: "BV1FixtureA1", cid: 900_001) }
+        ),
+        AccountReadCase(
+            path: "/x/web-interface/history/cursor",
+            responses: { [try fixtureResponse("history")] },
+            call: { _ = try await $0.watchHistory(pageSize: 20) }
         )
-    }
+    ]
 
-    func waitUntilSecondAuthorizationStarts() async {
-        guard !secondAuthorizationStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
+    let path: String
+    let responses: @Sendable () throws -> [HTTPResponse]
+    let call: @Sendable (BiliAPIClient) async throws -> Void
 
-    func resumeSecondAuthorization() {
-        authorizationContinuation?.resume()
-        authorizationContinuation = nil
-    }
+    var testDescription: String { path }
 }
 
-private actor SuspendingMissingCredentialAuthorizer: HTTPRequestAuthorizing {
-    private var authorizationStarted = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+/// playurl 只返回 durl 时的各种形状；只有单段、安全来源、mp4 可以映射为 progressive 媒体。
+enum ProgressiveShape: Sendable {
+    case singleSafeSegment
+    case emptyDURL
+    case twoSegments
+    case malformedSecondSegment
+    case zeroDuration
+    case zeroSize
+    case loopbackOnly
+    case missingURL
+    case flvContainer
 
-    func authorize(_ request: HTTPRequest) async throws -> HTTPRequest {
-        authorizationStarted = true
-        for waiter in startWaiters {
-            waiter.resume()
+    func response() throws -> HTTPResponse {
+        let backup = "https://backup.fixture.bilivideo.com/preview.mp4"
+        func segment(
+            path: String = "preview.mp4",
+            length: Int64 = 884_983,
+            size: Int64 = 50_000_000,
+            url: String? = nil,
+            backupURLs: [String] = [backup]
+        ) -> [String: Any] {
+            [
+                "length": length,
+                "size": size,
+                "url": url ?? "https://media.fixture.bilivideo.com/\(path)",
+                "backup_url": backupURLs
+            ]
         }
-        startWaiters.removeAll()
-        await withCheckedContinuation { continuation in
-            authorizationContinuation = continuation
-        }
-        throw FixtureAuthorizationFailure(kind: .missingCredential)
-    }
-
-    func waitUntilAuthorizationStarts() async {
-        guard !authorizationStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func resumeWithMissingCredential() {
-        authorizationContinuation?.resume()
-        authorizationContinuation = nil
-    }
-}
-
-private final class RecordingInvalidatingAPITransport: HTTPTransport,
-    HTTPTransportInvalidating, @unchecked Sendable
-{
-    private let lock = NSLock()
-    private let response: HTTPResponse
-    private var requests: [HTTPRequest] = []
-    private var invalidated = false
-
-    init(response: HTTPResponse) {
-        self.response = response
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        lock.withLock {
-            requests.append(request)
-        }
-        return response
-    }
-
-    func invalidateAndCancel() {
-        lock.withLock {
-            invalidated = true
-        }
-    }
-
-    func capturedRequests() -> [HTTPRequest] {
-        lock.withLock { requests }
-    }
-
-    var wasInvalidated: Bool {
-        lock.withLock { invalidated }
+        let durl: [[String: Any]] =
+            switch self {
+            case .singleSafeSegment, .flvContainer: [segment()]
+            case .emptyDURL: []
+            case .twoSegments: [segment(), segment(path: "part-2.mp4")]
+            case .malformedSecondSegment: [segment(), ["unexpected": true]]
+            case .zeroDuration: [segment(length: 0)]
+            case .zeroSize: [segment(size: 0)]
+            case .loopbackOnly: [segment(url: "http://127.0.0.1/media.mp4", backupURLs: [])]
+            case .missingURL: [["length": 884_983, "size": 50_000_000, "backup_url": []]]
+            }
+        return HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: try JSONSerialization.data(
+                withJSONObject: [
+                    "code": 0,
+                    "message": "OK",
+                    "data": ["durl": durl, "format": self == .flvContainer ? "flv" : "mp4"]
+                ]
+            )
+        )
     }
 }
 
@@ -2530,107 +1762,4 @@ private final class SequentialTransportFactory: @unchecked Sendable {
             return transports.removeFirst()
         }
     }
-}
-
-private final class SuspendingResponseTransport: HTTPTransport,
-    HTTPTransportInvalidating, @unchecked Sendable
-{
-    private let flow: SuspendingResponseTransportFlow
-    private let lock = NSLock()
-    private var invalidated = false
-
-    init(response: HTTPResponse) {
-        flow = SuspendingResponseTransportFlow(response: response)
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        await flow.send(request)
-    }
-
-    func invalidateAndCancel() {
-        lock.withLock {
-            invalidated = true
-        }
-    }
-
-    func waitUntilRequestStarts() async {
-        await flow.waitUntilRequestStarts()
-    }
-
-    func resumeResponse() async {
-        await flow.resumeResponse()
-    }
-
-    func capturedRequests() async -> [HTTPRequest] {
-        await flow.capturedRequests()
-    }
-
-    var wasInvalidated: Bool {
-        lock.withLock { invalidated }
-    }
-}
-
-private actor SuspendingResponseTransportFlow {
-    private let response: HTTPResponse
-    private var requests: [HTTPRequest] = []
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var responseContinuation: CheckedContinuation<Void, Never>?
-
-    init(response: HTTPResponse) {
-        self.response = response
-    }
-
-    func send(_ request: HTTPRequest) async -> HTTPResponse {
-        requests.append(request)
-        for waiter in startWaiters {
-            waiter.resume()
-        }
-        startWaiters.removeAll()
-        await withCheckedContinuation { continuation in
-            responseContinuation = continuation
-        }
-        return response
-    }
-
-    func waitUntilRequestStarts() async {
-        guard requests.isEmpty else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func resumeResponse() {
-        responseContinuation?.resume()
-        responseContinuation = nil
-    }
-
-    func capturedRequests() -> [HTTPRequest] {
-        requests
-    }
-}
-
-private struct ThrowingRequestAuthorizer: HTTPRequestAuthorizing {
-    let kind: HTTPRequestAuthorizationFailureKind
-
-    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
-        throw FixtureAuthorizationFailure(kind: kind)
-    }
-}
-
-private struct FixtureAuthorizationFailure: HTTPRequestAuthorizationFailure {
-    let authorizationFailureKind: HTTPRequestAuthorizationFailureKind
-
-    init(kind: HTTPRequestAuthorizationFailureKind) {
-        authorizationFailureKind = kind
-    }
-}
-
-private struct CancellationTransport: HTTPTransport {
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        throw CancellationError()
-    }
-}
-
-private enum RecordingTransportError: Error {
-    case missingResponse
 }

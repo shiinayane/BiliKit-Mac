@@ -3,6 +3,32 @@ import BiliApplication
 import CoreFoundation
 import Foundation
 
+/// `UserDefaults` 中 Bool 与数字都以 `NSNumber` 存储；设置只接受类型严格匹配的值，
+/// 损坏、类型错写或由其他版本写入的值一律视为缺失并回退默认。
+extension UserDefaults {
+    func strictBool(forKey key: String) -> Bool? {
+        guard let number = object(forKey: key) as? NSNumber,
+            CFGetTypeID(number) == CFBooleanGetTypeID()
+        else { return nil }
+        return number.boolValue
+    }
+
+    /// 非 Bool 的数字；调用方自行校验有限性与范围。
+    func strictNumber(forKey key: String) -> NSNumber? {
+        guard let number = object(forKey: key) as? NSNumber,
+            CFGetTypeID(number) != CFBooleanGetTypeID()
+        else { return nil }
+        return number
+    }
+
+    /// 非 Bool 且没有小数部分的整数。
+    func strictInteger(forKey key: String) -> Int? {
+        guard let number = strictNumber(forKey: key) else { return nil }
+        let value = number.intValue
+        return number.doubleValue == Double(value) ? value : nil
+    }
+}
+
 struct PlaybackPreferences: Equatable, Sendable {
     static let defaults = PlaybackPreferences(
         volume: 1,
@@ -42,9 +68,14 @@ final class UserDefaultsPlaybackPreferencesStore:
         PlaybackPreferences(
             volume: validNumber(forKey: Key.volume, in: 0...1)
                 ?? PlaybackPreferences.defaults.volume,
-            isMuted: validBool(forKey: Key.isMuted)
+            isMuted: defaults.strictBool(forKey: Key.isMuted)
                 ?? PlaybackPreferences.defaults.isMuted,
-            preferredRate: validNumber(forKey: Key.preferredRate, in: 0.25...4)
+            preferredRate: validNumber(
+                forKey: Key.preferredRate,
+                in: Float(
+                    PlaybackRate.supported.lowerBound
+                )...Float(PlaybackRate.supported.upperBound)
+            )
                 ?? PlaybackPreferences.defaults.preferredRate
         )
     }
@@ -59,7 +90,7 @@ final class UserDefaultsPlaybackPreferencesStore:
     }
 
     func savePreferredRate(_ rate: Float) {
-        guard rate.isFinite, (0.25...4).contains(rate) else { return }
+        guard PlaybackRate.isSupported(rate) else { return }
         defaults.set(rate, forKey: Key.preferredRate)
     }
 
@@ -67,29 +98,20 @@ final class UserDefaultsPlaybackPreferencesStore:
         forKey key: String,
         in range: ClosedRange<Float>
     ) -> Float? {
-        guard let number = defaults.object(forKey: key) as? NSNumber else {
+        guard let value = defaults.strictNumber(forKey: key)?.floatValue else {
             return nil
         }
-        guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-        let value = number.floatValue
         guard value.isFinite, range.contains(value) else { return nil }
         return value
-    }
-
-    private func validBool(forKey key: String) -> Bool? {
-        guard let number = defaults.object(forKey: key) as? NSNumber,
-            CFGetTypeID(number) == CFBooleanGetTypeID()
-        else { return nil }
-        return number.boolValue
     }
 }
 
 struct DanmakuPreferences: Equatable, Sendable {
     static let defaults = DanmakuPreferences(
-        speedLevel: .three,
+        speedLevel: .default,
         opacity: .fullyOpaque,
-        displayArea: .full,
-        density: .normal
+        displayArea: .default,
+        density: .default
     )
 
     let speedLevel: DanmakuSpeedLevel
@@ -149,13 +171,7 @@ final class UserDefaultsDanmakuPreferencesStore:
     }
 
     private func loadSpeedLevel() -> DanmakuSpeedLevel {
-        guard let number = defaults.object(forKey: Key.speedLevel) as? NSNumber,
-            CFGetTypeID(number) != CFBooleanGetTypeID()
-        else {
-            return DanmakuPreferences.defaults.speedLevel
-        }
-        let rawValue = number.intValue
-        guard number.doubleValue == Double(rawValue),
+        guard let rawValue = defaults.strictInteger(forKey: Key.speedLevel),
             let speedLevel = DanmakuSpeedLevel(rawValue: rawValue)
         else {
             return DanmakuPreferences.defaults.speedLevel
@@ -164,8 +180,7 @@ final class UserDefaultsDanmakuPreferencesStore:
     }
 
     private func loadOpacity() -> DanmakuOpacity {
-        guard let number = defaults.object(forKey: Key.opacity) as? NSNumber,
-            CFGetTypeID(number) != CFBooleanGetTypeID(),
+        guard let number = defaults.strictNumber(forKey: Key.opacity),
             let opacity = DanmakuOpacity(number.doubleValue)
         else {
             return DanmakuPreferences.defaults.opacity
@@ -174,7 +189,7 @@ final class UserDefaultsDanmakuPreferencesStore:
     }
 
     private func loadDisplayArea() -> DanmakuDisplayArea {
-        guard let rawValue = integer(forKey: Key.displayArea),
+        guard let rawValue = defaults.strictInteger(forKey: Key.displayArea),
             let displayArea = DanmakuDisplayArea(rawValue: rawValue)
         else {
             return DanmakuPreferences.defaults.displayArea
@@ -183,22 +198,12 @@ final class UserDefaultsDanmakuPreferencesStore:
     }
 
     private func loadDensity() -> DanmakuDensity {
-        guard let rawValue = integer(forKey: Key.density),
+        guard let rawValue = defaults.strictInteger(forKey: Key.density),
             let density = DanmakuDensity(rawValue: rawValue)
         else {
             return DanmakuPreferences.defaults.density
         }
         return density
-    }
-
-    private func integer(forKey key: String) -> Int? {
-        guard let number = defaults.object(forKey: key) as? NSNumber,
-            CFGetTypeID(number) != CFBooleanGetTypeID()
-        else {
-            return nil
-        }
-        let value = number.intValue
-        return number.doubleValue == Double(value) ? value : nil
     }
 }
 

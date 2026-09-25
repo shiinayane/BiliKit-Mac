@@ -54,7 +54,7 @@ struct SearchFilterSelection: Hashable {
         ListFormatter.localizedString(
             byJoining: [
                 publication == .all ? nil : publication.localizedTitle(locale: locale),
-                duration == .all ? nil : duration.localizedTitle(locale: locale),
+                duration == .all ? nil : duration.localizedTitle(locale: locale)
             ].compactMap { $0 }
         )
     }

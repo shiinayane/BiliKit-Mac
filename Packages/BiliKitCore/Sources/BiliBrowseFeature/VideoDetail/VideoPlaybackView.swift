@@ -8,7 +8,7 @@ import SwiftUI
 /// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
 public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let model: GuestVideoViewModel
+    private let model: VideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
     private let onRetry: () -> Void
     private let onSelectRelatedVideo: (String) -> Void
@@ -21,7 +21,7 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
         ) -> RelatedContent
 
     public init(
-        model: GuestVideoViewModel,
+        model: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
         onRetry: @escaping () -> Void,
         onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
@@ -105,7 +105,7 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
     @ViewBuilder
     private var detailSurfaceContent: some View {
         if let currentContext {
-            GuestVideoDetailView(
+            VideoDetailView(
                 context: currentContext,
                 isPreparingPlayback: showsPlaybackActivity,
                 danmakuModel: danmakuModel,
@@ -130,7 +130,7 @@ public struct VideoPlaybackView<PlayerContent: View, RelatedContent: View>: View
         return BrowseFeatureStrings.localized("正在加载视频详情")
     }
 
-    private var currentContext: GuestVideoContext? {
+    private var currentContext: VideoContext? {
         model.presentedContext
     }
 

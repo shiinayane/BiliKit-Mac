@@ -3,6 +3,8 @@ import Foundation
 import SwiftUI
 
 struct PlaybackSourceSettingsView: View {
+    private static let experimentalRouteCount = BilivideoRoute.allCases.count
+
     @Bindable var model: AppSettingsModel
 
     var body: some View {
@@ -36,9 +38,11 @@ struct PlaybackSourceSettingsView: View {
                 Text("默认使用 B 站服务端顺序。改选只影响之后新开始的播放，当前播放不会切源或重建。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("18 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "\(Self.experimentalRouteCount) 条 bilivideo 镜像线路属于实验性能力，可能失效，不保证每个视频都完整可用；不可用时仍回退服务端原始完整候选。"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             Section("线路测速参考") {
@@ -50,9 +54,11 @@ struct PlaybackSourceSettingsView: View {
                 .pickerStyle(.segmented)
                 .disabled(model.state.isRunning)
 
-                Text("最多约 \(maximumTrafficMiB) MiB；每个样本对 1 条原始 Akamai 与 18 条实验 bilivideo 线路逐条串行测试。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "最多约 \(maximumTrafficMiB) MiB；每个样本对 1 条原始 Akamai 与 \(Self.experimentalRouteCount) 条实验 bilivideo 线路逐条串行测试。"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
                 if case .testing(let completed, let total) = model.state {
                     ProgressView(value: Double(completed), total: Double(total)) {
@@ -148,8 +154,10 @@ struct PlaybackSourceSettingsView: View {
             return AppStrings.localized("暂时找不到合格样本，请稍后重试。")
         case .authenticationFailure:
             return AppStrings.localized("登录状态已失效或暂时不可用，请重新登录后再试。")
+        case .restricted:
+            return AppStrings.localized("B 站暂时限制了测速请求，请稍后再试。")
         case .networkOrProtocolFailure:
-            return AppStrings.localized("网络或远端协议未能完成测速，未暴露样本或网络详情。")
+            return AppStrings.localized("网络或服务器响应异常，测速未能完成，请稍后重试。")
         }
     }
 

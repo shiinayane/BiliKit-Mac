@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "BiliDanmaku", targets: ["BiliDanmaku"]),
         .library(name: "BiliBrowseFeature", targets: ["BiliBrowseFeature"]),
         .library(name: "BiliAuthFeature", targets: ["BiliAuthFeature"]),
-        .library(name: "BiliLibraryFeature", targets: ["BiliLibraryFeature"]),
+        .library(name: "BiliLibraryFeature", targets: ["BiliLibraryFeature"])
     ],
     dependencies: [
         .package(
@@ -43,7 +43,7 @@ let package = Package(
                 "BiliApplication",
                 "BiliModels",
                 "BiliNetworking",
-                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf")
             ],
             exclude: ["Remote/Protobuf/danmaku.proto"]
         ),
@@ -93,7 +93,7 @@ let package = Package(
         .testTarget(
             name: "BiliAPITests",
             dependencies: [
-                "BiliAPI", "BiliApplication", "BiliModels", "BiliNetworking",
+                "BiliAPI", "BiliApplication", "BiliModels", "BiliNetworking"
             ],
             resources: [
                 .copy("Fixtures")
@@ -105,7 +105,7 @@ let package = Package(
                 "BiliApplication",
                 "BiliModels",
                 "BiliNetworking",
-                "BiliPlayback",
+                "BiliPlayback"
             ],
             resources: [
                 .copy("Fixtures")
@@ -116,7 +116,7 @@ let package = Package(
             dependencies: [
                 "BiliApplication",
                 "BiliDanmaku",
-                "BiliModels",
+                "BiliModels"
             ]
         ),
         .testTarget(
@@ -125,7 +125,7 @@ let package = Package(
                 "BiliApplication",
                 "BiliBrowseFeature",
                 "BiliModels",
-                "BiliUI",
+                "BiliUI"
             ]
         ),
         .testTarget(
@@ -135,6 +135,11 @@ let package = Package(
         .testTarget(
             name: "BiliLibraryFeatureTests",
             dependencies: ["BiliApplication", "BiliLibraryFeature", "BiliModels"]
-        ),
+        )
     ]
 )
+
+// 只维护发布工具链一个版本：本包所有 target 的编译警告都视为错误。
+for target in package.targets {
+    target.swiftSettings = (target.swiftSettings ?? []) + [.treatAllWarnings(as: .error)]
+}

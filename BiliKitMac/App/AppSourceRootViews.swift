@@ -4,32 +4,21 @@ import BiliLibraryFeature
 import SwiftUI
 
 struct RecommendedTabRoot: View {
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
 
     var body: some View {
         RecommendedFeedView(
             model: model,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                videos,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 RecommendedNativeGridView(
-                    videos: videos,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -40,32 +29,21 @@ struct RecommendedTabRoot: View {
 }
 
 struct PopularTabRoot: View {
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
 
     var body: some View {
         PopularFeedView(
             model: model,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                videos,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 PopularNativeGridView(
-                    videos: videos,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -77,11 +55,12 @@ struct PopularTabRoot: View {
 
 struct SearchTabRoot: View {
     @Binding var filterSelection: SearchFilterSelection
-    let model: GuestBrowseViewModel
+    let model: BrowseViewModel
     @Binding var searchDraft: String
     let submittedSearchCriteria: VideoSearchCriteria?
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
     let onSubmit: () -> Void
     let onSelectOrder: (VideoSearchOrder) -> Void
@@ -93,24 +72,12 @@ struct SearchTabRoot: View {
             model: model,
             submittedSearchCriteria: submittedSearchCriteria,
             hasActiveFilters: filterSelection.activeFilterCount > 0,
-            scrollOffsetY: $scrollOffsetY,
-            makeLoadedContent: {
-                presentations,
-                scrollOffsetY,
-                canLoadMore,
-                tailIdentity,
-                isLoading,
-                onNearEnd,
-                onSelect in
+            makeLoadedContent: { content in
                 SearchNativeGridView(
-                    presentations: presentations,
-                    scrollOffsetY: scrollOffsetY,
-                    canLoadMore: canLoadMore,
-                    tailIdentity: tailIdentity,
-                    isLoading: isLoading,
+                    content: content,
+                    scrollOffsetY: $scrollOffsetY,
                     scrollReset: $scrollReset,
-                    onNearEnd: onNearEnd,
-                    onSelect: onSelect
+                    imagePipeline: imagePipeline
                 )
                 .ignoresSafeArea(.container, edges: .top)
             },
@@ -148,6 +115,7 @@ struct HistoryTabRoot: View {
     let accountState: AccountPresentationState
     @Binding var scrollOffsetY: CGFloat
     @Binding var scrollReset: NativeVideoGridScrollResetState
+    let imagePipeline: NativeVideoImagePipeline
     let onSelect: (String) -> Void
     let onPresentAuthentication: () -> Void
     let onAuthenticationRequired: () -> Void
@@ -170,22 +138,12 @@ struct HistoryTabRoot: View {
         case .signedIn:
             WatchHistoryView(
                 model: model,
-                makeLoadedContent: {
-                    presentations,
-                    canLoadMore,
-                    tailIdentity,
-                    isLoading,
-                    onNearEnd,
-                    onSelect in
+                makeLoadedContent: { content in
                     HistoryNativeGridView(
-                        presentations: presentations,
+                        content: content,
                         scrollOffsetY: $scrollOffsetY,
-                        canLoadMore: canLoadMore,
-                        tailIdentity: tailIdentity,
-                        isLoading: isLoading,
                         scrollReset: $scrollReset,
-                        onNearEnd: onNearEnd,
-                        onSelect: onSelect
+                        imagePipeline: imagePipeline
                     )
                     .ignoresSafeArea(.container, edges: .top)
                 },

@@ -4,7 +4,10 @@ set -eu
 
 check_forbidden_imports() {
     target_path="$1"
-    forbidden_pattern="$2"
+    # 同时匹配 `@testable`/`@preconcurrency` 等属性与 `public`/`package` 访问级别的 import。
+    forbidden_pattern=$(
+        printf '%s' "$2" | sed 's/^\^import /^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*((public|package|internal|fileprivate|private)[[:space:]]+)?import[[:space:]]+/'
+    )
     description="$3"
 
     if grep -R -n -E --include='*.swift' "$forbidden_pattern" "$target_path"; then

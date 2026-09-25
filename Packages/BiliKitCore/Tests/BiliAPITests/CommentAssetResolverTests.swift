@@ -8,24 +8,23 @@ import Testing
 struct CommentAssetResolverTests {
     private let resolver = BiliCommentAssetResolver()
 
-    @Test
-    func acceptsTrustedHTTPSHostsAcrossTheBFSNamespace() throws {
-        for host in ["i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"] {
-            for path in [
-                "bfs/emote/fixture.png",
-                "bfs/face/fixture.jpg",
-                "bfs/new_dyn/fixture.webp",
-                "bfs/garb/item/fixture.png",
-                "bfs/garb/fixture.webp",
-                "bfs/activity-plat/static/20231013/bucket/fixture.png",
-                "bfs/future-package/nested/fixture.gif@128w.webp",
-            ] {
-                let url = try #require(URL(string: "https://\(host)/\(path)"))
-                let reference = CommentAssetReference(remoteURL: url)
+    @Test(
+        arguments: ["i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"],
+        [
+            "bfs/emote/fixture.png",
+            "bfs/face/fixture.jpg",
+            "bfs/new_dyn/fixture.webp",
+            "bfs/garb/item/fixture.png",
+            "bfs/garb/fixture.webp",
+            "bfs/activity-plat/static/20231013/bucket/fixture.png",
+            "bfs/future-package/nested/fixture.gif@128w.webp"
+        ]
+    )
+    func acceptsTrustedHTTPSHostsAcrossTheBFSNamespace(host: String, path: String) throws {
+        let url = try #require(URL(string: "https://\(host)/\(path)"))
+        let reference = CommentAssetReference(remoteURL: url)
 
-                #expect(resolver.imageURL(for: reference) == url)
-            }
-        }
+        #expect(resolver.imageURL(for: reference) == url)
     }
 
     @Test(
@@ -47,7 +46,7 @@ struct CommentAssetResolverTests {
             "https://i0.hdslb.com/bfs/emote%255Cfixture.png",
             "https://i0.hdslb.com/bfs/%252E%252E/fixture.png",
             "https://i0.hdslb.com/bfs/emote/fixture.png?token=value",
-            "https://i0.hdslb.com/bfs/emote/fixture.png#fragment",
+            "https://i0.hdslb.com/bfs/emote/fixture.png#fragment"
         ]
     )
     func rejectsUntrustedOrAmbiguousSources(_ value: String) throws {

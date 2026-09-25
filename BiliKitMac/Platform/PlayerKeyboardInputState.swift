@@ -126,7 +126,7 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
             guard let offset = direction.seekOffsetSeconds else { return [] }
             return [
                 .cancelLongPress(pressID: horizontalPress.pressID),
-                .seekBy(seconds: offset),
+                .seekBy(seconds: offset)
             ]
         case .longActivated:
             return [.endMomentaryRate(pressID: horizontalPress.pressID)]
@@ -218,15 +218,13 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
 enum PlayerKeyboardEventScope {
     static func captures(
         isEnabled: Bool,
-        isSupportedKey: Bool,
         hasDisallowedModifier: Bool,
         eventMatchesCaptureWindow: Bool,
-        isEditableResponder: Bool
+        focusedResponderOwnsKeys: Bool
     ) -> Bool {
         isEnabled
-            && isSupportedKey
             && !hasDisallowedModifier
             && eventMatchesCaptureWindow
-            && !isEditableResponder
+            && !focusedResponderOwnsKeys
     }
 }

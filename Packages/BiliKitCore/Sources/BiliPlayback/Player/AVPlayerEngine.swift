@@ -10,15 +10,8 @@ public enum AVPlayerEngineError: Error, Sendable, Equatable {
     case duplicateAudioTrackID(String)
     case invalidDefaultAudioTrackCount(Int)
     case invalidAudioTrackRepresentation(trackID: String, representationID: Int)
-    case preferredVideoRepresentationNotFound(Int)
-    case preferredAudioTrackNotFound(String)
-    case preferredAudioRepresentationNotFound(
-        trackID: String,
-        representationID: Int
-    )
     case itemFailed(errorType: String)
     case invalidPlaybackRate
-    case seekFailed
 }
 
 public enum NativeSubtitleToggleResult: Sendable, Equatable {
@@ -31,111 +24,27 @@ private struct NativeSubtitleSelectionPreference: Sendable {
     let propertyListData: Data?
 }
 
-enum PlaybackToggleAction: Equatable, Sendable {
-    case play
-    case pause
-
-    init?(
-        timeControlStatus: AVPlayer.TimeControlStatus,
-        timelineState: PlaybackTimelineState
-    ) {
-        guard timelineState != .ended else { return nil }
-        self = timeControlStatus == .paused ? .play : .pause
-    }
+/// 断点续播与 seek 的时间策略。
+private enum SeekPolicy {
+    static let timescale: CMTimeScale = 600
+    /// 断点续播与 transport 相对跳转允许落在最近的可解码位置。
+    static let resumeTolerance = CMTime(seconds: 0.25, preferredTimescale: timescale)
+    /// 不超过该位置视为仍在开头：可自动起播，也不值得作为续播落点。
+    static let beginningThresholdSeconds = 0.25
+    /// 续播落点离结尾至少保留的余量。
+    static let endMarginSeconds = 0.05
+    /// “从头播放”的落点不超过该位置才算成功。
+    static let restartLandingLimitSeconds = 0.5
 }
 
-struct TransportSeekOperationState: Sendable {
-    struct Operation: Equatable, Sendable {
-        let id: UUID
-        let generation: UUID
-        let itemIdentity: ObjectIdentifier
-        let targetSeconds: Double
-    }
-
-    enum Completion: Equatable, Sendable {
-        case ignored
-        case failed
-        case completed(positionSeconds: Double)
-    }
-
-    private(set) var current: Operation?
-
-    mutating func prepare(
-        offsetSeconds: Double,
-        currentSeconds: Double,
-        durationSeconds: Double,
-        generation: UUID,
-        itemIdentity: ObjectIdentifier,
-        makeOperationID: () -> UUID = UUID.init
-    ) -> Operation? {
-        guard offsetSeconds.isFinite,
-            currentSeconds.isFinite,
-            currentSeconds >= 0,
-            durationSeconds.isFinite,
-            durationSeconds > 0
-        else { return nil }
-        let base =
-            if let current,
-                current.generation == generation,
-                current.itemIdentity == itemIdentity
-            {
-                current.targetSeconds
-            } else {
-                currentSeconds
-            }
-        let operation = Operation(
-            id: makeOperationID(),
-            generation: generation,
-            itemIdentity: itemIdentity,
-            targetSeconds: min(max(base + offsetSeconds, 0), durationSeconds)
-        )
-        current = operation
-        return operation
-    }
-
-    func matches(_ operation: Operation) -> Bool {
-        current == operation
-    }
-
-    mutating func complete(
-        _ operation: Operation,
-        finished: Bool,
-        resolvedPositionSeconds: Double?
-    ) -> Completion {
-        guard matches(operation) else { return .ignored }
-        current = nil
-        guard finished,
-            let resolvedPositionSeconds,
-            resolvedPositionSeconds.isFinite,
-            resolvedPositionSeconds >= 0
-        else { return .failed }
-        return .completed(positionSeconds: resolvedPositionSeconds)
-    }
-
-    @discardableResult
-    mutating func invalidate() -> Operation? {
-        let operation = current
-        current = nil
-        return operation
-    }
-}
-
-struct AudioSelectionOperationState: Sendable {
-    private(set) var currentID: UUID?
-
-    mutating func begin(makeID: () -> UUID = UUID.init) -> UUID {
-        let id = makeID()
-        currentID = id
-        return id
-    }
-
-    func matches(_ id: UUID) -> Bool {
-        currentID == id
-    }
-
-    mutating func invalidate() {
-        currentID = nil
-    }
+private enum SeekSettlement: Equatable {
+    /// 已被更新的 seek、重新 load 或外部时间跳变取代。
+    case superseded
+    /// AVPlayer 未完成 seek，或落点不满足调用方要求。
+    case failed
+    /// 等待期间 load、intent、identity 或用户交互已变化。
+    case contextChanged
+    case landed(positionSeconds: Double)
 }
 
 @MainActor
@@ -148,13 +57,11 @@ public final class AVPlayerEngine:
     PlaybackTimelineProviding
 {
     public let player: AVPlayer
-    public let events: AsyncStream<PlayerEvent>
 
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase?
     private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
     private let loudnessNormalizationEnabledProvider: @MainActor @Sendable () -> Bool
-    private let eventContinuation: AsyncStream<PlayerEvent>.Continuation
     private let failureEvents: AsyncStream<PlaybackFailureEvent>
     private let failureContinuation: AsyncStream<PlaybackFailureEvent>.Continuation
     private let timeline: AVPlayerTimelineAdapter
@@ -171,11 +78,7 @@ public final class AVPlayerEngine:
     private var subtitleToggleOperationID: UUID?
     private var lastSubtitleSelection: NativeSubtitleSelectionPreference?
     private var transportSeek = TransportSeekOperationState()
-    private var loudnessTap: LoudnessProcessingTap?
-    private var loudnessAudioTracks: [PlaybackAudioTrack] = []
-    private var audioSelectionObserver: (any NSObjectProtocol)?
-    private var audioSelectionTask: Task<Void, Never>?
-    private var audioSelectionOperation = AudioSelectionOperationState()
+    private let loudness = LoudnessNormalizationController()
 
     public init(
         player: AVPlayer = AVPlayer(),
@@ -200,17 +103,11 @@ public final class AVPlayerEngine:
             player.appliesMediaSelectionCriteriaAutomatically = false
         }
         timeline = AVPlayerTimelineAdapter(player: player)
-        let stream = AsyncStream<PlayerEvent>.makeStream()
-        events = stream.stream
-        eventContinuation = stream.continuation
         let failureStream = AsyncStream<PlaybackFailureEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(1)
         )
         failureEvents = failureStream.stream
         failureContinuation = failureStream.continuation
-        timeline.onEnded = { [weak self] in
-            self?.emit(.stateChanged(.ended))
-        }
         timeline.onFailed = { [weak self] in
             self?.handleCurrentItemFailure()
         }
@@ -223,10 +120,6 @@ public final class AVPlayerEngine:
     deinit {
         loadTask?.cancel()
         readinessTask?.cancel()
-        audioSelectionTask?.cancel()
-        if let audioSelectionObserver {
-            NotificationCenter.default.removeObserver(audioSelectionObserver)
-        }
         preparedAsset?.stop()
         if let subtitleUseCase, let subtitleIdentity {
             let previousReset = subtitleResetTask
@@ -235,7 +128,6 @@ public final class AVPlayerEngine:
                 await subtitleUseCase.reset(for: subtitleIdentity)
             }
         }
-        eventContinuation.finish()
         failureContinuation.finish()
     }
 
@@ -339,19 +231,6 @@ public final class AVPlayerEngine:
 
     public func load(
         _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity
-    ) async throws {
-        try await load(
-            PlaybackRequest(
-                media: playback.media,
-                mediaHeaders: playback.mediaHeaders
-            ),
-            identity: identity
-        )
-    }
-
-    public func load(
-        _ playback: VideoPlayback,
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent
     ) async throws {
@@ -381,16 +260,10 @@ public final class AVPlayerEngine:
         switch request.media {
         case .dash(let manifest):
             progressiveSource = nil
-            videos = try selectedVideos(
-                in: manifest,
-                request: request
-            ).map {
+            videos = try manifest.selectedVideos().map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
-            audioTracks = try selectedAudioTracks(
-                in: manifest,
-                request: request
-            )
+            audioTracks = try manifest.selectedAudioTracks()
         case .progressive(let source):
             progressiveSource = source
             videos = []
@@ -398,25 +271,9 @@ public final class AVPlayerEngine:
         }
         try Task.checkCancellation()
 
-        loadGeneration = generation
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = intent
-        activeResumeToken = nil
-        restartOperation = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        preparedAsset?.stop()
-        preparedAsset = nil
-        player.pause()
-        player.replaceCurrentItem(with: nil)
+        releaseCurrentPlayback(nextGeneration: generation, nextIntent: intent)
         let pendingSubtitleReset = enqueueSubtitleReset()
         timeline.begin(identity: identity, loadIntent: intent)
-        emit(.stateChanged(.loading))
 
         await pendingSubtitleReset?.value
         try Task.checkCancellation()
@@ -459,25 +316,11 @@ public final class AVPlayerEngine:
             loadTask = nil
             preparedAsset = prepared
             let item = AVPlayerItem(url: prepared.url)
-            if LoudnessNormalizationRuntimePolicy.shouldInstall(
-                enabled: loudnessNormalizationEnabled,
-                hasMetadata: audioTracks.contains {
-                    $0.track.loudnessMetadata != nil
-                }
-            ),
-                let defaultTrack = audioTracks.first(where: {
-                    $0.track.isDefault
-                }),
-                let tap = LoudnessProcessingTap.make(
-                    initialGain: LoudnessNormalizationPolicy().linearGain(
-                        for: defaultTrack.track.loudnessMetadata
-                    )
-                )
-            {
-                loudnessTap = tap
-                loudnessAudioTracks = audioTracks.map(\.track)
-                item.audioMix = tap.makeAudioMix()
-            }
+            loudness.install(
+                on: item,
+                audioTracks: audioTracks,
+                enabled: loudnessNormalizationEnabled
+            )
             player.replaceCurrentItem(with: item)
             timeline.installObservers(for: item)
             let readinessTask = Task {
@@ -502,44 +345,17 @@ public final class AVPlayerEngine:
             }
             self.readinessTask = nil
             timeline.markReady(duration: item.duration)
-            beginObservingAudioSelection(for: item, generation: generation)
-            let audioSelectionOperationID = audioSelectionOperation.begin()
-            await updateSelectedAudioGain(
-                for: item,
-                generation: generation,
-                operationID: audioSelectionOperationID
-            )
-            emit(.stateChanged(.ready))
+            await loudness.activate()
         } catch is CancellationError {
             if loadGeneration == generation {
-                loadTask = nil
-                readinessTask = nil
-                clearLoudnessNormalization()
-                activeSeekOperationID = nil
-                preparedAsset?.stop()
-                preparedAsset = nil
-                player.replaceCurrentItem(with: nil)
-                timeline.clear()
-                _ = enqueueSubtitleReset()
-                emit(.stateChanged(.idle))
+                resetToIdle()
             }
             throw CancellationError()
         } catch {
             if loadGeneration == generation {
-                loadTask = nil
-                readinessTask = nil
-                clearLoudnessNormalization()
-                activeSeekOperationID = nil
-                preparedAsset?.stop()
-                preparedAsset = nil
-                player.replaceCurrentItem(with: nil)
+                releaseCurrentPlayback()
                 timeline.markFailed()
                 _ = enqueueSubtitleReset()
-                emit(
-                    .failed(
-                        message: String(reflecting: type(of: error))
-                    )
-                )
             }
             throw error
         }
@@ -547,24 +363,7 @@ public final class AVPlayerEngine:
 
     private func cancelLoad(generation: UUID) {
         guard loadGeneration == generation else { return }
-        loadGeneration = UUID()
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = nil
-        activeResumeToken = nil
-        restartOperation = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        preparedAsset?.stop()
-        preparedAsset = nil
-        player.replaceCurrentItem(with: nil)
-        timeline.clear()
-        _ = enqueueSubtitleReset()
-        emit(.stateChanged(.idle))
+        resetToIdle()
     }
 
     /// 当前 item 保持暂停，先完成受 intent 和交互 revision 保护的首次定位，再开始播放。
@@ -578,7 +377,7 @@ public final class AVPlayerEngine:
             !timeline.hasObservedPlaybackInteraction,
             player.currentTime().seconds.isFinite,
             player.currentTime().seconds >= 0,
-            player.currentTime().seconds <= 0.25,
+            player.currentTime().seconds <= SeekPolicy.beginningThresholdSeconds,
             timeline.currentSnapshot.state == .ready
                 || timeline.currentSnapshot.state == .paused,
             let item = player.currentItem
@@ -590,7 +389,7 @@ public final class AVPlayerEngine:
             let durationSeconds = Self.validSeconds(item.duration),
             initialPositionSeconds.isFinite,
             initialPositionSeconds > 0,
-            initialPositionSeconds < durationSeconds - 0.05
+            initialPositionSeconds < durationSeconds - SeekPolicy.endMarginSeconds
         else {
             activeResumeToken = nil
             play()
@@ -603,64 +402,45 @@ public final class AVPlayerEngine:
             operationID: operation,
             to: initialPositionSeconds
         )
-        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
-        let didSeek = await player.seek(
-            to: CMTime(seconds: initialPositionSeconds, preferredTimescale: 600),
-            toleranceBefore: tolerance,
-            toleranceAfter: tolerance
+        let didSeek = await seek(
+            to: initialPositionSeconds,
+            tolerance: SeekPolicy.resumeTolerance
         )
-        guard activeSeekOperationID == operation else {
-            if !didSeek {
-                timeline.discardStaleSeekLanding(operationID: operation)
-            }
-            return .rejected
-        }
-        guard didSeek else {
-            timeline.initialSeekFailed(operationID: operation)
-            activeSeekOperationID = nil
-            return .preparationFailed
-        }
-        guard loadGeneration == currentGeneration,
-            loadIntent == intent,
-            player.currentItem === item,
-            timeline.currentSnapshot.identity == identity,
-            timeline.playbackInteractionRevision == interactionRevision,
-            timeline.currentSnapshot.state == .ready
-                || timeline.currentSnapshot.state == .paused
-                || timeline.currentSnapshot.state == .buffering
-        else {
-            if player.currentItem === item {
-                timeline.initialSeekFailed(operationID: operation)
-            }
-            activeSeekOperationID = nil
-            return .rejected
-        }
-
-        guard
-            let resolvedPosition = Self.validatedResolvedInitialPosition(
+        let settlement = settleSeek(
+            operation,
+            didSeek: didSeek,
+            isOwned: activeSeekOperationID == operation,
+            item: item,
+            contextIsValid: loadGeneration == currentGeneration
+                && loadIntent == intent
+                && player.currentItem === item
+                && timeline.currentSnapshot.identity == identity
+                && timeline.playbackInteractionRevision == interactionRevision
+                && (timeline.currentSnapshot.state == .ready
+                    || timeline.currentSnapshot.state == .paused
+                    || timeline.currentSnapshot.state == .buffering)
+        ) {
+            Self.validatedResolvedInitialPosition(
                 player.currentTime(),
                 durationSeconds: durationSeconds
             )
-        else {
-            timeline.initialSeekFailed(operationID: operation)
-            activeSeekOperationID = nil
-            return .preparationFailed
         }
-        timeline.initialSeekCompleted(
-            operationID: operation,
-            at: resolvedPosition
-        )
-        activeSeekOperationID = nil
-        let token = PlaybackResumeToken()
-        activeResumeToken = token
-        timeline.playAfterInternalSeek()
-        emit(.stateChanged(.playing))
-        return .resumed(
-            positionSeconds: resolvedPosition,
-            token: token,
-            discontinuityGeneration:
-                timeline.currentSnapshot.discontinuityGeneration
-        )
+        switch settlement {
+        case .superseded, .contextChanged:
+            return .rejected
+        case .failed:
+            return .preparationFailed
+        case .landed(let resolvedPosition):
+            let token = PlaybackResumeToken()
+            activeResumeToken = token
+            timeline.playAfterInternalSeek()
+            return .resumed(
+                positionSeconds: resolvedPosition,
+                token: token,
+                discontinuityGeneration:
+                    timeline.currentSnapshot.discontinuityGeneration
+            )
+        }
     }
 
     public func restartFromBeginning(
@@ -686,60 +466,39 @@ public final class AVPlayerEngine:
         let currentGeneration = loadGeneration
         timeline.prepareResumeRestart(operationID: operation)
         let interactionRevision = timeline.playbackInteractionRevision
-        let didSeek = await player.seek(
-            to: .zero,
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
-        guard restartOperation == operation else {
-            if !didSeek {
-                timeline.discardStaleSeekLanding(operationID: operation)
-            }
-            return false
+        let didSeek = await seek(to: 0, tolerance: .zero)
+        let settlement = settleSeek(
+            operation,
+            didSeek: didSeek,
+            isOwned: restartOperation == operation,
+            item: item,
+            contextIsValid: activeResumeToken == resumeToken
+                && loadGeneration == currentGeneration
+                && loadIntent == intent
+                && player.currentItem === item
+                && timeline.currentSnapshot.identity == identity
+                && timeline.playbackInteractionRevision == interactionRevision
+        ) {
+            // 断点浮层只接受真正回到开头附近的落点，时间线统一记为 0 秒。
+            guard let resolvedPosition = Self.validSeconds(player.currentTime()),
+                resolvedPosition <= SeekPolicy.restartLandingLimitSeconds
+            else { return nil }
+            return 0
         }
-        guard didSeek else {
-            timeline.resumeRestartFailed(operationID: operation)
-            activeSeekOperationID = nil
-            return false
-        }
-        guard activeResumeToken == resumeToken,
-            loadGeneration == currentGeneration,
-            loadIntent == intent,
-            player.currentItem === item,
-            timeline.currentSnapshot.identity == identity,
-            timeline.playbackInteractionRevision == interactionRevision
-        else {
-            if player.currentItem === item {
-                timeline.resumeRestartFailed(operationID: operation)
-            }
-            activeSeekOperationID = nil
-            return false
-        }
-        guard let resolvedPosition = Self.validSeconds(player.currentTime()),
-            resolvedPosition <= 0.5
-        else {
-            timeline.resumeRestartFailed(operationID: operation)
-            activeSeekOperationID = nil
-            return false
-        }
-        timeline.resumeRestartCompleted(operationID: operation)
-        activeSeekOperationID = nil
+        guard case .landed = settlement else { return false }
         activeResumeToken = nil
         timeline.playAfterInternalSeek()
-        emit(.stateChanged(.playing))
         return true
     }
 
     public func play() {
         guard player.currentItem != nil else { return }
         timeline.play()
-        emit(.stateChanged(.playing))
     }
 
     public func pause() {
         guard player.currentItem != nil else { return }
         timeline.pause()
-        emit(.stateChanged(.paused))
     }
 
     @discardableResult
@@ -795,97 +554,38 @@ public final class AVPlayerEngine:
 
         restartOperation = nil
         activeSeekOperationID = operation.id
-        timeline.prepareTransportSeek(
+        timeline.prepareObservedSeek(
             operationID: operation.id,
             to: operation.targetSeconds
         )
-        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
-        player.seek(
-            to: CMTime(
-                seconds: operation.targetSeconds,
-                preferredTimescale: 600
-            ),
-            toleranceBefore: tolerance,
-            toleranceAfter: tolerance
-        ) { [weak self, weak item] finished in
-            guard let item else { return }
-            Task { @MainActor [weak self] in
-                guard let self,
-                    self.loadGeneration == generation,
-                    self.player.currentItem === item
-                else { return }
-                guard self.activeSeekOperationID == operation.id,
-                    self.transportSeek.matches(operation)
-                else {
-                    if !finished {
-                        self.timeline.discardStaleSeekLanding(
-                            operationID: operation.id
-                        )
-                    }
-                    return
-                }
-                let resolved =
-                    finished ? Self.validSeconds(self.player.currentTime()) : nil
-                switch self.transportSeek.complete(
+        issueSeek(
+            to: operation.targetSeconds,
+            tolerance: SeekPolicy.resumeTolerance,
+            generation: generation,
+            item: item
+        ) { engine, finished in
+            let isOwned =
+                engine.activeSeekOperationID == operation.id
+                && engine.transportSeek.matches(operation)
+            var landing: Double?
+            if isOwned,
+                case .completed(let positionSeconds) = engine.transportSeek.complete(
                     operation,
                     finished: finished,
-                    resolvedPositionSeconds: resolved
-                ) {
-                case .ignored:
-                    return
-                case .failed:
-                    self.timeline.transportSeekFailed(
-                        operationID: operation.id
-                    )
-                    self.activeSeekOperationID = nil
-                case .completed(let positionSeconds):
-                    self.timeline.transportSeekCompleted(
-                        operationID: operation.id,
-                        at: positionSeconds
-                    )
-                    self.activeSeekOperationID = nil
-                }
+                    resolvedPositionSeconds: finished
+                        ? Self.validSeconds(engine.player.currentTime()) : nil
+                )
+            {
+                landing = positionSeconds
             }
+            engine.settleSeek(
+                operation.id,
+                didSeek: finished,
+                isOwned: isOwned,
+                item: item
+            ) { landing }
         }
         return true
-    }
-
-    /// 执行精确 seek，并只为一次用户 seek 发布一个 discontinuity generation。
-    public func seek(to time: Duration) async throws {
-        guard let item = player.currentItem else {
-            throw AVPlayerEngineError.seekFailed
-        }
-        let generation = loadGeneration
-        let operation = UUID()
-        restartOperation = nil
-        supersedeTransportSeek()
-        activeSeekOperationID = operation
-        let components = time.components
-        let seconds =
-            Double(components.seconds)
-            + Double(components.attoseconds) / 1_000_000_000_000_000_000
-        timeline.prepareExplicitSeek(operationID: operation, to: seconds)
-        let didSeek = await player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
-        guard activeSeekOperationID == operation,
-            loadGeneration == generation,
-            player.currentItem === item
-        else {
-            if !didSeek {
-                timeline.discardStaleSeekLanding(operationID: operation)
-            }
-            throw CancellationError()
-        }
-        guard didSeek else {
-            timeline.explicitSeekFailed(operationID: operation)
-            activeSeekOperationID = nil
-            throw AVPlayerEngineError.seekFailed
-        }
-        timeline.explicitSeekCompleted(operationID: operation, at: seconds)
-        activeSeekOperationID = nil
     }
 
     /// 同步接受当前 item 上的精确 seek，并在 engine 内完成 generation-safe 的异步收尾。
@@ -909,60 +609,133 @@ public final class AVPlayerEngine:
         restartOperation = nil
         supersedeTransportSeek()
         activeSeekOperationID = operation
-        timeline.prepareExplicitSeek(operationID: operation, to: seconds)
-        player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        ) { [weak self, weak item] didSeek in
-            Task { @MainActor in
-                guard let self, let item,
-                    self.loadGeneration == generation,
-                    self.player.currentItem === item
-                else { return }
-                guard self.activeSeekOperationID == operation else {
-                    if !didSeek {
-                        self.timeline.discardStaleSeekLanding(
-                            operationID: operation
-                        )
-                    }
-                    return
-                }
-                self.activeSeekOperationID = nil
-                if didSeek {
-                    self.timeline.explicitSeekCompleted(
-                        operationID: operation,
-                        at: seconds
-                    )
-                } else {
-                    self.timeline.explicitSeekFailed(operationID: operation)
-                }
-            }
+        timeline.prepareObservedSeek(operationID: operation, to: seconds)
+        issueSeek(
+            to: seconds,
+            tolerance: .zero,
+            generation: generation,
+            item: item
+        ) { engine, didSeek in
+            engine.settleSeek(
+                operation,
+                didSeek: didSeek,
+                isOwned: engine.activeSeekOperationID == operation,
+                item: item
+            ) { seconds }
         }
         return true
     }
 
+    /// 以 AVPlayer 的异步接口等待 seek 完成。
+    private func seek(to seconds: Double, tolerance: CMTime) async -> Bool {
+        await player.seek(
+            to: CMTime(seconds: seconds, preferredTimescale: SeekPolicy.timescale),
+            toleranceBefore: tolerance,
+            toleranceAfter: tolerance
+        )
+    }
+
+    /// 同步向 AVPlayer 发出 seek，调用方可立即返回；完成回调回到 main actor，旧 load 或旧 item
+    /// 的回调静默丢弃。
+    private func issueSeek(
+        to seconds: Double,
+        tolerance: CMTime,
+        generation: UUID,
+        item: AVPlayerItem,
+        settle: @escaping @MainActor (AVPlayerEngine, Bool) -> Void
+    ) {
+        player.seek(
+            to: CMTime(seconds: seconds, preferredTimescale: SeekPolicy.timescale),
+            toleranceBefore: tolerance,
+            toleranceAfter: tolerance
+        ) { [weak self, weak item] finished in
+            Task { @MainActor [weak self, weak item] in
+                guard let self, let item,
+                    self.loadGeneration == generation,
+                    self.player.currentItem === item
+                else { return }
+                settle(self, finished)
+            }
+        }
+    }
+
+    /// 所有 seek 入口共用的收尾：只有仍拥有该操作的调用方才能写回时间线并结束 `activeSeekOperationID`。
+    ///
+    /// 被取代的操作只丢弃失败落点；等待期间上下文变化时，仅当 item 仍在播放器上才撤销时间线的
+    /// 待定 seek；`landing` 返回 nil 表示落点不合格。
+    @discardableResult
+    private func settleSeek(
+        _ operationID: UUID,
+        didSeek: Bool,
+        isOwned: Bool,
+        item: AVPlayerItem,
+        contextIsValid: Bool = true,
+        landing: () -> Double?
+    ) -> SeekSettlement {
+        guard isOwned else {
+            if !didSeek {
+                timeline.discardStaleSeekLanding(operationID: operationID)
+            }
+            return .superseded
+        }
+        guard didSeek else {
+            timeline.seekFailed(operationID: operationID)
+            activeSeekOperationID = nil
+            return .failed
+        }
+        guard contextIsValid else {
+            if player.currentItem === item {
+                timeline.seekFailed(operationID: operationID)
+            }
+            activeSeekOperationID = nil
+            return .contextChanged
+        }
+        guard let positionSeconds = landing() else {
+            timeline.seekFailed(operationID: operationID)
+            activeSeekOperationID = nil
+            return .failed
+        }
+        timeline.seekCompleted(operationID: operationID, at: positionSeconds)
+        activeSeekOperationID = nil
+        return .landed(positionSeconds: positionSeconds)
+    }
+
     /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
-        loadGeneration = UUID()
+        resetToIdle()
+    }
+
+    /// 使当前 load 世代失效，并释放播放项目及其派生状态：在途加载／就绪任务、响度处理、
+    /// 字幕切换、seek、恢复与重新开始操作，以及 loopback 资源。
+    ///
+    /// 先移除 AVPlayerItem 再停止 loopback 资源，避免旧项目因资源消失而触发失败回调。
+    /// 时间线终态、字幕重置与对外事件由调用方决定。
+    private func releaseCurrentPlayback(
+        nextGeneration: UUID = UUID(),
+        nextIntent: PlaybackLoadIntent? = nil
+    ) {
+        loadGeneration = nextGeneration
         activeSeekOperationID = nil
         invalidateSubtitleToggle(clearPreference: true)
         invalidateTransportSeek()
-        loadIntent = nil
+        loadIntent = nextIntent
         activeResumeToken = nil
         restartOperation = nil
         loadTask?.cancel()
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
-        clearLoudnessNormalization()
+        loudness.clear()
         player.pause()
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
         preparedAsset = nil
+    }
+
+    private func resetToIdle() {
+        releaseCurrentPlayback()
         timeline.clear()
         _ = enqueueSubtitleReset()
-        emit(.stateChanged(.idle))
     }
 
     private static func validSeconds(_ time: CMTime) -> Double? {
@@ -1053,270 +826,26 @@ public final class AVPlayerEngine:
     ) -> Double? {
         guard let positionSeconds = validSeconds(time),
             durationSeconds.isFinite,
-            positionSeconds > 0.25,
-            positionSeconds < durationSeconds - 0.05
+            positionSeconds > SeekPolicy.beginningThresholdSeconds,
+            positionSeconds < durationSeconds - SeekPolicy.endMarginSeconds
         else { return nil }
         return positionSeconds
-    }
-
-    private func selectedVideos(
-        in manifest: PlaybackManifest,
-        request: PlaybackRequest
-    ) throws -> [MediaRepresentation] {
-        if let preferredID = request.preferredVideoRepresentationID {
-            guard
-                let representation = manifest.videoRepresentations.first(
-                    where: { $0.id == preferredID }
-                )
-            else {
-                throw AVPlayerEngineError.preferredVideoRepresentationNotFound(
-                    preferredID
-                )
-            }
-            return [representation]
-        }
-        guard !manifest.videoRepresentations.isEmpty else {
-            throw AVPlayerEngineError.missingVideoRepresentation
-        }
-        return manifest.videoRepresentations
-    }
-
-    func selectedAudioTracks(
-        in manifest: PlaybackManifest,
-        request: PlaybackRequest
-    ) throws -> [SelectedPlaybackAudioTrack] {
-        guard !manifest.audioTracks.isEmpty else {
-            throw AVPlayerEngineError.missingAudioRepresentation
-        }
-        var trackIDs = Set<String>()
-        for track in manifest.audioTracks {
-            guard trackIDs.insert(track.id).inserted else {
-                throw AVPlayerEngineError.duplicateAudioTrackID(track.id)
-            }
-        }
-        for trackID in request.preferredAudioRepresentationIDs.keys
-        where !trackIDs.contains(trackID) {
-            throw AVPlayerEngineError.preferredAudioTrackNotFound(trackID)
-        }
-        let defaultTracks = manifest.audioTracks.filter(\.isDefault)
-        guard defaultTracks.count == 1 else {
-            throw AVPlayerEngineError.invalidDefaultAudioTrackCount(
-                defaultTracks.count
-            )
-        }
-
-        return try manifest.audioTracks.map { track in
-            for representation in track.representations
-            where representation.kind != .audio {
-                throw AVPlayerEngineError.invalidAudioTrackRepresentation(
-                    trackID: track.id,
-                    representationID: representation.id
-                )
-            }
-            let representation: MediaRepresentation
-            if let preferredID =
-                request.preferredAudioRepresentationIDs[track.id]
-            {
-                guard
-                    let preferred = track.representations.first(
-                        where: { $0.id == preferredID }
-                    )
-                else {
-                    throw
-                        AVPlayerEngineError
-                        .preferredAudioRepresentationNotFound(
-                            trackID: track.id,
-                            representationID: preferredID
-                        )
-                }
-                representation = preferred
-            } else {
-                guard let first = track.representations.first else {
-                    throw AVPlayerEngineError.missingAudioTrackRepresentation(
-                        track.id
-                    )
-                }
-                representation = first
-            }
-            return SelectedPlaybackAudioTrack(
-                track: track,
-                representation: representation
-            )
-        }
-    }
-
-    func selectedAudioTracks(
-        for request: PlaybackRequest
-    ) throws -> [SelectedPlaybackAudioTrack] {
-        guard case .dash(let manifest) = request.media else {
-            throw AVPlayerEngineError.missingAudioRepresentation
-        }
-        return try selectedAudioTracks(in: manifest, request: request)
-    }
-
-    private func emit(_ event: PlayerEvent) {
-        eventContinuation.yield(event)
     }
 
     private func handleCurrentItemFailure() {
         guard let identity = timeline.currentSnapshot.identity,
             let intent = loadIntent
         else { return }
-        loadGeneration = UUID()
-        activeSeekOperationID = nil
-        invalidateSubtitleToggle(clearPreference: true)
-        invalidateTransportSeek()
-        loadIntent = nil
-        loadTask?.cancel()
-        loadTask = nil
-        readinessTask?.cancel()
-        readinessTask = nil
-        clearLoudnessNormalization()
-        player.pause()
-        player.replaceCurrentItem(with: nil)
-        preparedAsset?.stop()
-        preparedAsset = nil
+        releaseCurrentPlayback()
         _ = enqueueSubtitleReset()
         failureContinuation.yield(
             PlaybackFailureEvent(identity: identity, intent: intent)
         )
-        emit(.failed(message: "PlaybackItemFailed"))
-    }
-
-    private func beginObservingAudioSelection(
-        for item: AVPlayerItem,
-        generation: UUID
-    ) {
-        guard loudnessTap != nil else { return }
-        audioSelectionObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.mediaSelectionDidChangeNotification,
-            object: item,
-            queue: .main
-        ) { [weak self, weak item] _ in
-            guard let item else { return }
-            Task { @MainActor [weak self, weak item] in
-                guard let self, let item,
-                    self.loadGeneration == generation,
-                    self.player.currentItem === item
-                else { return }
-                self.audioSelectionTask?.cancel()
-                let operationID = self.audioSelectionOperation.begin()
-                let task = Task { @MainActor [weak self, weak item] in
-                    guard let self, let item else { return }
-                    await self.updateSelectedAudioGain(
-                        for: item,
-                        generation: generation,
-                        operationID: operationID
-                    )
-                }
-                self.audioSelectionTask = task
-            }
-        }
-    }
-
-    private func updateSelectedAudioGain(
-        for item: AVPlayerItem,
-        generation: UUID,
-        operationID: UUID
-    ) async {
-        guard let loudnessTap,
-            isCurrentAudioSelectionOperation(
-                operationID,
-                generation: generation,
-                item: item,
-                tap: loudnessTap
-            )
-        else { return }
-
-        let group: AVMediaSelectionGroup?
-        do {
-            group = try await item.asset.loadMediaSelectionGroup(for: .audible)
-        } catch {
-            guard
-                isCurrentAudioSelectionOperation(
-                    operationID,
-                    generation: generation,
-                    item: item,
-                    tap: loudnessTap
-                )
-            else { return }
-            loudnessTap.setTargetGain(1)
-            return
-        }
-
-        guard
-            isCurrentAudioSelectionOperation(
-                operationID,
-                generation: generation,
-                item: item,
-                tap: loudnessTap
-            )
-        else { return }
-
-        let metadata: PlaybackLoudnessMetadata?
-        if let group,
-            let option = item.currentMediaSelection.selectedMediaOption(in: group)
-        {
-            let matches = loudnessAudioTracks.filter {
-                Self.matches($0, option: option)
-            }
-            metadata = matches.count == 1 ? matches[0].loudnessMetadata : nil
-        } else {
-            metadata = nil
-        }
-        loudnessTap.setTargetGain(
-            LoudnessNormalizationPolicy().linearGain(for: metadata)
-        )
-    }
-
-    private func isCurrentAudioSelectionOperation(
-        _ operationID: UUID,
-        generation: UUID,
-        item: AVPlayerItem,
-        tap: LoudnessProcessingTap
-    ) -> Bool {
-        !Task.isCancelled
-            && audioSelectionOperation.matches(operationID)
-            && loadGeneration == generation
-            && player.currentItem === item
-            && loudnessTap === tap
-    }
-
-    private static func matches(
-        _ track: PlaybackAudioTrack,
-        option: AVMediaSelectionOption
-    ) -> Bool {
-        let expectedLanguage = (track.languageTag ?? "und")
-            .replacingOccurrences(of: "_", with: "-")
-            .lowercased()
-        let actualLanguage = (option.locale?.identifier ?? "und")
-            .replacingOccurrences(of: "_", with: "-")
-            .lowercased()
-        let characteristic = AVMediaCharacteristic(
-            rawValue:
-                track.role == .original
-                ? "public.original-content" : "public.machine-generated"
-        )
-        return option.displayName == track.displayName
-            && actualLanguage == expectedLanguage
-            && option.hasMediaCharacteristic(characteristic)
-    }
-
-    private func clearLoudnessNormalization() {
-        audioSelectionTask?.cancel()
-        audioSelectionTask = nil
-        audioSelectionOperation.invalidate()
-        if let audioSelectionObserver {
-            NotificationCenter.default.removeObserver(audioSelectionObserver)
-        }
-        audioSelectionObserver = nil
-        loudnessAudioTracks = []
-        loudnessTap = nil
     }
 
     private func invalidateTransportSeek() {
         guard let operation = transportSeek.invalidate() else { return }
-        timeline.transportSeekFailed(operationID: operation.id)
+        timeline.seekFailed(operationID: operation.id)
         if activeSeekOperationID == operation.id {
             activeSeekOperationID = nil
         }

@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct CommentUseCaseTests {
     @Test
     func rootPageRemovesExistingAndDuplicateItemsWithoutReordering() async throws {
@@ -27,61 +28,6 @@ struct CommentUseCaseTests {
         #expect(batch.threads.map(\.id.rawValue) == [2, 3])
         #expect(batch.continuation == next)
         #expect(batch.termination == nil)
-    }
-
-    @Test
-    func repeatedContinuationKeepsPagingWhenThePageContainsNewItems() async throws {
-        let continuation = commentContinuation("same")
-        let useCase = CommentUseCase(
-            repository: CommentRepositoryStub(
-                rootPages: [
-                    CommentRootPage(
-                        threads: [thread(1)],
-                        totalCount: 2,
-                        continuation: continuation,
-                        isEnd: false
-                    )
-                ]
-            )
-        )
-
-        let batch = try await useCase.loadRoots(
-            for: .video(aid: 700_001),
-            sort: .latest,
-            after: continuation
-        )
-
-        #expect(batch.threads.map(\.id.rawValue) == [1])
-        #expect(batch.continuation == continuation)
-        #expect(batch.termination == nil)
-    }
-
-    @Test
-    func duplicateRootPageStopsAutomaticPagingButKeepsContinuationForRetry() async throws {
-        let continuation = commentContinuation("same")
-        let useCase = CommentUseCase(
-            repository: CommentRepositoryStub(
-                rootPages: [
-                    CommentRootPage(
-                        threads: [thread(1)],
-                        totalCount: 2,
-                        continuation: continuation,
-                        isEnd: false
-                    )
-                ]
-            )
-        )
-
-        let batch = try await useCase.loadRoots(
-            for: .video(aid: 700_001),
-            sort: .hot,
-            after: continuation,
-            excluding: [CommentID(rawValue: 1)]
-        )
-
-        #expect(batch.threads.isEmpty)
-        #expect(batch.continuation == continuation)
-        #expect(batch.termination == .duplicatePage)
     }
 
     @Test

@@ -11,8 +11,8 @@ import SwiftUI
 final class AppWindowOwner {
     let benchmarkAuthenticationOwnerID = UUID()
     let navigationCoordinator: AppNavigationCoordinator
-    let browseModel: GuestBrowseViewModel
-    let videoModel: GuestVideoViewModel
+    let browseModel: BrowseViewModel
+    let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel?
     let danmakuModel: DanmakuControlsViewModel
     let authenticationModel: AuthenticationViewModel
@@ -21,8 +21,9 @@ final class AppWindowOwner {
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentVideoLinkResolver: CommentVideoLinkResolver
     let commentLinkURLResolver: CommentLinkURLResolver
-    let commentImagePipeline: NativeVideoImagePipeline
-    private let commentImagePipelineOwner: NativeVideoImagePipelineOwner
+    /// 窗口内所有封面、头像与评论图片共用的匿名有界图片管线。
+    let imagePipeline: NativeVideoImagePipeline
+    private let imagePipelineOwner: NativeVideoImagePipelineOwner
     private let playbackPreferencesController: PlaybackPreferencesController?
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator?
     private let watchProgressConnection: WatchProgressWindowConnection?
@@ -81,7 +82,7 @@ final class AppWindowOwner {
 
     static func handlePlaybackSelection(
         _ intent: PlaybackSelectionIntent,
-        with videoModel: GuestVideoViewModel
+        with videoModel: VideoViewModel
     ) {
         guard videoModel.presentedBVID == intent.bvid,
             let preferredCID = intent.preferredCID
@@ -101,8 +102,8 @@ final class AppWindowOwner {
 
     init(
         navigationCoordinator: AppNavigationCoordinator,
-        browseModel: GuestBrowseViewModel,
-        videoModel: GuestVideoViewModel,
+        browseModel: BrowseViewModel,
+        videoModel: VideoViewModel,
         commentsModel: PlaybackCommentsViewModel? = nil,
         danmakuModel: DanmakuControlsViewModel,
         authenticationModel: AuthenticationViewModel,
@@ -111,7 +112,7 @@ final class AppWindowOwner {
         commentAssetURLResolver: @escaping CommentAssetURLResolver = { _ in nil },
         commentVideoLinkResolver: @escaping CommentVideoLinkResolver = { _ in nil },
         commentLinkURLResolver: @escaping CommentLinkURLResolver = { _ in nil },
-        commentImagePipelineOwner: NativeVideoImagePipelineOwner =
+        imagePipelineOwner: NativeVideoImagePipelineOwner =
             NativeVideoImagePipelineOwner(),
         playbackPreferencesController: PlaybackPreferencesController? = nil,
         systemNowPlayingController: SystemNowPlayingController? = nil,
@@ -131,8 +132,8 @@ final class AppWindowOwner {
         self.commentAssetURLResolver = commentAssetURLResolver
         self.commentVideoLinkResolver = commentVideoLinkResolver
         self.commentLinkURLResolver = commentLinkURLResolver
-        self.commentImagePipelineOwner = commentImagePipelineOwner
-        commentImagePipeline = commentImagePipelineOwner.pipeline
+        self.imagePipelineOwner = imagePipelineOwner
+        imagePipeline = imagePipelineOwner.pipeline
         self.playbackPreferencesController = playbackPreferencesController
         if let systemNowPlayingController, let systemNowPlayingConnection {
             systemNowPlayingCoordinator = SystemNowPlayingWindowCoordinator(
@@ -161,7 +162,7 @@ final class AppWindowOwner {
         isClosed = true
         watchProgressConnection?.stop()
         systemNowPlayingCoordinator?.close()
-        commentImagePipelineOwner.shutdown()
+        imagePipelineOwner.shutdown()
         if isOpen {
             closeEnvironment?()
         }

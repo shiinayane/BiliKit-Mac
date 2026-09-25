@@ -6,14 +6,14 @@ import Testing
 
 @testable import BiliAPI
 
-@Suite("Comment API")
+@Suite("Comment API", .timeLimit(.minutes(1)))
 struct CommentAPIClientTests {
     @Test
     func rootCommentsUseAccountEnhancedWBIAndMapReadableRows() async throws {
-        let transport = CommentRecordingTransport(
-            responses: [try fixture("nav"), try fixture("comment-main")]
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), try fixtureResponse("comment-main")]
         )
-        let authorizer = CommentRecordingAuthorizer()
+        let authorizer = StubAuthorizer()
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
                 transport: transport,
@@ -32,7 +32,7 @@ struct CommentAPIClientTests {
         #expect(page.threads.count == 3)
         #expect(page.continuation != nil)
         #expect(page.isEnd == false)
-        #expect(await authorizer.count == 1)
+        #expect(await authorizer.authorizationCount == 1)
         let first = try #require(available(page.threads[0].root))
         #expect(first.author.isVIP)
         #expect(first.location == "东京")
@@ -54,10 +54,10 @@ struct CommentAPIClientTests {
             return
         }
 
-        let requests = await transport.requests
+        let requests = transport.capturedRequests()
         #expect(
             requests.map(\.url.path) == [
-                "/x/web-interface/nav", "/x/v2/reply/wbi/main",
+                "/x/web-interface/nav", "/x/v2/reply/wbi/main"
             ]
         )
         let query = URLComponents(
@@ -70,16 +70,16 @@ struct CommentAPIClientTests {
         #expect(query?.first(where: { $0.name == "wts" })?.value == "1700000000")
         #expect(query?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
         #expect(requests[0].headers["Cookie"] == nil)
-        #expect(requests[1].headers["Cookie"] == "FIXTURE_AUTHORIZED")
+        #expect(requests[1].headers["Cookie"] == StubAuthorizer.cookie)
     }
 
     @Test
     func continuationStaysOpaqueAndSuppliesNextOffset() async throws {
-        let transport = CommentRecordingTransport(
+        let transport = StubTransport(
             responses: [
-                try fixture("nav"),
-                try fixture("comment-main"),
-                try fixture("comment-main"),
+                try fixtureResponse("nav"),
+                try fixtureResponse("comment-main"),
+                try fixtureResponse("comment-main")
             ]
         )
         let repository = BiliCommentRepository(
@@ -102,7 +102,7 @@ struct CommentAPIClientTests {
         )
 
         #expect(second.continuation == continuation)
-        let requests = await transport.requests
+        let requests = transport.capturedRequests()
         let queries = requests.filter { $0.url.path == "/x/v2/reply/wbi/main" }
         #expect(queries.count == 2)
         let firstItems = URLComponents(
@@ -122,10 +122,10 @@ struct CommentAPIClientTests {
 
     @Test
     func replyPageUsesRootAndTenItemPageContract() async throws {
-        let transport = CommentRecordingTransport(
-            responses: [try fixture("comment-replies")]
+        let transport = StubTransport(
+            responses: [try fixtureResponse("comment-replies")]
         )
-        let authorizer = CommentRecordingAuthorizer()
+        let authorizer = StubAuthorizer()
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
                 transport: transport,
@@ -145,7 +145,7 @@ struct CommentAPIClientTests {
         #expect(page.pageSize == 10)
         #expect(page.totalCount == 11)
         #expect(page.replies.map(\.id) == [CommentID(rawValue: 211)])
-        let request = try #require(await transport.requests.first)
+        let request = try #require(transport.capturedRequests().first)
         let query = URLComponents(
             url: request.url,
             resolvingAgainstBaseURL: false
@@ -154,21 +154,19 @@ struct CommentAPIClientTests {
         #expect(query?.first(where: { $0.name == "root" })?.value == "102")
         #expect(query?.first(where: { $0.name == "pn" })?.value == "2")
         #expect(query?.first(where: { $0.name == "ps" })?.value == "10")
-        #expect(request.headers["Cookie"] == "FIXTURE_AUTHORIZED")
-        #expect(await authorizer.count == 1)
+        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
+        #expect(await authorizer.authorizationCount == 1)
     }
 
     @Test
     func authenticationInvalidationIsPreservedForRootAndReplies() async throws {
-        let rootTransport = CommentRecordingTransport(
-            responses: [try fixture("nav")]
+        let rootTransport = StubTransport(
+            responses: [try fixtureResponse("nav")]
         )
         let rootRepository = BiliCommentRepository(
             client: BiliAPIClient(
                 transport: rootTransport,
-                requestAuthorizer: CommentRecordingAuthorizer(
-                    failureKind: .invalidCredential
-                ),
+                requestAuthorizer: StubAuthorizer(.fail(.invalidCredential)),
                 timestampProvider: { 1_700_000_000 }
             )
         )
@@ -180,7 +178,7 @@ struct CommentAPIClientTests {
                 after: nil
             )
         }
-        #expect(await rootTransport.requests.map(\.url.path) == ["/x/web-interface/nav"])
+        #expect(rootTransport.capturedRequests().map(\.url.path) == ["/x/web-interface/nav"])
 
         let rejected = HTTPResponse(
             statusCode: 200,
@@ -189,8 +187,8 @@ struct CommentAPIClientTests {
         )
         let replyRepository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(responses: [rejected]),
-                requestAuthorizer: CommentRecordingAuthorizer()
+                transport: StubTransport(responses: [rejected]),
+                requestAuthorizer: StubAuthorizer()
             )
         )
         await #expect(throws: CommentReadError.authenticationInvalid) {
@@ -203,15 +201,16 @@ struct CommentAPIClientTests {
         }
     }
 
-    @Test
-    func riskControlMapsToRestrictedWithoutAutomaticRetry() async throws {
-        let rejected = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":-352,"message":"blocked"}"#.utf8)
-        )
-        let transport = CommentRecordingTransport(
-            responses: [try fixture("nav"), rejected]
+    /// 评论主列表遇到风控或 HTTP 403 时失败关闭，既不自动重试，也不刷新 WBI key。
+    @Test(arguments: [
+        jsonResponse(#"{"code":-352,"message":"blocked"}"#),
+        jsonResponse("", statusCode: 403)
+    ])
+    func rootRestrictionFailsClosedWithoutRetryOrWBIRefresh(
+        rejected: HTTPResponse
+    ) async throws {
+        let transport = StubTransport(
+            responses: [try fixtureResponse("nav"), rejected]
         )
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
@@ -227,34 +226,33 @@ struct CommentAPIClientTests {
                 after: nil
             )
         }
-        #expect(await transport.requests.count == 2)
+        #expect(transport.capturedRequests().count == 2)
     }
 
-    @Test
-    func httpForbiddenFailsClosedWithoutRefreshingWBI() async throws {
-        let forbidden = HTTPResponse(
-            statusCode: 403,
-            headers: ["Content-Type": "application/json"],
-            body: Data()
-        )
-        let transport = CommentRecordingTransport(
-            responses: [try fixture("nav"), forbidden]
-        )
+    @Test(arguments: [
+        (htmlRiskControlResponse(), CommentReadError.requestRestricted),
+        (jsonResponse("", statusCode: 412), .requestRestricted),
+        (jsonResponse(#"{"code":-412,"message":"fixture"}"#), .requestRestricted),
+        (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
+        (jsonResponse("", statusCode: 500), .unavailable),
+        (jsonResponse("{"), .invalidResponse)
+    ])
+    func replyFailuresMapToCommentReadError(
+        response: HTTPResponse,
+        expected: CommentReadError
+    ) async {
         let repository = BiliCommentRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                timestampProvider: { 1_700_000_000 }
-            )
+            client: BiliAPIClient(transport: StubTransport(responses: [response]))
         )
 
-        await #expect(throws: CommentReadError.requestRestricted) {
-            try await repository.rootComments(
+        await #expect(throws: expected) {
+            try await repository.replies(
                 for: .video(aid: 700_001),
-                sort: .hot,
-                after: nil
+                rootID: CommentID(rawValue: 102),
+                page: 1,
+                pageSize: 10
             )
         }
-        #expect(await transport.requests.count == 2)
     }
 
     @Test
@@ -272,8 +270,8 @@ struct CommentAPIClientTests {
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -310,7 +308,7 @@ struct CommentAPIClientTests {
             content["members"] = [42]
             content["pictures"] = [
                 ["img_src": "https://example.invalid/fixture.png"],
-                42,
+                42
             ]
             reply["content"] = content
             replies[0] = reply
@@ -318,8 +316,8 @@ struct CommentAPIClientTests {
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -340,20 +338,38 @@ struct CommentAPIClientTests {
         #expect(details.content.links.isEmpty)
         #expect(details.author.level == nil)
         #expect(!details.author.isHardcoreMember)
+
+        let replyResponse = try mutatedFixture("comment-replies") { data in
+            data["upper"] = "unexpected"
+        }
+        let replyRepository = BiliCommentRepository(
+            client: BiliAPIClient(
+                transport: StubTransport(responses: [replyResponse])
+            )
+        )
+        let replyPage = try await replyRepository.replies(
+            for: .video(aid: 700_001),
+            rootID: CommentID(rawValue: 102),
+            page: 2,
+            pageSize: 10
+        )
+        #expect(replyPage.replies.map(\.id.rawValue) == [211])
+        let reply = try #require(available(replyPage.replies[0]))
+        #expect(!reply.author.isUploader)
     }
 
     @Test(
         arguments: [
             "//i0.hdslb.com/bfs/face/protocol-relative.jpg",
             "http://i1.hdslb.com/bfs/face/legacy-http.jpg",
-            "https://i2.hdslb.com/bfs/face/secure.jpg",
+            "https://i2.hdslb.com/bfs/face/secure.jpg"
         ]
     )
     func commentAvatarMapsToNormalizedOpaqueAssetReference(_ value: String) throws {
         let data = try JSONSerialization.data(withJSONObject: [
             "mid": "42",
             "uname": "评论者",
-            "avatar": value,
+            "avatar": value
         ])
         let payload = try JSONDecoder().decode(CommentMemberPayload.self, from: data)
 
@@ -369,7 +385,7 @@ struct CommentAPIClientTests {
         let data = try JSONSerialization.data(withJSONObject: [
             "mid": "42",
             "uname": "评论者",
-            "avatar": "https://user@i0.hdslb.com/bfs/face/avatar.jpg",
+            "avatar": "https://user@i0.hdslb.com/bfs/face/avatar.jpg"
         ])
         let payload = try JSONDecoder().decode(CommentMemberPayload.self, from: data)
 
@@ -409,7 +425,7 @@ struct CommentAPIClientTests {
             links.map(\.range) == [
                 CommentTextRange(location: 0, length: 3),
                 CommentTextRange(location: 4, length: 4),
-                CommentTextRange(location: 9, length: 5),
+                CommentTextRange(location: 9, length: 5)
             ]
         )
         #expect(links[0].target == .video(bvid: "BV1FixtureA1"))
@@ -425,6 +441,40 @@ struct CommentAPIClientTests {
             links[2].target
                 == .member(CommentAuthorID(rawValue: "301"))
         )
+    }
+
+    /// 非内部视频的合法 HTTPS jump_url 保持为外部链接；非 HTTPS 或带 userinfo 的直接丢弃。
+    @Test(arguments: [
+        ("https://www.bilibili.com/video/BV😈", true),
+        ("https://example.com/video/BV1FixtureA1", true),
+        ("https://www.bilibili.com/video/BV", true),
+        ("http://www.bilibili.com/video/BV1FixtureA1", false),
+        ("https://user@example.com/video/BV1FixtureA1", false)
+    ])
+    func commentJumpLinksKeepOnlySafeExternalHTTPS(
+        value: String,
+        isKept: Bool
+    ) throws {
+        let data = try JSONSerialization.data(
+            withJSONObject: [
+                "message": "视频",
+                "jump_url": ["视频": ["pc_url": value]]
+            ]
+        )
+        let payload = try JSONDecoder().decode(CommentContentPayload.self, from: data)
+
+        let links = try payload.model().links
+
+        guard isKept else {
+            #expect(links.isEmpty)
+            return
+        }
+        #expect(links.count == 1)
+        guard case .external(let reference) = links.first?.target else {
+            Issue.record("合法但非内部视频的 HTTPS jump_url 应保持为外部链接")
+            return
+        }
+        #expect(reference.remoteURL == URL(string: value))
     }
 
     @Test
@@ -450,8 +500,8 @@ struct CommentAPIClientTests {
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -480,8 +530,8 @@ struct CommentAPIClientTests {
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -508,8 +558,8 @@ struct CommentAPIClientTests {
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -525,35 +575,16 @@ struct CommentAPIClientTests {
     }
 
     @Test
-    func malformedReplyPageUploaderEnhancementDoesNotFailPage() async throws {
-        let response = try mutatedFixture("comment-replies") { data in
-            data["upper"] = "unexpected"
-        }
-        let repository = BiliCommentRepository(
-            client: BiliAPIClient(
-                transport: CommentRecordingTransport(responses: [response])
-            )
-        )
-
-        let page = try await repository.replies(
-            for: .video(aid: 700_001),
-            rootID: CommentID(rawValue: 102),
-            page: 2,
-            pageSize: 10
-        )
-
-        #expect(page.replies.map(\.id.rawValue) == [211])
-        let details = try #require(available(page.replies[0]))
-        #expect(!details.author.isUploader)
-    }
-
-    @Test
-    func rootPageRejectsNestedRowsAndMapsHardcoreMembership() async throws {
+    func rootPageRejectsNestedAndNegativeRootRowsAndMapsHardcoreMembership() async throws {
         let response = try mutatedFixture("comment-main") { data in
             var replies = try #require(data["replies"] as? [[String: Any]])
             var nested = replies[0]
             nested["root"] = 101
             nested["parent"] = 101
+            var negativeRoot = replies[0]
+            negativeRoot["rpid"] = 106
+            negativeRoot["root"] = -1
+            negativeRoot["parent"] = -1
             var unavailable = replies[1]
             unavailable["rpid"] = 105
             unavailable["state"] = 0
@@ -567,16 +598,16 @@ struct CommentAPIClientTests {
             unavailable["member"] = [
                 "mid": "305",
                 "uname": "硬核会员",
-                "is_senior_member": 1,
+                "is_senior_member": 1
             ]
             unavailable["content"] = ["message": "硬核会员评论"]
-            replies = [nested, unavailable]
+            replies = [nested, negativeRoot, unavailable]
             data["replies"] = replies
         }
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), response]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -588,38 +619,12 @@ struct CommentAPIClientTests {
             after: nil
         )
 
-        #expect(!page.threads.contains(where: { $0.id.rawValue == 102 }))
+        #expect(!page.threads.contains(where: { [102, 106].contains($0.id.rawValue) }))
         let details = try #require(
             page.threads.first(where: { $0.id.rawValue == 105 })
                 .flatMap { available($0.root) }
         )
         #expect(details.author.isHardcoreMember)
-    }
-
-    @Test
-    func rootPageRejectsNegativeRootShape() async throws {
-        let response = try mutatedFixture("comment-main") { data in
-            var replies = try #require(data["replies"] as? [[String: Any]])
-            replies[0]["root"] = -1
-            replies[0]["parent"] = -1
-            data["replies"] = replies
-        }
-        let repository = BiliCommentRepository(
-            client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), response]
-                ),
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        let page = try await repository.rootComments(
-            for: .video(aid: 700_001),
-            sort: .hot,
-            after: nil
-        )
-
-        #expect(!page.threads.contains(where: { $0.id.rawValue == 102 }))
     }
 
     @Test
@@ -634,8 +639,8 @@ struct CommentAPIClientTests {
         }
         let rootRepository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(
-                    responses: [try fixture("nav"), rootResponse]
+                transport: StubTransport(
+                    responses: [try fixtureResponse("nav"), rootResponse]
                 ),
                 timestampProvider: { 1_700_000_000 }
             )
@@ -657,7 +662,7 @@ struct CommentAPIClientTests {
         }
         let replyRepository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(responses: [replyResponse])
+                transport: StubTransport(responses: [replyResponse])
             )
         )
         let replyPage = try await replyRepository.replies(
@@ -667,61 +672,6 @@ struct CommentAPIClientTests {
             pageSize: 10
         )
         #expect(replyPage.replies.isEmpty)
-    }
-
-    @Test
-    func commentJumpLinksDistinguishInternalVideosFromExternalHTTPS() throws {
-        let internalVideoJSON =
-            #"{"message":"视频","jump_url":{"视频":{"pc_url":"https://www.bilibili.com/video/BV1FixtureA1"}}}"#
-        let internalVideo = try JSONDecoder().decode(
-            CommentContentPayload.self,
-            from: Data(internalVideoJSON.utf8)
-        )
-        #expect(
-            try internalVideo.model().links == [
-                CommentLink(
-                    range: CommentTextRange(location: 0, length: 2),
-                    target: .video(bvid: "BV1FixtureA1")
-                )
-            ]
-        )
-
-        let externalValues = [
-            "https://www.bilibili.com/video/BV😈",
-            "https://example.com/video/BV1FixtureA1",
-            "https://www.bilibili.com/video/BV",
-        ]
-        for value in externalValues {
-            let data = try JSONSerialization.data(
-                withJSONObject: [
-                    "message": "视频",
-                    "jump_url": ["视频": ["pc_url": value]],
-                ]
-            )
-            let payload = try JSONDecoder().decode(CommentContentPayload.self, from: data)
-            let links = try payload.model().links
-            #expect(links.count == 1)
-            guard case .external(let reference) = try #require(links.first).target else {
-                Issue.record("合法但非内部视频的 HTTPS jump_url 应保持为外部链接")
-                continue
-            }
-            #expect(reference.remoteURL == URL(string: value))
-        }
-
-        let rejectedValues = [
-            "http://www.bilibili.com/video/BV1FixtureA1",
-            "https://user@example.com/video/BV1FixtureA1",
-        ]
-        for value in rejectedValues {
-            let data = try JSONSerialization.data(
-                withJSONObject: [
-                    "message": "视频",
-                    "jump_url": ["视频": ["pc_url": value]],
-                ]
-            )
-            let payload = try JSONDecoder().decode(CommentContentPayload.self, from: data)
-            #expect(try payload.model().links.isEmpty)
-        }
     }
 
     @Test
@@ -760,7 +710,7 @@ struct CommentAPIClientTests {
             emotes.map(\.range) == [
                 CommentTextRange(location: 3, length: 6),
                 CommentTextRange(location: 10, length: 6),
-                CommentTextRange(location: 16, length: 5),
+                CommentTextRange(location: 16, length: 5)
             ]
         )
         #expect(emotes.map(\.size) == [.standard, .standard, .large])
@@ -808,37 +758,18 @@ struct CommentAPIClientTests {
     }
 
     @Test
-    func overlappingCommentEmotesPreferLeftmostThenLongestAtTheSameLocation() throws {
+    func overlappingEmotesPreferLongestAndSharedURLsShareAssetIdentity() throws {
         let body = Data(
             #"""
             {
-              "message": "[doge]",
+              "message": "[doge][甲][乙]",
               "emote": {
                 "[doge]": {
                   "url": "https://i0.hdslb.com/bfs/emote/doge.png"
                 },
                 "doge": {
                   "url": "https://i0.hdslb.com/bfs/emote/overlap.png"
-                }
-              }
-            }
-            """#.utf8
-        )
-        let payload = try JSONDecoder().decode(CommentContentPayload.self, from: body)
-
-        let emotes = try payload.model().emotes
-
-        #expect(emotes.map(\.text) == ["[doge]"])
-        #expect(emotes.map(\.range) == [CommentTextRange(location: 0, length: 6)])
-    }
-
-    @Test
-    func differentCommentEmoteTokensShareTheSameAssetIdentity() throws {
-        let body = Data(
-            #"""
-            {
-              "message": "[甲][乙]",
-              "emote": {
+                },
                 "[甲]": {
                   "url": "https://i0.hdslb.com/bfs/emote/shared.png"
                 },
@@ -853,8 +784,10 @@ struct CommentAPIClientTests {
 
         let emotes = try payload.model().emotes
 
-        #expect(emotes.count == 2)
-        #expect(emotes[0].asset == emotes[1].asset)
+        #expect(emotes.map(\.text) == ["[doge]", "[甲]", "[乙]"])
+        #expect(emotes.first?.range == CommentTextRange(location: 0, length: 6))
+        #expect(emotes[1].asset == emotes[2].asset)
+        #expect(emotes[0].asset != emotes[1].asset)
     }
 
     @Test
@@ -908,7 +841,7 @@ struct CommentAPIClientTests {
 
     @Test
     func replyPageDropsRowsFromAnotherRoot() async throws {
-        let fixtureResponse = try fixture("comment-replies")
+        let fixtureResponse = try fixtureResponse("comment-replies")
         let body = try #require(String(data: fixtureResponse.body, encoding: .utf8))
         let response = HTTPResponse(
             statusCode: 200,
@@ -922,7 +855,7 @@ struct CommentAPIClientTests {
         )
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
-                transport: CommentRecordingTransport(responses: [response])
+                transport: StubTransport(responses: [response])
             )
         )
 
@@ -940,86 +873,4 @@ struct CommentAPIClientTests {
         guard case .available(let details) = comment.payload else { return nil }
         return details
     }
-
-    private func fixture(_ name: String) throws -> HTTPResponse {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        return HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json; charset=utf-8"],
-            body: try Data(contentsOf: url)
-        )
-    }
-
-    private func mutatedFixture(
-        _ name: String,
-        mutate: (inout [String: Any]) throws -> Void
-    ) throws -> HTTPResponse {
-        let response = try fixture(name)
-        var object = try #require(
-            JSONSerialization.jsonObject(with: response.body) as? [String: Any]
-        )
-        var data = try #require(object["data"] as? [String: Any])
-        try mutate(&data)
-        object["data"] = data
-        return HTTPResponse(
-            statusCode: response.statusCode,
-            headers: response.headers,
-            body: try JSONSerialization.data(withJSONObject: object)
-        )
-    }
-}
-
-private actor CommentRecordingTransport: HTTPTransport {
-    private var responses: [HTTPResponse]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        self.responses = responses
-    }
-
-    func send(_ request: HTTPRequest) throws -> HTTPResponse {
-        requests.append(request)
-        guard !responses.isEmpty else { throw CommentTransportError.noResponse }
-        return responses.removeFirst()
-    }
-}
-
-private actor CommentRecordingAuthorizer: HTTPRequestAuthorizing {
-    private let failureKind: HTTPRequestAuthorizationFailureKind?
-    private(set) var count = 0
-
-    init(failureKind: HTTPRequestAuthorizationFailureKind? = nil) {
-        self.failureKind = failureKind
-    }
-
-    func authorize(_ request: HTTPRequest) throws -> HTTPRequest {
-        count += 1
-        if let failureKind {
-            throw CommentAuthorizationFailure(
-                authorizationFailureKind: failureKind
-            )
-        }
-        var headers = request.headers
-        headers["Cookie"] = "FIXTURE_AUTHORIZED"
-        return HTTPRequest(
-            url: request.url,
-            method: request.method,
-            headers: headers,
-            body: request.body
-        )
-    }
-}
-
-private struct CommentAuthorizationFailure: HTTPRequestAuthorizationFailure {
-    let authorizationFailureKind: HTTPRequestAuthorizationFailureKind
-}
-
-private enum CommentTransportError: Error {
-    case noResponse
 }

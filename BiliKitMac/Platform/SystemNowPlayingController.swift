@@ -143,8 +143,6 @@ private final class DefaultSystemNowPlayingCenter: SystemNowPlayingCenterWriting
 
 @MainActor
 protocol SystemRemoteCommandManaging: AnyObject {
-    var installationCount: Int { get }
-    var removalCount: Int { get }
     func install(
         handler:
             @escaping @Sendable (SystemNowPlayingCommand) ->
@@ -159,8 +157,6 @@ private final class DefaultSystemRemoteCommandManager:
 {
     private let center: MPRemoteCommandCenter
     private var registrations: [(command: MPRemoteCommand, token: Any)] = []
-    private(set) var installationCount = 0
-    private(set) var removalCount = 0
 
     init(center: MPRemoteCommandCenter = .shared()) {
         self.center = center
@@ -172,7 +168,6 @@ private final class DefaultSystemRemoteCommandManager:
             SystemNowPlayingCommandResult
     ) {
         guard registrations.isEmpty else { return }
-        installationCount += 1
 
         register(center.playCommand) { _ in handler(.play) }
         register(center.pauseCommand) { _ in handler(.pause) }
@@ -213,7 +208,6 @@ private final class DefaultSystemRemoteCommandManager:
 
     func removeHandlers() {
         guard !registrations.isEmpty else { return }
-        removalCount += 1
         for registration in registrations {
             registration.command.removeTarget(registration.token)
         }
@@ -241,26 +235,19 @@ private final class DefaultSystemRemoteCommandManager:
     }
 }
 
-private final class SystemNowPlayingArtworkImageBox: @unchecked Sendable {
-    let image: CGImage
-
-    init(_ image: CGImage) {
-        self.image = image
-    }
-}
-
 @MainActor
 final class SystemNowPlayingController {
     private let center: any SystemNowPlayingCenterWriting
     private let remoteCommands: any SystemRemoteCommandManaging
-    private let artworkLoader: (@Sendable (URL) async -> CGImage?)?
+    private let artworkLoader: @Sendable (URL) async -> CGImage?
+    /// 进程级封面管线：随 controller 存活，只在 `close()`／`deinit` 关闭，换曲目只取消等待者。
+    private let artworkPipelineOwner: NativeVideoImagePipelineOwner?
     private var sessions: [UUID: SystemNowPlayingSession] = [:]
     private var selectionClock: UInt64 = 0
     private var publishedIdentity: SystemNowPlayingPublicationIdentity?
     private var publishedFingerprint: SystemNowPlayingTimelineFingerprint?
     private var publishedArtwork: MPMediaItemArtwork?
     private var artworkTask: Task<Void, Never>?
-    private var artworkPipelineOwner: NativeVideoImagePipelineOwner?
     private var isClosed = false
 
     init(
@@ -271,7 +258,16 @@ final class SystemNowPlayingController {
         self.center = center ?? DefaultSystemNowPlayingCenter()
         self.remoteCommands =
             remoteCommands ?? DefaultSystemRemoteCommandManager()
-        self.artworkLoader = artworkLoader
+        if let artworkLoader {
+            self.artworkLoader = artworkLoader
+            artworkPipelineOwner = nil
+        } else {
+            let owner = NativeVideoImagePipelineOwner()
+            self.artworkLoader = { [pipeline = owner.pipeline] url in
+                await pipeline.image(for: url, variant: .cover)?.image
+            }
+            artworkPipelineOwner = owner
+        }
         self.remoteCommands.install { [weak self] command in
             guard let self else { return .noSuchContent }
             return self.handleFromAnyThread(command)
@@ -355,6 +351,7 @@ final class SystemNowPlayingController {
         isClosed = true
         sessions.removeAll()
         clearPublishedSession()
+        artworkPipelineOwner?.shutdown()
         remoteCommands.removeHandlers()
     }
 
@@ -487,7 +484,7 @@ final class SystemNowPlayingController {
             MPNowPlayingInfoPropertyMediaType:
                 MPNowPlayingInfoMediaType.video.rawValue,
             MPNowPlayingInfoPropertyIsLiveStream: false,
-            MPNowPlayingInfoPropertyExcludeFromSuggestions: true,
+            MPNowPlayingInfoPropertyExcludeFromSuggestions: true
         ]
         if let artist = presentation.artist {
             info[MPMediaItemPropertyArtist] = artist
@@ -535,22 +532,11 @@ final class SystemNowPlayingController {
         from url: URL,
         for identity: SystemNowPlayingPublicationIdentity
     ) {
-        if let artworkLoader {
-            artworkTask = Task { [weak self] in
-                guard let image = await artworkLoader(url),
-                    !Task.isCancelled
-                else { return }
-                self?.acceptArtwork(image, for: identity)
-            }
-            return
-        }
-        let owner = NativeVideoImagePipelineOwner()
-        artworkPipelineOwner = owner
-        artworkTask = Task { [weak self, pipeline = owner.pipeline] in
-            guard let result = await pipeline.image(for: url, variant: .cover),
+        artworkTask = Task { [weak self, artworkLoader] in
+            guard let image = await artworkLoader(url),
                 !Task.isCancelled
             else { return }
-            self?.acceptArtwork(result.image, for: identity)
+            self?.acceptArtwork(image, for: identity)
         }
     }
 
@@ -575,18 +561,15 @@ final class SystemNowPlayingController {
     nonisolated private static func makeArtwork(
         from image: CGImage
     ) -> MPMediaItemArtwork {
-        let box = SystemNowPlayingArtworkImageBox(image)
         let size = NSSize(width: image.width, height: image.height)
         return MPMediaItemArtwork(boundsSize: size) { _ in
-            NSImage(cgImage: box.image, size: size)
+            NSImage(cgImage: image, size: size)
         }
     }
 
     private func cancelArtworkLoad() {
         artworkTask?.cancel()
         artworkTask = nil
-        artworkPipelineOwner?.shutdown()
-        artworkPipelineOwner = nil
     }
 
     private func clearPublishedSession() {

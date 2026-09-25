@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import Synchronization
 
 enum NativeVideoImageLoadOrigin: Equatable {
     case memoryCache
@@ -10,7 +11,7 @@ enum NativeVideoImageLoadOrigin: Equatable {
     var shouldAnimate: Bool { self == .network }
 }
 
-struct NativeVideoImageLoadResult: @unchecked Sendable {
+struct NativeVideoImageLoadResult: Sendable {
     let image: CGImage
     let origin: NativeVideoImageLoadOrigin
 }
@@ -54,7 +55,7 @@ struct NativeVideoImageResponseAccumulator {
     }
 }
 
-private struct NativeVideoImageResponse: @unchecked Sendable {
+private struct NativeVideoImageResponse: Sendable {
     let data: Data
 }
 
@@ -63,114 +64,107 @@ private enum NativeVideoImageTransferError: Error {
     case responseTooLarge
 }
 
-private final class NativeVideoImageTaskBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var task: URLSessionTask?
-    private var isCancelled = false
+private final class NativeVideoImageTaskBox: Sendable {
+    private struct State {
+        var task: URLSessionTask?
+        var isCancelled = false
+    }
+
+    private let state = Mutex(State())
 
     func store(_ task: URLSessionTask) {
-        lock.lock()
-        if isCancelled {
-            lock.unlock()
-            task.cancel()
-        } else {
-            self.task = task
-            lock.unlock()
+        let isCancelled = state.withLock { state in
+            if !state.isCancelled { state.task = task }
+            return state.isCancelled
         }
+        if isCancelled { task.cancel() }
     }
 
     func cancel() {
-        lock.lock()
-        isCancelled = true
-        let task = task
-        lock.unlock()
+        let task = state.withLock { state in
+            state.isCancelled = true
+            return state.task
+        }
         task?.cancel()
     }
 }
 
-final class NativeVideoImageSessionGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var isInvalidated = false
+final class NativeVideoImageSessionGate: Sendable {
+    private let isInvalidated = Mutex(false)
 
     func register(_ operation: () -> Void) -> Bool {
-        lock.lock()
-        guard !isInvalidated else {
-            lock.unlock()
-            return false
+        isInvalidated.withLock { isInvalidated in
+            guard !isInvalidated else { return false }
+            operation()
+            return true
         }
-        operation()
-        lock.unlock()
-        return true
     }
 
     func invalidate(_ session: URLSession) {
-        lock.lock()
-        guard !isInvalidated else {
-            lock.unlock()
-            return
+        isInvalidated.withLock { isInvalidated in
+            guard !isInvalidated else { return }
+            isInvalidated = true
+            session.invalidateAndCancel()
         }
-        isInvalidated = true
-        session.invalidateAndCancel()
-        lock.unlock()
     }
 }
 
-private final class NativeVideoImageWaiter: @unchecked Sendable {
+/// 一个等待者只 resume 一次：先完成则缓存结果，先挂起则由 `finish` 恢复；两边都在锁外 resume。
+final class NativeVideoImageWaiter: Sendable {
     private enum State {
         case waiting
         case suspended(CheckedContinuation<NativeVideoImageLoadResult?, Never>)
         case completed(NativeVideoImageLoadResult?)
     }
 
-    private let lock = NSLock()
-    private var state: State = .waiting
+    private let state = Mutex(State.waiting)
 
     func value() async -> NativeVideoImageLoadResult? {
         await withCheckedContinuation { continuation in
-            lock.lock()
-            switch state {
-            case .waiting:
-                state = .suspended(continuation)
-                lock.unlock()
-            case .suspended:
-                lock.unlock()
-                preconditionFailure("image waiter may only be awaited once")
-            case .completed(let result):
-                lock.unlock()
-                continuation.resume(returning: result)
+            let completed: NativeVideoImageLoadResult?? = state.withLock { state in
+                switch state {
+                case .waiting:
+                    state = .suspended(continuation)
+                    return nil
+                case .suspended:
+                    preconditionFailure("image waiter may only be awaited once")
+                case .completed(let result):
+                    return .some(result)
+                }
             }
+            if let completed { continuation.resume(returning: completed) }
         }
     }
 
     func finish(with result: NativeVideoImageLoadResult?) {
-        lock.lock()
-        switch state {
-        case .waiting:
-            state = .completed(result)
-            lock.unlock()
-        case .suspended(let continuation):
-            state = .completed(result)
-            lock.unlock()
-            continuation.resume(returning: result)
-        case .completed:
-            lock.unlock()
-        }
+        let continuation: CheckedContinuation<NativeVideoImageLoadResult?, Never>? =
+            state.withLock { state in
+                switch state {
+                case .waiting:
+                    state = .completed(result)
+                    return nil
+                case .suspended(let continuation):
+                    state = .completed(result)
+                    return continuation
+                case .completed:
+                    return nil
+                }
+            }
+        continuation?.resume(returning: result)
     }
 }
 
-private final class NativeVideoImageSessionDelegate: NSObject,
-    URLSessionDataDelegate,
-    @unchecked Sendable
-{
+private final class NativeVideoImageSessionDelegate: NSObject, URLSessionDataDelegate, Sendable {
     private struct Pending {
         let expectedHost: String
         let continuation: CheckedContinuation<NativeVideoImageResponse, Error>
-        var response: HTTPURLResponse?
-        var accumulator: NativeVideoImageResponseAccumulator
+        var isAccepted = false
+        var accumulator = NativeVideoImageResponseAccumulator(
+            maximumBytes: NativeVideoImagePipeline.maximumResponseBytes
+        )
     }
 
-    private let lock = NSLock()
-    private var pending: [Int: Pending] = [:]
+    private let pending = Mutex<[Int: Pending]>([:])
 
     func response(
         for request: URLRequest,
@@ -186,17 +180,12 @@ private final class NativeVideoImageSessionDelegate: NSObject,
                 var task: URLSessionDataTask?
                 let registered = gate.register {
                     let dataTask = session.dataTask(with: request)
-                    let transfer = Pending(
-                        expectedHost: expectedHost,
-                        continuation: continuation,
-                        response: nil,
-                        accumulator: NativeVideoImageResponseAccumulator(
-                            maximumBytes: NativeVideoImagePipeline.maximumResponseBytes
+                    pending.withLock {
+                        $0[dataTask.taskIdentifier] = Pending(
+                            expectedHost: expectedHost,
+                            continuation: continuation
                         )
-                    )
-                    lock.lock()
-                    pending[dataTask.taskIdentifier] = transfer
-                    lock.unlock()
+                    }
                     taskBox.store(dataTask)
                     task = dataTask
                 }
@@ -227,32 +216,24 @@ private final class NativeVideoImageSessionDelegate: NSObject,
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
-        guard let http = response as? HTTPURLResponse else {
-            finish(dataTask, result: .failure(.invalidResponse))
-            completionHandler(.cancel)
-            return
-        }
-        lock.lock()
-        guard var transfer = pending[dataTask.taskIdentifier] else {
-            lock.unlock()
-            completionHandler(.cancel)
-            return
-        }
-        let isAccepted =
-            (200..<300).contains(http.statusCode)
-            && http.url?.scheme?.lowercased() == "https"
-            && http.url?.host?.lowercased() == transfer.expectedHost
-            && http.mimeType?.lowercased().hasPrefix("image/") == true
-            && NativeVideoImagePipeline.acceptsExpectedLength(http.expectedContentLength)
-        if isAccepted {
-            transfer.response = http
+        let http = response as? HTTPURLResponse
+        let isAccepted = pending.withLock { pending in
+            guard let http, var transfer = pending[dataTask.taskIdentifier] else {
+                return false
+            }
+            transfer.isAccepted =
+                (200..<300).contains(http.statusCode)
+                && http.url?.scheme?.lowercased() == "https"
+                && http.url?.host?.lowercased() == transfer.expectedHost
+                && http.mimeType?.lowercased().hasPrefix("image/") == true
+                && NativeVideoImagePipeline.acceptsExpectedLength(http.expectedContentLength)
             pending[dataTask.taskIdentifier] = transfer
+            return transfer.isAccepted
         }
-        lock.unlock()
         if isAccepted {
             completionHandler(.allow)
         } else {
-            finish(dataTask, result: .failure(.invalidResponse))
+            fail(dataTask, with: .invalidResponse)
             completionHandler(.cancel)
         }
     }
@@ -262,16 +243,14 @@ private final class NativeVideoImageSessionDelegate: NSObject,
         dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
-        lock.lock()
-        guard var transfer = pending[dataTask.taskIdentifier] else {
-            lock.unlock()
-            return
+        let accepted = pending.withLock { pending in
+            guard var transfer = pending[dataTask.taskIdentifier] else { return true }
+            guard transfer.accumulator.append(data) else { return false }
+            pending[dataTask.taskIdentifier] = transfer
+            return true
         }
-        let accepted = transfer.accumulator.append(data)
-        if accepted { pending[dataTask.taskIdentifier] = transfer }
-        lock.unlock()
         guard !accepted else { return }
-        finish(dataTask, result: .failure(.responseTooLarge))
+        fail(dataTask, with: .responseTooLarge)
         dataTask.cancel()
     }
 
@@ -280,19 +259,13 @@ private final class NativeVideoImageSessionDelegate: NSObject,
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        lock.lock()
-        guard let transfer = pending.removeValue(forKey: task.taskIdentifier) else {
-            lock.unlock()
-            return
-        }
-        lock.unlock()
+        guard let transfer = pending.withLock({ $0.removeValue(forKey: task.taskIdentifier) })
+        else { return }
         if let error {
             transfer.continuation.resume(throwing: error)
-        } else if transfer.response != nil {
+        } else if transfer.isAccepted {
             transfer.continuation.resume(
-                returning: NativeVideoImageResponse(
-                    data: transfer.accumulator.data
-                )
+                returning: NativeVideoImageResponse(data: transfer.accumulator.data)
             )
         } else {
             transfer.continuation.resume(
@@ -301,24 +274,13 @@ private final class NativeVideoImageSessionDelegate: NSObject,
         }
     }
 
-    private func finish(
-        _ task: URLSessionTask,
-        result: Result<NativeVideoImageResponse, NativeVideoImageTransferError>
-    ) {
-        lock.lock()
-        let transfer = pending.removeValue(forKey: task.taskIdentifier)
-        lock.unlock()
-        guard let transfer else { return }
-        switch result {
-        case .success(let response):
-            transfer.continuation.resume(returning: response)
-        case .failure(let error):
-            transfer.continuation.resume(throwing: error)
-        }
+    private func fail(_ task: URLSessionTask, with error: NativeVideoImageTransferError) {
+        pending.withLock { $0.removeValue(forKey: task.taskIdentifier) }?
+            .continuation.resume(throwing: error)
     }
 }
 
-final class NativeVideoImagePipeline: @unchecked Sendable {
+final class NativeVideoImagePipeline: Sendable {
     static let maximumResponseBytes = 8 * 1_024 * 1_024
     static let cacheCountLimit = 160
     static let cacheCostLimit = 64 * 1_024 * 1_024
@@ -329,24 +291,32 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
         var waiters: [UInt64: NativeVideoImageWaiter]
     }
 
+    private struct State {
+        var cache = NativeVideoImageCache(
+            countLimit: NativeVideoImagePipeline.cacheCountLimit,
+            costLimit: NativeVideoImagePipeline.cacheCostLimit
+        )
+        var inFlight: [NativeVideoImageKey: InFlight] = [:]
+        var nextRequestID: UInt64 = 0
+        var nextWaiterID: UInt64 = 0
+        var isShutdown = false
+    }
+
     private enum Lookup {
         case unavailable
         case cached(CGImage)
-        case request(requestID: UInt64, waiterID: UInt64, NativeVideoImageWaiter)
+        case request(
+            requestID: UInt64,
+            waiterID: UInt64,
+            NativeVideoImageWaiter,
+            startsNetwork: Bool
+        )
     }
 
-    private let lock = NSLock()
+    private let state = Mutex(State())
     private let sessionGate = NativeVideoImageSessionGate()
     private let sessionDelegate = NativeVideoImageSessionDelegate()
     private let session: URLSession
-    private var cache = NativeVideoImageCache(
-        countLimit: cacheCountLimit,
-        costLimit: cacheCostLimit
-    )
-    private var inFlight: [NativeVideoImageKey: InFlight] = [:]
-    private var nextRequestID: UInt64 = 0
-    private var nextWaiterID: UInt64 = 0
-    private var isShutdown = false
 
     init() {
         let configuration = URLSessionConfiguration.ephemeral
@@ -373,10 +343,10 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
         for url: URL,
         variant: NativeVideoImageVariant
     ) -> CGImage? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isShutdown else { return nil }
-        return cache.image(for: NativeVideoImageKey(url: url, variant: variant))
+        state.withLock { state in
+            guard !state.isShutdown else { return nil }
+            return state.cache.image(for: NativeVideoImageKey(url: url, variant: variant))
+        }
     }
 
     func image(
@@ -397,15 +367,14 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
             return nil
         case .cached(let image):
             return NativeVideoImageLoadResult(image: image, origin: .memoryCache)
-        case .request(let requestID, let waiterID, let waiter):
+        case .request(let requestID, let waiterID, let waiter, let startsNetwork):
+            if startsNetwork {
+                startRequest(key: key, requestID: requestID)
+            }
             let result = await withTaskCancellationHandler {
                 await waiter.value()
             } onCancel: {
-                self.cancelWaiter(
-                    key: key,
-                    requestID: requestID,
-                    waiterID: waiterID
-                )
+                self.cancelWaiter(key: key, requestID: requestID, waiterID: waiterID)
             }
             guard isActive, !Task.isCancelled else {
                 return nil
@@ -415,19 +384,17 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
     }
 
     func shutdown() {
-        lock.lock()
-        guard !isShutdown else {
-            lock.unlock()
-            return
+        let inFlight: [InFlight]? = state.withLock { state in
+            guard !state.isShutdown else { return nil }
+            state.isShutdown = true
+            state.cache.removeAll()
+            let requests = Array(state.inFlight.values)
+            state.inFlight.removeAll()
+            return requests
         }
-        isShutdown = true
-        cache.removeAll()
-        let tasks = inFlight.values.compactMap(\.task)
-        let waiters = inFlight.values.flatMap { $0.waiters.values }
-        inFlight.removeAll()
-        lock.unlock()
-        for task in tasks { task.cancel() }
-        for waiter in waiters { waiter.finish(with: nil) }
+        guard let inFlight else { return }
+        for request in inFlight { request.task?.cancel() }
+        for waiter in inFlight.flatMap({ $0.waiters.values }) { waiter.finish(with: nil) }
         sessionGate.invalidate(session)
     }
 
@@ -449,7 +416,7 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: variant.maximumDecodedPixelSize,
-                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceShouldCacheImmediately: true
             ] as CFDictionary
         )
     }
@@ -477,63 +444,60 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
     }
 
     private func lookup(for key: NativeVideoImageKey) -> Lookup {
-        lock.lock()
-        guard !isShutdown else {
-            lock.unlock()
-            return .unavailable
-        }
-        if let image = cache.image(for: key) {
-            lock.unlock()
-            return .cached(image)
-        }
-        nextWaiterID &+= 1
-        let waiterID = nextWaiterID
-        let waiter = NativeVideoImageWaiter()
-        if var existing = inFlight[key] {
-            existing.waiters[waiterID] = waiter
-            inFlight[key] = existing
-            lock.unlock()
+        state.withLock { state in
+            guard !state.isShutdown else { return .unavailable }
+            if let image = state.cache.image(for: key) {
+                return .cached(image)
+            }
+            state.nextWaiterID &+= 1
+            let waiterID = state.nextWaiterID
+            let waiter = NativeVideoImageWaiter()
+            if var existing = state.inFlight[key] {
+                existing.waiters[waiterID] = waiter
+                state.inFlight[key] = existing
+                return .request(
+                    requestID: existing.id,
+                    waiterID: waiterID,
+                    waiter,
+                    startsNetwork: false
+                )
+            }
+            state.nextRequestID &+= 1
+            let requestID = state.nextRequestID
+            state.inFlight[key] = InFlight(
+                id: requestID,
+                task: nil,
+                waiters: [waiterID: waiter]
+            )
             return .request(
-                requestID: existing.id,
+                requestID: requestID,
                 waiterID: waiterID,
-                waiter
+                waiter,
+                startsNetwork: true
             )
         }
-        nextRequestID &+= 1
-        let requestID = nextRequestID
-        let request = InFlight(
-            id: requestID,
-            task: nil,
-            waiters: [waiterID: waiter]
-        )
-        inFlight[key] = request
-        lock.unlock()
+    }
 
+    /// 在锁外创建网络 Task；请求已被取消或关闭时立即取消刚创建的 Task。
+    private func startRequest(key: NativeVideoImageKey, requestID: UInt64) {
         let task = Task { [weak self] in
             guard let self else { return }
             let result = await loadNetworkImage(for: key)
             finishRequest(key: key, requestID: requestID, result: result)
         }
-        lock.lock()
-        if var active = inFlight[key], active.id == requestID {
+        let isAttached = state.withLock { state in
+            guard var active = state.inFlight[key], active.id == requestID else {
+                return false
+            }
             active.task = task
-            inFlight[key] = active
-            lock.unlock()
-        } else {
-            lock.unlock()
-            task.cancel()
+            state.inFlight[key] = active
+            return true
         }
-        return .request(
-            requestID: requestID,
-            waiterID: waiterID,
-            waiter
-        )
+        if !isAttached { task.cancel() }
     }
 
     private var isActive: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return !isShutdown
+        state.withLock { !$0.isShutdown }
     }
 
     private func cancelWaiter(
@@ -541,22 +505,18 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
         requestID: UInt64,
         waiterID: UInt64
     ) {
-        lock.lock()
-        guard var request = inFlight[key], request.id == requestID,
-            let waiter = request.waiters.removeValue(forKey: waiterID)
-        else {
-            lock.unlock()
-            return
+        let removed: (NativeVideoImageWaiter, Task<Void, Never>?)? = state.withLock { state in
+            guard var request = state.inFlight[key], request.id == requestID,
+                let waiter = request.waiters.removeValue(forKey: waiterID)
+            else { return nil }
+            guard request.waiters.isEmpty else {
+                state.inFlight[key] = request
+                return (waiter, nil)
+            }
+            state.inFlight[key] = nil
+            return (waiter, request.task)
         }
-        let task: Task<Void, Never>?
-        if request.waiters.isEmpty {
-            inFlight[key] = nil
-            task = request.task
-        } else {
-            inFlight[key] = request
-            task = nil
-        }
-        lock.unlock()
+        guard let (waiter, task) = removed else { return }
         waiter.finish(with: nil)
         task?.cancel()
     }
@@ -566,23 +526,22 @@ final class NativeVideoImagePipeline: @unchecked Sendable {
         requestID: UInt64,
         result: NativeVideoImageLoadResult?
     ) {
-        lock.lock()
-        guard let request = inFlight[key], request.id == requestID else {
-            lock.unlock()
-            return
+        let waiters: [NativeVideoImageWaiter] = state.withLock { state in
+            guard let request = state.inFlight[key], request.id == requestID else {
+                return []
+            }
+            state.inFlight[key] = nil
+            return Array(request.waiters.values)
         }
-        inFlight[key] = nil
-        let waiters = request.waiters.values
-        lock.unlock()
         for waiter in waiters { waiter.finish(with: result) }
     }
 
     private func store(_ image: CGImage, for key: NativeVideoImageKey) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isShutdown else { return false }
-        cache.insert(image, for: key)
-        return true
+        state.withLock { state in
+            guard !state.isShutdown else { return false }
+            state.cache.insert(image, for: key)
+            return true
+        }
     }
 }
 

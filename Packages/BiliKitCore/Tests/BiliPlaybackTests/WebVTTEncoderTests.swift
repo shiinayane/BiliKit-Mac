@@ -35,7 +35,7 @@ struct WebVTTEncoderTests {
             try WebVTTEncoder().encode(
                 cues: [
                     SubtitleCue(startSeconds: 2, endSeconds: 3, text: "later"),
-                    SubtitleCue(startSeconds: 1, endSeconds: 2, text: "earlier"),
+                    SubtitleCue(startSeconds: 1, endSeconds: 2, text: "earlier")
                 ],
                 earliestPresentationTime: 0,
                 timescale: 1

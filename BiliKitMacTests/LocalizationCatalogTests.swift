@@ -13,7 +13,7 @@ struct LocalizationCatalogTests {
             "BiliKitMac/Localizable.xcstrings",
             "Packages/BiliKitCore/Sources/BiliBrowseFeature/Resources/Localizable.xcstrings",
             "Packages/BiliKitCore/Sources/BiliAuthFeature/Resources/Localizable.xcstrings",
-            "Packages/BiliKitCore/Sources/BiliLibraryFeature/Resources/Localizable.xcstrings",
+            "Packages/BiliKitCore/Sources/BiliLibraryFeature/Resources/Localizable.xcstrings"
         ]
 
         for catalogPath in catalogPaths {
@@ -58,7 +58,7 @@ struct LocalizationCatalogTests {
         let featureBundleNames = [
             "BiliKitCore_BiliAuthFeature",
             "BiliKitCore_BiliBrowseFeature",
-            "BiliKitCore_BiliLibraryFeature",
+            "BiliKitCore_BiliLibraryFeature"
         ]
         for name in featureBundleNames {
             let url = try #require(

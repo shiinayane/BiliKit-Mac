@@ -18,11 +18,11 @@ struct BrowseFailureView: View {
     }
 }
 
-extension GuestVideoFailure {
+extension VideoLoadFailure {
     public var title: String {
         switch self {
         case .content(let error):
-            error.guestTitle
+            error.displayTitle
         case .playback:
             BrowseFeatureStrings.localized("无法准备播放")
         }
@@ -31,15 +31,15 @@ extension GuestVideoFailure {
     public var message: String {
         switch self {
         case .content(let error):
-            error.guestMessage
+            error.displayMessage
         case .playback:
             BrowseFeatureStrings.localized("当前媒体轨道或网络响应无法交给系统播放器。")
         }
     }
 }
 
-extension GuestApplicationError {
-    var guestTitle: String {
+extension ContentApplicationError {
+    var displayTitle: String {
         switch self {
         case .authenticationInvalid:
             BrowseFeatureStrings.localized("登录状态已失效")
@@ -56,7 +56,7 @@ extension GuestApplicationError {
         }
     }
 
-    var guestMessage: String {
+    var displayMessage: String {
         switch self {
         case .invalidRequest:
             BrowseFeatureStrings.localized("请求参数无效，请重新选择内容。")

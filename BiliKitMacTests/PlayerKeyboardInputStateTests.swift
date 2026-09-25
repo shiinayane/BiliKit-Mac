@@ -1,3 +1,4 @@
+import AppKit
 import BiliPlayback
 import Foundation
 import Testing
@@ -18,7 +19,7 @@ struct PlayerKeyboardInputStateTests {
         #expect(
             shortState.keyUp(.right) == [
                 .cancelLongPress(pressID: shortID),
-                .seekBy(seconds: 5),
+                .seekBy(seconds: 5)
             ]
         )
         #expect(shortState.deadlineReached(pressID: shortID).isEmpty)
@@ -45,7 +46,7 @@ struct PlayerKeyboardInputStateTests {
             state.keyDown(.right, isRepeat: false, timestamp: 1) { rightID }
                 == [
                     .endMomentaryRate(pressID: leftID),
-                    .scheduleLongPress(pressID: rightID),
+                    .scheduleLongPress(pressID: rightID)
                 ]
         )
         #expect(state.keyUp(.left).isEmpty)
@@ -71,7 +72,7 @@ struct PlayerKeyboardInputStateTests {
         let cases: [(PlayerKeyboardShortcut, PlayerKeyboardInputState.Action)] = [
             (.playback, .togglePlayback),
             (.danmaku, .toggleDanmaku),
-            (.subtitles, .toggleSubtitles),
+            (.subtitles, .toggleSubtitles)
         ]
         for (shortcut, action) in cases {
             #expect(state.shortcutKeyDown(shortcut, isRepeat: false) == [action])
@@ -81,93 +82,78 @@ struct PlayerKeyboardInputStateTests {
     }
 
     @Test
-    func detailWindowScopeExcludesModifiersEditingAndOtherWindows() {
+    func detailWindowScopeCapturesOnlyAnEnabledUnmodifiedPlayerWindow() {
         #expect(
             PlayerKeyboardEventScope.captures(
                 isEnabled: true,
-                isSupportedKey: true,
                 hasDisallowedModifier: false,
                 eventMatchesCaptureWindow: true,
-                isEditableResponder: false
+                focusedResponderOwnsKeys: false
             )
         )
-        for excluded in [
-            (false, true, false, true, false),
-            (true, false, false, true, false),
-            (true, true, true, true, false),
-            (true, true, false, false, false),
-            (true, true, false, true, true),
-        ] {
-            #expect(
-                !PlayerKeyboardEventScope.captures(
-                    isEnabled: excluded.0,
-                    isSupportedKey: excluded.1,
-                    hasDisallowedModifier: excluded.2,
-                    eventMatchesCaptureWindow: excluded.3,
-                    isEditableResponder: excluded.4
-                )
+    }
+
+    /// 依次为：未启用、带修饰键、不是捕获窗口、焦点控件自行处理按键。
+    @Test(
+        arguments: [
+            (false, false, true, false),
+            (true, true, true, false),
+            (true, false, false, false),
+            (true, false, true, true)
+        ]
+    )
+    func detailWindowScopeExcludesModifiersFocusedControlsAndOtherWindows(
+        isEnabled: Bool,
+        hasDisallowedModifier: Bool,
+        eventMatchesCaptureWindow: Bool,
+        focusedResponderOwnsKeys: Bool
+    ) {
+        #expect(
+            !PlayerKeyboardEventScope.captures(
+                isEnabled: isEnabled,
+                hasDisallowedModifier: hasDisallowedModifier,
+                eventMatchesCaptureWindow: eventMatchesCaptureWindow,
+                focusedResponderOwnsKeys: focusedResponderOwnsKeys
             )
-        }
+        )
     }
 
     @Test
-    func feedbackDismissalUsesStaleIdentityGuard() {
-        let identity = UUID()
-        #expect(PlayerShortcutFeedbackDismissalPolicy.delay == .milliseconds(800))
-        #expect(PlayerShortcutFeedbackDismissalPolicy.fadeDuration == 0.16)
-        #expect(
-            PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
-                reduceMotion: false
+    @MainActor
+    func controlsOutsideThePlayerKeepTheirKeys() {
+        let playerView = NSView()
+        let playerButton = NSButton()
+        playerView.addSubview(playerButton)
+        let sidebarButton = NSButton()
+        let readOnlyText = NSTextView()
+        readOnlyText.isEditable = false
+        let editableText = NSTextView()
+        let overlay = KeyboardOwningOverlay()
+        let overlayChild = NSView()
+        overlay.addSubview(overlayChild)
+        let listView = NSCollectionView()
+        listView.isSelectable = true
+        let staticListView = NSCollectionView()
+        staticListView.isSelectable = false
+
+        func ownsKeys(_ responder: NSResponder?) -> Bool {
+            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(
+                responder,
+                playerView: playerView
             )
-        )
-        #expect(
-            !PlayerShortcutFeedbackDismissalPolicy.shouldAnimate(
-                reduceMotion: true
-            )
-        )
-        #expect(
-            PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
-                displayedID: identity,
-                scheduledID: identity
-            )
-        )
-        #expect(
-            !PlayerShortcutFeedbackDismissalPolicy.shouldDismiss(
-                displayedID: UUID(),
-                scheduledID: identity
-            )
-        )
-        #expect(PlayerShortcutFeedback.volume(55).label == "55%")
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(-5).label
-                == AppStrings.localized("后退 \(5) 秒")
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(5).label
-                == AppStrings.localized("前进 \(5) 秒")
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(-5).symbolName
-                == "gobackward.5"
-        )
-        #expect(
-            PlayerShortcutFeedback.relativeSeek(5).accessibilityLabel
-                == AppStrings.localized("已前进 \(5) 秒")
-        )
-        #expect(PlayerShortcutFeedback.playback(true).label == AppStrings.localized("播放"))
-        #expect(PlayerShortcutFeedback.playback(false).label == AppStrings.localized("暂停"))
-        #expect(PlayerShortcutFeedback.playback(true).symbolName == "play.fill")
-        #expect(
-            PlayerShortcutFeedback.playback(false).accessibilityLabel
-                == AppStrings.localized("已暂停播放")
-        )
-        #expect(
-            PlayerShortcutFeedback.danmaku(false).label
-                == AppStrings.localized("弹幕 关")
-        )
-        #expect(
-            PlayerShortcutFeedback.subtitles(.unavailable).label
-                == AppStrings.localized("无可用字幕")
-        )
+        }
+
+        #expect(ownsKeys(sidebarButton))
+        #expect(ownsKeys(editableText))
+        #expect(ownsKeys(overlayChild))
+        #expect(ownsKeys(listView))
+        #expect(!ownsKeys(playerButton))
+        #expect(!ownsKeys(readOnlyText))
+        #expect(!ownsKeys(staticListView))
+        #expect(!ownsKeys(NSView()))
+        #expect(!ownsKeys(nil))
     }
 }
+
+@MainActor
+private final class KeyboardOwningOverlay: NSView, PlayerKeyboardFocusOwner {}

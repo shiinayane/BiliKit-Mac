@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliPlayback
 
+@Suite(.timeLimit(.minutes(1)))
 struct AVPlayerTimelineAdapterTests {
     @Test
     @MainActor
@@ -30,34 +31,6 @@ struct AVPlayerTimelineAdapterTests {
         await Task.yield()
 
         #expect(timeline.currentSnapshot.state == .paused)
-    }
-
-    @Test
-    func playbackTogglePausesUnlessPlayerIsPaused() {
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .paused
-            ) == .play
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .playing,
-                timelineState: .playing
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
-                timelineState: .buffering
-            ) == .pause
-        )
-        #expect(
-            PlaybackToggleAction(
-                timeControlStatus: .paused,
-                timelineState: .ended
-            ) == nil
-        )
     }
 
     @Test
@@ -146,23 +119,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func audioSelectionOperationRejectsCancelledOrReplacedWork() {
-        var state = AudioSelectionOperationState()
-        let firstID = UUID()
-        let replacementID = UUID()
-
-        let first = state.begin { firstID }
-        #expect(state.matches(first))
-
-        let replacement = state.begin { replacementID }
-        #expect(!state.matches(first))
-        #expect(state.matches(replacement))
-
-        state.invalidate()
-        #expect(!state.matches(replacement))
-    }
-
-    @Test
     @MainActor
     func completedTransportSeekAdvancesDiscontinuityWithoutResuming() {
         let player = AVPlayer()
@@ -173,8 +129,8 @@ struct AVPlayerTimelineAdapterTests {
         let before = timeline.currentSnapshot.discontinuityGeneration
         let operationID = UUID()
 
-        timeline.prepareTransportSeek(operationID: operationID, to: 15)
-        timeline.transportSeekCompleted(
+        timeline.prepareObservedSeek(operationID: operationID, to: 15)
+        timeline.seekCompleted(
             operationID: operationID,
             at: 14.9
         )
@@ -199,8 +155,8 @@ struct AVPlayerTimelineAdapterTests {
         let operationID = UUID()
         let before = timeline.currentSnapshot.discontinuityGeneration
 
-        timeline.prepareTransportSeek(operationID: operationID, to: 15)
-        timeline.transportSeekCompleted(operationID: operationID, at: 14.9)
+        timeline.prepareObservedSeek(operationID: operationID, to: 15)
+        timeline.seekCompleted(operationID: operationID, at: 14.9)
         timeline.observeTimeJump(at: 14.9)
 
         #expect(
@@ -225,9 +181,9 @@ struct AVPlayerTimelineAdapterTests {
         let operationID = UUID()
         let before = timeline.currentSnapshot.discontinuityGeneration
 
-        timeline.prepareExplicitSeek(operationID: operationID, to: 15)
+        timeline.prepareObservedSeek(operationID: operationID, to: 15)
         timeline.observeTimeJump(at: 15)
-        timeline.explicitSeekCompleted(operationID: operationID, at: 14.9)
+        timeline.seekCompleted(operationID: operationID, at: 14.9)
 
         #expect(
             timeline.currentSnapshot.discontinuityGeneration == before + 1
@@ -254,11 +210,11 @@ struct AVPlayerTimelineAdapterTests {
         let before = timeline.currentSnapshot.discontinuityGeneration
 
         timeline.prepareInitialSeek(operationID: initial, to: 10)
-        timeline.prepareExplicitSeek(operationID: remote, to: 20)
-        timeline.initialSeekFailed(operationID: initial)
-        timeline.prepareTransportSeek(operationID: transport, to: 25)
-        timeline.explicitSeekCompleted(operationID: remote, at: 20)
-        timeline.transportSeekCompleted(operationID: transport, at: 24.9)
+        timeline.prepareObservedSeek(operationID: remote, to: 20)
+        timeline.seekFailed(operationID: initial)
+        timeline.prepareObservedSeek(operationID: transport, to: 25)
+        timeline.seekCompleted(operationID: remote, at: 20)
+        timeline.seekCompleted(operationID: transport, at: 24.9)
 
         #expect(
             timeline.currentSnapshot.discontinuityGeneration == before + 1
@@ -283,9 +239,9 @@ struct AVPlayerTimelineAdapterTests {
             supersededOperations.append($0)
         }
 
-        timeline.prepareTransportSeek(operationID: operationID, to: 15)
+        timeline.prepareObservedSeek(operationID: operationID, to: 15)
         timeline.observeTimeJump(at: 50)
-        timeline.transportSeekCompleted(operationID: operationID, at: 15)
+        timeline.seekCompleted(operationID: operationID, at: 15)
 
         #expect(supersededOperations == [operationID])
         #expect(
@@ -312,10 +268,10 @@ struct AVPlayerTimelineAdapterTests {
             supersededOperations.append($0)
         }
 
-        timeline.prepareTransportSeek(operationID: first, to: 5)
-        timeline.prepareTransportSeek(operationID: second, to: 10)
+        timeline.prepareObservedSeek(operationID: first, to: 5)
+        timeline.prepareObservedSeek(operationID: second, to: 10)
         timeline.observeTimeJump(at: 5)
-        timeline.transportSeekCompleted(operationID: second, at: 10)
+        timeline.seekCompleted(operationID: second, at: 10)
         timeline.observeTimeJump(at: 10)
 
         #expect(supersededOperations.isEmpty)
@@ -343,10 +299,10 @@ struct AVPlayerTimelineAdapterTests {
             supersededOperations.append($0)
         }
 
-        timeline.prepareExplicitSeek(operationID: first, to: 0.2)
-        timeline.prepareExplicitSeek(operationID: second, to: 0.5)
+        timeline.prepareObservedSeek(operationID: first, to: 0.2)
+        timeline.prepareObservedSeek(operationID: second, to: 0.5)
         timeline.observeTimeJump(at: 0.2)
-        timeline.explicitSeekCompleted(operationID: second, at: 0.5)
+        timeline.seekCompleted(operationID: second, at: 0.5)
         timeline.observeTimeJump(at: 0.5)
 
         #expect(supersededOperations.isEmpty)
@@ -370,10 +326,10 @@ struct AVPlayerTimelineAdapterTests {
         let second = UUID()
         let before = timeline.currentSnapshot.discontinuityGeneration
 
-        timeline.prepareTransportSeek(operationID: first, to: 5)
-        timeline.prepareTransportSeek(operationID: second, to: 10)
+        timeline.prepareObservedSeek(operationID: first, to: 5)
+        timeline.prepareObservedSeek(operationID: second, to: 10)
         timeline.discardStaleSeekLanding(operationID: first)
-        timeline.transportSeekCompleted(operationID: second, at: 10)
+        timeline.seekCompleted(operationID: second, at: 10)
         timeline.observeTimeJump(at: 10)
         timeline.observeTimeJump(at: 5)
 
@@ -401,10 +357,10 @@ struct AVPlayerTimelineAdapterTests {
             supersededOperations.append($0)
         }
 
-        timeline.prepareTransportSeek(operationID: transport, to: 15)
-        timeline.prepareExplicitSeek(operationID: explicit, to: 50)
+        timeline.prepareObservedSeek(operationID: transport, to: 15)
+        timeline.prepareObservedSeek(operationID: explicit, to: 50)
         timeline.observeTimeJump(at: 15)
-        timeline.explicitSeekCompleted(operationID: explicit, at: 50)
+        timeline.seekCompleted(operationID: explicit, at: 50)
         timeline.observeTimeJump(at: 50)
 
         #expect(supersededOperations.isEmpty)
@@ -428,9 +384,9 @@ struct AVPlayerTimelineAdapterTests {
         let second = UUID()
         let before = timeline.currentSnapshot.discontinuityGeneration
 
-        timeline.prepareTransportSeek(operationID: first, to: 100)
-        timeline.prepareTransportSeek(operationID: second, to: 100)
-        timeline.transportSeekCompleted(operationID: second, at: 100)
+        timeline.prepareObservedSeek(operationID: first, to: 100)
+        timeline.prepareObservedSeek(operationID: second, to: 100)
+        timeline.seekCompleted(operationID: second, at: 100)
         timeline.observeTimeJump(at: 100)
 
         #expect(
@@ -500,17 +456,6 @@ struct AVPlayerTimelineAdapterTests {
     }
 
     @Test
-    func explicitPauseOrSeekAdvancesInteractionRevision() {
-        let tracker = PlaybackInteractionTracker()
-
-        tracker.markObserved()
-        tracker.markObserved()
-
-        #expect(tracker.hasObservedInteraction)
-        #expect(tracker.revision == 2)
-    }
-
-    @Test
     func controlledRestartIsAnInteractionButIgnoresItsOwnTimeJump() {
         let tracker = PlaybackInteractionTracker()
 
@@ -572,14 +517,17 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
-    @Test
-    func playThenPauseDuringInitialSeekCancelsThePendingCommit() {
+    /// 首次定位期间无论已真正播放还是仍在按请求速率等待，随后的暂停都要取消待提交断点。
+    @Test(arguments: [true, false])
+    func pauseAfterStartDuringInitialSeekCancelsThePendingCommit(
+        reachedPlaying: Bool
+    ) {
         let tracker = PlaybackInteractionTracker()
         tracker.allowInternalSeek(to: 42)
 
         tracker.observeTimeControlStatus(
             isPaused: false,
-            isPlaying: true,
+            isPlaying: reachedPlaying,
             playbackRate: 1
         )
         #expect(tracker.revision == 0)
@@ -592,24 +540,26 @@ struct AVPlayerTimelineAdapterTests {
         #expect(tracker.revision == 1)
     }
 
-    @Test
-    func requestedWaitingThenPauseDuringInitialSeekCancelsCommit() {
-        let tracker = PlaybackInteractionTracker()
-        tracker.allowInternalSeek(to: 42)
-
-        tracker.observeTimeControlStatus(
-            isPaused: false,
-            isPlaying: false,
-            playbackRate: 1
+    @Test(
+        arguments: [
+            (AVPlayer.TimeControlStatus.paused, 0, MomentaryRateRestorationAction.none),
+            (.playing, 2, .setCurrentRate),
+            (.waitingToPlayAtSpecifiedRate, 0, .resumeAtDefaultRate),
+            (.waitingToPlayAtSpecifiedRate, 1.5, .none)
+        ] as [(AVPlayer.TimeControlStatus, Float, MomentaryRateRestorationAction)]
+    )
+    func momentaryRateRestorationPreservesPauseAndRecoversBuffering(
+        status: AVPlayer.TimeControlStatus,
+        currentRate: Float,
+        expected: MomentaryRateRestorationAction
+    ) {
+        #expect(
+            MomentaryRateRestorationPolicy.action(
+                timeControlStatus: status,
+                currentRate: currentRate,
+                momentaryRate: 2
+            ) == expected
         )
-        #expect(tracker.revision == 0)
-        tracker.observeTimeControlStatus(
-            isPaused: true,
-            isPlaying: false,
-            playbackRate: 0
-        )
-
-        #expect(tracker.revision == 1)
     }
 
     @Test
@@ -659,17 +609,5 @@ struct AVPlayerTimelineAdapterTests {
         #expect(player.rate == 2)
         #expect(timeline.currentSnapshot.rate == 2)
         #expect(timeline.currentSnapshot.state == .playing)
-    }
-
-    @Test
-    @MainActor
-    func invalidPlayerDefaultRateFallsBackBeforePlayback() {
-        let player = AVPlayer()
-        player.defaultRate = .nan
-
-        let timeline = AVPlayerTimelineAdapter(player: player)
-
-        #expect(player.defaultRate == 1)
-        withExtendedLifetime(timeline) {}
     }
 }

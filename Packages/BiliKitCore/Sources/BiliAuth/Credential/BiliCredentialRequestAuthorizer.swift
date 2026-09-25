@@ -31,25 +31,13 @@ public enum BiliRequestAuthorizationError:
 /// 调用方声明账户读取能力后，scheme、host、port、method、exact path、userinfo、fragment 与
 /// 现有凭据 header 仍会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界。
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
-    private static let maximumResponseSize = 256 * 1_024
-    private static let navigationValidationURL: URL = {
-        guard
-            let url = URL(
-                string: "https://api.bilibili.com/x/web-interface/nav"
-            )
-        else {
-            preconditionFailure("Static navigation validation URL must be valid")
-        }
-        return url
-    }()
-
     private let store: any WebCredentialStoring
     private let httpClient: HTTPClient
     private let transportInvalidator: (@Sendable () -> Void)?
     private let allowedPaths: Set<String>
 
     public init(allowedPaths: Set<String>) {
-        let transport = Self.makeProductionTransport()
+        let transport = AuthenticationHTTP.makeProductionTransport()
         store = KeychainWebCredentialStore()
         httpClient = HTTPClient(transport: transport)
         transportInvalidator = { transport.invalidateAndCancel() }
@@ -59,7 +47,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
     init(
         store: any WebCredentialStoring,
         allowedPaths: Set<String>,
-        transport: any HTTPTransport = Self.makeProductionTransport()
+        transport: any HTTPTransport = AuthenticationHTTP.makeProductionTransport()
     ) {
         self.store = store
         httpClient = HTTPClient(transport: transport)
@@ -76,7 +64,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         guard isAllowed(request) else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard !Self.containsCredentialHeader(request.headers) else {
+        guard !request.headers.containsCredentialHeader else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -124,17 +112,11 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
 
     /// 验证已存凭据当前是否仍登录；明确失效会清除，验证不可用则保留并抛错。
     func restoreAccountSession() async throws -> StoredAccountSessionRestoreResult {
-        let request = HTTPRequest(
-            url: Self.navigationValidationURL,
-            headers: [
-                "Accept": "application/json",
-                "Referer": "https://www.bilibili.com/",
-                "User-Agent": "BiliKitMac/0.1",
-            ]
-        )
         let authorized: HTTPRequest
         do {
-            authorized = try await authorize(request)
+            authorized = try await authorize(
+                AuthenticationHTTP.navigationValidationRequest()
+            )
         } catch BiliRequestAuthorizationError.missingCredential {
             return .signedOut(hadCredential: false)
         } catch BiliRequestAuthorizationError.expiredCredential,
@@ -151,18 +133,12 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         } catch {
             throw BiliRequestAuthorizationError.validationUnavailable
         }
-        guard response.body.count <= Self.maximumResponseSize,
-            Self.looksLikeJSON(response),
-            let envelope = try? JSONDecoder().decode(
-                NavigationAuthenticationEnvelope.self,
-                from: response.body
-            ),
-            envelope.code == 0,
-            let data = envelope.data
+        guard
+            let result = try? AuthenticationHTTP.navigationResult(from: response)
         else {
             throw BiliRequestAuthorizationError.validationUnavailable
         }
-        guard case .signedIn(let identity) = data.authenticationResult else {
+        guard case .signedIn(let identity) = result else {
             try purgeStoredCredential()
             return .signedOut(hadCredential: true)
         }
@@ -189,14 +165,6 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             && request.method == .get
     }
 
-    private static func containsCredentialHeader(_ headers: [String: String]) -> Bool {
-        headers.keys.contains {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
-                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
-        }
-    }
-
     private func purgeStoredCredential() throws {
         do {
             try store.delete()
@@ -204,36 +172,15 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             throw BiliRequestAuthorizationError.credentialStoreUnavailable
         }
     }
+}
 
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        if let contentType = response.headers.first(where: {
-            $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-        })?.value.lowercased(),
-            !contentType.contains("json")
-        {
-            return false
+extension Dictionary where Key == String, Value == String {
+    /// 调用方已自带凭据类 header 时，授权器拒绝而不覆盖；两个授权器共用这一判定。
+    var containsCredentialHeader: Bool {
+        keys.contains {
+            $0.caseInsensitiveCompare("Cookie") == .orderedSame
+                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
+                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
         }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
-    }
-
-    private static func makeProductionTransport() -> URLSessionTransport {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 30
-        return URLSessionTransport(
-            configuration: configuration,
-            redirectPolicy: .reject
-        )
     }
 }

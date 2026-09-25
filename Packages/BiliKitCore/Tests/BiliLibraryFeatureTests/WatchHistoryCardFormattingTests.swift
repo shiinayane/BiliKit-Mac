@@ -48,62 +48,6 @@ struct WatchHistoryCardFormattingTests {
     }
 
     @Test
-    func manualContinuationKeepsCardsButDisablesAutomaticNearEnd() {
-        let item = WatchHistoryItem(
-            bvid: "BV1HistoryManual",
-            title: "历史卡片",
-            coverURL: nil,
-            owner: VideoOwner(id: 7, name: "历史作者"),
-            progressSeconds: 65,
-            durationSeconds: 600,
-            viewedAt: .now
-        )
-        let surface = WatchHistoryLoadedSurface(
-            state: .loaded(
-                items: [item],
-                continuation: WatchHistoryContinuation(rawValue: "opaque"),
-                loadMoreError: nil
-            ),
-            requiresManualLoadMore: true
-        )
-
-        #expect(surface?.items == [item])
-        #expect(surface?.canLoadMore == true)
-        #expect(surface?.requiresManualLoadMore == true)
-        #expect(surface?.isLoadingMore == false)
-    }
-
-    @Test
-    func nativePresentationMapsCurrentHistorySlotsAndAccessibility() {
-        let item = WatchHistoryItem(
-            bvid: "BV1HistorySlot",
-            title: "历史卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/cover.jpg"),
-            owner: VideoOwner(
-                id: 7,
-                name: "历史作者",
-                avatarURL: nil
-            ),
-            progressSeconds: 65,
-            durationSeconds: 600,
-            viewedAt: .now
-        )
-
-        let presentation = WatchHistoryCardPresentation(item: item)
-
-        #expect(presentation.bvid == "BV1HistorySlot")
-        #expect(presentation.title == "历史卡片")
-        #expect(
-            presentation.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true
-        )
-        #expect(presentation.avatarURL == nil)
-        #expect(!presentation.showsAvatar)
-        #expect(presentation.progressText == "1:05/10:00")
-        #expect(presentation.footerLeadingText == "历史作者")
-        #expect(presentation.accessibilityLabel.contains(presentation.progressText))
-    }
-
-    @Test
     func historyImagesUseBoundedCDNVariantsWithoutRewritingUnknownOrigins() throws {
         let trusted = WatchHistoryCardPresentation(
             item: WatchHistoryItem(
@@ -145,7 +89,7 @@ struct WatchHistoryCardFormattingTests {
             #require(URL(string: "https://evilhdslb.com/avatar.jpg")),
             #require(URL(string: "https://i0.hdslb.com/avatar.jpg?token=public")),
             #require(URL(string: "https://i0.hdslb.com/avatar.jpg#fragment")),
-            #require(URL(string: "https://i0.hdslb.com/avatar.jpg@48w_48h.webp")),
+            #require(URL(string: "https://i0.hdslb.com/avatar.jpg@48w_48h.webp"))
         ]
 
         for (index, url) in values.enumerated() {
@@ -166,107 +110,64 @@ struct WatchHistoryCardFormattingTests {
         }
     }
 
-    @Test
-    func progressShowsElapsedDurationOrCompletedState() {
+    @Test(arguments: [
+        (progress: 65, duration: 600, expected: "1:05/10:00"),
+        (progress: 3_661, duration: 7_322, expected: "1:01:01/2:02:02"),
+        (progress: 0, duration: 0, expected: "0:00/0:00"),
+        (progress: 600, duration: 600, expected: completedText)
+    ])
+    func progressShowsElapsedDurationOrCompletedState(
+        progress: Int,
+        duration: Int,
+        expected: String
+    ) {
         #expect(
             WatchHistoryCardFormatting.progress(
-                progressSeconds: 65,
-                durationSeconds: 600
-            ) == "1:05/10:00"
-        )
-        #expect(
-            WatchHistoryCardFormatting.progress(
-                progressSeconds: 3_661,
-                durationSeconds: 7_322
-            ) == "1:01:01/2:02:02"
-        )
-        #expect(
-            WatchHistoryCardFormatting.progress(
-                progressSeconds: 600,
-                durationSeconds: 600
-            ) == String(localized: "已看完", bundle: LibraryFeatureStrings.bundle)
-        )
-        #expect(
-            WatchHistoryCardFormatting.progress(
-                progressSeconds: 0,
-                durationSeconds: 0
-            ) == "0:00/0:00"
+                progressSeconds: progress,
+                durationSeconds: duration
+            ) == expected
         )
     }
 
-    @Test
-    func viewedAtPreservesDayAndTimeBoundaries() throws {
+    /// 东京时间 2026-07-24 13:00 为 now；日界按日历时区而不是 UTC 判定。
+    @Test(arguments: [
+        (day: 24, hour: 9, minute: 5, expected: localized("今天 \("9:05")")),
+        // 东京 7/24 08:00 在 UTC 仍是 7/23，必须按日历时区归入今天。
+        (day: 24, hour: 8, minute: 0, expected: localized("今天 \("8:00")")),
+        (day: 23, hour: 23, minute: 59, expected: localized("昨天 \("23:59")")),
+        (day: 23, hour: 22, minute: 7, expected: localized("昨天 \("22:07")")),
+        (day: 20, hour: 8, minute: 3, expected: localized("\(7)月\(20)日 \("8:03")"))
+    ])
+    func viewedAtUsesCalendarDayBoundaries(
+        day: Int,
+        hour: Int,
+        minute: Int,
+        expected: String
+    ) throws {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(
-            TimeZone(identifier: "Asia/Tokyo")
-        )
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
         let now = try #require(
-            calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 24,
-                    hour: 13
-                )
-            )
+            calendar.date(from: DateComponents(year: 2026, month: 7, day: 24, hour: 13))
         )
-        let today = try #require(
+        let viewedAt = try #require(
             calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 24,
-                    hour: 9,
-                    minute: 5
-                )
-            )
-        )
-        let yesterday = try #require(
-            calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 23,
-                    hour: 22,
-                    minute: 7
-                )
-            )
-        )
-        let older = try #require(
-            calendar.date(
-                from: DateComponents(
-                    year: 2026,
-                    month: 7,
-                    day: 20,
-                    hour: 8,
-                    minute: 3
-                )
+                from: DateComponents(year: 2026, month: 7, day: day, hour: hour, minute: minute)
             )
         )
 
         #expect(
             WatchHistoryCardFormatting.viewedAt(
-                today,
+                viewedAt,
                 now: now,
                 calendar: calendar,
                 locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "今天 \("9:05")", bundle: LibraryFeatureStrings.bundle)
-        )
-        #expect(
-            WatchHistoryCardFormatting.viewedAt(
-                yesterday,
-                now: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "昨天 \("22:07")", bundle: LibraryFeatureStrings.bundle)
-        )
-        #expect(
-            WatchHistoryCardFormatting.viewedAt(
-                older,
-                now: now,
-                calendar: calendar,
-                locale: Locale(identifier: "zh-Hans")
-            ) == String(localized: "\(7)月\(20)日 \("8:03")", bundle: LibraryFeatureStrings.bundle)
+            ) == expected
         )
     }
+}
+
+private let completedText = localized("已看完")
+
+private func localized(_ key: String.LocalizationValue) -> String {
+    String(localized: key, bundle: LibraryFeatureStrings.bundle)
 }

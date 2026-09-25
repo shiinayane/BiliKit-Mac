@@ -35,15 +35,7 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     let model: WatchHistoryViewModel
-    let makeLoadedContent:
-        (
-            [WatchHistoryCardPresentation],
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    let makeLoadedContent: (LoadedHistoryContent) -> LoadedContent
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -141,12 +133,14 @@ struct WatchHistoryContentView<LoadedContent: View>: View {
     ) -> some View {
         ZStack(alignment: .bottom) {
             makeLoadedContent(
-                items.map { WatchHistoryCardPresentation(item: $0, locale: locale) },
-                canLoadMore && !requiresManualLoadMore,
-                model.paginationTailIdentity,
-                isLoadingMore,
-                model.loadMore,
-                onSelect
+                LoadedHistoryContent(
+                    items: items.map { WatchHistoryCardPresentation(item: $0, locale: locale) },
+                    canLoadMore: canLoadMore && !requiresManualLoadMore,
+                    tailIdentity: model.paginationTailIdentity,
+                    isLoadingMore: isLoadingMore,
+                    loadMore: model.loadMore,
+                    select: onSelect
+                )
             )
 
             if isLoadingMore {

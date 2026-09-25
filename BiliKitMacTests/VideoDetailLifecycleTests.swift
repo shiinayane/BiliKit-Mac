@@ -6,7 +6,6 @@ import BiliDanmaku
 import BiliLibraryFeature
 import BiliModels
 import CoreGraphics
-import Observation
 import SwiftUI
 import Testing
 
@@ -18,10 +17,10 @@ struct VideoDetailLifecycleTests {
     @MainActor
     func playbackFailureStopsPresentationAndRetryStartsItAgain() async {
         let fixture = VideoDetailLifecycleFixture()
-        let player = ControlledFailingPlayback()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
-                repository: VideoDetailLifecycleRepository(fixture: fixture)
+        let player = LifecyclePlayback(holdsLoads: true)
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(
+                repository: LifecycleVideoRepository(fixtures: [fixture])
             ),
             playback: player
         )
@@ -55,12 +54,12 @@ struct VideoDetailLifecycleTests {
         videoModel.loadVideo(fixture.bvid)
         await player.waitForLoadCallCount(1)
         await presentation.waitForStartedCount(1)
-        #expect(player.loadCallCount == 1)
+        #expect(player.loadedIdentities.count == 1)
         #expect(presentation.startedIdentities.count == 1)
         #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
         player.failPendingLoad()
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await presentation.waitForStopCount(baselineStopCount + 1)
         #expect(presentation.stopCount == baselineStopCount + 1)
         guard case .failed = videoModel.state else {
@@ -72,11 +71,11 @@ struct VideoDetailLifecycleTests {
         videoModel.loadVideo(fixture.bvid)
         await player.waitForLoadCallCount(2)
         await presentation.waitForStartedCount(2)
-        #expect(player.loadCallCount == 2)
+        #expect(player.loadedIdentities.count == 2)
         #expect(presentation.startedIdentities.count == 2)
 
         player.failPendingLoad()
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await presentation.waitForStopCount(baselineStopCount + 2)
         #expect(presentation.stopCount == baselineStopCount + 2)
 
@@ -90,11 +89,11 @@ struct VideoDetailLifecycleTests {
     {
         let fixture = VideoDetailLifecycleFixture()
         let signatureRepository = PendingLifecycleUploaderSignatureRepository()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(
-                repository: VideoDetailLifecycleRepository(fixture: fixture)
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(
+                repository: LifecycleVideoRepository(fixtures: [fixture])
             ),
-            playback: RecordingLifecyclePlayback(),
+            playback: LifecyclePlayback(),
             uploaderSignatureUseCase: UploaderSignatureUseCase(
                 repository: signatureRepository
             )
@@ -112,7 +111,7 @@ struct VideoDetailLifecycleTests {
         )
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         try await signatureRepository.waitForRequest()
         #expect(videoModel.uploaderSignatureState == .loading)
 
@@ -130,13 +129,13 @@ struct VideoDetailLifecycleTests {
     func onlyResolvedAuthenticationBoundaryClosesPlayback() async throws {
         let fixture = VideoDetailLifecycleFixture()
         let watchProgressProbe = WatchProgressConnectionProbe()
-        let repository = VideoDetailLifecycleRepository(fixture: fixture)
-        let playback = RecordingLifecyclePlayback()
-        let browseModel = GuestBrowseViewModel(
-            useCase: GuestFeedUseCase(repository: repository)
+        let repository = LifecycleVideoRepository(fixtures: [fixture])
+        let playback = LifecyclePlayback()
+        let browseModel = BrowseViewModel(
+            useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
         )
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: playback
         )
         let danmakuModel = DanmakuControlsViewModel(
@@ -193,7 +192,7 @@ struct VideoDetailLifecycleTests {
         #expect(watchProgressProbe.accessValues == [false])
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(playback.loadedIdentities == [fixture.identity])
         #expect(videoModel.presentedContext?.detail.bvid == fixture.bvid)
 
@@ -223,7 +222,7 @@ struct VideoDetailLifecycleTests {
         #expect(playback.stopCallCount == stopCountBeforeIdentity + 1)
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
 
         let stopCountBeforeLogout = playback.stopCallCount
@@ -237,12 +236,12 @@ struct VideoDetailLifecycleTests {
         #expect(watchProgressProbe.accessValues.last == false)
 
         coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         #expect(
             playback.loadedIdentities == [
                 fixture.identity,
                 fixture.identity,
-                fixture.identity,
+                fixture.identity
             ]
         )
         #expect(coordinator.currentPlaybackBVID == fixture.bvid)
@@ -264,18 +263,27 @@ struct VideoDetailLifecycleTests {
         #expect(watchProgressProbe.stopCount == 1)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(arguments: VideoDetailCredentialFailureSource.allCases)
     @MainActor
-    func invalidPlaybackCredentialRevalidatesAndClosesPlayback() async throws {
+    func invalidCredentialRevalidatesAndClosesPlayback(
+        _ source: VideoDetailCredentialFailureSource
+    ) async {
         let fixture = VideoDetailLifecycleFixture()
-        let repository = VideoDetailLifecycleRepository(
-            fixture: fixture,
-            playbackError: .authenticationInvalid
+        let repository = LifecycleVideoRepository(
+            fixtures: [fixture],
+            playbackError: source == .playback ? .authenticationInvalid : nil
         )
-        let playback = RecordingLifecyclePlayback()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
+        let playback = LifecyclePlayback()
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
             playback: playback
+        )
+        let commentsModel = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(
+                repository: LifecycleCommentRepository(
+                    rootError: source == .comments ? .authenticationInvalid : nil
+                )
+            )
         )
         let danmakuModel = DanmakuControlsViewModel(
             presentation: RecordingPresentation()
@@ -299,94 +307,8 @@ struct VideoDetailLifecycleTests {
         let hostingView = NSHostingView(
             rootView: AppRootView(
                 navigationCoordinator: coordinator,
-                browseModel: GuestBrowseViewModel(
-                    useCase: GuestFeedUseCase(repository: repository)
-                ),
-                videoModel: videoModel,
-                danmakuModel: danmakuModel,
-                authenticationModel: authenticationModel,
-                historyModel: WatchHistoryViewModel(
-                    useCase: WatchHistoryUseCase(
-                        repository: EmptyLifecycleHistoryRepository()
-                    )
-                ),
-                playerContent: AnyView(EmptyView())
-            )
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
-        await authenticationService.waitForRestoreCallCount(1)
-        await authenticationModel.waitForCurrentTask()
-        #expect(authenticationModel.sessionState == .signedIn(nil))
-
-        await authenticationService.setRestoreState(.signedOut)
-        coordinator.openPlayback(fixture.bvid)
-        await videoModel.waitForCurrentTask()
-        await authenticationService.waitForRestoreCallCount(2)
-        await authenticationModel.waitForCurrentTask()
-        await playback.waitForStopCallCount(1)
-
-        #expect(authenticationModel.sessionState == .signedOut)
-        #expect(coordinator.currentPlaybackBVID == nil)
-        #expect(videoModel.state == .idle)
-        #expect(playback.loadedIdentities.isEmpty)
-        #expect(playback.stopCallCount == 1)
-        window.contentView = NSView()
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    @MainActor
-    func invalidCommentCredentialRevalidatesAndClosesPlayback() async throws {
-        let fixture = VideoDetailLifecycleFixture(
-            aid: 700_003,
-            bvid: "BV1CommentAuth",
-            cid: 900_003,
-            title: "评论认证失效"
-        )
-        let repository = CommentLifecycleVideoRepository(fixtures: [fixture])
-        let playback = RecordingLifecyclePlayback()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
-            playback: playback
-        )
-        let commentsModel = PlaybackCommentsViewModel(
-            useCase: CommentUseCase(
-                repository: AuthenticationInvalidLifecycleCommentRepository()
-            )
-        )
-        let danmakuModel = DanmakuControlsViewModel(
-            presentation: RecordingPresentation()
-        )
-        let authenticationService = LifecycleAuthenticationService(
-            restoreState: .signedIn(nil)
-        )
-        let authenticationModel = AuthenticationViewModel(
-            service: authenticationService,
-            qrCodeProvider: LifecycleQRCodeProvider()
-        )
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { intent in
-                videoModel.loadVideo(
-                    intent.bvid,
-                    preferredCID: intent.preferredCID
-                )
-            },
-            stopPlayback: {
-                videoModel.reset()
-                danmakuModel.reset()
-            }
-        )
-        let hostingView = NSHostingView(
-            rootView: AppRootView(
-                navigationCoordinator: coordinator,
-                browseModel: GuestBrowseViewModel(
-                    useCase: GuestFeedUseCase(repository: repository)
+                browseModel: BrowseViewModel(
+                    useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
                 ),
                 videoModel: videoModel,
                 commentsModel: commentsModel,
@@ -414,15 +336,21 @@ struct VideoDetailLifecycleTests {
 
         await authenticationService.setRestoreState(.signedOut)
         coordinator.openPlayback(fixture.bvid)
+        await waitUntilSettled(videoModel)
         await authenticationService.waitForRestoreCallCount(2)
         await authenticationModel.waitForCurrentTask()
         await playback.waitForStopCallCount(1)
 
-        #expect(commentsModel.authenticationRevalidationGeneration == 1)
         #expect(authenticationModel.sessionState == .signedOut)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(videoModel.state == .idle)
         #expect(playback.stopCallCount == 1)
+        switch source {
+        case .playback:
+            #expect(playback.loadedIdentities.isEmpty)
+        case .comments:
+            #expect(commentsModel.authenticationRevalidationGeneration == 1)
+        }
         window.contentView = NSView()
     }
 
@@ -430,19 +358,27 @@ struct VideoDetailLifecycleTests {
     @MainActor
     func failedPageSelectionRoutesANewCIDInsteadOfRetryingTheOldTarget() async {
         let fixture = PageSelectionRoutingFixture()
-        let repository = PageSelectionRoutingRepository(fixture: fixture)
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingLifecyclePlayback()
+        let repository = LifecycleVideoRepository(
+            detail: { _ in fixture.detail },
+            playback: { _, cid in
+                if cid == fixture.failingPage.cid {
+                    throw ContentApplicationError.transportFailure
+                }
+                return fixture.playback
+            }
+        )
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
+            playback: LifecyclePlayback()
         )
 
         videoModel.loadVideo(
             fixture.bvid,
             preferredCID: fixture.initialPage.cid
         )
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         videoModel.selectPage(cid: fixture.failingPage.cid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         guard case .failedPage(_, let failedPage, _) = videoModel.state else {
             Issue.record("切换失败后应保留失败的分 P 目标")
             return
@@ -456,15 +392,15 @@ struct VideoDetailLifecycleTests {
             ),
             with: videoModel
         )
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
 
         #expect(videoModel.requestedPreferredCID == fixture.replacementPage.cid)
         #expect(videoModel.presentedPlaybackIdentity?.cid == fixture.replacementPage.cid)
         #expect(
-            await repository.playbackCIDs() == [
+            await repository.playbackCIDs == [
                 fixture.initialPage.cid,
                 fixture.failingPage.cid,
-                fixture.replacementPage.cid,
+                fixture.replacementPage.cid
             ]
         )
     }
@@ -484,13 +420,13 @@ struct VideoDetailLifecycleTests {
             cid: 900_002,
             title: "评论生命周期 B"
         )
-        let repository = CommentLifecycleVideoRepository(
+        let repository = LifecycleVideoRepository(
             fixtures: [first, replacement]
         )
-        let commentsRepository = EmptyLifecycleCommentRepository()
-        let videoModel = GuestVideoViewModel(
-            useCase: GuestVideoUseCase(repository: repository),
-            playback: RecordingLifecyclePlayback()
+        let commentsRepository = LifecycleCommentRepository()
+        let videoModel = VideoViewModel(
+            useCase: VideoUseCase(repository: repository),
+            playback: LifecyclePlayback()
         )
         let commentsModel = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: commentsRepository)
@@ -513,8 +449,8 @@ struct VideoDetailLifecycleTests {
         let hostingView = NSHostingView(
             rootView: AppRootView(
                 navigationCoordinator: coordinator,
-                browseModel: GuestBrowseViewModel(
-                    useCase: GuestFeedUseCase(repository: repository)
+                browseModel: BrowseViewModel(
+                    useCase: FeedUseCase(repository: EmptyLifecycleFeedRepository())
                 ),
                 videoModel: videoModel,
                 commentsModel: commentsModel,
@@ -541,14 +477,14 @@ struct VideoDetailLifecycleTests {
         window.layoutIfNeeded()
 
         coordinator.openPlayback(first.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await commentsRepository.waitForRequestCount(1)
         await commentsModel.waitForCurrentRootTask()
         #expect(commentsModel.subject == .video(aid: first.aid))
         #expect(commentsModel.rootState == .empty)
 
         coordinator.openPlayback(replacement.bvid)
-        await videoModel.waitForCurrentTask()
+        await waitUntilSettled(videoModel)
         await commentsRepository.waitForRequestCount(2)
         await commentsModel.waitForCurrentRootTask()
         #expect(commentsModel.subject == .video(aid: replacement.aid))
@@ -569,41 +505,11 @@ struct VideoDetailLifecycleTests {
         #expect(videoModel.state == .idle)
         window.contentView = NSView()
     }
-
-    @MainActor
-    private func waitForObservedState(
-        _ condition: @MainActor @escaping () -> Bool
-    ) async {
-        while !condition() {
-            await withCheckedContinuation { continuation in
-                let gate = ObservationContinuationGate(continuation)
-                let isAlreadySatisfied = withObservationTracking {
-                    condition()
-                } onChange: {
-                    gate.resume()
-                }
-                if isAlreadySatisfied { gate.resume() }
-            }
-        }
-    }
 }
 
-private final class ObservationContinuationGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
-
-    init(_ continuation: CheckedContinuation<Void, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume() {
-        let continuation = lock.withLock {
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume()
-    }
+enum VideoDetailCredentialFailureSource: CaseIterable, Sendable {
+    case playback
+    case comments
 }
 
 private struct VideoDetailLifecycleFixture: Sendable {
@@ -647,7 +553,8 @@ private struct VideoDetailLifecycleFixture: Sendable {
             ),
             durationSeconds: 120,
             publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            aid: aid
+            aid: aid,
+            pages: [page]
         )
     }
 
@@ -662,97 +569,85 @@ private struct VideoDetailLifecycleFixture: Sendable {
     }
 }
 
-private actor VideoDetailLifecycleRepository: GuestContentRepository {
-    let fixture: VideoDetailLifecycleFixture
-    let playbackError: GuestApplicationError?
+/// 本文件共享的游客视频 port 替身：按闭包回答详情（含分 P）与播放，并记录播放 CID。
+private actor LifecycleVideoRepository: VideoRepository {
+    private let detailResponse: @Sendable (String) throws -> VideoDetail
+    private let playbackResponse: @Sendable (String, Int64) throws -> VideoPlayback
+    private(set) var playbackCIDs: [Int64] = []
 
     init(
-        fixture: VideoDetailLifecycleFixture,
-        playbackError: GuestApplicationError? = nil
+        detail: @escaping @Sendable (String) throws -> VideoDetail,
+        playback: @escaping @Sendable (String, Int64) throws -> VideoPlayback
     ) {
-        self.fixture = fixture
-        self.playbackError = playbackError
+        detailResponse = detail
+        playbackResponse = playback
     }
 
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
-    }
-
-    func videoDetail(for bvid: String) async throws -> VideoDetail {
-        fixture.detail
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        [fixture.page]
-    }
-
-    func playback(
-        for bvid: String,
-        cid: Int64
-    ) async throws -> VideoPlayback {
-        if let playbackError { throw playbackError }
-        return fixture.playback
-    }
-}
-
-private actor CommentLifecycleVideoRepository: GuestContentRepository {
-    private let fixtures: [String: VideoDetailLifecycleFixture]
-
-    init(fixtures: [VideoDetailLifecycleFixture]) {
-        self.fixtures = Dictionary(
+    /// 按 BVID 选择 fixture；`playbackError` 让每次播放请求都失败。
+    init(
+        fixtures: [VideoDetailLifecycleFixture],
+        playbackError: ContentApplicationError? = nil
+    ) {
+        let fixturesByBVID = Dictionary(
             uniqueKeysWithValues: fixtures.map { ($0.bvid, $0) }
         )
-    }
-
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
+        let fixture: @Sendable (String) throws -> VideoDetailLifecycleFixture = {
+            guard let fixture = fixturesByBVID[$0] else {
+                throw ContentApplicationError.invalidRequest
+            }
+            return fixture
+        }
+        self.init(
+            detail: { try fixture($0).detail },
+            playback: { bvid, _ in
+                if let playbackError { throw playbackError }
+                return try fixture(bvid).playback
+            }
         )
     }
 
     func videoDetail(for bvid: String) async throws -> VideoDetail {
-        try fixture(for: bvid).detail
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        [try fixture(for: bvid).page]
+        try detailResponse(bvid)
     }
 
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
-        try fixture(for: bvid).playback
-    }
-
-    private func fixture(
-        for bvid: String
-    ) throws -> VideoDetailLifecycleFixture {
-        guard let fixture = fixtures[bvid] else {
-            throw GuestApplicationError.invalidRequest
-        }
-        return fixture
+        playbackCIDs.append(cid)
+        return try playbackResponse(bvid, cid)
     }
 }
 
-private actor EmptyLifecycleCommentRepository: CommentRepository {
+/// App 根视图会激活浏览页；本文件只验证播放生命周期，因此 Feed 恒为空。
+private struct EmptyLifecycleFeedRepository: FeedRepository {
+    func recommendations(
+        after continuation: RecommendationContinuation?
+    ) async throws -> RecommendationPage {
+        throw ContentApplicationError.unavailable
+    }
+
+    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
+        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
+    }
+
+    func searchVideos(request: VideoSearchRequest) async throws -> SearchPage {
+        SearchPage(
+            videos: [],
+            pageNumber: request.page,
+            pageSize: 20,
+            totalResults: 0,
+            totalPages: 0
+        )
+    }
+}
+
+/// 本文件唯一的评论 port 替身：记录请求的 subject；`rootError` 让根评论请求失败。
+private actor LifecycleCommentRepository: CommentRepository {
+    private let rootError: CommentReadError?
     private var subjects: [CommentSubjectIdentity] = []
-    private var requestWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var requestWaiters = CountWaiters()
+
+    init(rootError: CommentReadError? = nil) {
+        self.rootError = rootError
+    }
 
     func rootComments(
         for subject: CommentSubjectIdentity,
@@ -760,11 +655,8 @@ private actor EmptyLifecycleCommentRepository: CommentRepository {
         after continuation: CommentContinuation?
     ) async throws -> CommentRootPage {
         subjects.append(subject)
-        let ready = requestWaiters.filter { $0.target <= subjects.count }
-        requestWaiters.removeAll { $0.target <= subjects.count }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
+        requestWaiters.resume(reaching: subjects.count)
+        if let rootError { throw rootError }
         return CommentRootPage(
             threads: [],
             totalCount: 0,
@@ -779,7 +671,8 @@ private actor EmptyLifecycleCommentRepository: CommentRepository {
         page: Int,
         pageSize: Int
     ) async throws -> CommentReplyPage {
-        CommentReplyPage(
+        if let rootError { throw rootError }
+        return CommentReplyPage(
             rootID: rootID,
             replies: [],
             pageNumber: page,
@@ -793,29 +686,9 @@ private actor EmptyLifecycleCommentRepository: CommentRepository {
     }
 
     func waitForRequestCount(_ target: Int) async {
-        guard subjects.count < target else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            requestWaiters.add($0, until: target, current: subjects.count)
         }
-    }
-}
-
-private actor AuthenticationInvalidLifecycleCommentRepository: CommentRepository {
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) throws -> CommentRootPage {
-        throw CommentReadError.authenticationInvalid
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) throws -> CommentReplyPage {
-        throw CommentReadError.authenticationInvalid
     }
 }
 
@@ -873,49 +746,6 @@ private struct PageSelectionRoutingFixture: Sendable {
     }
 }
 
-private actor PageSelectionRoutingRepository: GuestContentRepository {
-    let fixture: PageSelectionRoutingFixture
-    private var observedPlaybackCIDs: [Int64] = []
-
-    init(fixture: PageSelectionRoutingFixture) {
-        self.fixture = fixture
-    }
-
-    func popular(page: Int, pageSize: Int) async throws -> PopularPage {
-        PopularPage(videos: [], pageNumber: page, pageSize: pageSize)
-    }
-
-    func searchVideos(keyword: String, page: Int) async throws -> SearchPage {
-        SearchPage(
-            videos: [],
-            pageNumber: page,
-            pageSize: 20,
-            totalResults: 0,
-            totalPages: 0
-        )
-    }
-
-    func videoDetail(for bvid: String) async throws -> VideoDetail {
-        fixture.detail
-    }
-
-    func pages(for bvid: String) async throws -> [VideoPage] {
-        fixture.pages
-    }
-
-    func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback {
-        observedPlaybackCIDs.append(cid)
-        if cid == fixture.failingPage.cid {
-            throw GuestApplicationError.transportFailure
-        }
-        return fixture.playback
-    }
-
-    func playbackCIDs() -> [Int64] {
-        observedPlaybackCIDs
-    }
-}
-
 private actor PendingLifecycleUploaderSignatureRepository:
     UploaderSignatureRepository
 {
@@ -927,18 +757,12 @@ private actor PendingLifecycleUploaderSignatureRepository:
 
     func signature(for ownerID: Int64) async throws -> String? {
         requestStarted = true
-        for waiter in requestWaiters {
-            waiter.resume()
-        }
-        requestWaiters.removeAll()
+        requestWaiters.resumeAll()
         let result = await withCheckedContinuation { continuation in
             resultContinuation = continuation
         }
         requestCompleted = true
-        for waiter in completionWaiters {
-            waiter.resume()
-        }
-        completionWaiters.removeAll()
+        completionWaiters.resumeAll()
         return result
     }
 
@@ -962,83 +786,26 @@ private actor PendingLifecycleUploaderSignatureRepository:
     }
 }
 
+/// 本文件唯一的播放 port 替身：记录 load/begin/stop；`holdsLoads` 时 load 挂起到
+/// `failPendingLoad()` 为止，用于驱动加载失败路径。
 @MainActor
-private final class ControlledFailingPlayback: PlaybackControlling {
-    private(set) var loadCallCount = 0
-    private var pendingLoad: CheckedContinuation<Void, any Error>?
-    private var loadWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+private final class LifecyclePlayback: PlaybackControlling {
+    private struct ControlledFailure: Error {}
 
-    func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        finishedPlaybackFailureEvents()
-    }
-
-    func load(
-        _ playback: VideoPlayback,
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent
-    ) async throws {
-        loadCallCount += 1
-        resumeLoadWaiters()
-        try await withCheckedThrowingContinuation { continuation in
-            pendingLoad = continuation
-        }
-    }
-
-    func beginPlayback(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        initialPositionSeconds: Double?
-    ) async -> PlaybackStartOutcome { .startedAtBeginning }
-
-    func restartFromBeginning(
-        identity: PlaybackItemIdentity,
-        intent: PlaybackLoadIntent,
-        resumeToken: PlaybackResumeToken
-    ) async -> Bool { false }
-
-    func pause() {}
-
-    func stop() {}
-
-    func failPendingLoad() {
-        pendingLoad?.resume(throwing: ControlledPlaybackFailure())
-        pendingLoad = nil
-    }
-
-    func waitForLoadCallCount(_ target: Int) async {
-        guard loadCallCount < target else { return }
-        await withCheckedContinuation { continuation in
-            loadWaiters.append((target, continuation))
-        }
-    }
-
-    private func resumeLoadWaiters() {
-        let ready = loadWaiters.filter { $0.target <= loadCallCount }
-        loadWaiters.removeAll { $0.target <= loadCallCount }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
-}
-
-@MainActor
-private struct ControlledPlaybackFailure: Error {}
-
-private func finishedPlaybackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-    AsyncStream { continuation in
-        continuation.finish()
-    }
-}
-
-@MainActor
-private final class RecordingLifecyclePlayback: PlaybackControlling {
+    private let holdsLoads: Bool
     private(set) var loadedIdentities: [PlaybackItemIdentity] = []
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCallCount = 0
-    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var pendingLoad: CheckedContinuation<Void, any Error>?
+    private var loadWaiters = CountWaiters()
+    private var stopWaiters = CountWaiters()
+
+    init(holdsLoads: Bool = false) {
+        self.holdsLoads = holdsLoads
+    }
 
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent> {
-        finishedPlaybackFailureEvents()
+        AsyncStream { $0.finish() }
     }
 
     func load(
@@ -1047,6 +814,11 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async throws {
         loadedIdentities.append(identity)
+        loadWaiters.resume(reaching: loadedIdentities.count)
+        guard holdsLoads else { return }
+        try await withCheckedThrowingContinuation { continuation in
+            pendingLoad = continuation
+        }
     }
 
     func beginPlayback(
@@ -1068,17 +840,23 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
 
     func stop() {
         stopCallCount += 1
-        let ready = stopWaiters.filter { $0.target <= stopCallCount }
-        stopWaiters.removeAll { $0.target <= stopCallCount }
-        for waiter in ready {
-            waiter.continuation.resume()
+        stopWaiters.resume(reaching: stopCallCount)
+    }
+
+    func failPendingLoad() {
+        pendingLoad?.resume(throwing: ControlledFailure())
+        pendingLoad = nil
+    }
+
+    func waitForLoadCallCount(_ target: Int) async {
+        await withCheckedContinuation {
+            loadWaiters.add($0, until: target, current: loadedIdentities.count)
         }
     }
 
     func waitForStopCallCount(_ target: Int) async {
-        guard stopCallCount < target else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            stopWaiters.add($0, until: target, current: stopCallCount)
         }
     }
 }
@@ -1087,12 +865,12 @@ private final class RecordingLifecyclePlayback: PlaybackControlling {
 private final class RecordingPresentation: DanmakuPresentationControlling {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
     private(set) var stopCount = 0
-    private var startWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
-    private var stopWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var startWaiters = CountWaiters()
+    private var stopWaiters = CountWaiters()
 
     func start(for identity: PlaybackItemIdentity) {
         startedIdentities.append(identity)
-        resumeStartWaiters()
+        startWaiters.resume(reaching: startedIdentities.count)
     }
 
     func setEnabled(_ enabled: Bool) {}
@@ -1109,36 +887,18 @@ private final class RecordingPresentation: DanmakuPresentationControlling {
 
     func stop() {
         stopCount += 1
-        resumeStopWaiters()
+        stopWaiters.resume(reaching: stopCount)
     }
 
     func waitForStartedCount(_ target: Int) async {
-        guard startedIdentities.count < target else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            startWaiters.add($0, until: target, current: startedIdentities.count)
         }
     }
 
     func waitForStopCount(_ target: Int) async {
-        guard stopCount < target else { return }
-        await withCheckedContinuation { continuation in
-            stopWaiters.append((target, continuation))
-        }
-    }
-
-    private func resumeStartWaiters() {
-        let ready = startWaiters.filter { $0.target <= startedIdentities.count }
-        startWaiters.removeAll { $0.target <= startedIdentities.count }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
-
-    private func resumeStopWaiters() {
-        let ready = stopWaiters.filter { $0.target <= stopCount }
-        stopWaiters.removeAll { $0.target <= stopCount }
-        for waiter in ready {
-            waiter.continuation.resume()
+        await withCheckedContinuation {
+            stopWaiters.add($0, until: target, current: stopCount)
         }
     }
 }
@@ -1151,8 +911,7 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     private var firstRestoreReleased = false
     private var restoreStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var restoreReleaseWaiters: [CheckedContinuation<Void, Never>] = []
-    private var restoreCountWaiters:
-        [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var restoreCountWaiters = CountWaiters()
 
     init(
         restoreState: AuthenticationState,
@@ -1172,10 +931,10 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
 
     func restore() async -> AuthenticationState {
         restoreCount += 1
-        resumeRestoreCountWaiters()
+        restoreCountWaiters.resume(reaching: restoreCount)
         if blocksFirstRestore, restoreCount == 1 {
             firstRestoreStarted = true
-            resume(&restoreStartWaiters)
+            restoreStartWaiters.resumeAll()
             await withCheckedContinuation { continuation in
                 if firstRestoreReleased {
                     continuation.resume()
@@ -1195,32 +954,16 @@ private actor LifecycleAuthenticationService: AuthenticationServicing {
     }
 
     func waitForRestoreCallCount(_ target: Int) async {
-        guard restoreCount < target else { return }
-        await withCheckedContinuation { continuation in
-            restoreCountWaiters.append((target, continuation))
+        await withCheckedContinuation {
+            restoreCountWaiters.add($0, until: target, current: restoreCount)
         }
     }
 
     func releaseFirstRestore() {
         firstRestoreReleased = true
-        resume(&restoreReleaseWaiters)
+        restoreReleaseWaiters.resumeAll()
     }
 
-    private func resume(_ waiters: inout [CheckedContinuation<Void, Never>]) {
-        let pending = waiters
-        waiters.removeAll(keepingCapacity: false)
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-
-    private func resumeRestoreCountWaiters() {
-        let ready = restoreCountWaiters.filter { $0.target <= restoreCount }
-        restoreCountWaiters.removeAll { $0.target <= restoreCount }
-        for waiter in ready {
-            waiter.continuation.resume()
-        }
-    }
     func requestQRCode() async -> AuthenticationState { .signedOut }
     func pollOnce() async -> AuthenticationState { .signedOut }
     func finalizeLogin() async -> AuthenticationState { .signedOut }

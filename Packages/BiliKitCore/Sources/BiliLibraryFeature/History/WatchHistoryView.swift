@@ -6,29 +6,13 @@ import SwiftUI
 /// 播放详情只是覆盖本页面，不应误取消分页。登出清理仍由窗口级 `reset` 边界负责。
 public struct WatchHistoryView<LoadedContent: View>: View {
     private let model: WatchHistoryViewModel
-    private let makeLoadedContent:
-        (
-            [WatchHistoryCardPresentation],
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    private let makeLoadedContent: (LoadedHistoryContent) -> LoadedContent
     private let onSelect: (String) -> Void
     private let onAuthenticationRequired: () -> Void
 
     public init(
         model: WatchHistoryViewModel,
-        @ViewBuilder makeLoadedContent:
-            @escaping (
-                [WatchHistoryCardPresentation],
-                Bool,
-                String?,
-                Bool,
-                @escaping () -> Void,
-                @escaping (String) -> Void
-            ) -> LoadedContent,
+        @ViewBuilder makeLoadedContent: @escaping (LoadedHistoryContent) -> LoadedContent,
         onSelect: @escaping (String) -> Void,
         onAuthenticationRequired: @escaping () -> Void
     ) {

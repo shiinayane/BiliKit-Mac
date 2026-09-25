@@ -1,57 +1,49 @@
 import BiliApplication
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct UploaderSignatureUseCaseTests {
-    @Test
-    func normalizesPublicSignatureWhitespace() async throws {
+    @Test(
+        arguments: [
+            ("  记录生活\n也记录技术  ", "记录生活 也记录技术"),
+            (nil, nil),
+            ("", nil),
+            (" \t\n ", nil)
+        ] as [(String?, String?)]
+    )
+    func collapsesWhitespaceAndTreatsBlankSignatureAsAbsent(
+        remote: String?,
+        expected: String?
+    ) async throws {
         let useCase = UploaderSignatureUseCase(
-            repository: UploaderSignatureRepositoryStub(
-                result: "  记录生活\n也记录技术  "
-            )
+            repository: UploaderSignatureRepositoryStub(result: remote)
         )
 
-        #expect(
-            try await useCase.signature(for: 10_001)
-                == "记录生活 也记录技术"
-        )
-    }
-
-    @Test(arguments: [nil, "", " \t\n "])
-    func emptyPublicSignatureBecomesAbsent(value: String?) async throws {
-        let useCase = UploaderSignatureUseCase(
-            repository: UploaderSignatureRepositoryStub(result: value)
-        )
-
-        #expect(try await useCase.signature(for: 10_001) == nil)
+        #expect(try await useCase.signature(for: 10_001) == expected)
     }
 
     @Test
     func rejectsInvalidOwnerBeforeRepository() async {
-        let repository = CountingUploaderSignatureRepository()
+        let repository = UploaderSignatureRepositoryStub(result: nil)
         let useCase = UploaderSignatureUseCase(repository: repository)
 
-        await #expect(throws: GuestApplicationError.invalidRequest) {
+        await #expect(throws: ContentApplicationError.invalidRequest) {
             try await useCase.signature(for: 0)
         }
         #expect(await repository.callCount == 0)
     }
 }
 
-private struct UploaderSignatureRepositoryStub: UploaderSignatureRepository {
-    let result: String?
-
-    func signature(for ownerID: Int64) async throws -> String? {
-        result
-    }
-}
-
-private actor CountingUploaderSignatureRepository:
-    UploaderSignatureRepository
-{
+private actor UploaderSignatureRepositoryStub: UploaderSignatureRepository {
+    private let result: String?
     private(set) var callCount = 0
+
+    init(result: String?) {
+        self.result = result
+    }
 
     func signature(for ownerID: Int64) async throws -> String? {
         callCount += 1
-        return nil
+        return result
     }
 }

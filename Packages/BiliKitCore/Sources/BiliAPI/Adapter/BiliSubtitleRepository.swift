@@ -19,11 +19,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
     private var resourceURLs: [String: URL] = [:]
 
     public init(client: BiliAPIClient) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let configuration = URLSessionConfiguration.credentialFreeEphemeral()
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
         self.init(
@@ -63,15 +59,9 @@ public actor BiliSubtitleRepository: SubtitleRepository {
                 uniqueKeysWithValues: resources.map { ($0.track.id, $0.url) }
             )
             return resources.map(\.track)
-        } catch is CancellationError {
-            clearIfCurrent(generation: requestGeneration)
-            throw CancellationError()
-        } catch let error as BiliAPIError {
-            clearIfCurrent(generation: requestGeneration)
-            throw Self.applicationError(error)
         } catch {
             clearIfCurrent(generation: requestGeneration)
-            throw SubtitleApplicationError.unavailable
+            throw Self.applicationError(error)
         }
     }
 
@@ -91,12 +81,17 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             headers: [
                 "Accept": "application/json",
                 "Referer": "https://www.bilibili.com/video/\(identity.bvid)/",
-                "User-Agent": "BiliKitMac/0.1",
+                "User-Agent": HTTPUserAgent.short
             ]
         )
 
         do {
-            let response = try await bodyClient.send(request)
+            let response: HTTPResponse
+            do {
+                response = try await bodyClient.send(request)
+            } catch let error as HTTPClientError {
+                throw BiliAPIError(error)
+            }
             try Task.checkCancellation()
             guard generation == requestGeneration,
                 currentIdentity == identity
@@ -106,7 +101,7 @@ public actor BiliSubtitleRepository: SubtitleRepository {
             guard response.body.count <= Self.maximumBodySize else {
                 throw BiliAPIError.responseTooLarge(response.body.count)
             }
-            guard Self.looksLikeJSON(response) else {
+            guard response.looksLikeJSON() else {
                 throw BiliAPIError.nonJSONResponse
             }
             let payload: SubtitleBodyPayload
@@ -119,21 +114,8 @@ public actor BiliSubtitleRepository: SubtitleRepository {
                 throw BiliAPIError.decodingFailed
             }
             return try payload.cues()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HTTPClientError {
-            switch error {
-            case .unacceptableStatusCode(let status):
-                throw Self.applicationError(.httpStatus(status))
-            case .nonHTTPResponse:
-                throw SubtitleApplicationError.transportFailure
-            }
-        } catch let error as BiliAPIError {
-            throw Self.applicationError(error)
-        } catch let error as SubtitleApplicationError {
-            throw error
         } catch {
-            throw SubtitleApplicationError.transportFailure
+            throw Self.applicationError(error)
         }
     }
 
@@ -151,49 +133,27 @@ public actor BiliSubtitleRepository: SubtitleRepository {
         resourceURLs.removeAll(keepingCapacity: false)
     }
 
-    private static func looksLikeJSON(_ response: HTTPResponse) -> Bool {
-        guard
-            let contentType = response.headers.first(where: {
-                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
-            })?.value.lowercased(),
-            contentType.contains("json")
-        else {
-            return false
-        }
-        guard
-            let firstByte = response.body.first(where: {
-                ![9, 10, 13, 32].contains($0)
-            })
-        else {
-            return false
-        }
-        return firstByte == 0x7B
-    }
-
-    private static func applicationError(
-        _ error: BiliAPIError
-    ) -> SubtitleApplicationError {
-        switch error {
-        case .invalidRequest:
-            .invalidRequest
-        case .authorizationRequired, .authenticationInvalid,
-            .authorizationUnavailable:
-            .authenticationRequired
-        case .transportFailure:
-            .transportFailure
-        case .httpStatus(403), .nonJSONResponse,
-            .apiRejected(code: -403, _), .apiRejected(code: -412, _):
-            .requestRestricted
-        case .responseTooLarge, .decodingFailed, .missingData,
-            .invalidSubtitleData, .untrustedSubtitleOrigin,
-            .nonProtobufResponse, .invalidDanmakuData:
-            .invalidResponse
-        case .httpStatus, .apiRejected:
-            .unavailable
-        case .invalidWBIKey, .signingFailed, .invalidMediaData,
-            .noAVCVideo, .noAACAudio, .unsupportedProgressiveMedia,
-            .noPlayableMedia:
-            .invalidResponse
+    /// 目录与正文共用同一映射；两者的非 API 错误都来自 transport，因此 fallback 为传输失败。
+    private static func applicationError(_ error: any Error) -> any Error {
+        BiliAPIError.domainError(
+            for: error,
+            fallback: SubtitleApplicationError.transportFailure
+        ) { failure in
+            switch failure {
+            case .invalidRequest:
+                .invalidRequest
+            case .authorizationRequired, .authenticationInvalid,
+                .authorizationUnavailable:
+                .authenticationRequired
+            case .restricted:
+                .requestRestricted
+            case .transport:
+                .transportFailure
+            case .unexpectedHTTPStatus, .rejected:
+                .unavailable
+            case .unsupportedMedia, .noPlayableMedia, .invalidResponse:
+                .invalidResponse
+            }
         }
     }
 }

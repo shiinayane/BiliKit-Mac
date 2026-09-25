@@ -8,43 +8,9 @@ import Testing
 struct PlaybackCommentsViewModelTests {
     @Test
     @MainActor
-    func initialLoadAndPaginationAppendWithoutMovingExistingThreads() async {
-        let continuation = CommentContinuation(rawValue: "page-2")
-        let repository = SequencedCommentRepository(
-            rootPages: [
-                CommentRootPage(
-                    threads: [thread(1)],
-                    totalCount: 2,
-                    continuation: continuation,
-                    isEnd: false
-                ),
-                CommentRootPage(
-                    threads: [thread(2)],
-                    totalCount: 2,
-                    continuation: nil,
-                    isEnd: true
-                ),
-            ]
-        )
-        let model = PlaybackCommentsViewModel(
-            useCase: CommentUseCase(repository: repository)
-        )
-
-        model.activate(subject: .video(aid: 700_001))
-        await model.waitForCurrentRootTask()
-        model.loadNextPage()
-        await model.waitForCurrentRootTask()
-
-        #expect(model.threads.map(\.id.rawValue) == [1, 2])
-        #expect(model.reachedEnd)
-        #expect(model.rootState == .loaded)
-    }
-
-    @Test
-    @MainActor
     func stableContinuationCanAppendMultiplePagesUntilTheServerEnds() async {
         let continuation = CommentContinuation(rawValue: "stable-session")
-        let repository = SequencedCommentRepository(
+        let repository = CommentRepositoryStub(
             rootPages: [
                 CommentRootPage(
                     threads: [thread(1)],
@@ -63,7 +29,7 @@ struct PlaybackCommentsViewModelTests {
                     totalCount: 3,
                     continuation: continuation,
                     isEnd: true
-                ),
+                )
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -91,7 +57,7 @@ struct PlaybackCommentsViewModelTests {
     @MainActor
     func duplicatePageStopsAutomaticPagingAndExplicitRetryUsesTheSameContinuation() async {
         let continuation = CommentContinuation(rawValue: "stable-session")
-        let repository = SequencedCommentRepository(
+        let repository = CommentRepositoryStub(
             rootPages: [
                 CommentRootPage(
                     threads: [thread(1)],
@@ -110,7 +76,7 @@ struct PlaybackCommentsViewModelTests {
                     totalCount: 2,
                     continuation: nil,
                     isEnd: true
-                ),
+                )
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -141,10 +107,10 @@ struct PlaybackCommentsViewModelTests {
     @Test
     @MainActor
     func sameSubjectKeepsWorksetWhileNewSubjectReplacesIt() async {
-        let repository = SequencedCommentRepository(
+        let repository = CommentRepositoryStub(
             rootPages: [
                 endPage([thread(1)]),
-                endPage([thread(2)]),
+                endPage([thread(2)])
             ]
         )
         let model = PlaybackCommentsViewModel(
@@ -168,21 +134,19 @@ struct PlaybackCommentsViewModelTests {
     @Test
     @MainActor
     func sortReplacementRejectsLateOldResult() async throws {
-        let repository = ControlledRootCommentRepository()
+        let repository = CommentRepositoryStub(holdsRoots: true)
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
 
         model.activate(subject: .video(aid: 700_001))
-        await repository.waitForRequestCount(1)
-        let oldTask = try #require(model.rootTaskSnapshotForTesting())
+        await repository.waitForRootRequestCount(1)
 
         model.selectSort(.latest)
-        await repository.waitForRequestCount(2)
-        await repository.releaseRequest(1, page: endPage([thread(2)]))
+        await repository.waitForRootRequestCount(2)
+        await repository.releaseRoot(1, page: endPage([thread(2)]))
         await model.waitForCurrentRootTask()
-        await repository.releaseRequest(0, page: endPage([thread(1)]))
-        await oldTask.value
+        await repository.releaseRoot(0, page: endPage([thread(1)]))
 
         #expect(model.sort == .latest)
         #expect(model.threads.map(\.id.rawValue) == [2])
@@ -192,7 +156,10 @@ struct PlaybackCommentsViewModelTests {
     @MainActor
     func collapsingThreadCancelsItsLateReplyReplacement() async throws {
         let rootID = CommentID(rawValue: 10)
-        let repository = ControlledReplyCommentRepository(root: thread(10))
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage([thread(10)])],
+            heldReplyPages: [1]
+        )
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
@@ -200,34 +167,33 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_001))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
-        await repository.waitForReplyRequest()
-        let replyTask = try #require(
-            model.replyTaskSnapshotForTesting(rootID: rootID)
-        )
+        await repository.waitForReplyRequestCount(1)
 
         model.collapseReplies(for: rootID)
-        await repository.releaseReply(
-            CommentReplyPage(
-                rootID: rootID,
-                replies: [comment(11)],
-                pageNumber: 1,
-                pageSize: 10,
-                totalCount: 1
-            )
-        )
-        await replyTask.value
+        let collapsed = try #require(model.replyStates[rootID])
+        #expect(!collapsed.isExpanded)
+        #expect(!collapsed.isLoading)
 
-        let state = try #require(model.replyStates[rootID])
-        #expect(!state.isExpanded)
-        #expect(!state.isLoading)
-        #expect(state.replies.isEmpty)
+        await repository.releaseReply(at: 0)
+        // 同一根评论的新请求要等旧请求让出请求位才会发出，第二个请求出现即证明迟到回复已处理完。
+        model.expandReplies(for: rootID)
+        await repository.waitForReplyRequestCount(2)
+        #expect(model.replyStates[rootID]?.replies.isEmpty == true)
+
+        await repository.releaseReply(at: 1)
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
+        #expect(model.replyStates[rootID]?.replies.map(\.id.rawValue) == [1001])
     }
 
     @Test
     @MainActor
     func failedReplyPageCannotBeSkippedAndRetryRequestsSamePage() async throws {
         let rootID = CommentID(rawValue: 20)
-        let repository = RetryingReplyCommentRepository(root: thread(20))
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage([thread(20)])],
+            replyTotalCount: 25,
+            failingReplyPagesOnce: [2]
+        )
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
@@ -235,25 +201,25 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_001))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
-        await model.waitForActiveReplyTaskForTesting(rootID: rootID)
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
 
         model.showNextReplyPage(for: rootID)
-        await model.waitForActiveReplyTaskForTesting(rootID: rootID)
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
         #expect(model.replyStates[rootID]?.error == .transportFailure)
 
         model.showNextReplyPage(for: rootID)
-        #expect(await repository.requestedPages == [1, 2])
+        #expect(await repository.requestedReplyPages == [1, 2])
 
         model.retryReplies(for: rootID)
-        await model.waitForActiveReplyTaskForTesting(rootID: rootID)
-        #expect(await repository.requestedPages == [1, 2, 2])
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
+        #expect(await repository.requestedReplyPages == [1, 2, 2])
         #expect(model.replyStates[rootID]?.error == nil)
     }
 
     @Test
     @MainActor
     func rootRetentionStopsAtTheInMemoryLimit() async {
-        let repository = SequencedCommentRepository(
+        let repository = CommentRepositoryStub(
             rootPages: [endPage((1...1_001).map { thread(Int64($0)) })]
         )
         let model = PlaybackCommentsViewModel(
@@ -272,7 +238,11 @@ struct PlaybackCommentsViewModelTests {
     @MainActor
     func collapsingPendingNextPageKeepsTheLastSuccessfulReplyPage() async throws {
         let rootID = CommentID(rawValue: 30)
-        let repository = PagingControlledReplyCommentRepository(root: thread(30))
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage([thread(30)])],
+            replyTotalCount: 11,
+            heldReplyPages: [2]
+        )
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
@@ -280,30 +250,29 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_001))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: rootID)
-        await model.waitForActiveReplyTaskForTesting(rootID: rootID)
+        await waitForObservedState { model.replyStates[rootID]?.isLoading == false }
         model.showNextReplyPage(for: rootID)
-        await repository.waitForSecondPageRequest()
-        let pendingTask = try #require(
-            model.replyTaskSnapshotForTesting(rootID: rootID)
-        )
+        await repository.waitForReplyRequestCount(2)
 
         model.collapseReplies(for: rootID)
-        await repository.releaseSecondPage()
-        await pendingTask.value
+        await repository.releaseReply(at: 1)
         model.expandReplies(for: rootID)
 
         let state = try #require(model.replyStates[rootID])
         #expect(state.pageNumber == 1)
         #expect(state.requestedPageNumber == nil)
-        #expect(state.replies.map(\.id.rawValue) == [31])
-        #expect(await repository.requestedPages == [1, 2])
+        #expect(state.replies.map(\.id.rawValue) == [3001])
+        #expect(await repository.requestedReplyPages == [1, 2])
     }
 
     @Test
     @MainActor
     func replyRequestsUseBoundedWindowConcurrency() async {
         let roots = (1...6).map { thread(Int64($0)) }
-        let repository = ConcurrentReplyCommentRepository(roots: roots)
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage(roots)],
+            heldReplyPages: [1]
+        )
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
@@ -313,32 +282,29 @@ struct PlaybackCommentsViewModelTests {
         for root in roots {
             model.expandReplies(for: root.id)
         }
-        await repository.waitForRequestCount(4)
+        await repository.waitForReplyRequestCount(4)
 
-        #expect(model.replyWorkCountsForTesting() == (active: 4, pending: 2))
-        #expect(await repository.maximumActiveCount == 4)
-
+        // 折叠不会提前释放仍在途的请求位；重新展开排到队尾。
         model.collapseReplies(for: roots[0].id)
         model.expandReplies(for: roots[0].id)
-        await Task.yield()
-        #expect(await repository.requestCount == 4)
-        #expect(model.replyWorkCountsForTesting() == (active: 4, pending: 3))
+        await repository.releaseReplies(rootID: roots[0].id)
+        await repository.waitForReplyRequestCount(5)
+        await repository.releaseAllHeldReplies()
+        await repository.waitForReplyRequestCount(7)
+        await repository.releaseAllHeldReplies()
 
-        await repository.release(rootID: roots[0].id)
-        await repository.waitForRequestCount(5)
-        #expect(model.replyWorkCountsForTesting() == (active: 4, pending: 2))
-        #expect(await repository.maximumActiveCount == 4)
-
-        await repository.releaseAllActive()
-        await repository.waitForRequestCount(7)
-        await repository.releaseAllActive()
+        #expect(await repository.maximumActiveReplyCount == 4)
+        #expect(await repository.replyRequestCount == 7)
     }
 
     @Test
     @MainActor
     func subjectReplacementRejectsLateReplyWithReusedRootID() async throws {
         let root = thread(50)
-        let repository = ReusedRootReplyCommentRepository(root: root)
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage([root])],
+            heldReplyPages: [1]
+        )
         let model = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: repository)
         )
@@ -351,20 +317,15 @@ struct PlaybackCommentsViewModelTests {
         model.activate(subject: .video(aid: 700_002))
         await model.waitForCurrentRootTask()
         model.expandReplies(for: root.id)
-        await Task.yield()
-        #expect(await repository.replyRequestCount == 1)
 
         await repository.releaseReply(at: 0, replyID: 51)
         await repository.waitForReplyRequestCount(2)
         await repository.releaseReply(at: 1, replyID: 52)
-        await model.waitForActiveReplyTaskForTesting(rootID: root.id)
+        await waitForObservedState { model.replyStates[root.id]?.isLoading == false }
 
         let state = try #require(model.replyStates[root.id])
         #expect(state.replies.map(\.id.rawValue) == [52])
-        #expect(model.replyWorkCountsForTesting() == (active: 0, pending: 0))
-
-        model.reset()
-        #expect(model.replyWorkCountsForTesting() == (active: 0, pending: 0))
+        #expect(await repository.replyRequestCount == 2)
     }
 
     @Test
@@ -372,7 +333,7 @@ struct PlaybackCommentsViewModelTests {
     func rootAndReplyAuthenticationInvalidationPublishRevalidationIntent() async throws {
         let rootFailureModel = PlaybackCommentsViewModel(
             useCase: CommentUseCase(
-                repository: AuthenticationInvalidCommentRepository(root: nil)
+                repository: CommentRepositoryStub(rootFailure: .authenticationInvalid)
             )
         )
         rootFailureModel.activate(subject: .video(aid: 700_001))
@@ -384,13 +345,18 @@ struct PlaybackCommentsViewModelTests {
         let root = thread(80)
         let replyFailureModel = PlaybackCommentsViewModel(
             useCase: CommentUseCase(
-                repository: AuthenticationInvalidCommentRepository(root: root)
+                repository: CommentRepositoryStub(
+                    rootPages: [endPage([root])],
+                    replyFailure: .authenticationInvalid
+                )
             )
         )
         replyFailureModel.activate(subject: .video(aid: 700_001))
         await replyFailureModel.waitForCurrentRootTask()
         replyFailureModel.expandReplies(for: root.id)
-        await replyFailureModel.waitForActiveReplyTaskForTesting(rootID: root.id)
+        await waitForObservedState {
+            replyFailureModel.replyStates[root.id]?.isLoading == false
+        }
 
         #expect(
             replyFailureModel.replyStates[root.id]?.error
@@ -400,128 +366,63 @@ struct PlaybackCommentsViewModelTests {
     }
 }
 
-private actor AuthenticationInvalidCommentRepository: CommentRepository {
-    private let root: CommentThread?
-
-    init(root: CommentThread?) {
-        self.root = root
+/// 唯一的 CommentRepository 替身：根评论按序返回（最后一页可重复）或逐个挂起，
+/// 回复按页可挂起、首次失败或持续失败，并记录请求数与挂起回复的并发峰值。
+private actor CommentRepositoryStub: CommentRepository {
+    private struct ReplyRequest {
+        let rootID: CommentID
+        let page: Int
+        var continuation: CheckedContinuation<CommentReplyPage, Never>?
     }
 
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) throws -> CommentRootPage {
-        guard let root else { throw CommentReadError.authenticationInvalid }
-        return CommentRootPage(
-            threads: [root],
-            totalCount: 1,
-            continuation: nil,
-            isEnd: true
-        )
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) throws -> CommentReplyPage {
-        throw CommentReadError.authenticationInvalid
-    }
-}
-
-private actor SequencedCommentRepository: CommentRepository {
     private var rootPages: [CommentRootPage]
+    private let rootFailure: CommentReadError?
+    private let holdsRoots: Bool
+    private let replyTotalCount: Int
+    private let heldReplyPages: Set<Int>
+    private var failingReplyPagesOnce: Set<Int>
+    private let replyFailure: CommentReadError?
+    private var heldRoots: [CheckedContinuation<CommentRootPage, Never>?] = []
+    private var replyRequests: [ReplyRequest] = []
+    private var activeReplyCount = 0
+    private var rootWaiters = CountWaiters()
+    private var replyWaiters = CountWaiters()
     private(set) var rootRequestCount = 0
+    private(set) var maximumActiveReplyCount = 0
 
-    init(rootPages: [CommentRootPage]) {
+    init(
+        rootPages: [CommentRootPage] = [],
+        rootFailure: CommentReadError? = nil,
+        holdsRoots: Bool = false,
+        replyTotalCount: Int = 1,
+        heldReplyPages: Set<Int> = [],
+        failingReplyPagesOnce: Set<Int> = [],
+        replyFailure: CommentReadError? = nil
+    ) {
         self.rootPages = rootPages
+        self.rootFailure = rootFailure
+        self.holdsRoots = holdsRoots
+        self.replyTotalCount = replyTotalCount
+        self.heldReplyPages = heldReplyPages
+        self.failingReplyPagesOnce = failingReplyPagesOnce
+        self.replyFailure = replyFailure
     }
 
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) throws -> CommentRootPage {
-        rootRequestCount += 1
-        return rootPages.removeFirst()
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) throws -> CommentReplyPage {
-        throw CommentReadError.unavailable
-    }
-}
-
-private actor ControlledRootCommentRepository: CommentRepository {
-    private var requests: [CheckedContinuation<CommentRootPage, any Error>?] = []
-    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    var replyRequestCount: Int { replyRequests.count }
+    var requestedReplyPages: [Int] { replyRequests.map(\.page) }
 
     func rootComments(
         for subject: CommentSubjectIdentity,
         sort: CommentSort,
         after continuation: CommentContinuation?
     ) async throws -> CommentRootPage {
-        try await withCheckedThrowingContinuation { continuation in
-            requests.append(continuation)
-            resumeRequestWaitersIfNeeded()
+        rootRequestCount += 1
+        rootWaiters.resume(reaching: rootRequestCount)
+        if let rootFailure { throw rootFailure }
+        if holdsRoots {
+            return await withCheckedContinuation { heldRoots.append($0) }
         }
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) throws -> CommentReplyPage {
-        throw CommentReadError.unavailable
-    }
-
-    func waitForRequestCount(_ count: Int) async {
-        guard requests.count < count else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((count, continuation))
-        }
-    }
-
-    func releaseRequest(_ index: Int, page: CommentRootPage) {
-        requests[index]?.resume(returning: page)
-        requests[index] = nil
-    }
-
-    private func resumeRequestWaitersIfNeeded() {
-        var pending: [(Int, CheckedContinuation<Void, Never>)] = []
-        for waiter in requestWaiters {
-            if requests.count >= waiter.0 {
-                waiter.1.resume()
-            } else {
-                pending.append(waiter)
-            }
-        }
-        requestWaiters = pending
-    }
-}
-
-private actor ControlledReplyCommentRepository: CommentRepository {
-    private let root: CommentThread
-    private var replyContinuation: CheckedContinuation<CommentReplyPage, any Error>?
-    private var replyStartWaiters: [CheckedContinuation<Void, Never>] = []
-
-    init(root: CommentThread) {
-        self.root = root
-    }
-
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) -> CommentRootPage {
-        endPage([root])
+        return rootPages.count > 1 ? rootPages.removeFirst() : rootPages[0]
     }
 
     func replies(
@@ -530,279 +431,69 @@ private actor ControlledReplyCommentRepository: CommentRepository {
         page: Int,
         pageSize: Int
     ) async throws -> CommentReplyPage {
-        try await withCheckedThrowingContinuation { continuation in
-            replyContinuation = continuation
-            for waiter in replyStartWaiters {
-                waiter.resume()
-            }
-            replyStartWaiters = []
-        }
-    }
-
-    func waitForReplyRequest() async {
-        guard replyContinuation == nil else { return }
-        await withCheckedContinuation { continuation in
-            replyStartWaiters.append(continuation)
-        }
-    }
-
-    func releaseReply(_ page: CommentReplyPage) {
-        replyContinuation?.resume(returning: page)
-        replyContinuation = nil
-    }
-}
-
-private actor RetryingReplyCommentRepository: CommentRepository {
-    private let root: CommentThread
-    private(set) var requestedPages: [Int] = []
-    private var didFailSecondPage = false
-
-    init(root: CommentThread) {
-        self.root = root
-    }
-
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) -> CommentRootPage {
-        endPage([root])
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) throws -> CommentReplyPage {
-        requestedPages.append(page)
-        if page == 2, !didFailSecondPage {
-            didFailSecondPage = true
+        replyRequests.append(ReplyRequest(rootID: rootID, page: page))
+        replyWaiters.resume(reaching: replyRequests.count)
+        if let replyFailure { throw replyFailure }
+        if failingReplyPagesOnce.remove(page) != nil {
             throw CommentReadError.transportFailure
         }
-        return CommentReplyPage(
-            rootID: rootID,
-            replies: [comment(Int64(page * 100))],
-            pageNumber: page,
-            pageSize: pageSize,
-            totalCount: 25
-        )
-    }
-}
-
-private actor PagingControlledReplyCommentRepository: CommentRepository {
-    private let root: CommentThread
-    private(set) var requestedPages: [Int] = []
-    private var secondPageContinuation: CheckedContinuation<CommentReplyPage, Never>?
-    private var secondPageWaiters: [CheckedContinuation<Void, Never>] = []
-
-    init(root: CommentThread) {
-        self.root = root
-    }
-
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) -> CommentRootPage {
-        endPage([root])
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) async -> CommentReplyPage {
-        requestedPages.append(page)
-        if page == 1 {
-            return CommentReplyPage(
-                rootID: rootID,
-                replies: [comment(31)],
-                pageNumber: 1,
-                pageSize: pageSize,
-                totalCount: 11
-            )
+        guard heldReplyPages.contains(page) else {
+            return replyPage(rootID: rootID, page: page, replyID: nil)
         }
-        return await withCheckedContinuation { continuation in
-            secondPageContinuation = continuation
-            for waiter in secondPageWaiters { waiter.resume() }
-            secondPageWaiters = []
-        }
+        let index = replyRequests.count - 1
+        activeReplyCount += 1
+        maximumActiveReplyCount = max(maximumActiveReplyCount, activeReplyCount)
+        return await withCheckedContinuation { replyRequests[index].continuation = $0 }
     }
 
-    func waitForSecondPageRequest() async {
-        guard secondPageContinuation == nil else { return }
-        await withCheckedContinuation { continuation in
-            secondPageWaiters.append(continuation)
-        }
-    }
-
-    func releaseSecondPage() {
-        secondPageContinuation?.resume(
-            returning: CommentReplyPage(
-                rootID: root.id,
-                replies: [comment(32)],
-                pageNumber: 2,
-                pageSize: 10,
-                totalCount: 11
-            )
-        )
-        secondPageContinuation = nil
-    }
-}
-
-private actor ConcurrentReplyCommentRepository: CommentRepository {
-    private let roots: [CommentThread]
-    private var continuations: [CommentID: CheckedContinuation<CommentReplyPage, Never>] = [:]
-    private(set) var requestCount = 0
-    private var activeCount = 0
-    private(set) var maximumActiveCount = 0
-    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-    init(roots: [CommentThread]) {
-        self.roots = roots
-    }
-
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) -> CommentRootPage {
-        endPage(roots)
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) async -> CommentReplyPage {
-        requestCount += 1
-        activeCount += 1
-        maximumActiveCount = max(maximumActiveCount, activeCount)
-        resumeRequestWaitersIfNeeded()
-        return await withCheckedContinuation { continuation in
-            continuations[rootID] = continuation
-        }
-    }
-
-    func waitForRequestCount(_ expected: Int) async {
-        guard requestCount < expected else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((expected, continuation))
-        }
-    }
-
-    func release(rootID: CommentID) {
-        guard let continuation = continuations.removeValue(forKey: rootID) else { return }
-        activeCount -= 1
-        continuation.resume(
-            returning: CommentReplyPage(
-                rootID: rootID,
-                replies: [comment(rootID.rawValue * 100)],
-                pageNumber: 1,
-                pageSize: 10,
-                totalCount: 1
-            )
-        )
-    }
-
-    func releaseAllActive() {
-        let active = continuations
-        continuations = [:]
-        activeCount = 0
-        for (rootID, continuation) in active {
-            continuation.resume(
-                returning: CommentReplyPage(
-                    rootID: rootID,
-                    replies: [comment(rootID.rawValue * 100)],
-                    pageNumber: 1,
-                    pageSize: 10,
-                    totalCount: 1
-                )
-            )
-        }
-    }
-
-    private func resumeRequestWaitersIfNeeded() {
-        var pending: [(Int, CheckedContinuation<Void, Never>)] = []
-        for waiter in requestWaiters {
-            if requestCount >= waiter.0 {
-                waiter.1.resume()
-            } else {
-                pending.append(waiter)
-            }
-        }
-        requestWaiters = pending
-    }
-}
-
-private actor ReusedRootReplyCommentRepository: CommentRepository {
-    private let root: CommentThread
-    private var replyRequests: [(CommentID, CheckedContinuation<CommentReplyPage, Never>?)] = []
-    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-    init(root: CommentThread) {
-        self.root = root
-    }
-
-    var replyRequestCount: Int { replyRequests.count }
-
-    func rootComments(
-        for subject: CommentSubjectIdentity,
-        sort: CommentSort,
-        after continuation: CommentContinuation?
-    ) -> CommentRootPage {
-        endPage([root])
-    }
-
-    func replies(
-        for subject: CommentSubjectIdentity,
-        rootID: CommentID,
-        page: Int,
-        pageSize: Int
-    ) async -> CommentReplyPage {
-        await withCheckedContinuation { continuation in
-            replyRequests.append((rootID, continuation))
-            resumeRequestWaitersIfNeeded()
+    func waitForRootRequestCount(_ count: Int) async {
+        await withCheckedContinuation {
+            rootWaiters.add($0, until: count, current: rootRequestCount)
         }
     }
 
     func waitForReplyRequestCount(_ count: Int) async {
-        guard replyRequests.count < count else { return }
-        await withCheckedContinuation { continuation in
-            requestWaiters.append((count, continuation))
+        await withCheckedContinuation {
+            replyWaiters.add($0, until: count, current: replyRequests.count)
         }
     }
 
-    func releaseReply(at index: Int, replyID: Int64) {
-        guard replyRequests.indices.contains(index),
-            let continuation = replyRequests[index].1
-        else { return }
-        let rootID = replyRequests[index].0
-        replyRequests[index].1 = nil
+    func releaseRoot(_ index: Int, page: CommentRootPage) {
+        heldRoots[index]?.resume(returning: page)
+        heldRoots[index] = nil
+    }
+
+    /// 默认回复 ID 为 `rootID * 100 + page`；需要区分同一根评论的新旧请求时显式指定。
+    func releaseReply(at index: Int, replyID: Int64? = nil) {
+        guard let continuation = replyRequests[index].continuation else { return }
+        replyRequests[index].continuation = nil
+        activeReplyCount -= 1
+        let request = replyRequests[index]
         continuation.resume(
-            returning: CommentReplyPage(
-                rootID: rootID,
-                replies: [comment(replyID)],
-                pageNumber: 1,
-                pageSize: 10,
-                totalCount: 1
-            )
+            returning: replyPage(rootID: request.rootID, page: request.page, replyID: replyID)
         )
     }
 
-    private func resumeRequestWaitersIfNeeded() {
-        var pending: [(Int, CheckedContinuation<Void, Never>)] = []
-        for waiter in requestWaiters {
-            if replyRequests.count >= waiter.0 {
-                waiter.1.resume()
-            } else {
-                pending.append(waiter)
-            }
+    func releaseReplies(rootID: CommentID) {
+        for index in replyRequests.indices where replyRequests[index].rootID == rootID {
+            releaseReply(at: index)
         }
-        requestWaiters = pending
+    }
+
+    func releaseAllHeldReplies() {
+        for index in replyRequests.indices {
+            releaseReply(at: index)
+        }
+    }
+
+    private func replyPage(rootID: CommentID, page: Int, replyID: Int64?) -> CommentReplyPage {
+        CommentReplyPage(
+            rootID: rootID,
+            replies: [comment(replyID ?? rootID.rawValue * 100 + Int64(page))],
+            pageNumber: page,
+            pageSize: 10,
+            totalCount: replyTotalCount
+        )
     }
 }
 

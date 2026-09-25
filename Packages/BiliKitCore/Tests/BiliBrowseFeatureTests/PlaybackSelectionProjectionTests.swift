@@ -133,7 +133,7 @@ struct PlaybackSelectionProjectionTests {
                 pages: [page(1)],
                 collection: collection(sections: [
                     Array(episodes[0..<3]),
-                    Array(episodes[3..<10]),
+                    Array(episodes[3..<10])
                 ])
             )
         )
@@ -207,7 +207,7 @@ struct PlaybackSelectionProjectionTests {
     }
 
     private func projection(
-        context: GuestVideoContext,
+        context: VideoContext,
         selectedEpisodeID: VideoCollectionEpisodeIdentity? = nil,
         requestedBVID: String? = nil,
         requestedCID: Int64? = nil,
@@ -228,7 +228,7 @@ struct PlaybackSelectionProjectionTests {
     private func context(
         pages: [VideoPage],
         collection: VideoCollection? = nil
-    ) -> GuestVideoContext {
+    ) -> VideoContext {
         let detail = VideoDetail(
             bvid: "BVCurrent",
             title: "当前视频",
@@ -245,7 +245,7 @@ struct PlaybackSelectionProjectionTests {
             pages: pages,
             collection: collection
         )
-        return GuestVideoContext(
+        return VideoContext(
             detail: detail,
             pages: pages,
             selectedPage: pages[0],

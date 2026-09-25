@@ -42,7 +42,7 @@ public struct WatchHistoryCardPresentation: Sendable, Equatable {
                 item.title,
                 item.owner.name,
                 LibraryFeatureStrings.localized("观看进度 \(progress)", locale: locale),
-                viewedAt,
+                viewedAt
             ]
         )
     }

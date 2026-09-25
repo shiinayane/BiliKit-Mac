@@ -14,7 +14,7 @@ struct AppUpdaterTests {
             "SUEnableDownloaderService": false,
             "SUVerifyUpdateBeforeExtraction": true,
             "SURequireSignedFeed": true,
-            "SUSignedFeedFailureExpirationInterval": 0,
+            "SUSignedFeedFailureExpirationInterval": 0
         ]
     }
 
@@ -35,29 +35,37 @@ struct AppUpdaterTests {
         #expect(!AppUpdater.hasValidConfiguration(info))
     }
 
-    @Test
-    func feedMustBeCredentialFreeHTTPSAndSigningMustBeEnabled() {
-        #expect(AppUpdater.hasValidConfiguration(configuredInfo))
-        for feed in [
+    @Test(
+        arguments: [
             "http://updates.example.org/appcast.xml",
             "https://user@updates.example.org/appcast.xml",
             "https://updates.example.org/appcast.xml?key=placeholder",
             "https://updates.example.org/appcast.xml#fragment",
             "https://updates.example.org:8080/appcast.xml",
-            "https://updates.example.org/",
-        ] {
-            var info = configuredInfo
-            info["SUFeedURL"] = feed
-            #expect(!AppUpdater.hasValidConfiguration(info))
-        }
-        for key in [
+            "https://updates.example.org/"
+        ]
+    )
+    func feedMustBeCredentialFreeHTTPS(feed: String) {
+        var info = configuredInfo
+        info["SUFeedURL"] = feed
+        #expect(!AppUpdater.hasValidConfiguration(info))
+    }
+
+    @Test(
+        arguments: [
             "SUEnableInstallerLauncherService", "SUVerifyUpdateBeforeExtraction",
-            "SURequireSignedFeed",
-        ] {
-            var info = configuredInfo
-            info[key] = false
-            #expect(!AppUpdater.hasValidConfiguration(info))
-        }
+            "SURequireSignedFeed"
+        ]
+    )
+    func signingSafeguardMustStayEnabled(key: String) {
+        var info = configuredInfo
+        info[key] = false
+        #expect(!AppUpdater.hasValidConfiguration(info))
+    }
+
+    @Test
+    func signedFeedFailuresAndDownloaderServiceStayDisabled() {
+        #expect(AppUpdater.hasValidConfiguration(configuredInfo))
         var info = configuredInfo
         info["SUSignedFeedFailureExpirationInterval"] = 1
         #expect(!AppUpdater.hasValidConfiguration(info))

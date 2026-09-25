@@ -1,5 +1,4 @@
 import BiliPlayback
-import CoreFoundation
 import Foundation
 
 enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identifiable {
@@ -16,7 +15,7 @@ enum PlaybackSourceSelection: String, Sendable, Equatable, CaseIterable, Identif
     var displayName: String {
         switch self {
         case .serverDefault: AppStrings.localized("B 站服务端默认")
-        case .serverAkamai: AppStrings.localized("Akamai（服务端原始）")
+        case .serverAkamai: PlaybackRouteTarget.serverAkamai.appDisplayName
         case .serverBilivideo: AppStrings.localized("bilivideo（服务端原始）")
         default: route?.appDisplayName ?? rawValue
         }
@@ -129,20 +128,11 @@ final class UserDefaultsPlaybackSourcePreferenceStore:
             let raw = defaults.string(forKey: Key.selection),
             let selection = PlaybackSourceSelection(rawValue: raw)
         else { return .defaults }
-        let storedEnabled = defaults.object(
-            forKey: Key.loudnessNormalizationEnabled
-        )
-        let enabled =
-            if let number = storedEnabled as? NSNumber,
-                CFGetTypeID(number) == CFBooleanGetTypeID()
-            {
-                number.boolValue
-            } else {
-                false
-            }
         return PlaybackSourcePreferenceRecord(
             selection: selection,
-            loudnessNormalizationEnabled: enabled
+            loudnessNormalizationEnabled: defaults.strictBool(
+                forKey: Key.loudnessNormalizationEnabled
+            ) ?? false
         )
     }
 

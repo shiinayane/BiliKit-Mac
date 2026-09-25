@@ -1,0 +1,16 @@
+# 每周检查按 SHA 固定的 GitHub Actions，合并为一个 PR。
+# Swift 依赖不交给 Dependabot：它只会更新 Package 目录下的 Package.resolved，不会同步 Xcode 工程
+# 那份锁文件，而发布归档只使用工程锁文件中的版本；swift-protobuf 按精确版本手动升级。
+# npm 清单（DMG 工具、Cloudflare）按发布流程锁定，也不在此自动升级。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci

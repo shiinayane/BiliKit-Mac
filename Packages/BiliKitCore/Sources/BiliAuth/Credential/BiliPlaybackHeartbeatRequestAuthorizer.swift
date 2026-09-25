@@ -7,19 +7,18 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
 {
     private static let allowedPath = "/x/click-interface/web/heartbeat"
     private static let maximumBodySize = 2 * 1_024
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1"
+    private static let userAgent = HTTPUserAgent.browserCompatible
     private static let requiredQueryNames: Set<String> = [
         "w_aid", "w_dt", "w_last_play_progress_time", "w_played_time",
         "w_real_played_time", "w_realtime", "w_start_ts", "web_location",
-        "wts", "w_rid",
+        "wts", "w_rid"
     ]
     private static let optionalQueryNames: Set<String> = ["w_video_duration"]
     private static let requiredBodyNames: Set<String> = [
         "start_ts", "aid", "cid", "type", "sub_type", "dt", "play_type",
         "realtime", "played_time", "real_played_time", "refer_url",
         "last_play_progress_time", "max_play_progress_time", "outer",
-        "mobi_app", "device", "platform", "session",
+        "mobi_app", "device", "platform", "session"
     ]
     private static let optionalBodyNames: Set<String> = ["video_duration"]
 
@@ -45,7 +44,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
         else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
-        guard !Self.containsCredentialHeader(request.headers) else {
+        guard !request.headers.containsCredentialHeader else {
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
@@ -109,7 +108,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
             by: { $0.key.lowercased() }
         )
         let allowedHeaderNames: Set<String> = [
-            "accept", "content-type", "referer", "user-agent",
+            "accept", "content-type", "referer", "user-agent"
         ]
         guard Set(normalizedHeaders.keys) == allowedHeaderNames,
             normalizedHeaders.values.allSatisfy({ $0.count == 1 }),
@@ -204,7 +203,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
             ("played_time", "w_played_time"),
             ("real_played_time", "w_real_played_time"),
             ("realtime", "w_realtime"),
-            ("start_ts", "w_start_ts"),
+            ("start_ts", "w_start_ts")
         ]
         return mirrors.allSatisfy { body[$0.0] == query[$0.1] }
             && body["video_duration"] == query["w_video_duration"]
@@ -282,14 +281,6 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
         guard let value, value.count == count else { return false }
         return value.allSatisfy {
             $0.isNumber || ("a"..."f").contains(String($0))
-        }
-    }
-
-    private static func containsCredentialHeader(_ headers: [String: String]) -> Bool {
-        headers.keys.contains {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-                || $0.caseInsensitiveCompare("Authorization") == .orderedSame
-                || $0.caseInsensitiveCompare("X-CSRF-Token") == .orderedSame
         }
     }
 

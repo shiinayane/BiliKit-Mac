@@ -6,42 +6,26 @@ public struct DanmakuFilter: Sendable, Equatable {
     public var showsScrolling: Bool
     public var showsTop: Bool
     public var showsBottom: Bool
-    public var minimumWeight: Int
-    public var blockedKeywords: [String]
 
     public init(
         showsScrolling: Bool = true,
         showsTop: Bool = true,
-        showsBottom: Bool = true,
-        minimumWeight: Int = 0,
-        blockedKeywords: [String] = []
+        showsBottom: Bool = true
     ) {
         self.showsScrolling = showsScrolling
         self.showsTop = showsTop
         self.showsBottom = showsBottom
-        self.minimumWeight = minimumWeight
-        self.blockedKeywords = Array(
-            blockedKeywords
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .prefix(128)
-        )
     }
 
+    /// 负权重的弹幕不显示，与删除可配置 `minimumWeight`（默认 0）之前的行为一致。
+    private static let minimumWeight = 0
+
     func allows(_ event: DanmakuEvent) -> Bool {
-        guard event.weight >= minimumWeight else { return false }
-        let showsMode =
-            switch event.mode {
-            case .scrolling: showsScrolling
-            case .top: showsTop
-            case .bottom: showsBottom
-            }
-        guard showsMode else { return false }
-        return !blockedKeywords.contains { keyword in
-            event.text.range(
-                of: String(keyword.prefix(64)),
-                options: [.caseInsensitive, .diacriticInsensitive]
-            ) != nil
+        guard event.weight >= Self.minimumWeight else { return false }
+        return switch event.mode {
+        case .scrolling: showsScrolling
+        case .top: showsTop
+        case .bottom: showsBottom
         }
     }
 }

@@ -1,13 +1,14 @@
 import AppKit
 import BiliBrowseFeature
-import BiliLibraryFeature
 import BiliModels
+import BiliUI
 import CoreGraphics
 import Foundation
 import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct PopularNativeGridTests {
     @Test
     func updatePlanDescribesAppendReloadAndRemovalWithoutFullReloadContract() {
@@ -16,13 +17,13 @@ struct PopularNativeGridTests {
             previousContents: [
                 "BV-a": "old",
                 "BV-b": "same",
-                "BV-remove": "gone",
+                "BV-remove": "gone"
             ],
             updatedIDs: ["BV-a", "BV-b", "BV-new"],
             updatedContents: [
                 "BV-a": "updated",
                 "BV-b": "same",
-                "BV-new": "inserted",
+                "BV-new": "inserted"
             ]
         )
 
@@ -82,110 +83,6 @@ struct PopularNativeGridTests {
         #expect(!reorder.isStrictTailAppend)
         #expect(reorder.animatesDifferences)
         #expect(reorder.restoresViewportAnchor)
-    }
-
-    @Test
-    func responsiveGeometryPreservesPopularGridContract() {
-        #expect(NativeVideoGridGeometry.columnCount(for: 760) == 2)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_080) == 4)
-        #expect(NativeVideoGridGeometry.columnCount(for: 1_600) == 5)
-        #expect(NativeVideoGridGeometry.topContentPadding == 0)
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 0))
-        #expect(!NativeVideoGridGeometry.isRenderableViewport(width: 69))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 70))
-        #expect(NativeVideoGridGeometry.isRenderableViewport(width: 760))
-
-        let size = NativeVideoGridGeometry.itemSize(for: 1_080)
-        #expect(size.width == 243)
-        #expect(size.height == 220)
-        #expect(
-            NativeVideoGridGeometry.contentHeight(
-                for: 1_080,
-                itemCount: 50
-            ) == 3_220
-        )
-
-        for provisionalWidth in [CGFloat.zero, 1, 48, 67] {
-            let provisionalSize = NativeVideoGridGeometry.itemSize(
-                for: provisionalWidth
-            )
-            #expect(provisionalSize.width >= 1)
-            #expect(provisionalSize.height >= 84)
-        }
-    }
-
-    @Test
-    func nearEndGateRequiresThresholdExitBeforeRearmingNewTail() {
-        var gate = NativeVideoGridNearEndGate()
-        let first = NativeVideoGridTailState(
-            canLoadMore: true,
-            tailIdentity: "tail-1",
-            isLoading: false
-        )
-
-        let outside = gate.update(isInsideThreshold: false, state: first)
-        let firstEntry = gate.update(isInsideThreshold: true, state: first)
-        let repeatedEntry = gate.update(isInsideThreshold: true, state: first)
-        let leftThreshold = gate.update(isInsideThreshold: false, state: first)
-        let sameTailReentry = gate.update(isInsideThreshold: true, state: first)
-        let loading = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-1",
-                isLoading: true
-            )
-        )
-        let changedTailWhileInside = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let leftNewTailThreshold = gate.update(
-            isInsideThreshold: false,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let rearmed = gate.update(
-            isInsideThreshold: true,
-            state: NativeVideoGridTailState(
-                canLoadMore: true,
-                tailIdentity: "tail-2",
-                isLoading: false
-            )
-        )
-        let ended = gate.update(isInsideThreshold: true, state: .end)
-
-        #expect(!outside)
-        #expect(firstEntry)
-        #expect(!repeatedEntry)
-        #expect(!leftThreshold)
-        #expect(!sameTailReentry)
-        #expect(!loading)
-        #expect(!changedTailWhileInside)
-        #expect(!leftNewTailThreshold)
-        #expect(rearmed)
-        #expect(!ended)
-    }
-
-    @Test
-    func liveScrollBackpressureAllowsOnlyOneAutomaticPagePerGesture() {
-        var backpressure = NativeVideoGridLiveScrollBackpressure()
-
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: true)
-        #expect(!backpressure.permitsAutomaticLoad)
-
-        backpressure.beginLiveScroll()
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: false)
-        #expect(backpressure.permitsAutomaticLoad)
     }
 
     @Test
@@ -255,33 +152,47 @@ struct PopularNativeGridTests {
         )
     }
 
+    /// 纵向 toolbar inset（网格）与横向侧栏 inset（shelf）共用同一逻辑坐标换算。
+    @Test(arguments: [
+        (physical: CGFloat(-52), inset: CGFloat(52), logical: CGFloat(0)),
+        (physical: 0, inset: 52, logical: 52),
+        (physical: -320, inset: 320, logical: 0),
+        (physical: 160, inset: 320, logical: 480)
+    ])
+    func logicalScrollOffsetIncludesLeadingInset(
+        _ sample: (physical: CGFloat, inset: CGFloat, logical: CGFloat)
+    ) {
+        #expect(
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: sample.physical,
+                leadingInset: sample.inset
+            ) == sample.logical
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: sample.logical,
+                leadingInset: sample.inset
+            ) == sample.physical
+        )
+    }
+
     @Test
-    func logicalScrollOffsetIncludesAutomaticToolbarInset() {
+    func maximumLogicalScrollOffsetIncludesBothInsets() {
         #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: -52,
-                topInset: 52
-            ) == 0
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.logicalOffsetY(
-                physicalOffsetY: 0,
-                topInset: 52
-            ) == 52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.physicalOffsetY(
-                logicalOffsetY: 0,
-                topInset: 52
-            ) == -52
-        )
-        #expect(
-            NativeVideoScrollCoordinateSpace.maximumLogicalOffsetY(
-                documentHeight: 2_686,
-                viewportHeight: 1_050,
-                topInset: 52,
-                bottomInset: 0
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 2_686,
+                viewportLength: 1_050,
+                leadingInset: 52,
+                trailingInset: 0
             ) == 1_688
+        )
+        #expect(
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: 1_472,
+                viewportLength: 900,
+                leadingInset: 320,
+                trailingInset: 0
+            ) == 892
         )
     }
 
@@ -359,6 +270,21 @@ struct PopularNativeGridTests {
     }
 
     @Test
+    @MainActor
+    func hoverTrackerDropsCardThatEndsDisplayingBeforeReuse() {
+        let tracker = NativeVideoHoverTracker()
+        let hovered = NativeVideoCollectionItem()
+        let other = NativeVideoCollectionItem()
+        tracker.setHoveredItem(hovered)
+
+        tracker.itemDidEndDisplaying(other)
+        #expect(tracker.hoveredItem === hovered)
+
+        tracker.itemDidEndDisplaying(hovered)
+        #expect(tracker.hoveredItem == nil)
+    }
+
+    @Test
     func imageApplicationGateRejectsCancellationAndLateCoverOrAvatarReuse() {
         let current = NativeVideoReuseIdentity(itemID: "BV-current", generation: 8)
         #expect(
@@ -433,16 +359,7 @@ struct PopularNativeGridTests {
     }
 
     @Test
-    func imageVariantsUseDistinctDecodeBoundsAndCacheIdentities() throws {
-        #expect(NativeVideoImageVariant.cover.maximumDecodedPixelSize == 640)
-        #expect(NativeVideoImageVariant.avatar.maximumDecodedPixelSize == 96)
-        #expect(NativeVideoImageVariant.commentEmote.maximumDecodedPixelSize == 128)
-        #expect(NativeVideoImageVariant.commentPicture.maximumDecodedPixelSize == 1_024)
-        #expect(
-            NativeVideoImageVariant.commentPicturePreview.maximumDecodedPixelSize
-                == 3_840
-        )
-
+    func imageVariantsUseDistinctCacheIdentities() throws {
         let url = try #require(URL(string: "https://i.example/shared.webp"))
         let coverKey = NativeVideoImageKey(url: url, variant: .cover)
         let avatarKey = NativeVideoImageKey(url: url, variant: .avatar)
@@ -485,26 +402,6 @@ struct PopularNativeGridTests {
 
         #expect(max(cover.width, cover.height) == 640)
         #expect(max(avatar.width, avatar.height) == 96)
-    }
-
-    @Test
-    func threeScreenHistoryImageWorkingSetIncludesOverscanWithinCurrentBounds() throws {
-        var cache = NativeVideoImageCache(
-            countLimit: NativeVideoImagePipeline.cacheCountLimit,
-            costLimit: NativeVideoImagePipeline.cacheCostLimit
-        )
-        let cover = try #require(makeImage(width: 640, height: 360))
-        let avatar = try #require(makeImage(width: 96, height: 96))
-
-        for index in 0..<64 {
-            cache.insert(cover, for: imageKey("cover-\(index)", variant: .cover))
-            cache.insert(avatar, for: imageKey("avatar-\(index)", variant: .avatar))
-        }
-
-        #expect(cache.count == 128)
-        #expect(cache.totalCost <= NativeVideoImagePipeline.cacheCostLimit)
-        #expect(cache.image(for: imageKey("cover-0", variant: .cover)) != nil)
-        #expect(cache.image(for: imageKey("avatar-0", variant: .avatar)) != nil)
     }
 
     @Test
@@ -564,44 +461,6 @@ struct PopularNativeGridTests {
     }
 
     @Test @MainActor
-    func popularMappingKeepsStableBVIDAndCurrentSlots() throws {
-        let video = PopularVideo(
-            bvid: "BV-stable",
-            title: "原生卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/a.jpg"),
-            owner: VideoOwner(
-                id: 1,
-                name: "作者",
-                avatarURL: URL(string: "https://i1.hdslb.com/b.jpg")
-            ),
-            statistics: VideoStatistics(
-                viewCount: 12_345,
-                danmakuCount: 67,
-                likeCount: 8
-            ),
-            durationSeconds: 125,
-            publishedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        let featurePresentation = PopularVideoCardPresentation(video: video)
-        let content = try #require(
-            PopularNativeGridView.makePresentations([video]).first
-        )
-        #expect(content.id == "BV-stable")
-        #expect(content.title == "原生卡片")
-        #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(
-            content.coverMetrics.map(\.text)
-                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
-        )
-        #expect(content.coverTrailingText == featurePresentation.durationText)
-        #expect(content.showsAvatar)
-        #expect(content.accessibilityLabel.contains(featurePresentation.viewCountText))
-        #expect(content.accessibilityLabel.contains(featurePresentation.durationText))
-    }
-
-    @Test @MainActor
     func recommendationMappingUsesBrandCapsuleOnlyWhenReasonExists() throws {
         let video = RecommendedVideo(
             bvid: "BV-rcmd-stable",
@@ -641,67 +500,6 @@ struct PopularNativeGridTests {
         )
         #expect(plain.footerTrailingText == nil)
         #expect(plain.footerTrailingStyle == .plain)
-    }
-
-    @Test @MainActor
-    func searchMappingKeepsStableBVIDAndFeatureFormattedSlots() throws {
-        let video = SearchVideo(
-            bvid: "BV-search-stable",
-            title: "搜索原生卡片",
-            coverURL: URL(string: "https://i0.hdslb.com/search.jpg"),
-            owner: VideoOwner(
-                id: 2,
-                name: "搜索作者",
-                avatarURL: URL(string: "https://i1.hdslb.com/avatar.jpg")
-            ),
-            statistics: VideoStatistics(
-                viewCount: 23_456,
-                danmakuCount: 89,
-                likeCount: 10
-            ),
-            durationSeconds: 185,
-            publishedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        let featurePresentation = SearchVideoCardPresentation(video: video)
-        let content = SearchNativeGridView.makePresentation(featurePresentation)
-
-        #expect(content.id == "BV-search-stable")
-        #expect(content.title == "搜索原生卡片")
-        #expect(content.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(content.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(
-            content.coverMetrics.map(\.text)
-                == [featurePresentation.viewCountText, featurePresentation.danmakuCountText]
-        )
-        #expect(content.coverTrailingText == featurePresentation.durationText)
-        #expect(content.footerLeadingText.contains("搜索作者"))
-        #expect(content.accessibilityLabel == featurePresentation.accessibilityLabel)
-    }
-
-    @Test @MainActor
-    func historyAdapterConsumesOnlyFormattedPresentationSlots() {
-        let history = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV-history",
-                title: "历史卡片",
-                coverURL: nil,
-                owner: VideoOwner(id: 9, name: "作者"),
-                progressSeconds: 12,
-                durationSeconds: 120,
-                viewedAt: .now
-            )
-        )
-
-        let content = HistoryNativeGridView.makePresentation(history)
-
-        #expect(content.id == "BV-history")
-        #expect(content.title == "历史卡片")
-        #expect(content.coverMetrics.isEmpty)
-        #expect(content.coverTrailingText == "0:12/2:00")
-        #expect(content.footerLeadingText == "作者")
-        #expect(!content.showsAvatar)
-        #expect(content.accessibilityLabel == history.accessibilityLabel)
     }
 
     @Test

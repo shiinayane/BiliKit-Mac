@@ -8,7 +8,7 @@ public struct BiliMediaCDNURLPolicy: Sendable {
     private static let dedicatedDomainSuffixes = [
         "bilivideo.com",
         "bilivideo.cn",
-        "szbdyd.com",
+        "szbdyd.com"
     ]
 
     private let publicHTTPSPolicy = PublicHTTPSURLPolicy()
@@ -25,9 +25,6 @@ public struct BiliMediaCDNURLPolicy: Sendable {
         }) {
             return true
         }
-        if host.hasPrefix("upos-") && host.hasSuffix(".akamaized.net") {
-            return true
-        }
-        return host.hasSuffix(".example.invalid")
+        return host.hasPrefix("upos-") && host.hasSuffix(".akamaized.net")
     }
 }

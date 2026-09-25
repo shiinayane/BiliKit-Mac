@@ -7,12 +7,12 @@ import Testing
 struct HTTPRangeStreamingClientTests {
     @Test
     func exact206StreamsOnlyAfterValidatedResponseAndStripsCredentials() async throws {
-        RangeStreamURLProtocol.state.configure(
+        StreamingRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 10-13/100",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4; charset=binary",
+                "Content-Type": "video/mp4; charset=binary"
             ],
             chunks: [Data([1, 2]), Data([3, 4])]
         )
@@ -25,7 +25,7 @@ struct HTTPRangeStreamingClientTests {
             headers: [
                 "Cookie": "must-not-leave",
                 "Authorization": "must-not-leave",
-                "Referer": "https://www.bilibili.com/",
+                "Referer": "https://www.bilibili.com/"
             ],
             allowedContentTypes: ["video/mp4"],
             onResponse: { _ in await events.append("response") },
@@ -34,7 +34,7 @@ struct HTTPRangeStreamingClientTests {
 
         #expect(result.byteCount == 4)
         #expect(await events.values.first == "response")
-        let request = RangeStreamURLProtocol.state.lastRequest
+        let request = StreamingRangeURLProtocol.state.lastRequest
         #expect(request?.value(forHTTPHeaderField: "Range") == "bytes=10-13")
         #expect(request?.value(forHTTPHeaderField: "Cookie") == nil)
         #expect(request?.value(forHTTPHeaderField: "Authorization") == nil)
@@ -43,14 +43,14 @@ struct HTTPRangeStreamingClientTests {
 
     @Test
     func rejectsStatusRangeLengthTotalAndContentTypeBeforeBody() async throws {
-        let cases: [(Int, [String: String], HTTPRangeStreamingError)] = [
+        let cases: [(Int, [String: String], HTTPRangeResponseError)] = [
             (200, [:], .statusCode(200)),
             (302, ["Location": "https://redirect.example/video.mp4"], .statusCode(302)),
             (
                 206,
                 [
                     "Content-Range": "bytes 0-2/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedContentRange(
                     expected: try HTTPByteRange(start: 0, endInclusive: 3),
@@ -61,7 +61,7 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/11", "Content-Length": "4",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedCompleteLength(expected: 10, actual: 11)
             ),
@@ -69,7 +69,7 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4",
+                    "Content-Type": "video/mp4"
                 ],
                 .mismatchedContentLength(expected: 4, actual: 3)
             ),
@@ -77,15 +77,15 @@ struct HTTPRangeStreamingClientTests {
                 206,
                 [
                     "Content-Range": "bytes 0-3/10", "Content-Length": "4",
-                    "Content-Type": "text/html",
+                    "Content-Type": "text/html"
                 ],
                 .unsupportedContentType("text/html")
-            ),
+            )
         ]
 
         for (status, headers, expectedError) in cases {
             let events = StreamEventRecorder()
-            RangeStreamURLProtocol.state.configure(
+            StreamingRangeURLProtocol.state.configure(
                 statusCode: status,
                 headers: headers,
                 chunks: [Data([1, 2, 3, 4])]
@@ -102,86 +102,147 @@ struct HTTPRangeStreamingClientTests {
         let headers = [
             "Content-Range": "bytes 0-3/10",
             "Content-Length": "4",
-            "Content-Type": "video/mp4",
+            "Content-Type": "video/mp4"
         ]
-        RangeStreamURLProtocol.state.configure(
+        StreamingRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: headers,
             chunks: [Data([1, 2, 3])]
         )
         await #expect(
-            throws: HTTPRangeStreamingError.bodyLengthMismatch(expected: 4, actual: 3)
+            throws: HTTPRangeResponseError.bodyLengthMismatch(expected: 4, actual: 3)
         ) {
             try await streamFourBytes()
         }
-        RangeStreamURLProtocol.state.configure(
+        StreamingRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: headers,
             chunks: [Data([1, 2, 3, 4, 5])]
         )
         await #expect(
-            throws: HTTPRangeStreamingError.bodyLengthMismatch(expected: 4, actual: 5)
+            throws: HTTPRangeResponseError.bodyLengthMismatch(expected: 4, actual: 5)
         ) {
             try await streamFourBytes()
         }
     }
 
+    @Test(arguments: [nil, "text/html", "application/octet-stream"] as [String?])
+    func unrestrictedContentTypeStillRequiresExactRangeAndLength(
+        contentType: String?
+    ) async throws {
+        var headers = ["Content-Range": "bytes 0-3/10", "Content-Length": "4"]
+        headers["Content-Type"] = contentType
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: headers,
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        #expect(try await streamFourBytes(allowedContentTypes: nil).byteCount == 4)
+
+        headers["Content-Range"] = "bytes 0-3/11"
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: headers,
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        await #expect(
+            throws: HTTPRangeResponseError.mismatchedCompleteLength(expected: 10, actual: 11)
+        ) {
+            try await streamFourBytes(allowedContentTypes: nil)
+        }
+    }
+
+    /// 只有要求时才拒绝缺少 Content-Length 的响应。
+    ///
+    /// DASH 分段允许上游省略该头，progressive 仍要求；两者都按实际字节核对正文长度。
+    @Test(arguments: [true, false])
+    func missingContentLengthIsRejectedOnlyWhenRequired(requiresContentLength: Bool) async throws {
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: ["Content-Range": "bytes 0-3/10", "Content-Type": "video/mp4"],
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        if requiresContentLength {
+            await #expect(throws: HTTPRangeResponseError.missingContentLength) {
+                try await streamFourBytes(requiresContentLength: true)
+            }
+        } else {
+            #expect(try await streamFourBytes(requiresContentLength: false).byteCount == 4)
+        }
+
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: 206,
+            headers: ["Content-Range": "bytes 0-3/10", "Content-Type": "video/mp4"],
+            chunks: [Data([1, 2, 3])]
+        )
+        await #expect(
+            throws: HTTPRangeResponseError.bodyLengthMismatch(expected: 4, actual: 3)
+        ) {
+            try await streamFourBytes(requiresContentLength: false)
+        }
+    }
+
+    /// 下游阻塞期间上游继续送达：最多暂存一个 chunk，回调串行执行，正文完整且有序。
     @Test
-    func slowForwardingAcceptsCompleteBodyWithBoundedChunkDelivery() async throws {
-        RangeStreamURLProtocol.state.configure(
+    func blockedDownstreamReceivesCompleteOrderedBodyOneCallbackAtATime() async throws {
+        StreamingRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 0-3/10",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4",
+                "Content-Type": "video/mp4"
             ],
             chunks: [Data([1, 2]), Data([3, 4])]
         )
-        let recorder = StreamEventRecorder()
+        let consumer = GatedChunkConsumer()
+        let url = try #require(URL(string: "https://cdn.example/video.mp4"))
+        let range = try HTTPByteRange(start: 0, endInclusive: 3)
+        let client = makeClient()
+        let stream = Task {
+            try await client.stream(
+                from: url,
+                rangeHeader: "bytes=0-3",
+                expectedRange: range,
+                expectedCompleteLength: 10,
+                headers: [:],
+                allowedContentTypes: ["video/mp4"],
+                onResponse: { _ in },
+                onChunk: { data in await consumer.consume(data) }
+            )
+        }
 
-        let result = try await makeClient().stream(
-            from: URL(string: "https://cdn.example/video.mp4")!,
-            rangeHeader: "bytes=0-3",
-            expectedRange: try HTTPByteRange(start: 0, endInclusive: 3),
-            expectedCompleteLength: 10,
-            headers: [:],
-            allowedContentTypes: ["video/mp4"],
-            onResponse: { _ in },
-            onChunk: { data in
-                await recorder.append("chunk:\(data.count)")
-                try await Task.sleep(for: .milliseconds(10))
-            }
-        )
+        await StreamingRangeURLProtocol.state.waitUntilDelivered(bytes: 4)
+        await consumer.release()
+        let result = try await stream.value
 
         #expect(result.byteCount == 4)
-        let deliveredSizes = await recorder.values.compactMap {
-            Int($0.replacingOccurrences(of: "chunk:", with: ""))
-        }
-        #expect(deliveredSizes.reduce(0, +) == 4)
-        #expect(deliveredSizes.count <= 2)
+        #expect(await consumer.received == Data([1, 2, 3, 4]))
+        #expect(await consumer.maximumConcurrentCallbacks == 1)
     }
 
     @Test
     func cancellationStopsTheUpstreamTask() async throws {
-        RangeStreamURLProtocol.state.configure(
+        StreamingRangeURLProtocol.state.configure(
             statusCode: 206,
             headers: [
                 "Content-Range": "bytes 0-3/10",
                 "Content-Length": "4",
-                "Content-Type": "video/mp4",
+                "Content-Type": "video/mp4"
             ],
             chunks: [Data([1, 2, 3, 4])],
             delay: 5
         )
         let task = Task { try await streamFourBytes() }
-        await RangeStreamURLProtocol.state.waitUntilStarted()
+        await StreamingRangeURLProtocol.state.waitUntilStarted()
         task.cancel()
         await #expect(throws: (any Error).self) { try await task.value }
-        try await waitUntil { RangeStreamURLProtocol.state.wasStopped }
+        await StreamingRangeURLProtocol.state.waitUntilStopped()
     }
 
     private func streamFourBytes(
-        events: StreamEventRecorder? = nil
+        events: StreamEventRecorder? = nil,
+        allowedContentTypes: Set<String>? = ["video/mp4"],
+        requiresContentLength: Bool = true
     ) async throws -> HTTPRangeStreamResult {
         let url = try #require(URL(string: "https://cdn.example/video.mp4"))
         return try await makeClient().stream(
@@ -190,7 +251,8 @@ struct HTTPRangeStreamingClientTests {
             expectedRange: try HTTPByteRange(start: 0, endInclusive: 3),
             expectedCompleteLength: 10,
             headers: [:],
-            allowedContentTypes: ["video/mp4"],
+            allowedContentTypes: allowedContentTypes,
+            requiresContentLength: requiresContentLength,
             onResponse: { _ in await events?.append("response") },
             onChunk: { data in await events?.append("chunk:\(data.count)") }
         )
@@ -198,19 +260,35 @@ struct HTTPRangeStreamingClientTests {
 
     private func makeClient() -> HTTPRangeStreamingClient {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [RangeStreamURLProtocol.self]
+        configuration.protocolClasses = [StreamingRangeURLProtocol.self]
         return HTTPRangeStreamingClient(
-            transport: URLSessionRangeStreamingTransport(configuration: configuration)
+            transport: URLSessionRangeTransport(configuration: configuration)
         )
     }
+}
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !condition(), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
+/// 第一个 chunk 的回调被挡住直到 `release()`，同时记录并发回调的峰值。
+private actor GatedChunkConsumer {
+    private(set) var received = Data()
+    private(set) var maximumConcurrentCallbacks = 0
+    private var activeCallbacks = 0
+    private var isReleased = false
+    private var gate: CheckedContinuation<Void, Never>?
+
+    func consume(_ data: Data) async {
+        activeCallbacks += 1
+        maximumConcurrentCallbacks = max(maximumConcurrentCallbacks, activeCallbacks)
+        if !isReleased {
+            await withCheckedContinuation { gate = $0 }
         }
-        #expect(condition())
+        received.append(data)
+        activeCallbacks -= 1
+    }
+
+    func release() {
+        isReleased = true
+        gate?.resume()
+        gate = nil
     }
 }
 
@@ -219,109 +297,7 @@ private actor StreamEventRecorder {
     func append(_ value: String) { values.append(value) }
 }
 
-private final class RangeStreamURLProtocol: URLProtocol, @unchecked Sendable {
-    static let state = RangeStreamURLProtocolState()
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        let configuration = Self.state.begin(request: request)
-        guard let url = request.url,
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: configuration.statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: configuration.headers
-            )
-        else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        let deliver: @Sendable () -> Void = { [weak self] in
-            guard let self, !Self.state.wasStopped else { return }
-            for chunk in configuration.chunks {
-                guard !Self.state.wasStopped else { return }
-                Self.state.markDelivered(chunk.count)
-                client?.urlProtocol(self, didLoad: chunk)
-            }
-            client?.urlProtocolDidFinishLoading(self)
-        }
-        if configuration.delay > 0 {
-            DispatchQueue.global().asyncAfter(deadline: .now() + configuration.delay) {
-                deliver()
-            }
-        } else {
-            deliver()
-        }
-    }
-
-    override func stopLoading() { Self.state.markStopped() }
-}
-
-private struct RangeStreamConfiguration: Sendable {
-    let statusCode: Int
-    let headers: [String: String]
-    let chunks: [Data]
-    let delay: TimeInterval
-}
-
-private final class RangeStreamURLProtocolState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var configuration = RangeStreamConfiguration(
-        statusCode: 500,
-        headers: [:],
-        chunks: [],
-        delay: 0
-    )
-    private var stopped = false
-    private var delivered = 0
-    private var capturedRequest: URLRequest?
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-
-    var wasStopped: Bool { lock.withLock { stopped } }
-    var deliveredBodyBytes: Int { lock.withLock { delivered } }
-    var lastRequest: URLRequest? { lock.withLock { capturedRequest } }
-
-    func configure(
-        statusCode: Int,
-        headers: [String: String],
-        chunks: [Data],
-        delay: TimeInterval = 0
-    ) {
-        lock.withLock {
-            configuration = RangeStreamConfiguration(
-                statusCode: statusCode,
-                headers: headers,
-                chunks: chunks,
-                delay: delay
-            )
-            stopped = false
-            delivered = 0
-            capturedRequest = nil
-        }
-    }
-
-    func begin(request: URLRequest) -> RangeStreamConfiguration {
-        let result = lock.withLock {
-            capturedRequest = request
-            let waiters = startWaiters
-            startWaiters.removeAll()
-            return (configuration, waiters)
-        }
-        for waiter in result.1 { waiter.resume() }
-        return result.0
-    }
-
-    func waitUntilStarted() async {
-        await withCheckedContinuation { continuation in
-            let isStarted = lock.withLock {
-                guard capturedRequest == nil else { return true }
-                startWaiters.append(continuation)
-                return false
-            }
-            if isStarted { continuation.resume() }
-        }
-    }
-
-    func markStopped() { lock.withLock { stopped = true } }
-    func markDelivered(_ count: Int) { lock.withLock { delivered += count } }
+private final class StreamingRangeURLProtocol: ScriptedRangeURLProtocol, @unchecked Sendable {
+    private static let sharedState = ScriptedRangeURLProtocolState()
+    override class var state: ScriptedRangeURLProtocolState { sharedState }
 }

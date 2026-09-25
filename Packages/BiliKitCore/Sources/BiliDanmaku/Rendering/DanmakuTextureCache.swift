@@ -31,9 +31,6 @@ final class DanmakuTextureLRUCache {
 
     let limits: Limits
     private(set) var totalCost = 0
-    private(set) var hitCount = 0
-    private(set) var missCount = 0
-    private(set) var evictionCount = 0
     private var entries: [DanmakuTextureCacheKey: Node] = [:]
     private var mostRecentlyUsed: Node?
     private var leastRecentlyUsed: Node?
@@ -44,17 +41,11 @@ final class DanmakuTextureLRUCache {
         self.limits = limits
     }
 
-    var count: Int { entries.count }
-
     func value(
         for key: DanmakuTextureCacheKey
     ) -> DanmakuTexturePayload? {
-        guard let node = entries[key] else {
-            missCount += 1
-            return nil
-        }
+        guard let node = entries[key] else { return nil }
         moveToFront(node)
-        hitCount += 1
         return node.payload
     }
 
@@ -71,7 +62,6 @@ final class DanmakuTextureLRUCache {
             let oldest = leastRecentlyUsed
         {
             remove(oldest)
-            evictionCount += 1
         }
         guard totalCost + payload.byteCost <= limits.maximumTotalCost else {
             return false

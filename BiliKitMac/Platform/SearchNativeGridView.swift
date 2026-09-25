@@ -2,30 +2,25 @@ import BiliBrowseFeature
 import SwiftUI
 
 struct SearchNativeGridView: View {
-    @State private var imageOwner = NativeVideoImagePipelineOwner()
-    let presentations: [SearchVideoCardPresentation]
+    let content: LoadedFeedContent<SearchVideoCardPresentation>
     @Binding var scrollOffsetY: CGFloat
-    let canLoadMore: Bool
-    let tailIdentity: String?
-    let isLoading: Bool
     @Binding var scrollReset: NativeVideoGridScrollResetState
-    let onNearEnd: () -> Void
-    let onSelect: (String) -> Void
+    let imagePipeline: NativeVideoImagePipeline
 
     var body: some View {
         NativeVideoGridView(
-            items: presentations.map(Self.makePresentation),
+            items: content.items.map(Self.makePresentation),
             scrollOffsetY: $scrollOffsetY,
             accessibilityLabel: AppStrings.localized("搜索结果视频"),
             tailState: NativeVideoGridTailState(
-                canLoadMore: canLoadMore,
-                tailIdentity: tailIdentity,
-                isLoading: isLoading
+                canLoadMore: content.canLoadMore,
+                tailIdentity: content.tailIdentity,
+                isLoading: content.isLoadingMore
             ),
             scrollReset: $scrollReset,
-            imagePipeline: imageOwner.pipeline,
-            onNearEnd: onNearEnd,
-            onSelect: onSelect
+            imagePipeline: imagePipeline,
+            onNearEnd: content.loadMore,
+            onSelect: content.select
         )
     }
 
@@ -46,7 +41,7 @@ struct SearchNativeGridView: View {
                 NativeVideoCardMetric(
                     text: presentation.danmakuCountText,
                     systemImage: "text.bubble.fill"
-                ),
+                )
             ],
             coverTrailingText: presentation.durationText,
             footerLeadingText: presentation.footerText,

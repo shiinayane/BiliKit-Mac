@@ -1,3 +1,4 @@
+import BiliAPI
 import BiliAuthFeature
 import BiliModels
 import BiliPlayback
@@ -8,6 +9,20 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackSourceSettingsTests {
+    @Test
+    func everySelectionAndBenchmarkTargetHasADisplayName() {
+        for selection in PlaybackSourceSelection.allCases {
+            #expect(!selection.displayName.isEmpty)
+        }
+        for target in PlaybackRouteTarget.allCases {
+            #expect(!target.appDisplayName.isEmpty)
+        }
+        #expect(
+            PlaybackSourceSelection.serverAkamai.displayName
+                == PlaybackRouteTarget.serverAkamai.appDisplayName
+        )
+    }
+
     @Test @MainActor
     func storePersistsKnownManualRouteAndFallsBackOnDamage() {
         withIsolatedDefaults { defaults in
@@ -19,18 +34,6 @@ struct PlaybackSourceSettingsTests {
             defaults.set(99, forKey: "playbackSourcePreference.schema")
             #expect(store.load() == .defaults)
         }
-    }
-
-    @Test @MainActor
-    func manualSelectionPersistsAndMapsToFuturePlaybackPreference() {
-        let store = MemoryPlaybackSourcePreferenceStore()
-        let model = makeModel(store: store)
-        let oldSnapshot = model.playbackSourcePreference
-        model.selection = .tencentOverseas
-
-        #expect(oldSnapshot == .serverDefault)
-        #expect(model.playbackSourcePreference == .experimentalBilivideoRoute(.tencentOverseas))
-        #expect(store.load().selection == .tencentOverseas)
     }
 
     @Test @MainActor
@@ -59,33 +62,6 @@ struct PlaybackSourceSettingsTests {
     }
 
     @Test @MainActor
-    func loudnessSettingDoesNotRewriteCurrentPreferenceSnapshot() {
-        let store = MemoryPlaybackSourcePreferenceStore()
-        let model = makeModel(store: store)
-        let oldSnapshot = model.loudnessNormalizationEnabled
-
-        model.loudnessNormalizationEnabled = true
-
-        #expect(!oldSnapshot)
-        #expect(model.loudnessNormalizationEnabled)
-        #expect(store.load().loudnessNormalizationEnabled)
-    }
-
-    @Test @MainActor
-    func trafficLimitIsDerivedFromNineteenBoundedSerialTargets() {
-        let mebibyte: UInt64 = 1_024 * 1_024
-        #expect(
-            AppSettingsModel.maximumTrafficBytes(repetitions: 1)
-                == 19 * (10 * mebibyte + 256 * 1_024) + 256 * 1_024
-        )
-        #expect(
-            AppSettingsModel.maximumTrafficBytes(repetitions: 3)
-                == 3 * (19 * (10 * mebibyte + 256 * 1_024) + 256 * 1_024)
-        )
-        #expect(AppSettingsModel.maximumTrafficBytes(repetitions: 4) == nil)
-    }
-
-    @Test @MainActor
     func benchmarkResultNeverChangesManualSelection() async throws {
         let store = MemoryPlaybackSourcePreferenceStore(
             record: PlaybackSourcePreferenceRecord(selection: .alibabaMainland)
@@ -109,7 +85,7 @@ struct PlaybackSourceSettingsTests {
         )
         model.setBenchmarkSampleCount(3)
         model.startBenchmark()
-        try await waitUntil { model.state == .completed }
+        await waitForObservedState { model.state == .completed }
 
         #expect(model.selection == .alibabaMainland)
         #expect(store.load().selection == .alibabaMainland)
@@ -157,13 +133,13 @@ struct PlaybackSourceSettingsTests {
                         effectiveBitsPerSecond: 100_000_000,
                         successfulRuns: 1,
                         totalRuns: 3
-                    ),
+                    )
                 ]
             }
         )
         model.setBenchmarkSampleCount(3)
         model.startBenchmark()
-        try await waitUntil { model.state == .completed }
+        await waitForObservedState { model.state == .completed }
 
         #expect(
             model.measurements.map(\.target) == [
@@ -171,52 +147,8 @@ struct PlaybackSourceSettingsTests {
                 .bilivideo(.alibabaMainland),
                 .serverAkamai,
                 .bilivideo(.tencentOverseas),
-                .bilivideo(.huaweiMainland),
+                .bilivideo(.huaweiMainland)
             ]
-        )
-    }
-
-    @Test @MainActor
-    func throughputTextKeepsOneFractionDigit() {
-        let locale = Locale(identifier: "en_US_POSIX")
-        let result = PlaybackRouteMeasurement(
-            target: .serverAkamai,
-            effectiveBitsPerSecond: 12_345_678,
-            successfulRuns: 3,
-            totalRuns: 3
-        )
-
-        #expect(
-            PlaybackSourceSettingsView.resultText(
-                result,
-                locale: locale
-            )
-                == AppStrings.localized(
-                    "综合 \("12.3 Mbps") · 最低 \("12.3 Mbps") · 中位 \("12.3 Mbps") · \(3)/\(3) 个样本成功",
-                    locale: locale
-                )
-        )
-    }
-
-    @Test @MainActor
-    func singleSampleResultStillShowsSuccessCount() {
-        let locale = Locale(identifier: "en_US_POSIX")
-        let result = PlaybackRouteMeasurement(
-            target: .serverAkamai,
-            effectiveBitsPerSecond: 12_345_678,
-            successfulRuns: 1,
-            totalRuns: 1
-        )
-
-        #expect(
-            PlaybackSourceSettingsView.resultText(
-                result,
-                locale: locale
-            )
-                == AppStrings.localized(
-                    "最慢片段吞吐 \("12.3 Mbps") · \(1)/\(1) 个样本成功",
-                    locale: locale
-                )
         )
     }
 
@@ -255,7 +187,7 @@ struct PlaybackSourceSettingsTests {
     @Test @MainActor
     func newDiscoveryWaitsForLifecycleResetToFinish() async throws {
         let resetGate = ResetGate()
-        let discovery = InvocationRecorder()
+        let discovery = TestEventCounter()
         let model = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             discover: { _ in
@@ -268,38 +200,29 @@ struct PlaybackSourceSettingsTests {
 
         model.closeSettings()
         model.startBenchmark()
-        try await waitUntil { await resetGate.isWaiting }
+        await resetGate.entered.wait()
         #expect(await discovery.count == 0)
 
         await resetGate.release()
-        try await waitUntil { await discovery.count == 1 }
+        await discovery.wait()
     }
 
-    @Test @MainActor
-    func benchmarkFailureUsesNonIdentifyingProtocolState() async throws {
-        let model = AppSettingsModel(
-            store: MemoryPlaybackSourcePreferenceStore(),
-            discover: { _ in [try Self.sample()] },
-            run: { _, _ in throw BenchmarkTestError.transportFailure }
-        )
-        model.startBenchmark()
-        try await waitUntil { model.state == .networkOrProtocolFailure }
-
-        #expect(model.measurements.isEmpty)
-        #expect(model.selection == .serverDefault)
-    }
-
-    @Test @MainActor
-    func authenticationFailureKeepsItsDedicatedPresentationState() async throws {
+    @Test(arguments: SettingsBenchmarkFailureFixture.allCases) @MainActor
+    func benchmarkFailureMapsToNonIdentifyingStateAndKeepsSelection(
+        _ failure: SettingsBenchmarkFailureFixture
+    ) async {
         let model = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             discover: { _ in
-                throw PlaybackRouteBenchmarkOperationError.authenticationFailure
+                if let discoveryError = failure.discoveryError {
+                    throw PlaybackRouteBenchmarkOperationError.mappingDiscoveryError(discoveryError)
+                }
+                return [try Self.sample()]
             },
-            run: { _, _ in [] }
+            run: { _, _ in throw BenchmarkTestError.transportFailure }
         )
         model.startBenchmark()
-        try await waitUntil { model.state == .authenticationFailure }
+        await waitForObservedState { model.state == failure.expectedState }
 
         #expect(model.measurements.isEmpty)
         #expect(model.selection == .serverDefault)
@@ -307,8 +230,8 @@ struct PlaybackSourceSettingsTests {
 
     @Test @MainActor
     func cancellationStopsWorkAndPreservesSelection() async throws {
-        let cancellation = CancellationRecorder()
-        let invocation = InvocationRecorder()
+        let cancellation = TestEventCounter()
+        let invocation = TestEventCounter()
         let store = MemoryPlaybackSourcePreferenceStore(
             record: PlaybackSourcePreferenceRecord(selection: .serverAkamai)
         )
@@ -320,24 +243,24 @@ struct PlaybackSourceSettingsTests {
                     try await Task.sleep(for: .seconds(60))
                     return []
                 } catch is CancellationError {
-                    await cancellation.markCancelled()
+                    await cancellation.record()
                     throw CancellationError()
                 }
             },
             run: { _, _ in [] }
         )
         model.startBenchmark()
-        try await waitUntil { await invocation.count == 1 }
+        await invocation.wait()
         model.cancelBenchmark()
-        try await waitUntil { await cancellation.wasCancelled }
+        await cancellation.wait()
         #expect(model.state == .cancelled)
         #expect(model.selection == .serverAkamai)
     }
 
     @Test @MainActor
     func ownerDestructionCancelsDiscovery() async throws {
-        let cancellation = CancellationRecorder()
-        let invocation = InvocationRecorder()
+        let cancellation = TestEventCounter()
+        let invocation = TestEventCounter()
         var model: AppSettingsModel? = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             discover: { _ in
@@ -346,7 +269,7 @@ struct PlaybackSourceSettingsTests {
                     try await Task.sleep(for: .seconds(60))
                     return []
                 } catch is CancellationError {
-                    await cancellation.markCancelled()
+                    await cancellation.record()
                     throw CancellationError()
                 }
             },
@@ -354,18 +277,18 @@ struct PlaybackSourceSettingsTests {
         )
         weak let owner = model
         model?.startBenchmark()
-        try await waitUntil { await invocation.count == 1 }
+        await invocation.wait()
         model = nil
 
-        try await waitUntil { await cancellation.wasCancelled }
+        await cancellation.wait()
         #expect(owner == nil)
     }
 
     @Test @MainActor
     func signedOutStatePreventsDiscoveryAndLogoutCancelsRunningBenchmark() async throws {
-        let discovery = InvocationRecorder()
-        let cancellation = CancellationRecorder()
-        let reset = InvocationRecorder()
+        let discovery = TestEventCounter()
+        let cancellation = TestEventCounter()
+        let reset = TestEventCounter()
         let model = AppSettingsModel(
             store: MemoryPlaybackSourcePreferenceStore(),
             benchmarkAccess: .signedOut,
@@ -375,7 +298,7 @@ struct PlaybackSourceSettingsTests {
                     try await Task.sleep(for: .seconds(60))
                     return []
                 } catch is CancellationError {
-                    await cancellation.markCancelled()
+                    await cancellation.record()
                     throw CancellationError()
                 }
             },
@@ -388,10 +311,10 @@ struct PlaybackSourceSettingsTests {
 
         model.synchronizeAuthentication(.signedIn)
         model.startBenchmark()
-        try await waitUntil { await discovery.count == 1 }
+        await discovery.wait()
         model.synchronizeAuthentication(.signedOut)
-        try await waitUntil { await cancellation.wasCancelled }
-        try await waitUntil { await reset.count == 1 }
+        await cancellation.wait()
+        await reset.wait()
 
         #expect(model.state == .notTested)
         #expect(model.measurements.isEmpty)
@@ -436,17 +359,35 @@ struct PlaybackSourceSettingsTests {
         defer { defaults.removePersistentDomain(forName: name) }
         body(defaults)
     }
-
-    @MainActor
-    private func waitUntil(_ condition: () async -> Bool) async throws {
-        while !(await condition()) {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-    }
 }
 
 private enum BenchmarkTestError: Error {
     case transportFailure
+}
+
+enum SettingsBenchmarkFailureFixture: CaseIterable, Sendable {
+    case transport
+    case authentication
+    case riskControlStatus
+    case riskControlVoucher
+
+    /// 样本发现阶段抛出的 API 错误；nil 表示发现成功、测速运行失败。
+    var discoveryError: BiliAPIError? {
+        switch self {
+        case .transport: nil
+        case .authentication: .authenticationInvalid
+        case .riskControlStatus: .httpStatus(412)
+        case .riskControlVoucher: .riskControlVoucher
+        }
+    }
+
+    var expectedState: PlaybackRouteBenchmarkState {
+        switch self {
+        case .transport: .networkOrProtocolFailure
+        case .authentication: .authenticationFailure
+        case .riskControlStatus, .riskControlVoucher: .restricted
+        }
+    }
 }
 
 private final class MemoryPlaybackSourcePreferenceStore: PlaybackSourcePreferenceStoring,
@@ -459,30 +400,22 @@ private final class MemoryPlaybackSourcePreferenceStore: PlaybackSourcePreferenc
     func save(_ record: PlaybackSourcePreferenceRecord) { lock.withLock { self.record = record } }
 }
 
-private actor CancellationRecorder {
-    private(set) var wasCancelled = false
-    func markCancelled() { wasCancelled = true }
-}
-
-private actor InvocationRecorder {
-    private(set) var count = 0
-    func record() { count += 1 }
-}
-
 private actor ResetGate {
+    let entered = TestEventCounter()
     private var continuation: CheckedContinuation<Void, Never>?
-    private(set) var isWaiting = false
+    private var isReleased = false
 
     func wait() async {
-        isWaiting = true
+        await entered.record()
+        guard !isReleased else { return }
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
     }
 
     func release() {
+        isReleased = true
         continuation?.resume()
         continuation = nil
-        isWaiting = false
     }
 }

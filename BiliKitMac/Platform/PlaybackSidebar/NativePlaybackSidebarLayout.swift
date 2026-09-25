@@ -497,7 +497,7 @@ private final class NativePlaybackSidebarTextMeasurer {
                     .font: font,
                     .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle(
                         maximumLines: maximumLines
-                    ),
+                    )
                 ]
             )
         )

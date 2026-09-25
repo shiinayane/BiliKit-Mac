@@ -8,7 +8,7 @@ struct HTTPRangeClientTests {
     @Test
     func sendsRangeHeaderAndAcceptsMatchingPartialResponse() async throws {
         let url = try #require(URL(string: "https://cdn.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(
                     statusCode: 206,
@@ -39,7 +39,7 @@ struct HTTPRangeClientTests {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
         let third = try #require(URL(string: "https://third.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(statusCode: 403, body: Data()),
                 HTTPResponse(
@@ -51,7 +51,7 @@ struct HTTPRangeClientTests {
                     statusCode: 206,
                     headers: ["Content-Range": "bytes 10-12/100"],
                     body: Data([2, 3, 4])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)
@@ -69,49 +69,46 @@ struct HTTPRangeClientTests {
     func reportsAllCandidateFailuresWithoutResponseBodies() async throws {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(statusCode: 403, body: Data("secret-page".utf8)),
                 HTTPResponse(
                     statusCode: 206,
                     headers: [:],
                     body: Data([0, 1, 2])
-                ),
+                )
             ]
         )
         let client = HTTPRangeClient(transport: transport)
 
-        do {
-            _ = try await client.fetch(
+        let error = await #expect(throws: HTTPRangeClientError.self) {
+            try await client.fetch(
                 from: [first, second],
                 range: try HTTPByteRange(start: 0, endInclusive: 2)
             )
-            Issue.record("Expected every CDN candidate to fail")
-        } catch HTTPRangeClientError.allCandidatesFailed(let attempts) {
-            #expect(
-                attempts == [
-                    HTTPRangeAttempt(url: first, failure: .statusCode(403)),
-                    HTTPRangeAttempt(url: second, failure: .missingContentRange),
-                ]
-            )
-            #expect(!String(describing: attempts).contains("secret-page"))
         }
+        #expect(
+            error
+                == .allCandidatesFailed([
+                    HTTPRangeAttempt(url: first, failure: .statusCode(403)),
+                    HTTPRangeAttempt(url: second, failure: .missingContentRange)
+                ])
+        )
+        #expect(!String(describing: error).contains("secret-page"))
     }
 
     @Test
     func cancellationStopsTheActiveRequestWithoutTryingBackup() async throws {
         let first = try #require(URL(string: "https://first.example/media"))
         let second = try #require(URL(string: "https://second.example/media"))
-        let transport = CancellationObservingTransport()
+        let transport = StubTransport(hangsWhenExhausted: true)
         let client = HTTPRangeClient(transport: transport)
         let range = try HTTPByteRange(start: 0, endInclusive: 2)
 
         let task = Task {
             try await client.fetch(from: [first, second], range: range)
         }
-        try await waitUntil {
-            await transport.hasStarted
-        }
+        await transport.waitForFirstRequest()
         task.cancel()
 
         await #expect(throws: CancellationError.self) {
@@ -129,7 +126,7 @@ struct HTTPRangeClientTests {
         let hexadecimalLocal = try #require(URL(string: "https://0x7f000001/media"))
         let plaintext = try #require(URL(string: "http://cdn.example/media"))
         let safe = try #require(URL(string: "https://cdn.example/media"))
-        let transport = RangeStubTransport(
+        let transport = StubTransport(
             responses: [
                 HTTPResponse(
                     statusCode: 206,
@@ -147,7 +144,7 @@ struct HTTPRangeClientTests {
                 octalLocal,
                 hexadecimalLocal,
                 plaintext,
-                safe,
+                safe
             ],
             range: try HTTPByteRange(start: 0, endInclusive: 2)
         )
@@ -155,55 +152,4 @@ struct HTTPRangeClientTests {
         #expect(result.sourceURL == safe)
         #expect(await transport.requests.map(\.url) == [safe])
     }
-
-    private func waitUntil(
-        _ condition: () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !(await condition()), clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        #expect(await condition())
-    }
-}
-
-private actor RangeStubTransport: HTTPTransport {
-    private var queuedResponses: [HTTPResponse]
-    private(set) var requests: [HTTPRequest] = []
-
-    init(responses: [HTTPResponse]) {
-        queuedResponses = responses
-    }
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        guard !queuedResponses.isEmpty else {
-            throw RangeStubError.noResponse
-        }
-        return queuedResponses.removeFirst()
-    }
-}
-
-private actor CancellationObservingTransport: HTTPTransport {
-    private(set) var requests: [HTTPRequest] = []
-    private(set) var hasStarted = false
-    private(set) var wasCancelled = false
-
-    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
-        hasStarted = true
-
-        do {
-            try await Task.sleep(for: .seconds(60))
-            return HTTPResponse(statusCode: 500, body: Data())
-        } catch is CancellationError {
-            wasCancelled = true
-            throw CancellationError()
-        }
-    }
-}
-
-private enum RangeStubError: Error {
-    case noResponse
 }

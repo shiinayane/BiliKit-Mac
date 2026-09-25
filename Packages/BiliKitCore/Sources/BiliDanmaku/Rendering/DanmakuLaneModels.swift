@@ -12,7 +12,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             surfaceWidth: surfaceWidth,
             surfaceHeight: surfaceHeight,
             laneHeight: 36,
-            minimumHorizontalGap: 64,
+            minimumHorizontalGap: DanmakuDensityAdmissionPolicy(.default).minimumHorizontalGap,
             maximumActiveCount: hardMaximumActiveCount,
             displayAreaFraction: 1
         )
@@ -50,7 +50,7 @@ public struct DanmakuLaneConfiguration: Sendable, Equatable {
             surfaceHeight,
             laneHeight,
             minimumHorizontalGap,
-            displayAreaFraction,
+            displayAreaFraction
         ]
         guard values.allSatisfy(\.isFinite),
             surfaceWidth > 0,

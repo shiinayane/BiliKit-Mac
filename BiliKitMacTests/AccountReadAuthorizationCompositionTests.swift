@@ -5,6 +5,7 @@ import Testing
 @testable import BiliAuth
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct AccountReadAuthorizationCompositionTests {
     @Test
     @MainActor
@@ -16,8 +17,7 @@ struct AccountReadAuthorizationCompositionTests {
         )
         #expect(
             AppEnvironment.mainAccountReadAllowedPaths == [
-                "/x/player/pagelist",
-                "/x/player/playurl",
+                "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/v2/reply/reply",
@@ -28,12 +28,13 @@ struct AccountReadAuthorizationCompositionTests {
                 "/x/web-interface/popular",
                 "/x/web-interface/view",
                 "/x/web-interface/wbi/index/top/feed/rcmd",
-                "/x/web-interface/wbi/search/type",
+                "/x/web-interface/wbi/search/type"
             ]
         )
         #expect(
             AppEnvironment.cdnBenchmarkAccountReadAllowedPaths == [
-                "/x/player/playurl"
+                "/x/player/wbi/playurl",
+                "/x/web-interface/view"
             ]
         )
         #expect(AppEnvironment.watchProgressAccountReadAllowedPaths == nil)
@@ -46,7 +47,7 @@ struct AccountReadAuthorizationCompositionTests {
         let configuredCapabilities = [
             AppEnvironment.accountSessionValidationAllowedPaths,
             AppEnvironment.mainAccountReadAllowedPaths,
-            AppEnvironment.cdnBenchmarkAccountReadAllowedPaths,
+            AppEnvironment.cdnBenchmarkAccountReadAllowedPaths
         ]
 
         for allowedPaths in configuredCapabilities {

@@ -23,7 +23,7 @@ struct VideoSearchCriteriaTests {
     @Test(arguments: [
         (VideoPublicationFilter.today, 0),
         (.lastSevenDays, -6),
-        (.last180Days, -179),
+        (.last180Days, -179)
     ])
     func relativeRangesFreezeToLocalNaturalDays(
         filter: VideoPublicationFilter,
@@ -108,46 +108,49 @@ struct VideoSearchCriteriaTests {
         )
     }
 
-    @Test
-    func naturalDayRangeFollowsCalendarAcrossDaylightSavingChanges() throws {
+    /// 洛杉矶 2026-03-08 进入夏令时（23 小时），2026-11-01 退出（25 小时）。
+    @Test(arguments: [(3, 8, 23), (11, 1, 25)])
+    func naturalDayRangeFollowsCalendarAcrossDaylightSavingChanges(
+        month: Int,
+        day: Int,
+        expectedHours: Int
+    ) throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
 
-        for (month, day, expectedHours) in [(3, 8, 23), (11, 1, 25)] {
-            let now = try #require(
-                calendar.date(
-                    from: DateComponents(
-                        year: 2026,
-                        month: month,
-                        day: day,
-                        hour: 12
-                    )
+        let now = try #require(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026,
+                    month: month,
+                    day: day,
+                    hour: 12
                 )
             )
-            let begin = calendar.startOfDay(for: now)
-            let endExclusive = try #require(
-                calendar.date(byAdding: .day, value: 1, to: begin)
+        )
+        let begin = calendar.startOfDay(for: now)
+        let endExclusive = try #require(
+            calendar.date(byAdding: .day, value: 1, to: begin)
+        )
+        let range = try #require(
+            try VideoPublicationRangeResolver.resolve(
+                filter: .today,
+                customStart: now,
+                customEnd: now,
+                now: now,
+                calendar: calendar
             )
-            let range = try #require(
-                try VideoPublicationRangeResolver.resolve(
-                    filter: .today,
-                    customStart: now,
-                    customEnd: now,
-                    now: now,
-                    calendar: calendar
-                )
-            )
+        )
 
-            #expect(range.beginTimestamp == Int64(begin.timeIntervalSince1970))
-            #expect(
-                range.endTimestamp
-                    == Int64(endExclusive.timeIntervalSince1970) - 1
-            )
-            #expect(
-                range.endTimestamp - range.beginTimestamp
-                    == Int64(expectedHours * 60 * 60 - 1)
-            )
-        }
+        #expect(range.beginTimestamp == Int64(begin.timeIntervalSince1970))
+        #expect(
+            range.endTimestamp
+                == Int64(endExclusive.timeIntervalSince1970) - 1
+        )
+        #expect(
+            range.endTimestamp - range.beginTimestamp
+                == Int64(expectedHours * 60 * 60 - 1)
+        )
     }
 
     @Test

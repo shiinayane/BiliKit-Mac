@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliKit
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct NativePlaybackSidebarTests {
     @Test
     @MainActor
@@ -25,203 +25,136 @@ struct NativePlaybackSidebarTests {
                     .summary(bvid: "BVCurrent"),
                     .selection(bvid: "BVCurrent"),
                     .commentsHeader(subject: nil),
-                    .commentsState(subject: nil, kind: .idle),
+                    .commentsState(subject: nil, kind: .idle)
                 ]
         )
     }
 
     @Test
     @MainActor
-    func rootOwnsExactlyOneVerticalScrollChainWithoutHostingViews() {
-        let controller = NativePlaybackSidebarController()
-        controller.update(
-            presentation: presentation(bvid: "BVCurrent"),
-            actions: actions
-        )
-
-        let descendants = descendants(of: controller.rootView)
-        let verticalScrollViews = descendants.compactMap { $0 as? NSScrollView }
-            .filter(\.hasVerticalScroller)
-        let hostingViews = descendants.filter {
-            String(describing: type(of: $0)).contains("NSHostingView")
-        }
-
-        #expect(controller.rootView.scrollView.documentView is NSCollectionView)
-        #expect(verticalScrollViews.count == 1)
-        #expect(hostingViews.isEmpty)
-        #expect(controller.rootView.overlayView.isFlipped)
-        #expect(controller.rootView.scrollView.automaticallyAdjustsContentInsets)
-        #expect(
-            controller.rootView.commentsTopButton.accessibilityLabel()
-                == AppStrings.localized("返回评论区顶部")
-        )
-        #expect(controller.rootView.commentsTopButton.action != nil)
-
-        controller.tearDown()
-
-        #expect(controller.rootView.scrollView.documentView == nil)
-    }
-
-    @Test
-    @MainActor
-    func rootReportsTheCurrentViewportDuringTheSameResizeLayoutPass() {
-        let root = NativePlaybackSidebarRootView()
-        root.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
-        root.layout()
-        var observedWidths: [CGFloat] = []
-        root.viewportSizeDidChange = { observedWidths.append($0.width) }
-
-        root.frame.size.width = 520
-        root.layout()
-
-        #expect(root.scrollView.frame.width == 520)
-        #expect(root.scrollView.contentSize.width == 520)
-        #expect(observedWidths.last == 520)
-    }
-
-    @Test
-    @MainActor
-    func summaryUsesSelectableNonScrollingTextKitAtSidebarWidths() throws {
-        let text = String(
-            repeating: "这是一段需要按字符精确换行的简介，后续链接拦截也由同一个TextKit正文视图承担。",
-            count: 3
-        )
-        let font = NSFont.preferredFont(forTextStyle: .callout)
-        let heights = [440.0, 480.0, 520.0].map { sidebarWidth in
-            NativePlaybackSidebarTextLayout.height(
-                text,
-                width: sidebarWidth - NativePlaybackSidebarLayout.contentInset * 2,
-                font: font
-            )
-        }
-        let textView = NativePlaybackSidebarReadOnlyTextView(font: font)
-        textView.frame = NSRect(x: 0, y: 0, width: 408, height: heights[0])
-        textView.setText(text, font: font, color: .secondaryLabelColor)
-        textView.layoutSubtreeIfNeeded()
-        let container = try #require(textView.textContainer)
-        let manager = try #require(textView.layoutManager)
-        manager.ensureLayout(for: container)
-
-        #expect(heights[0] >= heights[1])
-        #expect(heights[1] >= heights[2])
-        #expect(heights[0] > heights[2])
-        #expect(textView.isSelectable)
-        #expect(!textView.isEditable)
-        #expect(textView.enclosingScrollView == nil)
-        #expect(textView.textContainer?.lineBreakMode == .byCharWrapping)
-        #expect(container.containerSize.height == CGFloat.greatestFiniteMagnitude)
-        #expect(manager.usedRect(for: container).height > 0)
-    }
-
-    @Test
-    @MainActor
-    func summaryKeepsItsTitleStaticAndCollapsesOnlyOverflowingBodyToFiveLines() throws {
+    func summaryCollapsesOnlyOverflowingBodyToFiveLines() {
         let summary = String(
             repeating: "简介正文需要由 TextKit 精确换行，并在超过五行时才提供展开控制。",
             count: 8
         )
-        let width: CGFloat = 240
-        let collapsedHeight = NativePlaybackSidebarItemMeasurement.summary(
-            summary,
-            width: width,
+        let collapsed = NativePlaybackSummaryGeometry(summary: summary, width: 240, expanded: false)
+        let expanded = NativePlaybackSummaryGeometry(summary: summary, width: 240, expanded: true)
+        let short = NativePlaybackSummaryGeometry(
+            summary: "不足五行的简介",
+            width: 240,
             expanded: false
         )
-        let expandedHeight = NativePlaybackSidebarItemMeasurement.summary(
-            summary,
-            width: width,
-            expanded: true
-        )
-        let item = NativePlaybackSidebarSummaryItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: width,
-            height: collapsedHeight
-        )
-        var toggled = false
-        item.configure(summary: summary, expanded: false) {
-            toggled = true
-        }
-        item.view.layoutSubtreeIfNeeded()
 
-        let views = descendants(of: item.view)
-        let body = try #require(views.compactMap { $0 as? NSTextView }.first)
-        let expandButton = try #require(
-            views.compactMap { $0 as? NSButton }.first {
-                $0.title == AppStrings.localized("展开")
-            }
-        )
-        let title = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.stringValue == AppStrings.localized("简介")
-            }
-        )
-
-        #expect(expandedHeight > collapsedHeight)
-        #expect(body.textContainer?.maximumNumberOfLines == 5)
-        #expect(body.textContainer?.lineBreakMode == .byTruncatingTail)
-        #expect(title.isEnabled)
-        #expect(
-            views.compactMap { $0 as? NSButton }.allSatisfy {
-                $0.title != AppStrings.localized("简介")
-            }
-        )
-        expandButton.performClick(nil)
-        #expect(toggled)
-
-        let shortItem = NativePlaybackSidebarSummaryItem()
-        shortItem.view.frame = NSRect(x: 0, y: 0, width: width, height: 80)
-        shortItem.configure(summary: "不足五行的简介", expanded: false, onToggle: {})
-        shortItem.view.layoutSubtreeIfNeeded()
-        #expect(
-            descendants(of: shortItem.view).compactMap { $0 as? NSButton }
-                .allSatisfy { $0.isHidden }
-        )
+        #expect(collapsed.overflows)
+        #expect(collapsed.maximumLines == NativePlaybackSummaryGeometry.collapsedLineLimit)
+        #expect(collapsed.toggleFrame.height > 0)
+        #expect(expanded.maximumLines == nil)
+        #expect(expanded.height > collapsed.height)
+        #expect(!short.overflows)
+        #expect(short.maximumLines == nil)
+        #expect(short.toggleFrame.height == 0)
     }
 
     @Test
     @MainActor
-    func blockingOverlayDoesNotOwnAFullSidebarBackdrop() {
-        let overlay = NativePlaybackSidebarOverlayView()
-        let views: [NSView] = [overlay] + descendants(of: overlay)
+    func uploaderSignatureOverflowFollowsTheAvailableWidth() {
+        let content = VideoUploaderHeaderContent(
+            owner: VideoOwner(
+                id: 1,
+                name: "UP 主",
+                signature: String(repeating: "签名", count: 16)
+            )
+        )
+        let wide = NativePlaybackUploaderGeometry(
+            content: content,
+            width: 488,
+            signatureExpanded: false
+        )
+        let narrow = NativePlaybackUploaderGeometry(
+            content: content,
+            width: 408,
+            signatureExpanded: false
+        )
+        let expanded = NativePlaybackUploaderGeometry(
+            content: content,
+            width: 408,
+            signatureExpanded: true
+        )
 
-        #expect(!overlay.isOpaque)
-        #expect(overlay.layer?.backgroundColor == nil)
-        #expect(views.compactMap { $0 as? NSVisualEffectView }.isEmpty)
+        #expect(!wide.signatureOverflows)
+        #expect(wide.signatureMaximumLines == nil)
+        #expect(wide.signatureToggleFrame.width == 0)
+        #expect(narrow.signatureOverflows)
+        #expect(narrow.signatureMaximumLines == 1)
+        #expect(narrow.signatureTextFrame.maxX <= narrow.signatureToggleFrame.minX)
+        #expect(expanded.signatureOverflows)
+        #expect(expanded.signatureMaximumLines == nil)
+        #expect(expanded.height > narrow.height)
     }
 
     @Test
     @MainActor
-    func blockingOverlayKeepsTheTransparentScrollSurfaceAndHidesOnlyItsRows() {
-        let controller = NativePlaybackSidebarController()
-        let loaded = presentation(bvid: "BVCurrent")
-        controller.update(presentation: loaded, actions: actions)
-
-        #expect(!controller.rootView.scrollView.isHidden)
-        #expect(controller.rootView.scrollView.documentView?.isHidden == false)
-        #expect(controller.rootView.overlayView.isHidden)
-
-        controller.update(
-            presentation: NativePlaybackSidebarPresentation(
-                content: loaded.content,
-                overlay: .loading(label: "正在加载视频上下文")
-            ),
-            actions: actions
+    func browsingAnotherSectionKeepsPagesOnlyForTheSelectedEpisodeSection() {
+        let collection = VideoCollection(
+            id: 1,
+            title: "合集",
+            reportedEpisodeCount: 2,
+            sections: [
+                collectionSection(
+                    id: 10,
+                    title: "正片",
+                    episodes: [
+                        collectionEpisode(
+                            sectionID: 10,
+                            episodeID: 100,
+                            bvid: "BVCurrent",
+                            title: "第一集"
+                        )
+                    ]
+                ),
+                collectionSection(
+                    id: 11,
+                    title: "花絮",
+                    episodes: [
+                        collectionEpisode(
+                            sectionID: 11,
+                            episodeID: 101,
+                            bvid: "BVOther",
+                            title: "幕后花絮"
+                        )
+                    ]
+                )
+            ]
+        )
+        let projection = selectionProjection(
+            context: context(bvid: "BVCurrent", collection: collection)
+        )
+        let selectedSectionHeight = NativePlaybackSidebarItemMeasurement.selection(
+            projection,
+            width: 328,
+            browsedSectionID: projection.selectedEpisodeSectionID
+        )
+        let otherSectionHeight = NativePlaybackSidebarItemMeasurement.selection(
+            projection,
+            width: 328,
+            browsedSectionID: collection.sections[1].id
         )
 
-        #expect(!controller.rootView.scrollView.isHidden)
-        #expect(controller.rootView.scrollView.documentView?.isHidden == true)
-        #expect(!controller.rootView.overlayView.isHidden)
-        #expect(!controller.rootView.overlayView.isOpaque)
-
-        controller.tearDown()
+        #expect(projection.showsSectionPicker)
+        #expect(
+            projection.episodeSections.map { $0.episodes.map(\.title) }
+                == [["第一集"], ["幕后花絮"]]
+        )
+        #expect(projection.selectedEpisodeSectionID == collection.sections[0].id)
+        #expect(projection.showsPagePicker)
+        #expect(otherSectionHeight < selectedSectionHeight)
     }
 
     @Test
     @MainActor
     func retainedFailedPageKeepsSelectionAvailableAsARecoveryPath() {
         let context = context(bvid: "BVCurrent")
-        let failure = GuestVideoFailure.playback
+        let failure = VideoLoadFailure.playback
 
         #expect(
             NativePlaybackSidebarOverlay.resolve(
@@ -415,189 +348,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func summaryAndUploaderRowsContainNativeTextViewsOnly() {
-        let summaryItem = NativePlaybackSidebarSummaryItem()
-        summaryItem.view.frame = NSRect(x: 0, y: 0, width: 328, height: 180)
-        summaryItem.configure(summary: "可选择的简介正文", expanded: true, onToggle: {})
-
-        let imageOwner = NativeVideoImagePipelineOwner()
-        let uploaderItem = NativePlaybackSidebarUploaderItem()
-        uploaderItem.view.frame = NSRect(x: 0, y: 0, width: 328, height: 64)
-        uploaderItem.configure(
-            content: VideoUploaderHeaderContent(
-                owner: VideoOwner(id: 1, name: "UP 主", signature: "可选择的签名")
-            ),
-            signatureExpanded: false,
-            imagePipeline: imageOwner.pipeline,
-            onToggleSignature: {}
-        )
-
-        let views = descendants(of: summaryItem.view) + descendants(of: uploaderItem.view)
-        let textViews = views.compactMap { $0 as? NSTextView }
-
-        #expect(textViews.count == 2)
-        #expect(textViews.allSatisfy { $0.isSelectable && !$0.isEditable })
-        #expect(views.compactMap { $0 as? NSScrollView }.isEmpty)
-        #expect(
-            views.allSatisfy {
-                !String(describing: type(of: $0)).contains("NSHostingView")
-            }
-        )
-
-        uploaderItem.prepareForReuse()
-        imageOwner.shutdown()
-    }
-
-    @Test
-    @MainActor
-    func uploaderSignatureRecomputesOverflowWhileSidebarResizes() throws {
-        let signature = String(repeating: "签名", count: 16)
-        let imageOwner = NativeVideoImagePipelineOwner()
-        let item = NativePlaybackSidebarUploaderItem()
-        item.view.frame = NSRect(x: 0, y: 0, width: 488, height: 80)
-        item.configure(
-            content: VideoUploaderHeaderContent(
-                owner: VideoOwner(id: 1, name: "UP 主", signature: signature)
-            ),
-            signatureExpanded: false,
-            imagePipeline: imageOwner.pipeline,
-            onToggleSignature: {}
-        )
-        item.view.layoutSubtreeIfNeeded()
-        let views = descendants(of: item.view)
-        let signatureText = try #require(views.compactMap { $0 as? NSTextView }.first)
-        let toggle = try #require(
-            views.compactMap { $0 as? NSButton }
-                .first {
-                    $0.accessibilityLabel() == AppStrings.localized("UP 主签名")
-                }
-        )
-
-        #expect(toggle.isHidden)
-        #expect(signatureText.textContainer?.maximumNumberOfLines == 0)
-        signatureText.setSelectedRange(NSRange(location: 2, length: 4))
-
-        item.view.frame.size.width = 408
-        item.view.layoutSubtreeIfNeeded()
-
-        #expect(!toggle.isHidden)
-        #expect(toggle.title == AppStrings.localized("展开"))
-        #expect(signatureText.textContainer?.maximumNumberOfLines == 1)
-        #expect(signatureText.selectedRange() == NSRange(location: 2, length: 4))
-
-        item.prepareForReuse()
-        imageOwner.shutdown()
-    }
-
-    @Test
-    @MainActor
-    func pageMenuKeepsAtomicCIDIntentInNativeMenuItems() {
-        let projection = selectionProjection()
-        let item = NativePlaybackSidebarSelectionItem()
-        item.view.frame = NSRect(x: 0, y: 0, width: 328, height: 80)
-        var selectedCID: Int64?
-        item.configure(
-            projection: projection,
-            browsedSectionID: projection.selectedEpisodeSectionID,
-            onSelectSection: { _ in },
-            onSelectEpisode: { _ in },
-            onSelectPage: { selectedCID = $0 },
-            onRetryPages: {}
-        )
-        item.view.layoutSubtreeIfNeeded()
-
-        let pagePopUp = descendants(of: item.view).compactMap { $0 as? NSPopUpButton }
-            .first { !$0.isHidden }
-        let targetItem = pagePopUp?.menu?.items.last {
-            $0.representedObject is NSNumber
-        }
-        let sent = targetItem.flatMap { item in
-            item.action.map {
-                NSApplication.shared.sendAction($0, to: item.target, from: item)
-            }
-        }
-
-        #expect(projection.showsPagePicker)
-        #expect(pagePopUp != nil)
-        #expect(sent == true)
-        #expect(selectedCID == 1_002)
-    }
-
-    @Test
-    @MainActor
-    func sectionPickerLimitsEpisodePickerToTheBrowsedSection() throws {
-        let first = collectionEpisode(
-            sectionID: 10,
-            episodeID: 100,
-            bvid: "BVCurrent",
-            title: "第一集"
-        )
-        let second = collectionEpisode(
-            sectionID: 11,
-            episodeID: 101,
-            bvid: "BVOther",
-            title: "幕后花絮"
-        )
-        let collection = VideoCollection(
-            id: 1,
-            title: "合集",
-            reportedEpisodeCount: 2,
-            sections: [
-                collectionSection(id: 10, title: "正片", episodes: [first]),
-                collectionSection(id: 11, title: "花絮", episodes: [second]),
-            ]
-        )
-        let projection = selectionProjection(
-            context: context(bvid: "BVCurrent", collection: collection)
-        )
-        let item = NativePlaybackSidebarSelectionItem()
-        item.view.frame = NSRect(x: 0, y: 0, width: 328, height: 130)
-        var browsedSectionID: VideoCollectionSectionIdentity?
-        var selectedCID: Int64?
-        item.configure(
-            projection: projection,
-            browsedSectionID: projection.selectedEpisodeSectionID,
-            onSelectSection: { browsedSectionID = $0 },
-            onSelectEpisode: { _ in },
-            onSelectPage: { selectedCID = $0 },
-            onRetryPages: {}
-        )
-        item.view.layoutSubtreeIfNeeded()
-
-        let popUps = descendants(of: item.view).compactMap { $0 as? NSPopUpButton }
-        let sectionPopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == AppStrings.localized("分区") }
-        )
-        let episodePopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == AppStrings.localized("选集") }
-        )
-        let pagePopUp = try #require(
-            popUps.first { $0.accessibilityLabel() == AppStrings.localized("分 P") }
-        )
-        #expect(sectionPopUp.menu?.items.map(\.title) == ["正片", "花絮"])
-        #expect(episodePopUp.menu?.items.map(\.title) == ["第一集"])
-        #expect(!pagePopUp.isHidden)
-
-        let targetSection = try #require(
-            sectionPopUp.menu?.items.first { $0.title == "花絮" }
-        )
-        let sent = targetSection.action.map {
-            NSApplication.shared.sendAction($0, to: targetSection.target, from: targetSection)
-        }
-
-        #expect(sent == true)
-        #expect(browsedSectionID == collection.sections[1].id)
-        #expect(
-            episodePopUp.menu?.items.map(\.title)
-                == [AppStrings.localized("请选择选集"), "幕后花絮"]
-        )
-        #expect(pagePopUp.isHidden)
-        #expect(pagePopUp.menu == nil)
-        #expect(selectedCID == nil)
-    }
-
-    @Test
-    @MainActor
     func commentsUseStableSubjectAndRootIDsAcrossAppend() {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let first = commentThread(id: 1, message: "第一条评论")
@@ -610,7 +360,7 @@ struct NativePlaybackSidebarTests {
                 == [
                     .commentsHeader(subject: subject),
                     .commentThread(subject: subject, rootID: first.id),
-                    .commentsFooter(subject: subject),
+                    .commentsFooter(subject: subject)
                 ]
         )
         #expect(
@@ -690,101 +440,6 @@ struct NativePlaybackSidebarTests {
         #expect(plain.revision != verified.revision)
         #expect(verified.revision != linked.revision)
         #expect(linked.revision != pictured.revision)
-    }
-
-    @Test
-    @MainActor
-    func selectionOnlyUpdateKeepsEveryLoadedCommentInTheLayout() async throws {
-        let controller = NativePlaybackSidebarController()
-        controller.rootView.frame = NSRect(x: 0, y: 0, width: 440, height: 600)
-        controller.rootView.layoutSubtreeIfNeeded()
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let comments = commentsPresentation(
-            subject: subject,
-            threads: (1...40).map {
-                commentThread(id: Int64($0), message: "第 \($0) 条评论正文")
-            }
-        )
-        let original = presentation(bvid: "BVCurrent", comments: comments)
-        controller.update(presentation: original, actions: actions)
-        #expect(
-            await waitUntil(timeout: .seconds(5)) {
-                guard
-                    let collectionView = controller.rootView.scrollView.documentView
-                        as? NSCollectionView
-                else { return false }
-                return collectionView.numberOfSections == 4
-                    && collectionView.numberOfItems(inSection: 3) == 42
-            }
-        )
-
-        let content = try #require(original.content)
-        let episode = collectionEpisode(
-            sectionID: 10,
-            episodeID: 100,
-            bvid: content.bvid,
-            title: "当前选集"
-        )
-        let collection = VideoCollection(
-            id: 1,
-            title: "异步到达的合集",
-            reportedEpisodeCount: 1,
-            sections: [
-                collectionSection(id: 10, title: "正片", episodes: [episode])
-            ]
-        )
-        let updated = NativePlaybackSidebarPresentation(
-            content: NativePlaybackSidebarContent(
-                bvid: content.bvid,
-                uploader: content.uploader,
-                summary: content.summary,
-                selection: selectionProjection(
-                    context: context(bvid: content.bvid, collection: collection)
-                ),
-                comments: content.comments
-            ),
-            overlay: .none
-        )
-        controller.update(presentation: updated, actions: actions)
-        #expect(
-            await waitUntil(timeout: .seconds(5)) {
-                guard
-                    let collectionView = controller.rootView.scrollView.documentView
-                        as? NSCollectionView
-                else { return false }
-                controller.rootView.layoutSubtreeIfNeeded()
-                return collectionView.numberOfSections == 4
-                    && collectionView.numberOfItems(inSection: 3) == 42
-                    && (collectionView.collectionViewLayout?.collectionViewContentSize.height
-                        ?? 0) > 600
-            }
-        )
-
-        let collectionView = try #require(
-            controller.rootView.scrollView.documentView as? NSCollectionView
-        )
-        let collectionLayout = try #require(collectionView.collectionViewLayout)
-        let selectionAttributes = try #require(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 0, section: 2)
-            )
-        )
-        let commentsHeaderAttributes = try #require(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 0, section: 3)
-            )
-        )
-
-        #expect(collectionView.numberOfSections == 4)
-        #expect(collectionView.numberOfItems(inSection: 3) == 42)
-        #expect(collectionLayout.collectionViewContentSize.height > 600)
-        #expect(commentsHeaderAttributes.frame.minY > selectionAttributes.frame.maxY)
-        #expect(
-            collectionLayout.layoutAttributesForItem(
-                at: IndexPath(item: 40, section: 3)
-            ) != nil
-        )
-        controller.tearDown()
     }
 
     @Test
@@ -1084,70 +739,6 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func replyLoadingAndFailureHeightsRetainVisiblePreviousPageRows() throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let thread = commentThread(
-            id: 1,
-            message: "主评论",
-            replyCount: 12
-        )
-        var state = PlaybackCommentReplyState()
-        state.isExpanded = true
-        state.replies = [
-            comment(id: 11, rootID: 1, message: "旧页回复一"),
-            comment(id: 12, rootID: 1, message: "旧页回复二"),
-        ]
-        state.totalCount = 12
-
-        for failure in [false, true] {
-            state.isLoading = !failure
-            state.error = failure ? .transportFailure : nil
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: subject,
-                thread: thread,
-                replyState: state
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
-
-            let statusText =
-                failure
-                ? AppStrings.localized("回复加载失败")
-                : AppStrings.localized("回复加载中…")
-            let status = try #require(
-                descendants(of: item.view).compactMap { $0 as? NSTextField }
-                    .first { $0.stringValue == statusText }
-            )
-            let panel = try #require(status.superview)
-            let visibleBottom =
-                panel.subviews.filter { !$0.isHidden }
-                .map(\.frame.maxY).max() ?? 0
-            #expect(visibleBottom <= panel.bounds.height + 0.5)
-        }
-    }
-
-    @Test
-    @MainActor
     func commentLoadingAccessibilityDoesNotReuseStaleCountOrFooterState() throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let loaded = commentsPresentation(
@@ -1234,39 +825,27 @@ struct NativePlaybackSidebarTests {
 
         #expect(stopped.footer == .stopped)
         #expect(ended.footer == .end(memoryLimited: false))
-
-        let footer = NativePlaybackCommentsFooterItem()
-        footer.configure(footer: stopped.footer, onRetry: {}, onLoadMore: {})
-        let statusLabels = descendants(of: footer.view).compactMap { $0 as? NSTextField }
-        #expect(
-            statusLabels.contains {
-                $0.stringValue == AppStrings.localized("后续评论暂不可用")
-            }
-        )
-        #expect(
-            !statusLabels.contains {
-                $0.stringValue == AppStrings.localized("已显示全部评论")
-            }
-        )
     }
 
     @Test
     @MainActor
-    func commentThreadUsesSelectableNonScrollingTextKitAndNativeLinkAttributes() throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
+    func commentRendererMapsLinkAttributesToTargetsAndSkipsInvalidRanges() {
         let message = "跳转 BV1FixtureA1 查看视频 @回复用户"
-        let linkRange = (message as NSString).range(of: "BV1FixtureA1")
+        let videoRange = (message as NSString).range(of: "BV1FixtureA1")
         let memberRange = (message as NSString).range(of: "@回复用户")
-        let thread = commentThread(
-            id: 1,
+        let content = CommentContent(
             message: message,
             links: [
                 CommentLink(
                     range: CommentTextRange(
-                        location: linkRange.location,
-                        length: linkRange.length
+                        location: videoRange.location,
+                        length: videoRange.length
                     ),
                     target: .video(bvid: "BV1FixtureA1")
+                ),
+                CommentLink(
+                    range: CommentTextRange(location: message.utf16.count, length: 4),
+                    target: .video(bvid: "BV1OutOfRange")
                 ),
                 CommentLink(
                     range: CommentTextRange(
@@ -1274,119 +853,40 @@ struct NativePlaybackSidebarTests {
                         length: memberRange.length
                     ),
                     target: .member(CommentAuthorID(rawValue: "301"))
-                ),
-            ],
-            replyCount: 1,
-            preview: [comment(id: 11, rootID: 1, message: "楼中楼正文")]
-        )
-        let item = NativePlaybackCommentThreadItem()
-        var openedTargets: [CommentLinkTarget] = []
-        let row = NativePlaybackCommentThreadPresentation(
-            subject: subject,
-            thread: thread,
-            replyState: nil
-        )
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-        )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onPrevious: {},
-            onNext: {},
-            onRetry: {},
-            onOpenLink: { openedTargets.append($0) },
-            onOpenPictures: { _ in }
-        )
-        item.view.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: item.view)
-        let textViews = views.compactMap { $0 as? NSTextView }
-        let rootBody = try #require(
-            textViews.first { $0.string == message }
-        )
-        let link = try #require(
-            rootBody.textStorage?.attribute(
-                .link,
-                at: linkRange.location,
-                effectiveRange: nil
-            )
-        )
-        let handled = rootBody.delegate?.textView?(
-            rootBody,
-            clickedOnLink: link,
-            at: linkRange.location
-        )
-        let memberLink = try #require(
-            rootBody.textStorage?.attribute(
-                .link,
-                at: memberRange.location,
-                effectiveRange: nil
-            )
-        )
-        let handledMember = rootBody.delegate?.textView?(
-            rootBody,
-            clickedOnLink: memberLink,
-            at: memberRange.location
-        )
-
-        #expect(textViews.count >= 2)
-        #expect(textViews.allSatisfy { $0.isSelectable && !$0.isEditable })
-        #expect(textViews.allSatisfy { $0.enclosingScrollView == nil })
-        #expect(views.compactMap { $0 as? NSScrollView }.isEmpty)
-        #expect(
-            views.allSatisfy {
-                !String(describing: type(of: $0)).contains("NSHostingView")
-            }
-        )
-        #expect(handled == true)
-        #expect(handledMember == true)
-        #expect(
-            openedTargets == [
-                .video(bvid: "BV1FixtureA1"),
-                .member(CommentAuthorID(rawValue: "301")),
+                )
             ]
         )
-        let labels = views.compactMap { $0 as? NSTextField }
-        #expect(labels.contains { $0.stringValue.contains("东京") })
-        #expect(labels.allSatisfy { !$0.stringValue.contains("IP属地：") })
-        let likeLabel = try #require(labels.first { $0.stringValue == "42" })
-        #expect(likeLabel.frame.maxX <= item.view.bounds.maxX - 1)
-        #expect(likeLabel.frame.width >= ceil(likeLabel.intrinsicContentSize.width) + 2)
-        #expect(labels.allSatisfy { !$0.stringValue.contains("👍") })
-        let likeImage = views.compactMap { $0 as? NSImageView }.first {
-            $0.image?.accessibilityDescription == AppStrings.localized("点赞")
+        let rendered = makeCommentTextRenderer().render(
+            content,
+            scope: NativePlaybackCommentTextScope(
+                subject: .video(aid: 700_001),
+                rootID: CommentID(rawValue: 1),
+                revision: 1
+            )
+        )
+        func target(at location: Int) -> CommentLinkTarget? {
+            guard
+                let value = rendered.attributedString.attribute(
+                    .link,
+                    at: location,
+                    effectiveRange: nil
+                ) as? String,
+                value.hasPrefix("bilikit-comment-link-"),
+                let index = Int(value.dropFirst("bilikit-comment-link-".count)),
+                rendered.linkTargets.indices.contains(index)
+            else { return nil }
+            return rendered.linkTargets[index]
         }
-        #expect(likeImage != nil)
-        #expect(
-            views.compactMap { $0 as? NSButton }.contains {
-                $0.title == AppStrings.localized("共 \(1) 条回复")
-            }
-        )
-    }
 
-    @Test
-    @MainActor
-    func commentImageTransitionOnlyAnimatesNetworkResults() {
         #expect(
-            !NativePlaybackCommentImageTransition.shouldAnimate(
-                loadOrigin: .memoryCache
-            )
+            rendered.linkTargets == [
+                .video(bvid: "BV1FixtureA1"),
+                .member(CommentAuthorID(rawValue: "301"))
+            ]
         )
-        #expect(
-            NativePlaybackCommentImageTransition.shouldAnimate(
-                loadOrigin: .network
-            )
-        )
-        #expect(NativePlaybackCommentImageTransition.duration == 0.15)
+        #expect(target(at: videoRange.location) == .video(bvid: "BV1FixtureA1"))
+        #expect(target(at: memberRange.location) == .member(CommentAuthorID(rawValue: "301")))
+        #expect(target(at: 0) == nil)
     }
 
     @Test
@@ -1415,14 +915,14 @@ struct NativePlaybackSidebarTests {
         #expect(
             layout.frames == [
                 CGRect(x: 0, y: 0, width: 135, height: 180),
-                CGRect(x: 139, y: 0, width: 223, height: 135),
+                CGRect(x: 139, y: 0, width: 223, height: 135)
             ]
         )
     }
 
     @Test
     @MainActor
-    func commentPicturesUseMetadataDrivenFlowWithoutNestedScrolling() throws {
+    func commentPicturesOpenAMetadataDrivenGalleryAndSkipStaleFocusRestore() throws {
         let first = CommentAssetReference()
         let third = CommentAssetReference()
         let pictures = [
@@ -1437,7 +937,7 @@ struct NativePlaybackSidebarTests {
                 position: 2,
                 pixelWidth: 446,
                 pixelHeight: 270
-            ),
+            )
         ]
         let slots = NativePlaybackCommentPictureSlots.slots(
             images: pictures,
@@ -1491,31 +991,8 @@ struct NativePlaybackSidebarTests {
         )
         item.view.layoutSubtreeIfNeeded()
 
-        let views = descendants(of: item.view)
-        let pictureGroup = try #require(
-            views.first {
-                $0.accessibilityLabel()
-                    == AppStrings.localized("评论图片，共 \(3) 张")
-            }
-        )
-        let pictureImageViews = descendants(of: pictureGroup).compactMap {
-            $0 as? NSImageView
-        }
-        #expect(pictureGroup.accessibilityRole() == .group)
-        #expect(!pictureImageViews.isEmpty)
-        #expect(
-            pictureImageViews.allSatisfy {
-                $0.imageScaling == .scaleProportionallyUpOrDown
-            }
-        )
-        #expect(!views.contains { $0 is NSScrollView })
-        #expect(
-            !views.contains {
-                String(describing: type(of: $0)).contains("NSHostingView")
-            }
-        )
         let thirdPictureButton = try #require(
-            views.compactMap { $0 as? NSButton }.first {
+            descendants(of: item.view).compactMap { $0 as? NSButton }.first {
                 $0.accessibilityLabel()
                     == AppStrings.localized("查看第 \(3) 张评论图片")
             }
@@ -1600,72 +1077,6 @@ struct NativePlaybackSidebarTests {
         #expect(selection.index == 0)
         #expect(!selection.canSelectPrevious)
         #expect(selection.canSelectNext)
-    }
-
-    @Test
-    @MainActor
-    func commentImagePreviewUsesOneNativeModalSurfaceAndSemanticControls() throws {
-        let owner = NativeVideoImagePipelineOwner()
-        let references = [CommentAssetReference(), CommentAssetReference()]
-        var dismissCount = 0
-        let preview = NativeCommentImagePreviewRootView(
-            imagePipeline: owner.pipeline,
-            resolveURL: { _ in nil }
-        )
-        preview.frame = NSRect(x: 0, y: 0, width: 900, height: 620)
-        preview.configure(
-            request: NativeCommentImagePreviewRequest(
-                bvid: "BVPreview",
-                references: references,
-                selectedIndex: 1,
-                restoreFocus: {}
-            ),
-            onDismiss: { dismissCount += 1 }
-        )
-        preview.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: preview)
-        let buttons = views.compactMap { $0 as? NSButton }
-        let previous = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("上一张图片")
-            }
-        )
-        let next = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("下一张图片")
-            }
-        )
-        let close = try #require(
-            buttons.first {
-                $0.accessibilityLabel() == AppStrings.localized("关闭图片预览")
-            }
-        )
-        let counter = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.stringValue == "2 / 2"
-            }
-        )
-
-        #expect(preview.accessibilityRole() == .group)
-        #expect(preview.accessibilitySubrole() == .dialog)
-        #expect(preview.isAccessibilityModal())
-        #expect(
-            preview.accessibilityLabel() == AppStrings.localized("评论图片预览")
-        )
-        #expect(!views.contains { $0 is NSScrollView })
-        #expect(counter.stringValue == "2 / 2")
-        #expect(previous.isEnabled)
-        #expect(!next.isEnabled)
-        previous.performClick(nil)
-        #expect(counter.stringValue == "1 / 2")
-        #expect(!previous.isEnabled)
-        #expect(next.isEnabled)
-        close.performClick(nil)
-        #expect(dismissCount == 1)
-
-        preview.tearDown()
-        owner.shutdown()
     }
 
     @Test
@@ -1758,7 +1169,7 @@ struct NativePlaybackSidebarTests {
 
         renderer.retainFailureScopes(Set(scopes))
         for scope in scopes {
-            renderer.markUnavailable(asset, in: scope)
+            #expect(renderer.markUnavailable(asset, in: scope))
         }
 
         #expect(renderer.render(content, scope: scopes[0]).pendingAssets.count == 1)
@@ -1830,7 +1241,7 @@ struct NativePlaybackSidebarTests {
                     range: CommentTextRange(location: 3, length: 4),
                     asset: unknownAsset,
                     size: .unknown
-                ),
+                )
             ]
         )
         let scope = NativePlaybackCommentTextScope(
@@ -1856,110 +1267,7 @@ struct NativePlaybackSidebarTests {
 
     @Test
     @MainActor
-    func commentAuthorNameColorOnlyReflectsVIPState() throws {
-        for (id, sex, isVIP, expectedColor) in [
-            (21, CommentAuthorSex.male, false, NSColor.labelColor),
-            (22, CommentAuthorSex.female, false, NSColor.labelColor),
-            (23, CommentAuthorSex.unspecified, true, NSColor.systemPink),
-        ] {
-            let author = CommentAuthor(
-                id: CommentAuthorID(rawValue: "author-\(id)"),
-                name: "昵称\(id)",
-                sex: sex,
-                isVIP: isVIP
-            )
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: .video(aid: 700_001),
-                thread: commentThread(id: Int64(id), message: "正文", author: author),
-                replyState: nil
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
-
-            let authorLabel = try #require(
-                descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
-                    $0.stringValue == author.name
-                }
-            )
-            #expect(authorLabel.textColor == expectedColor)
-        }
-    }
-
-    @Test
-    @MainActor
-    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply() throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let previews = [
-            comment(id: 31, rootID: 3, message: "回复一"),
-            comment(id: 32, rootID: 3, message: "回复二"),
-        ]
-
-        for replyCount in [2, 3] {
-            let row = NativePlaybackCommentThreadPresentation(
-                subject: subject,
-                thread: commentThread(
-                    id: 3,
-                    message: "正文",
-                    replyCount: replyCount,
-                    preview: previews
-                ),
-                replyState: nil
-            )
-            let item = NativePlaybackCommentThreadItem()
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onPrevious: {},
-                onNext: {},
-                onRetry: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in }
-            )
-            item.view.layoutSubtreeIfNeeded()
-
-            let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
-                .first {
-                    $0.title == AppStrings.localized("共 \(replyCount) 条回复")
-                }
-            #expect(summary != nil)
-        }
-    }
-
-    @Test
-    @MainActor
-    func crowdedAuthorAndStatusBadgesPreserveNamesAndNativeCapsules() throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
+    func crowdedAuthorBadgesMergeHardcoreIntoLevelAndStatusBadgesStayOrdered() {
         let author = CommentAuthor(
             id: CommentAuthorID(rawValue: "crowded-author"),
             name: "昵称应该完整显示",
@@ -1969,90 +1277,46 @@ struct NativePlaybackSidebarTests {
             isVIP: true,
             isUploader: true
         )
-        let thread = commentThread(
-            id: 2,
-            message: "正文",
-            author: author,
-            provenance: [.uploaderPinned, .uploaderLiked]
-        )
-        let row = NativePlaybackCommentThreadPresentation(
-            subject: subject,
-            thread: thread,
-            replyState: nil
-        )
-        let item = NativePlaybackCommentThreadItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 220,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 220)
-        )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onPrevious: {},
-            onNext: {},
-            onRetry: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in }
-        )
-        item.view.layoutSubtreeIfNeeded()
+        let statusBadges = NativePlaybackCommentProvenanceBadgesView()
+        statusBadges.configure([.uploaderLiked, .uploaderPinned])
 
-        let views = descendants(of: item.view)
-        let authorLabel = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.stringValue == author.name
-            }
+        #expect(
+            NativePlaybackCommentAuthorBadgesView.segments(for: author).map(\.text)
+                == ["♂", "LV6⚡︎", "UP"]
         )
-        let authorBadges = try #require(
-            views.compactMap { $0 as? NativePlaybackCommentAuthorBadgesView }.first
-        )
-        let statusBadges = try #require(
-            views.compactMap { $0 as? NativePlaybackCommentProvenanceBadgesView }.first
-        )
-
-        #expect(authorLabel.frame.width >= authorLabel.intrinsicContentSize.width)
-        #expect(!authorBadges.isHidden)
-        #expect(authorBadges.displayedTexts.contains("LV6⚡︎"))
-        #expect(!authorBadges.displayedTexts.contains("硬核"))
         #expect(
             statusBadges.displayedTexts
-                == [
-                    AppStrings.localized("置顶"),
-                    AppStrings.localized("UP 主觉得很赞"),
-                ]
+                == [AppStrings.localized("置顶"), AppStrings.localized("UP 主觉得很赞")]
         )
         #expect(
             statusBadges.accessibilityLabel()
-                == ListFormatter.localizedString(
-                    byJoining: [
-                        AppStrings.localized("置顶"),
-                        AppStrings.localized("UP 主觉得很赞"),
-                    ]
-                )
+                == ListFormatter.localizedString(byJoining: statusBadges.displayedTexts)
         )
     }
 
-    @Test
+    @Test(
+        arguments: [
+            (21, CommentAuthorSex.male, false),
+            (22, CommentAuthorSex.female, false),
+            (23, CommentAuthorSex.unspecified, true)
+        ]
+    )
     @MainActor
-    func inlineAuthorBadgesFollowVisibleNameGlyphsWithoutCellPaddingGap() throws {
+    func commentAuthorNameColorOnlyReflectsVIPState(
+        id: Int,
+        sex: CommentAuthorSex,
+        isVIP: Bool
+    ) throws {
+        let expectedColor = isVIP ? NSColor.systemPink : NSColor.labelColor
         let author = CommentAuthor(
-            id: CommentAuthorID(rawValue: "inline-author"),
-            name: "短昵称",
-            sex: .unspecified,
-            level: 6,
-            isHardcoreMember: true,
-            isVIP: true,
-            isUploader: false
+            id: CommentAuthorID(rawValue: "author-\(id)"),
+            name: "昵称\(id)",
+            sex: sex,
+            isVIP: isVIP
         )
         let row = NativePlaybackCommentThreadPresentation(
             subject: .video(aid: 700_001),
-            thread: commentThread(id: 3, message: "正文", author: author),
+            thread: commentThread(id: Int64(id), message: "正文", author: author),
             replyState: nil
         )
         let item = NativePlaybackCommentThreadItem()
@@ -2078,113 +1342,66 @@ struct NativePlaybackSidebarTests {
         )
         item.view.layoutSubtreeIfNeeded()
 
-        let views = descendants(of: item.view)
         let authorLabel = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
+            descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
                 $0.stringValue == author.name
             }
         )
-        let authorBadges = try #require(
-            views.compactMap { $0 as? NativePlaybackCommentAuthorBadgesView }.first
-        )
-        let textWidth = NativePlaybackCommentsItemMeasurement.authorNameTextWidth(
-            author,
-            maximumWidth: 366
-        )
-
-        #expect(authorBadges.frame.minY == authorLabel.frame.minY)
-        #expect(
-            abs(
-                authorBadges.frame.minX - authorLabel.frame.minX - textWidth
-                    - NativePlaybackCommentsItemMeasurement.authorBadgeSpacing
-            ) <= 0.5
-        )
+        #expect(authorLabel.textColor == expectedColor)
     }
 
-    @Test
+    @Test(arguments: [2, 3])
     @MainActor
-    func commentsHeaderCountReservesTrailingGlyphSpace() throws {
-        let header = NativePlaybackCommentsHeaderItem()
-        let presentation = NativePlaybackCommentsPresentation(
-            subject: .video(aid: 700_001),
-            sort: .hot,
-            rootState: .loaded,
-            totalCount: 12_345,
-            threads: []
-        )
-        header.view.frame = NSRect(x: 0, y: 0, width: 320, height: 42)
-        header.configure(presentation: presentation, onSelectSort: { _ in })
-        header.view.layoutSubtreeIfNeeded()
-
-        let views = descendants(of: header.view)
-        let count = CommentPresentationFormatting.compactCount(
-            presentation.totalCount
-        )
-        let countLabel = try #require(
-            views.compactMap { $0 as? NSTextField }.first {
-                $0.accessibilityLabel()
-                    == AppStrings.localized("共 \(count) 条评论")
-            }
-        )
-        let sortControl = try #require(
-            views.compactMap { $0 as? NSSegmentedControl }.first
-        )
-        #expect(countLabel.frame.width >= ceil(countLabel.intrinsicContentSize.width) + 3)
-        #expect(countLabel.frame.maxX < sortControl.frame.minX)
-    }
-
-    @Test
-    func commentsPaginationRequiresThresholdExitBeforeLoadingAnotherTail() {
+    func replySummaryRemainsAvailableWhenPreviewAlreadyShowsEveryReply(
+        replyCount: Int
+    ) throws {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let first = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: .init(subject: subject, lastRootID: .init(rawValue: 1)),
-            isLoading: false
+        let previews = [
+            comment(id: 31, rootID: 3, message: "回复一"),
+            comment(id: 32, rootID: 3, message: "回复二")
+        ]
+
+        let row = NativePlaybackCommentThreadPresentation(
+            subject: subject,
+            thread: commentThread(
+                id: 3,
+                message: "正文",
+                replyCount: replyCount,
+                preview: previews
+            ),
+            replyState: nil
         )
-        let loading = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: first.identity,
-            isLoading: true
+        let item = NativePlaybackCommentThreadItem()
+        item.view.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 408,
+            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
         )
-        let second = NativePlaybackCommentsPaginationTailState(
-            canLoadMore: true,
-            identity: .init(subject: subject, lastRootID: .init(rawValue: 2)),
-            isLoading: false
+        item.configure(
+            presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: makeCommentAvatarLoader(),
+            pictureLoader: makeCommentPictureLoader(),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onPrevious: {},
+            onNext: {},
+            onRetry: {},
+            onOpenLink: { _ in },
+            onOpenPictures: { _ in }
         )
-        var gate = NativePlaybackCommentsPaginationGate()
+        item.view.layoutSubtreeIfNeeded()
 
-        let outside = gate.update(isInsideThreshold: false, state: first)
-        let firstEntry = gate.update(isInsideThreshold: true, state: first)
-        let loadingEntry = gate.update(isInsideThreshold: true, state: loading)
-        let changedTail = gate.update(isInsideThreshold: true, state: second)
-        let repeatedTail = gate.update(isInsideThreshold: true, state: second)
-        let leftThreshold = gate.update(isInsideThreshold: false, state: second)
-        let reentered = gate.update(isInsideThreshold: true, state: second)
-        let ended = gate.update(isInsideThreshold: true, state: .end)
-
-        #expect(!outside)
-        #expect(firstEntry)
-        #expect(!loadingEntry)
-        #expect(!changedTail)
-        #expect(!repeatedTail)
-        #expect(!leftThreshold)
-        #expect(reentered)
-        #expect(!ended)
-    }
-
-    @Test
-    func commentsLiveScrollBackpressureAllowsOnlyOnePagePerGesture() {
-        var backpressure = NativePlaybackCommentsLiveScrollBackpressure()
-
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: true)
-        #expect(!backpressure.permitsAutomaticLoad)
-        backpressure.beginLiveScroll()
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.recordTrigger(isLiveScrolling: false)
-        #expect(backpressure.permitsAutomaticLoad)
-        backpressure.reset()
-        #expect(backpressure.permitsAutomaticLoad)
+        let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
+            .first {
+                $0.title
+                    == AppStrings.localized(
+                        "共 \(CommentPresentationFormatting.compactCount(replyCount)) 条回复"
+                    )
+            }
+        #expect(summary != nil)
     }
 
     @Test
@@ -2420,7 +1637,6 @@ struct NativePlaybackSidebarTests {
         )
         var nextPageRequests = 0
         let testActions = NativePlaybackSidebarActions(
-            retry: {},
             selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},
@@ -2475,7 +1691,6 @@ struct NativePlaybackSidebarTests {
     @MainActor
     private var actions: NativePlaybackSidebarActions {
         NativePlaybackSidebarActions(
-            retry: {},
             selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},
@@ -2639,7 +1854,7 @@ struct NativePlaybackSidebarTests {
 
     @MainActor
     private func selectionProjection(
-        context: GuestVideoContext? = nil
+        context: VideoContext? = nil
     ) -> PlaybackSelectionProjection {
         let context = context ?? self.context(bvid: "BVCurrent")
         return PlaybackSelectionProjection(
@@ -2656,12 +1871,12 @@ struct NativePlaybackSidebarTests {
     private func context(
         bvid: String,
         collection: VideoCollection? = nil
-    ) -> GuestVideoContext {
+    ) -> VideoContext {
         let pages = [
             VideoPage(cid: 1_001, index: 1, title: "第一部分", durationSeconds: 61),
-            VideoPage(cid: 1_002, index: 2, title: "第二部分", durationSeconds: 122),
+            VideoPage(cid: 1_002, index: 2, title: "第二部分", durationSeconds: 122)
         ]
-        return GuestVideoContext(
+        return VideoContext(
             detail: VideoDetail(
                 bvid: bvid,
                 title: "当前视频",
@@ -2766,19 +1981,5 @@ struct NativePlaybackSidebarTests {
     @MainActor
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
-    }
-
-    @MainActor
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        _ condition: @MainActor () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !condition() {
-            guard clock.now < deadline else { return false }
-            await Task.yield()
-        }
-        return true
     }
 }

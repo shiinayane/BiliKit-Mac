@@ -1,9 +1,10 @@
 import AppKit
+import BiliUI
 import SwiftUI
 
 enum NativeVideoShelfGeometry {
     static let cardWidth: CGFloat = 224
-    static let cardHeight: CGFloat = 210
+    static let cardHeight = VideoCardGeometry.height(forWidth: cardWidth)
     static let spacing: CGFloat = 16
     static let contentInset: CGFloat = 40
     static let bottomInset: CGFloat = 22
@@ -30,30 +31,6 @@ enum NativeVideoShelfGeometry {
     static func nearestIndex(offset: CGFloat, itemCount: Int) -> Int {
         guard itemCount > 0 else { return 0 }
         return min(itemCount - 1, max(0, Int(round(max(0, offset) / stride))))
-    }
-}
-
-enum NativeVideoShelfScrollCoordinates {
-    static func logicalOffsetX(physicalOffsetX: CGFloat, leadingInset: CGFloat) -> CGFloat {
-        max(0, physicalOffsetX + max(0, leadingInset))
-    }
-
-    static func physicalOffsetX(logicalOffsetX: CGFloat, leadingInset: CGFloat) -> CGFloat {
-        max(0, logicalOffsetX) - max(0, leadingInset)
-    }
-
-    static func maximumLogicalOffsetX(
-        documentWidth: CGFloat,
-        viewportWidth: CGFloat,
-        leadingInset: CGFloat,
-        trailingInset: CGFloat
-    ) -> CGFloat {
-        max(
-            0,
-            documentWidth - viewportWidth
-                + max(0, leadingInset)
-                + max(0, trailingInset)
-        )
     }
 }
 
@@ -131,15 +108,13 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private let configuredItems = NSHashTable<NativeVideoCollectionItem>.weakObjects()
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
         private var contentIdentity: String
-        private var contentsByID: [String: NativeVideoCardPresentation]
-        private var orderedIDs: [String]
+        private var contents: NativeVideoCardContents
         private var reduceMotion: Bool
         private var isInteractionEnabled: Bool
         private var onSelect: (String) -> Void
-        private var boundsObserver: NSObjectProtocol?
-        private var accessibilityObserver: NSObjectProtocol?
-        private var windowResignObserver: NSObjectProtocol?
-        private weak var hoveredItem: NativeVideoCollectionItem?
+        private var observers = NativeVideoNotificationObservers()
+        private var windowObservers = NativeVideoNotificationObservers()
+        private let hover = NativeVideoHoverTracker()
         private var operationGeneration: UInt64 = 0
         private var isResizingDocument = false
         private var isReset = false
@@ -152,12 +127,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
             isInteractionEnabled: Bool,
             onSelect: @escaping (String) -> Void
         ) {
-            let uniqueItems = Self.uniqueItems(items)
             self.contentIdentity = contentIdentity
-            contentsByID = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            orderedIDs = uniqueItems.map(\.id)
+            contents = NativeVideoCardContents(items)
             self.imagePipeline = imagePipeline
             self.reduceMotion = reduceMotion
             self.isInteractionEnabled = isInteractionEnabled
@@ -188,8 +159,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 self?.selectAndActivate(id)
             }
             collectionView.itemIDAtIndex = { [weak self] index in
-                guard let self, self.orderedIDs.indices.contains(index) else { return nil }
-                return self.orderedIDs[index]
+                guard let ids = self?.contents.orderedIDs, ids.indices.contains(index) else {
+                    return nil
+                }
+                return ids[index]
             }
             collectionView.onFocusChange = { [weak scrollView] in
                 scrollView?.updateFocusWithinSoon()
@@ -200,24 +173,16 @@ struct NativeVideoShelfView: NSViewRepresentable {
             )
             collectionView.setAccessibilityLabel(AppStrings.localized("横向相关推荐"))
 
-            dataSource = NSCollectionViewDiffableDataSource<Int, String>(
-                collectionView: collectionView
-            ) { [weak self] collectionView, indexPath, id in
-                guard
-                    let self,
-                    let presentation = self.contentsByID[id],
-                    let item = collectionView.makeItem(
-                        withIdentifier: .nativeVideoCard,
-                        for: indexPath
-                    ) as? NativeVideoCollectionItem
-                else { return nil }
-                self.configure(item, with: presentation)
-                item.setKeyboardFocusVisible(
-                    self.collectionView.showsKeyboardSelection
-                        && self.collectionView.selectionIndexPaths.contains(indexPath)
-                )
-                return item
-            }
+            dataSource = NativeVideoCardDataSource.make(
+                collectionView: collectionView,
+                presentation: { [weak self] id in self?.contents[id] },
+                configure: { [weak self] item, presentation in
+                    self?.configure(item, with: presentation)
+                },
+                showsKeyboardSelection: { [weak collectionView] in
+                    collectionView?.showsKeyboardSelection == true
+                }
+            )
 
             scrollView.install(collectionView: collectionView)
             applyInteractionState(isInteractionEnabled, reconfiguresCards: false)
@@ -230,19 +195,9 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 self?.observeWindow(window)
             }
 
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.didScroll() }
-            }
-            accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
-                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshVisibleCards() }
+            observers.observeScrolling(of: scrollView) { [weak self] in self?.didScroll() }
+            observers.observeAccessibilityDisplayOptions { [weak collectionView] in
+                collectionView?.refreshVisibleCardAppearance()
             }
 
             operationGeneration &+= 1
@@ -271,23 +226,18 @@ struct NativeVideoShelfView: NSViewRepresentable {
             self.reduceMotion = reduceMotion
             self.onSelect = onSelect
             applyInteractionState(isInteractionEnabled, reconfiguresCards: true)
-            let uniqueItems = Self.uniqueItems(items)
-            let updatedContents = Dictionary(
-                uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) }
-            )
-            let updatedIDs = uniqueItems.map(\.id)
+            let updatedContents = NativeVideoCardContents(items)
             let plan = NativeVideoShelfUpdatePlan(
                 previousContentIdentity: self.contentIdentity,
                 updatedContentIdentity: contentIdentity,
-                previousIDs: orderedIDs,
-                previousContents: contentsByID,
-                updatedIDs: updatedIDs,
-                updatedContents: updatedContents
+                previousIDs: contents.orderedIDs,
+                previousContents: contents.byID,
+                updatedIDs: updatedContents.orderedIDs,
+                updatedContents: updatedContents.byID
             )
             let resetsToLeading = self.contentIdentity != contentIdentity
             self.contentIdentity = contentIdentity
-            contentsByID = updatedContents
-            orderedIDs = updatedIDs
+            contents = updatedContents
 
             if plan.identityChanged {
                 operationGeneration &+= 1
@@ -316,18 +266,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
             scrollView.clearFirstResponderIfNeeded()
             isReset = true
             operationGeneration &+= 1
-            setHoveredItem(nil)
+            hover.setHoveredItem(nil)
             for item in configuredItems.allObjects { item.invalidate() }
-            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
-            if let accessibilityObserver {
-                NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
-            }
-            if let windowResignObserver {
-                NotificationCenter.default.removeObserver(windowResignObserver)
-            }
-            boundsObserver = nil
-            accessibilityObserver = nil
-            windowResignObserver = nil
+            observers.removeAll()
+            windowObservers.removeAll()
             collectionView.onActivateSelection = nil
             collectionView.itemIDAtIndex = nil
             collectionView.onFocusChange = nil
@@ -335,27 +277,16 @@ struct NativeVideoShelfView: NSViewRepresentable {
             collectionView.dataSource = nil
             dataSource = nil
             scrollView.reset()
-            contentsByID.removeAll()
-            orderedIDs.removeAll()
+            contents = NativeVideoCardContents()
             onSelect = { _ in }
-        }
-
-        private static func uniqueItems(
-            _ items: [NativeVideoCardPresentation]
-        ) -> [NativeVideoCardPresentation] {
-            var seen: Set<String> = []
-            return items.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
         }
 
         private func applySnapshot(
             animatingDifferences: Bool,
             completion: (() -> Void)? = nil
         ) {
-            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
-            snapshot.appendSections([0])
-            snapshot.appendItems(orderedIDs, toSection: 0)
             dataSource?.apply(
-                snapshot,
+                contents.makeSnapshot(),
                 animatingDifferences: animatingDifferences,
                 completion: completion
             )
@@ -386,34 +317,23 @@ struct NativeVideoShelfView: NSViewRepresentable {
             guard
                 !isReset,
                 isInteractionEnabled,
-                contentsByID[id] != nil
+                contents[id] != nil
             else { return }
-            if let index = orderedIDs.firstIndex(of: id) {
-                collectionView.selectionIndexPaths = [IndexPath(item: index, section: 0)]
+            if let indexPath = contents.indexPath(of: id) {
+                collectionView.selectionIndexPaths = [indexPath]
             }
             onSelect(id)
         }
 
         private func reconfigureVisibleCards(ids: Set<String>? = nil) {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                guard
-                    let id = item.representedVideoID,
-                    ids?.contains(id) ?? true,
-                    let presentation = contentsByID[id]
-                else { continue }
+            for (item, presentation) in contents.visibleCards(in: collectionView, ids: ids) {
                 configure(item, with: presentation)
-            }
-        }
-
-        private func refreshVisibleCards() {
-            for case let item as NativeVideoCollectionItem in collectionView.visibleItems() {
-                item.refreshEnvironmentAppearance()
             }
         }
 
         private func invalidateInteractionAndImageRequestsForContentReplacement() {
             scrollView.clearFirstResponderIfNeeded()
-            setHoveredItem(nil)
+            hover.setHoveredItem(nil)
             collectionView.clearSelectionForContentReplacement()
             for item in configuredItems.allObjects {
                 item.invalidateImageRequests()
@@ -448,7 +368,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             let targetSize = NSSize(
                 width: max(
                     viewport.width,
-                    NativeVideoShelfGeometry.documentWidth(itemCount: orderedIDs.count)
+                    NativeVideoShelfGeometry.documentWidth(itemCount: contents.orderedIDs.count)
                 ),
                 height: max(viewport.height, NativeVideoShelfGeometry.viewportHeight)
             )
@@ -475,18 +395,18 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private var currentLogicalOffsetX: CGFloat {
-            NativeVideoShelfScrollCoordinates.logicalOffsetX(
-                physicalOffsetX: scrollView.contentView.bounds.origin.x,
+            NativeVideoScrollCoordinateSpace.logicalOffset(
+                physicalOffset: scrollView.contentView.bounds.origin.x,
                 leadingInset: scrollView.contentInsets.left
             )
         }
 
         private var maximumLogicalOffsetX: CGFloat {
-            NativeVideoShelfScrollCoordinates.maximumLogicalOffsetX(
-                documentWidth: NativeVideoShelfGeometry.documentWidth(
-                    itemCount: orderedIDs.count
+            NativeVideoScrollCoordinateSpace.maximumLogicalOffset(
+                documentLength: NativeVideoShelfGeometry.documentWidth(
+                    itemCount: contents.orderedIDs.count
                 ),
-                viewportWidth: scrollView.contentSize.width,
+                viewportLength: scrollView.contentSize.width,
                 leadingInset: scrollView.contentInsets.left,
                 trailingInset: scrollView.contentInsets.right
             )
@@ -495,7 +415,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private func page(by direction: Int) {
             let current = NativeVideoShelfGeometry.nearestIndex(
                 offset: currentLogicalOffsetX,
-                itemCount: orderedIDs.count
+                itemCount: contents.orderedIDs.count
             )
             let capacity = NativeVideoShelfGeometry.pageCapacity(
                 viewportWidth: max(
@@ -513,8 +433,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private func scroll(to index: Int, animated: Bool) {
-            guard !orderedIDs.isEmpty else { return }
-            let targetIndex = min(orderedIDs.count - 1, max(0, index))
+            guard !contents.orderedIDs.isEmpty else { return }
+            let targetIndex = min(contents.orderedIDs.count - 1, max(0, index))
             applyLogicalScrollOffset(
                 NativeVideoShelfGeometry.offset(for: targetIndex),
                 animated: animated
@@ -523,8 +443,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
         private func applyLogicalScrollOffset(_ requested: CGFloat, animated: Bool) {
             let logicalTarget = min(max(0, requested), maximumLogicalOffsetX)
-            let physicalTarget = NativeVideoShelfScrollCoordinates.physicalOffsetX(
-                logicalOffsetX: logicalTarget,
+            let physicalTarget = NativeVideoScrollCoordinateSpace.physicalOffset(
+                logicalOffset: logicalTarget,
                 leadingInset: scrollView.contentInsets.left
             )
             scrollView.scrollHorizontally(to: physicalTarget, animated: animated)
@@ -547,31 +467,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
         private func updateHoverForCurrentPointerLocation() {
             guard isInteractionEnabled else {
-                setHoveredItem(nil)
+                hover.setHoveredItem(nil)
                 return
             }
-            let candidate: NativeVideoCollectionItem?
-            if let windowPoint = collectionView.window?.mouseLocationOutsideOfEventStream {
-                let collectionPoint = collectionView.convert(windowPoint, from: nil)
-                if collectionView.visibleRect.contains(collectionPoint),
-                    let indexPath = collectionView.indexPathForItem(at: collectionPoint)
-                {
-                    candidate = collectionView.item(at: indexPath) as? NativeVideoCollectionItem
-                } else {
-                    candidate = nil
-                }
-            } else {
-                candidate = nil
-            }
-            setHoveredItem(candidate)
-        }
-
-        private func setHoveredItem(_ item: NativeVideoCollectionItem?) {
-            guard hoveredItem !== item else { return }
-            let previous = hoveredItem
-            hoveredItem = item
-            previous?.setHovered(false)
-            item?.setHovered(true)
+            hover.updateForCurrentPointerLocation(in: collectionView)
         }
 
         private func item(
@@ -583,35 +482,20 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 if isHovered { item.clearHover() }
                 return
             }
-            if isHovered {
-                guard hoveredItem !== item else { return }
-                let previous = hoveredItem
-                hoveredItem = item
-                previous?.setHovered(false)
-            } else if hoveredItem === item {
-                hoveredItem = nil
-            }
+            hover.itemDidChangeHover(item, isHovered: isHovered)
         }
 
         private func observeWindow(_ window: NSWindow?) {
-            if let windowResignObserver {
-                NotificationCenter.default.removeObserver(windowResignObserver)
-                self.windowResignObserver = nil
-            }
+            windowObservers.removeAll()
             guard let window else {
-                setHoveredItem(nil)
+                hover.setHoveredItem(nil)
                 return
             }
-            windowResignObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResignKeyNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.setHoveredItem(nil)
-                    self?.collectionView.hideKeyboardSelectionAppearance()
-                    self?.scrollView.clearTransientControls()
-                }
+            windowObservers.observe(NSWindow.didResignKeyNotification, object: window) {
+                [weak self] in
+                self?.hover.setHoveredItem(nil)
+                self?.collectionView.hideKeyboardSelectionAppearance()
+                self?.scrollView.clearTransientControls()
             }
         }
 
@@ -622,437 +506,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         ) {
             guard let item = item as? NativeVideoCollectionItem else { return }
             guard collectionView.indexPath(for: item) == nil else { return }
-            if hoveredItem === item { hoveredItem = nil }
-            item.invalidateImageRequests()
-            item.clearHover()
-        }
-    }
-}
-
-@MainActor
-final class NativeVideoShelfScrollView: NSScrollView {
-    var onViewportLayout: (() -> Void)?
-    var onPageBackward: (() -> Void)?
-    var onPageForward: (() -> Void)?
-    var onWindowChange: ((NSWindow?) -> Void)?
-
-    private let backwardButton = NativeVideoShelfPageButton()
-    private let forwardButton = NativeVideoShelfPageButton()
-    private var trackingArea: NSTrackingArea?
-    private var isPointerInside = false
-    private var canGoBackward = false
-    private var canGoForward = false
-    private var lastViewportSize: NSSize?
-    private var lastContentInsets = NSEdgeInsetsZero
-    private var viewportUpdateScheduled = false
-    private var focusUpdateScheduled = false
-    private var isInteractionEnabled = true
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        for (button, symbol, label) in [
-            (backwardButton, "chevron.left", AppStrings.localized("上一排相关推荐")),
-            (forwardButton, "chevron.right", AppStrings.localized("下一排相关推荐")),
-        ] {
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyDown
-            button.controlSize = .large
-            if #available(macOS 26.0, *) {
-                button.bezelStyle = .glass
-            } else {
-                button.bezelStyle = .circular
-            }
-            button.setAccessibilityLabel(label)
-            button.toolTip = label
-            button.isHidden = true
-            button.onFocusChange = { [weak self] in
-                self?.updateFocusWithinSoon()
-            }
-            addSubview(button)
-        }
-        backwardButton.target = self
-        backwardButton.action = #selector(pageBackward)
-        forwardButton.target = self
-        forwardButton.action = #selector(pageForward)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func install(collectionView: NSCollectionView) {
-        documentView = collectionView
-        hasHorizontalScroller = true
-        horizontalScroller = NativeVideoShelfHiddenScroller()
-        hasVerticalScroller = false
-        verticalScroller = nil
-        drawsBackground = false
-        automaticallyAdjustsContentInsets = true
-        usesPredominantAxisScrolling = true
-        horizontalScrollElasticity = .automatic
-        verticalScrollElasticity = .none
-        contentView.postsBoundsChangedNotifications = true
-    }
-
-    override func layout() {
-        super.layout()
-        let safeLeading = max(contentInsets.left, safeAreaInsets.left)
-        let safeTrailing = max(contentInsets.right, safeAreaInsets.right)
-        let buttonSize = NSSize(width: 44, height: 44)
-        let y = max(0, (bounds.height - buttonSize.height) / 2)
-        backwardButton.frame = NSRect(
-            x: safeLeading + 12,
-            y: y,
-            width: buttonSize.width,
-            height: buttonSize.height
-        )
-        forwardButton.frame = NSRect(
-            x: max(
-                safeLeading + 12,
-                bounds.width - safeTrailing - buttonSize.width - 12
-            ),
-            y: y,
-            width: buttonSize.width,
-            height: buttonSize.height
-        )
-        updatePointerInsideFromWindow()
-
-        let viewportSize = contentSize
-        let viewportChanged =
-            lastViewportSize.map {
-                abs($0.width - viewportSize.width) > 0.5
-                    || abs($0.height - viewportSize.height) > 0.5
-            } ?? true
-        let insetsChanged =
-            abs(lastContentInsets.left - contentInsets.left) > 0.5
-            || abs(lastContentInsets.right - contentInsets.right) > 0.5
-            || abs(lastContentInsets.top - contentInsets.top) > 0.5
-            || abs(lastContentInsets.bottom - contentInsets.bottom) > 0.5
-        guard viewportChanged || insetsChanged else { return }
-        lastViewportSize = viewportSize
-        lastContentInsets = contentInsets
-        scheduleViewportUpdate()
-    }
-
-    private func scheduleViewportUpdate() {
-        guard !viewportUpdateScheduled else { return }
-        viewportUpdateScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.viewportUpdateScheduled = false
-            self.onViewportLayout?()
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        onWindowChange?(window)
-        updateFocusWithinSoon()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let updated = NSTrackingArea(
-            rect: .zero,
-            options: [
-                .mouseEnteredAndExited,
-                .activeInKeyWindow,
-                .inVisibleRect,
-            ],
-            owner: self
-        )
-        addTrackingArea(updated)
-        trackingArea = updated
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        updatePointerInside(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        updatePointerInside(false)
-    }
-
-    func updatePageAvailability(canGoBackward: Bool, canGoForward: Bool) {
-        guard
-            self.canGoBackward != canGoBackward
-                || self.canGoForward != canGoForward
-        else { return }
-        self.canGoBackward = canGoBackward
-        self.canGoForward = canGoForward
-        updateButtons()
-    }
-
-    func setInteractionEnabled(_ isEnabled: Bool) {
-        guard isInteractionEnabled != isEnabled else { return }
-        isInteractionEnabled = isEnabled
-        updateButtons()
-    }
-
-    func updateFocusWithinSoon() {
-        guard !focusUpdateScheduled else { return }
-        focusUpdateScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.focusUpdateScheduled = false
-            self.updateButtons()
-        }
-    }
-
-    func scrollHorizontally(to x: CGFloat, animated: Bool) {
-        let target = NSPoint(x: x, y: contentView.bounds.origin.y)
-        guard animated else {
-            contentView.scroll(to: target)
-            reflectScrolledClipView(contentView)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.24
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            contentView.animator().setBoundsOrigin(target)
-        }
-    }
-
-    func reset() {
-        clearTransientControls()
-        viewportUpdateScheduled = false
-        onViewportLayout = nil
-        onPageBackward = nil
-        onPageForward = nil
-        onWindowChange = nil
-        documentView = nil
-    }
-
-    func clearFirstResponderIfNeeded() {
-        guard
-            let window,
-            let responder = window.firstResponder as? NSView,
-            responder === self || responder.isDescendant(of: self)
-        else { return }
-        window.makeFirstResponder(nil)
-    }
-
-    func clearTransientControls() {
-        updatePointerInside(false)
-    }
-
-    @objc private func pageBackward() {
-        guard isInteractionEnabled else { return }
-        onPageBackward?()
-    }
-
-    @objc private func pageForward() {
-        guard isInteractionEnabled else { return }
-        onPageForward?()
-    }
-
-    func updatePointerInside(_ isInside: Bool) {
-        guard isPointerInside != isInside else { return }
-        isPointerInside = isInside
-        updateButtons()
-    }
-
-    private func updatePointerInsideFromWindow() {
-        guard let window else {
-            updatePointerInside(false)
-            return
-        }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        updatePointerInside(bounds.contains(point))
-    }
-
-    private var keyboardShowsControls: Bool {
-        if window?.firstResponder === backwardButton
-            || window?.firstResponder === forwardButton
-        {
-            return true
-        }
-        return (documentView as? NativeVideoShelfCollectionView)?.showsKeyboardSelection
-            == true
-    }
-
-    private func updateButtons() {
-        let hidesControls = !isInteractionEnabled || (!isPointerInside && !keyboardShowsControls)
-        moveFocusToCollectionIfNeeded(
-            beforeHiding: backwardButton,
-            hides: hidesControls || !canGoBackward
-        )
-        moveFocusToCollectionIfNeeded(
-            beforeHiding: forwardButton,
-            hides: hidesControls || !canGoForward
-        )
-        backwardButton.isEnabled = isInteractionEnabled && canGoBackward
-        forwardButton.isEnabled = isInteractionEnabled && canGoForward
-        if backwardButton.isHidden != hidesControls {
-            backwardButton.isHidden = hidesControls
-        }
-        if forwardButton.isHidden != hidesControls {
-            forwardButton.isHidden = hidesControls
-        }
-    }
-
-    private func moveFocusToCollectionIfNeeded(beforeHiding button: NSButton, hides: Bool) {
-        guard hides, window?.firstResponder === button else { return }
-        window?.makeFirstResponder(documentView)
-    }
-}
-
-@MainActor
-final class NativeVideoShelfPageButton: NSButton {
-    var onFocusChange: (() -> Void)?
-
-    override func becomeFirstResponder() -> Bool {
-        let accepted = super.becomeFirstResponder()
-        if accepted { onFocusChange?() }
-        return accepted
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let accepted = super.resignFirstResponder()
-        if accepted { onFocusChange?() }
-        return accepted
-    }
-}
-
-@MainActor
-final class NativeVideoShelfHiddenScroller: NSScroller {
-    override class func scrollerWidth(
-        for controlSize: NSControl.ControlSize,
-        scrollerStyle: NSScroller.Style
-    ) -> CGFloat {
-        0
-    }
-
-    override func draw(_ dirtyRect: NSRect) {}
-}
-
-@MainActor
-final class NativeVideoShelfCollectionView: NSCollectionView {
-    var onActivateSelection: ((String) -> Void)?
-    var itemIDAtIndex: ((Int) -> String?)?
-    var onFocusChange: (() -> Void)?
-    private(set) var showsKeyboardSelection = false
-    var isInteractionEnabled = true
-
-    override func becomeFirstResponder() -> Bool {
-        guard isInteractionEnabled else { return false }
-        let accepted = super.becomeFirstResponder()
-        if accepted {
-            if selectionIndexPaths.isEmpty, let first = firstVisibleIndexPath {
-                selectionIndexPaths = [first]
-            }
-            showsKeyboardSelection = true
-            updateVisibleKeyboardSelection()
-            onFocusChange?()
-        }
-        return accepted
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let accepted = super.resignFirstResponder()
-        if accepted {
-            hideKeyboardSelectionAppearance()
-        }
-        return accepted
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isInteractionEnabled else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        let clickedIndexPath = indexPathForItem(at: point)
-        super.mouseDown(with: event)
-        hideKeyboardSelectionAppearance()
-        guard
-            let clickedIndexPath,
-            let id = itemIDAtIndex?(clickedIndexPath.item)
-        else { return }
-        onActivateSelection?(id)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard isInteractionEnabled else {
-            super.keyDown(with: event)
-            return
-        }
-        if event.keyCode == 36 || event.charactersIgnoringModifiers == " " {
-            activateSelectedItem()
-            return
-        }
-        let delta: Int? =
-            switch event.keyCode {
-            case 123: -1
-            case 124: 1
-            default: nil
-            }
-        if let delta, moveSelection(by: delta) { return }
-        super.keyDown(with: event)
-    }
-
-    func clearSelectionForContentReplacement() {
-        hideKeyboardSelectionAppearance()
-        selectionIndexPaths = []
-        if window?.firstResponder === self {
-            window?.makeFirstResponder(nil)
-        }
-    }
-
-    func hideKeyboardSelectionAppearance() {
-        guard showsKeyboardSelection else { return }
-        showsKeyboardSelection = false
-        updateVisibleKeyboardSelection()
-        onFocusChange?()
-    }
-
-    func activateSelectedItem() {
-        guard
-            let id = Self.selectedItemID(
-                selectionIndexPaths: selectionIndexPaths,
-                itemIDAtIndex: itemIDAtIndex
-            )
-        else { return }
-        onActivateSelection?(id)
-    }
-
-    static func selectedItemID(
-        selectionIndexPaths: Set<IndexPath>,
-        itemIDAtIndex: ((Int) -> String?)?
-    ) -> String? {
-        guard let index = selectionIndexPaths.first?.item else { return nil }
-        return itemIDAtIndex?(index)
-    }
-
-    private var firstVisibleIndexPath: IndexPath? {
-        indexPathsForVisibleItems().min { lhs, rhs in lhs.item < rhs.item }
-    }
-
-    private func moveSelection(by delta: Int) -> Bool {
-        let itemCount = numberOfItems(inSection: 0)
-        guard itemCount > 0 else { return false }
-        let current: Int
-        if let selected = selectionIndexPaths.first?.item {
-            current = selected
-        } else if let firstVisible = firstVisibleIndexPath?.item {
-            current = delta < 0 ? min(itemCount - 1, firstVisible + 1) : firstVisible - 1
-        } else {
-            current = delta < 0 ? 1 : -1
-        }
-        let target = min(itemCount - 1, max(0, current + delta))
-        showsKeyboardSelection = true
-        let targetPath = IndexPath(item: target, section: 0)
-        selectionIndexPaths = [targetPath]
-        updateVisibleKeyboardSelection()
-        scrollToItems(at: [targetPath], scrollPosition: .nearestHorizontalEdge)
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleKeyboardSelection()
-        }
-        return true
-    }
-
-    private func updateVisibleKeyboardSelection() {
-        for case let item as NativeVideoCollectionItem in visibleItems() {
-            item.setKeyboardFocusVisible(showsKeyboardSelection && item.isSelected)
+            hover.itemDidEndDisplaying(item)
         }
     }
 }

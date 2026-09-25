@@ -69,6 +69,8 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         let activeAuthorizer = authorizer
         qrCode = nil
         state = .restoring
+        // 复核完成前凭据是否仍在 Keychain 未知：阻止并发的 QR 登录，并让中途取消保持"需先登出"。
+        requiresLogout = true
 
         do {
             let restored = try await activeAuthorizer.restoreAccountSession()
@@ -91,7 +93,8 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             }
         } catch is CancellationError {
             guard generation == operationGeneration else { return state }
-            state = .signedOut
+            // 复核被取消时凭据状态未知，不能伪装成安全的未登录；保留可重试的失败态。
+            state = .failed(.network)
         } catch let error as BiliRequestAuthorizationError {
             guard generation == operationGeneration else { return state }
             // restoreAccountSession only throws after credential access or validation

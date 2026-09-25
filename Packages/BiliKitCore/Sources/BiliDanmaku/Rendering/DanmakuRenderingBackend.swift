@@ -24,68 +24,16 @@ public enum DanmakuPreparationResult: Sendable, Equatable {
     case rejected(DanmakuPreparationRejectionReason)
 }
 
-public struct DanmakuRendererDurations: Sendable, Equatable {
-    public let scrollingSeconds: Double
-    public let fixedSeconds: Double
+/// 弹幕运动时长的唯一策略来源；基准速度、长度加成与上下限都是产品固定值。
+enum DanmakuMotionPolicy {
+    static let basePointSpeed = 130.0
+    static let lengthReferenceWidth = 960.0
+    static let lengthCoefficient = 0.3
+    static let minimumScrollingSeconds = 1.5
+    static let maximumScrollingSeconds = 60.0
+    static let fixedSeconds = 4.0
 
-    public init(
-        scrollingSeconds: Double = 8,
-        fixedSeconds: Double = 4
-    ) {
-        self.scrollingSeconds = scrollingSeconds
-        self.fixedSeconds = fixedSeconds
-    }
-
-    func duration(for mode: DanmakuPresentationMode) -> Double {
-        switch mode {
-        case .scrolling: scrollingSeconds
-        case .top, .bottom: fixedSeconds
-        }
-    }
-}
-
-public struct DanmakuMotionPolicy: Sendable, Equatable {
-    public let basePointSpeed: Double
-    public let lengthReferenceWidth: Double
-    public let lengthCoefficient: Double
-    public let maximumLengthBonus: Double
-    public let minimumScrollingSeconds: Double
-    public let maximumScrollingSeconds: Double
-    public let fixedSeconds: Double
-
-    private let fixedScrollingSeconds: Double?
-
-    public init(
-        basePointSpeed: Double = 130,
-        lengthReferenceWidth: Double = 960,
-        lengthCoefficient: Double = 0.3,
-        maximumLengthBonus: Double = .infinity,
-        minimumScrollingSeconds: Double = 1.5,
-        maximumScrollingSeconds: Double = 60,
-        fixedSeconds: Double = 4
-    ) {
-        self.basePointSpeed = basePointSpeed
-        self.lengthReferenceWidth = lengthReferenceWidth
-        self.lengthCoefficient = lengthCoefficient
-        self.maximumLengthBonus = maximumLengthBonus
-        self.minimumScrollingSeconds = minimumScrollingSeconds
-        self.maximumScrollingSeconds = maximumScrollingSeconds
-        self.fixedSeconds = fixedSeconds
-        self.fixedScrollingSeconds = nil
-    }
-
-    init(fixedDurations: DanmakuRendererDurations) {
-        basePointSpeed = 130
-        lengthReferenceWidth = 960
-        lengthCoefficient = 0.3
-        maximumLengthBonus = .infinity
-        minimumScrollingSeconds = 4
-        maximumScrollingSeconds = 30
-        fixedSeconds = fixedDurations.fixedSeconds
-        fixedScrollingSeconds = fixedDurations.scrollingSeconds
-    }
-
-    func duration(
+    static func duration(
         for mode: DanmakuPresentationMode,
         textWidth: Double,
         surfaceWidth: Double,
@@ -95,32 +43,14 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
         case .top, .bottom:
             return fixedSeconds
         case .scrolling:
-            if let fixedScrollingSeconds {
-                return fixedScrollingSeconds
-            }
-            guard basePointSpeed.isFinite,
-                basePointSpeed > 0,
-                lengthReferenceWidth.isFinite,
-                lengthReferenceWidth > 0,
-                lengthCoefficient.isFinite,
-                lengthCoefficient >= 0,
-                !maximumLengthBonus.isNaN,
-                maximumLengthBonus >= 0,
-                minimumScrollingSeconds.isFinite,
-                minimumScrollingSeconds > 0,
-                maximumScrollingSeconds.isFinite,
-                maximumScrollingSeconds >= minimumScrollingSeconds,
-                textWidth.isFinite,
+            guard textWidth.isFinite,
                 textWidth > 0,
                 surfaceWidth.isFinite,
                 surfaceWidth > 0
             else {
                 return .nan
             }
-            let lengthBonus = min(
-                lengthCoefficient * textWidth / lengthReferenceWidth,
-                maximumLengthBonus
-            )
+            let lengthBonus = lengthCoefficient * textWidth / lengthReferenceWidth
             let mediaPointSpeed =
                 basePointSpeed
                 * speedMultiplier(for: speedLevel)
@@ -133,7 +63,7 @@ public struct DanmakuMotionPolicy: Sendable, Equatable {
         }
     }
 
-    private func speedMultiplier(for level: DanmakuSpeedLevel) -> Double {
+    private static func speedMultiplier(for level: DanmakuSpeedLevel) -> Double {
         switch level {
         case .one: 90 / 130
         case .two: 110 / 130
@@ -157,15 +87,6 @@ public protocol DanmakuRenderingBackendDelegate: AnyObject {
 public protocol DanmakuRenderingBackend: AnyObject {
     var delegate: (any DanmakuRenderingBackendDelegate)? { get set }
 
-    func measure(_ event: DanmakuEvent) -> DanmakuTextMetrics
-    func render(_ placement: DanmakuLanePlacement)
-    func remove(eventID: String)
-    func clearAll()
-    func setPlaybackRate(_ rate: Double)
-    func setOpacity(_ opacity: DanmakuOpacity)
-    func updateSurfaceSize(width: Double, height: Double)
-    func stop()
-
     /// 准备完成回调必须返回 MainActor；controller 只会在 `.ready` 后执行 lane 准入。
     func prepare(
         _ event: DanmakuEvent,
@@ -186,53 +107,14 @@ public protocol DanmakuRenderingBackend: AnyObject {
     ) -> Bool
     func discardPreparation(preparationID: UInt64)
     func cancelPendingPreparations()
+    func remove(eventID: String)
+    func clearAll()
+    func setPlaybackRate(_ rate: Double)
+    func setOpacity(_ opacity: DanmakuOpacity)
     func updateSurfaceSize(
         width: Double,
         height: Double,
         backingScale: Double
     )
-}
-
-extension DanmakuRenderingBackend {
-    /// 旧 Lab/test backend 的同步兼容桥。
-    ///
-    /// 生产 renderer 覆盖此方法并在后台准备纹理。
-    public func prepare(
-        _ event: DanmakuEvent,
-        preparationID: UInt64,
-        generation: UInt64,
-        backingScale: Double,
-        completion:
-            @escaping @MainActor @Sendable (
-                DanmakuPreparationResult
-            ) -> Void
-    ) {
-        let metrics = measure(event)
-        completion(
-            metrics.width > 0 && metrics.height > 0
-                ? .ready(metrics) : .rejected(.invalidInput)
-        )
-    }
-
-    @discardableResult
-    public func renderPrepared(
-        _ placement: DanmakuLanePlacement,
-        preparationID: UInt64,
-        generation: UInt64
-    ) -> Bool {
-        render(placement)
-        return true
-    }
-
-    public func discardPreparation(preparationID: UInt64) {}
-
-    public func cancelPendingPreparations() {}
-
-    public func updateSurfaceSize(
-        width: Double,
-        height: Double,
-        backingScale: Double
-    ) {
-        updateSurfaceSize(width: width, height: height)
-    }
+    func stop()
 }

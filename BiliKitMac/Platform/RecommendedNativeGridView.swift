@@ -4,31 +4,26 @@ import Foundation
 import SwiftUI
 
 struct RecommendedNativeGridView: View {
-    @State private var imageOwner = NativeVideoImagePipelineOwner()
     @Environment(\.locale) private var locale
-    let videos: [RecommendedVideo]
+    let content: LoadedFeedContent<RecommendedVideo>
     @Binding var scrollOffsetY: CGFloat
-    let canLoadMore: Bool
-    let tailIdentity: String?
-    let isLoading: Bool
     @Binding var scrollReset: NativeVideoGridScrollResetState
-    let onNearEnd: () -> Void
-    let onSelect: (String) -> Void
+    let imagePipeline: NativeVideoImagePipeline
 
     var body: some View {
         NativeVideoGridView(
-            items: Self.makePresentations(videos, locale: locale),
+            items: Self.makePresentations(content.items, locale: locale),
             scrollOffsetY: $scrollOffsetY,
             accessibilityLabel: AppStrings.localized("首页推荐视频", locale: locale),
             tailState: NativeVideoGridTailState(
-                canLoadMore: canLoadMore,
-                tailIdentity: tailIdentity,
-                isLoading: isLoading
+                canLoadMore: content.canLoadMore,
+                tailIdentity: content.tailIdentity,
+                isLoading: content.isLoadingMore
             ),
             scrollReset: $scrollReset,
-            imagePipeline: imageOwner.pipeline,
-            onNearEnd: onNearEnd,
-            onSelect: onSelect
+            imagePipeline: imagePipeline,
+            onNearEnd: content.loadMore,
+            onSelect: content.select
         )
     }
 
@@ -54,7 +49,7 @@ struct RecommendedNativeGridView: View {
                     NativeVideoCardMetric(
                         text: presentation.danmakuCountText,
                         systemImage: "text.bubble.fill"
-                    ),
+                    )
                 ],
                 coverTrailingText: presentation.durationText,
                 footerLeadingText: presentation.footerText,
@@ -71,7 +66,7 @@ struct RecommendedNativeGridView: View {
                         AppStrings.localized("时长 \(presentation.durationText)", locale: locale),
                         presentation.recommendationReason.map {
                             AppStrings.localized("推荐理由 \($0)", locale: locale)
-                        },
+                        }
                     ].compactMap { $0 }
                 )
             )

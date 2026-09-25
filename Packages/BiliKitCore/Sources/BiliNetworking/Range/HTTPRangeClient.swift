@@ -116,23 +116,12 @@ public struct HTTPRangeFetchResult: Sendable, Equatable {
 
 public struct HTTPRangeAttempt: Sendable, Equatable {
     public let url: URL
-    public let failure: HTTPRangeAttemptFailure
+    public let failure: HTTPRangeResponseError
 
-    public init(url: URL, failure: HTTPRangeAttemptFailure) {
+    public init(url: URL, failure: HTTPRangeResponseError) {
         self.url = url
         self.failure = failure
     }
-}
-
-public enum HTTPRangeAttemptFailure: Sendable, Equatable {
-    case disallowedURL
-    case statusCode(Int)
-    case missingContentRange
-    case invalidContentRange
-    case mismatchedContentRange(expected: HTTPByteRange, actual: HTTPContentRange)
-    case bodyLengthMismatch(expected: UInt64, actual: Int)
-    case rejectedBody
-    case transport(errorType: String)
 }
 
 public enum HTTPRangeClientError: Error, Sendable, Equatable {
@@ -149,14 +138,9 @@ public struct HTTPRangeClient: Sendable {
     private let urlPolicy: PublicHTTPSURLPolicy
 
     public init() {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         self.init(
             transport: URLSessionTransport(
-                configuration: configuration,
+                configuration: .credentialFreeEphemeral(),
                 redirectPolicy: .reject
             )
         )
@@ -195,13 +179,9 @@ public struct HTTPRangeClient: Sendable {
                 continue
             }
 
-            let request = HTTPRequest(
-                url: url,
-                headers: headersBySettingRange(
-                    range,
-                    on: additionalHeaders
-                )
-            )
+            var headers = additionalHeaders.removingCredentialAndRangeHeaders()
+            headers["Range"] = range.headerValue
+            let request = HTTPRequest(url: url, headers: headers)
 
             do {
                 let response = try await transport.send(request)
@@ -211,13 +191,13 @@ public struct HTTPRangeClient: Sendable {
                     expectedRange: range
                 )
                 if let validateBody, !validateBody(result.body) {
-                    throw HTTPRangeAttemptFailureError(.rejectedBody)
+                    throw HTTPRangeResponseError.rejectedBody
                 }
                 return result
             } catch is CancellationError {
                 throw CancellationError()
-            } catch let failure as HTTPRangeAttemptFailureError {
-                attempts.append(HTTPRangeAttempt(url: url, failure: failure.value))
+            } catch let failure as HTTPRangeResponseError {
+                attempts.append(HTTPRangeAttempt(url: url, failure: failure))
             } catch {
                 attempts.append(
                     HTTPRangeAttempt(
@@ -233,68 +213,24 @@ public struct HTTPRangeClient: Sendable {
         throw HTTPRangeClientError.allCandidatesFailed(attempts)
     }
 
-    private func headersBySettingRange(
-        _ range: HTTPByteRange,
-        on headers: [String: String]
-    ) -> [String: String] {
-        var result = headers.filter { name, _ in
-            name.caseInsensitiveCompare("Range") != .orderedSame
-        }
-        result["Range"] = range.headerValue
-        return result
-    }
-
     private func validatedResult(
         _ response: HTTPResponse,
         sourceURL: URL,
         expectedRange: HTTPByteRange
     ) throws -> HTTPRangeFetchResult {
-        guard response.statusCode == 206 else {
-            throw HTTPRangeAttemptFailureError(.statusCode(response.statusCode))
-        }
-        guard let rawContentRange = response.headerValue(named: "Content-Range") else {
-            throw HTTPRangeAttemptFailureError(.missingContentRange)
-        }
-
-        let contentRange: HTTPContentRange
-        do {
-            contentRange = try HTTPContentRange.parse(rawContentRange)
-        } catch {
-            throw HTTPRangeAttemptFailureError(.invalidContentRange)
-        }
-
-        guard contentRange.start == expectedRange.start,
-            contentRange.endInclusive == expectedRange.endInclusive
-        else {
-            throw HTTPRangeAttemptFailureError(
-                .mismatchedContentRange(
-                    expected: expectedRange,
-                    actual: contentRange
-                )
-            )
-        }
+        let head = try HTTPRangeResponseValidator(expectedRange: expectedRange)
+            .validate(statusCode: response.statusCode) { response.headerValue(named: $0) }
         guard UInt64(response.body.count) == expectedRange.length else {
-            throw HTTPRangeAttemptFailureError(
-                .bodyLengthMismatch(
-                    expected: expectedRange.length,
-                    actual: response.body.count
-                )
+            throw HTTPRangeResponseError.bodyLengthMismatch(
+                expected: expectedRange.length,
+                actual: UInt64(response.body.count)
             )
         }
-
         return HTTPRangeFetchResult(
             sourceURL: sourceURL,
-            contentRange: contentRange,
+            contentRange: head.contentRange,
             body: response.body
         )
-    }
-}
-
-private struct HTTPRangeAttemptFailureError: Error {
-    let value: HTTPRangeAttemptFailure
-
-    init(_ value: HTTPRangeAttemptFailure) {
-        self.value = value
     }
 }
 

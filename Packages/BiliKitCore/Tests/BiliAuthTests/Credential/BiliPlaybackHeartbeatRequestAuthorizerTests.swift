@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliAuth
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func authorizesExactContractAndInjectsOnlySessionAndCSRF() async throws {
@@ -23,7 +24,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     }
 
     @Test
-    func rejectsEveryOriginMethodPathAndHeaderExpansion() async throws {
+    func rejectsEveryOriginMethodAndPathExpansion() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
             store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
         )
@@ -41,7 +42,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
                 .post
             ),
             ("https://api.bilibili.com/x/v2/history/report?\(validQuery)", .post),
-            ("https://api.bilibili.com/x/click-interface/web/heartbeat?\(validQuery)", .get),
+            ("https://api.bilibili.com/x/click-interface/web/heartbeat?\(validQuery)", .get)
         ]
         for (urlString, method) in cases {
             let request = HTTPRequest(
@@ -54,12 +55,17 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
                 try await authorizer.authorize(request)
             }
         }
+    }
 
-        for header in ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"] {
-            let request = try heartbeatRequest(additionalHeader: header)
-            await #expect(throws: (any Error).self) {
-                try await authorizer.authorize(request)
-            }
+    @Test(arguments: ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"])
+    func rejectsEveryHeaderExpansion(header: String) async throws {
+        let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
+            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        )
+        let request = try heartbeatRequest(additionalHeader: header)
+
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await authorizer.authorize(request)
         }
     }
 
@@ -96,7 +102,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
                     of: "w_video_duration=120",
                     with: "w_video_duration=121"
                 )
-            ),
+            )
         ]
         for request in invalidRequests {
             await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
@@ -154,7 +160,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
             "Content-Type": "application/x-www-form-urlencoded",
             "Referer": "https://www.bilibili.com/video/BV1FIXTURE/",
             "User-Agent":
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 BiliKitMac/0.1"
         ]
     }
 
@@ -166,7 +172,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
             "refer_url=https://www.bilibili.com/video/BV1FIXTURE/",
             "video_duration=120", "last_play_progress_time=18",
             "max_play_progress_time=33", "outer=0", "mobi_app=web", "device=web",
-            "platform=web", "session=0123456789abcdef0123456789abcdef",
+            "platform=web", "session=0123456789abcdef0123456789abcdef"
         ].joined(separator: "&")
     }
 
@@ -176,7 +182,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
             "w_played_time=18", "w_real_played_time=17", "w_realtime=20",
             "w_start_ts=1777777700", "w_video_duration=120",
             "web_location=1315873", "wts=1777777777",
-            "w_rid=0123456789abcdef0123456789abcdef",
+            "w_rid=0123456789abcdef0123456789abcdef"
         ].joined(separator: "&")
     }
 

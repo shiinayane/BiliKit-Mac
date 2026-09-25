@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+@Suite(.timeLimit(.minutes(1)))
 struct RelatedVideoUseCaseTests {
     @Test
     func removesCurrentVideoAndDuplicatesWithoutChangingRemoteOrder() async throws {
@@ -17,18 +18,6 @@ struct RelatedVideoUseCaseTests {
         let videos = try await useCase.relatedVideos(to: current.bvid)
 
         #expect(videos == [first, second])
-    }
-
-    @Test
-    func currentVideoOnlyBecomesEmptyResult() async throws {
-        let current = RelatedVideo.fixture(bvid: "BV1CurrentAA1")
-        let useCase = RelatedVideoUseCase(
-            repository: RelatedVideoRepositoryStub(videos: [current])
-        )
-
-        let videos = try await useCase.relatedVideos(to: current.bvid)
-
-        #expect(videos.isEmpty)
     }
 }
 

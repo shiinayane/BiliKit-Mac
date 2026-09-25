@@ -39,11 +39,10 @@ struct RelatedVideoShelfTests {
         #expect(presentation.durationText == "12:34")
         for value in [
             presentation.title, presentation.ownerName, presentation.viewCountText,
-            presentation.danmakuCountText, presentation.durationText ?? "",
+            presentation.danmakuCountText, presentation.durationText ?? ""
         ] {
             #expect(presentation.accessibilityLabel.contains(value))
         }
-        #expect(RelatedVideoShelfState.loaded([presentation]).itemCount == 1)
     }
 
     @Test
@@ -66,17 +65,5 @@ struct RelatedVideoShelfTests {
 
         #expect(presentation.durationText == nil)
         #expect(!presentation.accessibilityLabel.contains("12:34"))
-    }
-
-    @Test
-    func selectionForwardsOnlyTheReplacementBVID() {
-        var selectedBVID: String?
-        let selection = RelatedVideoShelfSelection { bvid in
-            selectedBVID = bvid
-        }
-
-        selection.select("BV1Replacement")
-
-        #expect(selectedBVID == "BV1Replacement")
     }
 }

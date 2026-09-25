@@ -1,6 +1,7 @@
 import BiliNetworking
 import Foundation
 @preconcurrency import Network
+import Synchronization
 
 private struct LoopbackResponseAlreadyStartedError: Error {}
 
@@ -16,6 +17,9 @@ public struct LoopbackRemoteResource: Sendable, Equatable {
         contentType: String,
         headers: [String: String] = [:]
     ) throws {
+        guard BiliMediaCDNURLPolicy().allows(sourceURL) else {
+            throw LoopbackPlaybackServerError.invalidRemoteSource
+        }
         guard contentLength > 0 else {
             throw LoopbackPlaybackServerError.invalidContentLength(contentLength)
         }
@@ -67,11 +71,7 @@ public final class LoopbackProgressiveResource: @unchecked Sendable, Equatable {
             allowed.insert("application/octet-stream")
         }
         allowedUpstreamContentTypes = allowed
-        self.headers = headers.filter { name, _ in
-            name.caseInsensitiveCompare("Cookie") != .orderedSame
-                && name.caseInsensitiveCompare("Authorization") != .orderedSame
-                && name.caseInsensitiveCompare("Range") != .orderedSame
-        }
+        self.headers = headers.removingCredentialAndRangeHeaders()
     }
 
     public static func == (
@@ -282,13 +282,7 @@ public enum LoopbackPlaybackServerError: Error, Sendable, Equatable {
     case listenerFailed(String)
     case invalidHTTPRequest
     case invalidProgressiveSource
-}
-
-struct LoopbackPlaybackServerDiagnostics: Sendable, Equatable {
-    let isRunning: Bool
-    let registeredRouteCount: Int
-    let activeConnectionCount: Int
-    let activeTaskCount: Int
+    case invalidRemoteSource
 }
 
 private enum LoopbackRangeRequest {
@@ -306,25 +300,20 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let lock = NSLock()
-    private let rangeClient: HTTPRangeClient
     private let rangeStreamer: any HTTPRangeStreaming
     private let sessionToken: String
     private var listener: NWListener?
     private var port: NWEndpoint.Port?
     private var routes: [String: LoopbackPlaybackResource] = [:]
-    private var requestCounts: [String: Int] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var connectionTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var connectionTargets: [ObjectIdentifier: String] = [:]
 
     public init(
-        rangeClient: HTTPRangeClient = HTTPRangeClient(),
-        rangeStreamer: any HTTPRangeStreaming = HTTPRangeStreamingClient(),
-        queueLabel: String = "com.shiinayane.BiliKit.loopback-playback"
+        rangeStreamer: any HTTPRangeStreaming = HTTPRangeStreamingClient()
     ) {
-        self.rangeClient = rangeClient
         self.rangeStreamer = rangeStreamer
-        queue = DispatchQueue(label: queueLabel)
+        queue = DispatchQueue(label: "com.shiinayane.BiliKit.loopback-playback")
         sessionToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
     }
 
@@ -353,14 +342,16 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             )
         }
 
-        let startBox = StartContinuationBox()
+        let started = OneShotResult<Void>()
         listener.stateUpdateHandler = { [weak self, weak listener] state in
             switch state {
             case .ready:
                 guard let self, let boundPort = listener?.port else {
-                    startBox.resume(
-                        throwing: LoopbackPlaybackServerError.listenerFailed(
-                            "Listener became ready without a port"
+                    started.resolve(
+                        .failure(
+                            LoopbackPlaybackServerError.listenerFailed(
+                                "Listener became ready without a port"
+                            )
                         )
                     )
                     return
@@ -368,17 +359,21 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 self.lock.withLock {
                     self.port = boundPort
                 }
-                startBox.resume()
+                started.resolve(.success(()))
             case .failed(let error):
-                startBox.resume(
-                    throwing: LoopbackPlaybackServerError.listenerFailed(
-                        String(describing: error)
+                started.resolve(
+                    .failure(
+                        LoopbackPlaybackServerError.listenerFailed(
+                            String(describing: error)
+                        )
                     )
                 )
             case .cancelled:
-                startBox.resume(
-                    throwing: LoopbackPlaybackServerError.listenerFailed(
-                        "Listener cancelled before becoming ready"
+                started.resolve(
+                    .failure(
+                        LoopbackPlaybackServerError.listenerFailed(
+                            "Listener cancelled before becoming ready"
+                        )
                     )
                 )
             default:
@@ -394,13 +389,11 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
 
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            try await withCheckedThrowingContinuation { continuation in
-                startBox.install(continuation)
-                listener.start(queue: queue)
-            }
+            listener.start(queue: queue)
+            try await started.value()
             try Task.checkCancellation()
         } onCancel: {
-            startBox.resume(throwing: CancellationError())
+            started.resolve(.failure(CancellationError()))
             self.cancelStart(listener)
         }
     }
@@ -508,7 +501,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             listener = nil
             port = nil
             routes.removeAll()
-            requestCounts.removeAll()
             connections.removeAll()
             connectionTasks.removeAll()
             connectionTargets.removeAll()
@@ -524,24 +516,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
         cancelGeneratedResources(in: state.3)
         rangeStreamer.invalidate()
-    }
-
-    func diagnosticsSnapshot() -> LoopbackPlaybackServerDiagnostics {
-        lock.withLock {
-            LoopbackPlaybackServerDiagnostics(
-                isRunning: listener != nil && port != nil,
-                registeredRouteCount: routes.count,
-                activeConnectionCount: connections.count,
-                activeTaskCount: connectionTasks.count
-            )
-        }
-    }
-
-    func requestCount(method: String, at relativePath: String) throws -> Int {
-        let route = try url(for: relativePath).path
-        return lock.withLock {
-            requestCounts[requestKey(method: method, target: route), default: 0]
-        }
     }
 
     private func accept(_ connection: NWConnection) {
@@ -646,10 +620,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             let resource = lock.withLock({ () -> LoopbackPlaybackResource? in
                 guard let resource = routes[request.target] else { return nil }
                 connectionTargets[id] = request.target
-                requestCounts[
-                    requestKey(method: request.method, target: request.target),
-                    default: 0
-                ] += 1
                 return resource
             })
         else {
@@ -689,10 +659,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
-    private func requestKey(method: String, target: String) -> String {
-        "\(method.uppercased()) \(target)"
-    }
-
     private func respond(
         to request: LoopbackHTTPRequest,
         with resource: LoopbackPlaybackResource,
@@ -728,14 +694,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
 
         let requestedRange: HTTPByteRange?
+        let requestedRangeHeader: String?
         switch parseRange(
             request.headers["range"],
             contentLength: resource.contentLength
         ) {
         case .ignored:
             requestedRange = nil
-        case .satisfiable(_, let range):
+            requestedRangeHeader = nil
+        case .satisfiable(let headerValue, let range):
             requestedRange = range
+            requestedRangeHeader = headerValue
         case .unsatisfiable:
             sendStatus(
                 416,
@@ -744,7 +713,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     "Accept-Ranges": "bytes",
                     "Cache-Control": "no-store",
                     "Content-Range": "bytes */\(resource.contentLength)",
-                    "Content-Type": resource.contentType,
+                    "Content-Type": resource.contentType
                 ],
                 on: connection
             )
@@ -778,42 +747,34 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
             }
-            let result = try await rangeClient.fetch(
-                from: [remote.sourceURL],
-                range: requestedRange,
-                headers: remote.headers
-            )
-            try Task.checkCancellation()
-            sendResponse(
-                status: 206,
-                reason: "Partial Content",
-                headers: responseHeaders(
-                    for: resource,
-                    bodyLength: result.body.count,
-                    range: requestedRange,
-                    isHead: false
-                ),
-                body: result.body,
+            // DASH 分段只向 SIDX 成功的来源转发解析后的闭区间 Range；部分 CDN／HTTP/2 省略
+            // Content-Length，正文长度由逐字节计数保证，因此不强制该头。
+            try await streamRange(
+                requestedRange,
+                rangeHeader: requestedRange.headerValue,
+                of: resource,
+                sourceURLs: [remote.sourceURL],
+                headers: remote.headers,
+                allowedUpstreamContentTypes: nil,
+                requiresUpstreamContentLength: false,
+                selectSource: { _ in true },
                 on: connection
             )
         case .progressive(let progressive):
-            guard let requestedRange else {
+            guard let requestedRange, let requestedRangeHeader else {
                 sendStatus(400, reason: "Range Required", on: connection)
                 return
             }
-            guard
-                case .satisfiable(let rangeHeader, _) = parseRange(
-                    request.headers["range"],
-                    contentLength: resource.contentLength
-                )
-            else {
-                sendStatus(400, reason: "Bad Request", on: connection)
-                return
-            }
-            try await streamProgressive(
-                progressive,
-                rangeHeader: rangeHeader,
-                range: requestedRange,
+            // progressive 保留 AVPlayer 原始的单一 Range 头。
+            try await streamRange(
+                requestedRange,
+                rangeHeader: requestedRangeHeader,
+                of: resource,
+                sourceURLs: progressive.eligibleSourceURLs,
+                headers: progressive.headers,
+                allowedUpstreamContentTypes: progressive.allowedUpstreamContentTypes,
+                requiresUpstreamContentLength: true,
+                selectSource: progressive.select,
                 on: connection
             )
         case .generated:
@@ -821,14 +782,34 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         }
     }
 
-    private func streamProgressive(
-        _ resource: LoopbackProgressiveResource,
+    /// 按候选顺序把上游 Range 逐 chunk 转发给 AVPlayer，每个 chunk 等待 send completion。
+    ///
+    /// 只有尚未发送响应头的候选失败才会尝试下一个来源；已发送 206 后失败只能断开连接。
+    private func streamRange(
+        _ range: HTTPByteRange,
         rangeHeader: String,
-        range: HTTPByteRange,
+        of resource: LoopbackPlaybackResource,
+        sourceURLs: [URL],
+        headers: [String: String],
+        allowedUpstreamContentTypes: Set<String>?,
+        requiresUpstreamContentLength: Bool,
+        selectSource: @escaping @Sendable (URL) -> Bool,
         on connection: NWConnection
     ) async throws {
+        var headHeaders = responseHeaders(
+            for: resource,
+            bodyLength: Int(range.length),
+            range: range,
+            isHead: false
+        )
+        headHeaders["Connection"] = "close"
+        let head = Self.responseHead(
+            status: 206,
+            reason: "Partial Content",
+            headers: headHeaders
+        )
         var lastError: (any Error)?
-        for sourceURL in resource.eligibleSourceURLs {
+        for sourceURL in sourceURLs {
             try Task.checkCancellation()
             let responseStarted = LockedFlag()
             do {
@@ -837,26 +818,14 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     rangeHeader: rangeHeader,
                     expectedRange: range,
                     expectedCompleteLength: resource.contentLength,
-                    headers: resource.headers,
-                    allowedContentTypes: resource.allowedUpstreamContentTypes,
+                    headers: headers,
+                    allowedContentTypes: allowedUpstreamContentTypes,
+                    requiresContentLength: requiresUpstreamContentLength,
                     onResponse: { [weak connection] _ in
-                        guard resource.select(sourceURL), let connection else {
+                        guard selectSource(sourceURL), let connection else {
                             throw CancellationError()
                         }
-                        try await Self.sendHead(
-                            status: 206,
-                            reason: "Partial Content",
-                            headers: [
-                                "Accept-Ranges": "bytes",
-                                "Cache-Control": "no-store",
-                                "Connection": "close",
-                                "Content-Length": "\(range.length)",
-                                "Content-Range":
-                                    "bytes \(range.start)-\(range.endInclusive)/\(resource.contentLength)",
-                                "Content-Type": resource.contentType,
-                            ],
-                            on: connection
-                        )
+                        try await Self.sendChunk(head, on: connection)
                         responseStarted.set()
                     },
                     onChunk: { [weak connection] chunk in
@@ -865,7 +834,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
                     }
                 )
                 guard result.byteCount == range.length else {
-                    throw HTTPRangeStreamingError.bodyLengthMismatch(
+                    throw HTTPRangeResponseError.bodyLengthMismatch(
                         expected: range.length,
                         actual: result.byteCount
                     )
@@ -884,18 +853,17 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         throw lastError ?? LoopbackPlaybackServerError.invalidProgressiveSource
     }
 
-    private static func sendHead(
+    private static func responseHead(
         status: Int,
         reason: String,
-        headers: [String: String],
-        on connection: NWConnection
-    ) async throws {
+        headers: [String: String]
+    ) -> Data {
         let head =
             (["HTTP/1.1 \(status) \(reason)"]
             + headers.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
             + ["", ""])
             .joined(separator: "\r\n")
-        try await sendChunk(Data(head.utf8), on: connection)
+        return Data(head.utf8)
     }
 
     private static func sendChunk(
@@ -931,7 +899,7 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             "Content-Type": resource.contentType,
             "Content-Length": isHead
                 ? "\(resource.contentLength)"
-                : "\(bodyLength)",
+                : "\(bodyLength)"
         ]
         if let range {
             headers["Content-Range"] =
@@ -1039,12 +1007,11 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
         responseHeaders["Content-Length"] =
             responseHeaders["Content-Length"]
             ?? "\(body.count)"
-        let head =
-            (["HTTP/1.1 \(status) \(reason)"]
-            + responseHeaders.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
-            + ["", ""])
-            .joined(separator: "\r\n")
-        var response = Data(head.utf8)
+        var response = Self.responseHead(
+            status: status,
+            reason: reason,
+            headers: responseHeaders
+        )
         response.append(body)
 
         connection.send(
@@ -1134,52 +1101,13 @@ private struct LoopbackHTTPRequest: Sendable {
     }
 }
 
-private final class StartContinuationBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, any Error>?
-    private var result: Result<Void, any Error>?
+private final class LockedFlag: Sendable {
+    private let storage = Atomic(false)
 
-    func install(_ continuation: CheckedContinuation<Void, any Error>) {
-        let pendingResult = lock.withLock { () -> Result<Void, any Error>? in
-            if let result {
-                return result
-            }
-            self.continuation = continuation
-            return nil
-        }
-        if let pendingResult {
-            continuation.resume(with: pendingResult)
-        }
-    }
-
-    func resume() {
-        resume(with: .success(()))
-    }
-
-    func resume(throwing error: any Error) {
-        resume(with: .failure(error))
-    }
-
-    private func resume(with result: Result<Void, any Error>) {
-        let continuation = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
-            guard self.result == nil else { return nil }
-            self.result = result
-            let continuation = self.continuation
-            self.continuation = nil
-            return continuation
-        }
-        continuation?.resume(with: result)
-    }
-}
-
-private final class LockedFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = false
-
-    var value: Bool { lock.withLock { storage } }
+    var value: Bool { storage.load(ordering: .acquiring) }
 
     func set() {
-        lock.withLock { storage = true }
+        storage.store(true, ordering: .releasing)
     }
 }
 

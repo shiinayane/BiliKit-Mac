@@ -1,30 +1,11 @@
 import BiliApplication
-import BiliAuthFeature
-import BiliBrowseFeature
-import BiliLibraryFeature
 import BiliModels
 import Testing
 
 @testable import BiliKit
 
+@Suite(.timeLimit(.minutes(1)))
 struct BiliKitMacTests {
-    @Test
-    @MainActor
-    func liveEnvironmentBuildsIdleGuestViewModels() {
-        let environment = AppEnvironment.live()
-
-        let browseModel = environment.makeBrowseViewModel()
-        let videoModel = environment.makeVideoViewModel()
-        let authenticationModel = environment.makeAuthenticationViewModel()
-        let historyModel = environment.makeWatchHistoryViewModel()
-
-        #expect(browseModel.state == .idle)
-        #expect(videoModel.state == .idle)
-        #expect(authenticationModel.state == .signedOut)
-        #expect(historyModel.state == .idle)
-        #expect(environment.nativeSubtitlesEnabled)
-    }
-
     @Test
     @MainActor
     func windowOwnerRetainsPlaybackPreferencesObservation() {
@@ -32,7 +13,9 @@ struct BiliKitMacTests {
         var owner: AppWindowOwner?
 
         do {
-            let environment = AppEnvironment.live()
+            let environment = AppEnvironment.live(
+                accountSessionCoordinator: AccountSessionCoordinator()
+            )
             weakController = environment.playbackPreferencesController
             owner = AppWindowOwner(environment: environment)
         }
@@ -95,7 +78,7 @@ struct BiliKitMacTests {
     func accountCoordinatorOwnsOneProcessWatchProgressWriter() async {
         let coordinator = AccountSessionCoordinator()
         let base = EmptyWatchProgressRepository()
-        let transport = WatchProgressTransportInvalidator()
+        let transport = RecordingSessionInvalidator()
         var factoryCount = 0
 
         for _ in 0..<2 {
@@ -113,12 +96,4 @@ struct BiliKitMacTests {
 
 private actor EmptyWatchProgressRepository: WatchProgressRepository {
     func report(_ progress: WatchProgressReport) {}
-}
-
-private actor WatchProgressTransportInvalidator: AuthenticatedSessionInvalidating {
-    private(set) var invalidationCount = 0
-
-    func invalidateAuthenticatedSession() {
-        invalidationCount += 1
-    }
 }

@@ -24,6 +24,22 @@ public struct HTTPRequest: Sendable, Equatable {
     }
 }
 
+extension HTTPResponse {
+    /// 解码前拒绝 HTML 风控页等非 JSON 响应：Content-Type 必须声明 JSON，正文须以对象（或允许时数组）开头。
+    public func looksLikeJSON(allowsTopLevelArray: Bool = false) -> Bool {
+        guard
+            let contentType = headers.first(where: {
+                $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame
+            })?.value.lowercased(),
+            contentType.contains("json"),
+            let firstByte = body.first(where: { ![9, 10, 13, 32].contains($0) })
+        else {
+            return false
+        }
+        return firstByte == 0x7B || (allowsTopLevelArray && firstByte == 0x5B)
+    }
+}
+
 public struct HTTPResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]
@@ -71,6 +87,21 @@ public actor HTTPClient {
             throw HTTPClientError.unacceptableStatusCode(response.statusCode)
         }
         return response
+    }
+}
+
+extension URLSessionConfiguration {
+    /// 认证、媒体与字幕共用的 ephemeral 基线：不自动附加 Cookie，没有 Cookie、凭据与 URL cache。
+    ///
+    /// 超时按用途由调用方设置；需要账户凭据的请求只由授权器显式写入 header。
+    package static func credentialFreeEphemeral() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
     }
 }
 

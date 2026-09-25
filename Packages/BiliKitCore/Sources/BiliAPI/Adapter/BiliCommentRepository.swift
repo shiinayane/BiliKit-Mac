@@ -94,29 +94,30 @@ public actor BiliCommentRepository: CommentRepository {
     }
 
     private func map(_ error: any Error) -> any Error {
-        if error is CancellationError { return CancellationError() }
-        guard let error = error as? BiliAPIError else {
-            return CommentReadError.unavailable
-        }
-        switch error {
-        case .transportFailure:
-            return CommentReadError.transportFailure
-        case .httpStatus(403), .httpStatus(412),
-            .apiRejected(code: -352, _), .apiRejected(code: -403, _),
-            .apiRejected(code: -412, _):
-            return CommentReadError.requestRestricted
-        case .apiRejected(let code, _):
-            return CommentReadError.serviceRejected(code: code)
-        case .responseTooLarge, .nonJSONResponse, .decodingFailed, .missingData,
-            .invalidWBIKey, .signingFailed, .invalidRequest:
-            return CommentReadError.invalidResponse
+        BiliAPIError.domainError(
+            for: error,
+            fallback: CommentReadError.unavailable,
+            Self.readError
+        )
+    }
+
+    private static func readError(
+        _ failure: BiliAPIError.Failure
+    ) -> CommentReadError {
+        switch failure {
         case .authorizationRequired, .authenticationInvalid:
-            return CommentReadError.authenticationInvalid
-        case .httpStatus, .authorizationUnavailable, .nonProtobufResponse,
-            .invalidMediaData, .invalidSubtitleData, .untrustedSubtitleOrigin,
-            .invalidDanmakuData, .noAVCVideo, .noAACAudio,
-            .unsupportedProgressiveMedia, .noPlayableMedia:
-            return CommentReadError.unavailable
+            .authenticationInvalid
+        case .restricted:
+            .requestRestricted
+        case .rejected(let code):
+            .serviceRejected(code: code)
+        case .transport:
+            .transportFailure
+        case .invalidRequest, .invalidResponse:
+            .invalidResponse
+        case .authorizationUnavailable, .unexpectedHTTPStatus,
+            .unsupportedMedia, .noPlayableMedia:
+            .unavailable
         }
     }
 }

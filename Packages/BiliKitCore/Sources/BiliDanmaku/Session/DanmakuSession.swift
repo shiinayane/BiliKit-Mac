@@ -79,25 +79,20 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         }
     }
 
-    public func setFilter(_ filter: DanmakuFilter) {
-        guard presentationFilter != filter else { return }
-        presentationFilter = filter
-        scheduler.setFilter(filter)
-        presentationSink?.clearPresentation()
-    }
-
     public func setModeVisibility(
         scrolling: Bool,
         top: Bool,
         bottom: Bool
     ) {
-        setFilter(
-            DanmakuFilter(
-                showsScrolling: scrolling,
-                showsTop: top,
-                showsBottom: bottom
-            )
+        let filter = DanmakuFilter(
+            showsScrolling: scrolling,
+            showsTop: top,
+            showsBottom: bottom
         )
+        guard presentationFilter != filter else { return }
+        presentationFilter = filter
+        scheduler.setFilter(filter)
+        presentationSink?.clearPresentation()
     }
 
     public func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
@@ -131,17 +126,6 @@ public final class DanmakuSession: DanmakuPresentationControlling {
         identity = nil
         scheduler.reset()
         state = .idle
-    }
-
-    public func waitForLoads() async {
-        let tasks = Array(loadTasks.values)
-        for task in tasks {
-            await task.value
-        }
-    }
-
-    func loadTaskSnapshotForTesting() -> [Task<Void, Never>] {
-        Array(loadTasks.values)
     }
 
     private func handle(_ snapshot: PlaybackTimelineSnapshot) {

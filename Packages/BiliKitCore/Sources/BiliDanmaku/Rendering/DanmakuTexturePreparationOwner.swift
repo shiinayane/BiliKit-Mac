@@ -40,7 +40,6 @@ final class DanmakuTexturePreparationOwner {
         var requestIDs: [UInt64]
     }
 
-    private(set) var rasterizationCount = 0
     private var cache: DanmakuTextureLRUCache
     private var requests: [UInt64: Request] = [:]
     private var prepared: [UInt64: Prepared] = [:]
@@ -76,18 +75,9 @@ final class DanmakuTexturePreparationOwner {
     }
 
     var outstandingRequestCount: Int { requests.count + prepared.count }
-    var cachedTextureCount: Int { cache.count }
-    var cachedByteCost: Int { cache.totalCost }
-    var cacheHitCount: Int { cache.hitCount }
-    var cacheMissCount: Int { cache.missCount }
-    var cacheEvictionCount: Int { cache.evictionCount }
-    var maximumConcurrentOperationCount: Int {
-        queue.maxConcurrentOperationCount
-    }
 
     func prepare(
         event: DanmakuEvent,
-        style: CoreAnimationDanmakuStyle,
         backingScale: Double,
         preparationID: UInt64,
         generation: UInt64,
@@ -104,7 +94,6 @@ final class DanmakuTexturePreparationOwner {
         guard
             let key = DanmakuTextureRasterizer.key(
                 event: event,
-                style: style,
                 backingScale: backingScale
             )
         else {
@@ -152,7 +141,6 @@ final class DanmakuTexturePreparationOwner {
             operation: operation,
             requestIDs: [preparationID]
         )
-        rasterizationCount += 1
         queue.addOperation(operation)
     }
 
@@ -183,10 +171,6 @@ final class DanmakuTexturePreparationOwner {
         for operation in operations {
             operation.cancel()
         }
-    }
-
-    func handleMemoryPressureForTesting() {
-        handleMemoryPressure()
     }
 
     private func finish(
@@ -228,7 +212,8 @@ final class DanmakuTexturePreparationOwner {
         memoryPressureSource = source
     }
 
-    private func handleMemoryPressure() {
+    /// 系统内存压力时丢弃缓存与未完成请求；等待中的调用方收到 `.capacity` 拒绝。
+    func handleMemoryPressure() {
         let completions = requests.values.map(\.completion)
         requests.removeAll(keepingCapacity: false)
         prepared.removeAll(keepingCapacity: false)

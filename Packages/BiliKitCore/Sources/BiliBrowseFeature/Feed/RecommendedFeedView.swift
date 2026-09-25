@@ -5,38 +5,18 @@ import SwiftUI
 
 public struct RecommendedFeedView<LoadedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let model: GuestBrowseViewModel
-    private let request = GuestFeedRequest.recommendation(continuation: nil)
-    @Binding private var scrollOffsetY: CGFloat
-    private let makeLoadedContent:
-        (
-            [RecommendedVideo],
-            Binding<CGFloat>,
-            Bool,
-            String?,
-            Bool,
-            @escaping () -> Void,
-            @escaping (String) -> Void
-        ) -> LoadedContent
+    private let model: BrowseViewModel
+    private let request = FeedRequest.recommendation(continuation: nil)
+    private let makeLoadedContent: (LoadedFeedContent<RecommendedVideo>) -> LoadedContent
     private let onSelect: (String) -> Void
 
     public init(
-        model: GuestBrowseViewModel,
-        scrollOffsetY: Binding<CGFloat>,
+        model: BrowseViewModel,
         makeLoadedContent:
-            @escaping (
-                [RecommendedVideo],
-                Binding<CGFloat>,
-                Bool,
-                String?,
-                Bool,
-                @escaping () -> Void,
-                @escaping (String) -> Void
-            ) -> LoadedContent,
+            @escaping (LoadedFeedContent<RecommendedVideo>) -> LoadedContent,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
-        _scrollOffsetY = scrollOffsetY
         self.makeLoadedContent = makeLoadedContent
         self.onSelect = onSelect
     }
@@ -64,7 +44,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     }
 
     @ViewBuilder
-    private func content(for presentation: GuestFeedPresentation) -> some View {
+    private func content(for presentation: FeedPresentation) -> some View {
         switch presentation.state {
         case .idle, .loading:
             VideoCardGridSkeleton(loadingLabel: BrowseFeatureStrings.localized("正在加载首页推荐"))
@@ -74,8 +54,8 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
             loadedResults(page: page, presentation: presentation)
         case .failed(request: .recommendation, let error):
             BrowseFailureView(
-                title: error.guestTitle,
-                message: error.guestMessage,
+                title: error.displayTitle,
+                message: error.displayMessage,
                 retry: { model.retry(request) }
             )
         default:
@@ -84,7 +64,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     }
 
     private func emptyResults(
-        presentation: GuestFeedPresentation
+        presentation: FeedPresentation
     ) -> some View {
         ContentUnavailableView(
             BrowseFeatureStrings.localized("暂无首页推荐"),
@@ -98,17 +78,18 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
 
     private func loadedResults(
         page: RecommendationPage,
-        presentation: GuestFeedPresentation
+        presentation: FeedPresentation
     ) -> some View {
-        let pagination = model.recommendationPagination()
+        let pagination = model.pagination(for: .recommendation(continuation: nil))
         return makeLoadedContent(
-            page.videos,
-            $scrollOffsetY,
-            pagination.canLoadMore,
-            pagination.tailIdentity,
-            pagination.isLoadingMore,
-            model.loadMoreRecommendations,
-            onSelect
+            LoadedFeedContent(
+                items: page.videos,
+                canLoadMore: pagination.canLoadMore,
+                tailIdentity: pagination.tailIdentity,
+                isLoadingMore: pagination.isLoadingMore,
+                loadMore: { model.loadMore(.recommendation) },
+                select: onSelect
+            )
         )
         .overlay(alignment: .top) {
             refreshStatus(presentation)
@@ -122,10 +103,10 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                     .accessibilityLabel(BrowseFeatureStrings.localized("正在加载更多首页推荐"))
             } else if let error = pagination.loadMoreError {
                 HStack(spacing: 8) {
-                    Text(error.guestMessage)
+                    Text(error.displayMessage)
                         .lineLimit(2)
                     Button(BrowseFeatureStrings.localized("重试")) {
-                        model.retryRecommendationLoadMore()
+                        model.retryLoadMore(.recommendation)
                     }
                 }
                 .font(.caption)
@@ -137,7 +118,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
 
     @ViewBuilder
     private func refreshStatus(
-        _ presentation: GuestFeedPresentation
+        _ presentation: FeedPresentation
     ) -> some View {
         if presentation.isRefreshing {
             ProgressView()
@@ -146,7 +127,7 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
                 .background(.regularMaterial, in: Capsule())
                 .accessibilityLabel(BrowseFeatureStrings.localized("正在刷新首页推荐"))
         } else if let error = presentation.refreshError {
-            Text(error.guestMessage)
+            Text(error.displayMessage)
                 .font(.caption)
                 .padding(8)
                 .background(.regularMaterial, in: Capsule())
@@ -154,14 +135,14 @@ public struct RecommendedFeedView<LoadedContent: View>: View {
     }
 
     private func isRefreshDisabled(
-        _ presentation: GuestFeedPresentation
+        _ presentation: FeedPresentation
     ) -> Bool {
         if presentation.isRefreshing { return true }
         if case .loading = presentation.state { return true }
         return false
     }
 
-    private func visualPhase(for state: GuestFeedState) -> LoadingVisualPhase {
+    private func visualPhase(for state: FeedState) -> LoadingVisualPhase {
         switch state {
         case .idle, .loading:
             .loading
