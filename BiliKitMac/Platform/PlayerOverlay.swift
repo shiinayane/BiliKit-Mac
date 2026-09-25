@@ -328,7 +328,6 @@ final class PlayerOverlayModel {
 
 /// 所有播放器浮层共用的一棵 SwiftUI 树，铺满 content overlay。
 struct PlayerOverlayView: View {
-
     let model: PlayerOverlayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
