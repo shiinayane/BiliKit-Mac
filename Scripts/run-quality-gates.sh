@@ -4,16 +4,9 @@ set -eu
 
 umask 077
 
-# prebuilt 只供 CI：运行其他 runner 用发布工具链构建的 App 测试产物，不做静态检查、不编译。
 mode="${1:-app}"
 case "$mode" in
     static|package|app) ;;
-    prebuilt)
-        [ -n "${BILIKIT_TEST_PRODUCTS_INPUT:-}" ] || {
-            echo "prebuilt 需要 BILIKIT_TEST_PRODUCTS_INPUT" >&2
-            exit 2
-        }
-        ;;
     *)
         echo "用法：$0 [static|package|app]" >&2
         exit 2
@@ -79,45 +72,34 @@ fail_on_swift_warnings() {
     exit 1
 }
 
-if [ "$mode" != "prebuilt" ]; then
-    echo "[Gate] static"
-    sh Scripts/check-architecture.sh
-    sh Scripts/check-secrets.sh
-    sh Scripts/check-project-contract.sh
-    sh Scripts/check-swift-format.sh
-    git diff --check
-    git diff --cached --check
+echo "[Gate] static"
+sh Scripts/check-architecture.sh
+sh Scripts/check-secrets.sh
+sh Scripts/check-project-contract.sh
+sh Scripts/check-swift-format.sh
+git diff --check
+git diff --cached --check
 
-    echo "[Gate] release safety contracts"
-    python3 -B -m unittest discover -s Scripts/release -p 'test_*.py'
-    (cd Updates/cloudflare && python3 -B -m unittest discover -s tests)
-fi
+echo "[Gate] release safety contracts"
+python3 -B -m unittest discover -s Scripts/release -p 'test_*.py'
+(cd Updates/cloudflare && python3 -B -m unittest discover -s tests)
 
 if [ "$mode" = "static" ]; then
     exit 0
 fi
 
-if [ "$mode" != "prebuilt" ]; then
-    echo "[Gate] package"
-    run_logged "$artifact_root/package-build.log" package_swiftpm build --build-tests
-    fail_on_swift_warnings "$artifact_root/package-build.log" package
-    package_test --skip-build --quiet
-fi
+echo "[Gate] package"
+run_logged "$artifact_root/package-build.log" package_swiftpm build --build-tests
+fail_on_swift_warnings "$artifact_root/package-build.log" package
+package_test --skip-build --quiet
 
 if [ "$mode" = "package" ]; then
     exit 0
 fi
 
-# CI 由发布工具链导出同一提交的 App 测试产物，其他 runner 导入后只运行测试。
-if [ "$mode" = "prebuilt" ]; then
-    echo "[Gate] import app test products"
-    mkdir -p "$derived_data/Build/Products"
-    tar -xf "$BILIKIT_TEST_PRODUCTS_INPUT" -C "$derived_data/Build/Products"
-else
-    echo "[Gate] app build-for-testing"
-    run_logged "$artifact_root/app-build.log" app_xcodebuild build-for-testing
-    fail_on_swift_warnings "$artifact_root/app-build.log" app
-fi
+echo "[Gate] app build-for-testing"
+run_logged "$artifact_root/app-build.log" app_xcodebuild build-for-testing
+fail_on_swift_warnings "$artifact_root/app-build.log" app
 
 set -- "$derived_data"/Build/Products/*.xctestrun
 [ "$#" -eq 1 ] && [ -f "$1" ] || {
@@ -125,19 +107,18 @@ set -- "$derived_data"/Build/Products/*.xctestrun
     exit 1
 }
 
-xctestrun=$1
-
 echo "[Gate] app tests"
 isolated xcode-home xcodebuild \
     -quiet \
-    -xctestrun "$xctestrun" \
+    -xctestrun "$1" \
     -destination 'platform=macOS' \
     -derivedDataPath "$derived_data" \
     test-without-building \
     -only-testing:BiliKitMacTests
 
-if [ -n "${BILIKIT_TEST_PRODUCTS_OUTPUT:-}" ]; then
-    tar -cf "$BILIKIT_TEST_PRODUCTS_OUTPUT" -C "$derived_data/Build/Products" .
+# CI 把发布工具链构建的 App 交给较旧系统做启动冒烟（Scripts/smoke-launch-app.sh）。
+if [ -n "${BILIKIT_APP_OUTPUT:-}" ]; then
+    tar -cf "$BILIKIT_APP_OUTPUT" -C "$derived_data/Build/Products/Debug" BiliKit.app
 fi
 
 echo "[Gate] app passed"
