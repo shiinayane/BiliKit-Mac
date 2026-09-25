@@ -44,7 +44,6 @@ package_test() {
 }
 
 app_xcodebuild() {
-    # Xcode 26 misdiagnoses explicit local-package edges during build-for-testing.
     isolated xcode-home xcodebuild \
         -quiet \
         -project BiliKitMac.xcodeproj \
@@ -54,6 +53,5 @@ app_xcodebuild() {
         -derivedDataPath "$derived_data" \
         -clonedSourcePackagesDirPath "$artifact_root/SourcePackages" \
         CODE_SIGNING_ALLOWED=NO \
-        SWIFT_ENABLE_EXPLICIT_MODULES=NO \
         "$@"
 }

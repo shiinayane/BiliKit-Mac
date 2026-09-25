@@ -26,8 +26,6 @@ app="BiliKitMac/App/BiliKitMacApp.swift"
 entitlements="BiliKitMac/BiliKitMac.entitlements"
 package="Packages/BiliKitCore/Package.swift"
 ci_workflow=".github/workflows/ci.yml"
-app_source_roots="BiliKitMac/App/AppSourceRootViews.swift"
-player_host="BiliKitMac/Platform/PlayerHostView.swift"
 
 /usr/bin/plutil -lint "$project" >/dev/null || fail "Xcode 工程格式无效"
 /usr/bin/plutil -lint "$entitlements" >/dev/null || fail "entitlements 格式无效"
@@ -78,10 +76,13 @@ deployment=$(awk '/MACOSX_DEPLOYMENT_TARGET = / { total += 1; if ($0 !~ /15\.0;/
 set -- $deployment
 [ "$1" -gt 0 ] && [ "$2" -eq 0 ] || fail "Xcode target 必须统一支持 macOS 15"
 expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
-grep -Fq '/Applications/Xcode_${{ matrix.xcode }}.app/' "$ci_workflow" \
-    || fail "CI 必须按矩阵选择 Xcode"
-expect_count 0 '#if compiler(>=6.2)' "$app_source_roots" "搜索栏不得为旧 SDK 保留编译期回退"
-expect_count 0 '#if compiler(>=6.2)' "$player_host" "播放器提示不得为旧 SDK 保留编译期回退"
+grep -Eq 'DEVELOPER_DIR: /Applications/Xcode_[0-9][0-9.]*\.app/' "$ci_workflow" \
+    || fail "CI 必须显式选择带版本号的 Xcode"
+# 只支持发布工具链一个版本，不保留按编译器版本分叉的代码。
+if find BiliKitMac BiliKitMacTests Packages/BiliKitCore/Sources Packages/BiliKitCore/Tests \
+    -type f -name '*.swift' -exec grep -En '#if[[:space:]]+compiler\(' {} + >/dev/null; then
+    fail "源码不得按编译器版本分叉"
+fi
 
 for script in Scripts/*.sh; do
     sh -n "$script" || fail "脚本语法无效：$script"
