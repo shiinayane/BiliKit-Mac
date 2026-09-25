@@ -1096,6 +1096,28 @@ struct BiliAPIClientTests {
         )
     }
 
+    /// 只有本地明确无凭据才匿名重试；凭据失效、不可用或被拒绝时失败关闭，不发出任何 playurl。
+    @Test(arguments: [
+        (HTTPRequestAuthorizationFailureKind.invalidCredential, BiliAPIError.authenticationInvalid),
+        (.unavailable, .authorizationUnavailable),
+        (.denied, .authorizationUnavailable)
+    ])
+    func localCredentialFailureDoesNotFallBackToAnonymousPlayback(
+        kind: HTTPRequestAuthorizationFailureKind,
+        expected: BiliAPIError
+    ) async throws {
+        let transport = StubTransport(responses: [try fixtureResponse("nav")])
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: StubAuthorizer(.fail(kind))
+        )
+
+        await #expect(throws: expected) {
+            try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+        }
+        #expect(playURLRequests(transport).isEmpty)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func cancelledMissingCredentialResolutionDoesNotSendAnonymousFallback() async throws {
         let authorizer = StubAuthorizer(.fail(.missingCredential), suspendingCall: 1)
