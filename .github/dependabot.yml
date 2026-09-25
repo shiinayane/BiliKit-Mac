@@ -1,0 +1,24 @@
+# 每周检查按 SHA 固定的 GitHub Actions 与 Swift Package 依赖，各合并为一个 PR。
+# npm 清单（DMG 工具、Cloudflare）按发布流程锁定版本，不在此自动升级。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
+  - package-ecosystem: swift
+    directory: /Packages/BiliKitCore
+    schedule:
+      interval: weekly
+    groups:
+      swift-packages:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: build
