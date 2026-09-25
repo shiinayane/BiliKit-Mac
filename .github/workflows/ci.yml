@@ -20,24 +20,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 发布工具链（Xcode 27）唯一构建一次：完整 Gate（含 package 测试），并导出 App 测试产物。
   build-and-test:
-    name: Build and test (${{ matrix.os }})
+    name: Build and test (macos-27)
     outputs:
       gate-mode: ${{ steps.quality-gate.outputs.mode }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-26
-            runner: macos-26
-            xcode: '26.3'
-          - os: macos-27
-            runner: xcode-27
-            xcode: '27.0'
-    runs-on: ${{ matrix.runner }}
+    runs-on: xcode-27
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
 
     steps:
       - name: Check out repository
@@ -67,7 +58,7 @@ jobs:
         id: quality-gate
         shell: bash
         env:
-          # 只有 PR 提供 base；push 与手动运行始终走完整 app Gate（发布依赖 main push 的三环境结果）。
+          # 只有 PR 提供 base；push、定时与手动运行始终走完整 app Gate（发布依赖 main push 的三环境结果）。
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
           mode=app
@@ -77,10 +68,9 @@ jobs:
           echo "mode=${mode}" >>"$GITHUB_OUTPUT"
           echo "Selected quality gate: ${mode}"
 
-      # Xcode 27 是发布工具链；它构建的 App 测试产物交给 macOS 15 运行。
       - name: Run selected quality gate (includes strict Swift format lint)
         env:
-          BILIKIT_TEST_PRODUCTS_OUTPUT: ${{ matrix.os == 'macos-27' && format('{0}/app-tests.tar', runner.temp) || '' }}
+          BILIKIT_TEST_PRODUCTS_OUTPUT: ${{ runner.temp }}/test-products.tar
           BILIKIT_FAILURE_OUTPUT: ${{ runner.temp }}/gate-failure
         run: sh Scripts/run-quality-gates.sh "${{ steps.quality-gate.outputs.mode }}"
 
@@ -88,29 +78,41 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: gate-failure-${{ matrix.os }}-${{ github.run_attempt }}
+          name: gate-failure-macos-27-${{ github.run_attempt }}
           path: ${{ runner.temp }}/gate-failure
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Share app test products for macOS 15
-        if: matrix.os == 'macos-27' && steps.quality-gate.outputs.mode == 'app'
+      - name: Share test products with older macOS runners
+        if: steps.quality-gate.outputs.mode == 'app'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: app-tests-${{ github.sha }}
-          path: ${{ runner.temp }}/app-tests.tar
+          name: test-products-${{ github.sha }}
+          path: ${{ runner.temp }}/test-products.tar
           if-no-files-found: error
           retention-days: 1
 
-  test-macos-15:
-    name: Build and test (macos-15)
+  # 较旧系统只运行发布工具链构建的产物、不在本机编译，因此不要求兼容旧 Swift；各用该 runner 上最新的
+  # Xcode 驱动测试。static 只检查文本与工程契约，由 macos-27 覆盖；跳过的 job 对 required check 视为通过。
+  test-prebuilt:
+    name: Build and test (${{ matrix.os }})
     needs: build-and-test
-    # static 只检查文本与工程契约，两条矩阵已覆盖；跳过的 job 对 required check 视为通过。
-    if: needs.build-and-test.outputs.gate-mode != 'static'
-    runs-on: macos-15
+    if: needs.build-and-test.outputs.gate-mode == 'app'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            runner: macos-26
+            xcode: '26.6'
+          - os: macos-15
+            runner: macos-15
+            xcode: '26.3'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -119,28 +121,24 @@ jobs:
         run: |
           sw_vers
           xcodebuild -version
-          xcrun swift --version
 
-      - name: Retrieve app test products from this workflow
-        if: needs.build-and-test.outputs.gate-mode == 'app'
+      - name: Retrieve test products from this workflow
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: app-tests-${{ github.sha }}
-          path: ${{ runner.temp }}/app-tests
+          name: test-products-${{ github.sha }}
+          path: ${{ runner.temp }}/test-products
 
-      # Compile Package tests locally; run the App binaries built by Xcode 27 (the release toolchain).
-      # Icon Composer's asset compiler crashes on the macOS 15 ARM runner.
-      - name: Run quality gate with prebuilt app tests
+      - name: Run prebuilt app tests
         env:
-          BILIKIT_TEST_PRODUCTS_INPUT: ${{ runner.temp }}/app-tests/app-tests.tar
+          BILIKIT_TEST_PRODUCTS_INPUT: ${{ runner.temp }}/test-products/test-products.tar
           BILIKIT_FAILURE_OUTPUT: ${{ runner.temp }}/gate-failure
-        run: sh Scripts/run-quality-gates.sh "${{ needs.build-and-test.outputs.gate-mode }}"
+        run: sh Scripts/run-quality-gates.sh prebuilt
 
       - name: Upload gate failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: gate-failure-macos-15-${{ github.run_attempt }}
+          name: gate-failure-${{ matrix.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/gate-failure
           if-no-files-found: ignore
           retention-days: 7

@@ -144,8 +144,9 @@ unity，播放不得失败。实时回调只读固定内存／原子值，不分
 - Developer ID 站外 DMG + 公证，不走 Mac App Store；更新用 Sparkle 2.9.6 完整包 + Cloudflare 静态签名
   appcast，不自研更新器。
 - 1.0.0 是最后一个 Universal 版本；此后 Release 主程序只含 `arm64`，Sparkle 官方嵌套组件保留其自带
-  架构。CI 只在 Apple Silicon 的 macOS 15／26／27 上运行：Xcode 26.3 与 27 各自构建并测试，
-  macOS 15 运行 Xcode 27（发布工具链）构建的 App 测试产物。不为旧 Intel 用户建立专用 feed。
+  架构。CI 只在 Apple Silicon 的 macOS 15／26／27 上运行：只用发布工具链 Xcode 27 构建一次，
+  macOS 26／15 运行同一批 App 测试产物；不要求兼容更旧的 Swift 工具链。不为旧 Intel
+  用户建立专用 feed。
 - macOS 15 是 GitHub 仍持续提供 runner 的最低运行时；项目没有 macOS 14 设备，deployment target
   编译成功不能证明 AVFoundation、loopback 与窗口行为可用。
 
