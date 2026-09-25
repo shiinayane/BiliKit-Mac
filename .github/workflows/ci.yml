@@ -15,8 +15,9 @@ on:
 permissions:
   contents: read
 
+# 按事件分组：每周定时运行不会取消 main 的 push 运行（release.py 只认 push 事件的成功记录）。
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

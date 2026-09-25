@@ -79,8 +79,8 @@ expect_count 1 '.macOS(.v15)' "$package" "Swift Package 必须支持 macOS 15"
 grep -Eq 'DEVELOPER_DIR: /Applications/Xcode_[0-9][0-9.]*\.app/' "$ci_workflow" \
     || fail "CI 必须显式选择带版本号的 Xcode"
 # 只支持发布工具链一个版本，不保留按编译器版本分叉的代码。
-if find BiliKitMac BiliKitMacTests Packages/BiliKitCore/Sources Packages/BiliKitCore/Tests \
-    -type f -name '*.swift' -exec grep -En '#if[[:space:]]+compiler\(' {} + >/dev/null; then
+if grep -rEq --include='*.swift' '#(if|elseif)[[:space:]]+!?[[:space:]]*compiler\(' \
+    BiliKitMac BiliKitMacTests Packages/BiliKitCore/Sources Packages/BiliKitCore/Tests; then
     fail "源码不得按编译器版本分叉"
 fi
 
