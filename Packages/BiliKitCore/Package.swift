@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -138,3 +138,8 @@ let package = Package(
         )
     ]
 )
+
+// 只维护发布工具链一个版本：本包所有 target 的编译警告都视为错误。
+for target in package.targets {
+    target.swiftSettings = (target.swiftSettings ?? []) + [.treatAllWarnings(as: .error)]
+}

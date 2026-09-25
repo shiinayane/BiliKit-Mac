@@ -26,21 +26,14 @@ isolated() {
         "$@"
 }
 
-# swift build／swift test 共用同一套隔离路径；第一个参数是 SwiftPM 子命令。
-package_swiftpm() {
-    subcommand=$1
-    shift
-    isolated swiftpm-home xcrun swift "$subcommand" \
+package_test() {
+    isolated swiftpm-home xcrun swift test \
         --package-path Packages/BiliKitCore \
         --scratch-path "$artifact_root/swiftpm" \
         --cache-path "$artifact_root/swiftpm-cache" \
         --config-path "$artifact_root/swiftpm-config" \
         --security-path "$artifact_root/swiftpm-security" \
         "$@"
-}
-
-package_test() {
-    package_swiftpm test "$@"
 }
 
 app_xcodebuild() {
