@@ -64,7 +64,8 @@ sh Scripts/run-targeted-tests.sh "$task_artifact_root" package 'BrowseAndVideoVi
 sh Scripts/run-targeted-tests.sh "$task_artifact_root" app 'BiliKitMacTests/PlaybackSourceSettingsTests'
 ```
 
-- 交付前只运行一次覆盖改动的最高适用 Gate（`app` 包含 `package`，`package` 包含 `static`）：
+- 交付前只运行一次覆盖改动的最高适用 Gate（`app` 包含 `package`，`package` 包含 `static`；
+  仓库内 Swift 编译警告视为失败）：
 
 ```sh
 sh Scripts/run-quality-gates.sh static

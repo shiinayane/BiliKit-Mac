@@ -31,6 +31,31 @@ trap 'exit 143' TERM
 
 . Scripts/isolated-toolchain.sh
 
+# 运行命令并把输出留在日志里；失败时打印完整日志。
+run_logged() {
+    log=$1
+    shift
+    if ! "$@" >"$log" 2>&1; then
+        cat "$log"
+        return 1
+    fi
+}
+
+# 仓库内 Swift 源码的编译警告视为 Gate 失败；远程依赖不在仓库目录下，不参与检查。
+# SwiftPM 写入文件时仍带 ANSI 颜色，`warning:` 前可能夹着一段 ESC 序列。
+fail_on_swift_warnings() {
+    warnings=$(
+        LC_ALL=C grep -E '\.swift:[0-9]+:[0-9]+: (.\[[0-9;]*m)?warning:' "$1" \
+            | grep -F "$repository_root/" \
+            | perl -pe 's/\e\[[0-9;]*m//g' \
+            | sort -u
+    ) || true
+    [ -z "$warnings" ] && return 0
+    echo "[Gate] $2 存在 Swift 编译警告：" >&2
+    echo "$warnings" >&2
+    exit 1
+}
+
 echo "[Gate] static"
 sh Scripts/check-architecture.sh
 sh Scripts/check-secrets.sh
@@ -48,7 +73,9 @@ if [ "$mode" = "static" ]; then
 fi
 
 echo "[Gate] package"
-package_test --quiet
+run_logged "$artifact_root/package-build.log" package_swiftpm build --build-tests
+fail_on_swift_warnings "$artifact_root/package-build.log" package
+package_test --skip-build --quiet
 
 if [ "$mode" = "package" ]; then
     exit 0
@@ -61,7 +88,8 @@ if [ -n "${BILIKIT_TEST_PRODUCTS_INPUT:-}" ]; then
     tar -xf "$BILIKIT_TEST_PRODUCTS_INPUT" -C "$derived_data/Build/Products"
 else
     echo "[Gate] app build-for-testing"
-    app_xcodebuild build-for-testing
+    run_logged "$artifact_root/app-build.log" app_xcodebuild build-for-testing
+    fail_on_swift_warnings "$artifact_root/app-build.log" app
 fi
 
 set -- "$derived_data"/Build/Products/*.xctestrun
