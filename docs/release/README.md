@@ -36,6 +36,8 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
   生成的 `hardwareRequirements arm64`，Intel 客户端因此不会收到更新；不为 Intel 另建 feed。
 - 候选目录保存 `release.json`、阶段日志、Archive、export、逐文件哈希、完整公证日志与
   `assets/{DMG,appcast.xml,SHA256SUMS}`。脚本不启动 App、不读 B 站凭据、不发 B 站请求。
+- Developer ID export 允许 Xcode 用已登录的开发者账号联网下载或补建自动管理的 Developer ID profile
+  （`-allowProvisioningUpdates`）；本机 profile 缓存被清空（例如升级 Xcode）后无需手动处理。
 - Keychain 弹窗时允许当前 codesign 或 Sparkle 签名工具访问既有条目，不把密码交给助手。notary profile
   不可用时交互运行 `xcrun notarytool store-credentials BiliKit-Notary` 后重试。不得新建或轮换 Sparkle
   key 来绕过访问失败。
