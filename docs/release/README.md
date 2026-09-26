@@ -8,7 +8,11 @@ Developer ID、`BiliKit-Notary` 与 Sparkle EdDSA key。GitHub Actions 只跑 ma
 ## 冻结与前提
 
 - App `BiliKit`，Bundle ID `com.shiinayane.BiliKit`，Team `2B3LZ256AG`，macOS 15+，App 主程序仅 `arm64`；
-  build 号全局递增。下一候选为 `1.0.1 (5)`，发布说明草稿见 [`1.0.1-notes.md`](1.0.1-notes.md)。
+  build 号全局递增。下一候选为 `1.0.1 (5)`。
+- 每个版本只写一份更新日志 `docs/release/<版本>-notes.md`：每行一条面向用户的 `- ` 条目，不写标题或
+  过程说明，冻结前随源码合并到 main。`prepare` 把它放在 DMG 旁由 Sparkle 以 Markdown 内嵌进 appcast
+  （更新提示）；`draft` 把它填入固定模板 [`release-page.md`](release-page.md) 作为 GitHub Release 正文。
+  两个渠道的更新日志因此逐字一致，Release 页只额外提供安装与系统要求。
 - 提交、PR、合并和正式发布需当前任务授权；历史授权不延续。
 - 先合并源码，等待同一提交的 main push CI 三个环境成功，再冻结干净的最新 main。
 - 工具：完整版 Xcode、Python 3、gh、Node **22.22.3**；DMG 工具固定 create-dmg **8.1.0** 及依赖锁，原生
@@ -28,7 +32,8 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
   Developer ID 与 notary credential。旧同名草稿先人工核对；脚本不删草稿、不移动 tag。
 - `prepare` 依次执行 App Gate、Release archive、Developer ID export、App 公证／staple、DMG 制作／签名／
   公证／staple、架构／entitlement／包内文件核对、Sparkle 官方工具签名 appcast 与校验和。仅完整安装包，
-  无 delta；新 feed 只列当前候选。不为旧 Intel 客户端做更新隔离。
+  无 delta；新 feed 只列当前候选。候选 feed 必须内嵌本版本更新日志，并带 Sparkle 按仅 arm64 主程序自动
+  生成的 `hardwareRequirements arm64`，Intel 客户端因此不会收到更新；不为 Intel 另建 feed。
 - 候选目录保存 `release.json`、阶段日志、Archive、export、逐文件哈希、完整公证日志与
   `assets/{DMG,appcast.xml,SHA256SUMS}`。脚本不启动 App、不读 B 站凭据、不发 B 站请求。
 - Keychain 弹窗时允许当前 codesign 或 Sparkle 签名工具访问既有条目，不把密码交给助手。notary profile
@@ -47,8 +52,7 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
 ## 2. 草稿与验收
 
 ```sh
-python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-UNIQUE \
-  --notes docs/release/1.0.1-notes.md
+python3 Scripts/release/release.py draft --output /private/tmp/bilikit-release-UNIQUE
 ```
 
 草稿绑定冻结 commit，只上传 DMG；appcast 与 SHA256SUMS 留作本机元数据，不标 Latest、不部署 feed。
