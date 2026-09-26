@@ -121,6 +121,10 @@ struct PlayerKeyboardInputStateTests {
     @Test
     @MainActor
     func controlsOutsideThePlayerKeepTheirKeys() {
+        // 全屏窗口：捕获层不在 AVPlayerView 下时以整个窗口内容为播放器范围。
+        let fullscreenContent = NSView()
+        let fullscreenControl = NSButton()
+        fullscreenContent.addSubview(fullscreenControl)
         let playerView = NSView()
         let playerButton = NSButton()
         playerView.addSubview(playerButton)
@@ -136,14 +140,24 @@ struct PlayerKeyboardInputStateTests {
         let staticListView = NSCollectionView()
         staticListView.isSelectable = false
 
-        func ownsKeys(_ responder: NSResponder?) -> Bool {
+        func ownsKeys(
+            _ responder: NSResponder?,
+            surface: NSView? = nil,
+            fullKeyboardAccess: Bool = true
+        ) -> Bool {
             PlayerKeyboardShortcutController.focusedResponderOwnsKeys(
                 responder,
-                playerView: playerView
+                playerView: surface ?? playerView,
+                fullKeyboardAccessEnabled: fullKeyboardAccess
             )
         }
 
         #expect(ownsKeys(sidebarButton))
+        // 未开全键盘访问：程序交还给按钮的焦点（关闭图片预览回到缩略图）不让出快捷键。
+        #expect(!ownsKeys(sidebarButton, fullKeyboardAccess: false))
+        #expect(ownsKeys(editableText, fullKeyboardAccess: false))
+        #expect(ownsKeys(overlayChild, fullKeyboardAccess: false))
+        #expect(!ownsKeys(fullscreenControl, surface: fullscreenContent))
         #expect(ownsKeys(editableText))
         #expect(ownsKeys(overlayChild))
         #expect(ownsKeys(listView))

@@ -98,7 +98,8 @@ final class PlayerKeyboardShortcutController {
         guard let captureWindow = anchorView?.window else { return false }
         let responderOwnsKeys = Self.focusedResponderOwnsKeys(
             captureWindow.firstResponder,
-            playerView: enclosingPlayerView
+            playerView: playerSurface,
+            fullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
         )
         guard
             PlayerKeyboardEventScope.captures(
@@ -216,29 +217,36 @@ final class PlayerKeyboardShortcutController {
             let window = anchorView?.window,
             Self.focusedResponderOwnsKeys(
                 window.firstResponder,
-                playerView: enclosingPlayerView
+                playerView: playerSurface,
+                fullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
             )
         else { return }
         cancelInputSession()
     }
 
-    private var enclosingPlayerView: AVPlayerView? {
+    /// 属于播放器的视图范围。
+    ///
+    /// 普通窗口里是所属 `AVPlayerView`。AVKit detached 全屏时捕获层不在任何 `AVPlayerView` 之下，
+    /// 而全屏窗口只承载播放器，因此整个窗口内容都算播放器，AVKit 自带控件取得焦点也不会让出快捷键。
+    private var playerSurface: NSView? {
         var ancestor = anchorView?.superview
         while let current = ancestor {
             if let playerView = current as? AVPlayerView { return playerView }
             ancestor = current.superview
         }
-        return nil
+        return anchorView?.window?.contentView
     }
 
     /// 键盘焦点位于播放器之外的可交互控件时，快捷键交还给该控件。
     ///
-    /// 包括可编辑文本、全键盘访问聚焦的按钮／分段控件、可键盘导航的列表，以及声明为
-    /// `PlayerKeyboardFocusOwner` 的浮层（例如评论图片预览）。播放器自身及其子视图仍由播放器处理；
-    /// 只可选择、不可编辑的文本不拦截空格等快捷键。
+    /// 包括可编辑文本、可键盘导航的列表、声明为 `PlayerKeyboardFocusOwner` 的浮层（例如评论图片
+    /// 预览），以及开启全键盘访问时聚焦的按钮／分段控件。未开启全键盘访问时控件不会经键盘取得焦点，
+    /// 程序交还的焦点（例如关闭图片预览后回到缩略图）不应让出快捷键。播放器自身及其子视图仍由
+    /// 播放器处理；只可选择、不可编辑的文本不拦截空格等快捷键。
     static func focusedResponderOwnsKeys(
         _ responder: NSResponder?,
-        playerView: NSView?
+        playerView: NSView?,
+        fullKeyboardAccessEnabled: Bool
     ) -> Bool {
         guard let view = responder as? NSView else { return false }
         if let playerView, view === playerView || view.isDescendant(of: playerView) {
@@ -257,7 +265,7 @@ final class PlayerKeyboardShortcutController {
         case let collectionView as NSCollectionView:
             return collectionView.isSelectable
         case is NSControl:
-            return true
+            return fullKeyboardAccessEnabled
         default:
             return false
         }
