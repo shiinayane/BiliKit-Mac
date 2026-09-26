@@ -77,6 +77,47 @@ class ReleaseSafetyTests(unittest.TestCase):
                 state['assets']['appcast.xml']['sha256'] = release.digest(out / 'prepublish-appcast.xml')
                 release.validate_live_build(out, state)
 
+    def test_release_notes_accept_only_user_facing_items(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docs = Path(directory)
+            with patch.object(release, 'RELEASE_DOCS', docs):
+                with self.assertRaises(ValueError):
+                    release.release_notes('9.9.9')
+                for text in ('', '# BiliKit 9.9.9\n- 修复\n', '- 修复\n当前尚未发布。\n', '- \n'):
+                    (docs / '9.9.9-notes.md').write_text(text)
+                    with self.subTest(text=text), self.assertRaises(ValueError):
+                        release.release_notes('9.9.9')
+                (docs / '9.9.9-notes.md').write_text('\n- 修复甲\n- 修复乙\n\n')
+                self.assertEqual(release.release_notes('9.9.9'), '- 修复甲\n- 修复乙\n')
+
+    def test_repository_notes_for_current_version_are_valid(self):
+        self.assertTrue(release.release_notes(release.version()[0]))
+
+    def test_release_page_embeds_the_same_notes_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docs = Path(directory)
+            with patch.object(release, 'RELEASE_DOCS', docs):
+                (docs / 'release-page.md').write_text('BiliKit {version}（{build}）\n\n{notes}\n\n安装说明\n')
+                page = release.release_page({'version': '9.9.9', 'build': 12}, '- 修复甲\n')
+                self.assertEqual(page, 'BiliKit 9.9.9（12）\n\n- 修复甲\n\n安装说明\n')
+                (docs / 'release-page.md').write_text('{notes}{notes}')
+                with self.assertRaises(ValueError):
+                    release.release_page({'version': '9.9.9', 'build': 12}, '- 修复甲\n')
+
+    def test_candidate_feed_item_embeds_notes_and_requires_apple_silicon(self):
+        ns = 'xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"'
+        description = '<description sparkle:format="markdown"><![CDATA[- 修复甲\n- 修复乙\n]]></description>'
+        hardware = '<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>'
+        notes = '- 修复甲\n- 修复乙\n'
+        def item(*parts):
+            return release.ET.fromstring(f'<item {ns}>{"".join(parts)}</item>')
+        release.validate_release_item(item(description, hardware), notes)
+        for parts in ((hardware,), (description,), (description.replace('markdown', 'html'), hardware),
+                      (description.replace('修复乙', '修复丙'), hardware),
+                      (description, hardware.replace('arm64', 'x86_64'))):
+            with self.subTest(parts=parts), self.assertRaises(ValueError):
+                release.validate_release_item(item(*parts), notes)
+
     def test_dirty_tree_cannot_freeze(self):
         with patch.object(release, 'run', return_value=' M source.swift'), self.assertRaises(ValueError):
             release.source()

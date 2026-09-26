@@ -27,6 +27,7 @@ SPEC = importlib.util.spec_from_file_location('feed', ROOT / 'Updates/cloudflare
 feed = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(feed)
 CONFIG = json.loads((ROOT / 'Updates/cloudflare/release.json').read_text())
+RELEASE_DOCS = ROOT / 'docs/release'
 
 
 def require(ok, message):
@@ -91,6 +92,34 @@ def ci(commit):
     return runs[0]['html_url']
 
 
+def release_notes(version):
+    """Sparkle 更新提示与 GitHub Release 共用的唯一更新日志：每行一条面向用户的 `- ` 条目。"""
+    path = RELEASE_DOCS / f'{version}-notes.md'
+    require(path.is_file(), f'缺少更新日志 docs/release/{version}-notes.md')
+    lines = path.read_text().strip().splitlines()
+    require(lines and all(line.startswith('- ') and line[2:].strip() for line in lines),
+            '更新日志只能包含面向用户的“- ”条目，不写标题或过程说明')
+    return '\n'.join(lines) + '\n'
+
+
+def release_page(state, notes):
+    """GitHub Release 正文：固定模板中的安装与系统要求，加上同一份更新日志。"""
+    template = (RELEASE_DOCS / 'release-page.md').read_text()
+    require(template.count('{notes}') == 1, 'Release 页模板需要唯一的 {notes}')
+    return (template.replace('{version}', state['version']).replace('{build}', str(state['build']))
+            .replace('{notes}', notes.strip()))
+
+
+def validate_release_item(item, notes):
+    """候选 feed 必须内嵌本版本的 Markdown 更新日志，并对 arm64 安装包标注 Apple silicon 要求。"""
+    description = item.find('description')
+    require(description is not None and description.get(f'{{{feed.SPARKLE}}}format') == 'markdown'
+            and ' '.join((description.text or '').split()) == ' '.join(notes.split()),
+            'feed 未内嵌本版本的 Markdown 更新日志')
+    require(item.findtext('s:hardwareRequirements', namespaces=feed.NS) == 'arm64',
+            'arm64 安装包必须标注 Apple silicon 硬件要求，避免向 Intel 用户推送')
+
+
 def releases():
     return json.loads(run('gh', 'api', '--paginate', '--slurp', f'repos/{REPO}/releases?per_page=100'))
 
@@ -99,6 +128,7 @@ def preflight():
     commit = source()
     v, build = version()
     tag = 'v' + v
+    release_notes(v)
     require(run('git', 'remote', 'get-url', 'origin') in
             (f'git@github.com:{REPO}.git', f'https://github.com/{REPO}.git'), '错误仓库')
     require(run('git', 'ls-remote', 'origin', 'refs/heads/main').split()[0] == commit, '先合并到 main 并冻结最新提交')
@@ -284,6 +314,8 @@ def prepare(out):
     step('dmg_notary', lambda: notarize(dmg, 'dmg', out))
     verify_dmg(dmg, app, state, out)
     def appcast():
+        # generate_appcast 只嵌入与安装包同名的 .md 说明。
+        (staging / (dmg.stem + '.md')).write_text(release_notes(state['version']))
         binary = scratch / 'SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast'
         logged(out / 'appcast.log', binary, '--maximum-deltas', '0', '--download-url-prefix',
                f"https://github.com/{REPO}/releases/download/{state['tag']}/", '--embed-release-notes', staging)
@@ -309,6 +341,7 @@ def validate_candidate_assets(out, state):
     filename = f"BiliKit-{state['version']}-{state['build']}-arm64.dmg"
     require(item.find('enclosure').get('url') == f"https://github.com/{REPO}/releases/download/{state['tag']}/{filename}",
             '候选 feed 与 tag/DMG URL 不一致')
+    validate_release_item(item, release_notes(state['version']))
     checksum = ''.join(f"{v['sha256']}  {k}\n" for k, v in state['assets'].items())
     require((staging / 'SHA256SUMS').read_text() == checksum, 'SHA256SUMS 与冻结资产不一致')
 
@@ -323,9 +356,10 @@ def load_prepared(out):
     return state
 
 
-def draft(out, notes):
+def draft(out):
     state = load_prepared(out)
-    require(notes.is_file(), '缺少发布说明')
+    notes = out / 'release-page.md'
+    notes.write_text(release_page(state, release_notes(state['version'])))
     # No clobber or implicit reuse of a pre-existing release/tag.
     for page in releases():
         require(all(r['tag_name'] != state['tag'] for r in page), 'Release 已存在；核对后使用 publish，禁止覆盖')
@@ -400,7 +434,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['preflight', 'prepare', 'draft', 'publish'])
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--notes', type=Path)
     parser.add_argument('--acceptance', type=Path)
     args = parser.parse_args()
     os.environ.setdefault('DEVELOPER_DIR', '/Applications/Xcode.app/Contents/Developer')
@@ -413,8 +446,7 @@ def main():
     if args.command == 'prepare':
         prepare(out)
     elif args.command == 'draft':
-        require(args.notes is not None, '需要 --notes')
-        draft(out, args.notes.resolve())
+        draft(out)
     else:
         require(args.acceptance is not None, '需要 --acceptance')
         publish(out, args.acceptance.resolve())
