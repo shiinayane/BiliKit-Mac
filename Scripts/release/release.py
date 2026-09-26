@@ -277,7 +277,8 @@ def prepare(out):
                '-disableAutomaticPackageResolution', '-onlyUsePackageVersionsFromResolvedFile', 'archive')
     step('archive', build_archive)
     step('export', lambda: logged(out / 'export.log', 'xcodebuild', '-exportArchive', '-archivePath', archive,
-                                '-exportOptionsPlist', ROOT / 'Scripts/release/ExportOptions.plist', '-exportPath', out / 'export'))
+                                '-exportOptionsPlist', ROOT / 'Scripts/release/ExportOptions.plist', '-exportPath', out / 'export',
+                                '-allowProvisioningUpdates'))
     verify_app(app, state, notarized=False)
     def app_notary():
         zipped = out / 'app-notary.zip'
