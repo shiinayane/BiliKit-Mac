@@ -120,52 +120,32 @@ struct PlayerKeyboardInputStateTests {
 
     @Test
     @MainActor
-    func controlsOutsideThePlayerKeepTheirKeys() {
-        // 全屏窗口：捕获层不在 AVPlayerView 下时以整个窗口内容为播放器范围。
-        let fullscreenContent = NSView()
-        let fullscreenControl = NSButton()
-        fullscreenContent.addSubview(fullscreenControl)
-        let playerView = NSView()
-        let playerButton = NSButton()
-        playerView.addSubview(playerButton)
-        let sidebarButton = NSButton()
+    func onlyTextInputAndKeyboardOwningOverlaysTakePlayerKeys() {
+        let editableText = NSTextView()
+        let editableField = NSTextField()
         let readOnlyText = NSTextView()
         readOnlyText.isEditable = false
-        let editableText = NSTextView()
         let overlay = KeyboardOwningOverlay()
         let overlayChild = NSView()
         overlay.addSubview(overlayChild)
-        let listView = NSCollectionView()
-        listView.isSelectable = true
-        let staticListView = NSCollectionView()
-        staticListView.isSelectable = false
+        let selectableList = NSCollectionView()
+        selectableList.isSelectable = true
 
-        func ownsKeys(
-            _ responder: NSResponder?,
-            surface: NSView? = nil,
-            fullKeyboardAccess: Bool = true
-        ) -> Bool {
-            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(
-                responder,
-                playerView: surface ?? playerView,
-                fullKeyboardAccessEnabled: fullKeyboardAccess
-            )
+        func ownsKeys(_ responder: NSResponder?) -> Bool {
+            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(responder)
         }
 
-        #expect(ownsKeys(sidebarButton))
-        // 未开全键盘访问：程序交还给按钮的焦点（关闭图片预览回到缩略图）不让出快捷键。
-        #expect(!ownsKeys(sidebarButton, fullKeyboardAccess: false))
-        #expect(ownsKeys(editableText, fullKeyboardAccess: false))
-        #expect(ownsKeys(overlayChild, fullKeyboardAccess: false))
-        #expect(!ownsKeys(fullscreenControl, surface: fullscreenContent))
         #expect(ownsKeys(editableText))
+        #expect(ownsKeys(editableField))
         #expect(ownsKeys(overlayChild))
-        #expect(ownsKeys(listView))
-        #expect(!ownsKeys(playerButton))
+        // 点击或程序交还焦点的按钮、列表不拦截空格与方向键（关闭预览回到缩略图、点推荐列表空白）。
+        #expect(!ownsKeys(NSButton()))
+        #expect(!ownsKeys(selectableList))
         #expect(!ownsKeys(readOnlyText))
-        #expect(!ownsKeys(staticListView))
         #expect(!ownsKeys(NSView()))
         #expect(!ownsKeys(nil))
+        #expect(PlayerKeyboardShortcutController.focusOwnerHoldsFocus(overlayChild))
+        #expect(!PlayerKeyboardShortcutController.focusOwnerHoldsFocus(editableText))
     }
 }
 

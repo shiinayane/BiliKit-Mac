@@ -375,6 +375,12 @@ final class DanmakuPlayerView: AVPlayerView {
         else { return }
         pendingInitialFocusIdentity = nil
         lastInitialFocusIdentity = identity
+        // 播放就绪时评论图片预览可能已打开；不抢走它的焦点，否则 Esc 与方向键会失效。
+        guard
+            !PlayerKeyboardShortcutController.focusOwnerHoldsFocus(
+                window.firstResponder
+            )
+        else { return }
         window.makeFirstResponder(self)
     }
 

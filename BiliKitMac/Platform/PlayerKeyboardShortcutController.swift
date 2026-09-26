@@ -1,4 +1,4 @@
-import AVKit
+import AppKit
 import BiliPlayback
 
 /// 打开时独占方向键等按键的浮层；播放器快捷键不会越过它。
@@ -7,7 +7,7 @@ protocol PlayerKeyboardFocusOwner: NSView {}
 
 /// 播放器键盘快捷键：本地 key monitor、长按临时倍速、离散快捷键与焦点让渡规则。
 ///
-/// 以 content overlay 中的捕获层为锚点取窗口与所属 `AVPlayerView`，因此 detached 全屏窗口里同样生效。
+/// 以 content overlay 中的捕获层为锚点取所在窗口，因此 detached 全屏窗口里同样生效。
 @MainActor
 final class PlayerKeyboardShortcutController {
     private enum KeyboardKey: Sendable {
@@ -97,9 +97,7 @@ final class PlayerKeyboardShortcutController {
     private func handleKeyboardEvent(_ event: KeyboardEventSnapshot) -> Bool {
         guard let captureWindow = anchorView?.window else { return false }
         let responderOwnsKeys = Self.focusedResponderOwnsKeys(
-            captureWindow.firstResponder,
-            playerView: playerSurface,
-            fullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
+            captureWindow.firstResponder
         )
         guard
             PlayerKeyboardEventScope.captures(
@@ -215,60 +213,35 @@ final class PlayerKeyboardShortcutController {
     private func cancelIfEditableResponder() {
         guard
             let window = anchorView?.window,
-            Self.focusedResponderOwnsKeys(
-                window.firstResponder,
-                playerView: playerSurface,
-                fullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
-            )
+            Self.focusedResponderOwnsKeys(window.firstResponder)
         else { return }
         cancelInputSession()
     }
 
-    /// 属于播放器的视图范围。
+    /// 只有正在输入的文本与声明为 `PlayerKeyboardFocusOwner` 的浮层（例如评论图片预览）拿走快捷键。
     ///
-    /// 普通窗口里是所属 `AVPlayerView`。AVKit detached 全屏时捕获层不在任何 `AVPlayerView` 之下，
-    /// 而全屏窗口只承载播放器，因此整个窗口内容都算播放器，AVKit 自带控件取得焦点也不会让出快捷键。
-    private var playerSurface: NSView? {
-        var ancestor = anchorView?.superview
-        while let current = ancestor {
-            if let playerView = current as? AVPlayerView { return playerView }
-            ancestor = current.superview
-        }
-        return anchorView?.window?.contentView
-    }
-
-    /// 键盘焦点位于播放器之外的可交互控件时，快捷键交还给该控件。
-    ///
-    /// 包括可编辑文本、可键盘导航的列表、声明为 `PlayerKeyboardFocusOwner` 的浮层（例如评论图片
-    /// 预览），以及开启全键盘访问时聚焦的按钮／分段控件。未开启全键盘访问时控件不会经键盘取得焦点，
-    /// 程序交还的焦点（例如关闭图片预览后回到缩略图）不应让出快捷键。播放器自身及其子视图仍由
-    /// 播放器处理；只可选择、不可编辑的文本不拦截空格等快捷键。
-    static func focusedResponderOwnsKeys(
-        _ responder: NSResponder?,
-        playerView: NSView?,
-        fullKeyboardAccessEnabled: Bool
-    ) -> Bool {
-        guard let view = responder as? NSView else { return false }
-        if let playerView, view === playerView || view.isDescendant(of: playerView) {
-            return false
-        }
-        var ancestor: NSView? = view
-        while let current = ancestor {
-            if current is PlayerKeyboardFocusOwner { return true }
-            ancestor = current.superview
-        }
-        switch view {
+    /// 按钮、列表等其余控件即使持有焦点（点击空白、关闭预览后交还给缩略图、AVKit 全屏控件）
+    /// 也不让出，空格、方向键始终控制播放；只可选择、不可编辑的文本同样不拦截。
+    static func focusedResponderOwnsKeys(_ responder: NSResponder?) -> Bool {
+        if focusOwnerHoldsFocus(responder) { return true }
+        switch responder {
         case let textView as NSTextView:
             return textView.isEditable
         case let textField as NSTextField:
             return textField.isEditable
-        case let collectionView as NSCollectionView:
-            return collectionView.isSelectable
-        case is NSControl:
-            return fullKeyboardAccessEnabled
         default:
             return false
         }
+    }
+
+    /// 第一响应者位于 `PlayerKeyboardFocusOwner` 浮层之内。
+    static func focusOwnerHoldsFocus(_ responder: NSResponder?) -> Bool {
+        var ancestor = responder as? NSView
+        while let current = ancestor {
+            if current is PlayerKeyboardFocusOwner { return true }
+            ancestor = current.superview
+        }
+        return false
     }
 
     private nonisolated static func keyboardSnapshot(
