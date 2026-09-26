@@ -258,6 +258,9 @@ final class DanmakuPlayerView: AVPlayerView {
         super.init(frame: .zero)
         updatesNowPlayingInfoCenter = false
         overlayHostingView.sizingOptions = []
+        // 浮层与 content overlay 等大；不按窗口安全区缩进，否则播放器滚到工具栏下或全屏时提示位置
+        // 与“从头播放”的点击区域会偏移。
+        overlayHostingView.safeAreaRegions = []
         overlayHostingView.interactiveFrame = { [overlayModel] in
             overlayModel.interactiveFrame
         }
@@ -375,6 +378,12 @@ final class DanmakuPlayerView: AVPlayerView {
         else { return }
         pendingInitialFocusIdentity = nil
         lastInitialFocusIdentity = identity
+        // 播放就绪时评论图片预览可能已打开；不抢走它的焦点，否则 Esc 与方向键会失效。
+        guard
+            !PlayerKeyboardShortcutController.focusOwnerHoldsFocus(
+                window.firstResponder
+            )
+        else { return }
         window.makeFirstResponder(self)
     }
 

@@ -100,12 +100,11 @@ struct LoopbackProgressiveStreamingTests {
     }
 
     @Test
-    func stopInvalidatesAndCancelsProgressiveStreamer() async throws {
+    func stopReleasesRoutes() async throws {
         let streamer = FixtureRangeTransport(media: [:])
         let server = LoopbackPlaybackServer(rangeStreamer: streamer)
         try await server.start()
         server.stop()
-        #expect(streamer.wasInvalidated)
         #expect(throws: LoopbackPlaybackServerError.notStarted) {
             try server.url(for: "progressive/media.mp4")
         }

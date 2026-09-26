@@ -54,9 +54,12 @@ public struct DASHToHLSBridge: Sendable {
     private let serverFactory: @Sendable () -> LoopbackPlaybackServer
 
     public init(rangeClient: HTTPRangeClient = HTTPRangeClient()) {
+        // 同一 bridge 的所有播放会话共用一个媒体 Range 会话，起播与切换清晰度时复用 CDN 连接；
+        // server 停止只取消自己的在途请求。
+        let rangeStreamer = HTTPRangeStreamingClient()
         self.init(
             rangeClient: rangeClient,
-            serverFactory: { LoopbackPlaybackServer() }
+            serverFactory: { LoopbackPlaybackServer(rangeStreamer: rangeStreamer) }
         )
     }
 

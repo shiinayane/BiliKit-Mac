@@ -3,7 +3,6 @@ import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
-import Synchronization
 import Testing
 
 @testable import BiliPlayback
@@ -317,7 +316,6 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
     private let unknownLengthURLs: Set<URL>
     private let truncatedBodyLengths: [URL: Int]
     private let blockingURLIndexRanges: [URL: MediaByteRange]
-    private let invalidation = Mutex(false)
     private(set) var requests: [HTTPRequest] = []
     private(set) var startedBlockedRequestCount = 0
     private(set) var cancelledBlockedRequestCount = 0
@@ -338,10 +336,6 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
         self.unknownLengthURLs = unknownLengthURLs
         self.truncatedBodyLengths = truncatedBodyLengths
         self.blockingURLIndexRanges = blockingURLIndexRanges
-    }
-
-    nonisolated var wasInvalidated: Bool {
-        invalidation.withLock { $0 }
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -427,10 +421,6 @@ actor FixtureRangeTransport: HTTPTransport, HTTPRangeStreaming {
             try await onChunk(body.suffix(from: body.startIndex + midpoint))
         }
         return HTTPRangeStreamResult(byteCount: UInt64(body.count))
-    }
-
-    nonisolated func invalidate() {
-        invalidation.withLock { $0 = true }
     }
 
     func waitForBlockedRequest() async {

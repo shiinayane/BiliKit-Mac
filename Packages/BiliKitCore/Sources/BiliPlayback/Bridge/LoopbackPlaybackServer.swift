@@ -515,7 +515,6 @@ public final class LoopbackPlaybackServer: @unchecked Sendable {
             task.cancel()
         }
         cancelGeneratedResources(in: state.3)
-        rangeStreamer.invalidate()
     }
 
     private func accept(_ connection: NWConnection) {

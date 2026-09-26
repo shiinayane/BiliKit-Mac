@@ -88,6 +88,10 @@ private struct NativeCommentImagePreviewHost<Content: View>: NSViewRepresentable
     func makeNSView(context: Context) -> NativeCommentImagePreviewHostingView<Content> {
         let view = NativeCommentImagePreviewHostingView(rootView: content)
         view.sizingOptions = []
+        // 预览铺满整个窗口（含隐藏工具栏后的标题栏区域），不按窗口安全区缩进背景与布局。
+        view.safeAreaRegions = []
+        // Tab 走完预览内的控件后回到预览自身，不落到被遮住的侧栏或推荐列表上。
+        view.nextKeyView = view
         return view
     }
 

@@ -120,38 +120,32 @@ struct PlayerKeyboardInputStateTests {
 
     @Test
     @MainActor
-    func controlsOutsideThePlayerKeepTheirKeys() {
-        let playerView = NSView()
-        let playerButton = NSButton()
-        playerView.addSubview(playerButton)
-        let sidebarButton = NSButton()
+    func onlyTextInputAndKeyboardOwningOverlaysTakePlayerKeys() {
+        let editableText = NSTextView()
+        let editableField = NSTextField()
         let readOnlyText = NSTextView()
         readOnlyText.isEditable = false
-        let editableText = NSTextView()
         let overlay = KeyboardOwningOverlay()
         let overlayChild = NSView()
         overlay.addSubview(overlayChild)
-        let listView = NSCollectionView()
-        listView.isSelectable = true
-        let staticListView = NSCollectionView()
-        staticListView.isSelectable = false
+        let selectableList = NSCollectionView()
+        selectableList.isSelectable = true
 
         func ownsKeys(_ responder: NSResponder?) -> Bool {
-            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(
-                responder,
-                playerView: playerView
-            )
+            PlayerKeyboardShortcutController.focusedResponderOwnsKeys(responder)
         }
 
-        #expect(ownsKeys(sidebarButton))
         #expect(ownsKeys(editableText))
+        #expect(ownsKeys(editableField))
         #expect(ownsKeys(overlayChild))
-        #expect(ownsKeys(listView))
-        #expect(!ownsKeys(playerButton))
+        // 点击或程序交还焦点的按钮、列表不拦截空格与方向键（关闭预览回到缩略图、点推荐列表空白）。
+        #expect(!ownsKeys(NSButton()))
+        #expect(!ownsKeys(selectableList))
         #expect(!ownsKeys(readOnlyText))
-        #expect(!ownsKeys(staticListView))
         #expect(!ownsKeys(NSView()))
         #expect(!ownsKeys(nil))
+        #expect(PlayerKeyboardShortcutController.focusOwnerHoldsFocus(overlayChild))
+        #expect(!PlayerKeyboardShortcutController.focusOwnerHoldsFocus(editableText))
     }
 }
 

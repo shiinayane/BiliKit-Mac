@@ -38,24 +38,20 @@ public protocol HTTPRangeStreaming: Sendable {
         onResponse: @escaping @Sendable (HTTPRangeStreamResponse) async throws -> Void,
         onChunk: @escaping @Sendable (Data) async throws -> Void
     ) async throws -> HTTPRangeStreamResult
-
-    func invalidate()
-}
-
-extension HTTPRangeStreaming {
-    public func invalidate() {}
 }
 
 /// 单来源媒体 Range 流。
 ///
 /// 响应头在正文放行前完成验证，正文按 URLSession
 /// chunk 交给下游；下游完成一个 chunk 后才恢复上游 task，避免把完整媒体积压在内存。
+/// 同一实例的请求共用一个 URLSession 与其 CDN 连接；实例释放时取消在途请求并失效 session。
 public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Sendable {
     private let transport: URLSessionRangeTransport
     private let urlPolicy: PublicHTTPSURLPolicy
 
+    /// `requestTimeout` 是两次收到数据之间的空闲上限，默认与 URLSession 一致（60 秒）。
     public init(
-        requestTimeout: TimeInterval = 30,
+        requestTimeout: TimeInterval = 60,
         resourceTimeout: TimeInterval = 7 * 24 * 60 * 60,
         urlPolicy: PublicHTTPSURLPolicy = PublicHTTPSURLPolicy()
     ) {
@@ -112,12 +108,18 @@ public final class HTTPRangeStreamingClient: HTTPRangeStreaming, @unchecked Send
         )
     }
 
-    public func invalidate() {
+    deinit {
         transport.invalidate()
     }
 }
 
 private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecked Sendable {
+    /// 下游回调进行中时暂存的上游字节上限。
+    ///
+    /// `suspend()` 不保证立即停止已排队的 `didReceive data`，挂起后仍可能到达多个 chunk；
+    /// 超过上限才判定失败，避免无界积压。
+    private static let maximumPendingBytes = 4 * 1_024 * 1_024
+
     private let lock = NSLock()
     private let validator: HTTPRangeResponseValidator
     private let expectedRange: HTTPByteRange
@@ -219,12 +221,13 @@ private final class RangeStreamingOperation: URLSessionRangeOperation, @unchecke
             }
             received = next
             if callbackInFlight {
-                guard pendingChunk == nil else {
+                let pending = (pendingChunk ?? Data()) + data
+                guard pending.count <= Self.maximumPendingBytes else {
                     return .fail(
                         .transport(errorType: "BufferedRangeChunkOverflow")
                     )
                 }
-                pendingChunk = data
+                pendingChunk = pending
                 return .queued
             }
             guard let task else { return .ignore }
