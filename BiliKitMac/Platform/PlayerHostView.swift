@@ -258,6 +258,9 @@ final class DanmakuPlayerView: AVPlayerView {
         super.init(frame: .zero)
         updatesNowPlayingInfoCenter = false
         overlayHostingView.sizingOptions = []
+        // 浮层与 content overlay 等大；不按窗口安全区缩进，否则播放器滚到工具栏下或全屏时提示位置
+        // 与“从头播放”的点击区域会偏移。
+        overlayHostingView.safeAreaRegions = []
         overlayHostingView.interactiveFrame = { [overlayModel] in
             overlayModel.interactiveFrame
         }
