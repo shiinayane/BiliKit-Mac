@@ -1,6 +1,6 @@
-name: 缺陷报告
+name: BUG 报告
 description: BiliKit 的行为不对、崩溃或播放异常。
-labels: ["类型：缺陷"]
+labels: ["类型：BUG"]
 body:
   - type: checkboxes
     id: checks
