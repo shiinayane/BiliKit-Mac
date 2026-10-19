@@ -1,0 +1,46 @@
+name: 功能建议
+description: 新功能或对现有功能的改进。
+labels: ["类型：功能建议"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 issue，没有找到相同的建议。
+          required: true
+        - label: 我已看过 [ROADMAP 的非目标](https://github.com/shiinayane/BiliKit-Mac/blob/main/docs/ROADMAP.md#非目标)，这项建议不在其中。
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题
+      description: 先描述你遇到的场景和不便，而不是具体做法。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 设想的做法
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: 其他客户端怎么做
+      description: 官方 App、网页版或其他第三方客户端的做法，可以附截图。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 相关区域
+      options:
+        - 播放（播放器、音频、画质、字幕）
+        - 弹幕
+        - 评论（评论、楼中楼、评论图片）
+        - 浏览（首页、热门、搜索、UP 主空间）
+        - 资料库（观看历史、稍后再看、收藏夹）
+        - 账号（登录与会话）
+        - 安装与更新
+        - 其他

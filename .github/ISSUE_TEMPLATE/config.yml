@@ -1,0 +1,6 @@
+# 所有 issue 从表单进入；涉及凭据或可利用漏洞的问题走私密报告，规则见 SECURITY.md。
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题
+    url: https://github.com/shiinayane/BiliKit-Mac/security/advisories/new
+    about: 凭据泄露、认证绕过、恶意更新、签名或其他可利用漏洞，请私密报告，不要公开提交 issue。
