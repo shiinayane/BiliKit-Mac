@@ -283,7 +283,7 @@ public final class CoreAnimationDanmakuRenderer:
     }
 
     /// 媒体时间换算成时钟层下的动画开始时间；0 写成 `beginTimeAtZero`，否则会被当作「现在」。
-    func animationBeginTime(forMediaTime seconds: Double) -> CFTimeInterval {
+    private func animationBeginTime(forMediaTime seconds: Double) -> CFTimeInterval {
         seconds > 0 ? seconds : beginTimeAtZero
     }
 
@@ -298,8 +298,8 @@ public final class CoreAnimationDanmakuRenderer:
 
     /// 按 placement 设定 layer 在锚点局部坐标里的几何、不可见的模型值与唯一的动画；安装与布局替换共用。
     ///
-    /// 局部坐标 y 轴向下（继承 `rootLayer` 的翻转）。滚动弹幕从右边缘外侧（x = +w/2）走到规划画布
-    /// 左外侧（x = −(规划宽度 + w/2)）；底部弹幕在底边之上，y 为负。
+    /// 局部坐标 y 轴向下（继承 `rootLayer` 的翻转）。滚动弹幕从右边缘外侧（x = +w/2）走完
+    /// `DanmakuMotionPolicy.scrollingTravel` 的行程，到规划画布左外侧（x = −(规划宽度 + w/2)）；底部弹幕在底边之上，y 为负。
     private func configure(_ layer: CALayer, for placement: DanmakuLanePlacement) {
         let request = placement.request
         let width = request.width
@@ -308,11 +308,17 @@ public final class CoreAnimationDanmakuRenderer:
         switch request.event.mode {
         case .scrolling:
             // 模型值在规划画布左外侧：动画开始之前与结束之后都看不见。
-            let exitX = -(placement.planningWidth + width / 2)
+            let entryX = width / 2
+            let exitX =
+                entryX
+                - DanmakuMotionPolicy.scrollingTravel(
+                    textWidth: width,
+                    planningWidth: placement.planningWidth
+                )
             layer.position = CGPoint(x: exitX, y: placement.edgeOffset + request.height / 2)
             layer.opacity = 1
             animation = CABasicAnimation(keyPath: "position.x")
-            animation.fromValue = width / 2
+            animation.fromValue = entryX
             animation.toValue = exitX
             animation.timingFunction = CAMediaTimingFunction(name: .linear)
         case .top, .bottom:

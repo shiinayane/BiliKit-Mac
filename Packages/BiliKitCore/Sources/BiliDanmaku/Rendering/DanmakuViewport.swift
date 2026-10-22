@@ -47,7 +47,10 @@ struct DanmakuViewport: Sendable, Equatable {
             return placement.expiresAtSeconds
         case .scrolling:
             let request = placement.request
-            let travel = placement.planningWidth + request.width
+            let travel = DanmakuMotionPolicy.scrollingTravel(
+                textWidth: request.width,
+                planningWidth: placement.planningWidth
+            )
             guard travel > 0 else { return placement.admittedAtSeconds }
             let fraction = min((width + request.width) / travel, 1)
             return placement.admittedAtSeconds + request.durationSeconds * fraction
