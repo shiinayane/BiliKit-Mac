@@ -459,12 +459,15 @@ final class DanmakuPlayerView: AVPlayerView {
                 self?.updatePlaybackActivity()
             }
         }
+        // 状态直接读播放器，不用 change.newValue：timeControlStatus 是 Objective-C 枚举，KVO 字典里是
+        // NSNumber，Swift 的 KeyPath 观察桥接不成这个枚举，newValue 恒为 nil，暂停就永远取消不了长按倍速。
+        // volume、rate 这类数值与 Bool 属性的 newValue 不受影响。
         playerTimeControlObservation = player.observe(
             \.timeControlStatus,
-            options: [.new]
+            options: []
         ) {
-            [weak self] _, change in
-            let paused = change.newValue == .paused
+            [weak self] player, _ in
+            let paused = player.timeControlStatus == .paused
             Task { @MainActor in
                 if paused {
                     self?.cancelMomentaryPlaybackRate()
