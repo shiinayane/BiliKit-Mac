@@ -283,12 +283,16 @@ struct DanmakuLaneAllocator: Sendable {
         let elapsed = playbackTime - previous.admittedAtSeconds
         guard elapsed >= 0 else { return false }
         let surfaceWidth = configuration.surfaceWidth
-        let previousSpeed =
-            (surfaceWidth + previousRequest.width)
-            / previousRequest.durationSeconds
-        let newSpeed =
-            (surfaceWidth + request.width)
-            / request.durationSeconds
+        let previousSpeed = DanmakuMotionPolicy.scrollingSpeed(
+            textWidth: previousRequest.width,
+            planningWidth: surfaceWidth,
+            durationSeconds: previousRequest.durationSeconds
+        )
+        let newSpeed = DanmakuMotionPolicy.scrollingSpeed(
+            textWidth: request.width,
+            planningWidth: surfaceWidth,
+            durationSeconds: request.durationSeconds
+        )
         let previousRightEdge =
             surfaceWidth - previousSpeed * elapsed
             + previousRequest.width
