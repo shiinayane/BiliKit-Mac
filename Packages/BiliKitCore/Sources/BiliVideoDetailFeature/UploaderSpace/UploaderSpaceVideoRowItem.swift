@@ -4,9 +4,12 @@ import BiliVideoCollectionUI
 /// UP 主空间投稿列表的一行：左封面、右标题与数据。
 ///
 /// 整行可点，悬停高亮，正在播放的行常亮。拥有封面加载 Task 与代次 `imageGeneration`：复用、离屏
-/// （`invalidateImageRequests`）或换封面时递增并取消；到达的封面只在代次未变时显示。
+/// （`invalidateImageRequests`）或换封面时递增并取消；到达的封面只在代次未变时显示。卡片菜单与读屏操作不在这里：
+/// 本项只提供视频 ID 与上下文描边，取用、弹出与核对都在所在的 `NativeVideoCardCollectionView`。
 @MainActor
-final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableCollectionItem {
+final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableCollectionItem,
+    NativeVideoMenuTargetItem
+{
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceVideoRowItem")
 
     private let rowView = UploaderSpaceVideoRowView()
@@ -16,8 +19,12 @@ final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableColl
     /// 离屏时请求被取消，回到屏幕后需要按这个标记重新加载。
     private var hasCoverImage = false
 
+    /// 此刻显示的投稿 BVID；复用时清空，菜单与读屏操作执行前按它核对。
+    private(set) var representedVideoID: String?
+
     override func loadView() {
         view = rowView
+        rowView.menuHost = self
     }
 
     func configure(
@@ -27,6 +34,7 @@ final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableColl
         onSelect: @escaping (String) -> Void,
         hoverChanged: @escaping (UploaderSpaceVideoRowItem, Bool) -> Void
     ) {
+        representedVideoID = row.bvid
         rowView.configure(row: row, isCurrent: isCurrent)
         rowView.onActivate = { onSelect(row.bvid) }
         rowView.onHoverChange = { [weak self] isHovered in
@@ -52,6 +60,10 @@ final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableColl
         rowView.setHovered(false)
     }
 
+    func setContextMenuTarget(_ isTarget: Bool) {
+        rowView.setContextMenuTarget(isTarget)
+    }
+
     func invalidateImageRequests() {
         imageGeneration &+= 1
         imageTask?.cancel()
@@ -60,6 +72,7 @@ final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableColl
 
     override func prepareForReuse() {
         invalidateImageRequests()
+        representedVideoID = nil
         loadedCoverURL = nil
         hasCoverImage = false
         rowView.reset()
@@ -103,6 +116,8 @@ final class UploaderSpaceVideoRowView: NSView {
     )
     var onActivate: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
+    /// 所在集合项：读屏取卡片菜单操作、弹出菜单与 Control-点按都经它转给集合视图，与右键同源。
+    weak var menuHost: UploaderSpaceVideoRowItem?
 
     private let durationBackground = NSView()
     private let durationLabel = NSTextField(labelWithString: "")
@@ -117,6 +132,8 @@ final class UploaderSpaceVideoRowView: NSView {
     private var isCurrent = false
     private var isHovered = false
     private var isPressed = false
+    /// 菜单打开期间画上下文描边（与视频卡片一致），由集合视图在 `willOpenMenu`／`didCloseMenu` 里切换。
+    private var isContextMenuTarget = false
     private let currentHighlightLayer = CALayer()
     private var trackingArea: NSTrackingArea?
 
@@ -221,12 +238,19 @@ final class UploaderSpaceVideoRowView: NSView {
         refreshAppearance(animated: true)
     }
 
+    func setContextMenuTarget(_ isTarget: Bool) {
+        guard isContextMenuTarget != isTarget else { return }
+        isContextMenuTarget = isTarget
+        refreshAppearance(animated: false)
+    }
+
     func reset() {
         row = nil
         onActivate = nil
         onHoverChange = nil
         isHovered = false
         isPressed = false
+        isContextMenuTarget = false
         isCurrent = false
         titleLabel.stringValue = ""
         metadataLabel.stringValue = ""
@@ -342,7 +366,16 @@ final class UploaderSpaceVideoRowView: NSView {
         super.hitTest(point) == nil ? nil : self
     }
 
+    /// Control-点按转进右键的菜单路径，且从不进入按下状态，松开也不会激活。
+    ///
+    /// 整行接管了鼠标，按下事件到不了集合视图，所以由这里转。右键不需要转：本视图没有菜单，`rightMouseDown`
+    /// 沿响应链交给集合视图的 `menu(for:)`。
     override func mouseDown(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else {
+            _ = (menuHost?.collectionView as? NativeVideoCardCollectionView)?
+                .routesControlClickToContextMenu(event)
+            return
+        }
         setPressed(true)
     }
 
@@ -351,10 +384,12 @@ final class UploaderSpaceVideoRowView: NSView {
         setPressed(bounds.contains(convert(event.locationInWindow, from: nil)))
     }
 
+    /// 只有按下过的行才激活：Control-点按与菜单关闭后补发的松开不算点击。
     override func mouseUp(with event: NSEvent) {
+        let wasPressed = isPressed
         let isInside = bounds.contains(convert(event.locationInWindow, from: nil))
         setPressed(false)
-        if isInside { activate() }
+        if wasPressed, isInside { activate() }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -365,6 +400,14 @@ final class UploaderSpaceVideoRowView: NSView {
     override func accessibilityPerformPress() -> Bool {
         activate()
         return true
+    }
+
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        menuHost?.accessibilityCardActions
+    }
+
+    override func accessibilityPerformShowMenu() -> Bool {
+        menuHost?.presentCardMenu() ?? false
     }
 
     private func activate() {
@@ -394,7 +437,7 @@ final class UploaderSpaceVideoRowView: NSView {
             NativeInteractiveSurface.State(
                 isHovered: isHovered,
                 isPressed: isPressed,
-                showsFocusRing: false
+                showsFocusRing: isContextMenuTarget
             ),
             to: layer,
             appearance: effectiveAppearance,

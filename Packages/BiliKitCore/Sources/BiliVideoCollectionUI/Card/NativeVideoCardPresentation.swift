@@ -49,7 +49,7 @@ package struct NativeVideoCardPresentation: Equatable, Sendable {
     package let availability: NativeVideoCardAvailability
 
     /// 可进入播放；网格的激活入口与卡片的读屏按下都只看它。
-    var isActivatable: Bool { availability == .available }
+    package var isActivatable: Bool { availability == .available }
 
     package init(
         id: String,

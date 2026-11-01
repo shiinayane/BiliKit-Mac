@@ -25,7 +25,8 @@ struct NativeVideoCardMenuTests {
         }
         let menu = try #require(
             NativeVideoCardMenu.video(
-                for: Self.card(id: "BV1Menu", availability: .available),
+                videoID: "BV1Menu",
+                isActivatable: true,
                 webPageURL: Self.webPage,
                 openURL: OpenURLAction { _ in .handled },
                 writing: nil,
@@ -82,7 +83,8 @@ struct NativeVideoCardMenuTests {
         var chosen: [String] = []
         let menu = try #require(
             NativeVideoCardMenu.video(
-                for: Self.card(id: "BV1Menu", availability: .available),
+                videoID: "BV1Menu",
+                isActivatable: true,
                 webPageURL: Self.webPage,
                 openURL: OpenURLAction { url in
                     opened.append(url)
@@ -126,7 +128,8 @@ struct NativeVideoCardMenuTests {
 
         let playable = try #require(
             NativeVideoCardMenu.video(
-                for: Self.card(id: "BV1Menu", availability: .available),
+                videoID: "BV1Menu",
+                isActivatable: true,
                 webPageURL: Self.webPage,
                 openURL: openURL,
                 writing: writing,
@@ -146,7 +149,8 @@ struct NativeVideoCardMenuTests {
 
         let withoutWebPage = try #require(
             NativeVideoCardMenu.video(
-                for: Self.card(id: "fav-2-170001", availability: .unavailable(badge: "已失效")),
+                videoID: "fav-2-170001",
+                isActivatable: false,
                 webPageURL: nil,
                 openURL: openURL,
                 writing: writing,
@@ -168,7 +172,8 @@ struct NativeVideoCardMenuTests {
 
         let removal = try #require(
             NativeVideoCardMenu.video(
-                for: unavailable,
+                videoID: unavailable.id,
+                isActivatable: unavailable.isActivatable,
                 webPageURL: Self.webPage,
                 openURL: openURL,
                 writing: writing,
@@ -184,7 +189,8 @@ struct NativeVideoCardMenuTests {
 
         #expect(
             NativeVideoCardMenu.video(
-                for: unavailable,
+                videoID: unavailable.id,
+                isActivatable: unavailable.isActivatable,
                 webPageURL: Self.webPage,
                 openURL: openURL,
                 writing: writing,
@@ -200,7 +206,8 @@ struct NativeVideoCardMenuTests {
 
         #expect(
             NativeVideoCardMenu.video(
-                for: playable,
+                videoID: playable.id,
+                isActivatable: playable.isActivatable,
                 webPageURL: nil,
                 openURL: openURL,
                 writing: Self.writing(isAvailable: true),
@@ -209,7 +216,8 @@ struct NativeVideoCardMenuTests {
         )
         let withoutWriting = try #require(
             NativeVideoCardMenu.video(
-                for: playable,
+                videoID: playable.id,
+                isActivatable: playable.isActivatable,
                 webPageURL: Self.webPage,
                 openURL: openURL,
                 writing: nil,
@@ -229,7 +237,8 @@ struct NativeVideoCardMenuTests {
         var removed: [String] = []
         let menu = try #require(
             NativeVideoCardMenu.video(
-                for: Self.card(id: "BV1Menu", availability: .available),
+                videoID: "BV1Menu",
+                isActivatable: true,
                 webPageURL: Self.webPage,
                 openURL: OpenURLAction { _ in .handled },
                 writing: Self.writing(isAvailable: false, removed: { removed.append($0) }),
@@ -290,7 +299,8 @@ struct NativeVideoCardMenuTests {
             ],
             cardMenu: { card in
                 NativeVideoCardMenu.video(
-                    for: card,
+                    videoID: card.id,
+                    isActivatable: card.isActivatable,
                     webPageURL: URL(string: "https://www.bilibili.com/video/\(card.id)"),
                     openURL: openURL,
                     writing: Self.writing(isAvailable: isWritingAvailable),
@@ -333,7 +343,8 @@ struct NativeVideoCardMenuTests {
             onSelect: { selections.append($0) },
             cardMenu: { card in
                 NativeVideoCardMenu.video(
-                    for: card,
+                    videoID: card.id,
+                    isActivatable: card.isActivatable,
                     webPageURL: URL(string: "https://www.bilibili.com/video/\(card.id)"),
                     openURL: OpenURLAction { _ in .handled },
                     writing: Self.writing(
@@ -424,7 +435,8 @@ struct NativeVideoCardMenuTests {
             cards: [Self.card(id: "BV1Menu0", availability: .available)],
             cardMenu: { card in
                 NativeVideoCardMenu.video(
-                    for: card,
+                    videoID: card.id,
+                    isActivatable: card.isActivatable,
                     webPageURL: URL(string: "https://www.bilibili.com/video/\(card.id)"),
                     openURL: OpenURLAction { _ in .handled },
                     writing: Self.writing(isAvailable: false),

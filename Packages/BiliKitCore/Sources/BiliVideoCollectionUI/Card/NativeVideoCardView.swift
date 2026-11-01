@@ -121,7 +121,9 @@ struct NativeVideoSingleLineWidthCache {
 /// 在换视频、换封面或头像地址、头像显隐变化与 `invalidate` 时递增，晚到的结果经 `NativeVideoImageApplicationGate`
 /// 比对身份后丢弃。
 @MainActor
-package final class NativeVideoCollectionItem: NSCollectionViewItem, NativeHoverableCollectionItem {
+package final class NativeVideoCollectionItem: NSCollectionViewItem, NativeHoverableCollectionItem,
+    NativeVideoMenuTargetItem
+{
     /// 只在 `.idle` 时发起请求；取消把加载中与失败都退回 `.idle`，卡片再次显示时重试。
     private enum ImagePhase: Equatable {
         case idle
@@ -149,7 +151,7 @@ package final class NativeVideoCollectionItem: NSCollectionViewItem, NativeHover
         didSet { card.setPressed(highlightState == .forSelection) }
     }
 
-    var representedVideoID: String? { currentPresentation?.id }
+    package var representedVideoID: String? { currentPresentation?.id }
 
     package override func loadView() {
         view = card
@@ -253,7 +255,7 @@ package final class NativeVideoCollectionItem: NSCollectionViewItem, NativeHover
     func setKeyboardFocusVisible(_ isVisible: Bool) {
         card.setKeyboardFocusVisible(isVisible)
     }
-    func setContextMenuTarget(_ isTarget: Bool) { card.setContextMenuTarget(isTarget) }
+    package func setContextMenuTarget(_ isTarget: Bool) { card.setContextMenuTarget(isTarget) }
     func refreshEnvironmentAppearance() { card.refreshEnvironmentAppearance() }
 
     private func restartMissingImageRequests(
