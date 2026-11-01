@@ -164,13 +164,6 @@ actor RecordingSessionInvalidator: AuthenticatedSessionInvalidating {
     }
 }
 
-/// 卡片取图 port 的最小替身：从不命中缓存，加载也不返回图；给只需要传入 port、不验证取图的视图用。
-struct NoImageCardLoader: NativeVideoImageLoading {
-    func cachedImage(for url: URL, kind: NativeVideoCardImageKind) -> CGImage? { nil }
-
-    func image(for url: URL, kind: NativeVideoCardImageKind) async -> NativeVideoCardImage? { nil }
-}
-
 /// Feed port 的唯一测试替身：推荐默认不可用（给了 `recommendations` 时只有这一页），热门与搜索恒为空页。
 ///
 /// App 根视图会激活浏览页，这里给不验证 Feed 的测试一个不依赖网络的来源。
@@ -632,7 +625,7 @@ struct UnavailableUploaderVideoRepository: UploaderVideoRepository {
     }
 }
 
-/// 侧栏上下文层（UP 主空间）的真实模型；投稿读取恒失败，名片请求挂起到测试放行。
+/// 右栏上下文层（UP 主空间）的真实模型；投稿读取恒失败，名片请求挂起到测试放行。
 @MainActor
 func makeUploaderSpace(
     profiles: UploaderProfileRepositoryStub = UploaderProfileRepositoryStub(holdsRequests: true)

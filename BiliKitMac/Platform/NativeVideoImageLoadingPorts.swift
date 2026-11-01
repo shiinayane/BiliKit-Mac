@@ -43,7 +43,7 @@ extension NativeVideoImagePipeline: DanmakuCoverImageLoading {
     }
 }
 
-/// 播放侧栏、评论、评论图片预览与 UP 主空间经 BiliVideoDetailFeature 的 `VideoDetailImageLoading` 取图；
+/// 播放详情区、评论、评论图片预览与 UP 主空间经 BiliVideoDetailFeature 的 `VideoDetailImageLoading` 取图；
 /// 用途映射到本管线的用途，请求地址、响应校验、解码上限与缓存仍只在这里（见 SECURITY-MODEL §4）。
 extension NativeVideoImagePipeline: VideoDetailImageLoading {
     func cachedImage(for url: URL, purpose: VideoDetailImagePurpose) -> CGImage? {

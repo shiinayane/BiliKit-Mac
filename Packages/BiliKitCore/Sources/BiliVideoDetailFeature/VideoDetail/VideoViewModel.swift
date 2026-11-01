@@ -215,7 +215,7 @@ public final class VideoViewModel: AccountRevalidationParticipant {
 
     /// Picker 或自动连播选择 episode 后解析其 pages；未知 pages 只在校验完成后提交跨 BVID 意图。
     ///
-    /// `onFailed` 在这一集仍是当前选择、解析却失败时调用一次（自动连播据此说明下一集无法播放）；侧栏不传，失败由
+    /// `onFailed` 在这一集仍是当前选择、解析却失败时调用一次（自动连播据此说明下一集无法播放）；详情区不传，失败由
     /// 选集菜单里的重试呈现。
     public func selectCollectionEpisode(
         _ episode: VideoCollectionEpisode,

@@ -2,7 +2,7 @@ import Foundation
 
 /// 视频卡片里由 BiliUI 拥有的读屏文案；卡片的标签与帮助由调用方给出。
 ///
-/// 浏览网格、相关推荐横排、UP 主空间投稿行与稍后再看卡片的读屏标签里“时长 X”这一段也只在这里，各 Feature 不另存
+/// 浏览网格、竖向视频行（UP 主空间投稿、相关推荐）与稍后再看卡片的读屏标签里“时长 X”这一段也只在这里，各 Feature 不另存
 /// 一份译文。
 package enum VideoCardAccessibilityText {
     /// 卡片处于选中状态时的读屏值。

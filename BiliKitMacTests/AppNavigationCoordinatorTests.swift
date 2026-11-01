@@ -292,7 +292,7 @@ struct AppNavigationCoordinatorTests {
 
     @Test
     @MainActor
-    func choosingFromTheSidebarContextKeepsIt() {
+    func choosingFromTheContextLayerKeepsIt() {
         let space = makeUploaderSpace()
         var contextOpenAtStart: [Bool] = []
         let coordinator = AppNavigationCoordinator(
@@ -303,17 +303,17 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback("BV1Source")
         coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
 
-        coordinator.openPlaybackFromSidebarContext("BV1FromSpace")
+        coordinator.openPlaybackFromContextLayer("BV1FromSpace")
 
         #expect(contextOpenAtStart == [false, true])
-        #expect(coordinator.isSidebarContextOpen)
+        #expect(coordinator.isContextLayerOpen)
         #expect(coordinator.currentPlaybackBVID == "BV1FromSpace")
     }
 
     /// 其他入口换视频先关闭上下文层再开始播放；重新打开正在播放的视频也关闭它。
     @Test
     @MainActor
-    func otherEntriesCloseTheSidebarContextEvenForTheCurrentVideo() {
+    func otherEntriesCloseTheContextLayerEvenForTheCurrentVideo() {
         let space = makeUploaderSpace()
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
@@ -326,19 +326,19 @@ struct AppNavigationCoordinatorTests {
 
         coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
         coordinator.openPlayback("BV1Related")
-        #expect(!coordinator.isSidebarContextOpen)
+        #expect(!coordinator.isContextLayerOpen)
 
         coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
         coordinator.openPlayback("BV1Related")
 
-        #expect(!coordinator.isSidebarContextOpen)
+        #expect(!coordinator.isContextLayerOpen)
         #expect(events == ["start:BV1Related context:false"])
     }
 
     /// 关闭播放时上下文层只关一次：之后重复的关闭播放不再动它。
     @Test(arguments: ["tab", "authentication", "back"])
     @MainActor
-    func closingPlaybackClosesTheSidebarContextOnce(trigger: String) async {
+    func closingPlaybackClosesTheContextLayerOnce(trigger: String) async {
         let space = makeUploaderSpace()
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
@@ -348,7 +348,7 @@ struct AppNavigationCoordinatorTests {
         )
         coordinator.openPlayback("BV1Source")
         coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
-        coordinator.openPlaybackFromSidebarContext("BV1FromSpace")
+        coordinator.openPlaybackFromContextLayer("BV1FromSpace")
         // 空间投稿读取恒失败；等它落定，之后空间模型的变化只来自关闭。
         await waitForObservedState {
             if case .failed = space.state { return true }
@@ -375,12 +375,12 @@ struct AppNavigationCoordinatorTests {
         countNextClose()
         coordinator.closePlaybackForAuthenticationChange()
 
-        #expect(!coordinator.isSidebarContextOpen)
+        #expect(!coordinator.isContextLayerOpen)
         #expect(closeCount.withLock { $0 } == 1)
         #expect(events == ["stop context:false"])
     }
 
-    /// 空间链接只有 MID：在侧栏空间层打开，并补取名片。
+    /// 空间链接只有 MID：在右栏空间层打开，并补取名片。
     @Test
     @MainActor
     func memberIDLinksOpenTheSpace() async throws {
@@ -395,7 +395,7 @@ struct AppNavigationCoordinatorTests {
         coordinator.openUploaderSpace(ownerID: 42)
 
         #expect(space.owner?.id == 42)
-        #expect(coordinator.isSidebarContextOpen)
+        #expect(coordinator.isContextLayerOpen)
         // 只有 MID 的入口会补取名片：放行它，不留下挂起的请求。
         try await profiles.waitForRequest()
         await profiles.releaseLateResult()

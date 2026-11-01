@@ -11,8 +11,10 @@ struct UploaderSpaceListLayoutTests {
     /// 没有投稿行时没有别的更新会顺带重算布局，头部停在旧宽度会让排序挤出屏幕、名字宽度为零。
     @Test @MainActor
     func headerFollowsTheListWidthAfterAnInterimNarrowLayout() throws {
-        let controller = UploaderSpaceListController(
-            imagePipeline: StubVideoDetailImageLoader()
+        let controller = VideoRowListController(
+            imagePipeline: StubVideoDetailImageLoader(),
+            accessibilityLabel: "列表",
+            topButtonLabel: "回顶"
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
@@ -26,7 +28,7 @@ struct UploaderSpaceListLayoutTests {
         scrollView.frame = NSRect(x: 0, y: 0, width: 120, height: 600)
         container.addSubview(scrollView)
         controller.update(
-            content: UploaderSpaceListContent(
+            content: VideoRowListContent(
                 header: UploaderSpaceHeaderContent(
                     name: "UP 主",
                     avatarURL: nil,
@@ -35,7 +37,7 @@ struct UploaderSpaceListLayoutTests {
                 ),
                 rows: [],
                 currentBVID: nil,
-                pageIdentity: .init(ownerID: 1, order: .newest, page: 1),
+                scrollIdentity: 1,
                 reservesPagerSpace: false
             ),
             actions: .none
@@ -48,7 +50,7 @@ struct UploaderSpaceListLayoutTests {
         let collectionView = try #require(scrollView.documentView as? NSCollectionView)
         let header = try #require(collectionView.item(at: IndexPath(item: 0, section: 0)))
         let expectedWidth =
-            collectionView.bounds.width - UploaderSpaceGeometry.listHorizontalInset * 2
+            collectionView.bounds.width - VideoRowGeometry.listHorizontalInset * 2
         #expect(expectedWidth > 300)
         #expect(abs(header.view.frame.width - expectedWidth) < 1)
         let picker = try #require(

@@ -14,7 +14,7 @@ public struct NativeCommentImagePreviewRequest: Identifiable {
     let sourceWindow: () -> NSWindow?
     let restoreFocus: () -> Void
 
-    /// 侧栏点开的一组评论图片属于 `bvid`；没有图片时为 nil，App 不打开预览。
+    /// 详情区点开的一组评论图片属于 `bvid`；没有图片时为 nil，App 不打开预览。
     public init?(bvid: String, gallery: NativePlaybackCommentPictureGallery) {
         guard !gallery.references.isEmpty else { return nil }
         self.bvid = bvid

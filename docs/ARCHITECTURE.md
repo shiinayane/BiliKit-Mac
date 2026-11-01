@@ -53,9 +53,9 @@ BiliNetworking 不依赖任何 Bili 模块
 | `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速、响度均一化 | `BiliAPI`、`BiliAuth` |
 | `BiliDanmaku` | 弹幕会话与分段缓存、车道布局、按媒体时间的 materializer、Core Animation renderer。`Session/`、`Layout/`、`Presentation/` 是纯逻辑，渲染框架只在 `Rendering/` | `BiliAPI`、`BiliAuth`、`BiliNetworking`、`BiliPlayback`、Feature、SwiftUI |
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
-| `BiliVideoDetailFeature` | 播放页与侧栏上下文层的 UP 主空间：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
+| `BiliVideoDetailFeature` | 播放页与右栏上下文层的 UP 主空间：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影、分栏几何与 AppKit 视图（详情区、评论图片预览、竖向视频行列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
 | `BiliUI` | Feature 共享的 SwiftUI 呈现：卡片与网格几何、骨架、状态胶囊、页码条、失败视图与文案、登录门槛、格式化、B 站图片缩略地址、临时反馈的读屏通告（全仓唯一入口，App 的播放器浮层也用它）；自己的字符串目录。默认 `package`，App 直接使用的才 `public`；无 library product | 除 Foundation、SwiftUI、BiliApplication 外的任何模块（含 BiliModels、AppKit 与其他 Feature） |
-| `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片、原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点视频条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
+| `BiliVideoCollectionUI` | 网格的 AppKit 卡片、原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点视频条目的悬停与按下外观与卡片菜单的集合视图基类（卡片与竖向视频行共用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
 | App `BiliKitMac` | composition root（`Composition/` 的进程级与窗口级组装）、导航协调、来源描述、复核汇总与账户写入的协调和效果路由（`Navigation/`）、AVKit 宿主、图片管线、Settings、Now Playing、Sparkle | `App/` 与 `Navigation/` 不直接 import adapter 或平台框架，`Navigation/` 只依赖 Feature、Application 与 Models；具体实现只在 `Composition/`、`Platform/`、`Settings/`；`App/` 里 import Application 或 BiliVideoCollectionUI 的文件由脚本逐个登记 |
 
 补充规则：
@@ -73,7 +73,7 @@ BiliNetworking 不依赖任何 Bili 模块
 - 两个以上 Feature（或 Feature 与 App）共用的呈现放进 `BiliUI`，只有一个调用方的留在拥有它的 Feature。
   BiliUI 的组件只负责排版与措辞，标签、动作与“是否可重试”由调用方给出。视频卡片的缩略参数只由
   `BiliImageThumbnail` 追加；评论资源是不透明引用，其图片地址只由 BiliAPI 的 resolver 生成。
-- Feature 视图直接渲染自己的网格、横排与 loading／empty／failure，不经 App 填充的泛型内容插槽；App 只注入
+- Feature 视图直接渲染自己的网格、列表与 loading／empty／failure，不经 App 填充的泛型内容插槽；App 只注入
   窗口级依赖（取图 port、每个来源一个 `NativeVideoGridHostContext`、评论资源地址闭包、评论图片预览与保存图片的 owner）。
 - 图片只经 port 取：卡片与网格经 `NativeVideoImageLoading`（只分封面与头像、结果只带图与是否淡入），某个
   Feature 自己的图片用途另设该 Feature 的窄 port，不放宽卡片 port。实现都是 App 的 `NativeVideoImagePipeline`，
@@ -133,7 +133,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   播放”只能按会话是否已报过 ended 判断，不能只看上一个快照；观看进度据此把重播当作新的一次观看。
 - 播完的处理（「播放结束后」）只在同一 item 刚进入 `ended` 时触发一次，由 `VideoViewModel.handlePlaybackEnded`
   核对快照仍属于此刻呈现、也是最新请求的那一项再动作；重播与断点浮层的「从头播放」共用引擎里同一条回到开头的 seek。
-  连播的下一项由视频模型决定（`PlaybackNextItem`），跳转由 App 经窗口导航执行，与侧栏选分 P、选集同一条路：视频模型
+  连播的下一项由视频模型决定（`PlaybackNextItem`），跳转由 App 经窗口导航执行，与详情区选分 P、选集同一条路：视频模型
   不导航，否则导航层的去重、当前意图与上下文层会和真实播放对不上。
 - 弹幕时钟层（App `Platform/DanmakuTimebaseClock`，owner 是 `DanmakuOverlayView`）是普通 `CALayer`，本地时间
   跟随当前 item `timebase`，更新不经过主线程。跨文件必须守住的约束：
@@ -192,11 +192,11 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 原生 AppKit 集合视图
 
-- **播放侧栏**：上传者、简介、选集／分 P、评论与分页 footer 由一个 `NSScrollView + NSCollectionView`
+- **播放详情区**：上传者、简介、选集／分 P、评论与分页 footer 由一个 `NSScrollView + NSCollectionView`
   拥有，全部是原生 item。真实长评论下 `ScrollView + LazyVStack` 产生不收敛的 SwiftUI
   transaction／AttributeGraph 工作；逐行 `NSHostingView` + `fittingSize` 会把全表重测放大到秒级。
   `PlaybackCommentsViewModel` 仍唯一拥有 subject、排序、分页、并发上限与 generation。
-- **浏览网格与 shelf**：各来源的网格和相关推荐 shelf 使用 `NSCollectionView` + 复用的原生卡片。热门 50 卡 A/B
+- **浏览网格**：各来源的网格使用 `NSCollectionView` + 复用的原生卡片。热门 50 卡 A/B
   表明 SwiftUI `LazyVGrid`/AttributeGraph 是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer`
   后，同样约 20 秒滚动 cycles 下降约 39%，0 hitch。网格只是已加载状态的呈现，loading／empty／failure 在同一个
   Feature 视图里。
@@ -215,7 +215,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   （`NativeVideoGridClipView`）在动画中每次视野移动之后补一次无动画的空批量更新，新视野的卡片立即补齐，进行中的动画
   不受影响。`apply` 返回时排版已是新内容，重配卡片、重排 document、回顶或锚点恢复与翻页判断都在同一轮里做完，不等
   完成回调，没有“新内容、旧偏移”的中间态。
-- 卡片菜单：各来源的网格、相关推荐横排与 UP 主空间的投稿行共用一份菜单描述 `NativeVideoCardMenu`，由拥有来源的
+- 卡片菜单：各来源的网格与竖向视频行（UP 主空间投稿、相关推荐）共用一份菜单描述 `NativeVideoCardMenu`，由拥有来源的
   Feature 按视频 ID 与能否播放构造、经 `cardMenu` 注入，不经 App 插槽。右键、Control-点按与读屏「显示菜单」走集合视图
   基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供视频 ID 与上下文描边（`NativeVideoMenuTargetItem`），
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
@@ -233,14 +233,18 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 播放页布局
 
-- 主区固定不滚动：视频取剩余空间里最大的 16:9，下方是固定高度的相关推荐横排；真实页面与加载骨架
-  共用 `PlaybackDetailLayout`。布局交给 SwiftUI，不测量 frame。
-- 骨架与内容切换只在外层交叉淡化，`PlaybackDetailLayout` 内部整体不参与动画：新建的 AppKit 视图会随布局
-  动画从初始 frame 移到最终位置，看起来像“飞入”。
-- 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
-  详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
+- 导航侧栏只负责导航，播放时不替换；播放页是 detail 列里压在来源页之上的一整页，分三块：视频、视频下方的详情区
+  （UP 主、简介、选集与评论）、右栏（相关推荐竖列，UP 主空间打开时盖在上面）。规则取自 B 站 iPad 端实测，唯一来源是
+  `PlaybackPageGeometry`：只看页面宽高比决定双栏或单栏（进出阈值不同，拖侧栏、缩放窗口经过切换点时不来回跳）；
+  双栏时左列占固定比例，视频按 16:9 撑满列宽、高度不被压缩，右栏占满剩余宽度；单栏时视频撑满宽度，右栏收进视频下方
+  的分页。不采用的：替换导航侧栏放评论（播放页拆在两列里，进出时侧栏宽度跳变，页面也无法整体做过渡）、
+  Inspector 放评论（三栏挤窄视频）、手动拖动分界（侧栏与窗口变化时比例不跟随）。
+- 分栏切换时三块是同一棵视图树里的同一批子视图（`PlaybackPageView`），只改位置与可见性：播放器宿主、详情区与右栏的
+  原生列表都不重建。分页藏起的一块由内容自己设 `isHidden`（理由同上下文层）。
+- 视频区（真实页面与加载骨架共用 `PlaybackDetailLayout`）铺满分栏给的区域，内部整体不参与动画：骨架与内容切换只在
+  外层交叉淡化，新建的 AppKit 播放器视图否则会随布局动画从初始 frame 移到最终位置，看起来像“飞入”。
 - 播放页压在 NavigationStack 根之上。macOS 没有给压栈页面设底色的接口（`ContainerBackgroundPlacement.navigation`
-  在 macOS 不可用），页面本身透明，播放页必须自铺不透明窗口背景并延伸到工具栏与侧栏下。压栈不带动画：放进
+  在 macOS 不可用），页面本身透明，播放页必须自铺不透明窗口背景并延伸到工具栏下。压栈不带动画：放进
   `withAnimation` 时 SwiftUI 会把根页面留在下面继续绘制，来源网格白白占着视图层级与绘制，播放页背景有缺口时还会透出；
   不带动画时根页面随即移除，出栈后重建。
 - AVKit 没有公开进入／退出全屏的方法，`enterFullScreen:`／`exitFullScreen:` 是唯一允许使用的私有 AVKit 接口：
@@ -253,9 +257,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 - 播放器上针对当前视频的低频操作（稍后再看、分享链接）放进 AVKit 控制条自带的动作菜单（`actionPopUpButtonMenu`），
   不在画面上另加浮动按钮：它随原生控件显隐、外观原生，全屏时 AVKit 把它收进浮动控制条的「»」→「其他」。浮动按钮要么
   自己计时显隐、与原生控件不同步，要么读 AVKit 的私有视图层级，目前都不采用（发送弹幕的入口另议，见 ROADMAP）。
-- 播放态侧栏替换导航侧栏，不另开右侧 inspector：播放期间导航使用率低，双栏把宽度留给视频。
 
-### 动线与侧栏上下文层
+### 动线与右栏上下文层
 
 - 平级来源（搜索、首页、热门、稍后再看、观看历史、收藏夹）以 `AppTab` 为 id，各由一份 `AppSourceDescriptor`
   描述标题、侧栏分组、是否要求账户、整体替换代次、停用、账户变化通知、复核参与者与 reset。侧栏行、刷新回顶、
@@ -263,10 +266,12 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 - 侧栏按 `AppSourceGroup` 分段；「收藏夹」组由一个来源为每个收藏夹提供一行，选择值 `AppSidebarSelection`
   让每行带不同的 tag。
 - 右侧栈深最多 1：来源页之上最多一层播放页，换视频只替换当前视频。与首页、热门平级的来源进导航侧栏；
-  围绕当前视频的浏览（UP 主空间）作为侧栏上下文层，不新增右侧压栈层级。
-- 侧栏 = 底层（导航或播放详情）+ 可选的上下文层。上下文层打开时底层保留状态，但必须真正隐藏：AppKit 底层
+  围绕当前视频的浏览（UP 主空间）作为播放页右栏的上下文层，不新增压栈层级。
+- 右栏 = 底层（相关推荐竖列）+ 可选的上下文层。上下文层打开时底层保留状态，但必须真正隐藏：AppKit 底层
   设 `isHidden`，只设 SwiftUI 透明度与 hit testing 管不到 cursor rect 和 tracking area。进出动画只作用于
-  上下文层，否则底层集合视图的布局变化也会被做成动画。
+  上下文层，否则底层集合视图的布局变化也会被做成动画。单栏时打开上下文层会切到右栏分页。
+- 相关推荐竖列与 UP 主空间投稿共用一个竖向视频行列表（`VideoRowListController`，空间多一个头部与页码条），行样式与
+  卡片菜单一致。
 - 上下文层的打开与关闭都经 `AppNavigationCoordinator`，按“从哪里打开”判断是否关闭：在上下文层里选的视频保留
   它，其他入口换视频或关闭播放时关闭。播完后的自动连播与列表循环不是用户从别处换视频，同样保留它。不比较新视频的
   UP 主：联合投稿的 UP 主字段可能是另一位。

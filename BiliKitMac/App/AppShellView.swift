@@ -45,55 +45,28 @@ struct AppShellView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var gridScroll = SourceGridScrollStates()
     /// 侧栏「收藏夹」组是否展开；只在窗口内存里，默认展开。
-    ///
-    /// 放在这里而不是侧栏里：进入、退出播放时导航侧栏会重建。
     @State private var isFavoritesExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            // 侧栏 = 底层（导航或播放详情）+ 可选的上下文层（UP 主空间）。两层并列叠放，
-            // 各自按安全区布局；上下文层打开时底层保留状态（关闭后评论位置还在），但不可见、
-            // 不可点、对辅助功能隐藏。播放详情是 AppKit，另经 `isObscured` 设 `isHidden`：
-            // 只设透明度与 hit testing 管不到 cursor rect 和 tracking area。
-            ZStack {
-                Group {
-                    if navigationCoordinator.currentPlaybackBVID != nil {
-                        playbackSidebar
-                    } else {
-                        AppNavigationSidebar(
-                            sections: sources.sections,
-                            selection: sidebarSelection,
-                            favoriteFolderList: favoriteFolderList,
-                            isFavoritesExpanded: $isFavoritesExpanded,
-                            accountScope: historyAccountScope,
-                            accountState: authenticationModel.accountPresentationState,
-                            imagePipeline: imagePipeline,
-                            onPresentAuthentication: {
-                                isAuthenticationPresented = true
-                            }
-                        )
-                    }
+            // 侧栏只负责导航，播放时也不替换：播放页整页压在 detail 列里，UP 主空间在播放页右栏打开。
+            AppNavigationSidebar(
+                sections: sources.sections,
+                selection: sidebarSelection,
+                favoriteFolderList: favoriteFolderList,
+                isFavoritesExpanded: $isFavoritesExpanded,
+                accountScope: historyAccountScope,
+                accountState: authenticationModel.accountPresentationState,
+                imagePipeline: imagePipeline,
+                onPresentAuthentication: {
+                    isAuthenticationPresented = true
                 }
-                .id(sidebarContextID)
-                .opacity(isSidebarContextOpen ? 0 : 1)
-                .allowsHitTesting(!isSidebarContextOpen)
-                .accessibilityHidden(isSidebarContextOpen)
-
-                // 只给上下文层自己的插入／移除加动画；底层立即隐藏，不参与这次 transaction，
-                // 否则底层的 AppKit 集合视图会把布局变化也做成动画而跳动。
-                ZStack { sidebarContextLayer }
-                    .animation(
-                        reduceMotion
-                            ? nil
-                            : .snappy(duration: UploaderSpaceGeometry.layerTransitionDuration),
-                        value: isSidebarContextOpen
-                    )
-            }
+            )
             .navigationSplitViewColumnWidth(
-                min: sidebarMinimumWidth,
-                ideal: sidebarIdealWidth,
-                max: sidebarMaximumWidth
+                min: Self.sidebarMinimumWidth,
+                ideal: Self.sidebarIdealWidth,
+                max: Self.sidebarMaximumWidth
             )
         } detail: {
             NavigationStack(path: Bindable(navigationCoordinator).playbackPath) {
@@ -109,19 +82,10 @@ struct AppShellView: View {
                     .navigationDestination(
                         for: PlaybackDestination.self
                     ) { _ in
-                        PlaybackDestinationView(
-                            model: videoModel,
-                            danmakuModel: danmakuModel,
-                            engagementModel: engagementModel,
-                            playerContent: playerContent,
-                            imagePipeline: imagePipeline,
-                            onRetry: retryPlayback,
-                            onSelectRelatedVideo:
-                                navigationCoordinator.openPlayback
-                        )
-                        .overlay(alignment: .bottom) {
-                            AccountWriteStatusOverlay(accountWrites: accountWrites)
-                        }
+                        playbackPage
+                            .overlay(alignment: .bottom) {
+                                AccountWriteStatusOverlay(accountWrites: accountWrites)
+                            }
                     }
             }
         }
@@ -218,12 +182,6 @@ struct AppShellView: View {
         )
     }
 
-    private var sidebarContextID: String {
-        navigationCoordinator.currentPlaybackBVID == nil
-            ? "navigation"
-            : "playback"
-    }
-
     private var historyAccountScope: AccountSessionScope {
         authenticationModel.sessionScope
     }
@@ -254,34 +212,75 @@ struct AppShellView: View {
         }
     }
 
-    private var playbackSidebar: some View {
-        NativePlaybackSidebarView(
-            model: videoModel,
-            commentsModel: commentsModel,
-            commentAssetURLResolver: commentAssetURLResolver,
-            commentImagePipeline: imagePipeline,
-            onRetry: retryPlayback,
-            onSelectPlayback: navigationCoordinator.openPlayback(_:preferredCID:),
-            onOpenCommentLink: { commentLinkOpener.open(commentLinkRouter($0)) },
-            onOpenCommentPictures: openCommentPictures,
-            onOpenUploaderSpace: { navigationCoordinator.openUploaderSpace(owner: $0) },
-            isObscured: isSidebarContextOpen
-        )
-        .ignoresSafeArea(.container, edges: .top)
+    /// 播放页：视频区、视频下方的详情与评论、右栏（相关推荐，空间打开时盖在上面），分栏规则在 `PlaybackPageView`。
+    private var playbackPage: some View {
+        PlaybackPageView(isSideContextOpen: isContextLayerOpen) {
+            PlaybackDestinationView(
+                model: videoModel,
+                danmakuModel: danmakuModel,
+                engagementModel: engagementModel,
+                playerContent: playerContent,
+                onRetry: retryPlayback
+            )
+        } details: { isVisible in
+            NativePlaybackDetailsView(
+                model: videoModel,
+                commentsModel: commentsModel,
+                commentAssetURLResolver: commentAssetURLResolver,
+                commentImagePipeline: imagePipeline,
+                onRetry: retryPlayback,
+                onSelectPlayback: navigationCoordinator.openPlayback(_:preferredCID:),
+                onOpenCommentLink: { commentLinkOpener.open(commentLinkRouter($0)) },
+                onOpenCommentPictures: openCommentPictures,
+                onOpenUploaderSpace: { navigationCoordinator.openUploaderSpace(owner: $0) },
+                isObscured: !isVisible
+            )
+        } side: { isVisible in
+            // 右栏 = 底层相关推荐 + 可选的上下文层（UP 主空间）。上下文层打开时底层保留状态但真正隐藏；只给上下文层
+            // 自己的插入／移除加动画，底层的 AppKit 列表不参与这次 transaction，否则布局变化也会被做成动画而跳动。
+            ZStack {
+                RelatedVideoColumn(
+                    model: videoModel,
+                    imagePipeline: imagePipeline,
+                    onSelect: navigationCoordinator.openPlayback,
+                    isObscured: !isVisible || isContextLayerOpen
+                )
+                .opacity(isContextLayerOpen ? 0 : 1)
+                .allowsHitTesting(!isContextLayerOpen)
+                .accessibilityHidden(isContextLayerOpen)
+
+                ZStack { contextLayer }
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : .snappy(duration: UploaderSpaceGeometry.layerTransitionDuration),
+                        value: isContextLayerOpen
+                    )
+            }
+            .clipped()
+        }
+        // macOS 没有给压栈页面设底色的接口，页面本身透明：不带动画压栈时根页面已移除，透出的是窗口底；带动画压栈时
+        // 来源页留在下面继续绘制，会透出来。所以自铺不透明窗口背景，并延伸到工具栏下方（见 ARCHITECTURE「播放页布局」）。
+        // 工具栏背景不强制显示：它会取紧贴下方的视频画面，整条变黑；保持自动，只在右栏列表滚到下面时出现边缘效果。
+        .background {
+            Color(nsColor: .windowBackgroundColor)
+                .ignoresSafeArea()
+        }
+        .navigationTitle("播放")
     }
 
-    private var isSidebarContextOpen: Bool {
-        navigationCoordinator.isSidebarContextOpen
+    private var isContextLayerOpen: Bool {
+        navigationCoordinator.isContextLayerOpen
     }
 
     @ViewBuilder
-    private var sidebarContextLayer: some View {
-        if isSidebarContextOpen {
-            UploaderSpaceSidebarView(
+    private var contextLayer: some View {
+        if isContextLayerOpen {
+            UploaderSpaceLayerView(
                 model: navigationCoordinator.uploaderSpace,
                 currentBVID: navigationCoordinator.currentPlaybackBVID,
                 imagePipeline: imagePipeline,
-                onSelect: navigationCoordinator.openPlaybackFromSidebarContext,
+                onSelect: navigationCoordinator.openPlaybackFromContextLayer,
                 onLogin: { isAuthenticationPresented = true }
             )
             .transition(
@@ -290,19 +289,10 @@ struct AppShellView: View {
         }
     }
 
-    // 浏览态与播放态共用一列：ideal 只在首次布局生效，切换状态时宽度被夹进新范围，
-    // 因此进入播放时侧栏宽度等于播放态最小值；更宽由用户自行拖动。
-    private var sidebarMinimumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 520
-    }
-
-    private var sidebarIdealWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 520
-    }
-
-    private var sidebarMaximumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 720
-    }
+    /// 导航侧栏的宽度范围：播放页的分栏按 detail 列的宽高比决定，侧栏越窄播放页越容易分栏（见 `PlaybackPageGeometry`）。
+    private static let sidebarMinimumWidth: CGFloat = 220
+    private static let sidebarIdealWidth: CGFloat = 260
+    private static let sidebarMaximumWidth: CGFloat = 320
 
     private var commentLinkOpener: CommentLinkOpener {
         CommentLinkOpener(
@@ -412,35 +402,23 @@ private struct SourceGridScrollStates {
     }
 }
 
+/// 播放页的视频区：把窗口的播放器接进 Feature 的 `VideoPlaybackView`（骨架、失败与播放器）。
 private struct PlaybackDestinationView: View {
     let model: VideoViewModel
     let danmakuModel: DanmakuControlsViewModel
     let engagementModel: VideoEngagementModel
     let playerContent: AnyView
-    let imagePipeline: NativeVideoImagePipeline
     let onRetry: () -> Void
-    let onSelectRelatedVideo: (String) -> Void
 
     var body: some View {
         VideoPlaybackView(
             model: model,
             danmakuModel: danmakuModel,
             engagementModel: engagementModel,
-            onRetry: onRetry,
-            onSelectRelatedVideo: onSelectRelatedVideo,
-            relatedImageLoader: imagePipeline
+            onRetry: onRetry
         ) {
             playerContent
         }
-        // macOS 没有给压栈页面设底色的接口，页面本身透明：不带动画压栈时根页面已移除，透出的是窗口底；
-        // 带动画压栈时来源页留在下面继续绘制，会透出来。所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方
-        // （见 ARCHITECTURE「播放页」）。
-        .background {
-            Color(nsColor: .windowBackgroundColor)
-                .ignoresSafeArea()
-        }
-        .navigationTitle("播放")
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 }
 

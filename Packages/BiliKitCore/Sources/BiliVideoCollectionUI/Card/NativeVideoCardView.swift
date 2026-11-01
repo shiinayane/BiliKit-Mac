@@ -4,7 +4,7 @@ import CoreGraphics
 import QuartzCore
 
 extension NSUserInterfaceItemIdentifier {
-    /// 网格与 shelf 注册、取用 `NativeVideoCollectionItem` 的复用标识。
+    /// 网格注册、取用 `NativeVideoCollectionItem` 的复用标识。
     package static let nativeVideoCard = Self("native.video-card")
 }
 
@@ -114,7 +114,7 @@ struct NativeVideoSingleLineWidthCache {
     }
 }
 
-/// 网格与 shelf 复用的卡片集合项，用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
+/// 网格复用的卡片集合项，用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 ///
 /// 拥有封面与头像的取图 Task 及配置代次；不拥有图片管线与悬停仲裁（交给 `NativeVideoHoverTracker`）。
 /// 离屏（`invalidateImageRequests`）、复用与拆除（`invalidate`）时取消 Task，deinit 兜底取消；`generation`

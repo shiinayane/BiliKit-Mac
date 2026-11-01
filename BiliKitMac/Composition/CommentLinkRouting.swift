@@ -8,7 +8,7 @@ enum CommentLinkRoute: Sendable {
     case playback(PlaybackSelectionIntent)
     /// 正文时间戳：在当前视频正在播的分 P 里跳到该秒数并播放。
     case seek(seconds: Int)
-    /// 在侧栏空间层打开。
+    /// 在右栏空间层打开。
     case space(memberID: Int64)
     case web(URL)
     /// 短链：点击后由 `resolve` 解析出真正的去向；解析不出时打开 `webFallback`（原短链）。
@@ -41,7 +41,7 @@ struct CommentLinkRouting: Sendable {
         case .space(let memberID):
             return .space(memberID: memberID)
         case .member(let user):
-            // 播放侧栏已把 @ 提及直接打开为空间；经这里的同样进空间，非正整数 MID 没有去向。
+            // 播放详情区已把 @ 提及直接打开为空间；经这里的同样进空间，非正整数 MID 没有去向。
             return user.id.memberID.map { .space(memberID: $0) }
         case .external(let reference):
             return linkResolver.externalURL(for: reference).map(CommentLinkRoute.web)

@@ -1,13 +1,10 @@
 import CoreGraphics
 
-/// UP 主空间层的唯一几何来源：原生列表与状态覆盖层共用；App 壳的上下文层动画读取其中的过渡时长。
+/// UP 主空间层头部与状态覆盖层的唯一几何来源；App 壳的上下文层动画读取其中的过渡时长。
 ///
-/// 页码条的几何与列表为它留出的高度在 BiliUI 的 `PageNumberPagerGeometry`。
+/// 投稿行与列表边距在 `VideoRowGeometry`（相关推荐竖列共用），页码条的几何与列表为它留出的高度在 BiliUI 的
+/// `PageNumberPagerGeometry`。
 public enum UploaderSpaceGeometry {
-    static let listHorizontalInset: CGFloat = 8
-    static let listTopInset: CGFloat = 8
-    static let listBottomInset: CGFloat = 12
-
     static let headerHeight: CGFloat = 40
     static let headerBottomSpacing: CGFloat = 10
     static let headerHorizontalPadding: CGFloat = 8
@@ -15,30 +12,7 @@ public enum UploaderSpaceGeometry {
     static let backButtonSize: CGFloat = 24
     static let avatarSize: CGFloat = 28
 
-    /// 用户在 spike 中对比 128／160／200 后选定 160。
-    static let coverWidth: CGFloat = 160
-    static let coverHeight: CGFloat = coverWidth * 9 / 16
-    static let coverCornerRadius: CGFloat = 6
-    static let coverTextSpacing: CGFloat = 10
-    static let rowPadding: CGFloat = 8
-    static let rowSpacing: CGFloat = 2
-    static let rowCornerRadius: CGFloat = 8
-    /// 正在播放那一行的强调色底色不透明度；比悬停底色明显，指针移开后仍能看出是哪一行。
-    static let currentRowFillOpacity: CGFloat = 0.15
-    static let rowHeight: CGFloat = coverHeight + rowPadding * 2
-
-    /// 封面右下角的时长角标。
-    static let durationBadgeTrailingInset: CGFloat = 8
-    static let durationBadgeBottomInset: CGFloat = 5
-    static let durationBadgePadding = CGSize(width: 4, height: 1)
-    static let badgeCornerRadius: CGFloat = 3
-    static let collaborationBorderWidth: CGFloat = 1
-    /// “正在播放”图标与文字、各标记之间、标记与数据行之间的间距。
-    static let playingIconSpacing: CGFloat = 3
-    static let badgeSpacing: CGFloat = 6
-    static let badgeToMetadataSpacing: CGFloat = 4
-
-    /// 空间层滑入／滑出侧栏的动画时长。
+    /// 空间层滑入／滑出右栏的动画时长。
     public static let layerTransitionDuration: Double = 0.28
 
     /// 头部下方状态提示（空、失败、登录）的间距与左右留白。
@@ -46,5 +20,6 @@ public enum UploaderSpaceGeometry {
     static let messageHorizontalPadding: CGFloat = 24
 
     /// 加载、空、失败等状态覆盖层从头部下方开始，返回按钮始终可点。
-    static let stateContentTop: CGFloat = listTopInset + headerHeight + headerBottomSpacing
+    static let stateContentTop: CGFloat =
+        VideoRowGeometry.listTopInset + headerHeight + headerBottomSpacing
 }

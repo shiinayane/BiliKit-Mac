@@ -2,7 +2,7 @@ import BiliApplication
 import BiliUI
 import Foundation
 
-/// 播放页失败的唯一措辞与重试判断：主区失败视图（`VideoPlaybackView`）与 App 的播放侧栏都只读这里。
+/// 播放页失败的唯一措辞与重试判断：主区失败视图（`VideoPlaybackView`）与 App 的播放详情区都只读这里。
 /// 内容失败交给 BiliUI 的 `ContentFailureText`，播放准备失败用本 Feature 自己的文案。
 extension VideoLoadFailure {
     public var isRetryable: Bool {

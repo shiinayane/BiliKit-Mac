@@ -673,8 +673,8 @@ struct StubVideoDetailImageLoader: VideoDetailImageLoading {
 
 /// 侧栏控制器的测试组装：不解析评论资源，取图全部未命中。
 @MainActor
-func makeSidebarController() -> NativePlaybackSidebarController {
-    NativePlaybackSidebarController(
+func makeSidebarController() -> NativePlaybackDetailsController {
+    NativePlaybackDetailsController(
         commentAssetURLResolver: { _, _ in nil },
         imagePipeline: StubVideoDetailImageLoader()
     )

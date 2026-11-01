@@ -10,7 +10,7 @@ import Testing
 /// 评论正文把链接标题、前置图标与表情渲染为固定尺寸的附件和可点目标，时间戳只在可跳转范围内成为链接，
 /// 加载失败的表情按渲染作用域有界记录。
 @Suite(.serialized, .timeLimit(.minutes(1)))
-struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
+struct PlaybackCommentTextTests: PlaybackDetailsFixtures {
     /// 接口给了标题的链接：原文网址显示为「图标 + 标题」，图标与标题都带同一个链接；后面的链接位置
     /// 不受前面替换影响，没有标题的链接保持原文。
     @Test
@@ -227,10 +227,10 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
             bvid: "BVCurrent",
             comments: await commentsPresentation(subject: subject, threads: threads)
         )
-        func limited(_ seconds: Int?) throws -> NativePlaybackSidebarPresentation {
+        func limited(_ seconds: Int?) throws -> NativePlaybackDetailsPresentation {
             let content = try #require(base.content)
-            return NativePlaybackSidebarPresentation(
-                content: NativePlaybackSidebarContent(
+            return NativePlaybackDetailsPresentation(
+                content: NativePlaybackDetailsContent(
                     bvid: content.bvid,
                     uploader: content.uploader,
                     summary: content.summary,
@@ -250,7 +250,7 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         #expect(changed == [.commentThread(subject: subject, rootID: CommentID(rawValue: 1))])
         #expect(try limited(120).changedItemIDs(comparedTo: short).isEmpty)
         #expect(
-            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+            NativePlaybackDetailsCollectionUpdatePolicy.resolve(
                 current: short.snapshotSections,
                 next: long.snapshotSections,
                 changedItemIDs: changed,

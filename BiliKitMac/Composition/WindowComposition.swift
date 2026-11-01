@@ -228,7 +228,7 @@ final class WindowComposition {
             ),
             PlayerWindowContext(
                 imagePipeline: imagePipelineOwner.pipeline,
-                // 与评论里不带时间的视频链接同一导航：换到该视频的播放页，离开侧栏上下文层。
+                // 与评论里不带时间的视频链接同一导航：换到该视频的播放页，离开右栏上下文层。
                 openVideo: { [navigationCoordinator] bvid in
                     navigationCoordinator.openPlayback(bvid)
                 },

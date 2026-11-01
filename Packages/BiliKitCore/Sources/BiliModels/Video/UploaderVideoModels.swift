@@ -1,7 +1,7 @@
 import Foundation
 
 /// UP 主空间投稿列表的排序。
-public enum UploaderVideoOrder: Sendable, Equatable {
+public enum UploaderVideoOrder: Sendable, Hashable {
     case newest
     case mostPlayed
     case mostFavorited

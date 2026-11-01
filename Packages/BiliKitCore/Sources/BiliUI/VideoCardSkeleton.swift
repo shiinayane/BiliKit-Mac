@@ -2,8 +2,8 @@ import SwiftUI
 
 /// 单张视频卡片的加载占位，与原生卡片同一布局：封面、头像、两行标题与 footer 的位置都来自 `VideoCardGeometry`。
 ///
-/// 网格骨架（`VideoCardGridSkeleton`）与播放页相关推荐横排的骨架共用；调用方给出卡片尺寸与是否带头像，
-/// 须与对应真实卡片一致（横排卡片不带头像，文字从左缘开始）。不读屏，读屏文案由外层骨架给出。
+/// 网格骨架（`VideoCardGridSkeleton`）使用；调用方给出卡片尺寸与是否带头像，须与对应真实卡片一致（不带头像时
+/// 文字从左缘开始）。不读屏，读屏文案由外层骨架给出。
 package struct VideoCardSkeleton: View {
     private static let barCornerRadius: CGFloat = 4
     private static let titleBarHeight: CGFloat = 18

@@ -226,8 +226,8 @@ extension WindowAdapters {
 /// 播放器在窗口层的依赖，构造窗口 adapter 时还不存在，由窗口组装播放器时交给 `makePlayerContent`。
 ///
 /// 弹幕关联视频卡片的封面经窗口的图片管线加载，点击经窗口导航在应用内打开视频；动作菜单的「添加到稍后再看」经窗口的
-/// 写入协调者，门槛（`canWriteAccount`）也由它判断；播完后的自动连播经 `continuePlayback` 走与侧栏选分 P、选集相同的
-/// 导航意图，但保留侧栏上下文层。
+/// 写入协调者，门槛（`canWriteAccount`）也由它判断；播完后的自动连播经 `continuePlayback` 走与详情区选分 P、选集相同的
+/// 导航意图，但保留右栏上下文层。
 struct PlayerWindowContext {
     let imagePipeline: NativeVideoImagePipeline
     let openVideo: @MainActor (_ bvid: String) -> Void

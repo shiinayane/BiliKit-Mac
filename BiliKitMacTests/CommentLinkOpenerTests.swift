@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliKit
 
-/// 评论链接的执行：视频在应用内播放或原地跳转，时间戳只在有播放时跳转，空间链接在侧栏打开，网页与解析不出的
+/// 评论链接的执行：视频在应用内播放或原地跳转，时间戳只在有播放时跳转，空间链接在右栏打开，网页与解析不出的
 /// 短链交给浏览器。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
@@ -55,7 +55,7 @@ struct CommentLinkOpenerTests {
         harness.opener.open(.space(memberID: 42))
 
         #expect(harness.coordinator.uploaderSpace.owner?.id == 42)
-        #expect(harness.coordinator.isSidebarContextOpen)
+        #expect(harness.coordinator.isContextLayerOpen)
         #expect(harness.recorder.openedURLs.isEmpty)
     }
 

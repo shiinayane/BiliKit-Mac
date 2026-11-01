@@ -1,16 +1,15 @@
 import CoreGraphics
 import Foundation
 
-/// 播放侧栏、评论、评论图片预览与 UP 主空间取图的 port：先同步查缓存，未命中再异步加载。
+/// 播放详情区、评论、评论图片预览与 UP 主空间取图的 port：先同步查缓存，未命中再异步加载。
 ///
 /// 实现是 App 的窗口图片管线（`NativeVideoImagePipeline`）：下载、来源与响应校验、大小上限、首帧解码、
 /// 动图播放门槛与有界缓存都只在那里（见 SECURITY-MODEL §4），用途到管线用途的映射也在 App；本 target 只对
 /// 管线按门槛放行的 `NativeAnimatedImage` 数据逐帧解码播放。同步查缓存让复用的行在配置当帧就显示已缓存的图，
 /// 不先闪一下占位。
 ///
-/// 同一 Feature 里有两个取图 port：相关推荐横排是共享卡片，走 BiliVideoCollectionUI 的
-/// `NativeVideoImageLoading`（只分封面与头像）；其余用途（评论表情、评论图片与预览、原图数据）走这个
-/// Feature 自有的窄 port，不为它们放宽卡片 port。
+/// 本 Feature 的所有取图（竖向视频行的封面、评论表情、评论图片与预览、原图数据）都走这个 Feature 自有的窄 port，
+/// 不经 BiliVideoCollectionUI 的卡片 port。
 ///
 /// 调用方契约：`cachedImage`／`cachedAnimation` 在主线程配置视图时同步调用，实现必须线程安全、只查内存
 /// 缓存、不阻塞、不发请求；调用方取消 `image(for:purpose:)` 所在的 Task 时，实现撤掉这个等待者并返回 nil，
@@ -29,7 +28,7 @@ public protocol VideoDetailImageLoading: Sendable {
 
 /// 本 target 的图片用途；每种用途的解码尺寸、响应上限与是否保留动图由实现方决定。
 public enum VideoDetailImagePurpose: Hashable, Sendable {
-    /// 侧栏 UP 主名片、评论作者与空间头部的头像。
+    /// 详情区 UP 主名片、评论作者与空间头部的头像。
     case avatar
     /// 空间投稿行的封面。
     case cover

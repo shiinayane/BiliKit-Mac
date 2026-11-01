@@ -8,7 +8,7 @@ public enum PlaybackEndHandling: Sendable, Equatable {
     case replayed
     /// 要重播但引擎没有回到开头：seek 失败、落点不在开头附近，或期间 item、意图或用户操作变了。
     case replayFailed
-    /// 要播下一项；跳转由调用方走与侧栏选分 P、选集相同的导航。
+    /// 要播下一项；跳转由调用方走与详情区选分 P、选集相同的导航。
     case advance(PlaybackEndAdvance)
     /// 下一集在合集里，但缺少能播放它的身份（没有 BV 号或身份不一致），停下。
     case nextUnavailable

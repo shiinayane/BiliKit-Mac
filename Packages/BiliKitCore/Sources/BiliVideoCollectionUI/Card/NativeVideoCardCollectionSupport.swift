@@ -1,8 +1,8 @@
 import AppKit
 
-/// 网格与 shelf 共用的卡片内容：去重、按 ID 查找与 diffable 快照。
+/// 网格的卡片内容：去重、按 ID 查找与 diffable 快照。
 ///
-/// 空 ID 与重复 ID 被丢弃，保留第一次出现的那张；值类型，由网格与 shelf 的 Coordinator 各自持有。
+/// 空 ID 与重复 ID 被丢弃，保留第一次出现的那张；值类型，由网格的 Coordinator 持有。
 package struct NativeVideoCardContents: Sendable {
     static let section = 0
 
@@ -24,8 +24,7 @@ package struct NativeVideoCardContents: Sendable {
 
     /// 该 ID 的卡片存在且可进入播放；不在内容里的 ID 按不可激活处理。
     ///
-    /// 网格与横排（VideoDetail 的相关推荐）的激活
-    /// 入口都经它拦截，所以是 `package`。
+    /// 网格的激活入口经它拦截，所以是 `package`。
     package func isActivatable(_ id: String) -> Bool {
         byID[id]?.isActivatable ?? false
     }
@@ -62,7 +61,7 @@ package struct NativeVideoCardContents: Sendable {
     }
 }
 
-/// 网格与 shelf 共用的 diffable 数据源：按 ID 取卡片内容、配置复用的卡片并同步键盘选择框。
+/// 网格的 diffable 数据源：按 ID 取卡片内容、配置复用的卡片并同步键盘选择框。
 @MainActor
 package enum NativeVideoCardDataSource {
     /// 调用方以 `[weak self]` 捕获 Coordinator，工厂本身不持有任何 owner。
@@ -104,7 +103,7 @@ package protocol NativeHoverableCollectionItem: NSCollectionViewItem {
 
 /// 指针悬停的唯一 owner：同一时刻最多一个集合项处于悬停外观。
 ///
-/// 由使用悬停的集合视图 owner 持有（网格与 shelf 的 Coordinator、UP 主空间列表）；只弱引用悬停项，
+/// 由使用悬停的集合视图 owner 持有（网格的 Coordinator、竖向视频行列表）；只弱引用悬停项，
 /// 不拥有集合项本身。
 @MainActor
 package final class NativeVideoHoverTracker {
@@ -200,7 +199,7 @@ package enum NativeVideoCollectionKeys {
 
 /// 能弹出卡片菜单的集合项：卡片菜单按它代表的视频 ID 取，菜单打开期间由它自己画上下文描边。
 ///
-/// 网格与横排的视频卡片（`NativeVideoCollectionItem`）与 UP 主空间的投稿行都实现它；菜单的取用、弹出与读屏操作只在
+/// 网格的视频卡片（`NativeVideoCollectionItem`）与竖向视频行都实现它；菜单的取用、弹出与读屏操作只在
 /// `NativeVideoCardCollectionView` 写一份，各集合项只提供 ID 与描边。
 @MainActor
 package protocol NativeVideoMenuTargetItem: NSCollectionViewItem {
@@ -209,8 +208,8 @@ package protocol NativeVideoMenuTargetItem: NSCollectionViewItem {
     func setContextMenuTarget(_ isTarget: Bool)
 }
 
-/// 网格、shelf 与 UP 主空间列表的集合视图基类：激活回调、键盘选择框状态与卡片菜单；`open` 供 BiliVideoDetailFeature 的
-/// 横排（`NativeVideoShelfCollectionView`）与空间列表跨模块子类化。
+/// 网格与竖向视频行列表（UP 主空间、相关推荐）的集合视图基类：激活回调、键盘选择框状态与卡片菜单；`open` 供
+/// BiliVideoDetailFeature 的竖向列表（`VideoRowCollectionView`）跨模块子类化。
 ///
 /// 用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 @MainActor
@@ -218,7 +217,7 @@ open class NativeVideoCardCollectionView: NSCollectionView {
     package var onActivateSelection: ((String) -> Void)?
     /// 按卡片 ID 取菜单描述；nil 或返回 nil 时不弹菜单、卡片没有读屏自定义操作。
     ///
-    /// 由网格与横排的 Coordinator 设置并在 reset 时清空，Coordinator 再转给 Feature 注入的 `cardMenu`。
+    /// 由网格与竖向列表的 Coordinator 设置并在 reset 时清空，Coordinator 再转给 Feature 注入的 `cardMenu`。
     package var cardMenu: ((String) -> NativeVideoCardMenu?)?
     package private(set) var showsKeyboardSelection = false
     /// 菜单打开期间的目标卡片：`menu(for:)` 记下，`willOpenMenu` 画上下文描边，`didCloseMenu` 撤销并清空。

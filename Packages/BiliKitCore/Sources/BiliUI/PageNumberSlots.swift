@@ -6,7 +6,7 @@ package enum PageNumberSlot: Hashable, Sendable {
 
 /// 页码条展开时的页码排布：首页、末页、当前页前后各 `neighborCount` 页，其余折成省略号。
 ///
-/// 来源列表的 `PageNumberPager` 与播放侧栏楼中楼的页码条共用这一份排布。
+/// 来源列表的 `PageNumberPager` 与播放详情区楼中楼的页码条共用这一份排布。
 package enum PageNumberSlots {
     /// 当前页两侧各显示两页：侧栏宽度下一行放得下，又能一步跳到附近的页。
     package static let neighborCount = 2

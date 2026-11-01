@@ -29,7 +29,7 @@ package enum NativeVideoCardAvailability: Equatable, Sendable {
 
 /// AppKit 卡片唯一消费的、无业务语义的展示值。
 ///
-/// Feature 的网格与横排包装（Browse、Library 与 VideoDetail）负责图片缩略地址、
+/// Feature 的网格包装（Browse、Library）负责图片缩略地址、
 /// 数字／日期／进度格式化与读屏文案；renderer 不读取 endpoint model，也不推断任何业务状态。
 package struct NativeVideoCardPresentation: Equatable, Sendable {
     package let id: String

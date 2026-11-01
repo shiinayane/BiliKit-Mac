@@ -281,34 +281,6 @@
         }
       }
     },
-    "上一排相关推荐" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Previous related videos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前の関連動画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上一排相关推荐"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上一排相關推薦"
-          }
-        }
-      }
-    },
     "上一页" : {
       "localizations" : {
         "en" : {
@@ -361,34 +333,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下一張圖片"
-          }
-        }
-      }
-    },
-    "下一排相关推荐" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Next related videos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次の関連動画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下一排相关推荐"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下一排相關推薦"
           }
         }
       }
@@ -1681,30 +1625,30 @@
         }
       }
     },
-    "播放并替换当前视频" : {
+    "播放页分页" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Play and replace the current video"
+            "value" : "Playback page sections"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再生して現在の動画を置き換える"
+            "value" : "再生ページの表示切替"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放并替换当前视频"
+            "value" : "播放页分页"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放並取代目前的影片"
+            "value" : "播放頁分頁"
           }
         }
       }
@@ -2349,34 +2293,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查看第 %lld 張評論圖片"
-          }
-        }
-      }
-    },
-    "横向相关推荐" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Horizontal related videos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "横方向の関連動画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "横向相关推荐"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "橫向相關推薦"
           }
         }
       }
@@ -3081,34 +2997,6 @@
         }
       }
     },
-    "继续观看" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keep watching"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "続けて見る"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "继续观看"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "繼續觀看"
-          }
-        }
-      }
-    },
     "置顶" : {
       "localizations" : {
         "en" : {
@@ -3637,6 +3525,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這則評論目前無法顯示"
+          }
+        }
+      }
+    },
+    "详情" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "详情"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳情"
           }
         }
       }

@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
 /// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
-/// 相关推荐横排由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）。展示的详情变化时交给
+/// 只负责播放页的视频区；相关推荐竖列与评论由 App 按 `PlaybackPageView` 分栏摆放。展示的详情变化时交给
 /// `VideoEngagementModel` 重读互动状态（窗口账户变化由 App 另行交给它）。
 public struct VideoPlaybackView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,8 +16,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let danmakuModel: DanmakuControlsViewModel
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
-    private let onSelectRelatedVideo: (String) -> Void
-    private let relatedImageLoader: any NativeVideoImageLoading
     private let playerContent: () -> PlayerContent
 
     public init(
@@ -25,16 +23,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         danmakuModel: DanmakuControlsViewModel,
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
-        onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
-        relatedImageLoader: any NativeVideoImageLoading,
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
         self.danmakuModel = danmakuModel
         self.engagementModel = engagementModel
         self.onRetry = onRetry
-        self.onSelectRelatedVideo = onSelectRelatedVideo
-        self.relatedImageLoader = relatedImageLoader
         self.playerContent = playerContent
     }
 
@@ -91,10 +85,6 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 context: currentContext,
                 danmakuModel: danmakuModel,
                 engagementModel: engagementModel,
-                relatedVideoState: model.relatedVideoState,
-                onSelectRelatedVideo: onSelectRelatedVideo,
-                onRetryRelatedVideos: model.retryRelatedVideos,
-                relatedImageLoader: relatedImageLoader,
                 playerContent: playerContent
             )
             .disabled(blocksRetainedContext)

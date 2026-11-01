@@ -6,9 +6,6 @@ package typealias NativeVideoGridTailState = NearEndTailState<UInt64>
 
 /// 一次内容更新相对上一次的差异：决定是否应用新快照、是否做差异动画、只重配内容变了的可见卡片，以及怎样保持
 /// 视口锚点。
-///
-/// 网格与 BiliVideoDetailFeature 的相关推荐横排（`NativeVideoShelfView`）共用这一份差异计算；
-/// 横排只读 `identityChanged` 与 `changedExistingIDs`，锚点、动画与尾部追加判断只属于网格。
 package struct NativeVideoGridUpdatePlan: Equatable {
     /// ID 序列（含顺序）变了，需要应用新快照。
     package let identityChanged: Bool

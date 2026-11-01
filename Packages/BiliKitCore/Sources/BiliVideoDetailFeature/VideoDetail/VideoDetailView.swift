@@ -5,29 +5,17 @@ import BiliVideoCollectionUI
 import Foundation
 import SwiftUI
 
-/// 已有详情时的播放页主区：播放器、相关推荐横排，以及工具栏标题、副标题、点赞投币收藏一组与弹幕按钮。
+/// 已有详情时的视频区：播放器，以及工具栏标题、副标题、点赞投币收藏一组与弹幕按钮。
 struct VideoDetailView<PlayerContent: View>: View {
     @Environment(\.locale) private var locale
     let context: VideoContext
     let danmakuModel: DanmakuControlsViewModel
     let engagementModel: VideoEngagementModel
-    let relatedVideoState: RelatedVideoState
-    let onSelectRelatedVideo: (String) -> Void
-    let onRetryRelatedVideos: () -> Void
-    let relatedImageLoader: any NativeVideoImageLoading
     let playerContent: () -> PlayerContent
 
     var body: some View {
         PlaybackDetailLayout {
             player
-        } related: {
-            RelatedVideoShelf(
-                state: shelfState,
-                onSelect: onSelectRelatedVideo,
-                onRetry: onRetryRelatedVideos,
-                contentIdentity: context.detail.bvid,
-                imageLoader: relatedImageLoader
-            )
         }
         .navigationTitle(context.detail.title)
         .navigationSubtitle(toolbarSubtitle)
@@ -38,23 +26,6 @@ struct VideoDetailView<PlayerContent: View>: View {
             ToolbarItem(placement: .primaryAction) {
                 DanmakuControlsView(model: danmakuModel)
             }
-        }
-    }
-
-    private var shelfState: RelatedVideoShelfState {
-        switch relatedVideoState {
-        case .idle, .loading:
-            .loading
-        case .loaded(let bvid, let videos) where bvid == context.detail.bvid:
-            .loaded(
-                videos.map { RelatedVideoCardPresentation(video: $0) }
-            )
-        case .empty(let bvid) where bvid == context.detail.bvid:
-            .empty
-        case .failed(let bvid, _) where bvid == context.detail.bvid:
-            .failure
-        case .loaded, .empty, .failed:
-            .loading
         }
     }
 
@@ -96,6 +67,7 @@ struct VideoDetailView<PlayerContent: View>: View {
 
     private var player: some View {
         playerContent()
-            .background(.black)
+            // 不用 `.background(.black)`：形状样式的背景默认延伸进安全区，视频区紧贴工具栏时会把工具栏底下涂黑。
+            .background(.black, ignoresSafeAreaEdges: [])
     }
 }

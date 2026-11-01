@@ -30,7 +30,7 @@ struct PlaybackEndBehaviorStore {
 /// 播完时的处理：订阅播放时间线，交给视频模型按偏好处理，执行它要求的跳转，给出要在播放器上显示的提示。
 ///
 /// 由 `WindowAdapters` 的播放器内容用播放引擎、视频模型与窗口导航构造（`make`），交给 `PlayerPlaybackEndObserver`。
-/// 下一个分 P 与下一集都走窗口导航（与侧栏选分 P、选集同一意图，保留侧栏上下文层），下一集的分 P 未知时先经视频模型
+/// 下一个分 P 与下一集都走窗口导航（与详情区选分 P、选集同一意图，保留右栏上下文层），下一集的分 P 未知时先经视频模型
 /// 解析；解析完才跳转或提示时，先核对视频模型仍在呈现播完的那一项，期间用户换了分 P 或视频就作废。不持有状态。
 struct PlayerPlaybackEndActions {
     typealias Observer = @MainActor (PlaybackTimelineSnapshot) -> Void

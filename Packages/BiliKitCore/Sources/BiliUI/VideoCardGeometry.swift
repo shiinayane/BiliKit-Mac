@@ -76,18 +76,6 @@ public enum VideoCardGridGeometry {
     }
 }
 
-/// 相关推荐横排的唯一几何来源：BiliVideoDetailFeature 的原生横排（`NativeVideoShelfView`）、
-/// 横排加载骨架与播放页布局共用。
-public enum VideoCardShelfGeometry {
-    public static let cardWidth: CGFloat = 224
-    public static let cardHeight = VideoCardGeometry.height(forWidth: cardWidth)
-    public static let spacing: CGFloat = 16
-    public static let contentInset: CGFloat = 40
-    /// 卡片下方仍在横排可视区内的留白；页面底边距要扣掉它，卡片到窗口底边才与设计值一致。
-    public static let bottomInset: CGFloat = 22
-    public static let viewportHeight = cardHeight + bottomInset
-}
-
 /// 单张卡片的 16:9 封面与文字区；纵向偏移都从封面底边算起。
 public enum VideoCardGeometry {
     public static let coverAspectWidth: CGFloat = 16
