@@ -2,6 +2,7 @@ import AppKit
 import BiliApplication
 import BiliModels
 import BiliUI
+import BiliVideoCollectionUI
 import SwiftUI
 
 /// 压在侧栏上的 UP 主空间层。
@@ -30,6 +31,8 @@ public struct UploaderSpaceSidebarView: View {
     }
 
     @Environment(\.locale) private var locale
+    @Environment(\.openURL) private var openURL
+    @Environment(\.videoCardAccountWriting) private var accountWriting
     /// 关闭前的最后一帧。
     ///
     /// 关闭时 ViewModel 立即清空，而移除动画还要播一段：保留最后一帧，让滑出去的是原来的列表与
@@ -70,7 +73,10 @@ public struct UploaderSpaceSidebarView: View {
                     actions: UploaderSpaceListActions(
                         close: model.close,
                         selectOrder: model.setOrder,
-                        selectVideo: onSelect
+                        selectVideo: onSelect,
+                        cardMenu: { [openURL, accountWriting] row in
+                            Self.cardMenu(for: row, openURL: openURL, writing: accountWriting)
+                        }
                     )
                 )
                 .ignoresSafeArea(.container, edges: .top)
@@ -87,6 +93,26 @@ public struct UploaderSpaceSidebarView: View {
                 )
             }
         }
+    }
+
+    /// 投稿行的卡片菜单：与相关推荐卡片相同的「添加到稍后再看」「收藏到…」一组加「拷贝链接」「在浏览器中打开」一组，
+    /// 规则在共用的 `NativeVideoCardMenu.video`。
+    ///
+    /// 投稿都可进入播放；BVID 不合法时没有菜单。`openURL` 是从环境取得的系统 `OpenURLAction`，`writing` 是 App 从环境注入的
+    /// 写入口（未登录或复核中时写操作项禁用）。
+    static func cardMenu(
+        for row: UploaderVideoRowPresentation,
+        openURL: OpenURLAction,
+        writing: VideoCardAccountWriting?
+    ) -> NativeVideoCardMenu? {
+        NativeVideoCardMenu.video(
+            videoID: row.bvid,
+            isActivatable: true,
+            webPageURL: BVID.webPageURL(row.bvid),
+            openURL: openURL,
+            writing: writing,
+            watchLater: .add
+        )
     }
 
     /// 空间打开期间按 ViewModel 实时生成；关闭后为 nil。

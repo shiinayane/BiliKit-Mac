@@ -46,7 +46,8 @@ struct RelatedNativeShelfView: View {
         writing: VideoCardAccountWriting?
     ) -> NativeVideoCardMenu? {
         NativeVideoCardMenu.video(
-            for: card,
+            videoID: card.id,
+            isActivatable: card.isActivatable,
             webPageURL: BVID.webPageURL(card.id),
             openURL: openURL,
             writing: writing,

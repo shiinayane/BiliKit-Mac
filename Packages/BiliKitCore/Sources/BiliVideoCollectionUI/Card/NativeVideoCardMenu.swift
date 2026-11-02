@@ -9,7 +9,7 @@ import SwiftUI
 /// 菜单里显示为灰色，读屏自定义操作没有“禁用”的表示，所以只列出可用的项（未登录或复核中时写操作项不进入转子）；子菜单
 /// 在读屏操作里没有层级，展开为带父项名字的各项（`actionableItems`）。
 ///
-/// 各来源的 Feature 按卡片构造（经 `NativeVideoGridView`、相关推荐横排的 `cardMenu` 注入），哪些项出现由来源决定；
+/// 各来源的 Feature 按卡片构造（经 `NativeVideoGridView`、相关推荐横排与 UP 主空间列表的 `cardMenu` 注入），哪些项出现由来源决定；
 /// 集合视图只在命中卡片时取用，取到 nil 就不弹菜单。描述是一次性的值：不持有卡片、集合视图或会话，每次弹出、读屏
 /// 询问或执行时重新构造。动作在主线程同步调用，只转发意图：写操作的 Task 由 App 的写入协调者拥有。
 @MainActor
@@ -167,6 +167,7 @@ extension NativeVideoCardMenu {
     /// 各来源共用的卡片菜单：写操作一组（稍后再看、收藏到…、收藏夹页的从此收藏夹移除），链接一组（拷贝链接、在浏览器
     /// 中打开）。
     ///
+    /// 菜单只看视频 ID 与能否进入播放，网格卡片与空间投稿行都按这两项调用。
     /// `webPageURL` 由 Feature 用 BiliModels 的 `BVID.webPageURL` 按卡片 ID 构造，为 nil 表示卡片 ID 不是合法 BVID：只可能有
     /// 「从此收藏夹移除」（收藏夹里没有 BVID 的失效视频）。链接项、「添加到稍后再看」与「收藏到…」只给可进入播放的卡片；
     /// 两种移除也给不可用卡片（失效的视频只能移除）。`removeFromFavoriteFolder` 只由收藏夹页给出（视频条目才有），
@@ -174,7 +175,8 @@ extension NativeVideoCardMenu {
     /// 「不感兴趣」，来源按 `writing` 自行决定给不给），排在写操作一组末尾，卡片 ID 不是合法 BVID 时不出现。`writing` 为 nil（没有注入写入口）时没有写操作
     /// 项；有入口但此刻不满足门槛时写操作项显示为禁用。
     package static func video(
-        for card: NativeVideoCardPresentation,
+        videoID: String,
+        isActivatable: Bool,
         webPageURL: URL?,
         openURL: OpenURLAction,
         writing: VideoCardAccountWriting?,
@@ -188,11 +190,24 @@ extension NativeVideoCardMenu {
         }
         return NativeVideoCardMenu(
             sections: [
-                Item.watchLater(watchLater, for: card, writing: writing)
-                    + Item.favorites(for: card, writing: writing)
+                Item.watchLater(
+                    watchLater,
+                    videoID: videoID,
+                    isActivatable: isActivatable,
+                    writing: writing
+                )
+                    + Item.favorites(
+                        videoID: videoID,
+                        isActivatable: isActivatable,
+                        writing: writing
+                    )
                     + folderRemoval
                     + additionalWriteItems,
-                Item.videoLinks(for: card, webPageURL: webPageURL, openURL: openURL)
+                Item.videoLinks(
+                    isActivatable: isActivatable,
+                    webPageURL: webPageURL,
+                    openURL: openURL
+                )
             ]
         )
     }
@@ -203,11 +218,11 @@ extension NativeVideoCardMenu.Item {
     ///
     /// 拷贝经 `VideoLinkPasteboard`；打开只经系统的 `OpenURLAction`，不预取、不附加凭据，见 SECURITY-MODEL §4。
     static func videoLinks(
-        for card: NativeVideoCardPresentation,
+        isActivatable: Bool,
         webPageURL: URL,
         openURL: OpenURLAction
     ) -> [Self] {
-        guard card.isActivatable else { return [] }
+        guard isActivatable else { return [] }
         return [
             Self(id: "copyLink", title: VideoCardMenuText.copyLink, systemImage: "link") {
                 VideoLinkPasteboard.copy(webPageURL)
@@ -226,14 +241,14 @@ extension NativeVideoCardMenu.Item {
     @MainActor
     static func watchLater(
         _ action: NativeVideoCardMenu.WatchLaterAction,
-        for card: NativeVideoCardPresentation,
+        videoID bvid: String,
+        isActivatable: Bool,
         writing: VideoCardAccountWriting?
     ) -> [Self] {
         guard let writing else { return [] }
-        let bvid = card.id
         switch action {
         case .add:
-            guard card.isActivatable else { return [] }
+            guard isActivatable else { return [] }
             return [
                 Self(
                     id: "addToWatchLater",
@@ -260,11 +275,11 @@ extension NativeVideoCardMenu.Item {
     /// 「收藏到…」：只给可进入播放的卡片；动作只打开面板，写入在面板确认时由写入协调者发出。
     @MainActor
     static func favorites(
-        for card: NativeVideoCardPresentation,
+        videoID bvid: String,
+        isActivatable: Bool,
         writing: VideoCardAccountWriting?
     ) -> [Self] {
-        guard let writing, card.isActivatable else { return [] }
-        let bvid = card.id
+        guard let writing, isActivatable else { return [] }
         return [
             Self(
                 id: "chooseFavoriteFolders",
@@ -311,7 +326,7 @@ private final class NativeVideoCardMenuActionTarget: NSObject {
 
 extension NativeVideoCardCollectionView {
     /// 卡片菜单的唯一取用处：右键、读屏自定义操作、读屏「显示菜单」与 ⌘⌫ 都经这里，只把卡片 ID 交给 `cardMenu`。
-    func cardMenu(for item: NativeVideoCollectionItem) -> NativeVideoCardMenu? {
+    func cardMenu(for item: any NativeVideoMenuTargetItem) -> NativeVideoCardMenu? {
         guard let id = item.representedVideoID else { return nil }
         return cardMenu?(id)
     }
@@ -321,7 +336,7 @@ extension NativeVideoCardCollectionView {
     ///
     /// 推到下一轮 runloop 再弹：菜单的跟踪循环会一直阻塞到菜单关闭，在辅助功能请求里同步弹出会让读屏等到超时。
     /// 届时卡片可能已被复用给其他视频，所以按发起时的 ID 重新核对。
-    func presentCardMenu(for item: NativeVideoCollectionItem) -> Bool {
+    func presentCardMenu(for item: any NativeVideoMenuTargetItem) -> Bool {
         guard let id = item.representedVideoID, cardMenu(for: item) != nil else { return false }
         DispatchQueue.main.async { [weak self, weak item] in
             guard
@@ -355,7 +370,7 @@ extension NativeVideoCardCollectionView {
     /// 读屏可能缓存操作列表，卡片在此期间会被复用给别的视频、账户门槛也可能变化；按 ID 与当下的描述核对，避免对另一个
     /// 视频或在不满足门槛时执行写操作（与 `presentCardMenu` 同一做法）。
     func accessibilityCustomActions(
-        for item: NativeVideoCollectionItem
+        for item: any NativeVideoMenuTargetItem
     ) -> [NSAccessibilityCustomAction]? {
         guard let id = item.representedVideoID, let menu = cardMenu(for: item) else { return nil }
         let actions = menu.actionableItems.filter(\.isEnabled).map { menuItem in
@@ -378,13 +393,13 @@ extension NativeVideoCardCollectionView {
     }
 }
 
-extension NativeVideoCollectionItem {
-    /// 卡片读屏入口（`NativeVideoCardView`）取操作与弹出菜单都转给所在的集合视图；不在集合视图里时没有菜单。
-    var accessibilityCardActions: [NSAccessibilityCustomAction]? {
+extension NativeVideoMenuTargetItem {
+    /// 集合项的读屏入口（视频卡片、空间投稿行）取操作与弹出菜单都转给所在的集合视图；不在集合视图里时没有菜单。
+    package var accessibilityCardActions: [NSAccessibilityCustomAction]? {
         (collectionView as? NativeVideoCardCollectionView)?.accessibilityCustomActions(for: self)
     }
 
-    func presentCardMenu() -> Bool {
+    package func presentCardMenu() -> Bool {
         (collectionView as? NativeVideoCardCollectionView)?.presentCardMenu(for: self) ?? false
     }
 }

@@ -198,8 +198,19 @@ package enum NativeVideoCollectionKeys {
     }
 }
 
-/// 网格与 shelf 的集合视图基类：激活回调、键盘选择框状态与卡片菜单；`open` 供 BiliVideoDetailFeature 的横排
-/// （`NativeVideoShelfCollectionView`）跨模块子类化。
+/// 能弹出卡片菜单的集合项：卡片菜单按它代表的视频 ID 取，菜单打开期间由它自己画上下文描边。
+///
+/// 网格与横排的视频卡片（`NativeVideoCollectionItem`）与 UP 主空间的投稿行都实现它；菜单的取用、弹出与读屏操作只在
+/// `NativeVideoCardCollectionView` 写一份，各集合项只提供 ID 与描边。
+@MainActor
+package protocol NativeVideoMenuTargetItem: NSCollectionViewItem {
+    /// 此刻代表的视频 ID；复用、拆除后为 nil。异步弹出菜单与读屏操作执行前按它核对集合项是否已换了视频。
+    var representedVideoID: String? { get }
+    func setContextMenuTarget(_ isTarget: Bool)
+}
+
+/// 网格、shelf 与 UP 主空间列表的集合视图基类：激活回调、键盘选择框状态与卡片菜单；`open` 供 BiliVideoDetailFeature 的
+/// 横排（`NativeVideoShelfCollectionView`）与空间列表跨模块子类化。
 ///
 /// 用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 @MainActor
@@ -213,7 +224,7 @@ open class NativeVideoCardCollectionView: NSCollectionView {
     /// 菜单打开期间的目标卡片：`menu(for:)` 记下，`willOpenMenu` 画上下文描边，`didCloseMenu` 撤销并清空。
     ///
     /// 右键、Control-点按与读屏「显示菜单」都经 `rightMouseDown` 走到这里，描边只在这一对回调里写。
-    private weak var contextMenuTarget: NativeVideoCollectionItem?
+    private weak var contextMenuTarget: (any NativeVideoMenuTargetItem)?
 
     /// 右键、Control-点按与读屏「显示菜单」命中卡片时弹出该卡片的菜单；空白处与没有菜单的卡片不弹。
     ///
@@ -223,14 +234,14 @@ open class NativeVideoCardCollectionView: NSCollectionView {
         let point = convert(event.locationInWindow, from: nil)
         guard
             let indexPath = indexPathForItem(at: point),
-            let item = item(at: indexPath) as? NativeVideoCollectionItem,
+            let item = item(at: indexPath) as? any NativeVideoMenuTargetItem,
             let menu = cardMenu(for: item)
         else { return nil }
         contextMenuTarget = item
         return menu.makeMenu()
     }
 
-    /// 子类 `mouseDown` 的第一步：Control-点按转进右键同一条菜单路径（`rightMouseDown` → `menu(for:)` →
+    /// 子类 `mouseDown`（或自己接管鼠标的集合项视图，例如空间投稿行）的第一步：Control-点按转进右键同一条菜单路径（`rightMouseDown` → `menu(for:)` →
     /// `willOpenMenu`／`didCloseMenu`），返回 true 时调用方不再按点击处理。
     ///
     /// 命中的是卡片视图：窗口先问它的 `menu(for:)`，它没有菜单，事件就作为普通按下沿响应链送到集合视图。右键沿响应链

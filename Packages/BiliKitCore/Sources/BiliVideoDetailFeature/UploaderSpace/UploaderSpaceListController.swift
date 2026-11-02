@@ -19,16 +19,20 @@ struct UploaderSpaceListContent: Equatable {
     let reservesPagerSpace: Bool
 }
 
-/// 空间列表的用户动作：返回详情、切换排序、选择投稿；由 `UploaderSpaceSidebarView` 接到 ViewModel 与 App 回调。
+/// 空间列表的用户动作：返回详情、切换排序、选择投稿，以及投稿行的卡片菜单；由 `UploaderSpaceSidebarView` 接到
+/// ViewModel 与 App 回调。
 struct UploaderSpaceListActions {
     let close: () -> Void
     let selectOrder: (UploaderVideoOrder) -> Void
     let selectVideo: (String) -> Void
+    /// 按投稿行取卡片菜单；每次右键、读屏询问或执行时调用，返回 nil 时不弹菜单。
+    let cardMenu: (UploaderVideoRowPresentation) -> NativeVideoCardMenu?
 
     @MainActor static let none = UploaderSpaceListActions(
         close: {},
         selectOrder: { _ in },
-        selectVideo: { _ in }
+        selectVideo: { _ in },
+        cardMenu: { _ in nil }
     )
 }
 
@@ -40,6 +44,9 @@ enum UploaderSpaceListItemID: Hashable, Sendable {
 
 /// UP 主空间列表的 `NSCollectionView` 协调器：头部与投稿行在同一个集合视图里，拥有 diffable 数据源、悬停与
 /// 滚动观察；行高固定，不需要测量缓存。
+///
+/// 投稿行的卡片菜单经集合视图的 `cardMenu` 按 BVID 转给 `actions.cardMenu`，右键、Control-点按与读屏操作都由共用的
+/// `NativeVideoCardCollectionView` 处理。
 ///
 /// 投稿数据、排序与分页归 `UploaderSpaceViewModel`；加载、空、失败与登录提示由 SwiftUI 覆盖层负责。取图经注入的
 /// port。`tearDown` 由 `UploaderSpaceSidebarView` 在视图拆除时调用一次：移除观察、清掉悬停并取消可见项的图片
@@ -96,6 +103,7 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
     func tearDown() {
         guard !isTornDown else { return }
         isTornDown = true
+        collectionView.cardMenu = nil
         observers.removeAll()
         hover.forgetHoveredItem()
         for item in collectionView.visibleItems() {
@@ -121,6 +129,11 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
             forItemWithIdentifier: UploaderSpaceVideoRowItem.reuseIdentifier
         )
         collectionView.setAccessibilityLabel(VideoDetailFeatureStrings.localized("UP 主投稿"))
+        // 每次取用时读当下的行与动作：菜单可能在行被替换、登录状态变化之后才弹出。
+        collectionView.cardMenu = { [weak self] bvid in
+            guard let self, !isTornDown, let row = rowsByBVID[bvid] else { return nil }
+            return actions.cardMenu(row)
+        }
         dataSource = NSCollectionViewDiffableDataSource(
             collectionView: collectionView
         ) { [weak self] collectionView, indexPath, id in
@@ -290,8 +303,10 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
 }
 
 /// 列表不接管键盘：方向键、空格等留给播放器快捷键。
+///
+/// 继承共用的卡片集合视图只为卡片菜单（右键、读屏操作）；键盘选择框不会出现，因为它从不成为第一响应者。
 @MainActor
-private final class UploaderSpaceCollectionView: NSCollectionView {
+private final class UploaderSpaceCollectionView: NativeVideoCardCollectionView {
     override var acceptsFirstResponder: Bool { false }
 
     /// 宽度变化（拖动侧栏、空间层进场时先以中间宽度布局）时重算行宽。
