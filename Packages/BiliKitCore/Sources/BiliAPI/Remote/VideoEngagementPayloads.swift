@@ -4,14 +4,16 @@ import Foundation
 /// 当前账户对视频的互动（`/x/web-interface/archive/relation` 的 `data`），映射为 `VideoEngagementState`。
 ///
 /// `like`、`coin`、`favorite` 缺失或形状不对时整份按解码失败：不知道是否已赞、已投几枚，按钮就给不出正确的状态，点赞
-/// 可能发成取消。已投数夹在单个稿件的上限内。
+/// 可能发成取消。已投数夹在单个稿件的上限内。`attention`（是否关注了 UP 主）缺失或形状不对时只让关注状态未知
+/// （关注按钮禁用），不拖累其余三项。
 struct VideoRelationPayload: Decodable, Sendable {
     let like: Bool?
     let coin: Int?
     let favorite: Bool?
+    let attention: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case like, coin, favorite
+        case like, coin, favorite, attention
     }
 
     init(from decoder: any Decoder) throws {
@@ -19,6 +21,7 @@ struct VideoRelationPayload: Decodable, Sendable {
         like = container.decodeLossyBool(forKey: .like)
         coin = container.decodeLossyIfPresent(Int.self, forKey: .coin)
         favorite = container.decodeLossyBool(forKey: .favorite)
+        attention = container.decodeLossyBool(forKey: .attention)
     }
 
     func model() throws -> VideoEngagementState {
@@ -26,7 +29,8 @@ struct VideoRelationPayload: Decodable, Sendable {
         return VideoEngagementState(
             isLiked: like,
             coinCount: min(max(0, coin), VideoCoinRule.maximumCoins(isReposted: false)),
-            isFavorited: favorite
+            isFavorited: favorite,
+            isFollowingUploader: attention
         )
     }
 }

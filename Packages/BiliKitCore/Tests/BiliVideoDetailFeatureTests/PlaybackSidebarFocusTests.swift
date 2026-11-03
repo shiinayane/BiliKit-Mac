@@ -66,12 +66,12 @@ struct PlaybackSidebarFocusTests: PlaybackSidebarFixtures {
             collectionView.visibleItems().lazy
                 .compactMap { $0 as? NativePlaybackSidebarUploaderItem }.first
         )
-        // 定位前提：UP 主行里的按钮只有名字右侧进入空间的箭头。
+        // 定位前提：UP 主行里进入空间的只有名字右侧的箭头（另一个按钮是关注）。
         let spaceButtons = descendants(of: uploaderItem.view).compactMap { $0 as? NSButton }
+            .filter { $0.accessibilityLabel() == VideoDetailFeatureStrings.localized("查看空间") }
         try #require(spaceButtons.count == 1)
         let spaceButton = spaceButtons[0]
         #expect(!spaceButton.isHidden)
-        #expect(spaceButton.accessibilityLabel() == VideoDetailFeatureStrings.localized("查看空间"))
 
         spaceButton.performClick(nil)
 

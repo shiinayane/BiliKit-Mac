@@ -1,14 +1,14 @@
 import BiliModels
 import Foundation
 
-/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连与首页推荐的「不感兴趣」）共用的应用级错误。
+/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连、关注与首页推荐的「不感兴趣」）共用的应用级错误。
 ///
 /// 由 BiliAPI 的写 adapter 映射：-101、-111 与凭据账户不符为 `authenticationInvalid`；窗口以为已登录、本地却没有凭据为
 /// `authenticationRequired`；Keychain 不可用为 `authenticationUnavailable`；HTTP 403／412、-352 等风控为 `restricted`；
 /// 稍后再看的业务码 90000 为 `unsupportedContent`，90001 为 `listFull`，90003 与内容不存在类业务码为 `contentUnavailable`；
 /// 收藏的业务码 11203 为 `listFull`，11010（收藏夹不存在）为 `contentUnavailable`；投币的 -104 为 `coinsInsufficient`，
 /// 34005 为 `coinLimitReached`，34002 为 `ownVideo`，34004 为 `restricted`；点赞、投币、三连的 -403（账号异常）为
-/// `declinedForClient`，三连报告的风控为 `restricted`；其他非零
+/// `declinedForClient`，三连报告的风控为 `restricted`；关注的业务码 22009（关注数已达上限）为 `listFull`；其他非零
 /// 业务码为 `rejected`，不回显服务端 message；网络与无法判定结果的响应为 `unavailable`。是否复核账户只读
 /// `requiresAccountRevalidation`，调用方不各自判断；提示措辞按 case 由写入结果胶囊的文案决定（写入从不自动重试，没有
 /// 另一个需要“是否可重试”的调用方）。写入不自动重试、不排队、不持久化（见 SECURITY-MODEL §3）。
@@ -23,7 +23,7 @@ public enum AccountWriteError: Error, Sendable, Equatable {
     case authenticationUnavailable
     /// 风控或限流。
     case restricted
-    /// 稍后再看已满（业务码 90001），或收藏夹已满（业务码 11203）。
+    /// 稍后再看已满（业务码 90001）、收藏夹已满（业务码 11203），或关注数已达上限（业务码 22009）。
     case listFull
     /// 这个稿件不能加入（业务码 90000：付费稿件）。
     case unsupportedContent
@@ -73,6 +73,17 @@ public struct VideoWriteTarget: Sendable, Hashable {
     }
 }
 
+/// 关注写入作用的 UP 主：只接受正数 mid。
+public struct UploaderWriteTarget: Sendable, Hashable {
+    public let mid: Int64
+
+    /// mid 不是正数时为 nil，不发请求。
+    public init?(mid: Int64) {
+        guard mid > 0 else { return nil }
+        self.mid = mid
+    }
+}
+
 /// 一次成功或尝试中的账户写入改了什么。
 public enum AccountWriteChange: Sendable, Hashable {
     case watchLaterAdded(VideoWriteTarget)
@@ -87,6 +98,8 @@ public enum AccountWriteChange: Sendable, Hashable {
     case coinsAdded(VideoWriteTarget, count: Int, alsoLiked: Bool)
     /// 三连；尝试中的改动没有结果，成功的效果带服务端报告的逐项结果。
     case tripled(VideoWriteTarget, VideoTripleOutcome?)
+    /// 关注或取消关注 UP 主。
+    case followChanged(UploaderWriteTarget, isFollowing: Bool)
     /// 对首页推荐的一条说「不感兴趣」。
     case recommendationDisliked(RecommendationFeedback)
     /// 撤销「不感兴趣」。
@@ -126,7 +139,8 @@ public struct AccountWriteReport: Sendable, Equatable {
         case .likeChanged(let target, _), .coinsAdded(let target, _, _), .tripled(let target, _):
             BVID.webPageURL(target.bvid)
         case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
-            .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled:
+            .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled,
+            .followChanged:
             nil
         }
     }

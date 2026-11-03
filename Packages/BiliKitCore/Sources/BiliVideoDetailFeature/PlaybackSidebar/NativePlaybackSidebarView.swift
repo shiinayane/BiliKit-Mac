@@ -3,11 +3,14 @@ import BiliApplication
 import BiliModels
 import SwiftUI
 
-/// 播放态侧栏：把视频与评论 ViewModel 投影成原生集合视图的呈现，用户操作转回 ViewModel 或 App 给的回调。
+/// 播放态侧栏：把视频、互动状态与评论 ViewModel 投影成原生集合视图的呈现，用户操作转回 ViewModel 或 App 给的回调。
 ///
-/// AppKit 集合视图的理由见 ARCHITECTURE「原生 AppKit 集合视图」；图片经 `VideoDetailImageLoading` 注入。
+/// AppKit 集合视图的理由见 ARCHITECTURE「原生 AppKit 集合视图」；图片经 `VideoDetailImageLoading` 注入。UP 主行的关注按钮
+/// 读 `engagementModel`，点按经环境里的 `VideoEngagementActions` 交给 App 的写入协调者。
 public struct NativePlaybackSidebarView: View {
+    @Environment(\.videoEngagementActions) private var engagementActions
     let model: VideoViewModel
+    let engagementModel: VideoEngagementModel
     let commentsModel: PlaybackCommentsViewModel?
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentImagePipeline: any VideoDetailImageLoading
@@ -23,6 +26,7 @@ public struct NativePlaybackSidebarView: View {
 
     public init(
         model: VideoViewModel,
+        engagementModel: VideoEngagementModel,
         commentsModel: PlaybackCommentsViewModel?,
         commentAssetURLResolver: @escaping CommentAssetURLResolver,
         commentImagePipeline: any VideoDetailImageLoading,
@@ -34,6 +38,7 @@ public struct NativePlaybackSidebarView: View {
         isObscured: Bool = false
     ) {
         self.model = model
+        self.engagementModel = engagementModel
         self.commentsModel = commentsModel
         self.commentAssetURLResolver = commentAssetURLResolver
         self.commentImagePipeline = commentImagePipeline
@@ -79,7 +84,11 @@ public struct NativePlaybackSidebarView: View {
                     guard let owner = model.presentedContext?.detail.owner else { return }
                     onOpenUploaderSpace(owner)
                 },
-                openCommentAuthorSpace: openUserSpace
+                openCommentAuthorSpace: openUserSpace,
+                setFollowing: { [engagementActions] isFollowing in
+                    guard let bvid = model.presentedContext?.detail.bvid else { return }
+                    engagementActions?.setFollowing(isFollowing, bvid)
+                }
             )
         )
         .overlay {
@@ -107,7 +116,8 @@ public struct NativePlaybackSidebarView: View {
                 bvid: context.detail.bvid,
                 uploader: VideoUploaderHeaderContent(
                     owner: context.detail.owner,
-                    profileState: model.uploaderProfileState
+                    profileState: model.uploaderProfileState,
+                    follow: followContent(for: context.detail.bvid)
                 ),
                 summary: context.detail.summary,
                 summaryLinks: context.detail.summaryLinks,
@@ -122,6 +132,16 @@ public struct NativePlaybackSidebarView: View {
                 state: model.state,
                 hasPresentedContent: content != nil
             )
+        )
+    }
+
+    /// 关注按钮：互动状态显示的是这个视频、且不是自己的视频时出现；满足写入门槛并读到关注状态时可点，否则禁用。
+    private func followContent(for bvid: String) -> VideoUploaderFollowContent? {
+        guard engagementModel.bvid == bvid, engagementModel.showsFollowButton else { return nil }
+        let isFollowing = engagementModel.isFollowingUploader
+        return VideoUploaderFollowContent(
+            isFollowing: isFollowing == true,
+            isEnabled: isFollowing != nil && (engagementActions?.isAvailable() ?? false)
         )
     }
 
@@ -199,7 +219,7 @@ public struct NativePlaybackSidebarView: View {
 
 /// 侧栏条目可以触发的全部动作：由 `NativePlaybackSidebarView` 接到 ViewModel 或 App 回调，控制器只转发。
 ///
-/// 两个空间入口为 nil 时不显示对应入口。
+/// 两个空间入口为 nil 时不显示对应入口；`setFollowing` 收到关注按钮点按后的目标状态。
 struct NativePlaybackSidebarActions {
     let selectEpisode: (VideoCollectionEpisodeIdentity) -> Void
     let selectPage: (String, Int64) -> Void
@@ -218,6 +238,7 @@ struct NativePlaybackSidebarActions {
     let openCommentPictures: (NativePlaybackCommentPictureGallery) -> Void
     var openUploaderSpace: (() -> Void)? = nil
     var openCommentAuthorSpace: ((CommentAuthor) -> Void)? = nil
+    var setFollowing: ((Bool) -> Void)? = nil
 }
 
 /// 把侧栏控制器挂进 SwiftUI：控制器作为 coordinator 随视图创建，`dismantleNSView` 时 `tearDown`；

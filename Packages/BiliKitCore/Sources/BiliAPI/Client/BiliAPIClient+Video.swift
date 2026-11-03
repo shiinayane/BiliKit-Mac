@@ -81,7 +81,7 @@ extension BiliAPIClient {
         guard payload.card.mid == ownerID else {
             throw BiliAPIError.decodingFailed
         }
-        return payload.card.model()
+        return payload.model()
     }
 
     /// 发出账户读取前核对构造出的地址恰好是名片 endpoint：HTTPS、固定主机、无端口与 userinfo、固定

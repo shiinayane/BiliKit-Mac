@@ -7,7 +7,8 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// UP 主名片与简介的排版：签名单行、简介超过五行才折叠、资料到达不改行高且只有新到的资料淡入，简介链接与时间戳按可跳转范围显示。
+/// UP 主名片与简介的排版：签名单行、简介超过五行才折叠、资料到达不改行高且只有新到的资料淡入，文字与头像一起上下居中，
+/// 关注按钮在行尾、文字止于它左侧、点按交出相反的目标状态；简介链接与时间戳按可跳转范围显示。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
     @Test
@@ -61,25 +62,150 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
 
     @Test
     @MainActor
-    func uploaderNameCentersOnTheAvatarOnlyWithoutSignature() {
-        let avatarCenter = NativePlaybackSidebarItemMeasurement.avatarSize / 2
-        let withoutSignature = NativePlaybackUploaderGeometry(
-            content: VideoUploaderHeaderContent(
-                owner: VideoOwner(id: 1, name: "UP 主"),
-                profileState: .loaded(UploaderProfile())
-            ),
-            width: 520
+    func uploaderTextCentersWithTheAvatar() {
+        func geometry(_ profile: UploaderProfile) -> NativePlaybackUploaderGeometry {
+            NativePlaybackUploaderGeometry(
+                content: VideoUploaderHeaderContent(
+                    owner: VideoOwner(id: 1, name: "UP 主"),
+                    profileState: .loaded(profile)
+                ),
+                width: 520
+            )
+        }
+        let nameOnly = geometry(UploaderProfile())
+        let full = geometry(
+            UploaderProfile(signature: "签名", followerCount: 12_345, videoCount: 6)
         )
-        let withSignature = NativePlaybackUploaderGeometry(
+
+        #expect(abs(nameOnly.nameFrame.midY - nameOnly.avatarFrame.midY) <= 1)
+        #expect(full.nameFrame.minY == 0)
+        #expect(full.statsFrame.minY > full.nameFrame.maxY)
+        #expect(full.signatureTextFrame.minY > full.statsFrame.maxY)
+        #expect(full.signatureTextFrame.maxY <= full.height)
+    }
+
+    @Test
+    @MainActor
+    func followButtonSitsAtTheTrailingEdgeAndTextStopsBeforeIt() {
+        let content = VideoUploaderHeaderContent(
+            owner: VideoOwner(id: 1, name: "UP 主"),
+            profileState: .loaded(
+                UploaderProfile(
+                    signature: String(repeating: "签名", count: 40),
+                    followerCount: 12_345,
+                    videoCount: 6
+                )
+            ),
+            follow: VideoUploaderFollowContent(isFollowing: false, isEnabled: true)
+        )
+        let geometry = NativePlaybackUploaderGeometry(content: content, width: 408)
+        let withoutFollow = NativePlaybackUploaderGeometry(
             content: VideoUploaderHeaderContent(
                 owner: VideoOwner(id: 1, name: "UP 主"),
                 profileState: .loaded(UploaderProfile(signature: "签名"))
             ),
-            width: 520
+            width: 408
         )
 
-        #expect(withoutSignature.nameFrame.midY == avatarCenter)
-        #expect(withSignature.nameFrame.minY == 0)
+        #expect(geometry.followButtonFrame.maxX == 408)
+        #expect(geometry.followButtonFrame.width > 0)
+        for line in [geometry.nameFrame, geometry.statsFrame, geometry.signatureTextFrame] {
+            #expect(line.maxX < geometry.followButtonFrame.minX)
+        }
+        #expect(geometry.height == withoutFollow.height)
+        #expect(withoutFollow.followButtonFrame == .zero)
+    }
+
+    /// 箭头紧跟名字末尾；名字放不下时截断，箭头仍在关注按钮左侧；没有空间入口时名字可占满整段。
+    @Test
+    @MainActor
+    func spaceArrowFollowsTheNameAndStaysBeforeTheFollowButton() {
+        let geometry = NativePlaybackUploaderGeometry(
+            content: VideoUploaderHeaderContent(
+                owner: VideoOwner(id: 1, name: "UP 主"),
+                profileState: .loaded(UploaderProfile(signature: "签名")),
+                follow: VideoUploaderFollowContent(isFollowing: false, isEnabled: true)
+            ),
+            width: 408
+        )
+        let spacing = NativePlaybackUploaderGeometry.spaceButtonSpacing
+
+        let short = geometry.nameRow(nameWidth: 60, showsSpaceButton: true)
+        #expect(short.name.width == 60)
+        #expect(short.spaceButton.minX == short.name.maxX + spacing)
+        #expect(abs(short.spaceButton.midY - geometry.nameFrame.midY) <= 1)
+
+        let long = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: true)
+        #expect(long.name.width < geometry.nameFrame.width)
+        #expect(long.spaceButton.maxX <= geometry.nameFrame.maxX)
+        #expect(long.spaceButton.maxX < geometry.followButtonFrame.minX)
+
+        let withoutSpace = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: false)
+        #expect(withoutSpace.name.width == geometry.nameFrame.width)
+        #expect(withoutSpace.spaceButton == .zero)
+    }
+
+    /// 标题说明现状，读屏的值说明是否已关注；点按交出相反的目标状态，禁用或没有关注内容时不交出。
+    @Test(arguments: [false, true])
+    @MainActor
+    func followButtonReportsStateAndSendsTheOppositeTarget(isFollowing: Bool) throws {
+        let item = NativePlaybackSidebarUploaderItem()
+        item.view.frame = NSRect(x: 0, y: 0, width: 408, height: 60)
+        var requested: [Bool] = []
+        item.configure(
+            content: VideoUploaderHeaderContent(
+                owner: VideoOwner(id: 1, name: "UP 主"),
+                profileState: .loaded(UploaderProfile()),
+                follow: VideoUploaderFollowContent(isFollowing: isFollowing, isEnabled: true)
+            ),
+            imagePipeline: StubVideoDetailImageLoader(),
+            onOpenSpace: nil,
+            onSetFollowing: { requested.append($0) }
+        )
+        let button = try #require(
+            descendants(of: item.view).compactMap { $0 as? NSButton }.first {
+                $0.accessibilityLabel() == VideoDetailFeatureStrings.localized("关注")
+            }
+        )
+
+        #expect(
+            button.title
+                == (isFollowing
+                    ? VideoDetailFeatureStrings.localized("已关注")
+                    : VideoDetailFeatureStrings.localized("关注"))
+        )
+        #expect(
+            button.accessibilityValue() as? String
+                == (isFollowing
+                    ? VideoDetailFeatureStrings.localized("已关注")
+                    : VideoDetailFeatureStrings.localized("未关注"))
+        )
+        #expect(button.isEnabled)
+        button.performClick(nil)
+        #expect(requested == [!isFollowing])
+
+        item.configure(
+            content: VideoUploaderHeaderContent(
+                owner: VideoOwner(id: 1, name: "UP 主"),
+                profileState: .loaded(UploaderProfile()),
+                follow: VideoUploaderFollowContent(isFollowing: isFollowing, isEnabled: false)
+            ),
+            imagePipeline: StubVideoDetailImageLoader(),
+            onOpenSpace: nil,
+            onSetFollowing: { requested.append($0) }
+        )
+        #expect(!button.isEnabled)
+        item.configure(
+            content: VideoUploaderHeaderContent(
+                owner: VideoOwner(id: 1, name: "UP 主"),
+                profileState: .loaded(UploaderProfile())
+            ),
+            imagePipeline: StubVideoDetailImageLoader(),
+            onOpenSpace: nil,
+            onSetFollowing: { requested.append($0) }
+        )
+        #expect(button.isHidden)
+        #expect(requested == [!isFollowing])
     }
 
     /// 名片加载完成前名字保持默认色，不会先粉后灰地闪一下；大会员同时告知 VoiceOver。
@@ -145,7 +271,9 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
     @Test(
         arguments: [
             VideoUploaderProfileState.loaded(UploaderProfile()),
-            .loaded(UploaderProfile(signature: String(repeating: "签名", count: 40)))
+            .loaded(UploaderProfile(signature: String(repeating: "签名", count: 40))),
+            .loaded(UploaderProfile(followerCount: 12_345, videoCount: 6)),
+            .loaded(UploaderProfile(signature: "签名", followerCount: 12_345, videoCount: 6))
         ]
     )
     @MainActor

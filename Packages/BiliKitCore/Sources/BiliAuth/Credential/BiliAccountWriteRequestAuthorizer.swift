@@ -130,6 +130,10 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
     /// 稿件的上限），`select_like` 0 或 1；三连只有 `aid`。网页同样附带的统计字段与 `cross_domain` 不发送。这三个接口
     /// 要求 Cookie 带 `buvid3`，它不是凭据、不在这里注入，由 BiliAPI 在授权之后附加（见 SECURITY-MODEL §3）。
     ///
+    /// 关注只登记 `relation/modify` 的关注与取消：`fid` 单个 UP 主，`act` 只能是 1（关注）或 2（取消），`re_src` 固定为
+    /// 11。同一接口的其他 `act`（悄悄关注、拉黑、移除粉丝等）改动的是另一种关系，一律拒绝；网页附带的 `gaia_source`、
+    /// `spmid`、`extend_content` 不发送，schema 也不接受。
+    ///
     /// 首页推荐的「不感兴趣」与撤销字段完全相同、共用 `recommendationFeedbackSchema`：只收单个稿件与它的 UP 主 `mid`
     /// （推荐流的普通视频总有 UP 主，0 只会是构造有误），`reason_id` 只能是 1（内容不感兴趣）或 4（不想看此 UP 主），其余
     /// 是网页固定发送的取值。网页对这两个接口签 WBI，这里不签（多个第三方
@@ -180,6 +184,16 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         ),
         "/x/web-interface/archive/like/triple": Schema(
             requiredFields: ["aid": .positiveInteger],
+            optionalFields: [:],
+            referer: "https://www.bilibili.com/",
+            cookieNames: [.session]
+        ),
+        "/x/relation/modify": Schema(
+            requiredFields: [
+                "fid": .positiveInteger,
+                "act": .oneOf(["1", "2"]),
+                "re_src": .literal("11")
+            ],
             optionalFields: [:],
             referer: "https://www.bilibili.com/",
             cookieNames: [.session]

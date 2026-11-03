@@ -19,7 +19,9 @@ public struct UploaderProfileUseCase: Sendable {
             name: Self.singleLine(profile.name),
             avatarURL: profile.avatarURL,
             signature: Self.singleLine(profile.signature),
-            isVIP: profile.isVIP
+            isVIP: profile.isVIP,
+            followerCount: profile.followerCount,
+            videoCount: profile.videoCount
         )
     }
 

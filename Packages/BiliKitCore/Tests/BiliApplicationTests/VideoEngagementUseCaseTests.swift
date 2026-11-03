@@ -2,8 +2,9 @@ import BiliApplication
 import Foundation
 import Testing
 
-/// 点赞、投币、三连只为正数账户发请求，投币只收 1 或 2 枚；成功时给出带账户的效果，投币效果带服务端报告的附带点赞，三连
-/// 效果带逐项结果；可投币数按转载与否的上限减去已投数；只有被 B 站拒绝的点赞、投币与三连给出在浏览器中打开的视频。
+/// 点赞、投币、三连与关注只为正数账户发请求，投币只收 1 或 2 枚，不关注自己；成功时给出带账户的效果，投币效果带服务端
+/// 报告的附带点赞，三连效果带逐项结果；可投币数按转载与否的上限减去已投数；只有被 B 站拒绝的点赞、投币与三连给出在浏览器
+/// 中打开的视频。
 @Suite(.timeLimit(.minutes(1)))
 struct VideoEngagementUseCaseTests {
     @Test
@@ -21,6 +22,8 @@ struct VideoEngagementUseCaseTests {
         let liked = try await useCase.setLiked(true, target: target, accountID: 42)
         let coined = try await useCase.addCoins(2, alsoLike: true, target: target, accountID: 42)
         let tripled = try await useCase.triple(target: target, accountID: 42)
+        let uploader = try #require(UploaderWriteTarget(mid: 7))
+        let followed = try await useCase.setFollowing(true, uploader: uploader, accountID: 42)
 
         #expect(
             liked == AccountWriteEffect(accountID: 42, change: .likeChanged(target, isLiked: true))
@@ -34,7 +37,30 @@ struct VideoEngagementUseCaseTests {
                 )
         )
         #expect(tripled == AccountWriteEffect(accountID: 42, change: .tripled(target, outcome)))
-        #expect(await repository.calls == ["like", "coin 2 +like", "triple"])
+        #expect(
+            followed
+                == AccountWriteEffect(
+                    accountID: 42,
+                    change: .followChanged(uploader, isFollowing: true)
+                )
+        )
+        #expect(await repository.calls == ["like", "coin 2 +like", "triple", "follow 7"])
+    }
+
+    @Test(arguments: [(Int64(42), Int64(42)), (7, 0), (7, -1)])
+    func followingYourselfOrWithoutAnAccountSendsNothing(
+        mid: Int64,
+        accountID: Int64
+    ) async throws {
+        let repository = VideoEngagementRepositoryStub()
+        let useCase = VideoEngagementUseCase(repository: repository)
+        let uploader = try #require(UploaderWriteTarget(mid: mid))
+
+        await #expect(throws: AccountWriteError.invalidRequest) {
+            try await useCase.setFollowing(true, uploader: uploader, accountID: accountID)
+        }
+        #expect(await repository.calls.isEmpty)
+        #expect(UploaderWriteTarget(mid: 0) == nil)
     }
 
     @Test(arguments: [(0, Int64(42)), (3, 42), (1, 0), (1, -7)])
@@ -71,6 +97,13 @@ struct VideoEngagementUseCaseTests {
         #expect(
             AccountWriteReport(change: .watchLaterAdded(target), failure: .declinedForClient)
                 .webFallbackURL == nil
+        )
+        let uploader = try #require(UploaderWriteTarget(mid: 7))
+        #expect(
+            AccountWriteReport(
+                change: .followChanged(uploader, isFollowing: true),
+                failure: .declinedForClient
+            ).webFallbackURL == nil
         )
     }
 
@@ -124,5 +157,13 @@ private actor VideoEngagementRepositoryStub: VideoEngagementRepository {
     func triple(target: VideoWriteTarget, accountID: Int64) async throws -> VideoTripleOutcome {
         calls.append("triple")
         return outcome
+    }
+
+    func setFollowing(
+        _ isFollowing: Bool,
+        uploader: UploaderWriteTarget,
+        accountID: Int64
+    ) async throws {
+        calls.append("\(isFollowing ? "follow" : "unfollow") \(uploader.mid)")
     }
 }

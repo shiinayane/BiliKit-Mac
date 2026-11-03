@@ -48,6 +48,7 @@ enum LiveAPIClients {
         BiliAccountWritePath.videoLike,
         BiliAccountWritePath.videoCoin,
         BiliAccountWritePath.videoTriple,
+        BiliAccountWritePath.relationModify,
         BiliAccountWritePath.recommendationDislike,
         BiliAccountWritePath.recommendationDislikeCancel
     ]

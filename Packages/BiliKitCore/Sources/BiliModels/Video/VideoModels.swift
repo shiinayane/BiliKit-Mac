@@ -23,23 +23,30 @@ public struct VideoOwner: Sendable, Equatable {
 
 /// 从 UP 主名片补充的公开资料。
 ///
-/// 播放页用签名与大会员状态；只凭 MID 打开的空间用名字与头像。
+/// 播放页用签名、大会员状态、粉丝数与投稿数；只凭 MID 打开的空间用名字与头像。计数是名片读到时的数，名片缺失或形状
+/// 不对时为 nil。不含当前账户是否关注：名片按 UP 主沿用、不随账户重读，关注状态归播放页的互动状态。
 public struct UploaderProfile: Sendable, Equatable {
     public let name: String?
     public let avatarURL: URL?
     public let signature: String?
     public let isVIP: Bool
+    public let followerCount: Int64?
+    public let videoCount: Int64?
 
     public init(
         name: String? = nil,
         avatarURL: URL? = nil,
         signature: String? = nil,
-        isVIP: Bool = false
+        isVIP: Bool = false,
+        followerCount: Int64? = nil,
+        videoCount: Int64? = nil
     ) {
         self.name = name
         self.avatarURL = avatarURL
         self.signature = signature
         self.isVIP = isVIP
+        self.followerCount = followerCount
+        self.videoCount = videoCount
     }
 }
 

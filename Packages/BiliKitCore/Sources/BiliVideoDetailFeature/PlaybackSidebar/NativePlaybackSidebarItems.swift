@@ -65,73 +65,153 @@ enum NativePlaybackSidebarItemMeasurement {
 }
 
 /// UP 主行的唯一几何来源；高度测量与 `layout()` 共用，缓存高度不会与实际布局漂移。
+///
+/// 行高按名字、计数、签名三行都在时计算，与名片状态无关：加载中两行占位，到达后缺了哪行也不改行高，名片到达的过渡只需
+/// 覆盖这一行（见 `NativePlaybackUploaderProfileReveal`）。实际出现的几行作为一块、与头像一起在行内上下居中；“查看空间”
+/// 箭头紧跟在名字末尾，像一个可点的标题；关注按钮独占行尾、与头像一起上下居中，文字各行都止于它左侧。
 @MainActor
 struct NativePlaybackUploaderGeometry {
     static let textLeading = NativePlaybackSidebarItemMeasurement.avatarSize + 12
-    /// 名字行右侧“查看空间”箭头按钮的边长，以及它与名字之间的间距。
+    /// 名字末尾“查看空间”箭头按钮的边长，以及它与名字之间的间距。
     static let spaceButtonSize: CGFloat = 16
-    static let spaceButtonSpacing: CGFloat = 8
-    static let loadingBarInset: CGFloat = 2
-    static let loadingBarHeight: CGFloat = 14
-    static let loadingBarMaximumWidth: CGFloat = 196
+    static let spaceButtonSpacing: CGFloat = 2
+    /// 关注按钮与左侧文字之间的间距。
+    static let followButtonSpacing: CGFloat = 12
+    static let loadingBarHeight: CGFloat = 12
+    static let statsLoadingBarWidth: CGFloat = 120
+    static let signatureLoadingBarWidth: CGFloat = 196
     static var nameFont: NSFont {
         .systemFont(
             ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
             weight: .semibold
         )
     }
+    static var statsFont: NSFont {
+        .monospacedDigitSystemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .subheadline).pointSize,
+            weight: .regular
+        )
+    }
     static var signatureFont: NSFont { .preferredFont(forTextStyle: .callout) }
+    static var followTitle: String { VideoDetailFeatureStrings.localized("关注") }
+    static var followingTitle: String { VideoDetailFeatureStrings.localized("已关注") }
 
+    let avatarFrame: NSRect
+    /// 名字行可用的整段宽度；名字与箭头的实际位置由 `nameRow` 在其中排出。
     let nameFrame: NSRect
-    /// 签名固定一行，超出部分省略，完整文字由系统 expansion tooltip 显示。
+    /// 计数与签名各一行，固定单行、超出省略；隐藏时高度为 0。
+    let statsFrame: NSRect
     let signatureTextFrame: NSRect
-    let loadingBarFrame: NSRect
+    /// 加载中占位条；不在加载时为 `.zero`。
+    let statsLoadingBarFrame: NSRect
+    let signatureLoadingBarFrame: NSRect
+    /// 没有关注按钮时为 `.zero`。
+    let followButtonFrame: NSRect
     let height: CGFloat
 
     init(content: VideoUploaderHeaderContent, width: CGFloat) {
-        let textWidth = max(40, width - Self.textLeading)
+        let spacing = NativePlaybackSidebarItemMeasurement.textSpacing
+        let avatarSize = NativePlaybackSidebarItemMeasurement.avatarSize
         let nameHeight = ceil(Self.nameFont.pointSize * 1.35)
-        let signatureY = nameHeight + NativePlaybackSidebarItemMeasurement.textSpacing
-        // 没有签名时名字与头像上下居中，否则名字贴顶、签名在下。
-        let nameY =
-            content.signature == .hidden
-            ? max(0, (NativePlaybackSidebarItemMeasurement.avatarSize - nameHeight) / 2)
-            : 0
-        let signatureHeight: CGFloat
-        switch content.signature {
-        case .hidden:
-            signatureHeight = 0
-        case .loading:
-            signatureHeight = Self.loadingBarInset + Self.loadingBarHeight
-        case .text:
-            signatureHeight = Self.signatureLineHeight
+        let statsHeight = Self.statsLineHeight
+        let signatureHeight = Self.signatureLineHeight
+        height = max(
+            avatarSize,
+            nameHeight + spacing + statsHeight + spacing + signatureHeight
+        )
+        avatarFrame = NSRect(
+            x: 0,
+            y: floor((height - avatarSize) / 2),
+            width: avatarSize,
+            height: avatarSize
+        )
+
+        let followSize = content.follow == nil ? NSSize.zero : Self.followButtonSize
+        followButtonFrame =
+            content.follow == nil
+            ? .zero
+            : NSRect(
+                x: width - followSize.width,
+                y: floor((height - followSize.height) / 2),
+                width: followSize.width,
+                height: followSize.height
+            )
+        let trailingReserve =
+            content.follow == nil ? 0 : followSize.width + Self.followButtonSpacing
+        let textWidth = max(40, width - Self.textLeading - trailingReserve)
+
+        let lineHeights =
+            [nameHeight]
+            + (content.stats == .hidden ? [] : [statsHeight])
+            + (content.signature == .hidden ? [] : [signatureHeight])
+        let blockHeight =
+            lineHeights.reduce(0, +) + spacing * CGFloat(lineHeights.count - 1)
+        var y = floor((height - blockHeight) / 2)
+        func nextLine(_ lineHeight: CGFloat, isPresent: Bool) -> NSRect {
+            let frame = NSRect(
+                x: Self.textLeading,
+                y: y,
+                width: textWidth,
+                height: isPresent ? lineHeight : 0
+            )
+            if isPresent { y += lineHeight + spacing }
+            return frame
         }
-        nameFrame = NSRect(x: Self.textLeading, y: nameY, width: textWidth, height: nameHeight)
-        signatureTextFrame = NSRect(
-            x: Self.textLeading,
-            y: signatureY,
-            width: textWidth,
-            height: signatureHeight
-        )
-        loadingBarFrame = NSRect(
-            x: Self.textLeading,
-            y: signatureY + Self.loadingBarInset,
-            width: min(Self.loadingBarMaximumWidth, textWidth),
-            height: Self.loadingBarHeight
-        )
-        let textHeight =
-            nameHeight
-            + (signatureHeight > 0
-                ? NativePlaybackSidebarItemMeasurement.textSpacing + signatureHeight : 0)
-        height = max(NativePlaybackSidebarItemMeasurement.avatarSize, textHeight)
+        nameFrame = nextLine(nameHeight, isPresent: true)
+        statsFrame = nextLine(statsHeight, isPresent: content.stats != .hidden)
+        signatureTextFrame = nextLine(signatureHeight, isPresent: content.signature != .hidden)
+        statsLoadingBarFrame =
+            content.stats == .loading
+            ? Self.loadingBar(in: statsFrame, maximumWidth: Self.statsLoadingBarWidth) : .zero
+        signatureLoadingBarFrame =
+            content.signature == .loading
+            ? Self.loadingBar(in: signatureTextFrame, maximumWidth: Self.signatureLoadingBarWidth)
+            : .zero
     }
 
-    /// 签名标签：一行，超出省略，被截断时由系统原地浮出完整文字（expansion tooltip）。
+    /// 名字与紧随其后的箭头：名字按不截断时的宽度 `nameWidth` 排，放不下时截断、给箭头留出位置；没有空间入口时箭头为
+    /// `.zero`，名字可占满整段。
+    func nameRow(
+        nameWidth: CGFloat,
+        showsSpaceButton: Bool
+    ) -> (name: NSRect, spaceButton: NSRect) {
+        let buttonSize = Self.spaceButtonSize
+        let reserve = showsSpaceButton ? buttonSize + Self.spaceButtonSpacing : 0
+        var name = nameFrame
+        name.size.width = max(0, min(ceil(nameWidth), nameFrame.width - reserve))
+        guard showsSpaceButton else { return (name, .zero) }
+        let button = NSRect(
+            x: name.maxX + Self.spaceButtonSpacing,
+            y: floor(nameFrame.midY - buttonSize / 2),
+            width: buttonSize,
+            height: buttonSize
+        )
+        return (name, button)
+    }
+
+    private static func loadingBar(in line: NSRect, maximumWidth: CGFloat) -> NSRect {
+        NSRect(
+            x: line.minX,
+            y: floor(line.midY - loadingBarHeight / 2),
+            width: min(maximumWidth, line.width),
+            height: loadingBarHeight
+        )
+    }
+
+    /// 计数与签名的单行标签：超出省略，被截断时由系统原地浮出完整文字（expansion tooltip）。
     ///
     /// 真实标签与测量用标签都由这里创建，保证行高测量与实际绘制一致。
+    static func makeStatsLabel() -> NSTextField {
+        makeSingleLineLabel(font: statsFont)
+    }
+
     static func makeSignatureLabel() -> NSTextField {
+        makeSingleLineLabel(font: signatureFont)
+    }
+
+    private static func makeSingleLineLabel(font: NSFont) -> NSTextField {
         let label = NSTextField(labelWithString: "")
-        label.font = signatureFont
+        label.font = font
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
@@ -140,13 +220,62 @@ struct NativePlaybackUploaderGeometry {
         return label
     }
 
-    private static let signatureSizingLabel = makeSignatureLabel()
+    /// 关注按钮；真实按钮与测量用按钮都由这里创建，宽度按两种标题中较宽的一个算，切换关注状态时名字的宽度不跳动。
+    static func makeFollowButton() -> NSButton {
+        let button = NSButton(title: followTitle, target: nil, action: nil)
+        button.bezelStyle = .push
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
+        return button
+    }
 
-    /// 单行签名标签的高度；测量与布局共用，测量标签复用同一个实例。
+    /// 名字标签；真实标签与测量用标签都由这里创建，名字的不截断宽度按同一字体与内边距测量。
+    static func makeNameLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: "")
+        label.font = nameFont
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        // 名字这一行可点，名字不再可选中复制，否则文本框会吃掉点击。
+        label.isSelectable = false
+        return label
+    }
+
+    /// 名字不截断时的宽度，交给 `nameRow`。
+    static func nameWidth(_ name: String) -> CGFloat {
+        nameSizingLabel.font = nameFont
+        nameSizingLabel.stringValue = name
+        return ceil(nameSizingLabel.fittingSize.width)
+    }
+
+    private static let nameSizingLabel = makeNameLabel()
+    private static let statsSizingLabel = makeStatsLabel()
+    private static let signatureSizingLabel = makeSignatureLabel()
+    private static let followSizingButton = makeFollowButton()
+
+    /// 单行计数与签名标签的高度；测量与布局共用，测量标签复用同一个实例。
+    static var statsLineHeight: CGFloat {
+        lineHeight(of: statsSizingLabel, font: statsFont)
+    }
+
     static var signatureLineHeight: CGFloat {
-        signatureSizingLabel.font = signatureFont
-        signatureSizingLabel.stringValue = "Ag签"
-        return ceil(signatureSizingLabel.fittingSize.height)
+        lineHeight(of: signatureSizingLabel, font: signatureFont)
+    }
+
+    private static func lineHeight(of label: NSTextField, font: NSFont) -> CGFloat {
+        label.font = font
+        label.stringValue = "Ag签"
+        return ceil(label.fittingSize.height)
+    }
+
+    static var followButtonSize: NSSize {
+        var size = NSSize.zero
+        for title in [followTitle, followingTitle] {
+            followSizingButton.title = title
+            let fitting = followSizingButton.fittingSize
+            size.width = max(size.width, ceil(fitting.width))
+            size.height = max(size.height, ceil(fitting.height))
+        }
+        return size
     }
 }
 

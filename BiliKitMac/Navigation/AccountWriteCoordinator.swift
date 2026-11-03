@@ -4,8 +4,8 @@ import BiliLibraryFeature
 import BiliVideoDetailFeature
 import Observation
 
-/// 一个窗口里用户发起的账户写入的 owner：卡片菜单（含首页推荐的「不感兴趣」）、读屏操作、⌘⌫、「收藏到…」面板，以及
-/// 播放页的点赞、投币、三连按钮与快捷键发出的意图都交给它。
+/// 一个窗口里用户发起的账户写入的 owner：卡片菜单（含首页推荐的「不感兴趣」）、读屏操作、⌘⌫、「收藏到…」面板、
+/// 播放页的点赞、投币、三连按钮与快捷键，以及播放侧栏的关注按钮发出的意图都交给它。
 ///
 /// 拥有每个在途写入的 Task（同一改动同时只有一个）、正在显示的「收藏到…」面板（`favoritePicker`，同时只有一个；归属的
 /// 读取 Task 归面板模型）、写入结果胶囊显示的最新结果与它的消失计时，以及窗口复核的参与者代次。不拥有门槛的判断
@@ -141,7 +141,7 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
     /// 点赞或取消：先在播放页的互动状态里乐观改动，失败或被取消时放回（此间状态被重读、换掉或有投币三连写回时由模型
     /// 丢弃这次回滚）；返回是否发出。
     ///
-    /// 写入成功时页面是否仍是乐观改动后的样子在那一刻判断（`stillShowsLike`）：期间有读取落地或在途，就让效果路由重读。
+    /// 写入成功时页面是否仍是乐观改动后的样子在那一刻判断（`stillShows`）：期间有读取落地或在途，就让效果路由重读。
     @discardableResult
     func setLiked(_ isLiked: Bool, bvid: String) -> Bool {
         guard let target = VideoWriteTarget(bvid: bvid), let account = currentAccount(),
@@ -152,7 +152,7 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
             .likeChanged(target, isLiked: isLiked),
             account: account,
             appliedLocally: { [engagementModel] in
-                snapshot.map(engagementModel.stillShowsLike) ?? false
+                snapshot.map(engagementModel.stillShows) ?? false
             },
             rollback: { [engagementModel] in
                 if let snapshot { engagementModel.restore(snapshot) }
@@ -222,18 +222,62 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         return true
     }
 
-    /// 同一视频的点赞、投币、三连同时只发一个：它们都可能改点赞，两个请求到达服务端的先后不可知，最终状态可能与界面
-    /// 相反；两次投币同时在途也可能超过可投数。
+    /// 关注或取消关注播放页此刻显示的视频的 UP 主：先在互动状态里乐观改动，失败或被取消时放回，成功时的判断同点赞；
+    /// 返回是否发出。
+    ///
+    /// UP 主取自互动状态（`bvid` 必须仍是它正在显示的视频），按钮不给 mid。关注状态未知、已是目标状态、UP 主就是窗口账户
+    /// 自己，或播放页还有互动写入在途时不发（理由见 `hasEngagementWriteInFlight`）。
+    @discardableResult
+    func setFollowing(_ isFollowing: Bool, bvid: String) -> Bool {
+        guard engagementModel.bvid == bvid,
+            let uploader = engagementModel.uploaderID.flatMap(UploaderWriteTarget.init(mid:)),
+            let account = currentAccount(), account.accountID != uploader.mid,
+            !inFlight.keys.contains(where: Self.isEngagementWrite),
+            let snapshot = engagementModel.applyFollow(isFollowing, bvid: bvid)
+        else { return false }
+        start(
+            .followChanged(uploader, isFollowing: isFollowing),
+            account: account,
+            appliedLocally: { [engagementModel] in engagementModel.stillShows(snapshot) },
+            rollback: { [engagementModel] in engagementModel.restore(snapshot) },
+            write: { [engagement] in
+                try await engagement.setFollowing(
+                    isFollowing,
+                    uploader: uploader,
+                    accountID: account.accountID
+                )
+            }
+        )
+        return true
+    }
+
+    /// 同一视频的点赞、投币、三连同时只发一个，关注在途时它们一个也不发。
+    ///
+    /// 它们都可能改点赞，两个请求到达服务端的先后不可知，最终状态可能与界面相反；两次投币同时在途也可能超过可投数。关注
+    /// 也只在它们都不在途时发：互动状态的乐观改动与回滚按整份快照进行，同时在途时一方失败的回滚会抹掉另一方的乐观改动。
     private func hasEngagementWriteInFlight(for target: VideoWriteTarget) -> Bool {
         inFlight.keys.contains { change in
             switch change {
             case .likeChanged(let other, _), .coinsAdded(let other, _, _), .tripled(let other, _):
                 other == target
+            case .followChanged:
+                true
             case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
                 .removedFromFavoriteFolder, .recommendationDisliked,
                 .recommendationDislikeCancelled:
                 false
             }
+        }
+    }
+
+    /// 写播放页互动状态的写入：点赞、投币、三连与关注。
+    private static func isEngagementWrite(_ change: AccountWriteChange) -> Bool {
+        switch change {
+        case .likeChanged, .coinsAdded, .tripled, .followChanged:
+            true
+        case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
+            .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled:
+            false
         }
     }
 
@@ -287,7 +331,7 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
                 .recommendationDislikeCancelled(let feedback):
                 feedback.target == target
             case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
-                .removedFromFavoriteFolder, .likeChanged, .coinsAdded, .tripled:
+                .removedFromFavoriteFolder, .likeChanged, .coinsAdded, .tripled, .followChanged:
                 false
             }
         }

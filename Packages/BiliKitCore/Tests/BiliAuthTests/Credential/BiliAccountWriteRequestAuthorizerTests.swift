@@ -5,7 +5,7 @@ import Testing
 @testable import BiliAuth
 
 /// 账户写入授权器只放行 schema 表里精确形状的 POST，绑定预期账户，只注入 `SESSDATA` 与表单 csrf；收藏移除一次只收
-/// 一个视频条目；「不感兴趣」只收网页的两个原因与有界的追踪 ID。
+/// 一个视频条目；「不感兴趣」只收网页的两个原因与有界的追踪 ID；关注只收单个 UP 主的关注与取消。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAccountWriteRequestAuthorizerTests {
     private static let addPath = "/x/v2/history/toview/add"
@@ -18,6 +18,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
     private static let likePath = "/x/web-interface/archive/like"
     private static let coinPath = "/x/web-interface/coin/add"
     private static let triplePath = "/x/web-interface/archive/like/triple"
+    private static let followPath = "/x/relation/modify"
     private static let dislikePath = "/x/web-interface/feedback/dislike"
     private static let dislikeCancelPath = "/x/web-interface/feedback/dislike/cancel"
     private static let dislikeBody =
@@ -53,6 +54,8 @@ struct BiliAccountWriteRequestAuthorizerTests {
         (coinPath, "aid=170001&multiply=1&select_like=0"),
         (coinPath, "aid=170001&multiply=2&select_like=1"),
         (triplePath, "aid=170001"),
+        (followPath, "fid=7&act=1&re_src=11"),
+        (followPath, "fid=7&act=2&re_src=11"),
         (dislikePath, dislikeBody),
         (
             dislikeCancelPath,
@@ -107,7 +110,8 @@ struct BiliAccountWriteRequestAuthorizerTests {
         }
     }
 
-    /// 点赞、投币与三连只收单个稿件与固定取值：投币不超过 2 枚，网页的统计字段与 `cross_domain` 都不收。
+    /// 点赞、投币、三连与关注只收单个稿件或 UP 主与固定取值：投币不超过 2 枚，关注只能关注或取消，网页的统计字段与
+    /// `cross_domain` 都不收。
     @Test(arguments: [
         (likePath, "aid=170001&like=0"),
         (likePath, "aid=170001&like=3"),
@@ -120,7 +124,16 @@ struct BiliAccountWriteRequestAuthorizerTests {
         (coinPath, "aid=170001&multiply=1&select_like=2"),
         (coinPath, "aid=170001&multiply=1&select_like=0&cross_domain=true"),
         (triplePath, "aid=170001&ga=1"),
-        (triplePath, "bvid=BV17x411w7KC")
+        (triplePath, "bvid=BV17x411w7KC"),
+        // 同一接口的拉黑（5）、移出黑名单（6）、移除粉丝（7）与悄悄关注（3、4）改动的是另一种关系。
+        (followPath, "fid=7&act=5&re_src=11"),
+        (followPath, "fid=7&act=3&re_src=11"),
+        (followPath, "fid=7&act=7&re_src=11"),
+        (followPath, "fid=7,8&act=1&re_src=11"),
+        (followPath, "fid=0&act=1&re_src=11"),
+        (followPath, "fid=7&act=1"),
+        (followPath, "fid=7&act=1&re_src=14"),
+        (followPath, "fid=7&act=1&re_src=11&gaia_source=web_main")
     ])
     func rejectsEngagementBodiesOutsideTheSchema(path: String, body: String) async throws {
         let authorizer = try makeAuthorizer()
