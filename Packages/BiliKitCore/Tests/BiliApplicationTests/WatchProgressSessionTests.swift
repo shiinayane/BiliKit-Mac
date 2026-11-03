@@ -131,13 +131,19 @@ struct WatchProgressSessionTests {
         fixture.session.start()
         fixture.send(state: .playing)
         fixture.ticks.tick()
-        fixture.session.stop()
-        #expect(await fixture.repository.reportCount == 0)
 
         fixture.session.setReportingAccess(signedIn: false)
-        fixture.send(state: .playing)
+        fixture.send(position: 10, state: .playing)
         fixture.ticks.tick()
-        #expect(await fixture.repository.reportCount == 0)
+        fixture.session.stop()
+
+        // 写入经异步 Task 才到 repository，此刻直接数次数证明不了什么。session 一次只有一个在途写入、待发队列先进
+        // 先出，所以打开写入后造一份可辨认的报告：它是 repository 收到的第一份，就说明之前没有任何写入。
+        fixture.send(position: 42, state: .playing)
+        fixture.session.setReportingAccess(signedIn: true)
+        let first = await fixture.repository.nextReport()
+        #expect(first.event == .started)
+        #expect(first.positionSeconds == 42)
     }
 
     @Test(arguments: [
@@ -152,16 +158,24 @@ struct WatchProgressSessionTests {
         fixture.session.start()
         fixture.session.setReportingAccess(signedIn: true)
         fixture.send(state: .playing)
-        _ = await fixture.repository.nextReport()
+        let failed = await fixture.repository.nextReport()
         await fixture.ticks.waitForTermination(1)
 
         fixture.time.value = 15
         fixture.ticks.tick()
         fixture.send(position: 15, state: .playing)
 
-        #expect(await fixture.repository.reportCount == 1)
         #expect(fixture.ticks.intervals == [15])
         #expect(fixture.timeline.currentTimelineSnapshot.state == .playing)
+
+        // 失败的会话里，暂停与播完本该各报一次边界。播完再播是新会话，必然上报 started：写入串行且先进先出，
+        // 它是失败之后 repository 收到的第一份，就说明失败的会话没有再上报。
+        fixture.send(position: 16, state: .paused)
+        fixture.send(position: 20, state: .ended)
+        fixture.send(position: 0, state: .playing)
+        let next = await fixture.repository.nextReport()
+        #expect(next.event == .started)
+        #expect(next.generation != failed.generation)
     }
 
     @Test
@@ -248,7 +262,9 @@ struct WatchProgressSessionTests {
         fixture.session.suspend()
         fixture.time.value = 105
         fixture.ticks.tick()
-        #expect(await fixture.repository.reportCount == 1)
+        // 挂起期间的 tick 要么已被处理完（请求数到 2），要么因计时器已停止再也不会被处理；落定后再恢复，挂起期间
+        // 若有写入就排在下面的 periodic 之前，被它的断言抓住。只数写入次数不行：tick 可能拖到恢复之后才处理。
+        await fixture.ticks.waitUntilTickSettles(demand: 2, termination: 1)
 
         fixture.session.resumeAfterSuspension()
         fixture.time.value = 110

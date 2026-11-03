@@ -134,13 +134,14 @@ struct VideoViewModelIdentityTests {
             playback: player
         )
 
-        model.loadVideo(slow.detail.bvid)
+        let stale = SpawnedTasks { model.loadVideo(slow.detail.bvid) }
         // 旧请求停在自带分 P 的 `/view` 上，此时只有 detail 在飞行。
         try await slowGate.waitForEntries(1)
         model.loadVideo(fast.detail.bvid)
         try await slowGate.waitForCancellations()
         await waitUntilSettled(model)
         await slowGate.open()
+        await stale.finished()
 
         guard case .ready(let context) = model.state else {
             Issue.record("最新视频未进入就绪状态")
@@ -384,12 +385,13 @@ struct VideoViewModelIdentityTests {
         model.loadVideo(fixture.bvid)
         await waitUntilSettled(model)
 
-        model.selectPage(cid: 900_002)
+        let stale = SpawnedTasks { model.selectPage(cid: 900_002) }
         try await secondPageGate.waitForEntries()
         model.selectPage(cid: 900_001)
         try await secondPageGate.waitForCancellations()
         await waitUntilSettled(model)
         await secondPageGate.open()
+        await stale.finished()
 
         #expect(model.authenticationRevalidationGeneration == 0)
         #expect(model.presentedPlaybackIdentity?.cid == 900_001)
@@ -421,7 +423,7 @@ struct VideoViewModelIdentityTests {
         model.loadVideo(fixture.bvid)
         await waitUntilSettled(model)
 
-        model.selectPage(cid: 900_002)
+        let stale = SpawnedTasks { model.selectPage(cid: 900_002) }
         try await secondPageGate.waitForEntries()
 
         model.selectPage(cid: 900_001)
@@ -430,6 +432,7 @@ struct VideoViewModelIdentityTests {
         await firstPageGate.open()
         await waitUntilSettled(model)
         await secondPageGate.open()
+        await stale.finished()
 
         #expect(model.presentedContext?.selectedPage.cid == 900_001)
         #expect(model.presentedPlaybackIdentity?.cid == 900_001)

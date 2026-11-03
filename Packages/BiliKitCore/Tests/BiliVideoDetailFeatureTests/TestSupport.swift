@@ -35,6 +35,43 @@ func waitUntilSettled(_ model: VideoViewModel) async {
     }
 }
 
+/// `body` 里发起的全部非分离 Task（连同它们再发起的）；`finished()` 在这些 Task 都结束后返回。
+///
+/// 被取代的旧意图丢弃迟到结果时什么都不写，没有状态可等；要断言“迟到结果没有写回”，只能等旧意图的 Task 结束。
+/// 做法是在 `body` 期间把一个哨兵绑定为 task-local 值：`Task {}` 创建时复制 task-local 值、结束时释放，最后一个
+/// 持有它的 Task 结束时哨兵析构并结束等待。`body` 不得发起长期存活的 Task（例如事件订阅循环），否则
+/// `finished()` 只能由测试的 time limit 兜底。
+@MainActor
+struct SpawnedTasks {
+    private let completion: AsyncStream<Void>
+
+    init(_ body: () -> Void) {
+        let (completion, continuation) = AsyncStream<Void>.makeStream()
+        self.completion = completion
+        SpawnedTaskSentinel.$current.withValue(SpawnedTaskSentinel(continuation)) {
+            body()
+        }
+    }
+
+    func finished() async {
+        for await _ in completion {}
+    }
+}
+
+private final class SpawnedTaskSentinel: Sendable {
+    @TaskLocal static var current: SpawnedTaskSentinel?
+
+    private let completion: AsyncStream<Void>.Continuation
+
+    init(_ completion: AsyncStream<Void>.Continuation) {
+        self.completion = completion
+    }
+
+    deinit {
+        completion.finish()
+    }
+}
+
 /// 让替身中的请求挂起到测试放行；放行后后续请求直接通过。
 ///
 /// 挂起期间忽略取消以模拟迟到结果，但记录取消事件，测试据此确认旧意图已被新意图取消。

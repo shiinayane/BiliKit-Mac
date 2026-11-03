@@ -149,12 +149,12 @@ struct UploaderSpaceViewModelTests {
         let repository = UploaderVideoRepositoryStub(gate: gate, gatedPages: [1])
         let model = makeModel(repository)
 
-        model.open(owner: owner)
+        let stale = SpawnedTasks { model.open(owner: owner) }
         try await gate.waitForEntries()
         model.close()
         try await gate.waitForCancellations()
         await gate.open()
-        await repository.waitForCompletions(1)
+        await stale.finished()
 
         #expect(model.state == .closed)
         #expect(model.owner == nil)
@@ -201,7 +201,7 @@ struct UploaderSpaceViewModelTests {
         model.open(owner: owner)
         await waitForLoaded(model, page: 1)
 
-        model.showPage(2)
+        let stale = SpawnedTasks { model.showPage(2) }
         try await gate.waitForEntries()
         model.showPage(2)
         #expect(await repository.calls.map(\.page) == [1, 2])
@@ -210,7 +210,7 @@ struct UploaderSpaceViewModelTests {
         try await gate.waitForCancellations()
         await waitForLoaded(model, page: 3)
         await gate.open()
-        await repository.waitForCompletions(3)
+        await stale.finished()
 
         #expect(model.currentPage == 3)
         #expect(await repository.calls.map(\.page) == [1, 2, 3])
@@ -385,7 +385,6 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
     private var failingPages: [Int: ContentApplicationError]
     private let gate: TestGate?
     private let gatedPages: Set<Int>
-    private let completions = TestEventCounter()
 
     init(
         totalCount: Int = 61,
@@ -412,10 +411,6 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         failingPages[page] = error
     }
 
-    func waitForCompletions(_ count: Int) async {
-        try? await completions.wait(until: count)
-    }
-
     func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
@@ -425,7 +420,6 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         if let gate, gatedPages.contains(page) {
             await gate.pass()
         }
-        defer { Task { await completions.signal() } }
         if cancellingPages.contains(page) {
             throw CancellationError()
         }

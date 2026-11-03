@@ -23,9 +23,9 @@ struct VideoViewModelEnhancementTests {
             )
         )
 
-        model.loadVideo("BV1RelatedAA")
+        let staleA = SpawnedTasks { model.loadVideo("BV1RelatedAA") }
         await relatedRepository.waitForRequestCount(1)
-        model.loadVideo("BV1RelatedBB")
+        let staleB = SpawnedTasks { model.loadVideo("BV1RelatedBB") }
         await relatedRepository.waitForRequestCount(2)
         model.loadVideo("BV1RelatedAA")
         await relatedRepository.waitForRequestCount(3)
@@ -42,6 +42,8 @@ struct VideoViewModelEnhancementTests {
             videos: [.testFixture(bvid: "BV1StaleAAA1")]
         )
         await relatedRepository.releaseRequest(1, videos: [])
+        await staleA.finished()
+        await staleB.finished()
 
         #expect(
             model.relatedVideoState
@@ -291,11 +293,11 @@ struct VideoViewModelEnhancementTests {
             )
         )
 
-        model.loadVideo(first.bvid)
+        let staleA = SpawnedTasks { model.loadVideo(first.bvid) }
         await waitUntilSettled(model)
         await profileRepository.waitForRequestCount(1)
 
-        model.loadVideo(second.bvid)
+        let staleB = SpawnedTasks { model.loadVideo(second.bvid) }
         await waitUntilSettled(model)
         await profileRepository.waitForRequestCount(2)
         model.loadVideo(first.bvid)
@@ -308,6 +310,8 @@ struct VideoViewModelEnhancementTests {
         }
         await profileRepository.releaseRequest(0, profile: UploaderProfile(signature: "旧 A 签名"))
         await profileRepository.releaseRequest(1, profile: UploaderProfile(signature: "旧 B 签名"))
+        await staleA.finished()
+        await staleB.finished()
 
         #expect(model.presentedContext?.detail.bvid == first.bvid)
         #expect(model.uploaderProfileState == .loaded(UploaderProfile(signature: "新 A 签名")))
@@ -328,11 +332,12 @@ struct VideoViewModelEnhancementTests {
             )
         )
 
-        model.loadVideo(fixture.bvid)
+        let stale = SpawnedTasks { model.loadVideo(fixture.bvid) }
         await waitUntilSettled(model)
         await profileRepository.waitForRequestCount(1)
         model.reset()
         await profileRepository.releaseRequest(0, profile: UploaderProfile(signature: "迟到签名"))
+        await stale.finished()
 
         #expect(model.state == .idle)
         #expect(model.presentedContext == nil)
