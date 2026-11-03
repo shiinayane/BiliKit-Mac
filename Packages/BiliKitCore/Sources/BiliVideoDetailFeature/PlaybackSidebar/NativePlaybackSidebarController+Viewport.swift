@@ -7,7 +7,7 @@ import BiliVideoCollectionUI
 extension NativePlaybackSidebarController {
     func viewportSizeDidChange(_ size: CGSize) {
         guard !isTornDown, size.width > 0,
-            abs(size.width - measuredViewportWidth) > 0.5
+            NativeViewportSize.differs(size.width, measuredViewportWidth)
         else { return }
         cancelRefinement()
         let anchor = captureAnchor()

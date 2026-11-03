@@ -90,10 +90,12 @@ struct AppShellView: View {
                         value: isSidebarContextOpen
                     )
             }
+            // 浏览与播放各自记住用户拖出的宽度；挂在 ZStack 上而不是随进出播放重建的 Group 里。
+            .background(SidebarWidthRestorer(mode: sidebarColumnMode))
             .navigationSplitViewColumnWidth(
-                min: sidebarMinimumWidth,
-                ideal: sidebarIdealWidth,
-                max: sidebarMaximumWidth
+                min: sidebarColumnMode.minimumWidth,
+                ideal: sidebarColumnMode.idealWidth,
+                max: sidebarColumnMode.maximumWidth
             )
         } detail: {
             NavigationStack(path: Bindable(navigationCoordinator).playbackPath) {
@@ -292,16 +294,8 @@ struct AppShellView: View {
 
     // 浏览态与播放态共用一列：ideal 只在首次布局生效，切换状态时宽度被夹进新范围，
     // 因此进入播放时侧栏宽度等于播放态最小值；更宽由用户自行拖动。
-    private var sidebarMinimumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 300 : 520
-    }
-
-    private var sidebarIdealWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 520
-    }
-
-    private var sidebarMaximumWidth: CGFloat {
-        navigationCoordinator.currentPlaybackBVID == nil ? 320 : 720
+    private var sidebarColumnMode: SidebarColumnMode {
+        navigationCoordinator.currentPlaybackBVID == nil ? .browsing : .playback
     }
 
     private var commentLinkOpener: CommentLinkOpener {

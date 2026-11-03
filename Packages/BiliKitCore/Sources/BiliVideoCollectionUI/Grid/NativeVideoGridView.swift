@@ -506,7 +506,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             return true
         }
 
-        /// 当前视口与最近一次排版（`lastViewportSize`）在宽、高上是否不同（容差半点）；还没有排版时都算不同。
+        /// 当前视口与最近一次排版（`lastViewportSize`）在宽、高上是否不同（按 `NativeViewportSize`）；还没有排版时都算不同。
         ///
         /// 视口尺寸是否变化只按这一份基准判断：滚动视图每次 tile 与 layout 后都回调，由这里决定要不要重排。
         /// 宽度一变，AppKit 在回调之前就已按新宽度、旧卡片尺寸重排了集合视图；高度一变，它可能已夹取偏移。
@@ -514,8 +514,8 @@ package struct NativeVideoGridView: NSViewRepresentable {
         private var pendingViewportChange: (width: Bool, height: Bool, any: Bool) {
             let size = scrollView.contentSize
             guard let lastViewportSize else { return (true, true, true) }
-            let width = abs(lastViewportSize.width - size.width) > 0.5
-            let height = abs(lastViewportSize.height - size.height) > 0.5
+            let width = NativeViewportSize.differs(lastViewportSize.width, size.width)
+            let height = NativeViewportSize.differs(lastViewportSize.height, size.height)
             return (width, height, width || height)
         }
 

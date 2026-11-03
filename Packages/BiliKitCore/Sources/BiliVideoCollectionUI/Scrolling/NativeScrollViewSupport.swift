@@ -34,7 +34,20 @@ package enum NativeVideoScrollCoordinateSpace {
     }
 }
 
-/// NSScrollView 子类在 `layout()` 中用它判断 viewport 尺寸与 contentInsets 是否变化（半点容差）。
+/// 视口与排版宽度“变了没有”的唯一判定，网格、相关推荐横排、播放侧栏与滚动视图的尺寸追踪共用。
+///
+/// 容差只吸收浮点误差，不能吞掉一个像素：Retina 上拖分隔条按 0.5pt 一步改宽度，卡片宽度又向下取整，半点的变化
+/// 也可能让一行排不下而少一列；把半点当成没变，AppKit 按旧卡片尺寸重排出的错列就会留在屏幕上。
+package enum NativeViewportSize {
+    private static let changeTolerance: CGFloat = 0.01
+
+    package static func differs(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
+        abs(lhs - rhs) > changeTolerance
+    }
+}
+
+/// NSScrollView 子类在 `layout()` 中用它判断 viewport 尺寸与 contentInsets 是否变化；尺寸按 `NativeViewportSize`，
+/// insets 半点容差。
 package struct NativeScrollViewportTracker: Sendable {
     /// 一次 `update(for:)` 的结果：视口尺寸是否变化，以及 insets 是否变化。
     package struct Change: Sendable {
@@ -54,7 +67,8 @@ package struct NativeScrollViewportTracker: Sendable {
         let insets = scrollView.contentInsets
         let sizeChanged =
             lastSize.map {
-                abs($0.width - size.width) > 0.5 || abs($0.height - size.height) > 0.5
+                NativeViewportSize.differs($0.width, size.width)
+                    || NativeViewportSize.differs($0.height, size.height)
             } ?? true
         if sizeChanged { lastSize = size }
         let insetsChanged =
