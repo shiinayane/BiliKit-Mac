@@ -118,7 +118,6 @@ struct UploaderSpaceCardMenuTests {
         UploaderSpaceListFixture(
             rows: [row("BV1SpaceRow")],
             actions: UploaderSpaceListActions(
-                close: {},
                 selectOrder: { _ in },
                 selectVideo: selectVideo,
                 cardMenu: cardMenu
