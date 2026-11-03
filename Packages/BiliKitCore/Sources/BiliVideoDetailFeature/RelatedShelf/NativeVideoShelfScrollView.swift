@@ -57,10 +57,19 @@ final class NativeVideoShelfScrollView: NSScrollView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// 横排始终不要横向滚动条，滚轮与触控板照常横向滚动，翻页交给左右按钮。
+    ///
+    /// 只在 `install` 里设 false 挡不住：内容比视口宽时，`NSCollectionView` 每次布局、每次滚动引起 bounds 变化都会把
+    /// 外层的 `hasHorizontalScroller` 改回 true（实测调用栈来自它的私有 `_resizeToFitContentAndClipView`）。不拦的话，
+    /// overlay 模式下滚动条从改回之后的那次滚动起出现，传统滚动条模式下一直显示并让出卡片行的高度。
+    override var hasHorizontalScroller: Bool {
+        get { super.hasHorizontalScroller }
+        set { super.hasHorizontalScroller = false }
+    }
+
     func install(collectionView: NSCollectionView) {
         documentView = collectionView
-        // 不要滚动条：滚轮与触控板照常横向滚动，传统滚动条模式下也不在卡片下方占位；翻页交给左右按钮。
-        hasHorizontalScroller = false
+        // 横向滚动条由 `hasHorizontalScroller` 的覆写挡住；纵向本来就不需要。
         hasVerticalScroller = false
         verticalScroller = nil
         drawsBackground = false
