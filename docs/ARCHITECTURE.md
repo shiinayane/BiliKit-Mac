@@ -200,6 +200,9 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   表明 SwiftUI `LazyVGrid`/AttributeGraph 是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer`
   后，同样约 20 秒滚动 cycles 下降约 39%，0 hitch。网格只是已加载状态的呈现，loading／empty／failure 在同一个
   Feature 视图里。
+- 集合项的尺寸只由布局给出：所有集合项继承 `NativeLayoutSizedCollectionItem`，对 `preferredLayoutAttributesFitting`
+  原样返回。默认实现在每次排可见项时为整棵条目视图临时建 Auto Layout 引擎量尺寸，而我们的布局不采纳结果；1.6.1
+  评论区滚动的 Time Profiler 里它约占主线程三分之一。
 - 网格提前准备：AppKit 默认只为视野内创建卡片，封面要等卡片露出来才开始加载，所以网格用
   `prepareContent(in:)` 把准备区域扩到视野上下各一屏。`NSCollectionViewPrefetching` 只给出即将进入视野的
   index、不创建卡片，替代不了。

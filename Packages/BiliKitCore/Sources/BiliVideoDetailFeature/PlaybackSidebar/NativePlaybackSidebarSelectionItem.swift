@@ -1,6 +1,7 @@
 import AppKit
 import BiliModels
 import BiliUI
+import BiliVideoCollectionUI
 
 /// 把选集身份放进 `NSMenuItem.representedObject`（要求对象类型）的包装。
 private final class NativePlaybackEpisodeIdentityBox: NSObject {
@@ -24,7 +25,7 @@ private final class NativePlaybackSectionIdentityBox: NSObject {
 ///
 /// 只呈现 `PlaybackSelectionProjection` 与侧栏持有的浏览分区；选择意图经回调交给控制器，再到 `VideoViewModel`。
 @MainActor
-final class NativePlaybackSidebarSelectionItem: NSCollectionViewItem {
+final class NativePlaybackSidebarSelectionItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackSidebarSelectionItem"
     )

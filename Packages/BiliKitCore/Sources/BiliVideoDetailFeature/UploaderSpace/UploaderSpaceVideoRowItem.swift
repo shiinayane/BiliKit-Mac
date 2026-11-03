@@ -7,7 +7,8 @@ import BiliVideoCollectionUI
 /// （`invalidateImageRequests`）或换封面时递增并取消；到达的封面只在代次未变时显示。卡片菜单与读屏操作不在这里：
 /// 本项只提供视频 ID 与上下文描边，取用、弹出与核对都在所在的 `NativeVideoCardCollectionView`。
 @MainActor
-final class UploaderSpaceVideoRowItem: NSCollectionViewItem, NativeHoverableCollectionItem,
+final class UploaderSpaceVideoRowItem: NativeLayoutSizedCollectionItem,
+    NativeHoverableCollectionItem,
     NativeVideoMenuTargetItem
 {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceVideoRowItem")

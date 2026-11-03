@@ -1,13 +1,14 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import BiliVideoCollectionUI
 
 /// 一条根评论及其楼中楼的条目；身份是评论对象加根评论 ID，追加评论时已有的行不重建。
 ///
 /// 各行的图片与正文附件加载由内容视图里的行拥有；复用前复位，控制器在条目离开显示时调用
 /// `releaseOffscreenResources` 放下图片、取消在途加载。
 @MainActor
-final class NativePlaybackCommentThreadItem: NSCollectionViewItem {
+final class NativePlaybackCommentThreadItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackCommentThreadItem"
     )

@@ -15,7 +15,7 @@ struct UploaderSpaceHeaderContent: Equatable {
 ///
 /// 随列表一起滚动，滚到工具栏下由系统做边缘模糊；返回按钮不在头部里，所以滚走后仍可点。
 @MainActor
-final class UploaderSpaceHeaderItem: NSCollectionViewItem {
+final class UploaderSpaceHeaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceHeaderItem")
     static let orders: [UploaderVideoOrder] = [.newest, .mostPlayed, .mostFavorited]
 
