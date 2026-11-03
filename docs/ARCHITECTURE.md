@@ -254,6 +254,11 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   不在画面上另加浮动按钮：它随原生控件显隐、外观原生，全屏时 AVKit 把它收进浮动控制条的「»」→「其他」。浮动按钮要么
   自己计时显隐、与原生控件不同步，要么读 AVKit 的私有视图层级，目前都不采用（发送弹幕的入口另议，见 ROADMAP）。
 - 播放态侧栏替换导航侧栏，不另开右侧 inspector：播放期间导航使用率低，双栏把宽度留给视频。
+- 进出播放时程序不收起、不展开系统侧栏：改 `columnVisibility` 必然整列跳变。浏览态与播放态的列宽范围
+  （`SidebarColumnMode`）不重叠，各自记住用户拖出的宽度：`NavigationSplitView` 没有宽度绑定，系统只在一次运行内记
+  一个宽度、切换状态时按新范围夹取。所以 `SidebarWidthRestoringView` 找到底下的 `NSSplitView`，在系统按新范围改宽度的
+  那次 resize 回调里同步调用 `setPosition`，中间宽度不会被画出来。不采用改 min/max 钉住宽度（放开时被系统打回，
+  再钉会反复振荡），也不自管 `NSSplitViewController`（要重做 `NavigationSplitView` 的工具栏与侧栏行为）。
 
 ### 动线与侧栏上下文层
 
