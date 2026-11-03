@@ -42,15 +42,47 @@ struct NativeVideoShelfTests {
     @Test(arguments: [NSScroller.Style.legacy, .overlay])
     @MainActor
     func scrollerNeverTakesRowHeight(_ scrollerStyle: NSScroller.Style) {
-        let scrollView = NativeVideoShelfScrollView(
-            frame: NSRect(x: 0, y: 0, width: 900, height: 232)
+        let items = (0..<12).map { index in
+            NativeVideoCardPresentation(
+                id: "BV-\(index)",
+                title: "相关推荐 \(index)",
+                coverURL: nil,
+                avatarURL: nil,
+                showsAvatar: false,
+                footerLeadingText: "作者",
+                accessibilityLabel: "相关推荐 \(index)"
+            )
+        }
+        let coordinator = NativeVideoShelfView.Coordinator(
+            contentIdentity: "BV-parent",
+            items: items,
+            imagePipeline: NativeVideoShelfPendingImageLoader(),
+            reduceMotion: true,
+            isInteractionEnabled: true,
+            onSelect: { _ in },
+            cardMenu: { _ in nil }
         )
-        scrollView.install(collectionView: NSCollectionView())
+        let scrollView = coordinator.makeScrollView()
         scrollView.scrollerStyle = scrollerStyle
-        scrollView.tile()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = scrollView
+        defer {
+            coordinator.reset()
+            window.contentView = NSView()
+        }
+        // 集合视图只在内容比视口宽时、布局与每次滚动中去打开外层的横向滚动条，所以要真实内容排版并滚动之后再看。
+        scrollView.layoutSubtreeIfNeeded()
+        scrollView.scrollHorizontally(to: NativeVideoShelfGeometry.stride, animated: false)
+        scrollView.layoutSubtreeIfNeeded()
 
+        #expect(Self.logicalOffset(of: scrollView) > 0)
+        #expect(!scrollView.hasHorizontalScroller)
         #expect(scrollView.contentView.frame.height == scrollView.bounds.height)
-        scrollView.reset()
     }
 
     @Test(.timeLimit(.minutes(1)))
