@@ -97,17 +97,28 @@ package struct NativeVideoGridView: NSViewRepresentable {
     /// `isReset` 返回；已排队的预备区域刷新靠 `window != nil` 兜底。在途差异动画的完成回调只撤销 clip view 的
     /// 动画计数，不回到 Coordinator，拆除后无须作废。
     @MainActor
-    package final class Coordinator: NSObject, NSCollectionViewDelegateFlowLayout {
+    package final class Coordinator: NSObject, NSCollectionViewDelegate {
         private let scrollView = NativeVideoGridScrollView()
         private let clipView = NativeVideoGridClipView()
         private let collectionView = NativeVideoCollectionView()
-        private let layout = NSCollectionViewFlowLayout()
+        /// 组合布局：section provider 按容器宽度重算这一节，宽度一变由系统自己失效重排，卡片尺寸从不落后于视口宽度。
+        ///
+        /// 不用流式布局加 `sizeForItemAt`：流式布局在宽度变化时先按旧卡片尺寸重排，要等网格手动失效才换新尺寸，
+        /// 两者之间按旧尺寸排出少一列的错列。provider 另外读 `bottomInset`，它不属于布局环境，变化时由 `update`
+        /// 手动失效。
+        private lazy var layout = NSCollectionViewCompositionalLayout {
+            [weak self] _, environment in
+            NativeVideoGridGeometry.layoutSection(
+                forWidth: environment.container.effectiveContentSize.width,
+                bottomInset: self?.bottomInset ?? 0
+            )
+        }
         private let imagePipeline: any NativeVideoImageLoading
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
         private var contents: NativeVideoCardContents
         private var accessibilityLabel: String
         private var tailState: NativeVideoGridTailState
-        /// 末行下方额外留出的高度；变化时重排 document。
+        /// 末行下方额外留出的高度，section provider 读它；变化时手动失效布局并重排 document。
         private var bottomInset: CGFloat
         /// 以已确认的回顶 ID 起步，每个新的 `requestID` 只消费一次：网格重建后仍会执行未确认的请求。
         private var scrollResetGate: NativeVideoGridScrollResetGate
@@ -129,7 +140,9 @@ package struct NativeVideoGridView: NSViewRepresentable {
         /// 最近一次可渲染的视口尺寸；nil 表示当前没有可渲染的排版（初次、视口过窄或已拆除），锚点、恢复与
         /// 翻页判断都等它。
         private var lastViewportSize: NSSize?
-        private var documentLayoutNeedsInvalidation = true
+        /// 内容身份或 `bottomInset` 变了、还没有按当前视口重排 document 时为 true：下一次重排即使视口没变也排一遍并按
+        /// 锚点恢复；视口不可渲染时也置位，等它重新可渲染。
+        private var documentNeedsLayout = true
         /// 用户最后看到的视野首卡，视口尺寸变化与整体替换都按它恢复位置，恢复后不重新捕获：连续宽度
         /// 变化中逐帧重新捕获会让首卡逐行漂移。
         ///
@@ -186,9 +199,6 @@ package struct NativeVideoGridView: NSViewRepresentable {
         }
 
         func makeScrollView() -> NSScrollView {
-            layout.minimumInteritemSpacing = NativeVideoGridGeometry.horizontalSpacing
-            layout.minimumLineSpacing = NativeVideoGridGeometry.verticalSpacing
-            layout.sectionInset = sectionInset
             collectionView.collectionViewLayout = layout
             collectionView.delegate = self
             collectionView.isSelectable = true
@@ -284,8 +294,8 @@ package struct NativeVideoGridView: NSViewRepresentable {
             self.tailState = tailState
             if self.bottomInset != bottomInset {
                 self.bottomInset = bottomInset
-                layout.sectionInset = sectionInset
-                documentLayoutNeedsInvalidation = true
+                layout.invalidateLayout()
+                documentNeedsLayout = true
                 resizeDocument()
             }
             // binding 每次都先交给 bridge：滤掉网格刚同步出去的当前值的回声，以及同一轮更新里交回的、
@@ -333,7 +343,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
                 nearEndPagination.releaseBackpressure()
             }
             if updatePlan.identityChanged {
-                documentLayoutNeedsInvalidation = true
+                documentNeedsLayout = true
                 // `apply` 返回时排版已是新内容，差异动画只是呈现；重配、重排 document、恢复位置与翻页判断都在同一轮
                 // 里做完，不等约 250ms 后的完成回调，否则其间是“新内容、旧偏移”的中间态，会误判翻页。动画中由此移动
                 // 视野时，`NativeVideoGridClipView` 补建新视野的卡片。
@@ -437,17 +447,6 @@ package struct NativeVideoGridView: NSViewRepresentable {
             actions.onSelect(id)
         }
 
-        /// 集合视图的 section 边距：底边是内容留白加上 `bottomInset`，与 `contentHeight` 同源。
-        private var sectionInset: NSEdgeInsets {
-            let padding = NativeVideoGridGeometry.contentPadding
-            return NSEdgeInsets(
-                top: NativeVideoGridGeometry.topContentPadding,
-                left: padding,
-                bottom: padding + bottomInset,
-                right: padding
-            )
-        }
-
         /// `restoringViewport` 为 false 时无条件重排 document，且不按 `viewportAnchor` 恢复；锚点缺失或它的卡片已不在
         /// 内容里时，重排后从当前排版补捕。
         ///
@@ -481,26 +480,16 @@ package struct NativeVideoGridView: NSViewRepresentable {
             guard NativeVideoGridGeometry.isRenderableViewport(width: viewportSize.width)
             else {
                 lastViewportSize = nil
-                documentLayoutNeedsInvalidation = true
+                documentNeedsLayout = true
                 return false
             }
-            let width = viewportSize.width
-            let change = pendingViewportChange
-            let shouldInvalidateLayout =
-                !restoringViewport || documentLayoutNeedsInvalidation || change.width
-            guard shouldInvalidateLayout || change.height else { return false }
+            guard !restoringViewport || documentNeedsLayout || pendingViewportChange.any
+            else { return false }
 
             lastViewportSize = viewportSize
-            documentLayoutNeedsInvalidation = false
-            let contentHeight = NativeVideoGridGeometry.contentHeight(
-                for: width,
-                itemCount: contents.orderedIDs.count,
-                bottomInset: bottomInset
-            )
-            collectionView.setFrameSize(
-                NSSize(width: width, height: max(viewportSize.height, contentHeight))
-            )
-            if shouldInvalidateLayout { layout.invalidateLayout() }
+            documentNeedsLayout = false
+            // 卡片尺寸由组合布局随宽度自己失效；这里只让集合视图按当前视口排好，document 尺寸也由它按布局的
+            // 内容尺寸设定，随后按锚点恢复读到的就是新排版。
             collectionView.layoutSubtreeIfNeeded()
             if restoringViewport { restore(viewportAnchor) }
             return true
@@ -509,8 +498,9 @@ package struct NativeVideoGridView: NSViewRepresentable {
         /// 当前视口与最近一次排版（`lastViewportSize`）在宽、高上是否不同（按 `NativeViewportSize`）；还没有排版时都算不同。
         ///
         /// 视口尺寸是否变化只按这一份基准判断：滚动视图每次 tile 与 layout 后都回调，由这里决定要不要重排。
-        /// 宽度一变，AppKit 在回调之前就已按新宽度、旧卡片尺寸重排了集合视图；高度一变，它可能已夹取偏移。
-        /// 重排之前排版与偏移都是过渡态，其间的 bounds 变化不记录、不捕获锚点。
+        /// 宽度一变，组合布局在回调之前就已按新宽度重排了集合视图，偏移却还是旧排版下的，视野首卡已经换了；高度
+        /// 一变，AppKit 可能已夹取偏移。按锚点恢复之前偏移都是过渡态，其间的 bounds 变化不记录、不捕获锚点。半点
+        /// 宽度变化也要算变化（`NativeViewportSize`），否则这一步不按锚点恢复，跨列数分界时视野会跳一行。
         private var pendingViewportChange: (width: Bool, height: Bool, any: Bool) {
             let size = scrollView.contentSize
             guard let lastViewportSize else { return (true, true, true) }
@@ -712,14 +702,6 @@ package struct NativeVideoGridView: NSViewRepresentable {
         ) {
             guard !isReset else { return }
             hover.itemDidChangeHover(item, isHovered: isHovered)
-        }
-
-        package func collectionView(
-            _ collectionView: NSCollectionView,
-            layout collectionViewLayout: NSCollectionViewLayout,
-            sizeForItemAt indexPath: IndexPath
-        ) -> NSSize {
-            NativeVideoGridGeometry.itemSize(for: collectionView.bounds.width)
         }
 
         /// 鼠标选中只接受可进入播放的卡片；键盘方向键直接设置选择、不经这里，焦点仍可停在不可用卡片上。

@@ -203,7 +203,7 @@ struct NativeVideoScrollBindingBridge {
     }
 }
 
-/// 网格几何来自 BiliUI，与加载骨架共用；预备区域与近尾部判断只属于原生网格。
+/// 网格几何来自 BiliUI，与加载骨架共用；组合布局的一节、预备区域与近尾部判断只属于原生网格。
 typealias NativeVideoGridGeometry = VideoCardGridGeometry
 
 extension VideoCardGridGeometry {
@@ -259,5 +259,41 @@ extension VideoCardGridGeometry {
             contentHeight(for: width, itemCount: itemCount, bottomInset: bottomInset)
             - visibleMaximumY
         return remaining < viewportHeight * nearEndViewportMultiple
+    }
+
+    /// 网格组合布局的唯一一节：卡片尺寸取 `itemSize(for:)`，与骨架、`contentHeight` 同源。
+    ///
+    /// `width` 是 section provider 拿到的容器宽度。每行都排满 `columnCount(for:)` 张：卡片宽度向下取整后余下的
+    /// 不足一列宽，再放一张至少要多出一个卡片宽加间距，所以组只装得下这么多张；余量经 `.flexible` 间距平均摊进
+    /// 列间，首尾贴齐左右边距，不满的末行各张仍在本列的位置。`bottomInset` 加在底边距上，与 `contentHeight` 同源。
+    @MainActor
+    static func layoutSection(
+        forWidth width: CGFloat,
+        bottomInset: CGFloat
+    ) -> NSCollectionLayoutSection {
+        let size = itemSize(for: width)
+        let item = NSCollectionLayoutItem(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .absolute(size.width),
+                heightDimension: .absolute(size.height)
+            )
+        )
+        let group = NSCollectionLayoutGroup.horizontal(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1),
+                heightDimension: .absolute(size.height)
+            ),
+            subitems: [item]
+        )
+        group.interItemSpacing = NSCollectionLayoutSpacing.flexible(horizontalSpacing)
+        let section = NSCollectionLayoutSection(group: group)
+        section.interGroupSpacing = verticalSpacing
+        section.contentInsets = NSDirectionalEdgeInsets(
+            top: topContentPadding,
+            leading: contentPadding,
+            bottom: contentPadding + bottomInset,
+            trailing: contentPadding
+        )
+        return section
     }
 }
