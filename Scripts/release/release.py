@@ -284,14 +284,16 @@ def verify_dmg(dmg, app, state, out):
     run('hdiutil', 'verify', dmg)
     mount = out / 'mount'
     mount.mkdir(exist_ok=True)
-    run('hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg)
+    # 挂载用 diskutil 而不用已弃用的 hdiutil attach：macOS 27.2 上后者对外置卷上的 mountpoint 报 EPERM，
+    # 候选目录常在外置卷。eject 卸载卷并分离整个映像设备，不留残余 disk 节点。
+    run('diskutil', 'image', 'attach', '--readOnly', '--nobrowse', '--mountPoint', mount, dmg)
     try:
         require({p.name for p in mount.iterdir()} <= {'BiliKit.app', 'Applications', '.DS_Store', '.VolumeIcon.icns', '.background', '.fseventsd'}, 'DMG 包含意外内容')
         require((mount / 'Applications').is_symlink() and os.readlink(mount / 'Applications') == '/Applications', 'Applications 链接错误')
         require(files(mount / 'BiliKit.app') == files(app), 'DMG 内 App 字节/链接不一致')
         verify_app(mount / 'BiliKit.app', state)
     finally:
-        run('hdiutil', 'detach', mount)
+        run('diskutil', 'eject', mount)
 
 
 def prepare(out):
