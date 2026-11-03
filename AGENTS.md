@@ -112,7 +112,8 @@ sh Scripts/run-quality-gates.sh app
 
 ## 提交文本
 
-Commit/PR 标题使用 `<type>(可选 scope): <中文动词摘要>`；type 为 `feat`、`fix`、`refactor`、`test`、
-`docs`、`build`、`ci` 或 `chore`。PR 与交付说明使用中文，写明变化、原因、用户影响、实际验证和
-未覆盖边界。分支名使用 ASCII kebab-case 与当前环境前缀。不提交 `BiliKitMac.xcscheme` 的改动（用户实机
-测试会把 Run 切到 Release）。互相依赖的多个 PR 用 `gh stack` 提交与合并。
+Commit/PR 标题使用 `<type>(可选 scope): <中文动词摘要>`；type 为 `feat`、`fix`、`perf`、`refactor`、`style`、
+`test`、`docs`、`build`、`ci`、`chore` 或 `revert`。`perf` 只用于行为不变、以性能为目的的改动，PR 写明前后对比；
+`style` 只改格式、不改语义；`revert` 撤回此前的提交，正文写明被撤回的提交与原因。PR 与交付说明使用中文，
+写明变化、原因、用户影响、实际验证和未覆盖边界。分支名使用 ASCII kebab-case 与当前环境前缀。不提交
+`BiliKitMac.xcscheme` 的改动（用户实机测试会把 Run 切到 Release）。互相依赖的多个 PR 用 `gh stack` 提交与合并。
