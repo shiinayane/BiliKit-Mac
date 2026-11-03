@@ -54,13 +54,13 @@ private final class NativePlaybackSidebarUploaderView: NSView {
     override var isFlipped: Bool { true }
 
     private let avatar = NSImageView()
-    private let nameLabel = NSTextField(labelWithString: "")
+    private let nameLabel = NativePlaybackUploaderGeometry.makeNameLabel()
     /// 计数与签名都只显示一行，超出省略；被截断时指针移上去由系统原地浮出完整文字（expansion tooltip）。
     private let statsLabel = NativePlaybackUploaderGeometry.makeStatsLabel()
     private let signatureLabel = NativePlaybackUploaderGeometry.makeSignatureLabel()
     private let statsLoadingBar = NSView()
     private let signatureLoadingBar = NSView()
-    /// 头像与名字这一行可点进入 UP 主空间；右侧箭头同时是给键盘与 VoiceOver 的显式按钮。
+    /// 头像与名字这一行可点进入 UP 主空间；名字末尾的箭头同时是给键盘与 VoiceOver 的显式按钮。
     private let spaceButton = NSButton(
         image: NSImage(
             systemSymbolName: "chevron.right",
@@ -87,12 +87,6 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         avatar.layer?.cornerRadius = NativePlaybackSidebarItemMeasurement.avatarSize / 2
         avatar.layer?.masksToBounds = true
         avatar.setAccessibilityElement(false)
-
-        nameLabel.font = NativePlaybackUploaderGeometry.nameFont
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.maximumNumberOfLines = 1
-        // 名字这一行可点，名字不再可选中复制，否则文本框会吃掉点击。
-        nameLabel.isSelectable = false
 
         spaceButton.isBordered = false
         spaceButton.imagePosition = .imageOnly
@@ -251,21 +245,12 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         }
         let geometry = NativePlaybackUploaderGeometry(content: content, width: bounds.width)
         avatar.frame = geometry.avatarFrame
-        nameLabel.frame = geometry.nameFrame
-        if !spaceButton.isHidden {
-            let buttonSize = NativePlaybackUploaderGeometry.spaceButtonSize
-            nameLabel.frame.size.width = max(
-                0,
-                geometry.nameFrame.width - buttonSize
-                    - NativePlaybackUploaderGeometry.spaceButtonSpacing
-            )
-            spaceButton.frame = NSRect(
-                x: geometry.nameFrame.maxX - buttonSize,
-                y: geometry.nameFrame.midY - buttonSize / 2,
-                width: buttonSize,
-                height: buttonSize
-            )
-        }
+        let nameRow = geometry.nameRow(
+            nameWidth: NativePlaybackUploaderGeometry.nameWidth(content.name),
+            showsSpaceButton: !spaceButton.isHidden
+        )
+        nameLabel.frame = nameRow.name
+        spaceButton.frame = nameRow.spaceButton
         statsLabel.frame = geometry.statsFrame
         signatureLabel.frame = geometry.signatureTextFrame
         statsLoadingBar.frame = geometry.statsLoadingBarFrame
@@ -274,7 +259,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         spaceRegion.setRects([spaceHitRect])
     }
 
-    /// 头像加上名字所在整行；没有计数与签名时文字左侧整块都可点；关注按钮不在其中；没有空间入口时为空。
+    /// 头像加上名字与箭头；没有计数与签名时到箭头为止的整块都可点；关注按钮不在其中；没有空间入口时为空。
     private var spaceHitRect: NSRect {
         guard onOpenSpace != nil, let content else { return .zero }
         let textMaxX = max(nameLabel.frame.maxX, spaceButton.isHidden ? 0 : spaceButton.frame.maxX)

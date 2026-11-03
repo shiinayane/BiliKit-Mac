@@ -116,6 +116,35 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
         #expect(withoutFollow.followButtonFrame == .zero)
     }
 
+    /// 箭头紧跟名字末尾；名字放不下时截断，箭头仍在关注按钮左侧；没有空间入口时名字可占满整段。
+    @Test
+    @MainActor
+    func spaceArrowFollowsTheNameAndStaysBeforeTheFollowButton() {
+        let geometry = NativePlaybackUploaderGeometry(
+            content: VideoUploaderHeaderContent(
+                owner: VideoOwner(id: 1, name: "UP 主"),
+                profileState: .loaded(UploaderProfile(signature: "签名")),
+                follow: VideoUploaderFollowContent(isFollowing: false, isEnabled: true)
+            ),
+            width: 408
+        )
+        let spacing = NativePlaybackUploaderGeometry.spaceButtonSpacing
+
+        let short = geometry.nameRow(nameWidth: 60, showsSpaceButton: true)
+        #expect(short.name.width == 60)
+        #expect(short.spaceButton.minX == short.name.maxX + spacing)
+        #expect(abs(short.spaceButton.midY - geometry.nameFrame.midY) <= 1)
+
+        let long = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: true)
+        #expect(long.name.width < geometry.nameFrame.width)
+        #expect(long.spaceButton.maxX <= geometry.nameFrame.maxX)
+        #expect(long.spaceButton.maxX < geometry.followButtonFrame.minX)
+
+        let withoutSpace = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: false)
+        #expect(withoutSpace.name.width == geometry.nameFrame.width)
+        #expect(withoutSpace.spaceButton == .zero)
+    }
+
     /// 标题说明现状，读屏的值说明是否已关注；点按交出相反的目标状态，禁用或没有关注内容时不交出。
     @Test(arguments: [false, true])
     @MainActor
