@@ -99,17 +99,6 @@ extension PlaybackSidebarFixtures {
         ).sections.first { $0.id == .comments }?.items ?? []
     }
 
-    func heightKey(rootID: Int64) -> NativePlaybackSidebarHeightCacheKey {
-        NativePlaybackSidebarHeightCacheKey(
-            itemID: .commentThread(
-                subject: .video(aid: 700_001),
-                rootID: CommentID(rawValue: rootID)
-            ),
-            widthBucket: 816,
-            revision: Int(rootID)
-        )
-    }
-
     func commentThread(
         id: Int64,
         message: String,

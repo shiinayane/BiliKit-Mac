@@ -399,8 +399,9 @@ struct HLSPlaylistBuilderTests {
         #expect(isPlaylistSafeText(text) == isSafe)
     }
 
-    @Test(arguments: ["\"", "\\", "\n", "\u{0000}"])
-    func rejectsUnsafeNativeSubtitleLabels(_ unsafe: String) throws {
+    /// 逐字符的拒绝规则由上面的 `isPlaylistSafeText` 用例固定；这里只证明字幕名经过这道检查。
+    @Test
+    func rejectsUnsafeNativeSubtitleLabels() throws {
         let index = try makeIndex(byteCounts: [1_000], durations: [1])
 
         #expect(throws: HLSPlaylistBuilderError.unsafeAttributeValue) {
@@ -411,7 +412,7 @@ struct HLSPlaylistBuilderTests {
                 ],
                 subtitleRenditions: [
                     HLSSubtitleRendition(
-                        name: "中文\(unsafe)",
+                        name: "中文\"",
                         languageTag: "zh",
                         playlistURI: try playlistURL("subtitle/0.m3u8")
                     )

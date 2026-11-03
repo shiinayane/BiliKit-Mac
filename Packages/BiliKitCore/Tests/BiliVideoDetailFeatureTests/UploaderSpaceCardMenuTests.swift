@@ -8,12 +8,13 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// UP 主空间的投稿行与视频卡片有同一份卡片菜单：「添加到稍后再看」「收藏到…」（不满足写入门槛时禁用）与「拷贝链接」
-/// 「在浏览器中打开」；右键弹出时画上下文描边、关闭后撤销，Control-点按只弹菜单不进入播放。
+/// UP 主空间的投稿行用视频卡片同一份菜单（组成与禁用规则由 BiliVideoCollectionUITests 的 `NativeVideoCardMenuTests`
+/// 固定），按 BVID 打开该视频的网页地址，BVID 不合法时没有菜单；右键弹出时画上下文描边、关闭后撤销，Control-点按只弹
+/// 菜单不进入播放，拆除后不再提供菜单。
 @MainActor
 struct UploaderSpaceCardMenuTests {
     @Test
-    func rowMenuMatchesTheVideoCardMenu() throws {
+    func rowMenuOpensTheVideoWebPage() throws {
         var opened: [URL] = []
         let menu = try #require(
             UploaderSpaceSidebarView.cardMenu(
@@ -26,17 +27,7 @@ struct UploaderSpaceCardMenuTests {
             )
         )
 
-        #expect(
-            menu.items.map(\.title)
-                == [
-                    VideoCardMenuText.addToWatchLater,
-                    VideoCardMenuText.addToFavorites,
-                    VideoCardMenuText.copyLink,
-                    VideoCardMenuText.openInBrowser
-                ]
-        )
-        #expect(menu.items.map(\.isEnabled) == [false, false, true, true])
-        menu.items[3].action()
+        try #require(menu.items.first { $0.title == VideoCardMenuText.openInBrowser }).action()
         #expect(opened.map(\.absoluteString) == ["https://www.bilibili.com/video/BV1SpaceRow"])
     }
 

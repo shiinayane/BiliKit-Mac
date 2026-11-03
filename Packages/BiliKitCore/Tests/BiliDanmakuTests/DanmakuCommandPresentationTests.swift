@@ -8,7 +8,7 @@ import Testing
 
 /// 互动弹幕在呈现端的契约：卡片只在弹幕开着、已有本视频时间线、时钟读得到 D 时交给 renderer，关闭、换 item、
 /// 停止时撤下，别的视频的卡片不显示；
-/// 卡片按媒体时间显隐、中心按位置比例落在窗口里并往里收；UP 主弹幕不参与重复合并，带标签与黑底后只加宽、不加高。
+/// 卡片按媒体时间显隐、中心按位置比例落在窗口里并往里收。
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct DanmakuCommandPresentationTests {
@@ -127,44 +127,6 @@ struct DanmakuCommandPresentationTests {
 
         layers.setCards([], reducesMotion: reducesMotion)
         #expect(layers.containerLayer.sublayers?.isEmpty ?? true)
-    }
-
-    @Test
-    func uploaderDanmakuIsNeverMerged() {
-        let events = [
-            fixtureEvent(id: "fan", mode: .scrolling),
-            fixtureEvent(id: "up", mode: .scrolling, isUploader: true),
-            fixtureEvent(id: "fan-2", mode: .scrolling)
-        ]
-
-        let groups = DanmakuDuplicateMerger.merged(events)
-
-        #expect(groups.map(\.event.id) == ["fan", "up"])
-        #expect(groups.map(\.laterArrivalTimes.count) == [1, 0])
-    }
-
-    /// UP 主弹幕的标签与黑底画在同一张纹理里：比同文的普通弹幕宽、一样高，所以占同样多的车道；测量与纹理一致。
-    @Test(arguments: [18.0, 25, 36])
-    func uploaderTextureIsWiderButNotTaller(fontSize: Double) throws {
-        func texture(isUploader: Bool) throws -> (DanmakuTexturePayload, DanmakuTextMetrics?) {
-            let event = fixtureEvent(
-                id: "up",
-                mode: .scrolling,
-                fontSize: fontSize,
-                isUploader: isUploader
-            )
-            let key = try #require(DanmakuTextureRasterizer.key(event: event, backingScale: 2))
-            var cache = DanmakuTextMeasurementCache()
-            return (
-                try #require(DanmakuTextureRasterizer.rasterize(key: key)),
-                cache.metrics(for: event, backingScale: 2)
-            )
-        }
-        let (plain, _) = try texture(isUploader: false)
-        let (uploader, measured) = try texture(isUploader: true)
-        #expect(uploader.widthPixels > plain.widthPixels)
-        #expect(uploader.heightPixels == plain.heightPixels)
-        #expect(measured == uploader.metrics)
     }
 
     private static let gradeCard = DanmakuCommandCard(

@@ -121,47 +121,26 @@ struct UploaderSpaceViewModelTests {
         #expect(await repository.calls.map(\.page) == [1, 2, 2])
     }
 
-    @Test
-    func missingLoginAsksForSignInWithoutRevalidation() async {
-        let repository = UploaderVideoRepositoryStub(failingPages: [1: .authenticationRequired])
+    /// 未登录给出登录入口、不复核；凭据失效不给登录入口，请求窗口复核。
+    @Test(
+        arguments: [
+            (ContentApplicationError.authenticationRequired, true, 0),
+            (.authenticationInvalid, false, 1)
+        ]
+    )
+    func loginFailuresAskForSignInOrRevalidation(
+        error: ContentApplicationError,
+        requiresAuthentication: Bool,
+        revalidations: Int
+    ) async {
+        let repository = UploaderVideoRepositoryStub(failingPages: [1: error])
         let model = makeModel(repository)
 
         model.open(owner: owner)
         await waitForObservedState { model.state != .loading(page: 1) }
 
-        #expect(model.requiresAuthentication)
-        #expect(model.authenticationRevalidationGeneration == 0)
-    }
-
-    @Test
-    func expiredLoginRequestsRevalidation() async {
-        let repository = UploaderVideoRepositoryStub(failingPages: [1: .authenticationInvalid])
-        let model = makeModel(repository)
-
-        model.open(owner: owner)
-        await waitForObservedState { model.state != .loading(page: 1) }
-
-        #expect(!model.requiresAuthentication)
-        #expect(model.authenticationRevalidationGeneration == 1)
-    }
-
-    @Test
-    func lateResultOfASupersededPageIsDiscarded() async throws {
-        let gate = TestGate()
-        let repository = UploaderVideoRepositoryStub(gate: gate, gatedPages: [2])
-        let model = makeModel(repository)
-        model.open(owner: owner)
-        await waitForLoaded(model, page: 1)
-
-        model.showPage(2)
-        try await gate.waitForEntries()
-        model.showPage(3)
-        try await gate.waitForCancellations()
-        await waitForLoaded(model, page: 3)
-        await gate.open()
-        await repository.waitForCompletions(3)
-
-        #expect(model.currentPage == 3)
+        #expect(model.requiresAuthentication == requiresAuthentication)
+        #expect(model.authenticationRevalidationGeneration == revalidations)
     }
 
     @Test
@@ -231,7 +210,9 @@ struct UploaderSpaceViewModelTests {
         try await gate.waitForCancellations()
         await waitForLoaded(model, page: 3)
         await gate.open()
+        await repository.waitForCompletions(3)
 
+        #expect(model.currentPage == 3)
         #expect(await repository.calls.map(\.page) == [1, 2, 3])
     }
 

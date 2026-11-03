@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 评论分页、上方内容变化与改变宽度时保持阅读位置：高度先估后分批精测、缓存有界，换视频回到顶部，近尾分页不被短内容误判。
+/// 评论分页、上方内容变化与改变宽度时保持阅读位置：高度先估后分批精测，换视频回到顶部，近尾分页不被短内容误判。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
     @Test
@@ -295,27 +295,6 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
                 "width \(width), relativeY \(currentRelativeY), expected \(expectedRelativeY), pending \(pendingCount)"
             )
         }
-    }
-
-    @Test
-    @MainActor
-    func commentHeightCacheIsBoundedAndUsesTrueLRURecency() {
-        let cache = CostBoundedLRUCache<NativePlaybackSidebarHeightCacheKey, CGFloat>(
-            limits: CostBoundedLRUCacheLimits(maximumItemCost: 1, maximumTotalCost: 2)
-        )
-        let first = heightKey(rootID: 1)
-        let second = heightKey(rootID: 2)
-        let third = heightKey(rootID: 3)
-
-        cache.insert(101, for: first)
-        cache.insert(102, for: second)
-        #expect(cache.value(for: first) == 101)
-        cache.insert(103, for: third)
-
-        #expect(cache.count == 2)
-        #expect(cache.value(for: first) == 101)
-        #expect(cache.value(for: second) == nil)
-        #expect(cache.value(for: third) == 103)
     }
 
     @Test

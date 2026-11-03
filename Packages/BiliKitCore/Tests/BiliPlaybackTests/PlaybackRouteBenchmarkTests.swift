@@ -169,7 +169,6 @@ struct PlaybackRouteBenchmarkTests {
         let result = try #require(results.first(where: { $0.target == .serverAkamai }))
         let mediaBits = Double(4 * 1_024 * 1_024) * 8
 
-        #expect(result.target == .serverAkamai)
         #expect(result.successfulRuns == 2)
         #expect(result.totalRuns == 3)
         #expect(

@@ -62,11 +62,6 @@ struct RecommendationFeedbackUseCaseTests {
             RecommendationFeedback(target: target, uploaderID: 1, trackID: "t", reason: .uploader)
                 != nil
         )
-        let declined = AccountWriteReport(
-            change: .recommendationDisliked(try Self.feedback()),
-            failure: .declinedForClient
-        )
-        #expect(declined.webFallbackURL == nil)
     }
 
     private static func feedback() throws -> RecommendationFeedback {

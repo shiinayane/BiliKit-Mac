@@ -100,42 +100,6 @@ struct WatchHistoryCardFormattingTests {
         #expect(retry?.loadMoreError == .transportFailure)
     }
 
-    @Test
-    func historyImagesUseBoundedCDNVariantsWithoutRewritingUnknownOrigins() throws {
-        let trusted = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV1HistoryImages",
-                title: "历史图片",
-                coverURL: URL(string: "https://i0.hdslb.com/cover.jpg"),
-                owner: VideoOwner(
-                    id: 7,
-                    name: "作者",
-                    avatarURL: URL(string: "https://i1.hdslb.com/avatar.jpg")
-                ),
-                progressSeconds: 1,
-                durationSeconds: 10,
-                viewedAt: .now
-            )
-        )
-        let unknownURL = try #require(URL(string: "https://images.example/avatar.jpg"))
-        let unknown = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV1HistoryUnknown",
-                title: "未知图片源",
-                coverURL: unknownURL,
-                owner: VideoOwner(id: 8, name: "作者", avatarURL: unknownURL),
-                progressSeconds: 1,
-                durationSeconds: 10,
-                viewedAt: .now
-            )
-        )
-
-        #expect(trusted.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(trusted.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(unknown.coverURL == unknownURL)
-        #expect(unknown.avatarURL == unknownURL)
-    }
-
     @Test(arguments: [
         (progress: 65, duration: 600, expected: "1:05/10:00"),
         (progress: 3_661, duration: 7_322, expected: "1:01:01/2:02:02"),

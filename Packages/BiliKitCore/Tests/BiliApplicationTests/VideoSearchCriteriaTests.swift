@@ -10,14 +10,8 @@ struct VideoSearchCriteriaTests {
     }
 
     @Test
-    func criteriaNormalizesQueryAndDefaults() {
-        let criteria = VideoSearchCriteria(query: "  macOS\n")
-
-        #expect(criteria.query == "macOS")
-        #expect(criteria.order == .relevance)
-        #expect(criteria.duration == .all)
-        #expect(criteria.publicationRange == nil)
-        #expect(criteria.pageSize == 20)
+    func criteriaNormalizesQuery() {
+        #expect(VideoSearchCriteria(query: "  macOS\n").query == "macOS")
     }
 
     @Test(arguments: [

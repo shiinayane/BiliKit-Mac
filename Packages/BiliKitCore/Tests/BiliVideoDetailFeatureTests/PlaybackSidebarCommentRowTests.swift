@@ -35,10 +35,10 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         #expect(NativeCommentAvatarMark(author: author) == expected)
     }
 
-    /// 评论区已关闭是终态说明，不提供重试；其余失败仍显示可重试的失败状态。
+    /// 评论区已关闭成为终态说明行，其余失败仍是失败状态行。
     @Test
     @MainActor
-    func closedCommentSectionShowsATerminalStateWithoutRetry() async {
+    func closedCommentSectionBecomesATerminalStateRow() async {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         for (error, kind) in [
             (CommentReadError.closed, NativePlaybackCommentsStateKind.closed),
@@ -49,18 +49,6 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
                 presentation(bvid: "BVCurrent", comments: comments).itemIDs.last
                     == .commentsState(subject: subject, kind: kind)
             )
-        }
-
-        for (kind, offersRetry) in [
-            (NativePlaybackCommentsStateKind.closed, false),
-            (.failed(.transportFailure), true)
-        ] {
-            let item = NativePlaybackCommentsStateItem()
-            item.configure(kind: kind, onRetry: {})
-            let visibleButtons = descendants(of: item.view)
-                .compactMap { $0 as? NSButton }
-                .filter { !$0.isHidden }
-            #expect(visibleButtons.isEmpty != offersRetry)
         }
     }
 

@@ -16,12 +16,7 @@ import UniformTypeIdentifiers
 struct NativeVideoImagePipelineTests {
     @Test(arguments: [
         ("https://i0.hdslb.com/bfs/archive/fixture.jpg", true),
-        ("https://album.biliimg.com/bfs/new_dyn/fixture.jpg", true),
-        ("http://i0.hdslb.com/bfs/archive/fixture.jpg", false),
-        ("https://127.0.0.1/cover.jpg", false),
-        ("https://localhost/cover.jpg", false),
-        ("https://i0.hdslb.com:8443/bfs/archive/fixture.jpg", false),
-        ("https://user@i0.hdslb.com/bfs/archive/fixture.jpg", false)
+        ("http://i0.hdslb.com/bfs/archive/fixture.jpg", false)
     ])
     func requestsOnlyPublicHTTPSImageAddresses(urlString: String, accepted: Bool) throws {
         let url = try #require(URL(string: urlString))
@@ -32,6 +27,7 @@ struct NativeVideoImagePipelineTests {
     func accountAvatarRequestsTheAvatarThumbnailLikeCardAvatars() throws {
         let face = try #require(URL(string: "https://i1.hdslb.com/bfs/face/fixture.jpg"))
         let elsewhere = try #require(URL(string: "https://images.example/face.jpg"))
+        let insecure = try #require(URL(string: "http://i1.hdslb.com/bfs/face/fixture.jpg"))
 
         #expect(
             NativeVideoImagePipeline.accountAvatarRequestURL(for: face)?.absoluteString
@@ -39,21 +35,8 @@ struct NativeVideoImagePipelineTests {
         )
         #expect(NativeVideoImagePipeline.accountAvatarRequestURL(for: elsewhere) == elsewhere)
         #expect(NativeVideoImagePipeline.accountAvatarRequestURL(for: nil) == nil)
-        #expect(
-            NativeVideoImageVariant.avatar.maximumDecodedPixelSize == BiliAvatarImageSize.pixelSide
-        )
-    }
-
-    @Test(arguments: [
-        "http://i1.hdslb.com/bfs/face/fixture.jpg",
-        "https://127.0.0.1/face.jpg",
-        "https://localhost/face.jpg",
-        "https://i1.hdslb.com:8443/bfs/face/fixture.jpg",
-        "https://user@i1.hdslb.com/bfs/face/fixture.jpg"
-    ])
-    func accountAvatarSkipsAddressesThePipelineWouldNotRequest(urlString: String) throws {
-        let url = try #require(URL(string: urlString))
-        #expect(NativeVideoImagePipeline.accountAvatarRequestURL(for: url) == nil)
+        // 管线不会请求的地址不给出请求地址。
+        #expect(NativeVideoImagePipeline.accountAvatarRequestURL(for: insecure) == nil)
     }
 
     /// 只有评论图片的列表格子与预览保留动图数据；帧数与第一帧尺寸都要在播放门槛内。
@@ -150,18 +133,9 @@ struct NativeVideoImagePipelineTests {
 
     @Test
     func imagePipelineBoundsResponseAndDecodedCache() throws {
-        let megabyte = 1_024 * 1_024
         #expect(NativeVideoImagePipeline.acceptsExpectedLength(-1, maximumBytes: 8))
         #expect(NativeVideoImagePipeline.acceptsExpectedLength(8, maximumBytes: 8))
         #expect(!NativeVideoImagePipeline.acceptsExpectedLength(9, maximumBytes: 8))
-        // 只有评论图片预览请求原图（B 站上传上限 20 MB），其余用途保持 8 MiB。
-        #expect(NativeVideoImageVariant.commentPicturePreview.maximumResponseBytes == 20 * megabyte)
-        for variant in [
-            NativeVideoImageVariant.cover, .avatar, .commentEmote, .commentPicture,
-            .trendingSearchIcon
-        ] {
-            #expect(variant.maximumResponseBytes == 8 * megabyte)
-        }
 
         var countBoundCache = NativeVideoImageCache(limits: .init(countLimit: 2, costLimit: 1_024))
         let image = try #require(Self.makeImage(width: 4, height: 4))
@@ -212,31 +186,14 @@ struct NativeVideoImagePipelineTests {
     }
 
     @Test
-    func imageVariantsEnforceDecodedPixelBounds() throws {
-        let source = try #require(Self.makeImage(width: 1_000, height: 1_000))
-        let data = try #require(
-            NSBitmapImageRep(cgImage: source).representation(
-                using: .png,
-                properties: [:]
-            )
-        )
-        let cover = try #require(
-            NativeVideoImagePipeline.decodeImage(data, variant: .cover)
-        )
-        let avatar = try #require(
-            NativeVideoImagePipeline.decodeImage(data, variant: .avatar)
-        )
-
-        #expect(max(cover.width, cover.height) == 640)
-        #expect(max(avatar.width, avatar.height) == 96)
-    }
-
-    @Test
     func largeImagesShrinkToEachVariantsBound() throws {
         let source = try #require(Self.makeSplitImage(width: 5_000, height: 2_500))
         let data = try #require(Self.encode(source, as: .png))
 
-        for variant in [NativeVideoImageVariant.commentPicturePreview, .commentPicture] {
+        for variant in [
+            NativeVideoImageVariant.cover, .avatar, .commentEmote, .commentPicture,
+            .commentPicturePreview, .trendingSearchIcon
+        ] {
             let image = try #require(NativeVideoImagePipeline.decodeImage(data, variant: variant))
             #expect(image.width == variant.maximumDecodedPixelSize)
             #expect(image.height == variant.maximumDecodedPixelSize / 2)

@@ -31,48 +31,22 @@ struct FeedAuthenticationTests {
         )
     }
 
-    @Test
+    @Test(arguments: [BrowseFeed.recommendation, .popular, .search])
     @MainActor
-    func recommendationTailAuthenticationFailureKeepsCardsAndRequestsRevalidation() async {
-        let fixture = ContentFixtures(bvid: "BV1AuthRcmd1", title: "认证推荐")
-        let repository = FeedRepositoryStub(recommendations: { continuation, _ in
-            guard continuation == nil else {
-                throw ContentApplicationError.authenticationInvalid
-            }
-            return fixture.recommendationPage
-        })
-        let model = BrowseViewModel(
-            useCase: FeedUseCase(repository: repository)
-        )
-
-        model.activateRecommendation()
-        await model.waitForCurrentTask()
-        model.loadMore(.recommendation)
-        await model.waitForCurrentTask()
-
-        #expect(BrowseFeed.recommendation.loadedBVIDs(model) == [fixture.bvid])
-        #expect(model.authenticationRevalidationGeneration == 1)
-        #expect(
-            model.pagination(for: .recommendation(continuation: nil)).loadMoreError
-                == .authenticationInvalid
-        )
-    }
-
-    @Test
-    @MainActor
-    func popularAndSearchTailAuthenticationFailuresRequestRevalidation() async {
+    func tailAuthenticationFailureKeepsCardsAndRequestsRevalidation(_ feed: BrowseFeed) async {
         let fixture = ContentFixtures(bvid: "BV1AuthTail1", title: "认证追加")
         let repository = FeedRepositoryStub(
+            recommendations: { continuation, _ in
+                guard continuation == nil else {
+                    throw ContentApplicationError.authenticationInvalid
+                }
+                return fixture.recommendationPage
+            },
             popular: { request, _ in
                 guard request.page == 1 else {
                     throw ContentApplicationError.authenticationInvalid
                 }
-                return PopularPage(
-                    videos: [fixture.popularVideo],
-                    pageNumber: 1,
-                    pageSize: request.pageSize,
-                    hasMore: true
-                )
+                return fixture.popularPage(request, hasMore: true)
             },
             search: { request, _ in
                 guard request.page == 1 else {
@@ -91,17 +65,15 @@ struct FeedAuthenticationTests {
             useCase: FeedUseCase(repository: repository)
         )
 
-        model.activatePopular(pageSize: 50)
+        feed.activate(model)
         await model.waitForCurrentTask()
-        model.loadMore(.popular)
+        feed.loadMore(model)
         await model.waitForCurrentTask()
-        #expect(model.authenticationRevalidationGeneration == 1)
 
-        model.activateSearch(VideoSearchCriteria(query: "认证"))
-        await model.waitForCurrentTask()
-        model.loadMore(.search)
-        await model.waitForCurrentTask()
-        #expect(model.authenticationRevalidationGeneration == 2)
+        #expect(feed.loadedBVIDs(model) == [fixture.bvid])
+        #expect(model.authenticationRevalidationGeneration == 1)
+        #expect(feed.pagination(model).loadMoreError == .authenticationInvalid)
+        #expect(await repository.requestedPages(feed) == [1, 2])
     }
 
     @Test(.timeLimit(.minutes(1)), arguments: [BrowseFeed.recommendation, .popular, .search])

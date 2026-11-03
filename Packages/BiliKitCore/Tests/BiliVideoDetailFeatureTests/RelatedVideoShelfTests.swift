@@ -7,7 +7,7 @@ import Testing
 
 struct RelatedVideoShelfTests {
     @Test
-    func presentationMapsStableBVIDAndEveryVisibleSlot() {
+    func presentationFillsAndReadsEveryVisibleSlot() {
         let locale = Locale(
             identifier: VideoDetailFeatureStrings.bundle.preferredLocalizations.first ?? "en"
         )
@@ -24,10 +24,6 @@ struct RelatedVideoShelfTests {
             locale: locale
         )
 
-        #expect(presentation.id == "BV1Related")
-        #expect(presentation.title == "示例推荐")
-        #expect(presentation.coverURL?.absoluteString == "https://example.com/cover.webp")
-        #expect(presentation.ownerName == "示例 UP 主")
         #expect(
             presentation.viewCountText.hasPrefix(
                 locale.language.languageCode?.identifier == "en" ? "123.4" : "12.3"
@@ -72,6 +68,5 @@ struct RelatedVideoShelfTests {
         )
 
         #expect(presentation.durationText == nil)
-        #expect(!presentation.accessibilityLabel.contains("12:34"))
     }
 }

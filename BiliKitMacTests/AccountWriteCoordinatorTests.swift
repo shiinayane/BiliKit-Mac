@@ -179,6 +179,8 @@ struct AccountWriteCoordinatorTests {
         #expect(!window.accountWrites.isWritable)
         #expect(!window.accountWrites.addToWatchLater(bvid: "BV17x411w7KC"))
         window.accountWrites.removeFromWatchLater(bvid: "BV17x411w7KC")
+        window.accountWrites.chooseFavoriteFolders(bvid: "BV17x411w7KC")
+        #expect(window.accountWrites.favoritePicker == nil)
         window.close()
 
         #expect(await writes.calls.isEmpty)
@@ -232,32 +234,6 @@ struct AccountWriteCoordinatorTests {
         #expect(!window.accountWrites.isWritable)
         #expect(window.accountWrites.report == nil)
         #expect(await writes.calls == ["add BV17x411w7KC 7"])
-    }
-
-    @Test
-    func onlyTheWindowAPIGetsTheExactWriteCapability() async throws {
-        #expect(
-            LiveAPIClients.mainAccountWriteAllowedPaths == [
-                "/x/v2/history/toview/add",
-                "/x/v2/history/toview/del",
-                "/x/v3/fav/resource/deal",
-                "/x/v3/fav/resource/batch-del",
-                "/x/web-interface/archive/like",
-                "/x/web-interface/coin/add",
-                "/x/web-interface/archive/like/triple",
-                "/x/relation/modify",
-                "/x/web-interface/feedback/dislike",
-                "/x/web-interface/feedback/dislike/cancel"
-            ]
-        )
-        #expect(BiliAccountWritePath.watchLaterAdd == "/x/v2/history/toview/add")
-        #expect(BiliAccountWritePath.watchLaterRemove == "/x/v2/history/toview/del")
-        // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
-        for client in [LiveAPIClients.cdnBenchmark(), LiveAPIClients.watchProgressWriter()] {
-            await #expect(throws: BiliAPIError.authorizationRequired) {
-                try await client.addToWatchLater(bvid: "BV17x411w7KC", accountID: 7)
-            }
-        }
     }
 
     @Test
@@ -402,18 +378,6 @@ struct AccountWriteCoordinatorTests {
         #expect(window.favoriteFolders.totalCount == 2)
         #expect(window.accountWrites.report?.failure == .unavailable)
         #expect(await writes.calls == ["unfavorite 170001 from 10 7"])
-    }
-
-    @Test
-    func closedGateOpensNoPicker() async throws {
-        let window = WindowComposition(process: makeTestProcess(), adapters: makeTestAdapters())
-        window.authenticationModel.restoreIfNeeded()
-        await window.authenticationModel.waitForCurrentTask()
-        defer { window.close() }
-
-        window.accountWrites.chooseFavoriteFolders(bvid: "BV17x411w7KC")
-
-        #expect(window.accountWrites.favoritePicker == nil)
     }
 
     /// 失败放回了标记，所以能再说一次；成功标上之后才能撤销。

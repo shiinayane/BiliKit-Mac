@@ -5,13 +5,6 @@ import Testing
 
 struct PlaybackManifestTests {
     @Test
-    func byteRangeProducesHTTPHeaderValue() throws {
-        let range = try MediaByteRange(start: 10, endInclusive: 19)
-
-        #expect(range.httpRangeHeaderValue == "bytes=10-19")
-    }
-
-    @Test
     func byteRangeRejectsInvalidBounds() {
         #expect(throws: MediaByteRangeError.self) {
             try MediaByteRange(start: 20, endInclusive: 10)

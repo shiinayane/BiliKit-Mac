@@ -43,42 +43,10 @@ struct FeedRefreshTests {
         #expect(model.successfulRefreshGeneration(for: .popular) == 1)
     }
 
+    /// 刷新期间内容保持显示、分页尾标收起；失败后内容、分页与代次都回到刷新前。
     @Test
     @MainActor
     func failedRefreshKeepsMatchingLoadedContentVisible() async {
-        let fixture = ContentFixtures()
-        let repository = FeedRepositoryStub(popular: { request, attempt in
-            if attempt == 2 { throw ContentApplicationError.requestRestricted }
-            return fixture.popularPage(request)
-        })
-        let model = BrowseViewModel(
-            useCase: FeedUseCase(repository: repository)
-        )
-
-        model.activatePopular(pageSize: 50)
-        await model.waitForCurrentTask()
-        let loadedState = model.state
-        let successfulRefreshGeneration =
-            model.successfulRefreshGeneration(for: .popular)
-
-        model.refreshPopular(pageSize: 50)
-        #expect(BrowseFeed.popular.loadedBVIDs(model) == [fixture.bvid])
-        #expect(model.isRefreshing)
-        await model.waitForCurrentTask()
-
-        #expect(model.state == loadedState)
-        #expect(!model.isRefreshing)
-        #expect(model.refreshError == .requestRestricted)
-        #expect(
-            model.successfulRefreshGeneration(for: .popular)
-                == successfulRefreshGeneration
-        )
-        #expect(await repository.popularPages.count == 2)
-    }
-
-    @Test
-    @MainActor
-    func inPlaceRefreshWithdrawsPaginationTailUntilItSettles() async {
         let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(popular: { request, attempt in
             if attempt == 2 { throw ContentApplicationError.requestRestricted }
@@ -91,9 +59,14 @@ struct FeedRefreshTests {
 
         model.activatePopular(pageSize: 50)
         await model.waitForCurrentTask()
+        let loadedState = model.state
         let loadedPagination = model.pagination(for: request)
+        let successfulRefreshGeneration =
+            model.successfulRefreshGeneration(for: .popular)
 
         model.refreshPopular(pageSize: 50)
+        #expect(BrowseFeed.popular.loadedBVIDs(model) == [fixture.bvid])
+        #expect(model.isRefreshing)
         let refreshingPagination = model.pagination(for: request)
         await model.waitForCurrentTask()
 
@@ -101,8 +74,15 @@ struct FeedRefreshTests {
         #expect(loadedPagination.tailIdentity != nil)
         #expect(!refreshingPagination.canLoadMore)
         #expect(refreshingPagination.tailIdentity == nil)
-        #expect(model.refreshError == .requestRestricted)
+        #expect(model.state == loadedState)
         #expect(model.pagination(for: request) == loadedPagination)
+        #expect(!model.isRefreshing)
+        #expect(model.refreshError == .requestRestricted)
+        #expect(
+            model.successfulRefreshGeneration(for: .popular)
+                == successfulRefreshGeneration
+        )
+        #expect(await repository.popularPages.count == 2)
     }
 
     @Test

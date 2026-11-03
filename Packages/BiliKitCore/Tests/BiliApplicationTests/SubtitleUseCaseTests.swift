@@ -88,29 +88,29 @@ struct SubtitleUseCaseTests {
         }
         #expect(await repository.requests().isEmpty)
     }
-}
 
-/// 字幕目录的凭据失效要在用例里报告：播放侧把目录失败当作没有字幕，不会再往上传。
-@Test(arguments: [
-    (SubtitleApplicationError.authenticationInvalid, 1),
-    (.authenticationRequired, 0),
-    (.authenticationUnavailable, 0),
-    (.requestRestricted, 0)
-])
-func onlyInvalidCredentialsAreReportedFromTheCatalog(
-    failure: SubtitleApplicationError,
-    expectedReports: Int
-) async {
-    let reports = ReportCounter()
-    let useCase = SubtitleUseCase(
-        repository: ApplicationSubtitleRepository(tracksFailure: failure),
-        reportAuthenticationInvalidation: { reports.increment() }
-    )
+    /// 字幕目录的凭据失效要在用例里报告：播放侧把目录失败当作没有字幕，不会再往上传。
+    @Test(arguments: [
+        (SubtitleApplicationError.authenticationInvalid, 1),
+        (.authenticationRequired, 0),
+        (.authenticationUnavailable, 0),
+        (.requestRestricted, 0)
+    ])
+    func onlyInvalidCredentialsAreReportedFromTheCatalog(
+        failure: SubtitleApplicationError,
+        expectedReports: Int
+    ) async {
+        let reports = ReportCounter()
+        let useCase = SubtitleUseCase(
+            repository: ApplicationSubtitleRepository(tracksFailure: failure),
+            reportAuthenticationInvalidation: { reports.increment() }
+        )
 
-    await #expect(throws: failure) {
-        try await useCase.tracks(for: PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 1))
+        await #expect(throws: failure) {
+            try await useCase.tracks(for: PlaybackItemIdentity(bvid: "BV1SubtitleFixture", cid: 1))
+        }
+        #expect(reports.count == expectedReports)
     }
-    #expect(reports.count == expectedReports)
 }
 
 private final class ReportCounter: Sendable {

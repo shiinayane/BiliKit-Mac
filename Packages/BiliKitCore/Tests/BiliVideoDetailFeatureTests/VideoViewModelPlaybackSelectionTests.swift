@@ -203,40 +203,6 @@ struct VideoViewModelPlaybackSelectionTests {
         #expect(player.loadedIdentities.map(\.cid) == [initialPage.cid, initialPage.cid])
     }
 
-    /// 分 P 切换失败时同样由模型重试，只重取失败的分 P。
-    @Test
-    func retryIfFailedRetriesAFailedPage() async {
-        let failingCID = secondPage.cid
-        let repository = makeRepository(playback: { [fixture] identity, attempt in
-            if identity.cid == failingCID, attempt == 1 {
-                throw ContentApplicationError.transportFailure
-            }
-            return fixture.playback
-        })
-        let model = makeVideoViewModel(
-            useCase: VideoUseCase(repository: repository),
-            playback: PlayerStub()
-        )
-        model.loadVideo(fixture.bvid, preferredCID: initialPage.cid)
-        await waitUntilSettled(model)
-        model.selectPage(cid: secondPage.cid)
-        await waitUntilSettled(model)
-        guard case .failedPage = model.state else {
-            Issue.record("切换分 P 失败后应进入分 P 失败状态，实际为 \(model.state)")
-            return
-        }
-
-        #expect(model.retryIfFailed())
-        await waitUntilSettled(model)
-
-        #expect(model.presentedPlaybackIdentity?.cid == secondPage.cid)
-        #expect(
-            await repository.playbackRequests.map(\.cid) == [
-                initialPage.cid, secondPage.cid, secondPage.cid
-            ]
-        )
-    }
-
     private func makeRepository(
         playback: ScriptedResponse<PlaybackItemIdentity, VideoPlayback>? = nil
     ) -> VideoRepositoryStub {

@@ -190,13 +190,6 @@ struct CommentTextLinkDetectorTests {
         )
     }
 
-    @Test
-    func aVideoAddressContainingABVIDIsOneLink() {
-        let links = detected("https://www.bilibili.com/video/BV1xx411c7mD")
-
-        #expect(links.count == 1)
-    }
-
     /// 接口已标出的链接（jump_url、@ 提及）覆盖的文字不再识别；范围按 UTF-16 计算。
     @Test
     func markedLinksWinAndRangesAreUTF16() throws {

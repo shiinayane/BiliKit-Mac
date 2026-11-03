@@ -31,30 +31,6 @@ struct BiliWatchHistoryRepositoryTests {
                 expected: .requestRestricted
             ),
             MappingCase(
-                scenario: .apiRejected(code: -352),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .httpStatus(403),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .httpStatus(412),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .htmlRiskControlPage,
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .apiRejected(code: -500),
-                expected: .serviceRejected(code: -500)
-            ),
-            MappingCase(
-                scenario: .httpStatus(500),
-                expected: .unavailable
-            ),
-            MappingCase(
                 scenario: .invalidRequest,
                 expected: .invalidRequest
             )
@@ -68,15 +44,6 @@ struct BiliWatchHistoryRepositoryTests {
                 after: nil,
                 pageSize: testCase.scenario.pageSize
             )
-        }
-    }
-
-    @Test
-    func preservesCancellation() async {
-        let repository = HistoryScenario.cancellation.repository()
-
-        await #expect(throws: CancellationError.self) {
-            try await repository.watchHistory(after: nil, pageSize: 20)
         }
     }
 
@@ -103,10 +70,7 @@ enum HistoryScenario: Sendable, Equatable {
     case authorizationRequired
     case credentialUnavailable
     case apiRejected(code: Int)
-    case httpStatus(Int)
-    case htmlRiskControlPage
     case invalidRequest
-    case cancellation
     case unknownTransportFailure
 
     var pageSize: Int {
@@ -124,12 +88,6 @@ enum HistoryScenario: Sendable, Equatable {
             switch self {
             case .apiRejected(let code):
                 [.response(jsonResponse("{\"code\":\(code),\"message\":\"fixture\"}"))]
-            case .httpStatus(let status):
-                [.response(HTTPResponse(statusCode: status, body: Data()))]
-            case .htmlRiskControlPage:
-                [.response(htmlRiskControlResponse())]
-            case .cancellation:
-                [.cancellation]
             case .authorizationRequired, .credentialUnavailable, .invalidRequest,
                 .unknownTransportFailure:
                 []

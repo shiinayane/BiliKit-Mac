@@ -19,9 +19,11 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
         rootID: rootID
     )
 
-    @Test
-    func pageChangeBringsTheRepliesPanelUpOnlyWhenItsTopWasAbove() async throws {
-        let states = await replyStates(next: .page)
+    @Test(arguments: [NextStep.page, .dialog])
+    func pageChangeAndDialogBringTheRepliesPanelUpOnlyWhenItsTopWasAbove(
+        next: NextStep
+    ) async throws {
+        let states = await replyStates(next: next)
         let sidebar = try await SidebarHarness(fixtures: self, comments: states.expanded)
         defer { sidebar.tearDown() }
 
@@ -34,30 +36,6 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
                 == .keepItemTop(offsetFromVisibleTop: rootTop - sidebar.visibleTop)
         )
 
-        sidebar.controller.scroll(to: panelTop + 20)
-        sidebar.controller.prepareThreadAlignment(Self.itemID, edge: .repliesPanel)
-        sidebar.update(states.changed)
-        func panelIsAtTop() -> Bool {
-            (try? abs(sidebar.alignmentY(.repliesPanel) - sidebar.visibleTop)) ?? .infinity <= 1
-        }
-        #expect(await waitUntil(timeout: .seconds(5)) { panelIsAtTop() })
-        #expect(sidebar.controller.pendingThreadAlignment != nil)
-
-        sidebar.update(await states.arrive())
-        #expect(
-            await waitUntil(timeout: .seconds(5)) {
-                panelIsAtTop() && sidebar.controller.pendingThreadAlignment == nil
-            }
-        )
-    }
-
-    @Test
-    func enteringADialogKeepsTheRepliesPanelAtTheTopThroughArrival() async throws {
-        let states = await replyStates(next: .dialog)
-        let sidebar = try await SidebarHarness(fixtures: self, comments: states.expanded)
-        defer { sidebar.tearDown() }
-
-        let panelTop = try sidebar.alignmentY(.repliesPanel)
         sidebar.controller.scroll(to: panelTop + 20)
         sidebar.controller.prepareThreadAlignment(Self.itemID, edge: .repliesPanel)
         sidebar.update(states.changed)
@@ -94,7 +72,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
         _ = await states.arrive()
     }
 
-    private enum NextStep {
+    enum NextStep {
         case page
         case dialog
         case collapse

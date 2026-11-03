@@ -44,9 +44,11 @@ struct BiliAPIClientPlayURLTests {
         #expect(video.videoAttributes?.width == 1280)
         #expect(video.videoAttributes?.height == 720)
         #expect(video.videoAttributes?.frameRate == 60_000.0 / 1_001.0)
-        #expect(video.segmentBase.initialization.httpRangeHeaderValue == "bytes=0-999")
+        #expect(video.segmentBase.initialization.start == 0)
+        #expect(video.segmentBase.initialization.endInclusive == 999)
         #expect(audio.id == 30216)
-        #expect(audio.segmentBase.index.httpRangeHeaderValue == "bytes=800-1599")
+        #expect(audio.segmentBase.index.start == 800)
+        #expect(audio.segmentBase.index.endInclusive == 1599)
         #expect(playback.mediaHeaders["Referer"]?.contains("BV1FixtureA1") == true)
         // playurl 请求可带账户凭据，交给 CDN 的媒体 header 不得带。
         #expect(Set(playback.mediaHeaders.keys) == ["Referer", "User-Agent"])

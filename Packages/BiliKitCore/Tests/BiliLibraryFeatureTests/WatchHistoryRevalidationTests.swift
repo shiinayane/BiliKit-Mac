@@ -44,7 +44,6 @@ struct WatchHistoryRevalidationTests {
         await model.waitForCurrentTask()
 
         #expect(model.state == .failed(.authenticationUnavailable))
-        #expect(ContentApplicationError.authenticationUnavailable.isRetryable)
         #expect(model.authenticationRevalidationGeneration == 0)
     }
 

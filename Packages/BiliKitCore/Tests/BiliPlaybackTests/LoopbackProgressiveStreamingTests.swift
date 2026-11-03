@@ -1,5 +1,3 @@
-@preconcurrency import AVFoundation
-import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
@@ -179,43 +177,6 @@ struct LoopbackProgressiveStreamingTests {
         await #expect(throws: (any Error).self) {
             _ = try await URLSession.shared.data(for: request)
         }
-    }
-
-    @Test
-    @MainActor
-    func progressiveUsesTheExistingEngineItemAndClearsItOnStop() async throws {
-        let source = URL(string: "https://primary.fixture.bilivideo.com/video.mp4")!
-        let fixtureURL = try #require(
-            Bundle.module.url(
-                forResource: "video-avc",
-                withExtension: "mp4",
-                subdirectory: "Fixtures"
-            )
-        )
-        let body = try Data(contentsOf: fixtureURL)
-        let bridge = makeFixtureBridge(FixtureRangeTransport(media: [source: body]))
-        let engine = makeFixtureEngine(bridge: bridge)
-        let player = engine.player
-        let sourceModel = ProgressivePlaybackSource(
-            primaryURL: source,
-            contentLength: Int64(body.count),
-            durationMilliseconds: 1_000,
-            contentType: "video/mp4",
-            container: .mp4
-        )
-
-        try await engine.load(
-            PlaybackRequest(media: .progressive(sourceModel)),
-            identity: PlaybackItemIdentity(bvid: "BVProgressiveFixture", cid: 1)
-        )
-
-        let item = try #require(player.currentItem)
-        #expect(engine.player === player)
-        #expect(item.forwardPlaybackEndTime.isValid)
-        #expect(item.forwardPlaybackEndTime.seconds > 0)
-        engine.stop()
-        #expect(player.currentItem == nil)
-        #expect(engine.currentTimelineSnapshot.state == .idle)
     }
 
     private func request(_ url: URL, range: String) async throws -> Data {

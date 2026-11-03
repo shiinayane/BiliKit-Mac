@@ -85,7 +85,7 @@ struct NearEndPaginationTests {
             ]
         ),
         Scenario(
-            description: "阈值外换尾部后首次进入即触发",
+            description: "阈值外换尾部后首次进入即触发；非实时滚动触发不产生背压",
             steps: [
                 .evaluate(inside: true, tail: 1, loads: true),
                 .evaluate(inside: false, tail: 2, loads: false),
@@ -110,14 +110,6 @@ struct NearEndPaginationTests {
                 .releaseBackpressure,
                 .evaluate(inside: false, tail: 2, live: true, loads: false),
                 .evaluate(inside: true, tail: 2, live: true, loads: true)
-            ]
-        ),
-        Scenario(
-            description: "非实时滚动触发不产生背压",
-            steps: [
-                .evaluate(inside: true, tail: 1, loads: true),
-                .evaluate(inside: false, tail: 2, loads: false),
-                .evaluate(inside: true, tail: 2, loads: true)
             ]
         ),
         Scenario(

@@ -262,83 +262,65 @@ struct CommentAPIClientTests {
         #expect(requests.first?.headers["Cookie"] == StubAuthorizer.cookie)
     }
 
-    /// 本地凭据读不到（Keychain 不可用）与凭据失效分开：不触发账户复核。
-    @Test
-    func unavailableCredentialIsNotTreatedAsInvalidation() async {
+    /// 本地凭据失败时根评论与回复都不发出业务请求：凭据失效触发账户复核，Keychain 不可用不当作失效，
+    /// 授权器 allowlist 拒绝是客户端发不出的 `invalidRequest`（见 SECURITY-MODEL §3）。
+    @Test(
+        arguments: [
+            (
+                HTTPRequestAuthorizationFailureKind.invalidCredential,
+                CommentReadError.authenticationInvalid
+            ),
+            (.unavailable, .authenticationUnavailable),
+            (.denied, .invalidRequest)
+        ],
+        [false, true]
+    )
+    func localCredentialFailureSendsNoBusinessRequest(
+        failure: (HTTPRequestAuthorizationFailureKind, CommentReadError),
+        readsReplies: Bool
+    ) async {
         let transport = StubTransport(responses: [], answersWBINavOnce: true)
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
                 transport: transport,
-                requestAuthorizer: StubAuthorizer(.fail(.unavailable)),
+                requestAuthorizer: StubAuthorizer(.fail(failure.0)),
                 timestampProvider: { 1_700_000_000 }
             )
         )
 
-        await #expect(throws: CommentReadError.authenticationUnavailable) {
-            try await repository.rootComments(
-                for: .video(aid: 700_001),
-                sort: .hot,
-                after: nil
-            )
+        await #expect(throws: failure.1) {
+            if readsReplies {
+                _ = try await repository.replies(
+                    for: .video(aid: 700_001),
+                    rootID: CommentID(rawValue: 102),
+                    page: 1,
+                    pageSize: 10
+                )
+            } else {
+                _ = try await repository.rootComments(
+                    for: .video(aid: 700_001),
+                    sort: .hot,
+                    after: nil
+                )
+            }
         }
         #expect(transport.businessRequests().isEmpty)
     }
 
-    @Test
-    func authenticationInvalidationIsPreservedForRootAndReplies() async throws {
-        let rootTransport = StubTransport(
-            responses: [],
-            answersWBINavOnce: true
-        )
-        let rootRepository = BiliCommentRepository(
-            client: BiliAPIClient(
-                transport: rootTransport,
-                requestAuthorizer: StubAuthorizer(.fail(.invalidCredential)),
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        await #expect(throws: CommentReadError.authenticationInvalid) {
-            try await rootRepository.rootComments(
-                for: .video(aid: 700_001),
-                sort: .hot,
-                after: nil
-            )
-        }
-        #expect(rootTransport.businessRequests().isEmpty)
-
-        let rejected = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(#"{"code":-101,"message":"账号未登录"}"#.utf8)
-        )
-        let replyRepository = BiliCommentRepository(
-            client: BiliAPIClient(
-                transport: StubTransport(responses: [rejected]),
-                requestAuthorizer: StubAuthorizer()
-            )
-        )
-        await #expect(throws: CommentReadError.authenticationInvalid) {
-            try await replyRepository.replies(
-                for: .video(aid: 700_001),
-                rootID: CommentID(rawValue: 102),
-                page: 1,
-                pageSize: 10
-            )
-        }
-    }
-
-    /// 评论主列表遇到风控或 HTTP 403 时失败关闭，既不自动重试，也不刷新 WBI key。
+    /// 根评论遇到风控、HTTP 403 或稿件、根评论不存在与不可见时失败关闭：只发一次业务请求，既不自动重试，
+    /// 也不刷新 WBI key；不存在与不可见归为不可重试的 `contentUnavailable`。
     @Test(arguments: [
-        jsonResponse(#"{"code":-352,"message":"blocked"}"#),
-        jsonResponse("", statusCode: 403)
+        (jsonResponse(#"{"code":-352,"message":"blocked"}"#), CommentReadError.requestRestricted),
+        (jsonResponse("", statusCode: 403), .requestRestricted),
+        (jsonResponse(#"{"code":-404,"message":"fixture"}"#), .contentUnavailable),
+        (jsonResponse(#"{"code":62002,"message":"fixture"}"#), .contentUnavailable),
+        (jsonResponse(#"{"code":62004,"message":"fixture"}"#), .contentUnavailable)
     ])
-    func rootRestrictionFailsClosedWithoutRetryOrWBIRefresh(
-        rejected: HTTPResponse
+    func rootFailuresFailClosedWithoutRetryOrWBIRefresh(
+        rejected: HTTPResponse,
+        expected: CommentReadError
     ) async throws {
-        let transport = StubTransport(
-            responses: [try fixtureResponse("nav"), rejected]
-        )
+        let transport = StubTransport(responses: [rejected], answersWBINavOnce: true)
         let repository = BiliCommentRepository(
             client: BiliAPIClient(
                 transport: transport,
@@ -346,14 +328,14 @@ struct CommentAPIClientTests {
             )
         )
 
-        await #expect(throws: CommentReadError.requestRestricted) {
+        await #expect(throws: expected) {
             try await repository.rootComments(
                 for: .video(aid: 700_001),
                 sort: .hot,
                 after: nil
             )
         }
-        #expect(transport.capturedRequests().count == 2)
+        #expect(transport.businessRequests().count == 1)
     }
 
     @Test(arguments: [
@@ -363,14 +345,19 @@ struct CommentAPIClientTests {
         (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
         (jsonResponse(#"{"code":12002,"message":"评论区已关闭"}"#), .closed),
         (jsonResponse("", statusCode: 500), .unavailable),
-        (jsonResponse("{"), .invalidResponse)
+        (jsonResponse("{"), .invalidResponse),
+        // 回复以账户凭据请求：-101 是凭据失效，不是“需要登录”。
+        (jsonResponse(#"{"code":-101,"message":"账号未登录"}"#), .authenticationInvalid)
     ])
     func replyFailuresMapToCommentReadError(
         response: HTTPResponse,
         expected: CommentReadError
     ) async {
         let repository = BiliCommentRepository(
-            client: BiliAPIClient(transport: StubTransport(responses: [response]))
+            client: BiliAPIClient(
+                transport: StubTransport(responses: [response]),
+                requestAuthorizer: StubAuthorizer()
+            )
         )
 
         await #expect(throws: expected) {

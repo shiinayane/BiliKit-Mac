@@ -235,7 +235,7 @@ struct VideoViewModelIdentityTests {
         #expect(model.presentedPlaybackIdentity == nil)
         #expect(model.requestedPlaybackIdentity?.cid == 900_002)
 
-        model.retry()
+        #expect(model.retryIfFailed())
         await waitUntilSettled(model)
 
         #expect(model.presentedContext?.selectedPage.cid == 900_002)

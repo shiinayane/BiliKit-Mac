@@ -23,37 +23,18 @@ struct DanmakuSessionTests {
     /// 同样在分段开头，想要第 3、2、4 段；第 1～3 段都已请求后，第 4 段被请求说明其中至多一段仍在加载。
     nonisolated private static let laterThreeSegmentPosition = 725.0
 
-    @Test
-    func sessionPrefetchesCurrentAndNextWithBoundedConcurrency() async throws {
-        let identity = PlaybackItemIdentity(bvid: "BV1DanmakuFixture", cid: 1)
-        let repository = StubDanmakuRepository(.holdUntilReleased)
-        let timeline = SessionTimeline()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline
-        )
-
-        session.start(for: identity)
-        timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
-        try await repository.waitForRequestCount(2, identity: identity)
-
-        #expect(await repository.requestedIndices(for: identity).sorted() == [1, 2])
-        #expect(await repository.maximumActiveRequests() == 2)
-        session.stop()
-        await repository.releaseAll()
-    }
-
-    /// 位置在分段开头一条弹幕的最长时长之内时先请求当前与上一分段，之后请求当前与下一分段。
+    /// 会话同时最多加载两段，按位置先要当前分段：在分段开头一条弹幕的最长时长之内先要当前与上一分段，
+    /// 之后要当前与下一分段。
     @Test(arguments: [
+        (0.0, [1, 2]),
         (DanmakuSessionTests.threeSegmentPosition, [1, 2]),
         (450.0, [2, 3])
     ])
-    func sessionRequestsThePreviousSegmentOnlyNearASegmentStart(
+    func sessionRequestsWantedSegmentsWithBoundedConcurrency(
         position: Double,
         expectedIndices: [Int]
     ) async throws {
-        let identity = PlaybackItemIdentity(bvid: "BV1PreviousSegment", cid: 4)
+        let identity = PlaybackItemIdentity(bvid: "BV1DanmakuFixture", cid: 1)
         let repository = StubDanmakuRepository(.holdUntilReleased)
         let timeline = SessionTimeline()
         let session = DanmakuSession(
@@ -67,6 +48,7 @@ struct DanmakuSessionTests {
         try await repository.waitForRequestCount(2, identity: identity)
 
         #expect(await repository.requestedIndices(for: identity).sorted() == expectedIndices)
+        #expect(await repository.maximumActiveRequests() == 2)
         session.stop()
         await repository.releaseAll()
     }

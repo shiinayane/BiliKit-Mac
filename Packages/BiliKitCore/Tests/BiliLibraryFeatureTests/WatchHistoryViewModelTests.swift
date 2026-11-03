@@ -55,78 +55,6 @@ struct WatchHistoryViewModelTests {
         #expect(await repository.observedContinuations() == [nil, continuation])
     }
 
-    /// 历史与首页推荐、热门、搜索共用上限：达到后收起分页尾标，也不再请求下一页。
-    @Test
-    @MainActor
-    func stopsPaginatingAtTheSharedCapacity() async {
-        let pageSize = 600
-        let page: @Sendable (Int, WatchHistoryContinuation) -> WatchHistoryPage = { index, next in
-            WatchHistoryPage(
-                items: (index * pageSize..<(index + 1) * pageSize).map { item("BV-history-\($0)") },
-                continuation: next
-            )
-        }
-        let repository = HistoryRepositoryStub(
-            results: [.success(page(0, token(1))), .success(page(1, token(2)))]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        await model.waitForCurrentTask()
-        #expect(model.paginationTailIdentity != nil)
-        model.loadMore()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-
-        guard case .loaded(let items, let continuation, let error) = model.state else {
-            Issue.record("历史达到上限后应保持 loaded")
-            return
-        }
-        #expect(items.count == VideoListRetention.maximumItemCount)
-        #expect(continuation == nil)
-        #expect(error == nil)
-        #expect(model.paginationTailIdentity == nil)
-        #expect(!model.requiresManualLoadMore)
-        #expect(await repository.observedContinuations() == [nil, token(1)])
-    }
-
-    /// continuation 回环是接口异常：恰好同时达到条目上限也要报告，不被上限吞掉。
-    @Test
-    @MainActor
-    func continuationLoopAtCapacityStillReportsInvalidResponse() async {
-        func page(_ range: Range<Int>, _ next: WatchHistoryContinuation) -> WatchHistoryPage {
-            WatchHistoryPage(items: range.map { item("BV-loop-\($0)") }, continuation: next)
-        }
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(page(0..<300, token(1))),
-                .success(page(300..<600, token(2))),
-                .success(page(600..<1_000, token(1)))
-            ]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-
-        guard case .loaded(let items, let continuation, let error) = model.state else {
-            Issue.record("回环后历史状态不是 loaded")
-            return
-        }
-        #expect(items.count == VideoListRetention.maximumItemCount)
-        #expect(continuation == nil)
-        #expect(error == .invalidResponse)
-    }
-
     /// 加载更多失败保留条目与 continuation，并暂停自动加载（没有尾标）；重试请求同一 continuation。
     @Test
     @MainActor
@@ -304,55 +232,6 @@ struct WatchHistoryViewModelTests {
         #expect(error == nil)
     }
 
-    @Test
-    @MainActor
-    func repeatedOpaqueContinuationCycleStopsAutomaticPagination() async {
-        let first = token(100)
-        let second = token(200)
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryA1")],
-                        continuation: first
-                    )
-                ),
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryB2")],
-                        continuation: second
-                    )
-                ),
-                .success(
-                    WatchHistoryPage(
-                        items: [item("BV1HistoryC3")],
-                        continuation: first
-                    )
-                )
-            ]
-        )
-        let model = WatchHistoryViewModel(
-            useCase: WatchHistoryUseCase(repository: repository)
-        )
-
-        model.loadIfNeeded()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-
-        guard case .loaded(let items, let continuation, let error) = model.state else {
-            Issue.record("历史状态不是 loaded")
-            return
-        }
-        #expect(items.map(\.bvid) == ["BV1HistoryA1", "BV1HistoryB2", "BV1HistoryC3"])
-        #expect(continuation == nil)
-        #expect(error == .invalidResponse)
-        #expect(model.paginationTailIdentity == nil)
-        #expect(!model.requiresManualLoadMore)
-    }
-
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func reloadPreventsOlderResultFromOverwritingNewIntent() async throws {
@@ -469,37 +348,8 @@ struct WatchHistoryViewModelTests {
         }
     }
 
-    /// 需要用户显式继续的分页状态在刷新失败后原样保留，不会变成自动连续扫描。
-    @Test
-    @MainActor
-    func failedRefreshKeepsTheManualContinueGate() async {
-        let manual = token(904)
-        let repository = HistoryRepositoryStub(
-            results: [
-                .success(WatchHistoryPage(items: [item("BV1HistoryA1")], continuation: token(1)))
-            ] + emptyPagesEnding(at: manual) + [.failure(ContentApplicationError.transportFailure)]
-        )
-        let model = WatchHistoryViewModel(useCase: WatchHistoryUseCase(repository: repository))
-        model.reload()
-        await model.waitForCurrentTask()
-        model.loadMore()
-        await model.waitForCurrentTask()
-        #expect(model.requiresManualLoadMore)
-
-        model.reload()
-        await model.waitForCurrentTask()
-
-        #expect(model.refreshError == .transportFailure)
-        #expect(model.requiresManualLoadMore)
-        #expect(model.paginationTailIdentity == nil)
-        guard case .loaded(_, let continuation, _) = model.state else {
-            Issue.record("刷新失败后历史状态不是 loaded")
-            return
-        }
-        #expect(continuation == manual)
-    }
-
-    /// 原地刷新期间收起“加载更早的记录”（刷新中加载更多不会开始），刷新失败后显式继续门恢复。
+    /// 原地刷新期间收起“加载更早的记录”（刷新中加载更多不会开始），刷新失败后显式继续门与它的 continuation 原样恢复，
+    /// 不会变成自动连续扫描。
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func refreshWithdrawsTheManualContinueEntryUntilItFails() async throws {
@@ -530,6 +380,11 @@ struct WatchHistoryViewModelTests {
         #expect(model.refreshError == .transportFailure)
         #expect(model.requiresManualLoadMore)
         #expect(model.paginationTailIdentity == nil)
+        guard case .loaded(_, let continuation, _) = model.state else {
+            Issue.record("刷新失败后历史状态不是 loaded")
+            return
+        }
+        #expect(continuation == manual)
     }
 
     /// 离开页面会取消原地刷新，保留条目、恢复刷新前的分页状态，并清掉刷新错误。

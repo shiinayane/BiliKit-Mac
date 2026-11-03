@@ -142,13 +142,38 @@ struct AccountReadAuthorizationCompositionTests {
     }
 }
 
-/// 窗口主 API 的每个写 path 都能被真实的账户写授权器按它的 schema 授权：BiliAuth 的 schema 表与 BiliAPI 的
-/// `BiliAccountWritePath` 各写一份字面量，这里是两边唯一的交叉核对。
+/// 账户写能力只给窗口主 API，且恰好是这十个 path；每个写 path 都能被真实的账户写授权器按它的 schema 授权：
+/// BiliAuth 的 schema 表与 BiliAPI 的 `BiliAccountWritePath` 各写一份字面量，这里是两边唯一的交叉核对。
 @Suite(.timeLimit(.minutes(1)))
 struct AccountWriteAuthorizationCompositionTests {
     private static let recommendationFeedbackBody =
         "app_id=100&platform=5&from_spmid=&spmid=333.1007.0.0&goto=av&id=170001&mid=1"
         + "&track_id=web_rcmd.abc&feedback_page=1&reason_id=1"
+
+    @Test
+    @MainActor
+    func onlyTheWindowAPIGetsTheExactWriteCapability() async throws {
+        #expect(
+            LiveAPIClients.mainAccountWriteAllowedPaths == [
+                "/x/v2/history/toview/add",
+                "/x/v2/history/toview/del",
+                "/x/v3/fav/resource/deal",
+                "/x/v3/fav/resource/batch-del",
+                "/x/web-interface/archive/like",
+                "/x/web-interface/coin/add",
+                "/x/web-interface/archive/like/triple",
+                "/x/relation/modify",
+                "/x/web-interface/feedback/dislike",
+                "/x/web-interface/feedback/dislike/cancel"
+            ]
+        )
+        // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
+        for client in [LiveAPIClients.cdnBenchmark(), LiveAPIClients.watchProgressWriter()] {
+            await #expect(throws: BiliAPIError.authorizationRequired) {
+                try await client.addToWatchLater(bvid: "BV17x411w7KC", accountID: 7)
+            }
+        }
+    }
 
     @Test
     @MainActor

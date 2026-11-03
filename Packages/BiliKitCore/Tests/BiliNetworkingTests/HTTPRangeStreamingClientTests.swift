@@ -41,60 +41,22 @@ struct HTTPRangeStreamingClientTests {
         #expect(request?.value(forHTTPHeaderField: "Referer") != nil)
     }
 
-    @Test
-    func rejectsStatusRangeLengthTotalAndContentTypeBeforeBody() async throws {
-        let cases: [(Int, [String: String], HTTPRangeResponseError)] = [
-            (200, [:], .statusCode(200)),
-            (302, ["Location": "https://redirect.example/video.mp4"], .statusCode(302)),
-            (
-                206,
-                [
-                    "Content-Range": "bytes 0-2/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4"
-                ],
-                .mismatchedContentRange(
-                    expected: try HTTPByteRange(start: 0, endInclusive: 3),
-                    actual: try HTTPContentRange.parse("bytes 0-2/10")
-                )
-            ),
-            (
-                206,
-                [
-                    "Content-Range": "bytes 0-3/11", "Content-Length": "4",
-                    "Content-Type": "video/mp4"
-                ],
-                .mismatchedCompleteLength(expected: 10, actual: 11)
-            ),
-            (
-                206,
-                [
-                    "Content-Range": "bytes 0-3/10", "Content-Length": "3",
-                    "Content-Type": "video/mp4"
-                ],
-                .mismatchedContentLength(expected: 4, actual: 3)
-            ),
-            (
-                206,
-                [
-                    "Content-Range": "bytes 0-3/10", "Content-Length": "4",
-                    "Content-Type": "text/html"
-                ],
-                .unsupportedContentType("text/html")
-            )
-        ]
-
-        for (status, headers, expectedError) in cases {
-            let events = StreamEventRecorder()
-            StreamingRangeURLProtocol.state.configure(
-                statusCode: status,
-                headers: headers,
-                chunks: [Data([1, 2, 3, 4])]
-            )
-            await #expect(throws: expectedError) {
-                try await streamFourBytes(events: events)
-            }
-            #expect(await events.values.isEmpty)
+    /// 状态码、区间、总长、长度与类型不符时在响应头阶段失败，一个回调也不调；被拒绝的 3xx 见
+    /// `rejectedRedirectFailsWithoutWaitingForItsBody`。
+    @Test(arguments: RejectedResponseHead.allCases)
+    func rejectsStatusRangeLengthTotalAndContentTypeBeforeBody(
+        head: RejectedResponseHead
+    ) async throws {
+        let events = StreamEventRecorder()
+        StreamingRangeURLProtocol.state.configure(
+            statusCode: head.statusCode,
+            headers: head.headers,
+            chunks: [Data([1, 2, 3, 4])]
+        )
+        await #expect(throws: try head.expectedError()) {
+            try await streamFourBytes(events: events)
         }
+        #expect(await events.values.isEmpty)
     }
 
     /// 被拒绝的重定向在重定向回调里就以它的状态码失败并取消上游，不等 3xx 正文传完。
@@ -281,6 +243,53 @@ struct HTTPRangeStreamingClientTests {
         return HTTPRangeStreamingClient(
             transport: URLSessionRangeTransport(configuration: configuration)
         )
+    }
+}
+
+/// 请求 `bytes=0-3`、总长 10、只接受 `video/mp4` 时，在正文之前就被拒绝的响应头。
+enum RejectedResponseHead: CaseIterable, Sendable {
+    case ignoredRange
+    case mismatchedRange
+    case mismatchedCompleteLength
+    case mismatchedContentLength
+    case unsupportedContentType
+
+    var statusCode: Int { self == .ignoredRange ? 200 : 206 }
+
+    var headers: [String: String] {
+        switch self {
+        case .ignoredRange: [:]
+        case .mismatchedRange: Self.head("bytes 0-2/10", length: "3", type: "video/mp4")
+        case .mismatchedCompleteLength: Self.head("bytes 0-3/11", length: "4", type: "video/mp4")
+        case .mismatchedContentLength: Self.head("bytes 0-3/10", length: "3", type: "video/mp4")
+        case .unsupportedContentType: Self.head("bytes 0-3/10", length: "4", type: "text/html")
+        }
+    }
+
+    private static func head(
+        _ contentRange: String,
+        length: String,
+        type: String
+    ) -> [String: String] {
+        ["Content-Range": contentRange, "Content-Length": length, "Content-Type": type]
+    }
+
+    func expectedError() throws -> HTTPRangeResponseError {
+        switch self {
+        case .ignoredRange:
+            .statusCode(200)
+        case .mismatchedRange:
+            .mismatchedContentRange(
+                expected: try HTTPByteRange(start: 0, endInclusive: 3),
+                actual: try HTTPContentRange.parse("bytes 0-2/10")
+            )
+        case .mismatchedCompleteLength:
+            .mismatchedCompleteLength(expected: 10, actual: 11)
+        case .mismatchedContentLength:
+            .mismatchedContentLength(expected: 4, actual: 3)
+        case .unsupportedContentType:
+            .unsupportedContentType("text/html")
+        }
     }
 }
 

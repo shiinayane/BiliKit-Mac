@@ -14,7 +14,8 @@ enum AVPlayerEngineSuites {}
 
 extension AVPlayerEngineSuites {
     /// 固定引擎生命周期契约：时间线随播放、倍速、seek、替换与停止发布，就绪后的失败通知去重，
-    /// 替换 load 取消旧媒体请求，替换与释放停止此前所有 loopback 会话。
+    /// 每次 `playbackFailureEvents()` 是独立订阅、取消其中一个不影响其他订阅，progressive item 就绪时
+    /// 带有效的正向结束时间，替换 load 取消旧媒体请求，替换与释放停止此前所有 loopback 会话。
     @Suite(.serialized, .timeLimit(.minutes(2)))
     struct AVPlayerEngineLifecycleTests {
         @Test
@@ -262,6 +263,80 @@ extension AVPlayerEngineSuites {
             #expect(engine.currentTimelineSnapshot.state == .failed)
             #expect(failureIdentities == [identity])
             #expect(engine.player.currentItem == nil)
+        }
+
+        @Test
+        @MainActor
+        func everyLiveSubscriberReceivesTheFailureAfterAnotherIsCancelled() async throws {
+            let fixture = try makeSimpleMedia(host: "failure-subscribers.fixture.bilivideo.com")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
+            )
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            let cancelled = engine.playbackFailureEvents()
+            var first = engine.playbackFailureEvents().makeAsyncIterator()
+            var second = engine.playbackFailureEvents().makeAsyncIterator()
+            let cancelledConsumer = Task {
+                for await _ in cancelled {}
+            }
+            cancelledConsumer.cancel()
+            await cancelledConsumer.value
+            let identity = PlaybackItemIdentity(bvid: "BV1FailureSubscribers", cid: 900_020)
+
+            try await engine.load(
+                PlaybackRequest(
+                    media: .dash(
+                        PlaybackManifest(
+                            videoRepresentations: [fixture.video],
+                            audioTracks: [
+                                .original(representations: [fixture.audio], loudnessMetadata: nil)
+                            ]
+                        )
+                    )
+                ),
+                identity: identity
+            )
+            let item = try #require(engine.player.currentItem)
+            NotificationCenter.default.post(
+                name: AVPlayerItem.failedToPlayToEndTimeNotification,
+                object: item
+            )
+
+            #expect(await first.next()?.identity == identity)
+            #expect(await second.next()?.identity == identity)
+        }
+
+        @Test
+        @MainActor
+        func progressiveItemCarriesForwardPlaybackEndTime() async throws {
+            let source = try #require(
+                URL(string: "https://primary.fixture.bilivideo.com/video.mp4")
+            )
+            let body = try fixtureData(named: "video-avc")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: [source: body]))
+            )
+            defer { engine.stop() }
+
+            try await engine.load(
+                PlaybackRequest(
+                    media: .progressive(
+                        ProgressivePlaybackSource(
+                            primaryURL: source,
+                            contentLength: Int64(body.count),
+                            durationMilliseconds: 1_000,
+                            contentType: "video/mp4",
+                            container: .mp4
+                        )
+                    )
+                ),
+                identity: PlaybackItemIdentity(bvid: "BVProgressiveFixture", cid: 1)
+            )
+
+            let item = try #require(engine.player.currentItem)
+            #expect(item.forwardPlaybackEndTime.isValid)
+            #expect(item.forwardPlaybackEndTime.seconds > 0)
         }
 
         @Test

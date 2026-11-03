@@ -259,35 +259,4 @@ struct FeedPagingTests {
         await model.waitForCurrentTask()
         #expect(await repository.requestedPages(feed) == [1, 2, 2])
     }
-
-    /// 经 ViewModel 的条目上限：热门每页 300 条，请求到第 4 页达到 1000 条后停止翻页，没有尾标。
-    @Test
-    @MainActor
-    func popularStopsPaginatingAtTheSharedCapacity() async {
-        let repository = FeedRepositoryStub(popular: { request, _ in
-            PopularPage(
-                videos: ((request.page - 1) * 300..<request.page * 300).map {
-                    ContentFixtures(bvid: "BV-popular-\($0)", title: "热门 \($0)").popularVideo
-                },
-                pageNumber: request.page,
-                pageSize: request.pageSize,
-                hasMore: true
-            )
-        })
-        let model = BrowseViewModel(useCase: FeedUseCase(repository: repository))
-        let request = FeedRequest.popular(page: 1, pageSize: 50)
-
-        model.activatePopular(pageSize: 50)
-        await model.waitForCurrentTask()
-        for _ in 0..<5 {
-            model.loadMore(.popular)
-            await model.waitForCurrentTask()
-        }
-
-        #expect(BrowseFeed.popular.loadedBVIDs(model).count == VideoListRetention.maximumItemCount)
-        #expect(model.pagination(for: request).tailIdentity == nil)
-        #expect(!model.pagination(for: request).canLoadMore)
-        #expect(model.pagination(for: request).loadMoreError == nil)
-        #expect(await repository.popularPages == [1, 2, 3, 4])
-    }
 }

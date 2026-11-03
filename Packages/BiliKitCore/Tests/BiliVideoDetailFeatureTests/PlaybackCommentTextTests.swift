@@ -204,61 +204,6 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         #expect(renderer.render(content, scope: scope).linkTargets == [.timestamp(seconds: 60)])
     }
 
-    /// 切换分 P 后上限变化：只有含时间戳链接的评论重新配置，链接随之更新；行高不变，更新方式与
-    /// 正文修改相同。
-    @Test
-    @MainActor
-    func timestampLimitChangeReconfiguresOnlyThreadsWithTimestamps() async throws {
-        let subject = CommentSubjectIdentity.video(aid: 700_001)
-        let threads = [
-            commentThread(
-                id: 1,
-                message: "1:00",
-                links: [
-                    CommentLink(
-                        range: CommentTextRange(location: 0, length: 4),
-                        target: .timestamp(seconds: 60)
-                    )
-                ]
-            ),
-            commentThread(id: 2, message: "第二条")
-        ]
-        let base = presentation(
-            bvid: "BVCurrent",
-            comments: await commentsPresentation(subject: subject, threads: threads)
-        )
-        func limited(_ seconds: Int?) throws -> NativePlaybackSidebarPresentation {
-            let content = try #require(base.content)
-            return NativePlaybackSidebarPresentation(
-                content: NativePlaybackSidebarContent(
-                    bvid: content.bvid,
-                    uploader: content.uploader,
-                    summary: content.summary,
-                    summaryLinks: content.summaryLinks,
-                    selection: content.selection,
-                    comments: content.comments,
-                    timestampLimitSeconds: seconds
-                ),
-                overlay: base.overlay
-            )
-        }
-        let short = try limited(120)
-        let long = try limited(600)
-
-        let changed = long.changedItemIDs(comparedTo: short)
-
-        #expect(changed == [.commentThread(subject: subject, rootID: CommentID(rawValue: 1))])
-        #expect(try limited(120).changedItemIDs(comparedTo: short).isEmpty)
-        #expect(
-            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
-                current: short.snapshotSections,
-                next: long.snapshotSections,
-                changedItemIDs: changed,
-                hasSnapshotInFlight: false
-            ) == .reloadChangedItems
-        )
-    }
-
     /// 悬停提示：站外链接与短链提示真实地址（短链换成标题后仍在），应用内目标不提示；文本视图不弹出
     /// 系统按内部链接值生成的提示。
     @Test

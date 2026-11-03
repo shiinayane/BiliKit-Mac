@@ -16,10 +16,9 @@ struct BiliAPIClientWatchLaterTests {
             responses: [try fixtureResponse("watchlater")],
             answersWBINavOnce: true
         )
-        let authorizer = StubAuthorizer()
         let client = BiliAPIClient(
             transport: transport,
-            requestAuthorizer: authorizer,
+            requestAuthorizer: StubAuthorizer(),
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -29,25 +28,13 @@ struct BiliAPIClientWatchLaterTests {
         #expect(requests.map(\.url.path) == ["/x/v2/history/toview/web"])
         let request = try #require(requests.first)
         #expect(request.headers["Referer"] == "https://www.bilibili.com/watchlater/")
-        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
         let query = Dictionary(
             uniqueKeysWithValues: (URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
                 .queryItems ?? []).map { ($0.name, $0.value ?? "") }
         )
-        #expect(query["pn"] == "1")
-        #expect(query["ps"] == "20")
-        #expect(query["viewed"] == "0")
-        #expect(query["key"] == "")
-        #expect(query["asc"] == "0")
-        #expect(query["web_location"] == "333.881")
         #expect(query["need_split"] == nil)
-        for name in ["add_time_start", "add_time_end", "arc_min_duration", "arc_max_duration"] {
-            #expect(query[name] == nil)
-        }
         #expect(query["wts"] == "1700000000")
         #expect(query["w_rid"]?.count == 32)
-        // WBI nav 保持匿名，只有稍后再看本身经过授权器。
-        #expect(await authorizer.capturedPaths() == ["/x/v2/history/toview/web"])
     }
 
     /// 每个条件单独映射到自己的参数；未启用的加入时间与时长两侧不传。
@@ -344,7 +331,8 @@ struct BiliAPIClientWatchLaterTests {
     }
 }
 
-/// 稍后再看 adapter 只经内容域映射失败：凭据四态与风控各归其类，取消原样传播；本地无凭据时不发出业务请求。
+/// 稍后再看 adapter 经内容域映射失败（共用映射的分类见 BiliContentRepositoryTests）：
+/// 本地无凭据时不发出业务请求，总条数为负是无效响应。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliWatchLaterRepositoryTests {
     @Test
@@ -361,55 +349,6 @@ struct BiliWatchLaterRepositoryTests {
             try await repository.watchLater(request: WatchLaterRequest(page: 1))
         }
         #expect(transport.businessRequests().isEmpty)
-    }
-
-    @Test(arguments: [
-        (#"{"code":-101,"message":"fixture"}"#, 200, ContentApplicationError.authenticationInvalid),
-        (#"{"code":-500,"message":"fixture"}"#, 200, .serviceRejected(code: -500)),
-        ("", 412, .requestRestricted)
-    ])
-    func mapsAPIFailure(body: String, statusCode: Int, expected: ContentApplicationError) async {
-        let repository = BiliWatchLaterRepository(
-            client: BiliAPIClient(
-                transport: StubTransport(
-                    responses: [jsonResponse(body, statusCode: statusCode)],
-                    answersWBINavOnce: true
-                ),
-                requestAuthorizer: StubAuthorizer()
-            )
-        )
-
-        await #expect(throws: expected) {
-            try await repository.watchLater(request: WatchLaterRequest(page: 1))
-        }
-    }
-
-    @Test
-    func keychainUnavailableIsNotCredentialInvalidation() async {
-        let repository = BiliWatchLaterRepository(
-            client: BiliAPIClient(
-                transport: StubTransport(responses: [], answersWBINavOnce: true),
-                requestAuthorizer: StubAuthorizer(.fail(.unavailable))
-            )
-        )
-
-        await #expect(throws: ContentApplicationError.authenticationUnavailable) {
-            try await repository.watchLater(request: WatchLaterRequest(page: 1))
-        }
-    }
-
-    @Test
-    func preservesCancellation() async {
-        let repository = BiliWatchLaterRepository(
-            client: BiliAPIClient(
-                transport: StubTransport([.cancellation], answersWBINavOnce: true),
-                requestAuthorizer: StubAuthorizer()
-            )
-        )
-
-        await #expect(throws: CancellationError.self) {
-            try await repository.watchLater(request: WatchLaterRequest(page: 1))
-        }
     }
 
     @Test

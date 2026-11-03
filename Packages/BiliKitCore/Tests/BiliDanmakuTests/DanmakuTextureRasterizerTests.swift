@@ -82,6 +82,7 @@ struct DanmakuTextureRasterizerTests {
             fixtureEvent(id: "mixed", mode: .scrolling, fontSize: 25),
             fixtureEvent(id: "small", mode: .top, colorRGB: 0x204060, fontSize: 18),
             fixtureEvent(id: "like-small", mode: .scrolling, fontSize: 18, isHighLike: true),
+            fixtureEvent(id: "uploader", mode: .scrolling, fontSize: 25, isUploader: true),
             fixtureEvent(
                 id: "like",
                 mode: .scrolling,
@@ -113,24 +114,30 @@ struct DanmakuTextureRasterizerTests {
         }
     }
 
-    /// 高赞弹幕：开头的图标只加宽纹理，不撑高行高，同字号的车道高度不变。
-    @Test(arguments: DanmakuEvent.supportedFontSizes.sorted())
-    func highLikeIconWidensWithoutChangingHeight(fontSize: Double) throws {
-        func texture(isHighLike: Bool) throws -> DanmakuTexturePayload {
+    /// 高赞图标与 UP 主的标签和黑底画在同一张纹理里：只加宽纹理，不撑高行高，同字号的车道高度不变。
+    @Test(arguments: [Decoration.highLike, .uploader], DanmakuEvent.supportedFontSizes.sorted())
+    func decorationWidensWithoutChangingHeight(decoration: Decoration, fontSize: Double) throws {
+        func texture(decorated: Bool) throws -> DanmakuTexturePayload {
             let event = fixtureEvent(
-                id: "like",
+                id: "decorated",
                 mode: .scrolling,
                 fontSize: fontSize,
-                isHighLike: isHighLike,
-                isUploader: false
+                isHighLike: decorated && decoration == .highLike,
+                isUploader: decorated && decoration == .uploader
             )
             let key = try #require(DanmakuTextureRasterizer.key(event: event, backingScale: 2))
             return try #require(DanmakuTextureRasterizer.rasterize(key: key))
         }
-        let plain = try texture(isHighLike: false)
-        let liked = try texture(isHighLike: true)
-        #expect(liked.widthPixels > plain.widthPixels)
-        #expect(liked.heightPixels == plain.heightPixels)
+        let plain = try texture(decorated: false)
+        let decorated = try texture(decorated: true)
+        #expect(decorated.widthPixels > plain.widthPixels)
+        #expect(decorated.heightPixels == plain.heightPixels)
+    }
+
+    /// 只加宽、不加高的两种纹理装饰。
+    enum Decoration: Sendable {
+        case highLike
+        case uploader
     }
 
     /// 大会员彩色弹幕：缓存键与普通弹幕区分，填充固定为白色、不随事件颜色变化。
