@@ -5,7 +5,7 @@ import Testing
 @testable import BiliVideoCollectionUI
 
 /// 视口尺寸变化（含侧栏收起、展开动画中的连续变化）前后与其后的原地刷新中，网格的首张可见卡片不变；尺寸变化之后滚进
-/// 近尾阈值仍会请求下一页。
+/// 近尾阈值仍会请求下一页；宽度只变半点（拖分隔条的一步）也按新卡片尺寸重排，不少排一列。
 ///
 /// 每个测试都在 overlay 与传统滚动条下各跑一遍，结果不取决于运行机器的滚动条设置。
 @Suite(.serialized, .timeLimit(.minutes(1)))
@@ -103,5 +103,25 @@ struct NativeVideoGridResizeAnchorTests {
         grid.scroll(toLogicalOffset: grid.maximumLogicalOffset)
 
         #expect(grid.nearEndRequests == requestsBeforeScrolling + 1, "\(grid.diagnostics)")
+    }
+
+    // 988 与 987.5 分属两种卡片宽度：987.5 时旧卡片一行排不下 3 张；只用 overlay 滚动条，传统滚动条占掉的宽度
+    // 会让分界落在别处。
+    @Test
+    func halfPointWidthChangeRelaysOutWithoutLosingAColumn() async throws {
+        let wider: CGFloat = 988
+        let narrower: CGFloat = 987.5
+        try #require(
+            NativeVideoGridGeometry.itemSize(for: wider).width
+                != NativeVideoGridGeometry.itemSize(for: narrower).width
+        )
+        let grid = try await GridHarness(width: wider, scrollerStyle: .overlay)
+
+        grid.setViewport(width: narrower)
+
+        #expect(
+            grid.firstRowCardCount() == NativeVideoGridGeometry.columnCount(for: narrower),
+            "\(grid.diagnostics)"
+        )
     }
 }

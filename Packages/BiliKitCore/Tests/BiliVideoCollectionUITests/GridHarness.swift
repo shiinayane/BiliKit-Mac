@@ -146,6 +146,16 @@ final class GridHarness {
             .flatMap { card(ids[$0.0]) }
     }
 
+    /// 首行卡片数：顶边与第一张卡片相同的卡片个数。
+    func firstRowCardCount() -> Int {
+        let minYs = ids.indices.prefix(8).compactMap {
+            collectionView.collectionViewLayout?
+                .layoutAttributesForItem(at: IndexPath(item: $0, section: 0))?.frame.minY
+        }
+        guard let first = minYs.first else { return 0 }
+        return minYs.prefix { $0 == first }.count
+    }
+
     /// 失败时帮助判断运行环境：缩放、滚动条样式、视口与 document 尺寸、首行张数。
     var diagnostics: String {
         let firstRow = ids.indices.prefix(8).compactMap {

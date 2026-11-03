@@ -1,5 +1,6 @@
 import AppKit
 import BiliApplication
+import BiliVideoCollectionUI
 
 /// 侧栏的单列布局：按条目顺序纵向排列，行高由控制器经 `heightProvider` 提供（带缓存的精确测量）。
 ///
@@ -196,7 +197,7 @@ final class NativePlaybackSidebarLayout: NSCollectionViewLayout {
     ) -> Bool {
         guard let preparedItemWidth else { return true }
         let itemWidth = max(1, newBounds.width - Self.contentInset * 2)
-        return abs(itemWidth - preparedItemWidth) > 0.5
+        return NativeViewportSize.differs(itemWidth, preparedItemWidth)
     }
 
     private func rebuild(viewportWidth: CGFloat, itemWidth: CGFloat) {

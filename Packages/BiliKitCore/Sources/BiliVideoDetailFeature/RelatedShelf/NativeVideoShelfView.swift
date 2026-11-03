@@ -393,8 +393,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 height: max(viewport.height, VideoCardShelfGeometry.viewportHeight)
             )
             let sizeChanged =
-                abs(collectionView.frame.width - targetSize.width) > 0.5
-                || abs(collectionView.frame.height - targetSize.height) > 0.5
+                NativeViewportSize.differs(collectionView.frame.width, targetSize.width)
+                || NativeViewportSize.differs(collectionView.frame.height, targetSize.height)
             if sizeChanged { collectionView.setFrameSize(targetSize) }
             if invalidateLayout { layout.invalidateLayout() }
             if sizeChanged || invalidateLayout { collectionView.needsLayout = true }
