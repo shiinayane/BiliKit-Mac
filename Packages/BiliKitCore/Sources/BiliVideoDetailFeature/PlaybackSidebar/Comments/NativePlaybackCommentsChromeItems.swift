@@ -1,10 +1,11 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import BiliVideoCollectionUI
 
 /// 评论区标题条目：标题、评论总数与热门／最新排序；排序变化经回调交给 ViewModel。
 @MainActor
-final class NativePlaybackCommentsHeaderItem: NSCollectionViewItem {
+final class NativePlaybackCommentsHeaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackCommentsHeaderItem"
     )
@@ -137,7 +138,7 @@ private final class NativePlaybackCommentsHeaderView: NSView {
 
 /// 评论区没有列表时的状态条目：加载中、暂无评论、已关闭、缺少评论标识或失败（可重试时带重试按钮）。
 @MainActor
-final class NativePlaybackCommentsStateItem: NSCollectionViewItem {
+final class NativePlaybackCommentsStateItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackCommentsStateItem"
     )
@@ -275,7 +276,7 @@ private final class NativePlaybackCommentsStateView: NSView {
 /// 评论列表的页脚条目：加载更多、加载中、失败或停止（可重试时带按钮）与已显示全部；它进入视野时控制器判断
 /// 是否请求下一页。
 @MainActor
-final class NativePlaybackCommentsFooterItem: NSCollectionViewItem {
+final class NativePlaybackCommentsFooterItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackCommentsFooterItem"
     )

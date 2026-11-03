@@ -8,7 +8,7 @@ import BiliVideoCollectionUI
 /// 内容视图拥有头像加载 Task；复用前（`prepareForReuse`）与离屏（控制器在条目结束显示时调用
 /// `releaseOffscreenResources`）取消并放下图片。
 @MainActor
-final class NativePlaybackSidebarUploaderItem: NSCollectionViewItem {
+final class NativePlaybackSidebarUploaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackSidebarUploaderItem"
     )
@@ -342,7 +342,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
 
 /// 视频简介条目：可选择的正文、链接与时间戳，超过五行时可展开或收起；展开状态由侧栏控制器持有。
 @MainActor
-final class NativePlaybackSidebarSummaryItem: NSCollectionViewItem {
+final class NativePlaybackSidebarSummaryItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
         "NativePlaybackSidebarSummaryItem"
     )
