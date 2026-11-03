@@ -3,6 +3,10 @@ import Testing
 
 @testable import BiliApplication
 
+/// 播放时间线只接受当前 item token 的更新，并把暂停、倍速与跳转反映到快照。
+///
+/// 跳转递增不连续代次并清除 ended；就绪不覆盖已有的用户状态；新订阅者先收到当前快照；
+/// 快照规整非法数值，描述不暴露播放身份。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct PlaybackTimelineStoreTests {

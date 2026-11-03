@@ -4,6 +4,9 @@ import Testing
 
 @testable import BiliAPI
 
+/// 评论图片只从可信图床的 HTTPS BFS 路径加载：主机、userinfo、端口、路径穿越与多重编码、query 与
+/// fragment 不合规都被拒绝；带像素框时请求缩小的 WebP，已有缩略参数或框不合法时用原图，
+/// 像素框不能让不可信来源变得可用（见 SECURITY-MODEL §4）。
 @Suite("Comment asset resolver")
 struct CommentAssetResolverTests {
     private let resolver = BiliCommentAssetResolver()

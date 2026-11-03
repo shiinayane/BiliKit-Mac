@@ -64,7 +64,7 @@ struct BrowseVideoCardMenuTests {
 
         for card in cards {
             var opened: [URL] = []
-            let added = AddedVideos()
+            let writes = RecordedWrites()
             let menu = try #require(
                 BrowseVideoCardMenu.menu(
                     for: card,
@@ -72,15 +72,7 @@ struct BrowseVideoCardMenuTests {
                         opened.append(url)
                         return .handled
                     },
-                    writing: VideoCardAccountWriting(
-                        isAvailable: { true },
-                        addToWatchLater: { added.ids.append($0) },
-                        removeFromWatchLater: { _ in },
-                        chooseFavoriteFolders: { _ in },
-                        removeFromFavoriteFolder: { _ in },
-                        dislikeRecommendation: { _ in },
-                        cancelRecommendationDislike: { _ in }
-                    )
+                    writing: writes.writing
                 )
             )
             #expect(
@@ -94,7 +86,7 @@ struct BrowseVideoCardMenuTests {
             )
             menu.items[0].action()
             menu.items[3].action()
-            #expect(added.ids == [card.id])
+            #expect(writes.addedToWatchLater == [card.id])
             #expect(opened.map(\.absoluteString) == ["https://www.bilibili.com/video/\(card.id)"])
         }
     }
@@ -118,10 +110,4 @@ struct BrowseVideoCardMenuTests {
         let openURL = OpenURLAction { _ in .handled }
         #expect(BrowseVideoCardMenu.menu(for: card, openURL: openURL, writing: nil) == nil)
     }
-}
-
-/// 记录写入口收到的 BVID；写入口的闭包在主线程调用。
-@MainActor
-private final class AddedVideos {
-    var ids: [String] = []
 }

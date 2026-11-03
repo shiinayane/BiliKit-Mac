@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliAuthFeature
 
+/// 登录 ViewModel 每一刻只有一个会话 owner：较新的意图让旧二维码结果作废，进行中的恢复与登出不被取代或重复发起。
+///
+/// 关闭登录 sheet 只取消二维码展示；失败后的重试沿用失败的那个操作；本地轮询到上限即取消挑战并过期；
+/// 重新校验期间保留已确认的会话，外部会话变化走专门的恢复。
 @Suite(.timeLimit(.minutes(1)))
 struct AuthenticationViewModelTests {
     @Test
@@ -15,11 +19,7 @@ struct AuthenticationViewModelTests {
             pollStates: [.awaitingConfirmation, .finalizing],
             finalizeState: .signedIn(nil)
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         #expect(model.accountPresentationState == .resolving)
         model.startLogin()
@@ -44,11 +44,7 @@ struct AuthenticationViewModelTests {
             requestStates: [.awaitingScan, .expired],
             suspendedFirstImageCompletion: completion
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.startLogin()
         try await service.waitForFirstImageStart()
@@ -69,11 +65,7 @@ struct AuthenticationViewModelTests {
             logoutState: .signedOut,
             suspendsFirstLogout: true
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
@@ -98,11 +90,7 @@ struct AuthenticationViewModelTests {
     @MainActor
     func initialRestoreConfirmsSignedOutOnlyOnce() async {
         let service = AuthenticationServiceStub(restoreState: .signedOut)
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         #expect(model.sessionState == .unresolved)
         model.restoreIfNeeded()
@@ -122,11 +110,7 @@ struct AuthenticationViewModelTests {
             restoreState: .signedIn(nil),
             suspendsFirstRestore: true
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         try await service.waitForFirstRestoreStart()
@@ -177,11 +161,7 @@ struct AuthenticationViewModelTests {
                     suspendsFirstLogout: true
                 )
             }
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
         let (inFlight, calls, finalState, finalSession):
             (AuthenticationState, [String], AuthenticationState, AccountSessionState) =
                 switch operation {
@@ -233,11 +213,7 @@ struct AuthenticationViewModelTests {
             requestStates: [.awaitingScan],
             suspendedFirstImageCompletion: .image
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.startLogin()
         try await service.waitForFirstImageStart()
@@ -257,11 +233,7 @@ struct AuthenticationViewModelTests {
         let service = AuthenticationServiceStub(
             restoreState: .failed(.network)
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
@@ -283,11 +255,7 @@ struct AuthenticationViewModelTests {
             restoreState: .failed(.network),
             logoutState: .signedOut
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
@@ -310,11 +278,7 @@ struct AuthenticationViewModelTests {
             pollStates: Array(repeating: .awaitingScan, count: 90),
             cancelState: .signedOut
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.startLogin()
         await model.waitForCurrentTask()
@@ -333,11 +297,7 @@ struct AuthenticationViewModelTests {
             restoreState: .signedIn(nil),
             logoutState: .failed(.credentialUnavailable)
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
@@ -363,11 +323,7 @@ struct AuthenticationViewModelTests {
         let service = AuthenticationServiceStub(
             restoreState: .signedIn(nil)
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.restoreIfNeeded()
         await model.waitForCurrentTask()
@@ -388,17 +344,23 @@ struct AuthenticationViewModelTests {
         let service = AuthenticationServiceStub(
             restoreState: .signedOut
         )
-        let model = AuthenticationViewModel(
-            service: service,
-            qrCodeProvider: service,
-            waitBeforePoll: immediatePollWait
-        )
+        let model = makeModel(service)
 
         model.revalidateAfterExternalSessionChange()
         await model.waitForCurrentTask()
 
         #expect(model.sessionState == .signedOut)
         #expect(await service.observedCalls() == ["externalRestore"])
+    }
+
+    /// 同一个替身同时充当会话服务与二维码来源；扫码轮询不真实计时。
+    @MainActor
+    private func makeModel(_ service: AuthenticationServiceStub) -> AuthenticationViewModel {
+        AuthenticationViewModel(
+            service: service,
+            qrCodeProvider: service,
+            waitBeforePoll: immediatePollWait
+        )
     }
 }
 

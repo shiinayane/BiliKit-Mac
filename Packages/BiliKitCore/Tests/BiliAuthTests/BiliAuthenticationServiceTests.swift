@@ -6,10 +6,10 @@ import Testing
 
 @testable import BiliAuth
 
-private let accountSessionValidationAllowedPaths: Set<String> = [
-    "/x/web-interface/nav"
-]
-
+/// 认证服务把扫码流程映射为账户状态，只在最终校验后提交凭据。
+///
+/// 凭据仍在时被取消的恢复不报告未登录；只有本窗口发现的会话丢失才全局失效认证 API；
+/// 登出先删凭据再失效全部会话、取消迟到的登录收尾，登出期间不能开始恢复。
 struct BiliAuthenticationServiceTests {
     @Test
     func mapsQRCodeFlowAndCommitsOnlyAfterFinalValidation() async throws {
@@ -208,11 +208,7 @@ struct BiliAuthenticationServiceTests {
                 transport: qrTransport,
                 credentialStore: store
             ),
-            authorizer: BiliCredentialRequestAuthorizer(
-                store: store,
-                allowedPaths: accountSessionValidationAllowedPaths,
-                transport: validationTransport
-            ),
+            authorizer: makeCredentialAuthorizer(store: store, transport: validationTransport),
             loginSessionFactory: {
                 WebQRLoginSession(
                     transport: RecordingAuthTransport(),
@@ -220,11 +216,7 @@ struct BiliAuthenticationServiceTests {
                 )
             },
             authorizerFactory: {
-                BiliCredentialRequestAuthorizer(
-                    store: store,
-                    allowedPaths: accountSessionValidationAllowedPaths,
-                    transport: RecordingAuthTransport()
-                )
+                makeCredentialAuthorizer(store: store)
             },
             additionalSessionInvalidators: invalidators
         )

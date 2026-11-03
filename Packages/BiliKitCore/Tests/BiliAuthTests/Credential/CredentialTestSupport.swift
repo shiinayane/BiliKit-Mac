@@ -27,6 +27,26 @@ func makeFixtureCredential(
     )
 }
 
+/// 账户会话校验（nav）授权器放行的 path；本 target 的读授权器测试与认证服务测试共用。
+let navigationAllowedPaths: Set<String> = [
+    "/x/web-interface/nav"
+]
+
+/// 本 target 唯一的读授权器组装：默认只放行 nav，transport 不回放任何响应。
+func makeCredentialAuthorizer(
+    store: MemoryWebCredentialStore,
+    allowedPaths: Set<String> = navigationAllowedPaths,
+    transport: RecordingAuthTransport = RecordingAuthTransport(),
+    isConfirmedSignedOut: @escaping @Sendable () -> Bool = { false }
+) -> BiliCredentialRequestAuthorizer {
+    BiliCredentialRequestAuthorizer(
+        store: store,
+        allowedPaths: allowedPaths,
+        transport: transport,
+        isConfirmedSignedOut: isConfirmedSignedOut
+    )
+}
+
 /// 按发生顺序记录登出链路中的删除与失效事件。
 final class AuthEventRecorder: Sendable {
     private let storage = Mutex<[String]>([])

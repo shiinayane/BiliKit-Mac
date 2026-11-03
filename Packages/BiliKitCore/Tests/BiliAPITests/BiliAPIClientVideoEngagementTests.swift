@@ -8,7 +8,7 @@ import Testing
 /// 固定播放页互动契约：互动状态按账户读取、带 aid 与 bvid，缺点赞、投币、收藏任一项整份失败，缺是否关注只让关注状态
 /// 未知；点赞、投币、三连只发最少字段，经账户写授权器绑定账户，并在授权之后附加随机 `buvid3`；关注只发 `fid`、`act`、
 /// `re_src`，不附加 `buvid3`，不给自己发；重复点赞、取消未赞与重复关注按成功处理，投币、三连与关注的业务码与风控映射为对应
-/// 的写入错误，-403（账号异常）是这个客户端被拒、网页上可以完成；详情带出投币数、收藏数与是否转载。
+/// 的写入错误，-403（账号异常）是这个客户端被拒、网页上可以完成。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAPIClientVideoEngagementTests {
     private static let bvid = "BV17x411w7KC"

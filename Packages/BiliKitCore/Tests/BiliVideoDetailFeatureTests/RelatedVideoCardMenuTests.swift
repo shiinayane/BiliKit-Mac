@@ -7,11 +7,11 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 相关推荐横排的卡片有「添加到稍后再看」「收藏到…」（不满足写入门槛时禁用）与「拷贝链接」「在浏览器中打开」，打开的是该视频的网页
-/// 地址；ID 不是合法 BVID 时没有菜单。
+/// 相关推荐横排的卡片菜单按卡片 ID 打开该视频的网页地址；ID 不是合法 BVID 时没有菜单；菜单项的组成与禁用规则由
+/// BiliVideoCollectionUITests 的 `NativeVideoCardMenuTests` 固定。
 struct RelatedVideoCardMenuTests {
     @Test @MainActor
-    func relatedCardOffersTheVideoLinks() throws {
+    func relatedCardMenuOpensTheVideoWebPage() throws {
         let card = try #require(
             RelatedNativeShelfView.makePresentations([Self.related("BV1Related")]).first
         )
@@ -23,29 +23,11 @@ struct RelatedVideoCardMenuTests {
                     opened.append(url)
                     return .handled
                 },
-                writing: VideoCardAccountWriting(
-                    isAvailable: { false },
-                    addToWatchLater: { _ in },
-                    removeFromWatchLater: { _ in },
-                    chooseFavoriteFolders: { _ in },
-                    removeFromFavoriteFolder: { _ in },
-                    dislikeRecommendation: { _ in },
-                    cancelRecommendationDislike: { _ in }
-                )
+                writing: .unavailable
             )
         )
 
-        #expect(
-            menu.items.map(\.title)
-                == [
-                    VideoCardMenuText.addToWatchLater,
-                    VideoCardMenuText.addToFavorites,
-                    VideoCardMenuText.copyLink,
-                    VideoCardMenuText.openInBrowser
-                ]
-        )
-        #expect(menu.items.map(\.isEnabled) == [false, false, true, true])
-        menu.items[3].action()
+        try #require(menu.items.first { $0.title == VideoCardMenuText.openInBrowser }).action()
         #expect(opened.map(\.absoluteString) == ["https://www.bilibili.com/video/BV1Related"])
     }
 

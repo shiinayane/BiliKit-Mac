@@ -5,6 +5,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定 b23.tv 短链解析：只对合规短链发一次无凭据、只含短码的 HEAD，按评论链接规则分类跳转目标；
+/// 非跳转、Location 缺失或不安全、目标又是短链以及传输失败都解析不出，由调用方打开原短链。
 @Suite("Short link resolver")
 struct BiliShortLinkResolverTests {
     private func shortLink(

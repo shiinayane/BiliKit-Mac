@@ -2,7 +2,7 @@ import Foundation
 
 /// 媒体文件里的闭区间字节范围，用于 HTTP Range 请求与 HLS byte-range。
 ///
-/// 构造时拒绝负起点与终点小于起点的区间，保证 `httpRangeHeaderValue` 总是合法的单段 Range。
+/// 构造时拒绝负起点与终点小于起点的区间，保证它总能写成合法的单段 Range。
 public struct MediaByteRange: Sendable, Equatable {
     public let start: Int64
     public let endInclusive: Int64
@@ -17,10 +17,6 @@ public struct MediaByteRange: Sendable, Equatable {
 
         self.start = start
         self.endInclusive = endInclusive
-    }
-
-    public var httpRangeHeaderValue: String {
-        "bytes=\(start)-\(endInclusive)"
     }
 }
 

@@ -5,6 +5,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定热搜契约：匿名、不签 WBI、只带 `limit`，只做字段映射，图标只保留图床上不带 query 的 HTTPS 地址，
+/// 单条损坏只丢这一条，`limit` 越界不发请求。
 struct TrendingSearchAPIClientTests {
     /// 字段形状依据匿名 `search/square` 响应手写；词与图片路径均为虚构值。
     private static let body = """

@@ -98,9 +98,11 @@ struct PagedVideoListTests {
         #expect(list.requiresManualContinue == (policy == .requireManualContinue))
     }
 
-    /// 回环（含游标不前进）是接口异常：停止翻页并报告，即使这一页恰好让条目达到上限也不被上限吞掉。
-    @Test(arguments: [false, true])
-    func cursorLoopReportsInvalidResponseEvenAtCapacity(reachesCapacity: Bool) {
+    /// 回环（回到请求过的游标，或游标不前进）是接口异常：停止翻页并报告，即使这一页恰好让条目达到上限也不被上限吞掉。
+    ///
+    /// 第二次加载请求游标 3：响应给出的下一页 2 回到请求过的游标，3 是游标不前进。
+    @Test(arguments: [(2, false), (2, true), (3, false)])
+    func cursorLoopReportsInvalidResponseEvenAtCapacity(nextCursor: Int, reachesCapacity: Bool) {
         var list = List(stallPolicy: .requireManualContinue)
         list.replaceFirstPage(page(["BV-first"], next: 2), bvid: \.self)
         _ = list.beginLoadMore()
@@ -108,26 +110,13 @@ struct PagedVideoListTests {
 
         _ = list.beginLoadMore()
         let items = reachesCapacity ? (0..<1_000).map { "BV\($0)" } : ["BV-third"]
-        list.apply(page(items, next: 2), requested: 3, bvid: \.self)
+        list.apply(page(items, next: nextCursor), requested: 3, bvid: \.self)
 
         #expect(list.items.count == (reachesCapacity ? 1_000 : 3))
         #expect(list.nextCursor == nil)
         #expect(list.loadMoreError == .invalidResponse)
         #expect(list.tailIdentity == nil)
         #expect(!list.requiresManualContinue)
-    }
-
-    @Test
-    func cursorThatDoesNotAdvanceIsALoop() {
-        var list = List(stallPolicy: .stop)
-        list.replaceFirstPage(page(["BV1A"], next: 2), bvid: \.self)
-
-        _ = list.beginLoadMore()
-        list.apply(page(["BV1B"], next: 2), requested: 2, bvid: \.self)
-
-        #expect(list.items == ["BV1A", "BV1B"])
-        #expect(list.nextCursor == nil)
-        #expect(list.loadMoreError == .invalidResponse)
     }
 
     /// 没有新条目的页不受条目上限约束，页数封顶让显式继续的扫描也有界。

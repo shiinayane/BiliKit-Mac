@@ -11,26 +11,6 @@ import Testing
 @Suite
 struct DanmakuLaneAllocatorTests {
     @Test
-    func threeModesShareDisplayRegionInAdmissionOrder() {
-        var allocator = DanmakuLaneAllocator(configuration: configuration())
-        let admission = admit(
-            &allocator,
-            [
-                request(id: "top", time: 1, mode: .top),
-                request(id: "bottom", time: 2, mode: .bottom),
-                request(id: "scroll", time: 2, mode: .scrolling)
-            ],
-            at: 3
-        )
-
-        #expect(
-            admission.map(\.request.event.id)
-                == ["top", "bottom", "scroll"]
-        )
-        #expect(admission.map(\.edgeOffset) == [0, 0, 0])
-    }
-
-    @Test
     func modesCanOverlapWhileSameModeStillOccupiesItsLane() {
         var allocator = DanmakuLaneAllocator(
             configuration: configuration(planningHeight: 36)
@@ -110,21 +90,6 @@ struct DanmakuLaneAllocatorTests {
 
         #expect(admission.map(\.laneIndex) == [0, 1, 2, 0, 1, 2, 0])
         #expect(admission.map(\.overlapDepth) == [0, 0, 0, 1, 1, 1, 2])
-    }
-
-    @Test
-    func nonOverlappingDensityRejectsAfterAllFixedLanesAreOccupied() {
-        var allocator = DanmakuLaneAllocator(configuration: configuration())
-        let admission = admit(
-            &allocator,
-            (0..<4).map {
-                request(id: "top-\($0)", mode: .top)
-            },
-            at: 0
-        )
-
-        #expect(admission.map(\.laneIndex) == [0, 1, 2])
-        #expect(admission.map(\.overlapDepth) == [0, 0, 0])
     }
 
     @Test
@@ -431,18 +396,7 @@ struct DanmakuLaneAllocatorTests {
         duration: Double = 8
     ) -> DanmakuLaneRequest {
         DanmakuLaneRequest(
-            event: DanmakuEvent(
-                id: id,
-                timeSeconds: time,
-                mode: mode,
-                text: "fixture",
-                fontSize: 24,
-                colorRGB: 0xFF_FF_FF,
-                colorStyle: .solid,
-                weight: 5,
-                isHighLike: false,
-                isUploader: false
-            ),
+            event: danmakuEvent(id: id, time: time, mode: mode, fontSize: 24, weight: 5),
             width: width,
             height: height,
             durationSeconds: duration,

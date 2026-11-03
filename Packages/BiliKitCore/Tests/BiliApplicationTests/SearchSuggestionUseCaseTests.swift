@@ -1,6 +1,7 @@
 import BiliApplication
 import Testing
 
+/// 搜索建议只为可搜索的输入发请求并先按搜索规则规范化，结果去掉不可搜索与重复的词并截到上限。
 @Suite(.timeLimit(.minutes(1)))
 struct SearchSuggestionUseCaseTests {
     @Test(arguments: [

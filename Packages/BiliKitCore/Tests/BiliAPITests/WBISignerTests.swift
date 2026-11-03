@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliAPI
 
+/// WBI 签名与固定向量逐字一致（含过滤 `!'()*` 与 unreserved 编码），key 地址的文件名不合规时拒绝。
 struct WBISignerTests {
     @Test
     func matchesDeterministicSignatureVector() throws {

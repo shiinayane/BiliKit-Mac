@@ -24,6 +24,24 @@ func snapshot(
     )
 }
 
+/// 接上本 target 的 repository、时间线与呈现端替身的弹幕会话。
+///
+/// 会话只弱持有呈现端：要经呈现端判断的测试必须留住返回的 sink，丢掉它就等于没有呈现端。
+@MainActor
+func makeDanmakuSession(
+    repository: StubDanmakuRepository
+) -> (DanmakuSession, SessionTimeline, SessionPresentationSink) {
+    let timeline = SessionTimeline()
+    let sink = SessionPresentationSink()
+    let session = DanmakuSession(
+        useCase: DanmakuSegmentUseCase(repository: repository),
+        commandUseCase: DanmakuCommandUseCase(repository: repository),
+        timeline: timeline,
+        presentationSink: sink
+    )
+    return (session, timeline, sink)
+}
+
 /// 弹幕会话测试唯一的呈现端替身：记录收到的快照、分段、开关、过滤与停止次数，每收到一个快照或分段
 /// 检查一次等待条件；显示时间由测试设定；不渲染任何弹幕。
 @MainActor

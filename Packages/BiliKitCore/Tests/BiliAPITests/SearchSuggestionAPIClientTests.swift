@@ -4,6 +4,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定搜索联想契约：匿名、不签 WBI、只带按 unreserved 编码的 `term`，只读纯文本 `value` 且单条损坏只丢
+/// 这一条，状态码 3 是空列表，其他拒绝照常失败，空词与过长的词不发请求。
 struct SearchSuggestionAPIClientTests {
     /// 字段形状依据匿名 `suggest` 响应手写；联想词均为虚构值。
     private static let body = """

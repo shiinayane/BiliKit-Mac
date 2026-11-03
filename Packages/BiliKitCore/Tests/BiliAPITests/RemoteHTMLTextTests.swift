@@ -2,6 +2,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 远端文本只解码一次 HTML 实体：命名、十进制与十六进制实体还原，未知、残缺或非法码点的实体保留原文，
+/// 搜索结果先去标签再解码。
 struct RemoteHTMLTextTests {
     @Test(
         arguments: [

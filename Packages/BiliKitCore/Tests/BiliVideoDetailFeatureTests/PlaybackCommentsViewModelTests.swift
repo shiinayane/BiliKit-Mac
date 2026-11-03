@@ -4,6 +4,13 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
+/// 评论区 ViewModel 的根评论、楼中楼与对话只写回当前意图的结果，迟到结果一律丢弃。
+///
+/// 根评论沿同一 continuation 追加到服务端末页，重复页停止自动翻页但显式重试照常请求，保留条数有内存上限；同一评论
+/// 对象不重复请求，换排序或评论对象后旧结果不写回。楼中楼按页码直接跳转，越界与同页不请求，失败页不能跳过、重试
+/// 同一页；收起、换对象或进入对话后迟到的回复不写回，回复请求的并发有上限，面板还有回复时加载提示延迟露出。对话
+/// 只对回复别人的回复生效，按楼层加载到底，失败按同一起点重试，关闭后回到原页。根评论与回复的认证失效都发出重新
+/// 校验意图。
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackCommentsViewModelTests {
     @Test

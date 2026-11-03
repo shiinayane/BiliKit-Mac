@@ -5,6 +5,9 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定测速样本发现：近期投稿列表与 nav 匿名，详情与 playurl 按账户读取、没有凭据时不匿名降级，
+/// 每个候选的请求链有界、拿到所需数量即停，样本的分区与 UP 主互不重复，只接受高清 AVC 且媒体 header
+/// 不带凭据；取消不会把样本记为已用过，重置后同一候选可以再次使用。
 @Suite(.timeLimit(.minutes(1)))
 struct CDNBenchmarkSampleDiscovererTests {
     private static let candidateA = Candidate(bvid: "BV1FixtureA1", mid: 10_001)

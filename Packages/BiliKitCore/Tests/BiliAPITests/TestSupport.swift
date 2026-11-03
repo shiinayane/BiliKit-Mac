@@ -62,6 +62,18 @@ func htmlRiskControlResponse() -> HTTPResponse {
     )
 }
 
+/// 字幕目录 fixture：主机是占位域名，换成允许的字幕来源后才能完成目录解析。
+func allowedSubtitleCatalogResponse() throws -> HTTPResponse {
+    let fixture = try fixtureResponse("subtitle-catalog")
+    let source = String(decoding: fixture.body, as: UTF8.self)
+        .replacingOccurrences(of: "subtitle.example.invalid", with: "aisubtitle.hdslb.com")
+    return HTTPResponse(
+        statusCode: fixture.statusCode,
+        headers: fixture.headers,
+        body: Data(source.utf8)
+    )
+}
+
 /// 修改 fixture 顶层 `data` 对象后重新编码，保持其余字段不变。
 func mutatedFixture(
     _ name: String,

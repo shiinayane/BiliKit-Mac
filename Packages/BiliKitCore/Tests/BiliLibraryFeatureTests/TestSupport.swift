@@ -2,6 +2,8 @@ import BiliApplication
 import BiliModels
 import Foundation
 
+@testable import BiliLibraryFeature
+
 /// 本 target 共用的等待替身；各测试文件不再各自复制。
 
 /// 可等待的事件计数：记录端 `signal()`，等待端挂起到计数达到目标；等待所在 Task 被取消时抛出
@@ -50,6 +52,14 @@ actor TestEventCounter {
             throwing: CancellationError()
         )
     }
+}
+
+/// 资料库字符串目录里 `key` 的译文；卡片格式化测试按简体中文构造展示，默认取简体中文。
+func localized(
+    _ key: String.LocalizationValue,
+    locale: Locale = Locale(identifier: "zh-Hans")
+) -> String {
+    String(localized: key, bundle: LibraryFeatureStrings.bundle, locale: locale)
 }
 
 func token(_ value: Int) -> WatchHistoryContinuation {

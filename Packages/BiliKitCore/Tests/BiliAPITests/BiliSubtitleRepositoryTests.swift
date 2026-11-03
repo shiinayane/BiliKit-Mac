@@ -6,6 +6,9 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定字幕契约：目录是带凭据的 WBI 请求，正文走无凭据的独立 transport 且来源须通过字幕来源规则；
+/// 自动字幕不靠语言白名单分类，空地址占位被跳过，正文拒绝 HTML、错误 JSON、时间倒序、越界与超大响应，
+/// `reset` 之后旧目录与迟到的目录结果都不能再取正文（见 SECURITY-MODEL §4）。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliSubtitleRepositoryTests {
     private let identity = PlaybackItemIdentity(
@@ -404,34 +407,26 @@ struct BiliSubtitleRepositoryTests {
     private func catalogResponse(
         prependingEmptyURLTrack: Bool = false
     ) throws -> HTTPResponse {
-        let fixture = try fixtureResponse("subtitle-catalog")
-        let source = String(decoding: fixture.body, as: UTF8.self)
-            .replacingOccurrences(
-                of: "subtitle.example.invalid",
-                with: "aisubtitle.hdslb.com"
-            )
-        var body = Data(source.utf8)
-        if prependingEmptyURLTrack {
-            var envelope = try #require(
-                JSONSerialization.jsonObject(with: body) as? [String: Any]
-            )
-            var data = try #require(envelope["data"] as? [String: Any])
-            var subtitle = try #require(data["subtitle"] as? [String: Any])
-            var tracks = try #require(subtitle["subtitles"] as? [[String: Any]])
-            var placeholder = try #require(tracks.first)
-            placeholder["id"] = 900_000
-            placeholder["id_str"] = "900000"
-            placeholder["subtitle_url"] = ""
-            tracks.insert(placeholder, at: 0)
-            subtitle["subtitles"] = tracks
-            data["subtitle"] = subtitle
-            envelope["data"] = data
-            body = try JSONSerialization.data(withJSONObject: envelope)
-        }
+        let fixture = try allowedSubtitleCatalogResponse()
+        guard prependingEmptyURLTrack else { return fixture }
+        var envelope = try #require(
+            JSONSerialization.jsonObject(with: fixture.body) as? [String: Any]
+        )
+        var data = try #require(envelope["data"] as? [String: Any])
+        var subtitle = try #require(data["subtitle"] as? [String: Any])
+        var tracks = try #require(subtitle["subtitles"] as? [[String: Any]])
+        var placeholder = try #require(tracks.first)
+        placeholder["id"] = 900_000
+        placeholder["id_str"] = "900000"
+        placeholder["subtitle_url"] = ""
+        tracks.insert(placeholder, at: 0)
+        subtitle["subtitles"] = tracks
+        data["subtitle"] = subtitle
+        envelope["data"] = data
         return HTTPResponse(
             statusCode: fixture.statusCode,
             headers: fixture.headers,
-            body: body
+            body: try JSONSerialization.data(withJSONObject: envelope)
         )
     }
 }

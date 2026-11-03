@@ -23,26 +23,6 @@ func viewport(width: Double = 800, height: Double = 360) -> DanmakuViewport {
     DanmakuViewport(width: width, height: height, displayAreaFraction: 1)
 }
 
-/// 时间点与模式可变、文字与字号固定的弹幕。
-func timedEvent(
-    id: String,
-    time: Double,
-    mode: DanmakuPresentationMode = .scrolling
-) -> DanmakuEvent {
-    DanmakuEvent(
-        id: id,
-        timeSeconds: time,
-        mode: mode,
-        text: "fixture",
-        fontSize: 25,
-        colorRGB: 0xFFFFFF,
-        colorStyle: .solid,
-        weight: 1,
-        isHighLike: false,
-        isUploader: false
-    )
-}
-
 /// 用测试测量把分段排成布局表；设置取 `configuration()` 与默认速度。
 func layoutTable(
     _ segments: [Int: [DanmakuEvent]],
@@ -277,18 +257,7 @@ final class ManualDisplayClock: DanmakuDisplayClock, @unchecked Sendable {
 
 /// 在 1x 下纹理放得下、在 2x 下超出像素宽度上限的滚动弹幕：250 个汉字约 6000pt 宽。
 func longTextEvent(id: String, time: Double) -> DanmakuEvent {
-    DanmakuEvent(
-        id: id,
-        timeSeconds: time,
-        mode: .scrolling,
-        text: String(repeating: "弹", count: 250),
-        fontSize: 25,
-        colorRGB: 0xFFFFFF,
-        colorStyle: .solid,
-        weight: 1,
-        isHighLike: false,
-        isUploader: false
-    )
+    danmakuEvent(id: id, time: time, text: String(repeating: "弹", count: 250))
 }
 
 /// `event` 在 `backingScale` 下能否生成纹理：测量与栅格化共用同一份像素上限。

@@ -3,14 +3,8 @@ import Testing
 
 @testable import BiliModels
 
+/// 播放清单的模型拒绝非法字节区间与视频属性，原声工厂把多个码率合成一条默认语义音轨。
 struct PlaybackManifestTests {
-    @Test
-    func byteRangeProducesHTTPHeaderValue() throws {
-        let range = try MediaByteRange(start: 10, endInclusive: 19)
-
-        #expect(range.httpRangeHeaderValue == "bytes=10-19")
-    }
-
     @Test
     func byteRangeRejectsInvalidBounds() {
         #expect(throws: MediaByteRangeError.self) {

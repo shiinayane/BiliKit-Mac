@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 
+/// 构建出的 App 与各 Feature 资源 bundle 恰好带简中、繁中、日、英四套本地化，开发语言为简中。
 struct LocalizationCatalogTests {
     private let supportedLanguages = ["zh-Hans", "zh-Hant", "ja", "en"]
 

@@ -316,15 +316,13 @@ struct VideoEngagementModelTests {
     }
 
     private func detail(_ bvid: String) -> VideoDetail {
-        VideoDetail(
+        makeVideoDetail(
             bvid: bvid,
             title: "标题",
             summary: "",
-            coverURL: nil,
-            owner: VideoOwner(id: 1, name: "作者"),
             statistics: VideoStatistics(viewCount: 1_000, danmakuCount: 10, likeCount: 100),
             durationSeconds: 60,
-            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pages: [],
             engagementSummary: VideoEngagementSummary(
                 coinCount: 20,
                 favoriteCount: 30,
@@ -351,7 +349,7 @@ private actor EngagementRepositoryStub: VideoEngagementRepository {
     private var failure: ContentApplicationError?
     private var holdsReads = false
     private var heldReads: [CheckedContinuation<Void, Never>] = []
-    private var readWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var readWaiters = CountWaiters()
     private(set) var reads: [String] = []
 
     func setState(_ state: VideoEngagementState) {
@@ -368,21 +366,18 @@ private actor EngagementRepositoryStub: VideoEngagementRepository {
 
     func releaseReads() {
         holdsReads = false
-        let held = heldReads
-        heldReads = []
-        for continuation in held { continuation.resume() }
+        heldReads.resumeAll()
     }
 
     func waitForReadCount(_ count: Int) async {
-        guard reads.count < count else { return }
-        await withCheckedContinuation { readWaiters.append((count, $0)) }
+        await withCheckedContinuation {
+            readWaiters.add($0, until: count, current: reads.count)
+        }
     }
 
     func engagement(of target: VideoWriteTarget) async throws -> VideoEngagementState {
         reads.append(target.bvid)
-        let ready = readWaiters.filter { $0.count <= reads.count }
-        readWaiters.removeAll { $0.count <= reads.count }
-        for waiter in ready { waiter.continuation.resume() }
+        readWaiters.resume(reaching: reads.count)
         if holdsReads {
             await withCheckedContinuation { heldReads.append($0) }
         }

@@ -198,11 +198,7 @@ extension AVPlayerEngineSuites {
                     )
                 ])
             )
-            let transport = FixtureRangeTransport(media: fixture.media)
-            let bridge = DASHToHLSBridge(
-                rangeClient: HTTPRangeClient(streamer: transport),
-                serverFactory: { LoopbackPlaybackServer(rangeStreamer: transport) }
-            )
+            let bridge = makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
             let source = NativeSubtitleSource(
                 useCase: SubtitleUseCase(
                     repository: repository,

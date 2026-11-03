@@ -8,6 +8,9 @@ import Testing
 
 @testable import BiliKit
 
+/// 手动线路与响度开关持久化、损坏时回退默认，测速结果只用于排序展示、从不改动手动选择。
+///
+/// 测速只在所有窗口都已登录时进行；取消、登出与 owner 释放都停止测速，失败只映射为不可识别的状态。
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackSourceSettingsTests {
     @Test
@@ -25,51 +28,53 @@ struct PlaybackSourceSettingsTests {
     }
 
     @Test @MainActor
-    func storePersistsKnownManualRouteAndFallsBackOnDamage() {
+    func storeRestoresTheSavedRecordAndDefaultsLoudnessOff() {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
-            store.save(PlaybackSourcePreferenceRecord(selection: .huaweiMainland))
-            #expect(store.load() == PlaybackSourcePreferenceRecord(selection: .huaweiMainland))
-            defaults.set("unknown", forKey: "playbackSourcePreference.selection")
             #expect(store.load() == .defaults)
-            defaults.set(99, forKey: "playbackSourcePreference.schema")
-            #expect(store.load() == .defaults)
-        }
-    }
+            #expect(!store.load().loudnessNormalizationEnabled)
 
-    @Test @MainActor
-    func storeFallsBackWhenSchemaHasWrongType() {
-        withIsolatedDefaults { defaults in
-            let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
             let saved = PlaybackSourcePreferenceRecord(
                 selection: .huaweiMainland,
                 loudnessNormalizationEnabled: true
             )
-            let schemaKey = "playbackSourcePreference.schema"
-
             store.save(saved)
-            defaults.set("1", forKey: schemaKey)
-            #expect(store.load() == .defaults)
-
-            store.save(saved)
-            // 已存的 schema 是整数 1：UserDefaults 视 `true` 与它相等而不覆盖，先移除才能真正写入 Bool。
-            defaults.removeObject(forKey: schemaKey)
-            defaults.set(true, forKey: schemaKey)
-            #expect(store.load() == .defaults)
-
-            store.save(saved)
-            defaults.set(1.9, forKey: schemaKey)
-            #expect(store.load() == .defaults)
+            #expect(store.load() == saved)
         }
     }
 
-    @Test @MainActor
-    func storeFallsBackWhenSelectionIsNotAString() {
+    /// schema 或线路损坏、类型错写时整条记录回退默认；只有响度开关损坏时保留线路、响度回退关闭。
+    @Test(
+        arguments: [
+            ("playbackSourcePreference.selection", "unknown", false),
+            ("playbackSourcePreference.selection", 1, false),
+            ("playbackSourcePreference.schema", 99, false),
+            ("playbackSourcePreference.schema", "1", false),
+            ("playbackSourcePreference.schema", true, false),
+            ("playbackSourcePreference.schema", 1.9, false),
+            ("playback.loudnessAttenuation.enabled", "damaged", true)
+        ] as [(String, any Sendable, Bool)]
+    )
+    @MainActor
+    func storeFallsBackOnDamagedValues(key: String, damaged: any Sendable, keepsSelection: Bool) {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
-            store.save(PlaybackSourcePreferenceRecord(selection: .huaweiMainland))
-            defaults.set(1, forKey: "playbackSourcePreference.selection")
-            #expect(store.load() == .defaults)
+            store.save(
+                PlaybackSourcePreferenceRecord(
+                    selection: .huaweiMainland,
+                    loudnessNormalizationEnabled: true
+                )
+            )
+            // 先移除再写：已存的 schema 是整数 1，UserDefaults 视 `true` 与它相等而不覆盖。
+            defaults.removeObject(forKey: key)
+            defaults.set(damaged, forKey: key)
+
+            #expect(
+                store.load()
+                    == (keepsSelection
+                        ? PlaybackSourcePreferenceRecord(selection: .huaweiMainland)
+                        : .defaults)
+            )
         }
     }
 
@@ -84,31 +89,6 @@ struct PlaybackSourceSettingsTests {
             locale: Locale(identifier: "en_US")
         )
         #expect(text.contains("1,234.5 Mbps"))
-    }
-
-    @Test @MainActor
-    func loudnessSettingDefaultsOffPersistsAndFallsBackOffWhenDamaged() {
-        withIsolatedDefaults { defaults in
-            let store = UserDefaultsPlaybackSourcePreferenceStore(
-                defaults: defaults
-            )
-            store.save(.defaults)
-            #expect(!store.load().loudnessNormalizationEnabled)
-
-            store.save(
-                PlaybackSourcePreferenceRecord(
-                    selection: .serverAkamai,
-                    loudnessNormalizationEnabled: true
-                )
-            )
-            #expect(store.load().loudnessNormalizationEnabled)
-            defaults.set(
-                "damaged",
-                forKey: "playback.loudnessAttenuation.enabled"
-            )
-            #expect(!store.load().loudnessNormalizationEnabled)
-            #expect(store.load().selection == .serverAkamai)
-        }
     }
 
     /// 旧版实验开关（可放大、仅 macOS 26）含义不同：升级后不沿用，需要用户重新开启，残留会被清掉。
@@ -297,16 +277,7 @@ struct PlaybackSourceSettingsTests {
         )
         let model = makeSettingsModel(
             store: store,
-            discover: { _ in
-                await invocation.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: invocation, cancelled: cancellation),
             run: { _, _ in [] }
         )
         model.startBenchmark()
@@ -322,16 +293,7 @@ struct PlaybackSourceSettingsTests {
         let cancellation = TestEventCounter()
         let invocation = TestEventCounter()
         var model: AppSettingsModel? = makeSettingsModel(
-            discover: { _ in
-                await invocation.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: invocation, cancelled: cancellation),
             run: { _, _ in [] }
         )
         weak let owner = model
@@ -350,16 +312,7 @@ struct PlaybackSourceSettingsTests {
         let reset = TestEventCounter()
         let model = makeSettingsModel(
             signedIn: false,
-            discover: { _ in
-                await discovery.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: discovery, cancelled: cancellation),
             resetDiscovery: { await reset.record() },
             run: { _, _ in [] }
         )
@@ -399,6 +352,23 @@ struct PlaybackSourceSettingsTests {
             model.synchronizeAuthentication(.signedIn, ownerID: UUID())
         }
         return model
+    }
+
+    /// 样本发现：开始时记一次 `started`，然后挂起到任务被取消，取消时记一次 `cancelled` 再抛出取消。
+    private static func discoverUntilCancelled(
+        started: TestEventCounter,
+        cancelled: TestEventCounter
+    ) -> AppSettingsModel.Discover {
+        { _ in
+            await started.record()
+            do {
+                try await Task.sleep(for: .seconds(60))
+                return []
+            } catch is CancellationError {
+                await cancelled.record()
+                throw CancellationError()
+            }
+        }
     }
 
     private static func sample() throws -> PlaybackRouteBenchmarkSample {

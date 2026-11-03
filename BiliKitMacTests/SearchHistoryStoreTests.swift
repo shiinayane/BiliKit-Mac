@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliKit
 
+/// 搜索历史最近在前、去重、限量并持久化，删除与清空同步落盘，读不出的历史在启动时删除。
 @MainActor
 struct SearchHistoryStoreTests {
     @Test

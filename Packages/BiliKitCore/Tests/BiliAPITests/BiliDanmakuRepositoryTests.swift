@@ -7,6 +7,9 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定弹幕分段契约：WBI 签名请求 `seg.so`，JSON 状态与 HTML 在 protobuf 解码前识别为受限或凭据失效，
+/// 空、截断与超限正文失败关闭，412 间歇风控等待后用同一个 key 重试一次、任何组合最多请求两次；
+/// 解码只留支持的模式与非空正文，字号、颜色、大会员渐变与高赞位按白名单映射。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliDanmakuRepositoryTests {
     private let identity = PlaybackItemIdentity(
@@ -86,13 +89,7 @@ struct BiliDanmakuRepositoryTests {
         let repository = BiliDanmakuRepository(
             client: BiliAPIClient(
                 transport: StubTransport(
-                    responses: [
-                        HTTPResponse(
-                            statusCode: 200,
-                            headers: ["Content-Type": "application/json"],
-                            body: Data(#"{"code":-101,"message":"fixture"}"#.utf8)
-                        )
-                    ],
+                    responses: [jsonResponse(#"{"code":-101,"message":"fixture"}"#)],
                     answersWBINavOnce: true
                 ),
                 requestAuthorizer: authorizer,
@@ -118,11 +115,7 @@ struct BiliDanmakuRepositoryTests {
 
     @Test(
         arguments: [
-            HTTPResponse(
-                statusCode: 200,
-                headers: ["Content-Type": "application/json"],
-                body: Data(#"{"code":-412}"#.utf8)
-            ),
+            jsonResponse(#"{"code":-412}"#),
             HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "application/octet-stream"],

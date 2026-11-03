@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 侧栏快照按稳定的语义分区与行身份组织，内容变化只重载对应的行；选集与分 P 只呈现所选目录，失败时保留恢复路径。
+/// 侧栏快照按稳定的语义分区与行身份组织，内容变化只重载对应的行，分 P 时长变化只重载含时间戳的简介与评论；选集与分 P 只呈现所选目录，失败时保留恢复路径。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
     @Test
@@ -34,37 +34,25 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
     @Test
     @MainActor
     func browsingAnotherSectionKeepsPagesOnlyForTheSelectedEpisodeSection() {
-        let collection = VideoCollection(
-            id: 1,
-            title: "合集",
-            reportedEpisodeCount: 2,
-            sections: [
-                collectionSection(
-                    id: 10,
-                    title: "正片",
-                    episodes: [
-                        collectionEpisode(
-                            sectionID: 10,
-                            episodeID: 100,
-                            bvid: "BVCurrent",
-                            title: "第一集"
-                        )
-                    ]
-                ),
-                collectionSection(
-                    id: 11,
-                    title: "花絮",
-                    episodes: [
-                        collectionEpisode(
-                            sectionID: 11,
-                            episodeID: 101,
-                            bvid: "BVOther",
-                            title: "幕后花絮"
-                        )
-                    ]
+        let collection = makeTestCollection(sections: [
+            [
+                makeTestEpisode(
+                    ordinal: 0,
+                    bvid: "BVCurrent",
+                    pages: [makeTestPage(1)],
+                    title: "第一集"
+                )
+            ],
+            [
+                makeTestEpisode(
+                    ordinal: 1,
+                    bvid: "BVOther",
+                    pages: [makeTestPage(1)],
+                    section: 1,
+                    title: "幕后花絮"
                 )
             ]
-        )
+        ])
         let projection = selectionProjection(
             context: context(bvid: "BVCurrent", collection: collection)
         )
@@ -235,6 +223,71 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                 changedItemIDs: appended.changedItemIDs(comparedTo: original),
                 hasSnapshotInFlight: true
             ) == .replaceSnapshot
+        )
+    }
+
+    /// 切换分 P 后可跳转上限变化：只有含时间戳链接的简介与评论重新配置，链接随之更新；行高不变，更新方式与
+    /// 正文修改相同；简介链接本身变化照常重载简介。
+    @Test
+    @MainActor
+    func timestampLimitChangeReconfiguresOnlyRowsWithTimestamps() async throws {
+        let subject = CommentSubjectIdentity.video(aid: 700_001)
+        let timestamp = CommentLink(
+            range: CommentTextRange(location: 0, length: 4),
+            target: .timestamp(seconds: 60)
+        )
+        let comments = await commentsPresentation(
+            subject: subject,
+            threads: [
+                commentThread(id: 1, message: "1:00", links: [timestamp]),
+                commentThread(id: 2, message: "第二条")
+            ]
+        )
+        let base = try #require(presentation(bvid: "BVCurrent", comments: comments).content)
+        func limited(
+            _ seconds: Int?,
+            summaryLinks: [CommentLink]
+        ) -> NativePlaybackSidebarPresentation {
+            NativePlaybackSidebarPresentation(
+                content: NativePlaybackSidebarContent(
+                    bvid: base.bvid,
+                    uploader: base.uploader,
+                    summary: "1:00 开始",
+                    summaryLinks: summaryLinks,
+                    selection: base.selection,
+                    comments: base.comments,
+                    timestampLimitSeconds: seconds
+                ),
+                overlay: .none
+            )
+        }
+        let timedThread = NativePlaybackSidebarItemID.commentThread(
+            subject: subject,
+            rootID: CommentID(rawValue: 1)
+        )
+        let short = limited(120, summaryLinks: [timestamp])
+        let long = limited(600, summaryLinks: [timestamp])
+        let changed = long.changedItemIDs(comparedTo: short)
+
+        #expect(changed == [.summary(bvid: "BVCurrent"), timedThread])
+        #expect(limited(120, summaryLinks: [timestamp]).changedItemIDs(comparedTo: short).isEmpty)
+        #expect(
+            limited(600, summaryLinks: [])
+                .changedItemIDs(comparedTo: limited(120, summaryLinks: []))
+                == [timedThread]
+        )
+        #expect(
+            limited(120, summaryLinks: [timestamp])
+                .changedItemIDs(comparedTo: limited(120, summaryLinks: []))
+                == [.summary(bvid: "BVCurrent")]
+        )
+        #expect(
+            NativePlaybackSidebarCollectionUpdatePolicy.resolve(
+                current: short.snapshotSections,
+                next: long.snapshotSections,
+                changedItemIDs: changed,
+                hasSnapshotInFlight: false
+            ) == .reloadChangedItems
         )
     }
 

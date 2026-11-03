@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+/// 相关推荐去掉当前视频与重复条目，其余保持服务端顺序。
 @Suite(.timeLimit(.minutes(1)))
 struct RelatedVideoUseCaseTests {
     @Test

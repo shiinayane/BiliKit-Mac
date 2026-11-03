@@ -12,14 +12,20 @@ protocol PlaybackSidebarFixtures {}
 
 extension PlaybackSidebarFixtures {
     @MainActor
-    var actions: NativePlaybackSidebarActions {
+    var actions: NativePlaybackSidebarActions { sidebarActions() }
+
+    /// 侧栏动作：只有 `loadNextComments` 可替换，其余都不做事。
+    @MainActor
+    func sidebarActions(
+        loadNextComments: @escaping () -> Void = {}
+    ) -> NativePlaybackSidebarActions {
         NativePlaybackSidebarActions(
             selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},
             selectCommentSort: { _ in },
             retryComments: {},
-            loadNextComments: {},
+            loadNextComments: loadNextComments,
             expandReplies: { _ in },
             collapseReplies: { _ in },
             showReplyPage: { _, _ in },
@@ -97,17 +103,6 @@ extension PlaybackSidebarFixtures {
             ),
             overlay: .none
         ).sections.first { $0.id == .comments }?.items ?? []
-    }
-
-    func heightKey(rootID: Int64) -> NativePlaybackSidebarHeightCacheKey {
-        NativePlaybackSidebarHeightCacheKey(
-            itemID: .commentThread(
-                subject: .video(aid: 700_001),
-                rootID: CommentID(rawValue: rootID)
-            ),
-            widthBucket: 816,
-            revision: Int(rootID)
-        )
     }
 
     func commentThread(
@@ -209,49 +204,6 @@ extension PlaybackSidebarFixtures {
         )
     }
 
-    func collectionSection(
-        id: Int64,
-        title: String,
-        episodes: [VideoCollectionEpisode]
-    ) -> VideoCollectionSection {
-        VideoCollectionSection(
-            id: VideoCollectionSectionIdentity(seasonID: 1, sectionID: id),
-            ordinal: Int(id - 10),
-            title: title,
-            episodes: episodes
-        )
-    }
-
-    func collectionEpisode(
-        sectionID: Int64,
-        episodeID: Int64,
-        bvid: String,
-        title: String
-    ) -> VideoCollectionEpisode {
-        VideoCollectionEpisode(
-            id: VideoCollectionEpisodeIdentity(
-                seasonID: 1,
-                sectionID: sectionID,
-                episodeID: episodeID
-            ),
-            ordinal: Int(episodeID - 100),
-            aid: nil,
-            bvid: bvid,
-            title: title,
-            coverURL: nil,
-            durationSeconds: 122,
-            defaultCID: 1_001,
-            knownPages: [
-                VideoPage(
-                    cid: 1_001,
-                    index: 1,
-                    title: "第一部分",
-                    durationSeconds: 61
-                )
-            ]
-        )
-    }
-
     @MainActor
     func makeCommentTextRenderer(
         resolveURL: @escaping CommentAssetURLResolver = { _, _ in nil }
@@ -262,23 +214,76 @@ extension PlaybackSidebarFixtures {
         )
     }
 
+    /// 按评论行自己的测量高度（宽 408）装配一条评论行并完成布局；取图全部未命中，没传的回调都不做事。
     @MainActor
-    func makeCommentAvatarLoader(
-        resolveURL: @escaping CommentAssetURLResolver = { _, _ in nil }
-    ) -> NativePlaybackCommentAvatarLoader {
-        NativePlaybackCommentAvatarLoader(
-            imagePipeline: StubVideoDetailImageLoader(),
-            resolveURL: resolveURL
+    func configureThreadItem(
+        _ item: NativePlaybackCommentThreadItem,
+        with row: NativePlaybackCommentThreadPresentation,
+        onShowDialog: @escaping (BiliModels.Comment) -> Void = { _ in },
+        onCloseDialog: @escaping () -> Void = {},
+        onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void = { _ in },
+        onOpenAuthorSpace: ((CommentAuthor) -> Void)? = nil
+    ) {
+        item.view.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 408,
+            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
         )
+        item.configure(
+            presentation: row,
+            textRenderer: makeCommentTextRenderer(),
+            avatarLoader: NativePlaybackCommentAvatarLoader(
+                imagePipeline: StubVideoDetailImageLoader(),
+                resolveURL: { _, _ in nil }
+            ),
+            pictureLoader: NativePlaybackCommentPictureLoader(
+                imagePipeline: StubVideoDetailImageLoader(),
+                resolveURL: { _, _ in nil }
+            ),
+            onTextLayoutChange: {},
+            onExpand: {},
+            onCollapse: {},
+            onShowPage: { _ in },
+            onRetry: {},
+            onShowDialog: onShowDialog,
+            onLoadMoreDialog: {},
+            onCloseDialog: onCloseDialog,
+            onOpenLink: { _ in },
+            onOpenPictures: onOpenPictures,
+            onOpenAuthorSpace: onOpenAuthorSpace
+        )
+        item.view.layoutSubtreeIfNeeded()
+    }
+}
+
+/// 挂在真实窗口（440×600）里的侧栏控制器，供需要真实滚动与布局的 Suite 共用。
+///
+/// 只持有控制器与窗口；`tearDown` 先拆控制器、再卸下窗口内容，测试结束前必须调用。
+@MainActor
+struct HostedPlaybackSidebar: PlaybackSidebarFixtures {
+    let controller = makeSidebarController()
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+
+    init() {
+        window.contentView = controller.rootView
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
     }
 
-    @MainActor
-    func makeCommentPictureLoader(
-        resolveURL: @escaping CommentAssetURLResolver = { _, _ in nil }
-    ) -> NativePlaybackCommentPictureLoader {
-        NativePlaybackCommentPictureLoader(
-            imagePipeline: StubVideoDetailImageLoader(),
-            resolveURL: resolveURL
-        )
+    /// 可见区顶边，已扣除顶部内容缩进。
+    var visibleTop: CGFloat {
+        controller.rootView.scrollView.documentVisibleRect.minY
+            + max(0, controller.rootView.scrollView.contentInsets.top)
+    }
+
+    func tearDown() {
+        controller.tearDown()
+        window.contentView = nil
     }
 }

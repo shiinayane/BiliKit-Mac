@@ -126,7 +126,7 @@ struct CoreAnimationDanmakuRendererTests {
         )
         func prepare(_ text: String, id: UInt64) {
             owner.prepare(
-                event: textEvent(text),
+                event: danmakuEvent(id: text, text: text),
                 backingScale: 2,
                 preparationID: id
             ) { _ in }
@@ -142,7 +142,7 @@ struct CoreAnimationDanmakuRendererTests {
 
         let fresh = await withCheckedContinuation { continuation in
             owner.prepare(
-                event: textEvent("fresh"),
+                event: danmakuEvent(id: "fresh", text: "fresh"),
                 backingScale: 2,
                 preparationID: 4
             ) { result in
@@ -153,21 +153,6 @@ struct CoreAnimationDanmakuRendererTests {
 
         #expect(fresh == .ready(DanmakuTextMetrics(width: 16, height: 1)))
         #expect(gate.rasterizedTexts == ["busy", "fresh"])
-    }
-
-    private func textEvent(_ text: String) -> DanmakuEvent {
-        DanmakuEvent(
-            id: text,
-            timeSeconds: 1,
-            mode: .scrolling,
-            text: text,
-            fontSize: 25,
-            colorRGB: 0xFFFFFF,
-            colorStyle: .solid,
-            weight: 1,
-            isHighLike: false,
-            isUploader: false
-        )
     }
 
     @Test
@@ -220,29 +205,11 @@ struct CoreAnimationDanmakuRendererTests {
     @Test
     func invalidAndOversizedTextFailClosedBeforeLaneAdmission() async {
         let renderer = makeRenderer()
-        let invalid = DanmakuEvent(
-            id: "invalid",
-            timeSeconds: 1,
-            mode: .scrolling,
-            text: "invalid",
-            fontSize: .nan,
-            colorRGB: 0xFFFFFF,
-            colorStyle: .solid,
-            weight: 1,
-            isHighLike: false,
-            isUploader: false
-        )
-        let oversized = DanmakuEvent(
+        let invalid = danmakuEvent(id: "invalid", text: "invalid", fontSize: .nan)
+        let oversized = danmakuEvent(
             id: "oversized",
-            timeSeconds: 1,
-            mode: .scrolling,
             text: String(repeating: "W", count: 512),
-            fontSize: 36,
-            colorRGB: 0xFFFFFF,
-            colorStyle: .solid,
-            weight: 1,
-            isHighLike: false,
-            isUploader: false
+            fontSize: 36
         )
 
         #expect(
@@ -431,18 +398,7 @@ struct CoreAnimationDanmakuRendererTests {
         let text = String(repeating: "W", count: 100)
         var nextPreparationID: UInt64 = 0
         func install(_ id: String, admittedAt: Double) async -> DanmakuInstallResult {
-            let event = DanmakuEvent(
-                id: id,
-                timeSeconds: admittedAt,
-                mode: .scrolling,
-                text: text,
-                fontSize: 36,
-                colorRGB: 0xFFFFFF,
-                colorStyle: .solid,
-                weight: 1,
-                isHighLike: false,
-                isUploader: false
-            )
+            let event = danmakuEvent(id: id, time: admittedAt, text: text, fontSize: 36)
             nextPreparationID += 1
             guard
                 case .ready(let metrics) = await prepare(

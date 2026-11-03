@@ -4,6 +4,10 @@ import Testing
 
 @testable import BiliPlayback
 
+/// HLS 峰值码率等于按定义逐个窗口求出的精确值，并对精确比值向上取整。
+///
+/// 合法窗口的时长在目标时长的 0.5–1.5 倍之间；用逐起点累加的参考实现对照边界用例、固定反例与多种 timescale 的
+/// 随机输入，并用闭式结果固定参考实现跑不动的病态索引。
 @Suite(.timeLimit(.minutes(1)))
 struct HLSPeakBitRateTests {
     @Test(arguments: peakBoundaryCases)

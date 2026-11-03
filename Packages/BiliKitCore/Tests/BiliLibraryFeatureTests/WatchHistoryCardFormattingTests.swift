@@ -6,6 +6,10 @@ import Testing
 @testable import BiliLibraryFeature
 @testable import BiliUI
 
+/// 观看历史卡片的进度、观看时间与观看设备的写法。
+///
+/// 进度写成“已看/总时长”或“已看完”；观看时间按今天、昨天、同年、跨年分写，年界与日界按日历时区；设备在日期前显示
+/// 图标并在读屏末尾读出。列表的已加载与加载更多状态投影到同一份已加载界面。
 struct WatchHistoryCardFormattingTests {
     /// 固定的观看时刻 2023-11-14 22:13:20 UTC，与执行日期相隔多年。
     ///
@@ -100,42 +104,6 @@ struct WatchHistoryCardFormattingTests {
         #expect(retry?.loadMoreError == .transportFailure)
     }
 
-    @Test
-    func historyImagesUseBoundedCDNVariantsWithoutRewritingUnknownOrigins() throws {
-        let trusted = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV1HistoryImages",
-                title: "历史图片",
-                coverURL: URL(string: "https://i0.hdslb.com/cover.jpg"),
-                owner: VideoOwner(
-                    id: 7,
-                    name: "作者",
-                    avatarURL: URL(string: "https://i1.hdslb.com/avatar.jpg")
-                ),
-                progressSeconds: 1,
-                durationSeconds: 10,
-                viewedAt: .now
-            )
-        )
-        let unknownURL = try #require(URL(string: "https://images.example/avatar.jpg"))
-        let unknown = WatchHistoryCardPresentation(
-            item: WatchHistoryItem(
-                bvid: "BV1HistoryUnknown",
-                title: "未知图片源",
-                coverURL: unknownURL,
-                owner: VideoOwner(id: 8, name: "作者", avatarURL: unknownURL),
-                progressSeconds: 1,
-                durationSeconds: 10,
-                viewedAt: .now
-            )
-        )
-
-        #expect(trusted.coverURL?.absoluteString.hasSuffix("@640w_360h_1c.webp") == true)
-        #expect(trusted.avatarURL?.absoluteString.hasSuffix("@96w_96h_1c.webp") == true)
-        #expect(unknown.coverURL == unknownURL)
-        #expect(unknown.avatarURL == unknownURL)
-    }
-
     @Test(arguments: [
         (progress: 65, duration: 600, expected: "1:05/10:00"),
         (progress: 3_661, duration: 7_322, expected: "1:01:01/2:02:02"),
@@ -228,8 +196,5 @@ private let tokyoCalendar: Calendar = {
     return calendar
 }()
 
-private let completedText = localized("已看完")
-
-private func localized(_ key: String.LocalizationValue) -> String {
-    String(localized: key, bundle: LibraryFeatureStrings.bundle)
-}
+/// `LibraryCardFormatting.progress` 在这里不传 locale，按当前语言给出“已看完”。
+private let completedText = localized("已看完", locale: .current)

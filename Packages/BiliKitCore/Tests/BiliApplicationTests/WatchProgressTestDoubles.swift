@@ -42,6 +42,29 @@ extension WatchProgressSession.Environment {
     }
 }
 
+extension WatchProgressSession {
+    /// 本 target 唯一的会话组装：经 `repository` 写入，`resolutions` 记下每一次目标解析。
+    ///
+    /// identity 与 load intent 都和 `targets` 里某一项相同的快照解析为那一项，其余解析为 nil。
+    static func fixture(
+        repository: any WatchProgressRepository,
+        timeline: StoreProgressTimeline,
+        targets: [WatchProgressTarget],
+        resolutions: ResolutionProbe,
+        environment: Environment = .fixture()
+    ) -> WatchProgressSession {
+        WatchProgressSession(
+            useCase: WatchProgressUseCase(repository: repository),
+            timeline: timeline,
+            resolveTarget: { identity, loadIntent in
+                resolutions.observe()
+                return targets.first { $0.identity == identity && $0.loadIntent == loadIntent }
+            },
+            environment: environment
+        )
+    }
+}
+
 /// 在 target resolver 内同步计数，证明某个时间线快照已被 session 消费。
 @MainActor
 final class ResolutionProbe {
@@ -62,9 +85,14 @@ final class ResolutionProbe {
 /// 让测试以事件而不是等待时长确认上一 tick 已同步处理完。
 @MainActor
 final class ManualProgressTicks {
+    private typealias SettleWaiter = (
+        demand: Int, termination: Int, continuation: CheckedContinuation<Void, Never>
+    )
+
     private var continuations: [AsyncStream<Void>.Continuation] = []
     private var demandWaiters = CountWaiters()
     private var terminationWaiters = CountWaiters()
+    private var settleWaiters: [SettleWaiter] = []
     private(set) var intervals: [Double] = []
     private var demandCount = 0
     private var terminationCount = 0
@@ -102,14 +130,37 @@ final class ManualProgressTicks {
         }
     }
 
+    /// 刚发出的 tick 落定为止：请求数到达 `demand`（消费者处理完它并回到 `for await`），或停止数到达
+    /// `termination`（计时器已停止，它不会再被处理），以先到者为准。
+    ///
+    /// 计时器本该停止却没有停时，单独等停止会永远挂起（continuation 不响应取消，`timeLimit` 也结束不了），
+    /// 所以两种结局都要能放行。
+    func waitUntilTickSettles(demand: Int, termination: Int) async {
+        guard demandCount < demand, terminationCount < termination else { return }
+        await withCheckedContinuation { settleWaiters.append((demand, termination, $0)) }
+    }
+
     private func recordDemand() {
         demandCount += 1
         demandWaiters.resume(reaching: demandCount)
+        resumeSettledWaiters()
     }
 
     private func recordTermination() {
         terminationCount += 1
         terminationWaiters.resume(reaching: terminationCount)
+        resumeSettledWaiters()
+    }
+
+    private func resumeSettledWaiters() {
+        let isSettled = { [demandCount, terminationCount] (waiter: SettleWaiter) in
+            demandCount >= waiter.demand || terminationCount >= waiter.termination
+        }
+        let ready = settleWaiters.filter(isSettled)
+        settleWaiters.removeAll(where: isSettled)
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
     }
 }
 

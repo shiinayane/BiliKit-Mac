@@ -5,6 +5,11 @@ import Testing
 
 @testable import BiliPlayback
 
+/// 线路改写只替换 bilivideo 主机并逐字保留签名，测速只用有界的 SIDX 分段探测候选线路。
+///
+/// 覆盖 `BilivideoRoute` 的主机替换、`PlaybackSourceOrdering` 的候选顺序（手动线路只加在最前且不改音频，
+/// 类别偏好稳定分区），以及 `BilivideoRouteBenchmark` 的候选池与请求预算、重复测速的平均与成功计数，
+/// SIDX 布局或完整长度对不上的候选判为不可用。
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackRouteBenchmarkTests {
     @Test
@@ -169,7 +174,6 @@ struct PlaybackRouteBenchmarkTests {
         let result = try #require(results.first(where: { $0.target == .serverAkamai }))
         let mediaBits = Double(4 * 1_024 * 1_024) * 8
 
-        #expect(result.target == .serverAkamai)
         #expect(result.successfulRuns == 2)
         #expect(result.totalRuns == 3)
         #expect(

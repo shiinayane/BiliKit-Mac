@@ -76,11 +76,6 @@ struct DanmakuTimebaseClockTests {
         #expect(await converges(clock, to: timebase))
     }
 
-    @Test
-    func clockLayerHoldsItsStartValueBeforeItBegins() {
-        #expect(DanmakuTimebaseClock().layer.fillMode == .backwards)
-    }
-
     /// 起播时 timebase 的新直线在 δ 之后才经过冻结值（系统按音频输出延迟重锚），此刻读数比冻结值小 δ × 速率：
     /// 等待窗口里本地时间停在冻结值，之后与 timebase 重合；暂停后往回 seek 仍严格跟随。
     @Test
@@ -273,6 +268,11 @@ struct DanmakuTimebaseClockTests {
         clock.bind(nil)
         #expect(clock.displayTime() == nil)
         #expect(await waitUntil { clock.layer.speed == 0 })
+        let now = CACurrentMediaTime()
+        #expect(
+            clock.layer.convertTime(now + Self.lookahead, from: nil)
+                == clock.layer.convertTime(now, from: nil)
+        )
 
         CMTimebaseSetTime(timebase, time: CMTime(seconds: 5, preferredTimescale: 600))
         #expect(clock.displayTime() == nil)
@@ -350,21 +350,6 @@ struct DanmakuTimebaseClockTests {
         }
 
         #expect(await converges(clock, to: timebase))
-    }
-
-    @Test
-    func unbindingStopsTheClock() async throws {
-        let timebase = try makeTimebase(time: 4, rate: 1)
-        let clock = DanmakuTimebaseClock()
-        clock.bind(timebase)
-        #expect(await converges(clock, to: timebase))
-
-        clock.bind(nil)
-
-        #expect(await waitUntil { clock.layer.speed == 0 })
-        let now = CACurrentMediaTime()
-        let local = clock.layer.convertTime(now, from: nil)
-        #expect(clock.layer.convertTime(now + Self.lookahead, from: nil) == local)
     }
 
     /// 在一条后台线程上不停提交改自己 layer 的显式事务，直到 `stop`。

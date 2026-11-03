@@ -83,14 +83,6 @@ struct AppUpdaterTests {
     }
 
     @Test
-    func bundledInfoPlistPassesTheSparkleSafetyChecks() {
-        // 只核对 Sparkle 安全键：是否启用更新器按构建配置决定（Debug 可以关闭），这里视为启用。
-        var info = Bundle.main.infoDictionary ?? [:]
-        info["BiliKitUpdaterEnabled"] = true
-        #expect(AppUpdater.hasValidConfiguration(info))
-    }
-
-    @Test
     func systemProfilingMustBeExplicitlyDisabled() {
         var info = configuredInfo
         info["SUEnableSystemProfiling"] = true

@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliDanmaku
 
+/// 固定弹幕纹理的契约：缓存键随每一项视觉输入变化，布局测量与栅格化的纹理尺寸逐像素一致。
+///
+/// 高赞与 UP 主装饰只加宽、不加高；大会员彩色弹幕的键与普通弹幕区分、填充固定为白色，描边从左段偏粉渐变到
+/// 右段偏蓝；纹理按像素字节判等；纹理缓存按字节有界、按 LRU 淘汰并拒绝单项超限。
 @Suite
 struct DanmakuTextureRasterizerTests {
     @Test
@@ -29,18 +33,7 @@ struct DanmakuTextureRasterizerTests {
         let base = try key(baseEvent)
         let variants = [
             try key(
-                DanmakuEvent(
-                    id: "key-2",
-                    timeSeconds: 1,
-                    mode: .top,
-                    text: "different",
-                    fontSize: 25,
-                    colorRGB: 0xFFFFFF,
-                    colorStyle: .solid,
-                    weight: 1,
-                    isHighLike: false,
-                    isUploader: false
-                )
+                danmakuEvent(id: "key-2", mode: .top, text: "different")
             ),
             try key(baseEvent, backingScale: 1),
             try key(
@@ -82,6 +75,7 @@ struct DanmakuTextureRasterizerTests {
             fixtureEvent(id: "mixed", mode: .scrolling, fontSize: 25),
             fixtureEvent(id: "small", mode: .top, colorRGB: 0x204060, fontSize: 18),
             fixtureEvent(id: "like-small", mode: .scrolling, fontSize: 18, isHighLike: true),
+            fixtureEvent(id: "uploader", mode: .scrolling, fontSize: 25, isUploader: true),
             fixtureEvent(
                 id: "like",
                 mode: .scrolling,
@@ -90,17 +84,14 @@ struct DanmakuTextureRasterizerTests {
                 isHighLike: true,
                 isUploader: false
             ),
-            DanmakuEvent(
+            danmakuEvent(
                 id: "vip",
-                timeSeconds: 1,
                 mode: .bottom,
                 text: "大会员 VIP",
                 fontSize: 36,
                 colorRGB: 0x00FF00,
                 colorStyle: .vipGradient,
-                weight: 1,
-                isHighLike: true,
-                isUploader: false
+                isHighLike: true
             )
         ]
         var cache = DanmakuTextMeasurementCache()
@@ -113,42 +104,37 @@ struct DanmakuTextureRasterizerTests {
         }
     }
 
-    /// 高赞弹幕：开头的图标只加宽纹理，不撑高行高，同字号的车道高度不变。
-    @Test(arguments: DanmakuEvent.supportedFontSizes.sorted())
-    func highLikeIconWidensWithoutChangingHeight(fontSize: Double) throws {
-        func texture(isHighLike: Bool) throws -> DanmakuTexturePayload {
+    /// 高赞图标与 UP 主的标签和黑底画在同一张纹理里：只加宽纹理，不撑高行高，同字号的车道高度不变。
+    @Test(arguments: [Decoration.highLike, .uploader], DanmakuEvent.supportedFontSizes.sorted())
+    func decorationWidensWithoutChangingHeight(decoration: Decoration, fontSize: Double) throws {
+        func texture(decorated: Bool) throws -> DanmakuTexturePayload {
             let event = fixtureEvent(
-                id: "like",
+                id: "decorated",
                 mode: .scrolling,
                 fontSize: fontSize,
-                isHighLike: isHighLike,
-                isUploader: false
+                isHighLike: decorated && decoration == .highLike,
+                isUploader: decorated && decoration == .uploader
             )
             let key = try #require(DanmakuTextureRasterizer.key(event: event, backingScale: 2))
             return try #require(DanmakuTextureRasterizer.rasterize(key: key))
         }
-        let plain = try texture(isHighLike: false)
-        let liked = try texture(isHighLike: true)
-        #expect(liked.widthPixels > plain.widthPixels)
-        #expect(liked.heightPixels == plain.heightPixels)
+        let plain = try texture(decorated: false)
+        let decorated = try texture(decorated: true)
+        #expect(decorated.widthPixels > plain.widthPixels)
+        #expect(decorated.heightPixels == plain.heightPixels)
+    }
+
+    /// 只加宽、不加高的两种纹理装饰。
+    enum Decoration: Sendable {
+        case highLike
+        case uploader
     }
 
     /// 大会员彩色弹幕：缓存键与普通弹幕区分，填充固定为白色、不随事件颜色变化。
     @Test
     func vipGradientKeyIsDistinctAndAlwaysWhite() throws {
         func event(_ style: DanmakuColorStyle, colorRGB: UInt32) -> DanmakuEvent {
-            DanmakuEvent(
-                id: "vip",
-                timeSeconds: 1,
-                mode: .scrolling,
-                text: "彩色弹幕",
-                fontSize: 25,
-                colorRGB: colorRGB,
-                colorStyle: style,
-                weight: 1,
-                isHighLike: false,
-                isUploader: false
-            )
+            danmakuEvent(id: "vip", text: "彩色弹幕", colorRGB: colorRGB, colorStyle: style)
         }
         let solid = try #require(
             DanmakuTextureRasterizer.key(event: event(.solid, colorRGB: 0xFFFFFF), backingScale: 2)

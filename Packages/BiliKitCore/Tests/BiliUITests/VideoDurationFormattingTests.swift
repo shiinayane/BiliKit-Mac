@@ -2,6 +2,7 @@ import BiliUI
 import Foundation
 import Testing
 
+/// 封面时长在所有 locale 下都写成同一种 `m:ss`／`h:mm:ss` 时钟格式，小时数不设上限。
 struct VideoDurationFormattingTests {
     @Test(
         arguments: ["zh_CN", "ja_JP", "en_US"],

@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliVideoCollectionUI
 
+/// 卡片 SF Symbol 按 backing scale 栅格化成位图，同一组参数再次取用的是缓存里的同一张。
 struct NativeVideoCardSymbolRasterTests {
     @Test @MainActor
     func rasterMatchesBackingScaleAndIsReusedFromCache() throws {

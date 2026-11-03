@@ -8,8 +8,12 @@ import Testing
 
 @testable import BiliKit
 
+/// 播放器宿主视图与弹幕 overlay 的生命周期：Now Playing 交给进程级控制器，准备播放期间挡住原生控件。
+///
+/// overlay 释放时呈现控制器与时钟随之释放；弹幕 surface 在窗口间挪动时保留已挂的弹幕；换 item 时在同一次调用
+/// 里清屏并把时钟换绑到新 item。
 @Suite(.serialized, .timeLimit(.minutes(1)))
-struct PlayerHostViewIdentityTests {
+struct NativePlayerHostViewTests {
     /// 局部时间与 item 时间的容差（秒）：两者按同一个宿主时刻换算，只差浮点与 CMTime 取整误差。
     private static let localTimeTolerance = 1e-3
 
@@ -95,11 +99,9 @@ struct PlayerHostViewIdentityTests {
     @Test
     @MainActor
     func danmakuSurfaceSurvivesTemporaryWindowReparenting() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("danmaku-reparent-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let item = AVPlayerItem(url: try writeSilentAudio(seconds: 4, in: directory))
+        let media = try SilentAudioFixture(seconds: 4)
+        defer { media.remove() }
+        let item = AVPlayerItem(url: media.mediaURL)
         let renderer = CoreAnimationDanmakuRenderer(
             beginTimeAtMediaZero: DanmakuTimebaseClock.beginTimeAtMediaZero
         )
@@ -188,11 +190,9 @@ struct PlayerHostViewIdentityTests {
         )
         window.contentView?.addSubview(view)
         view.layoutSubtreeIfNeeded()
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("danmaku-item-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let mediaURL = try writeSilentAudio(seconds: 8, in: directory)
+        let media = try SilentAudioFixture(seconds: 8)
+        defer { media.remove() }
+        let mediaURL = media.mediaURL
         let first = AVPlayerItem(url: mediaURL)
         let second = AVPlayerItem(url: mediaURL)
         let player = SeekTrackingPlayer(playerItem: first)

@@ -2,6 +2,10 @@ import Testing
 
 @testable import BiliVideoCollectionUI
 
+/// 近尾自动翻页的判定：同一尾标只请求一次，加载中与没有更多内容时不请求。
+///
+/// 换尾标后按来源策略重新布防（仍在阈值内时列表须先离开阈值、网格立即布防），一次实时滚动手势最多自动加载一页，
+/// `reset` 解除背压并重新布防。
 struct NearEndPaginationTests {
     enum Step: CustomStringConvertible, Sendable {
         /// 以给定阈值状态评估一次，并断言是否请求下一页。
@@ -85,7 +89,7 @@ struct NearEndPaginationTests {
             ]
         ),
         Scenario(
-            description: "阈值外换尾部后首次进入即触发",
+            description: "阈值外换尾部后首次进入即触发；非实时滚动触发不产生背压",
             steps: [
                 .evaluate(inside: true, tail: 1, loads: true),
                 .evaluate(inside: false, tail: 2, loads: false),
@@ -110,14 +114,6 @@ struct NearEndPaginationTests {
                 .releaseBackpressure,
                 .evaluate(inside: false, tail: 2, live: true, loads: false),
                 .evaluate(inside: true, tail: 2, live: true, loads: true)
-            ]
-        ),
-        Scenario(
-            description: "非实时滚动触发不产生背压",
-            steps: [
-                .evaluate(inside: true, tail: 1, loads: true),
-                .evaluate(inside: false, tail: 2, loads: false),
-                .evaluate(inside: true, tail: 2, loads: true)
             ]
         ),
         Scenario(

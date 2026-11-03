@@ -94,17 +94,21 @@ struct VideoEngagementUseCaseTests {
             )
             #expect(AccountWriteReport(change: change, failure: nil).webFallbackURL == nil)
         }
-        #expect(
-            AccountWriteReport(change: .watchLaterAdded(target), failure: .declinedForClient)
-                .webFallbackURL == nil
-        )
         let uploader = try #require(UploaderWriteTarget(mid: 7))
-        #expect(
-            AccountWriteReport(
-                change: .followChanged(uploader, isFollowing: true),
-                failure: .declinedForClient
-            ).webFallbackURL == nil
+        let feedback = try #require(
+            RecommendationFeedback(target: target, uploaderID: 7, trackID: "t", reason: .content)
         )
+        let others: [AccountWriteChange] = [
+            .watchLaterAdded(target),
+            .followChanged(uploader, isFollowing: true),
+            .recommendationDisliked(feedback)
+        ]
+        for change in others {
+            #expect(
+                AccountWriteReport(change: change, failure: .declinedForClient).webFallbackURL
+                    == nil
+            )
+        }
     }
 
     @Test(arguments: [

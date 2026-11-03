@@ -4,6 +4,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 交给播放器的媒体地址只接受审计过的 HTTPS CDN 主机族：明文、userinfo、端口、各种写法的本机地址、
+/// `.local`、伪装后缀、未知主机与 fragment 都被拒绝，见 SECURITY-MODEL §4。
 struct BiliMediaCDNURLPolicyTests {
     @Test(
         arguments: [

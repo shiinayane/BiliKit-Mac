@@ -3,6 +3,10 @@ import Testing
 
 @testable import BiliApplication
 
+/// 观看进度会话把时间线收敛为按序、有界的 heartbeat，写入失败只关闭本会话的报告、不控制播放。
+///
+/// 开始、周期、暂停、恢复与结束各报一次，播完再播另起会话；未登录不写入；挂起冻结计时与周期报告；
+/// 待发队列饱和或窗口退出时仍保留当前位置的最终 ended；迟到的失败不能关闭或重放后来的会话。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct WatchProgressSessionTests {
@@ -131,13 +135,19 @@ struct WatchProgressSessionTests {
         fixture.session.start()
         fixture.send(state: .playing)
         fixture.ticks.tick()
-        fixture.session.stop()
-        #expect(await fixture.repository.reportCount == 0)
 
         fixture.session.setReportingAccess(signedIn: false)
-        fixture.send(state: .playing)
+        fixture.send(position: 10, state: .playing)
         fixture.ticks.tick()
-        #expect(await fixture.repository.reportCount == 0)
+        fixture.session.stop()
+
+        // 写入经异步 Task 才到 repository，此刻直接数次数证明不了什么。session 一次只有一个在途写入、待发队列先进
+        // 先出，所以打开写入后造一份可辨认的报告：它是 repository 收到的第一份，就说明之前没有任何写入。
+        fixture.send(position: 42, state: .playing)
+        fixture.session.setReportingAccess(signedIn: true)
+        let first = await fixture.repository.nextReport()
+        #expect(first.event == .started)
+        #expect(first.positionSeconds == 42)
     }
 
     @Test(arguments: [
@@ -152,16 +162,24 @@ struct WatchProgressSessionTests {
         fixture.session.start()
         fixture.session.setReportingAccess(signedIn: true)
         fixture.send(state: .playing)
-        _ = await fixture.repository.nextReport()
+        let failed = await fixture.repository.nextReport()
         await fixture.ticks.waitForTermination(1)
 
         fixture.time.value = 15
         fixture.ticks.tick()
         fixture.send(position: 15, state: .playing)
 
-        #expect(await fixture.repository.reportCount == 1)
         #expect(fixture.ticks.intervals == [15])
         #expect(fixture.timeline.currentTimelineSnapshot.state == .playing)
+
+        // 失败的会话里，暂停与播完本该各报一次边界。播完再播是新会话，必然上报 started：写入串行且先进先出，
+        // 它是失败之后 repository 收到的第一份，就说明失败的会话没有再上报。
+        fixture.send(position: 16, state: .paused)
+        fixture.send(position: 20, state: .ended)
+        fixture.send(position: 0, state: .playing)
+        let next = await fixture.repository.nextReport()
+        #expect(next.event == .started)
+        #expect(next.generation != failed.generation)
     }
 
     @Test
@@ -248,7 +266,9 @@ struct WatchProgressSessionTests {
         fixture.session.suspend()
         fixture.time.value = 105
         fixture.ticks.tick()
-        #expect(await fixture.repository.reportCount == 1)
+        // 挂起期间的 tick 要么已被处理完（请求数到 2），要么因计时器已停止再也不会被处理；落定后再恢复，挂起期间
+        // 若有写入就排在下面的 periodic 之前，被它的断言抓住。只数写入次数不行：tick 可能拖到恢复之后才处理。
+        await fixture.ticks.waitUntilTickSettles(demand: 2, termination: 1)
 
         fixture.session.resumeAfterSuspension()
         fixture.time.value = 110
@@ -268,15 +288,11 @@ struct WatchProgressSessionTests {
         let target = try #require(
             WatchProgressTarget(aid: 11, identity: identity, loadIntent: loadIntent)
         )
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { candidateIdentity, candidateIntent in
-                resolutions.observe()
-                return candidateIdentity == identity && candidateIntent == loadIntent
-                    ? target : nil
-            },
-            environment: .fixture()
+            targets: [target],
+            resolutions: resolutions
         )
         session.start()
         session.setReportingAccess(signedIn: true)
@@ -320,24 +336,16 @@ struct WatchProgressSessionTests {
         let intentA1 = PlaybackLoadIntent()
         let intentB = PlaybackLoadIntent()
         let intentA2 = PlaybackLoadIntent()
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let targets = [
+            WatchProgressTarget(aid: 11, identity: identityA, loadIntent: intentA1),
+            WatchProgressTarget(aid: 33, identity: identityB, loadIntent: intentB),
+            WatchProgressTarget(aid: 11, identity: identityA, loadIntent: intentA2)
+        ].compactMap { $0 }
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { identity, intent in
-                resolutions.observe()
-                let aid: Int64? =
-                    if identity == identityA,
-                        intent == intentA1 || intent == intentA2
-                    { 11 } else if identity == identityB, intent == intentB {
-                        33
-                    } else {
-                        nil
-                    }
-                return aid.flatMap {
-                    WatchProgressTarget(aid: $0, identity: identity, loadIntent: intent)
-                }
-            },
-            environment: .fixture()
+            targets: targets,
+            resolutions: resolutions
         )
         session.start()
         session.setReportingAccess(signedIn: true)
@@ -388,14 +396,11 @@ struct WatchProgressSessionTests {
                 loadIntent: loadIntent
             )
         )
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { candidateIdentity, candidateIntent in
-                resolutions.observe()
-                return candidateIdentity == identity && candidateIntent == loadIntent
-                    ? target : nil
-            },
+            targets: [target],
+            resolutions: resolutions,
             environment: .fixture(
                 monotonicTime: { time.value },
                 periodicTicks: { ticks.stream(every: $0) }

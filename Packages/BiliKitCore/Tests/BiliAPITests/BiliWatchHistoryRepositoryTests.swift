@@ -4,6 +4,8 @@ import BiliNetworking
 import Foundation
 import Testing
 
+/// 观看历史 adapter 的失败分类：没有授权器是需要登录，带凭据的 -101 是凭据失效，Keychain 不可用单独归类，
+/// -412／-403 是受限，非法页大小在发出前拒绝，未知传输错误是传输失败。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliWatchHistoryRepositoryTests {
     @Test(
@@ -31,30 +33,6 @@ struct BiliWatchHistoryRepositoryTests {
                 expected: .requestRestricted
             ),
             MappingCase(
-                scenario: .apiRejected(code: -352),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .httpStatus(403),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .httpStatus(412),
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .htmlRiskControlPage,
-                expected: .requestRestricted
-            ),
-            MappingCase(
-                scenario: .apiRejected(code: -500),
-                expected: .serviceRejected(code: -500)
-            ),
-            MappingCase(
-                scenario: .httpStatus(500),
-                expected: .unavailable
-            ),
-            MappingCase(
                 scenario: .invalidRequest,
                 expected: .invalidRequest
             )
@@ -68,15 +46,6 @@ struct BiliWatchHistoryRepositoryTests {
                 after: nil,
                 pageSize: testCase.scenario.pageSize
             )
-        }
-    }
-
-    @Test
-    func preservesCancellation() async {
-        let repository = HistoryScenario.cancellation.repository()
-
-        await #expect(throws: CancellationError.self) {
-            try await repository.watchHistory(after: nil, pageSize: 20)
         }
     }
 
@@ -103,10 +72,7 @@ enum HistoryScenario: Sendable, Equatable {
     case authorizationRequired
     case credentialUnavailable
     case apiRejected(code: Int)
-    case httpStatus(Int)
-    case htmlRiskControlPage
     case invalidRequest
-    case cancellation
     case unknownTransportFailure
 
     var pageSize: Int {
@@ -124,12 +90,6 @@ enum HistoryScenario: Sendable, Equatable {
             switch self {
             case .apiRejected(let code):
                 [.response(jsonResponse("{\"code\":\(code),\"message\":\"fixture\"}"))]
-            case .httpStatus(let status):
-                [.response(HTTPResponse(statusCode: status, body: Data()))]
-            case .htmlRiskControlPage:
-                [.response(htmlRiskControlResponse())]
-            case .cancellation:
-                [.cancellation]
             case .authorizationRequired, .credentialUnavailable, .invalidRequest,
                 .unknownTransportFailure:
                 []

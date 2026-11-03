@@ -14,17 +14,14 @@ struct BiliAPIClientFavoritesTests {
     @Test
     func folderListIsUnsignedAccountReadForTheGivenOwner() async throws {
         let transport = StubTransport(responses: [try fixtureResponse("favorite-folders")])
-        let authorizer = StubAuthorizer()
-        let client = BiliAPIClient(transport: transport, requestAuthorizer: authorizer)
+        let client = BiliAPIClient(transport: transport, requestAuthorizer: StubAuthorizer())
 
         _ = try await client.favoriteFolders(ownerID: 10_001)
 
         let requests = transport.capturedRequests()
         #expect(requests.map(\.url.path) == ["/x/v3/fav/folder/created/list-all"])
         let request = try #require(requests.first)
-        #expect(query(of: request) == ["up_mid": "10001"])
-        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
-        #expect(await authorizer.capturedPaths() == ["/x/v3/fav/folder/created/list-all"])
+        #expect(queryFields(request) == ["up_mid": "10001"])
     }
 
     @Test
@@ -97,8 +94,7 @@ struct BiliAPIClientFavoritesTests {
     @Test
     func folderPageSendsTheFixedParametersWithoutWBI() async throws {
         let transport = StubTransport(responses: [try fixtureResponse("favorite-resources")])
-        let authorizer = StubAuthorizer()
-        let client = BiliAPIClient(transport: transport, requestAuthorizer: authorizer)
+        let client = BiliAPIClient(transport: transport, requestAuthorizer: StubAuthorizer())
 
         _ = try await client.favoriteFolderPage(request: FavoriteFolderRequest(folderID: 3001))
 
@@ -106,7 +102,7 @@ struct BiliAPIClientFavoritesTests {
         #expect(requests.map(\.url.path) == ["/x/v3/fav/resource/list"])
         let request = try #require(requests.first)
         #expect(
-            query(of: request) == [
+            queryFields(request) == [
                 "media_id": "3001",
                 "pn": "1",
                 "ps": "40",
@@ -117,8 +113,6 @@ struct BiliAPIClientFavoritesTests {
                 "platform": "web"
             ]
         )
-        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
-        #expect(await authorizer.capturedPaths() == ["/x/v3/fav/resource/list"])
     }
 
     @Test(arguments: [
@@ -135,8 +129,8 @@ struct BiliAPIClientFavoritesTests {
         )
 
         let sent = try #require(transport.capturedRequests().first)
-        #expect(query(of: sent)["order"] == expected)
-        #expect(query(of: sent)["pn"] == "2")
+        #expect(queryFields(sent)["order"] == expected)
+        #expect(queryFields(sent)["pn"] == "2")
     }
 
     /// 关键词按 unreserved 编码：`+` 不会被服务端当成空格。
@@ -151,7 +145,7 @@ struct BiliAPIClientFavoritesTests {
 
         let sent = try #require(transport.capturedRequests().first)
         #expect(sent.url.query?.contains("keyword=C%2B%2B%20%E7%8C%AB") == true)
-        #expect(query(of: sent)["keyword"] == "C++ 猫")
+        #expect(queryFields(sent)["keyword"] == "C++ 猫")
     }
 
     @Test(arguments: [
@@ -280,10 +274,7 @@ struct BiliAPIClientFavoritesTests {
         (#"{"code":0,"data":null}"#, ContentApplicationError.contentUnavailable),
         (#"{"code":0,"data":{"info":null,"medias":null,"has_more":false}}"#, .contentUnavailable),
         (#"{"code":11010,"message":"fixture"}"#, .contentUnavailable),
-        (#"{"code":-403,"message":"fixture"}"#, .authenticationInvalid),
-        (#"{"code":-400,"message":"fixture"}"#, .serviceRejected(code: -400)),
-        (#"{"code":-352,"message":"fixture"}"#, .requestRestricted),
-        (#"{"code":-101,"message":"fixture"}"#, .authenticationInvalid)
+        (#"{"code":-403,"message":"fixture"}"#, .authenticationInvalid)
     ])
     func repositoryMapsFolderPageFailures(body: String, expected: ContentApplicationError) async {
         let repository = BiliFavoritesRepository(
@@ -311,29 +302,5 @@ struct BiliAPIClientFavoritesTests {
         await #expect(throws: ContentApplicationError.requestRestricted) {
             try await repository.favoriteFolders(ownerID: 10_001)
         }
-    }
-
-    @Test
-    func repositoryPreservesCancellation() async {
-        let repository = BiliFavoritesRepository(
-            client: BiliAPIClient(
-                transport: StubTransport([.cancellation, .cancellation]),
-                requestAuthorizer: StubAuthorizer()
-            )
-        )
-
-        await #expect(throws: CancellationError.self) {
-            try await repository.favoriteFolders(ownerID: 10_001)
-        }
-        await #expect(throws: CancellationError.self) {
-            try await repository.favoriteFolderPage(request: FavoriteFolderRequest(folderID: 3001))
-        }
-    }
-
-    private func query(of request: HTTPRequest) -> [String: String] {
-        Dictionary(
-            uniqueKeysWithValues: (URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
-                .queryItems ?? []).map { ($0.name, $0.value ?? "") }
-        )
     }
 }

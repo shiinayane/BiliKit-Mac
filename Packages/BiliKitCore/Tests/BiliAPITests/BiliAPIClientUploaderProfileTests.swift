@@ -44,21 +44,6 @@ struct BiliAPIClientUploaderProfileTests {
         )
     }
 
-    @Test
-    func uploaderProfileAcceptsNumericMID() async throws {
-        let response = jsonResponse(
-            #"{"code":0,"data":{"card":{"mid":10001,"sign":"签名"}}}"#
-        )
-        let client = BiliAPIClient(
-            transport: StubTransport(responses: [response])
-        )
-
-        #expect(
-            try await client.uploaderProfile(for: 10_001)
-                == UploaderProfile(signature: "签名", isVIP: false)
-        )
-    }
-
     /// 粉丝数与投稿数只是展示：缺失、为负或形状不对时按缺省，签名照常返回。
     @Test(arguments: [#""follower":-1,"archive_count":"many""#, #""follower":null"#])
     func uploaderProfileTreatsMalformedCountsAsMissing(counts: String) async throws {

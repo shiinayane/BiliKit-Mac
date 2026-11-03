@@ -5,6 +5,9 @@ import Testing
 
 @testable import BiliKit
 
+/// 播放器的音量、静音与首选倍速随播放器变化同步写入、下次恢复，关窗后不再写入。
+///
+/// 相对调节音量夹在 0 到 1 之间并取消静音；弹幕显示偏好同样持久化；存储值类型不符、越界或非有限时逐项回退默认。
 struct PlaybackPreferencesControllerTests {
     @Test
     @MainActor

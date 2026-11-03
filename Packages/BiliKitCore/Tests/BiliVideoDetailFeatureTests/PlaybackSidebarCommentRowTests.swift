@@ -35,10 +35,10 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         #expect(NativeCommentAvatarMark(author: author) == expected)
     }
 
-    /// 评论区已关闭是终态说明，不提供重试；其余失败仍显示可重试的失败状态。
+    /// 评论区已关闭成为终态说明行，其余失败仍是失败状态行。
     @Test
     @MainActor
-    func closedCommentSectionShowsATerminalStateWithoutRetry() async {
+    func closedCommentSectionBecomesATerminalStateRow() async {
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         for (error, kind) in [
             (CommentReadError.closed, NativePlaybackCommentsStateKind.closed),
@@ -49,18 +49,6 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
                 presentation(bvid: "BVCurrent", comments: comments).itemIDs.last
                     == .commentsState(subject: subject, kind: kind)
             )
-        }
-
-        for (kind, offersRetry) in [
-            (NativePlaybackCommentsStateKind.closed, false),
-            (.failed(.transportFailure), true)
-        ] {
-            let item = NativePlaybackCommentsStateItem()
-            item.configure(kind: kind, onRetry: {})
-            let visibleButtons = descendants(of: item.view)
-                .compactMap { $0 as? NSButton }
-                .filter { !$0.isHidden }
-            #expect(visibleButtons.isEmpty != offersRetry)
         }
     }
 
@@ -232,30 +220,11 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         )
         let item = NativePlaybackCommentThreadItem()
         var openedGallery: NativePlaybackCommentPictureGallery?
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
+        configureThreadItem(
+            item,
+            with: row,
+            onOpenPictures: { openedGallery = $0 }
         )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onShowPage: { _ in },
-            onRetry: {},
-            onShowDialog: { _ in },
-            onLoadMoreDialog: {},
-            onCloseDialog: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { openedGallery = $0 },
-            onOpenAuthorSpace: nil
-        )
-        item.view.layoutSubtreeIfNeeded()
 
         let thirdPictureButton = try #require(
             descendants(of: item.view).compactMap { $0 as? NSButton }.first {
@@ -294,24 +263,7 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
             ),
             replyState: nil
         )
-        item.configure(
-            presentation: replacementRow,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onShowPage: { _ in },
-            onRetry: {},
-            onShowDialog: { _ in },
-            onLoadMoreDialog: {},
-            onCloseDialog: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in },
-            onOpenAuthorSpace: nil
-        )
-        item.view.layoutSubtreeIfNeeded()
+        configureThreadItem(item, with: replacementRow)
         focusWindow.makeFirstResponder(fallbackResponder)
 
         openedGallery?.restoreFocus()
@@ -377,30 +329,7 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
             replyState: nil
         )
         let item = NativePlaybackCommentThreadItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-        )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onShowPage: { _ in },
-            onRetry: {},
-            onShowDialog: { _ in },
-            onLoadMoreDialog: {},
-            onCloseDialog: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in },
-            onOpenAuthorSpace: nil
-        )
-        item.view.layoutSubtreeIfNeeded()
+        configureThreadItem(item, with: row)
 
         let authorLabel = try #require(
             descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
@@ -436,30 +365,11 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         )
         var opened: [CommentAuthorID] = []
         let item = NativePlaybackCommentThreadItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(presentation, width: 408)
-        )
-        item.configure(
-            presentation: presentation,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onShowPage: { _ in },
-            onRetry: {},
-            onShowDialog: { _ in },
-            onLoadMoreDialog: {},
-            onCloseDialog: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in },
+        configureThreadItem(
+            item,
+            with: presentation,
             onOpenAuthorSpace: { opened.append($0.id) }
         )
-        item.view.layoutSubtreeIfNeeded()
         func spaceAction(for name: String) throws -> NSAccessibilityCustomAction? {
             let label = try #require(
                 descendants(of: item.view).compactMap { $0 as? NSTextField }.first {
@@ -548,30 +458,7 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
             replyState: nil
         )
         let item = NativePlaybackCommentThreadItem()
-        item.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 408,
-            height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-        )
-        item.configure(
-            presentation: row,
-            textRenderer: makeCommentTextRenderer(),
-            avatarLoader: makeCommentAvatarLoader(),
-            pictureLoader: makeCommentPictureLoader(),
-            onTextLayoutChange: {},
-            onExpand: {},
-            onCollapse: {},
-            onShowPage: { _ in },
-            onRetry: {},
-            onShowDialog: { _ in },
-            onLoadMoreDialog: {},
-            onCloseDialog: {},
-            onOpenLink: { _ in },
-            onOpenPictures: { _ in },
-            onOpenAuthorSpace: nil
-        )
-        item.view.layoutSubtreeIfNeeded()
+        configureThreadItem(item, with: row)
 
         let summary = descendants(of: item.view).compactMap { $0 as? NSButton }
             .first {

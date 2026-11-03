@@ -71,14 +71,11 @@ struct UploaderVideoRowPresentationTests {
         durationSeconds: Int?,
         isCollaboration: Bool = false
     ) -> UploaderVideo {
-        UploaderVideo(
-            bvid: "BV1FixtureA1",
+        .testFixture(
             title: "标题",
-            coverURL: nil,
             durationSeconds: durationSeconds,
             viewCount: viewCount,
             danmakuCount: danmakuCount,
-            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
             isCollaboration: isCollaboration
         )
     }

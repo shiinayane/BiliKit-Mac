@@ -3,6 +3,10 @@ import BiliModels
 import Foundation
 import Testing
 
+/// 打开视频只为选定的一个分 P 请求播放，选择不合法或详情请求被取消时不请求播放。
+///
+/// 选择依次取显式 cid、链接分 P 序号、服务器的续播记录；续播位置为零、已看完或越界时从头播；
+/// 充电提示、可跳转时长与链接起播位置跟随实际下发的媒体。
 @Suite(.timeLimit(.minutes(1)))
 struct VideoUseCaseTests {
     @Test

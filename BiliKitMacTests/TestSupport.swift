@@ -1,4 +1,3 @@
-import AVFoundation
 import AppKit
 import BiliApplication
 import BiliDanmaku
@@ -12,40 +11,6 @@ import Synchronization
 import Testing
 
 @testable import BiliKit
-
-/// App 测试 target 共用的等待与记录替身；各测试文件不再各自复制。
-
-/// renderer 挂在滚动、顶部、底部三个锚点层下的全部弹幕 layer，按锚点顺序、各自按挂上的先后。
-///
-/// `rootLayer` 的前三个子层是锚点层，之后是互动弹幕卡片容器，卡片不算弹幕 layer。
-@MainActor
-func danmakuLayers(of renderer: CoreAnimationDanmakuRenderer) -> [CALayer] {
-    (renderer.rootLayer.sublayers ?? []).prefix(3).flatMap { $0.sublayers ?? [] }
-}
-
-/// `timebase` 在宿主时刻 `host`（与 `CACurrentMediaTime()` 同为 mach 时间的秒数）的媒体时间。
-///
-/// 与 `CALayer.convertTime(host, from: nil)` 按同一个宿主时刻比较，结果与读取的先后和间隔无关；分两次各取
-/// 此刻时，两次读取之间的抢占会按速率变成偏差。
-func mediaTime(of timebase: CMTimebase, atHost host: Double) -> Double {
-    CMSyncConvertTime(
-        CMTime(seconds: host, preferredTimescale: 1_000_000_000),
-        from: CMClockGetHostTimeClock(),
-        to: timebase
-    ).seconds
-}
-
-/// 在 `directory` 写一段静音的 PCM 音频：有音轨，播放器按音频时钟驱动 item 的 timebase。
-func writeSilentAudio(seconds: Double, in directory: URL) throws -> URL {
-    let url = directory.appendingPathComponent("silence-\(UUID().uuidString).caf")
-    let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
-    let file = try AVAudioFile(forWriting: url, settings: format.settings)
-    let frameCount = AVAudioFrameCount(seconds * format.sampleRate)
-    let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
-    buffer.frameLength = frameCount
-    try file.write(from: buffer)
-    return url
-}
 
 /// 等待 AppKit 在后续 main actor 回合完成的布局或 diff 应用；只让出执行权，不按固定时长轮询。
 @MainActor
@@ -103,8 +68,6 @@ actor TestEventCounter {
         await withCheckedContinuation { waiters.add($0, until: target, current: count) }
     }
 }
-
-// MARK: - 挂起与计数等待
 
 /// 由持有者在自己的隔离域内同步使用的计数等待表；计数本身由持有者保存与推进。
 struct CountWaiters {

@@ -33,13 +33,8 @@ struct BiliAPIClientRelatedVideoTests {
 
     @Test
     func relatedVideosRejectMissingInteractiveFields() async {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: Data(
-                #"{"code":0,"data":[{"bvid":"BV1RelatedA1","title":"","owner":{"name":"作者"},"stat":{"view":1,"danmaku":2}}]}"#
-                    .utf8
-            )
+        let response = jsonResponse(
+            #"{"code":0,"data":[{"bvid":"BV1RelatedA1","title":"","owner":{"name":"作者"},"stat":{"view":1,"danmaku":2}}]}"#
         )
         let client = BiliAPIClient(
             transport: StubTransport(responses: [response])

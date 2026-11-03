@@ -17,21 +17,7 @@ struct BiliAPIClientPlaybackAudioTests {
             responses: [
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
-                    languageCatalog: [
-                        "support": true,
-                        "items": [
-                            [
-                                "lang": "en",
-                                "title": "English（AI）",
-                                "production_type": 2
-                            ],
-                            [
-                                "lang": "ja",
-                                "title": "日本語（AI）",
-                                "production_type": 2
-                            ]
-                        ]
-                    ],
+                    languageCatalog: machineGeneratedEnglishAndJapaneseCatalog,
                     volume: originalVolume
                 ),
                 try semanticAudioResponse(
@@ -211,43 +197,6 @@ struct BiliAPIClientPlaybackAudioTests {
     }
 
     @Test
-    func anonymousFallbackDoesNotRequestAdvertisedAIAudio() async throws {
-        let transport = StubTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishCatalog
-                )
-            ],
-            answersWBINavOnce: true
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: StubAuthorizer(.fail(.missingCredential))
-        )
-
-        let playback = try await client.playback(
-            for: "BV1FixtureA1",
-            cid: 900_001
-        )
-
-        #expect(playback.dashManifest?.audioTracks.count == 1)
-        #expect(playback.dashManifest?.audioTracks[0].role == .original)
-        let request = try #require(playURLRequests(transport).first)
-        #expect(playURLRequests(transport).count == 1)
-        #expect(request.headers["Cookie"] == nil)
-        let queryItems = URLComponents(
-            url: request.url,
-            resolvingAgainstBaseURL: false
-        )?.queryItems
-        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
-        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
-        #expect(queryItems?.contains(URLQueryItem(name: "try_look", value: "1")) == true)
-        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
-        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
-    }
-
-    @Test
     func anonymousFallbackProvenanceCannotAuthorizeAdvertisedAIAudio()
         async throws
     {
@@ -273,7 +222,18 @@ struct BiliAPIClientPlaybackAudioTests {
 
         #expect(playback.dashManifest?.audioTracks.map(\.role) == [.original])
         #expect(await authorizer.authorizationCount == 1)
+        let request = try #require(playURLRequests(transport).first)
         #expect(playURLRequests(transport).count == 1)
+        #expect(request.headers["Cookie"] == nil)
+        let queryItems = URLComponents(
+            url: request.url,
+            resolvingAgainstBaseURL: false
+        )?.queryItems
+        #expect(queryItems?.contains(URLQueryItem(name: "gaia_source", value: "pre-load")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "isGaiaAvoided", value: "true")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "try_look", value: "1")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "dm_img_list", value: "[]")) == true)
+        #expect(queryItems?.first(where: { $0.name == "w_rid" })?.value?.count == 32)
     }
 
     /// 配音是附加内容：某个语言请求失败时保留原声继续播放，并停止后续语言的配音请求。

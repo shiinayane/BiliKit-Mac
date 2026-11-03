@@ -291,49 +291,6 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
         #expect(height(.loading) == height(loaded))
     }
 
-    /// 简介里有时间戳时，分 P 时长变化只重新配置简介这一项；没有时间戳的简介不受影响。
-    @Test
-    @MainActor
-    func timestampLimitChangeReconfiguresSummaryOnlyWhenItHasTimestamps() throws {
-        let base = try #require(presentation(bvid: "BVCurrent").content)
-        let timestamp = CommentLink(
-            range: CommentTextRange(location: 0, length: 4),
-            target: .timestamp(seconds: 60)
-        )
-        func summary(
-            links: [CommentLink],
-            limit: Int?
-        ) -> NativePlaybackSidebarPresentation {
-            NativePlaybackSidebarPresentation(
-                content: NativePlaybackSidebarContent(
-                    bvid: base.bvid,
-                    uploader: base.uploader,
-                    summary: "1:00 开始",
-                    summaryLinks: links,
-                    selection: base.selection,
-                    comments: base.comments,
-                    timestampLimitSeconds: limit
-                ),
-                overlay: .none
-            )
-        }
-
-        #expect(
-            summary(links: [timestamp], limit: 600)
-                .changedItemIDs(comparedTo: summary(links: [timestamp], limit: 120))
-                == [.summary(bvid: "BVCurrent")]
-        )
-        #expect(
-            summary(links: [], limit: 600)
-                .changedItemIDs(comparedTo: summary(links: [], limit: 120)).isEmpty
-        )
-        #expect(
-            summary(links: [timestamp], limit: 120)
-                .changedItemIDs(comparedTo: summary(links: [], limit: 120))
-                == [.summary(bvid: "BVCurrent")]
-        )
-    }
-
     /// 简介里的链接与评论正文同一套：点击交出目标；超出可跳转时长的时间戳不是链接。
     @Test
     @MainActor

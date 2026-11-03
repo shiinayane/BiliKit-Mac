@@ -6,8 +6,8 @@ import Testing
 
 @testable import BiliAPI
 
-/// 评论、字幕目录与弹幕分段与其他签名读取共用一条序列：会话在取 key 或换 key 重试期间变化时结果被丢弃、
-/// 不以新会话补发，签名被拒时只换 key 重试一次。
+/// 视频详情、评论、字幕目录与弹幕分段与其他签名读取共用一条序列：会话在取 key 或换 key
+/// 重试期间变化时结果被丢弃、不以新会话补发，签名被拒时只换 key 重试一次。
 @Suite(.timeLimit(.minutes(1)))
 struct SignedRequestSessionEpochTests {
     @Test(arguments: SignedEndpoint.allCases)
@@ -122,6 +122,7 @@ struct SignedRequestSessionEpochTests {
     }
 
     enum SignedEndpoint: CaseIterable, Sendable {
+        case videoDetail
         case commentRoot
         case subtitleCatalog
         case danmakuSegment
@@ -130,6 +131,7 @@ struct SignedRequestSessionEpochTests {
 
         var path: String {
             switch self {
+            case .videoDetail: "/x/web-interface/wbi/view"
             case .commentRoot: "/x/v2/reply/wbi/main"
             case .subtitleCatalog: "/x/player/wbi/v2"
             case .danmakuSegment: "/x/v2/dm/wbi/web/seg.so"
@@ -138,19 +140,17 @@ struct SignedRequestSessionEpochTests {
 
         func successResponse() throws -> HTTPResponse {
             switch self {
+            case .videoDetail: try fixtureResponse("view")
             case .commentRoot: try fixtureResponse("comment-main")
-            case .subtitleCatalog:
-                // fixture 的字幕主机是占位域名，换成允许的来源才能完成目录解析。
-                try fixtureResponse("subtitle-catalog").replacingBody(
-                    "subtitle.example.invalid",
-                    with: "aisubtitle.hdslb.com"
-                )
+            case .subtitleCatalog: try allowedSubtitleCatalogResponse()
             case .danmakuSegment: try hexFixtureResponse("danmaku-segment-minimal")
             }
         }
 
         func call(_ client: BiliAPIClient) async throws {
             switch self {
+            case .videoDetail:
+                _ = try await client.videoDetail(for: Self.identity.bvid)
             case .commentRoot:
                 _ = try await client.commentRootPage(
                     for: .video(aid: 700_001),
@@ -163,18 +163,5 @@ struct SignedRequestSessionEpochTests {
                 _ = try await client.danmakuSegmentData(index: 1, for: Self.identity)
             }
         }
-    }
-}
-
-extension HTTPResponse {
-    fileprivate func replacingBody(_ target: String, with replacement: String) -> HTTPResponse {
-        HTTPResponse(
-            statusCode: statusCode,
-            headers: headers,
-            body: Data(
-                String(decoding: body, as: UTF8.self)
-                    .replacingOccurrences(of: target, with: replacement).utf8
-            )
-        )
     }
 }

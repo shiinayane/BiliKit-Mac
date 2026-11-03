@@ -1,12 +1,11 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import BiliUI
 import Foundation
 import Observation
 
 @testable import BiliVideoDetailFeature
-
-/// 本 target 共用的等待、闸门与各 port 替身；各测试文件不再各自复制。
 
 /// 等待 `@Observable` 状态满足条件：每次被追踪属性变化后才重新判断，超时由测试的 time limit 兜底。
 @MainActor
@@ -32,6 +31,43 @@ func waitUntilSettled(_ model: VideoViewModel) async {
         case .loading, .loadingPage, .preparingPlayback:
             false
         }
+    }
+}
+
+/// `body` 里发起的全部非分离 Task（连同它们再发起的）；`finished()` 在这些 Task 都结束后返回。
+///
+/// 被取代的旧意图丢弃迟到结果时什么都不写，没有状态可等；要断言“迟到结果没有写回”，只能等旧意图的 Task 结束。
+/// 做法是在 `body` 期间把一个哨兵绑定为 task-local 值：`Task {}` 创建时复制 task-local 值、结束时释放，最后一个
+/// 持有它的 Task 结束时哨兵析构并结束等待。`body` 不得发起长期存活的 Task（例如事件订阅循环），否则
+/// `finished()` 只能由测试的 time limit 兜底。
+@MainActor
+struct SpawnedTasks {
+    private let completion: AsyncStream<Void>
+
+    init(_ body: () -> Void) {
+        let (completion, continuation) = AsyncStream<Void>.makeStream()
+        self.completion = completion
+        SpawnedTaskSentinel.$current.withValue(SpawnedTaskSentinel(continuation)) {
+            body()
+        }
+    }
+
+    func finished() async {
+        for await _ in completion {}
+    }
+}
+
+private final class SpawnedTaskSentinel: Sendable {
+    @TaskLocal static var current: SpawnedTaskSentinel?
+
+    private let completion: AsyncStream<Void>.Continuation
+
+    init(_ completion: AsyncStream<Void>.Continuation) {
+        self.completion = completion
+    }
+
+    deinit {
+        completion.finish()
     }
 }
 
@@ -131,8 +167,6 @@ actor TestEventCounter {
     }
 }
 
-// MARK: - 挂起与计数等待
-
 /// 由持有者在自己的隔离域内同步使用的计数等待表；计数本身由持有者保存与推进。
 struct CountWaiters {
     private var pending: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
@@ -169,8 +203,6 @@ extension Array where Element == CheckedContinuation<Void, Never> {
         }
     }
 }
-
-// MARK: - 仓库替身
 
 /// 由闭包回答的仓库请求；`attempt` 是同一请求第几次到达（从 1 开始），用于表达“首次失败、重试成功”。
 typealias ScriptedResponse<Request, Value> =
@@ -262,7 +294,7 @@ extension VideoRepositoryStub {
     }
 }
 
-/// 合成的视频详情：本 target 构造 `VideoDetail` 的唯一入口，各测试只传自己关心的字段；时长缺省取最长分 P 的时长。
+/// 合成的视频详情：各测试只传自己关心的字段；时长缺省取最长分 P 的时长。
 func makeVideoDetail(
     bvid: String = "BVCurrent",
     title: String = "当前视频",
@@ -271,7 +303,8 @@ func makeVideoDetail(
     statistics: VideoStatistics = VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
     durationSeconds: Int? = nil,
     pages: [VideoPage],
-    collection: VideoCollection? = nil
+    collection: VideoCollection? = nil,
+    engagementSummary: VideoEngagementSummary = VideoEngagementSummary()
 ) -> VideoDetail {
     VideoDetail(
         bvid: bvid,
@@ -283,25 +316,29 @@ func makeVideoDetail(
         durationSeconds: durationSeconds ?? pages.map(\.durationSeconds).max() ?? 0,
         publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
         pages: pages,
-        collection: collection
+        collection: collection,
+        engagementSummary: engagementSummary
     )
 }
 
-/// 合成的视频上下文：选中第一个分 P，播放地址为空清单；构造 `VideoContext` 的唯一入口。
-func makeVideoContext(detail: VideoDetail) -> VideoContext {
+/// 合成的视频上下文：选中第一个分 P，播放地址缺省为空清单；构造 `VideoContext` 的唯一入口。
+func makeVideoContext(
+    detail: VideoDetail,
+    playback: VideoPlayback = VideoPlayback(
+        media: .dash(
+            PlaybackManifest(
+                videoRepresentations: [],
+                audioTracks: []
+            )
+        ),
+        mediaHeaders: [:]
+    )
+) -> VideoContext {
     VideoContext(
         detail: detail,
         pages: detail.pages,
         selectedPage: detail.pages[0],
-        playback: VideoPlayback(
-            media: .dash(
-                PlaybackManifest(
-                    videoRepresentations: [],
-                    audioTracks: []
-                )
-            ),
-            mediaHeaders: [:]
-        )
+        playback: playback
     )
 }
 
@@ -446,6 +483,19 @@ extension RelatedVideo {
             durationSeconds: 120
         )
     }
+}
+
+extension VideoCardAccountWriting {
+    /// 有写入口但此刻不满足写入门槛：写操作项显示为禁用，动作都不做事。
+    static let unavailable = VideoCardAccountWriting(
+        isAvailable: { false },
+        addToWatchLater: { _ in },
+        removeFromWatchLater: { _ in },
+        chooseFavoriteFolders: { _ in },
+        removeFromFavoriteFolder: { _ in },
+        dislikeRecommendation: { _ in },
+        cancelRecommendationDislike: { _ in }
+    )
 }
 
 /// 唯一的 PlaybackControlling 替身，记录 load、开播、重播与停止。
@@ -689,7 +739,7 @@ func descendants(of view: NSView) -> [NSView] {
 /// 等待 AppKit 在后续 main actor 回合完成的布局或 diff 应用；只让出执行权，不按固定时长轮询。
 @MainActor
 func waitUntil(
-    timeout: Duration = .seconds(2),
+    timeout: Duration,
     _ condition: @MainActor () -> Bool
 ) async -> Bool {
     let clock = ContinuousClock()

@@ -5,6 +5,12 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
+/// UP 主空间视图模型的翻页、排序与重开规则。
+///
+/// 打开时读最新排序第 1 页；同一 UP 主再次打开保持当前页并更新资料、失败时顺带重试，换 UP 主回到默认排序与第 1 页，
+/// 换排序回到第 1 页；越界或正在显示／加载的页不发请求，重载与另选页取代在途请求，旧请求与关闭后的迟到结果不写回；
+/// 页数在翻页与失败期间保持，总数变少时落到最后一页；只有 MID 的入口先打开、名片到达后补名字；未登录给登录入口，
+/// 凭据失效请求窗口复核，会话在请求途中切换时关闭空间。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct UploaderSpaceViewModelTests {
@@ -121,47 +127,26 @@ struct UploaderSpaceViewModelTests {
         #expect(await repository.calls.map(\.page) == [1, 2, 2])
     }
 
-    @Test
-    func missingLoginAsksForSignInWithoutRevalidation() async {
-        let repository = UploaderVideoRepositoryStub(failingPages: [1: .authenticationRequired])
+    /// 未登录给出登录入口、不复核；凭据失效不给登录入口，请求窗口复核。
+    @Test(
+        arguments: [
+            (ContentApplicationError.authenticationRequired, true, 0),
+            (.authenticationInvalid, false, 1)
+        ]
+    )
+    func loginFailuresAskForSignInOrRevalidation(
+        error: ContentApplicationError,
+        requiresAuthentication: Bool,
+        revalidations: Int
+    ) async {
+        let repository = UploaderVideoRepositoryStub(failingPages: [1: error])
         let model = makeModel(repository)
 
         model.open(owner: owner)
         await waitForObservedState { model.state != .loading(page: 1) }
 
-        #expect(model.requiresAuthentication)
-        #expect(model.authenticationRevalidationGeneration == 0)
-    }
-
-    @Test
-    func expiredLoginRequestsRevalidation() async {
-        let repository = UploaderVideoRepositoryStub(failingPages: [1: .authenticationInvalid])
-        let model = makeModel(repository)
-
-        model.open(owner: owner)
-        await waitForObservedState { model.state != .loading(page: 1) }
-
-        #expect(!model.requiresAuthentication)
-        #expect(model.authenticationRevalidationGeneration == 1)
-    }
-
-    @Test
-    func lateResultOfASupersededPageIsDiscarded() async throws {
-        let gate = TestGate()
-        let repository = UploaderVideoRepositoryStub(gate: gate, gatedPages: [2])
-        let model = makeModel(repository)
-        model.open(owner: owner)
-        await waitForLoaded(model, page: 1)
-
-        model.showPage(2)
-        try await gate.waitForEntries()
-        model.showPage(3)
-        try await gate.waitForCancellations()
-        await waitForLoaded(model, page: 3)
-        await gate.open()
-        await repository.waitForCompletions(3)
-
-        #expect(model.currentPage == 3)
+        #expect(model.requiresAuthentication == requiresAuthentication)
+        #expect(model.authenticationRevalidationGeneration == revalidations)
     }
 
     @Test
@@ -170,12 +155,12 @@ struct UploaderSpaceViewModelTests {
         let repository = UploaderVideoRepositoryStub(gate: gate, gatedPages: [1])
         let model = makeModel(repository)
 
-        model.open(owner: owner)
+        let stale = SpawnedTasks { model.open(owner: owner) }
         try await gate.waitForEntries()
         model.close()
         try await gate.waitForCancellations()
         await gate.open()
-        await repository.waitForCompletions(1)
+        await stale.finished()
 
         #expect(model.state == .closed)
         #expect(model.owner == nil)
@@ -222,7 +207,7 @@ struct UploaderSpaceViewModelTests {
         model.open(owner: owner)
         await waitForLoaded(model, page: 1)
 
-        model.showPage(2)
+        let stale = SpawnedTasks { model.showPage(2) }
         try await gate.waitForEntries()
         model.showPage(2)
         #expect(await repository.calls.map(\.page) == [1, 2])
@@ -231,7 +216,9 @@ struct UploaderSpaceViewModelTests {
         try await gate.waitForCancellations()
         await waitForLoaded(model, page: 3)
         await gate.open()
+        await stale.finished()
 
+        #expect(model.currentPage == 3)
         #expect(await repository.calls.map(\.page) == [1, 2, 3])
     }
 
@@ -404,7 +391,6 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
     private var failingPages: [Int: ContentApplicationError]
     private let gate: TestGate?
     private let gatedPages: Set<Int>
-    private let completions = TestEventCounter()
 
     init(
         totalCount: Int = 61,
@@ -431,10 +417,6 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         failingPages[page] = error
     }
 
-    func waitForCompletions(_ count: Int) async {
-        try? await completions.wait(until: count)
-    }
-
     func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
@@ -444,28 +426,16 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         if let gate, gatedPages.contains(page) {
             await gate.pass()
         }
-        defer { Task { await completions.signal() } }
         if cancellingPages.contains(page) {
             throw CancellationError()
         }
         if let error = failingPages[page] {
             throw error
         }
-        let videos =
+        let videos: [UploaderVideo] =
             totalCount == 0
             ? []
-            : [
-                UploaderVideo(
-                    bvid: "BV1Page\(page)Fixture",
-                    title: "第 \(page) 页",
-                    coverURL: nil,
-                    durationSeconds: 60,
-                    viewCount: 1,
-                    danmakuCount: 0,
-                    publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                    isCollaboration: false
-                )
-            ]
+            : [.testFixture(bvid: "BV1Page\(page)Fixture", title: "第 \(page) 页")]
         return UploaderVideoPage(
             videos: videos,
             pageNumber: page,

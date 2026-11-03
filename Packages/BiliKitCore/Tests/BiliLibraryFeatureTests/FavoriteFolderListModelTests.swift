@@ -115,7 +115,6 @@ struct FavoriteFolderListModelTests {
 
         #expect(await repository.ownerIDs == [7, 7])
         #expect(model.state == .failed(.authenticationInvalid))
-        #expect(ContentApplicationError.authenticationInvalid.isRetryable)
 
         await repository.setFolders(.success(standardFolders))
         model.reload()

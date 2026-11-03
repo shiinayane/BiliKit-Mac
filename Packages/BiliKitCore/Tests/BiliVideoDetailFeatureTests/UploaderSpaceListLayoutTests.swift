@@ -11,39 +11,11 @@ struct UploaderSpaceListLayoutTests {
     /// 没有投稿行时没有别的更新会顺带重算布局，头部停在旧宽度会让排序挤出屏幕、名字宽度为零。
     @Test @MainActor
     func headerFollowsTheListWidthAfterAnInterimNarrowLayout() throws {
-        let controller = UploaderSpaceListController(
-            imagePipeline: StubVideoDetailImageLoader()
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: true
-        )
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 600))
-        window.contentView = container
-        let scrollView = controller.scrollView
-        scrollView.frame = NSRect(x: 0, y: 0, width: 120, height: 600)
-        container.addSubview(scrollView)
-        controller.update(
-            content: UploaderSpaceListContent(
-                header: UploaderSpaceHeaderContent(
-                    name: "UP 主",
-                    avatarURL: nil,
-                    totalCount: nil,
-                    order: .newest
-                ),
-                rows: [],
-                currentBVID: nil,
-                pageIdentity: .init(ownerID: 1, order: .newest, page: 1),
-                reservesPagerSpace: false
-            ),
-            actions: .none
-        )
-        container.layoutSubtreeIfNeeded()
+        let list = UploaderSpaceListFixture(rows: [], listWidth: 120)
+        let scrollView = list.controller.scrollView
 
         scrollView.frame.size.width = 420
-        container.layoutSubtreeIfNeeded()
+        list.container.layoutSubtreeIfNeeded()
 
         let collectionView = try #require(scrollView.documentView as? NSCollectionView)
         let header = try #require(collectionView.item(at: IndexPath(item: 0, section: 0)))
@@ -62,6 +34,6 @@ struct UploaderSpaceListLayoutTests {
         #expect(picker.frame.minX > name.frame.minX)
         #expect(picker.frame.maxX <= header.view.bounds.width)
         #expect(name.frame.width > 0)
-        controller.tearDown()
+        list.controller.tearDown()
     }
 }

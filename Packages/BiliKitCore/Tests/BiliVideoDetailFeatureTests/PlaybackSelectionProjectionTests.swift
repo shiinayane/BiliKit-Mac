@@ -5,6 +5,11 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
+/// 播放页的选集投影只呈现能确定的合集与分 P，认不准时不编造。
+///
+/// 没有合集时只按分 P 数决定显示分 P 选择；有合集时显示选集，分部保留、空分部不成组，不可用的集仍可见但禁用；
+/// 位置按当前集所在分部计数；认不出当前集或分 P 尚未加载时不编造集与 CID；重复 BVID 用 CID 区分，区分不了时
+/// 不猜，显式选中的那一集优先。
 struct PlaybackSelectionProjectionTests {
     @Test
     func noCollectionSinglePageHidesSelectionAndMultiplePagesShowOnlyPagePicker() {

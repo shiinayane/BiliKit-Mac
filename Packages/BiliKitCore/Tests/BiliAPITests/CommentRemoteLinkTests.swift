@@ -4,6 +4,9 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定评论链接分类：站内视频（含 av 号、分 P 与起播秒数）与空间投稿页在应用内打开，合规 b23.tv 短链
+/// 点击时只用短码解析，其余地址保持公开 HTTPS 外链；jump_url 的搜索词与无网页地址的条目不成链接，
+/// 标题、图标与 `match_once` 跟随链接，形状异常时按缺省处理。
 @Suite("Comment remote links")
 struct CommentRemoteLinkTests {
     /// 桌面版、手机版与裸域的视频地址都在应用内播放；av 号换算为 BV 号，分 P 只接受正整数。

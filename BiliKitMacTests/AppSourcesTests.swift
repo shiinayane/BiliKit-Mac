@@ -147,21 +147,31 @@ struct AppSourcesTests {
         #expect(historyModel.state == .idle)
     }
 
-    @Test
-    func leavingHistoryReturnsItsCredentialFailureToIdle() async {
+    /// 离开稍后再看或观看历史时，只把离开的那个来源的凭据类失败恢复为 idle。
+    @Test(arguments: [AppTab.history, .watchLater])
+    func leavingASourceReturnsItsCredentialFailureToIdle(source: AppTab) async {
         let historyModel = WatchHistoryViewModel(
             useCase: WatchHistoryUseCase(
                 repository: WatchHistoryRepositoryStub(error: .authenticationRequired)
             )
         )
-        let sources = makeSources(historyModel: historyModel)
+        let watchLaterModel = WatchLaterViewModel(
+            useCase: WatchLaterUseCase(
+                repository: WatchLaterRepositoryStub(error: .authenticationInvalid)
+            )
+        )
+        let sources = makeSources(watchLaterModel: watchLaterModel, historyModel: historyModel)
         historyModel.loadIfNeeded()
+        watchLaterModel.loadIfNeeded()
         await historyModel.waitForCurrentTask()
+        await watchLaterModel.waitForCurrentTask()
         #expect(historyModel.state == .failed(.authenticationRequired))
+        #expect(watchLaterModel.state == .failed(.authenticationInvalid))
 
-        sources[.history].deactivate()
+        sources[source].deactivate()
 
-        #expect(historyModel.state == .idle)
+        #expect((historyModel.state == .idle) == (source == .history))
+        #expect((watchLaterModel.state == .idle) == (source == .watchLater))
     }
 
     /// 稍后再看的描述跟随它的模型：刷新代次就是模型的加载成功代次，换号前的清理与离开来源都作用到模型。
@@ -181,23 +191,6 @@ struct AppSourcesTests {
         #expect(watchLaterModel.state == .idle)
     }
 
-    @Test
-    func leavingWatchLaterReturnsItsCredentialFailureToIdle() async {
-        let watchLaterModel = WatchLaterViewModel(
-            useCase: WatchLaterUseCase(
-                repository: WatchLaterRepositoryStub(error: .authenticationInvalid)
-            )
-        )
-        let sources = makeSources(watchLaterModel: watchLaterModel)
-        watchLaterModel.loadIfNeeded()
-        await watchLaterModel.waitForCurrentTask()
-        #expect(watchLaterModel.state == .failed(.authenticationInvalid))
-
-        sources[.watchLater].deactivate()
-
-        #expect(watchLaterModel.state == .idle)
-    }
-
     /// 稍后再看的条件只在窗口内存里：关窗清理与账户变化都经描述把排序、筛选与关键词恢复默认。
     @Test
     func watchLaterDescriptorRestoresTheDefaultCriteria() async {
@@ -205,22 +198,7 @@ struct AppSourcesTests {
             useCase: WatchLaterUseCase(repository: WatchLaterRepositoryStub())
         )
         let session = WatchLaterSession(model: watchLaterModel)
-        let browseModel = BrowseViewModel(useCase: FeedUseCase(repository: FeedRepositoryStub()))
-        let favorites = makeFavoriteModels()
-        let sources = AppSources(
-            browseModel: browseModel,
-            watchLaterModel: watchLaterModel,
-            watchLaterSession: session,
-            historyModel: WatchHistoryViewModel(
-                useCase: WatchHistoryUseCase(repository: WatchHistoryRepositoryStub())
-            ),
-            favoriteFolderList: favorites.list,
-            favoriteFolders: favorites.folders,
-            searchSession: VideoSearchSession(browseModel: browseModel, recordHistory: { _ in }),
-            trendingSearchModel: TrendingSearchViewModel(
-                useCase: TrendingSearchUseCase(repository: EmptyTrendingSearchRepository())
-            )
-        )
+        let sources = makeSources(watchLaterModel: watchLaterModel, watchLaterSession: session)
         session.searchDraft = "猫"
         session.submitSearch()
         await watchLaterModel.waitForCurrentTask()
@@ -246,24 +224,7 @@ struct AppSourcesTests {
     func windowClosureClearsTheSearchSession() {
         let browseModel = BrowseViewModel(useCase: FeedUseCase(repository: FeedRepositoryStub()))
         let session = VideoSearchSession(browseModel: browseModel, recordHistory: { _ in })
-        let watchLaterModel = WatchLaterViewModel(
-            useCase: WatchLaterUseCase(repository: WatchLaterRepositoryStub())
-        )
-        let favorites = makeFavoriteModels()
-        let sources = AppSources(
-            browseModel: browseModel,
-            watchLaterModel: watchLaterModel,
-            watchLaterSession: WatchLaterSession(model: watchLaterModel),
-            historyModel: WatchHistoryViewModel(
-                useCase: WatchHistoryUseCase(repository: WatchHistoryRepositoryStub())
-            ),
-            favoriteFolderList: favorites.list,
-            favoriteFolders: favorites.folders,
-            searchSession: session,
-            trendingSearchModel: TrendingSearchViewModel(
-                useCase: TrendingSearchUseCase(repository: EmptyTrendingSearchRepository())
-            )
-        )
+        let sources = makeSources(browseModel: browseModel, searchSession: session)
         session.search(keyword: "猫")
 
         sources.resetForWindowClosure()
@@ -277,24 +238,7 @@ struct AppSourcesTests {
     func accountChangeKeepsTheSearchDraft() {
         let browseModel = BrowseViewModel(useCase: FeedUseCase(repository: FeedRepositoryStub()))
         let session = VideoSearchSession(browseModel: browseModel, recordHistory: { _ in })
-        let watchLaterModel = WatchLaterViewModel(
-            useCase: WatchLaterUseCase(repository: WatchLaterRepositoryStub())
-        )
-        let favorites = makeFavoriteModels()
-        let sources = AppSources(
-            browseModel: browseModel,
-            watchLaterModel: watchLaterModel,
-            watchLaterSession: WatchLaterSession(model: watchLaterModel),
-            historyModel: WatchHistoryViewModel(
-                useCase: WatchHistoryUseCase(repository: WatchHistoryRepositoryStub())
-            ),
-            favoriteFolderList: favorites.list,
-            favoriteFolders: favorites.folders,
-            searchSession: session,
-            trendingSearchModel: TrendingSearchViewModel(
-                useCase: TrendingSearchUseCase(repository: EmptyTrendingSearchRepository())
-            )
-        )
+        let sources = makeSources(browseModel: browseModel, searchSession: session)
         session.search(keyword: "猫")
         let submitted = session.submittedCriteria
 
@@ -321,17 +265,22 @@ struct AppSourcesTests {
             useCase: WatchHistoryUseCase(repository: WatchHistoryRepositoryStub())
         ),
         favorites: (list: FavoriteFolderListModel, folders: FavoriteFolderViewModel) =
-            makeFavoriteModels()
+            makeFavoriteModels(),
+        watchLaterSession: WatchLaterSession? = nil,
+        browseModel: BrowseViewModel = BrowseViewModel(
+            useCase: FeedUseCase(repository: FeedRepositoryStub())
+        ),
+        searchSession: VideoSearchSession? = nil
     ) -> AppSources {
-        let browseModel = BrowseViewModel(useCase: FeedUseCase(repository: FeedRepositoryStub()))
-        return AppSources(
+        AppSources(
             browseModel: browseModel,
             watchLaterModel: watchLaterModel,
-            watchLaterSession: WatchLaterSession(model: watchLaterModel),
+            watchLaterSession: watchLaterSession ?? WatchLaterSession(model: watchLaterModel),
             historyModel: historyModel,
             favoriteFolderList: favorites.list,
             favoriteFolders: favorites.folders,
-            searchSession: VideoSearchSession(browseModel: browseModel, recordHistory: { _ in }),
+            searchSession: searchSession
+                ?? VideoSearchSession(browseModel: browseModel, recordHistory: { _ in }),
             trendingSearchModel: TrendingSearchViewModel(
                 useCase: TrendingSearchUseCase(repository: EmptyTrendingSearchRepository())
             )

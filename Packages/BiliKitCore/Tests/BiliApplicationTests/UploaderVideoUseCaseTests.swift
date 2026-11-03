@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+/// UP 主投稿页去掉同页重复的 BVID 并保留分页信息，非正的 UP 主 ID 或页码不发请求。
 @Suite(.timeLimit(.minutes(1)))
 struct UploaderVideoUseCaseTests {
     @Test

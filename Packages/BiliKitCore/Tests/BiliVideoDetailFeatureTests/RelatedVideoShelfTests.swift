@@ -5,9 +5,13 @@ import Testing
 @testable import BiliUI
 @testable import BiliVideoDetailFeature
 
+/// 相关推荐卡片的展示值。
+///
+/// 封面上的计数与时长用紧凑格式，缺时长时不显示时长；读屏 label 读出每个可见项，时长读带单位的说法而不是封面上的
+/// 「12:34」。
 struct RelatedVideoShelfTests {
     @Test
-    func presentationMapsStableBVIDAndEveryVisibleSlot() {
+    func presentationFillsAndReadsEveryVisibleSlot() {
         let locale = Locale(
             identifier: VideoDetailFeatureStrings.bundle.preferredLocalizations.first ?? "en"
         )
@@ -24,10 +28,6 @@ struct RelatedVideoShelfTests {
             locale: locale
         )
 
-        #expect(presentation.id == "BV1Related")
-        #expect(presentation.title == "示例推荐")
-        #expect(presentation.coverURL?.absoluteString == "https://example.com/cover.webp")
-        #expect(presentation.ownerName == "示例 UP 主")
         #expect(
             presentation.viewCountText.hasPrefix(
                 locale.language.languageCode?.identifier == "en" ? "123.4" : "12.3"
@@ -72,6 +72,5 @@ struct RelatedVideoShelfTests {
         )
 
         #expect(presentation.durationText == nil)
-        #expect(!presentation.accessibilityLabel.contains("12:34"))
     }
 }

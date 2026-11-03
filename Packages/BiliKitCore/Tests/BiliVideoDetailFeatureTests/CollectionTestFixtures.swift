@@ -10,13 +10,14 @@ func makeTestPage(_ index: Int) -> VideoPage {
     )
 }
 
-/// 合集测试共用的一集；`pages` 给出时第一页是它的默认 CID。
+/// 合集测试共用的一集；`pages` 给出时第一页是它的默认 CID，标题缺省为「第 n 集」。
 func makeTestEpisode(
     ordinal: Int,
     bvid: String?,
     pages: [VideoPage]?,
     isConsistent: Bool = true,
-    section: Int = 0
+    section: Int = 0,
+    title: String? = nil
 ) -> VideoCollectionEpisode {
     VideoCollectionEpisode(
         id: VideoCollectionEpisodeIdentity(
@@ -27,7 +28,7 @@ func makeTestEpisode(
         ordinal: ordinal,
         aid: nil,
         bvid: bvid,
-        title: "第 \(ordinal + 1) 集",
+        title: title ?? "第 \(ordinal + 1) 集",
         coverURL: nil,
         durationSeconds: 10,
         defaultCID: pages?.first?.cid,

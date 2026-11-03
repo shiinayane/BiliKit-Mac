@@ -8,12 +8,13 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// UP 主空间的投稿行与视频卡片有同一份卡片菜单：「添加到稍后再看」「收藏到…」（不满足写入门槛时禁用）与「拷贝链接」
-/// 「在浏览器中打开」；右键弹出时画上下文描边、关闭后撤销，Control-点按只弹菜单不进入播放。
+/// UP 主空间的投稿行用视频卡片同一份菜单（组成与禁用规则由 BiliVideoCollectionUITests 的 `NativeVideoCardMenuTests`
+/// 固定），按 BVID 打开该视频的网页地址，BVID 不合法时没有菜单；右键弹出时画上下文描边、关闭后撤销，Control-点按只弹
+/// 菜单不进入播放，拆除后不再提供菜单。
 @MainActor
 struct UploaderSpaceCardMenuTests {
     @Test
-    func rowMenuMatchesTheVideoCardMenu() throws {
+    func rowMenuOpensTheVideoWebPage() throws {
         var opened: [URL] = []
         let menu = try #require(
             UploaderSpaceSidebarView.cardMenu(
@@ -22,21 +23,11 @@ struct UploaderSpaceCardMenuTests {
                     opened.append(url)
                     return .handled
                 },
-                writing: Self.writing
+                writing: .unavailable
             )
         )
 
-        #expect(
-            menu.items.map(\.title)
-                == [
-                    VideoCardMenuText.addToWatchLater,
-                    VideoCardMenuText.addToFavorites,
-                    VideoCardMenuText.copyLink,
-                    VideoCardMenuText.openInBrowser
-                ]
-        )
-        #expect(menu.items.map(\.isEnabled) == [false, false, true, true])
-        menu.items[3].action()
+        try #require(menu.items.first { $0.title == VideoCardMenuText.openInBrowser }).action()
         #expect(opened.map(\.absoluteString) == ["https://www.bilibili.com/video/BV1SpaceRow"])
     }
 
@@ -59,7 +50,7 @@ struct UploaderSpaceCardMenuTests {
             return UploaderSpaceSidebarView.cardMenu(
                 for: row,
                 openURL: OpenURLAction { _ in .handled },
-                writing: Self.writing
+                writing: .unavailable
             )
         })
         defer { list.controller.tearDown() }
@@ -116,64 +107,16 @@ struct UploaderSpaceCardMenuTests {
         #expect(requested.isEmpty)
     }
 
-    private struct ListFixture {
-        let controller: UploaderSpaceListController
-        let window: NSWindow
-    }
-
-    private static let writing = VideoCardAccountWriting(
-        isAvailable: { false },
-        addToWatchLater: { _ in },
-        removeFromWatchLater: { _ in },
-        chooseFavoriteFolders: { _ in },
-        removeFromFavoriteFolder: { _ in },
-        dislikeRecommendation: { _ in },
-        cancelRecommendationDislike: { _ in }
-    )
-
     private static func row(_ bvid: String) -> UploaderVideoRowPresentation {
-        UploaderVideoRowPresentation(
-            video: UploaderVideo(
-                bvid: bvid,
-                title: "投稿",
-                coverURL: nil,
-                durationSeconds: 60,
-                viewCount: 1,
-                danmakuCount: 0,
-                publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                isCollaboration: false
-            )
-        )
+        UploaderVideoRowPresentation(video: .testFixture(bvid: bvid))
     }
 
     private static func list(
         cardMenu: @escaping (UploaderVideoRowPresentation) -> NativeVideoCardMenu?,
         selectVideo: @escaping (String) -> Void = { _ in }
-    ) -> ListFixture {
-        let controller = UploaderSpaceListController(imagePipeline: StubVideoDetailImageLoader())
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: true
-        )
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 600))
-        window.contentView = container
-        controller.scrollView.frame = container.bounds
-        container.addSubview(controller.scrollView)
-        controller.update(
-            content: UploaderSpaceListContent(
-                header: UploaderSpaceHeaderContent(
-                    name: "UP 主",
-                    avatarURL: nil,
-                    totalCount: nil,
-                    order: .newest
-                ),
-                rows: [row("BV1SpaceRow")],
-                currentBVID: nil,
-                pageIdentity: .init(ownerID: 1, order: .newest, page: 1),
-                reservesPagerSpace: false
-            ),
+    ) -> UploaderSpaceListFixture {
+        UploaderSpaceListFixture(
+            rows: [row("BV1SpaceRow")],
             actions: UploaderSpaceListActions(
                 close: {},
                 selectOrder: { _ in },
@@ -181,12 +124,10 @@ struct UploaderSpaceCardMenuTests {
                 cardMenu: cardMenu
             )
         )
-        container.layoutSubtreeIfNeeded()
-        return ListFixture(controller: controller, window: window)
     }
 
     private static func firstRow(
-        in list: ListFixture
+        in list: UploaderSpaceListFixture
     ) throws -> (NSCollectionView, UploaderSpaceVideoRowView) {
         let collectionView = try #require(
             list.controller.scrollView.documentView as? NSCollectionView

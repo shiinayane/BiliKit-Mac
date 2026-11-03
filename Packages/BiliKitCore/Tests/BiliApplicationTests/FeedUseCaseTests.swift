@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+/// Feed 用例把完整的搜索条件交给 repository，空白关键词与反向的发布时间区间不发请求。
 @Suite(.timeLimit(.minutes(1)))
 struct FeedUseCaseTests {
     @Test

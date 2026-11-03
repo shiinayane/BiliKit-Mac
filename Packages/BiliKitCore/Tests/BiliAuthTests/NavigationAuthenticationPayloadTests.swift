@@ -10,6 +10,7 @@ private let fixtureIdentityWithoutAvatar = AccountIdentity(
     avatarURL: nil
 )
 
+/// nav 响应只映射为不含秘密的登录结果：可选身份字段缺失或类型异常不否定登录态，越界的头像只丢头像。
 struct NavigationAuthenticationPayloadTests {
     @Test(
         arguments: [

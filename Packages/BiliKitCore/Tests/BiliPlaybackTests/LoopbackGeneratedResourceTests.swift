@@ -3,11 +3,15 @@ import Testing
 
 @testable import BiliPlayback
 
+/// 按需生成的 loopback 资源对并发请求只加载一次，每个路由 generation 失败后最多重试一次。
+///
+/// 也固定单个等待者取消不丢弃共享结果、成功后的长度／HEAD／Range 响应、server 停止时取消进行中的加载，
+/// 以及批量注册遇到冲突时整批不生效。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct LoopbackGeneratedResourceTests {
     @Test
     func failedRequestCanRetryThenServesLengthHeadAndRange() async throws {
-        let probe = RetryProbe(body: Data("WEBVTT\n".utf8))
+        let probe = GeneratedLoadProbe(.failsOnceThenServes(Data("WEBVTT\n".utf8)))
         let generated = try LoopbackGeneratedResource(
             contentType: "text/vtt",
             maximumContentLength: 1_024
@@ -62,12 +66,12 @@ struct LoopbackGeneratedResourceTests {
 
     @Test
     func concurrentRequestsCoalesceOneGeneratedLoad() async throws {
-        let probe = BlockingProbe(body: Data("WEBVTT\n".utf8))
+        let probe = GeneratedLoadProbe(.holdsUntilReleased(Data("WEBVTT\n".utf8)))
         let generated = try LoopbackGeneratedResource(
             contentType: "text/vtt",
             maximumContentLength: 1_024
         ) {
-            await probe.load()
+            try await probe.load()
         }
         let server = LoopbackPlaybackServer()
         try await server.start()
@@ -86,12 +90,12 @@ struct LoopbackGeneratedResourceTests {
 
     @Test
     func cancelledWaiterDoesNotDiscardSharedSuccessfulLoad() async throws {
-        let probe = BlockingProbe(body: Data("WEBVTT\n".utf8))
+        let probe = GeneratedLoadProbe(.holdsUntilReleased(Data("WEBVTT\n".utf8)))
         let generated = try LoopbackGeneratedResource(
             contentType: "text/vtt",
             maximumContentLength: 1_024
         ) {
-            await probe.load()
+            try await probe.load()
         }
         let server = LoopbackPlaybackServer()
         try await server.start()
@@ -112,7 +116,7 @@ struct LoopbackGeneratedResourceTests {
 
     @Test
     func stoppingServerCancelsInFlightGeneratedLoad() async throws {
-        let probe = CancellationProbe()
+        let probe = GeneratedLoadProbe(.holdsUntilCancelled)
         let generated = try LoopbackGeneratedResource(
             contentType: "text/vtt",
             maximumContentLength: 1_024
@@ -135,7 +139,7 @@ struct LoopbackGeneratedResourceTests {
 
     @Test
     func generatedLoadRetriesAtMostOncePerRouteGeneration() async throws {
-        let probe = AlwaysFailingProbe()
+        let probe = GeneratedLoadProbe(.alwaysFails)
         let generated = try LoopbackGeneratedResource(
             contentType: "text/vtt",
             maximumContentLength: 1_024
@@ -195,72 +199,54 @@ struct LoopbackGeneratedResourceTests {
 }
 
 private enum ProbeError: Error {
-    case firstFailure
+    case configuredFailure
 }
 
-private actor RetryProbe {
-    let body: Data
-    private(set) var loadCount = 0
-
-    init(body: Data) {
-        self.body = body
+/// `LoopbackGeneratedResource` 加载闭包的可配置替身：记录加载与取消次数，按配置失败、挂起或返回正文。
+private actor GeneratedLoadProbe {
+    enum Behavior: Sendable {
+        /// 第一次加载失败，之后返回正文。
+        case failsOnceThenServes(Data)
+        /// 每次加载都失败。
+        case alwaysFails
+        /// 挂起到 `release()` 后返回正文；不响应取消。
+        case holdsUntilReleased(Data)
+        /// 挂起到被取消；60 s 只是兜底超时。
+        case holdsUntilCancelled
     }
 
-    func load() throws -> Data {
-        loadCount += 1
-        if loadCount == 1 { throw ProbeError.firstFailure }
-        return body
-    }
-}
-
-private actor BlockingProbe {
-    let body: Data
-    private(set) var loadCount = 0
-    private var loadWaiters = CountWaiters()
-    private var continuation: CheckedContinuation<Void, Never>?
-
-    init(body: Data) {
-        self.body = body
-    }
-
-    func load() async -> Data {
-        loadCount += 1
-        loadWaiters.resume(reaching: loadCount)
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-        }
-        return body
-    }
-
-    func waitForLoads(_ count: Int) async {
-        await withCheckedContinuation {
-            loadWaiters.add($0, until: count, current: loadCount)
-        }
-    }
-
-    func release() {
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
-/// 加载挂起到被取消；60 s 只是兜底超时。
-private actor CancellationProbe {
+    private let behavior: Behavior
     private(set) var loadCount = 0
     private(set) var cancellationCount = 0
     private var loadWaiters = CountWaiters()
     private var cancellationWaiters = CountWaiters()
+    private var heldLoad: CheckedContinuation<Void, Never>?
+
+    init(_ behavior: Behavior) {
+        self.behavior = behavior
+    }
 
     func load() async throws -> Data {
         loadCount += 1
         loadWaiters.resume(reaching: loadCount)
-        do {
-            try await Task.sleep(for: .seconds(60))
-            return Data("late".utf8)
-        } catch is CancellationError {
-            cancellationCount += 1
-            cancellationWaiters.resume(reaching: cancellationCount)
-            throw CancellationError()
+        switch behavior {
+        case .failsOnceThenServes(let body):
+            if loadCount == 1 { throw ProbeError.configuredFailure }
+            return body
+        case .alwaysFails:
+            throw ProbeError.configuredFailure
+        case .holdsUntilReleased(let body):
+            await withCheckedContinuation { heldLoad = $0 }
+            return body
+        case .holdsUntilCancelled:
+            do {
+                try await Task.sleep(for: .seconds(60))
+                return Data("late".utf8)
+            } catch is CancellationError {
+                cancellationCount += 1
+                cancellationWaiters.resume(reaching: cancellationCount)
+                throw CancellationError()
+            }
         }
     }
 
@@ -275,13 +261,9 @@ private actor CancellationProbe {
             cancellationWaiters.add($0, until: count, current: cancellationCount)
         }
     }
-}
 
-private actor AlwaysFailingProbe {
-    private(set) var loadCount = 0
-
-    func load() throws -> Data {
-        loadCount += 1
-        throw ProbeError.firstFailure
+    func release() {
+        heldLoad?.resume()
+        heldLoad = nil
     }
 }

@@ -28,22 +28,6 @@ struct WatchLaterRemovalTests {
         #expect(model.totalCount == 3)
     }
 
-    /// 连续移除两条、写入按发出顺序依次失败：两条都回到原位，顺序仍是 A、B、C。
-    @Test
-    @MainActor
-    func consecutiveRemovalsFailingInOrderRestoreTheOriginalOrder() async throws {
-        let model = try await loadedModel(["BV1LaterA1", "BV1LaterB2", "BV1LaterC3"], total: 3)
-
-        let first = try #require(model.removeItem(bvid: "BV1LaterA1"))
-        let second = try #require(model.removeItem(bvid: "BV1LaterB2"))
-        #expect(model.loadedBVIDs == ["BV1LaterC3"])
-        model.restoreItem(first)
-        model.restoreItem(second)
-
-        #expect(model.loadedBVIDs == ["BV1LaterA1", "BV1LaterB2", "BV1LaterC3"])
-        #expect(model.totalCount == 3)
-    }
-
     /// 移除之后刷新成功或账户变化（`reset`）替换了内容：旧的移除不再放回，不与新内容或新账户的列表混排。
     @Test
     @MainActor

@@ -23,50 +23,27 @@ struct DanmakuSessionTests {
     /// 同样在分段开头，想要第 3、2、4 段；第 1～3 段都已请求后，第 4 段被请求说明其中至多一段仍在加载。
     nonisolated private static let laterThreeSegmentPosition = 725.0
 
-    @Test
-    func sessionPrefetchesCurrentAndNextWithBoundedConcurrency() async throws {
-        let identity = PlaybackItemIdentity(bvid: "BV1DanmakuFixture", cid: 1)
-        let repository = StubDanmakuRepository(.holdUntilReleased)
-        let timeline = SessionTimeline()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline
-        )
-
-        session.start(for: identity)
-        timeline.publish(snapshot(identity: identity, position: 0, generation: 1))
-        try await repository.waitForRequestCount(2, identity: identity)
-
-        #expect(await repository.requestedIndices(for: identity).sorted() == [1, 2])
-        #expect(await repository.maximumActiveRequests() == 2)
-        session.stop()
-        await repository.releaseAll()
-    }
-
-    /// 位置在分段开头一条弹幕的最长时长之内时先请求当前与上一分段，之后请求当前与下一分段。
+    /// 会话同时最多加载两段，按位置先要当前分段：在分段开头一条弹幕的最长时长之内先要当前与上一分段，
+    /// 之后要当前与下一分段。
     @Test(arguments: [
+        (0.0, [1, 2]),
         (DanmakuSessionTests.threeSegmentPosition, [1, 2]),
         (450.0, [2, 3])
     ])
-    func sessionRequestsThePreviousSegmentOnlyNearASegmentStart(
+    func sessionRequestsWantedSegmentsWithBoundedConcurrency(
         position: Double,
         expectedIndices: [Int]
     ) async throws {
-        let identity = PlaybackItemIdentity(bvid: "BV1PreviousSegment", cid: 4)
+        let identity = PlaybackItemIdentity(bvid: "BV1DanmakuFixture", cid: 1)
         let repository = StubDanmakuRepository(.holdUntilReleased)
-        let timeline = SessionTimeline()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline
-        )
+        let (session, timeline, _) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         timeline.publish(snapshot(identity: identity, position: position, generation: 1))
         try await repository.waitForRequestCount(2, identity: identity)
 
         #expect(await repository.requestedIndices(for: identity).sorted() == expectedIndices)
+        #expect(await repository.maximumActiveRequests() == 2)
         session.stop()
         await repository.releaseAll()
     }
@@ -78,7 +55,7 @@ struct DanmakuSessionTests {
     func loadedSegmentsAreCachedAndFreeSlotsForTheNextWantedSegment() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1WriteBackFixture", cid: 8)
         let repository = StubDanmakuRepository(.holdUntilReleased)
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         try await advanceUntilRequestCount(
@@ -109,7 +86,7 @@ struct DanmakuSessionTests {
         let first = PlaybackItemIdentity(bvid: "BV1FirstFixture", cid: 1)
         let second = PlaybackItemIdentity(bvid: "BV1SecondFixture", cid: 2)
         let repository = StubDanmakuRepository(.holdUntilReleased)
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: first)
         try await advanceUntilRequestCount(
@@ -169,7 +146,7 @@ struct DanmakuSessionTests {
             cid: 4
         )
         let repository = StubDanmakuRepository(.fail(error))
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         try await advanceUntilRequestCount(
@@ -200,7 +177,7 @@ struct DanmakuSessionTests {
             cid: 40
         )
         let repository = StubDanmakuRepository(.fail(.authenticationInvalid))
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
         let invalidations = InvalidationRecorder()
         session.setAuthenticationInvalidationHandler {
             invalidations.record()
@@ -256,7 +233,7 @@ struct DanmakuSessionTests {
             cid: 6
         )
         let repository = StubDanmakuRepository(.fail(.unavailable))
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: first)
         try await advanceUntilRequestCount(
@@ -290,7 +267,7 @@ struct DanmakuSessionTests {
             cid: 7
         )
         let repository = StubDanmakuRepository(.failFirstAttemptPerSegment(.unavailable))
-        let (session, timeline, sink) = makeThreeSegmentSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         try await advanceUntilRequestCount(
@@ -330,14 +307,7 @@ struct DanmakuSessionTests {
     func farJumpLoadsTheLandingSegmentsOnceAndKeepsTheScreenSide() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1FarJumpFixture", cid: 9)
         let repository = StubDanmakuRepository()
-        let timeline = SessionTimeline()
-        let sink = SessionPresentationSink()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline,
-            presentationSink: sink
-        )
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
         func publish(_ position: Double) {
             timeline.publish(
                 PlaybackTimelineSnapshot(
@@ -372,21 +342,6 @@ struct DanmakuSessionTests {
         try await waitForCachedSegments([7, 8, 9])
         #expect(await repository.requestedIndices(for: identity).sorted() == [1, 2, 3, 7, 8, 9])
         session.stop()
-    }
-
-    /// 记录呈现端更新的会话；配合分段开头的位置，想要的分段多于并发上限。
-    private func makeThreeSegmentSession(
-        repository: StubDanmakuRepository
-    ) -> (DanmakuSession, SessionTimeline, SessionPresentationSink) {
-        let timeline = SessionTimeline()
-        let sink = SessionPresentationSink()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline,
-            presentationSink: sink
-        )
-        return (session, timeline, sink)
     }
 
     /// 逐次发布 `position` 的快照并等呈现端收到，直到 repository 收到 `expected` 次请求。

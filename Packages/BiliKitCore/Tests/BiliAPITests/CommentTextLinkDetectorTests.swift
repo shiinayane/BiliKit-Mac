@@ -4,6 +4,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定评论正文自识别：纯文字里的视频网址、BV／av 号、b23.tv 短链与时间戳成为链接，句读、不成对括号、
+/// 表情与中文不算进网址，嵌在单词里或通不过 HTTPS 复核的不识别，接口已标出的范围优先，范围按 UTF-16 计算。
 @Suite("Comment text link detector")
 struct CommentTextLinkDetectorTests {
     private func detected(_ message: String) -> [(text: String, target: CommentLinkTarget)] {
@@ -188,13 +190,6 @@ struct CommentTextLinkDetectorTests {
                 return false
             }
         )
-    }
-
-    @Test
-    func aVideoAddressContainingABVIDIsOneLink() {
-        let links = detected("https://www.bilibili.com/video/BV1xx411c7mD")
-
-        #expect(links.count == 1)
     }
 
     /// 接口已标出的链接（jump_url、@ 提及）覆盖的文字不再识别；范围按 UTF-16 计算。

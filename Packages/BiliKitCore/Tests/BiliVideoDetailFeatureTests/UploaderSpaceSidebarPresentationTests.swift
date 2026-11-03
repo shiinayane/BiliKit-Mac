@@ -74,16 +74,7 @@ struct UploaderSpaceSidebarPresentationTests {
 private func page(videos count: Int) -> UploaderVideoPage {
     UploaderVideoPage(
         videos: (0..<count).map { index in
-            UploaderVideo(
-                bvid: "BV1Fixture\(index)",
-                title: "投稿 \(index)",
-                coverURL: nil,
-                durationSeconds: 60,
-                viewCount: 1,
-                danmakuCount: 0,
-                publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                isCollaboration: false
-            )
+            .testFixture(bvid: "BV1Fixture\(index)", title: "投稿 \(index)")
         },
         pageNumber: 1,
         pageSize: 30,

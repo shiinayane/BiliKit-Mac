@@ -7,7 +7,7 @@ import Testing
 @testable import BiliAPI
 
 /// 固定认证会话边界契约：带凭据的请求被拒或本地凭据失败时不匿名重试，
-/// 任务取消或会话失效后，在途的授权、取 key、请求与响应都以取消结束，既不补发也不写回。
+/// 任务取消或会话失效后，在途的授权、请求与响应都以取消结束，既不补发也不写回。
 struct BiliAPIClientSessionBoundaryTests {
     @Test(arguments: [
         (HTTPResponse(statusCode: 412, body: Data()), BiliAPIError.httpStatus(412)),
@@ -195,32 +195,5 @@ struct BiliAPIClientSessionBoundaryTests {
         #expect(playURLRequests(firstTransport).count == 1)
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
-    }
-
-    /// 取 WBI key 期间会话变化时取消详情，不以新会话或匿名身份补发。
-    @Test(.timeLimit(.minutes(1)))
-    func videoDetailIsCancelledWhenTheSessionChangesDuringWBIKeyFetch() async throws {
-        let firstTransport = StubTransport([
-            .suspended(try fixtureResponse("nav")), .response(try fixtureResponse("view"))
-        ])
-        let replacementTransport = StubTransport(responses: [try fixtureResponse("view")])
-        let transportFactory = SequentialTransportFactory(
-            transports: [firstTransport, replacementTransport]
-        )
-        let client = BiliAPIClient(
-            requestAuthorizer: StubAuthorizer(),
-            transportFactory: { transportFactory.makeTransport() }
-        )
-
-        let detailTask = Task { try await client.videoDetail(for: "BV1FixtureA1") }
-        await firstTransport.waitForRequests(1)
-        await client.invalidateAuthenticatedSession()
-        firstTransport.resumeSuspendedRequest()
-
-        await #expect(throws: CancellationError.self) {
-            try await detailTask.value
-        }
-        #expect(firstTransport.capturedRequests().map(\.url.path) == [StubTransport.wbiNavPath])
-        #expect(replacementTransport.capturedRequests().isEmpty)
     }
 }

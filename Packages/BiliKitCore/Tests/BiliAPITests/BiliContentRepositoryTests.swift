@@ -4,6 +4,9 @@ import BiliNetworking
 import Foundation
 import Testing
 
+/// 固定内容类 adapter 共用的错误映射：HTTP 403／412、-352、HTML 风控页与 `v_voucher` 挑战归为受限，
+/// 不存在或不可见归为内容不可用，匿名请求的 -101 是需要登录，不支持的媒体归为 `unsupportedMedia`，
+/// 非法请求在发出前拒绝，取消原样传播，其余按服务端拒绝、不可用或无效响应分类。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliContentRepositoryTests {
     @Test

@@ -4,6 +4,10 @@ import Testing
 
 @testable import BiliAuth
 
+/// 心跳授权器只放行精确形状的 heartbeat POST，并只注入 SESSDATA 与表单 csrf。
+///
+/// 来源、方法、path、header、query 与 body 的扩展、重复或互相矛盾都拒绝；会话与签名只收小写 ASCII 十六进制；
+/// 结束报告可带自然结束标记 -1 或当前退出位置；缺失或过期的凭据不能授权。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test

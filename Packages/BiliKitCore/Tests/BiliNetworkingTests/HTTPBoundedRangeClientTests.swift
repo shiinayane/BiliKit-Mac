@@ -3,6 +3,11 @@ import Testing
 
 @testable import BiliNetworking
 
+/// 固定有界 Range 读取的契约：只接受精确的 206 与对得上的 Content-Range、Content-Length，不符时在响应头阶段
+/// 失败并取消任务，不等正文。
+///
+/// 请求只带自己的 Range、不带 Cookie（见 SECURITY-MODEL §4）；按要求只计数或保留正文；超大区间按协议失败，
+/// 不触发整数溢出。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct HTTPBoundedRangeClientTests {
     @Test
