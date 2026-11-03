@@ -179,6 +179,9 @@ final class GridHarness {
         (scrollView.contentView as? NativeVideoGridClipView)?.isAnimatingUpdate ?? false
     }
 
+    /// 网格实际拿到的视口宽度（传统滚动条占掉的宽度已扣除）。
+    var viewportWidth: CGFloat { scrollView.contentSize.width }
+
     var logicalOffset: CGFloat {
         NativeVideoScrollCoordinateSpace.logicalOffset(
             physicalOffset: scrollView.contentView.bounds.origin.y,
