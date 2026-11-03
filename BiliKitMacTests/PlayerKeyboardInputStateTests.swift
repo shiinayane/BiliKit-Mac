@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliKit
 
+/// 左右键短按跳转、长按临时变速且两者互斥，旧按键与生命周期取消不会结束新的按压。
+///
+/// 音量键的系统重复按间隔限速，离散快捷键不重复；只有启用、无修饰键、事件来自播放窗口且焦点不在可编辑文本上时
+/// 才接管按键。
 struct PlayerKeyboardInputStateTests {
     @Test
     func shortAndLongPressAreMutuallyExclusiveAndRepeatIndependent() throws {

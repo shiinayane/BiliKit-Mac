@@ -10,6 +10,10 @@ import Testing
 // Swift Testing macros reference their diagnostic comment type without qualification.
 private typealias Comment = Testing.Comment
 
+/// loopback server 只服务 session token 与 Host 都对得上的本机请求，连接与上游请求都有界。
+///
+/// 对应 SECURITY-MODEL §5：独立进程视角的 Host／token／路径拒绝与畸形请求、请求目标解析、空闲与响应阶段的连接上限、
+/// 远端资源的来源白名单与固定来源、GET／HEAD 的 Range 语义、远端 Range 错误不发上游请求，以及停止时取消上游请求。
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct LoopbackServerBoundaryTests {
     @Test

@@ -2,6 +2,8 @@ import Testing
 
 @testable import BiliApplication
 
+/// 只有最新意图能写回：被取代或取消的旧操作收到取消且不再是当前意图，
+/// 旧操作结束不清掉新意图的引用，操作完成后释放 Task。
 @MainActor
 struct LatestTaskTests {
     enum Supersession: CaseIterable, Sendable {

@@ -292,11 +292,12 @@ struct NativeVideoCardMenuTests {
             opened.append(url)
             return .handled
         }
-        let grid = try await GridFixture(
+        let grid = try await GridHarness(
             cards: [
                 Self.card(id: "BV1Menu0", availability: .available),
                 Self.card(id: "BV1Menu1", availability: .unavailable(badge: "已失效"))
             ],
+            scrollerStyle: .overlay,
             cardMenu: { card in
                 NativeVideoCardMenu.video(
                     videoID: card.id,
@@ -308,7 +309,6 @@ struct NativeVideoCardMenuTests {
                 )
             }
         )
-        defer { grid.tearDown() }
         let available = try grid.cardView("BV1Menu0")
         let unavailable = try grid.cardView("BV1Menu1")
 
@@ -338,8 +338,9 @@ struct NativeVideoCardMenuTests {
         var removed: [String] = []
         var selections: [String] = []
         var isWritingAvailable = true
-        let grid = try await GridFixture(
+        let grid = try await GridHarness(
             cards: [Self.card(id: "BV1Gone", availability: .unavailable(badge: "已失效"))],
+            scrollerStyle: .overlay,
             onSelect: { selections.append($0) },
             cardMenu: { card in
                 NativeVideoCardMenu.video(
@@ -355,7 +356,6 @@ struct NativeVideoCardMenuTests {
                 )
             }
         )
-        defer { grid.tearDown() }
         let card = try grid.cardView("BV1Gone")
 
         #expect(card.isAccessibilityEnabled())
@@ -392,8 +392,9 @@ struct NativeVideoCardMenuTests {
     func entriesRouteToTheRightClickMenuWithoutActivating(entry: MenuEntry) async throws {
         var requestedIDs: [String] = []
         var selections: [String] = []
-        let grid = try await GridFixture(
+        let grid = try await GridHarness(
             cards: [Self.card(id: "BV1Menu0", availability: .available)],
+            scrollerStyle: .overlay,
             onSelect: { selections.append($0) },
             cardMenu: { card in
                 requestedIDs.append(card.id)
@@ -407,7 +408,6 @@ struct NativeVideoCardMenuTests {
                 )
             }
         )
-        defer { grid.tearDown() }
         let card = try grid.cardView("BV1Menu0")
 
         switch entry {
@@ -431,8 +431,9 @@ struct NativeVideoCardMenuTests {
     /// 右键路径给出的就是来源的菜单（含禁用状态）；上下文描边只由 `willOpenMenu` 画、`didCloseMenu` 撤。
     @Test(.timeLimit(.minutes(1))) @MainActor
     func rightClickMenuIsTheSourceMenuAndRingFollowsOpenAndClose() async throws {
-        let grid = try await GridFixture(
+        let grid = try await GridHarness(
             cards: [Self.card(id: "BV1Menu0", availability: .available)],
+            scrollerStyle: .overlay,
             cardMenu: { card in
                 NativeVideoCardMenu.video(
                     videoID: card.id,
@@ -444,7 +445,6 @@ struct NativeVideoCardMenuTests {
                 )
             }
         )
-        defer { grid.tearDown() }
         let card = try grid.cardView("BV1Menu0")
         let event = try grid.event(.rightMouseDown, [], on: card)
 
@@ -523,90 +523,6 @@ struct NativeVideoCardMenuTests {
             accessibilityLabel: "手写卡片",
             availability: availability
         )
-    }
-}
-
-/// 在无边框窗口里排好的网格，按 ID 取卡片视图；测试结束时 `tearDown` 拆除。
-@MainActor
-private struct GridFixture {
-    let coordinator: NativeVideoGridView.Coordinator
-    let window: NSWindow
-    let collectionView: NSCollectionView
-
-    init(
-        cards: [NativeVideoCardPresentation],
-        onSelect: @escaping (String) -> Void = { _ in },
-        cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu?
-    ) async throws {
-        coordinator = NativeVideoGridView.Coordinator(
-            items: cards,
-            initialScrollOffsetY: 0,
-            accessibilityLabel: "网格",
-            tailState: .end,
-            bottomInset: 0,
-            scrollResetRequestID: 0,
-            acknowledgedScrollResetRequestID: 0,
-            imagePipeline: StubCardImageLoader(),
-            onScroll: { _ in },
-            onAcknowledgeScrollReset: { _ in },
-            actions: NativeVideoGridActions(
-                onNearEnd: {},
-                onSelect: onSelect,
-                cardMenu: cardMenu
-            )
-        )
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        let scrollView = coordinator.makeScrollView()
-        window.contentView = scrollView
-        // makeScrollView 把首次排版排到下一轮主队列；等它跑完再取卡片。
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async { continuation.resume() }
-        }
-        scrollView.layoutSubtreeIfNeeded()
-        collectionView = try #require(scrollView.documentView as? NSCollectionView)
-    }
-
-    func cardView(_ id: String) throws -> NSView {
-        let item = try #require(
-            collectionView.visibleItems()
-                .compactMap { $0 as? NativeVideoCollectionItem }
-                .first { $0.representedVideoID == id }
-        )
-        return item.view
-    }
-
-    /// 落在 `view` 中心的鼠标事件。
-    func event(
-        _ type: NSEvent.EventType,
-        _ modifierFlags: NSEvent.ModifierFlags,
-        on view: NSView
-    ) throws -> NSEvent {
-        // 视图与窗口属性只能在主线程读；`#require` 的展开不继承主线程隔离，先取出再交给它。
-        let location = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
-        let windowNumber = window.windowNumber
-        return try #require(
-            NSEvent.mouseEvent(
-                with: type,
-                location: location,
-                modifierFlags: modifierFlags,
-                timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: windowNumber,
-                context: nil,
-                eventNumber: 0,
-                clickCount: 1,
-                pressure: 1
-            )
-        )
-    }
-
-    func tearDown() {
-        coordinator.reset()
-        window.contentView = NSView()
     }
 }
 

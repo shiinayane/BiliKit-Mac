@@ -244,14 +244,7 @@ struct CommentAPIClientTests {
         }
 
         let requests = transport.capturedRequests()
-        let queries = requests.map { request in
-            Dictionary(
-                uniqueKeysWithValues: (URLComponents(
-                    url: request.url,
-                    resolvingAgainstBaseURL: false
-                )?.queryItems ?? []).map { ($0.name, $0.value ?? "") }
-            )
-        }
+        let queries = requests.map(queryFields)
         #expect(requests.allSatisfy { $0.url.path == "/x/v2/reply/dialog/cursor" })
         #expect(
             queries.first == [

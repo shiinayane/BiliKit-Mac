@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+/// 观看历史跳过过滤后为空的页直到有可显示条目，空页扫描有上限并保留游标供手动继续，游标不前进按无效响应。
 @Suite(.timeLimit(.minutes(1)))
 struct WatchHistoryUseCaseTests {
     @Test

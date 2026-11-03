@@ -24,7 +24,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
         next: NextStep
     ) async throws {
         let states = await replyStates(next: next)
-        let sidebar = try await SidebarHarness(fixtures: self, comments: states.expanded)
+        let sidebar = try await HostedPlaybackSidebar(comments: states.expanded)
         defer { sidebar.tearDown() }
 
         let panelTop = try sidebar.alignmentY(.repliesPanel)
@@ -56,7 +56,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
     @Test
     func collapseBringsTheRootCommentUpWhenItsTopWasAbove() async throws {
         let states = await replyStates(next: .collapse)
-        let sidebar = try await SidebarHarness(fixtures: self, comments: states.expanded)
+        let sidebar = try await HostedPlaybackSidebar(comments: states.expanded)
         defer { sidebar.tearDown() }
 
         let rootTop = try sidebar.alignmentY(.root)
@@ -156,26 +156,10 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
     }
 }
 
-/// 挂在真实窗口里的侧栏控制器，加上读取第 5 楼对齐边与可见区顶边的帮手。
-@MainActor
-private struct SidebarHarness {
-    let controller = makeSidebarController()
-    let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
-        styleMask: .borderless,
-        backing: .buffered,
-        defer: false
-    )
-    let fixtures: PlaybackSidebarReplyNavigationTests
-
-    init(
-        fixtures: PlaybackSidebarReplyNavigationTests,
-        comments: NativePlaybackCommentsPresentation
-    ) async throws {
-        self.fixtures = fixtures
-        window.contentView = controller.rootView
-        window.contentView?.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
+/// 第 5 楼所在的侧栏：放入评论区后等到首轮精测完成，并读取这一楼的对齐边。
+extension HostedPlaybackSidebar {
+    fileprivate init(comments: NativePlaybackCommentsPresentation) async throws {
+        self.init()
         update(comments)
         let layout = controller.layout
         let settled = await waitUntil(timeout: .seconds(5)) { [controller] in
@@ -185,19 +169,16 @@ private struct SidebarHarness {
         try #require(settled)
     }
 
-    var visibleTop: CGFloat {
-        controller.rootView.scrollView.documentVisibleRect.minY
-            + max(0, controller.rootView.scrollView.contentInsets.top)
-    }
-
-    func update(_ comments: NativePlaybackCommentsPresentation) {
+    fileprivate func update(_ comments: NativePlaybackCommentsPresentation) {
         controller.update(
-            presentation: fixtures.presentation(bvid: "BVReplyNavigation", comments: comments),
-            actions: fixtures.actions
+            presentation: presentation(bvid: "BVReplyNavigation", comments: comments),
+            actions: actions
         )
     }
 
-    func alignmentY(_ edge: NativePlaybackSidebarThreadAlignment.Edge) throws -> CGFloat {
+    fileprivate func alignmentY(
+        _ edge: NativePlaybackSidebarThreadAlignment.Edge
+    ) throws -> CGFloat {
         controller.collectionView.layoutSubtreeIfNeeded()
         let itemID = NativePlaybackSidebarItemID.commentThread(
             subject: .video(aid: 700_001),
@@ -217,10 +198,5 @@ private struct SidebarHarness {
                     textRenderer: controller.commentTextRenderer
                 )
         }
-    }
-
-    func tearDown() {
-        controller.tearDown()
-        window.contentView = nil
     }
 }

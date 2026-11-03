@@ -2,6 +2,10 @@ import BiliApplication
 import BiliVideoDetailFeature
 import Testing
 
+/// 弹幕控制项只把有效且有变化的设置交给弹幕会话，并只保存用户改动过的值。
+///
+/// 初始偏好在创建时下发一次；超出范围或非有限的透明度被忽略；密度只在全屏显示区域可调；三类显示模式合并后整体
+/// 下发；选视频启动会话、重置停止会话，会话报告认证失效时递增重新校验 generation。
 @MainActor
 @Suite
 struct DanmakuControlsViewModelTests {

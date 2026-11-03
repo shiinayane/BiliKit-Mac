@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliLibraryFeature
 
+/// 观看历史列表按 continuation 翻页，旧意图的结果不会覆盖新的。
+///
+/// 空页扫描到头后改为显式继续；加载更多失败保留条目并重试同一 continuation；已有条目时刷新原地进行、失败保留条目，
+/// 凭据失效时放弃；新的加载、`reset` 与离开页面取消在途请求并丢弃它的迟到结果。
 @Suite(.timeLimit(.minutes(1)))
 struct WatchHistoryViewModelTests {
     @Test

@@ -17,21 +17,7 @@ struct BiliAPIClientPlaybackAudioTests {
             responses: [
                 try semanticAudioResponse(
                     audioPath: "original-audio.m4s",
-                    languageCatalog: [
-                        "support": true,
-                        "items": [
-                            [
-                                "lang": "en",
-                                "title": "English（AI）",
-                                "production_type": 2
-                            ],
-                            [
-                                "lang": "ja",
-                                "title": "日本語（AI）",
-                                "production_type": 2
-                            ]
-                        ]
-                    ],
+                    languageCatalog: machineGeneratedEnglishAndJapaneseCatalog,
                     volume: originalVolume
                 ),
                 try semanticAudioResponse(

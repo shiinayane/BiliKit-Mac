@@ -4,6 +4,8 @@ import BiliNetworking
 import Foundation
 import Testing
 
+/// 固定观看进度心跳契约：只发当前的 WBI 签名 heartbeat，query 与表单字段集合固定，授权前不自带 Cookie 与
+/// Origin，自然播完用 -1 哨兵，没有历史写授权器时不取 key 也不发请求，远端失败映射为 `WatchProgressError`。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliWatchProgressRepositoryTests {
     @Test
@@ -25,11 +27,7 @@ struct BiliWatchProgressRepositoryTests {
         #expect(components.scheme == "https")
         #expect(components.host == "api.bilibili.com")
         #expect(components.path == "/x/click-interface/web/heartbeat")
-        let query = Dictionary(
-            uniqueKeysWithValues: try #require(components.queryItems).map {
-                ($0.name, $0.value ?? "")
-            }
-        )
+        let query = queryFields(request)
         #expect(
             Set(query.keys) == [
                 "w_start_ts", "w_aid", "w_dt", "w_realtime", "w_played_time",
@@ -53,8 +51,7 @@ struct BiliWatchProgressRepositoryTests {
         #expect(request.headers["Referer"] == "https://www.bilibili.com/video/BV1FIXTURE/")
         #expect(request.headers["Origin"] == nil)
         #expect(request.headers["Cookie"] == nil)
-        let body = try #require(request.body.flatMap { String(data: $0, encoding: .utf8) })
-        let fields = try #require(Self.decodedFields(body))
+        let fields = formFields(request)
         #expect(
             Set(fields.keys) == [
                 "start_ts", "aid", "cid", "type", "sub_type", "dt", "play_type",
@@ -83,12 +80,8 @@ struct BiliWatchProgressRepositoryTests {
         )
 
         let request = try #require(await authorizer.capturedRequests().last)
-        let body = try #require(request.body.flatMap { String(data: $0, encoding: .utf8) })
-        #expect(Self.decodedFields(body)?["played_time"] == "-1")
-        let query = try #require(
-            URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems
-        )
-        #expect(query.first(where: { $0.name == "w_played_time" })?.value == "-1")
+        #expect(formFields(request)["played_time"] == "-1")
+        #expect(queryFields(request)["w_played_time"] == "-1")
     }
 
     @Test
@@ -169,12 +162,5 @@ struct BiliWatchProgressRepositoryTests {
                 completed: completed
             )
         )
-    }
-
-    private static func decodedFields(_ value: String) -> [String: String]? {
-        var components = URLComponents()
-        components.percentEncodedQuery = value
-        guard let items = components.queryItems else { return nil }
-        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
     }
 }

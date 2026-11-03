@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+/// 热搜只保留可搜索且不重复的关键词并截到上限，关键词按搜索规则规范化，空白展示名退回关键词。
 @Suite(.timeLimit(.minutes(1)))
 struct TrendingSearchUseCaseTests {
     @Test

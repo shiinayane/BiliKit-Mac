@@ -4,6 +4,11 @@ import Testing
 
 @testable import BiliPlayback
 
+/// 生成的 HLS playlist 逐字写出系统选轨与起播所需的属性，无法安全表达的输入一律报错。
+///
+/// 覆盖 media、I-frame、字幕与 master playlist 的 byte-range、时长、峰值码率、音轨与字幕的名称／语言／特征和
+/// `EXT-X-START`；不安全的属性文本、非独立分段、缺视频属性与对不上的 I-frame 档或音轨数都拒绝，
+/// 字幕与 AI 音轨只有时间线与基准等价时才可用。
 struct HLSPlaylistBuilderTests {
     @Test
     func buildsMediaPlaylistFromParsedSIDXReferences() throws {

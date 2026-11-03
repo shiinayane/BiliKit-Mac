@@ -5,7 +5,11 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 合集选集的分 P：按需读取且同一 BVID 只请求一次，失败只影响该选集、通知一次选择者并可重试（重试成功仍按原选择跳转），被取代或 reset 后的迟到结果被丢弃，缓存有上界。
+/// 合集选集的分 P 按需读取，每次选择只交出一个经过校验的跳转目标。
+///
+/// 已知分 P 不发请求，同一 BVID 只请求一次；失败只影响该选集、通知一次选择者并可重试，重试成功仍按原选择跳转；
+/// 被取代或 reset 后的迟到结果被丢弃，被取消的请求不触发重新校验；分 P 缓存有上界。跨 BVID 带显式 CID 加载时
+/// 只请求这个 CID，失败重试后仍保留它；显式选中的重复 BVID 那一集在上下文更新后仍被选中。
 @Suite(.timeLimit(.minutes(1)))
 struct CollectionEpisodePagesTests {
     @Test
@@ -321,7 +325,7 @@ struct CollectionEpisodePagesTests {
                 repository: VideoRepositoryStub(
                     detail: { _, _ in fixtures.detail },
                     pages: { _, _ in fixtures.detail.pages },
-                    playback: { _, _ in fixtures.playback }
+                    playback: { _, _ in emptyPlayback() }
                 )
             ),
             playback: PlayerStub()
@@ -380,15 +384,13 @@ private struct BoundedCollectionCacheFixtures: Sendable {
             title: "当前 P1",
             durationSeconds: 10
         )
-        return VideoDetail(
+        return makeVideoDetail(
             bvid: rootBVID,
             title: "缓存边界",
             summary: "脱敏详情",
-            coverURL: nil,
             owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
             statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
             durationSeconds: 10,
-            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
             pages: [rootPage],
             collection: VideoCollection(
                 id: 801,
@@ -406,18 +408,6 @@ private struct BoundedCollectionCacheFixtures: Sendable {
                     )
                 ]
             )
-        )
-    }
-
-    var playback: VideoPlayback {
-        VideoPlayback(
-            media: .dash(
-                PlaybackManifest(
-                    videoRepresentations: [],
-                    audioTracks: []
-                )
-            ),
-            mediaHeaders: [:]
         )
     }
 }
@@ -523,18 +513,6 @@ private struct CollectionFixtures: Sendable {
         }
     }
 
-    var playback: VideoPlayback {
-        VideoPlayback(
-            media: .dash(
-                PlaybackManifest(
-                    videoRepresentations: [],
-                    audioTracks: []
-                )
-            ),
-            mediaHeaders: [:]
-        )
-    }
-
     private func episode(
         episodeID: Int64,
         ordinal: Int,
@@ -563,11 +541,10 @@ private struct CollectionFixtures: Sendable {
         pages: [VideoPage],
         collection: VideoCollection?
     ) -> VideoDetail {
-        VideoDetail(
+        makeVideoDetail(
             bvid: bvid,
             title: "详情 \(bvid)",
             summary: "脱敏详情",
-            coverURL: nil,
             owner: VideoOwner(id: 10_001, name: "测试 UP 主"),
             statistics: VideoStatistics(
                 viewCount: 10,
@@ -575,11 +552,23 @@ private struct CollectionFixtures: Sendable {
                 likeCount: 3
             ),
             durationSeconds: pages.reduce(0) { $0 + $1.durationSeconds },
-            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
             pages: pages,
             collection: collection
         )
     }
+}
+
+/// 本文件两套合集 fixture 共用的播放地址：空清单，不带请求头。
+private func emptyPlayback() -> VideoPlayback {
+    VideoPlayback(
+        media: .dash(
+            PlaybackManifest(
+                videoRepresentations: [],
+                audioTracks: []
+            )
+        ),
+        mediaHeaders: [:]
+    )
 }
 
 extension VideoRepositoryStub {
@@ -606,7 +595,7 @@ extension VideoRepositoryStub {
                 return fixtures.detail(for: bvid)
             },
             pages: { bvid, _ in fixtures.detail(for: bvid).pages },
-            playback: { _, _ in fixtures.playback }
+            playback: { _, _ in emptyPlayback() }
         )
     }
 

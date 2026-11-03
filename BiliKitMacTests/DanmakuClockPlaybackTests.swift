@@ -236,14 +236,11 @@ private struct PlaybackFixture {
     let player: AVPlayer
     private let view: NativePlayerHostView
     private let window: NSWindow
-    private let directory: URL
+    private let media: SilentAudioFixture
 
     /// 写一段 `mediaSeconds` 秒的带音轨静音媒体，挂进无边框窗口里的播放器宿主并开始观察 item。
     init(mediaSeconds: Double) throws {
-        directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("danmaku-sync-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let mediaURL = try writeSilentAudio(seconds: mediaSeconds, in: directory)
+        media = try SilentAudioFixture(seconds: mediaSeconds)
         renderer = CoreAnimationDanmakuRenderer(
             beginTimeAtMediaZero: DanmakuTimebaseClock.beginTimeAtMediaZero
         )
@@ -262,7 +259,7 @@ private struct PlaybackFixture {
         )
         window.contentView = view
         window.orderFrontRegardless()
-        item = AVPlayerItem(url: mediaURL)
+        item = AVPlayerItem(url: media.mediaURL)
         let player = SeekTrackingPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = false
         self.player = player
@@ -276,7 +273,7 @@ private struct PlaybackFixture {
         view.stopObservingPlayerItemChanges()
         view.player = nil
         window.orderOut(nil)
-        try? FileManager.default.removeItem(at: directory)
+        media.remove()
     }
 }
 

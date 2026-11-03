@@ -2,6 +2,7 @@ import BiliApplication
 import BiliModels
 import Testing
 
+/// 弹幕分段序号不合法时不发请求，返回的分段与请求不符时按无效响应拒收。
 @Suite(.timeLimit(.minutes(1)))
 struct DanmakuSegmentUseCaseTests {
     private let identity = PlaybackItemIdentity(

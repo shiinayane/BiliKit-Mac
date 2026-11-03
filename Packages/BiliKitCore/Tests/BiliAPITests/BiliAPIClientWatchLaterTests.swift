@@ -28,10 +28,7 @@ struct BiliAPIClientWatchLaterTests {
         #expect(requests.map(\.url.path) == ["/x/v2/history/toview/web"])
         let request = try #require(requests.first)
         #expect(request.headers["Referer"] == "https://www.bilibili.com/watchlater/")
-        let query = Dictionary(
-            uniqueKeysWithValues: (URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
-                .queryItems ?? []).map { ($0.name, $0.value ?? "") }
-        )
+        let query = queryFields(request)
         #expect(query["need_split"] == nil)
         #expect(query["wts"] == "1700000000")
         #expect(query["w_rid"]?.count == 32)
@@ -315,11 +312,7 @@ struct BiliAPIClientWatchLaterTests {
             timestampProvider: { 1_700_000_000 }
         )
         _ = try await client.watchLater(request: request)
-        let url = try #require(transport.businessRequests().first?.url)
-        return Dictionary(
-            uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems ?? []).map { ($0.name, $0.value ?? "") }
-        )
+        return queryFields(try #require(transport.businessRequests().first))
     }
 
     /// 一页 `rows` 条可播放的手写条目，总条数为 `count`。

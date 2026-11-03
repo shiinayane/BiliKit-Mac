@@ -5,6 +5,9 @@ import Testing
 
 @testable import BiliBrowseFeature
 
+/// 热搜词刷新期间与刷新失败时保留已显示的词。
+///
+/// 首次加载失败给出失败态，再次刷新可恢复；`reset` 清空。
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct TrendingSearchViewModelTests {

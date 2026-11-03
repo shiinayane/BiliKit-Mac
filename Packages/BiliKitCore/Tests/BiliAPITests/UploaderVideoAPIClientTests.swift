@@ -6,6 +6,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定 UP 主投稿契约：WBI 签名的账户读取带空间 Referer 与排序映射，隐藏的统计不当作 0，单条损坏只丢
+/// 这一条，本地无凭据时不匿名请求，非法 MID 或页码不发请求，HTTP 403 不换 key 重试。
 struct UploaderVideoAPIClientTests {
     @Test
     func pageMapsFieldsAndDropsInvalidEntries() async throws {
@@ -69,10 +71,7 @@ struct UploaderVideoAPIClientTests {
         let request = try #require(requests.first)
         #expect(request.headers["Referer"] == "https://space.bilibili.com/10001/")
         #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
-        let query = Dictionary(
-            uniqueKeysWithValues: (URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
-                .queryItems ?? []).map { ($0.name, $0.value ?? "") }
-        )
+        let query = queryFields(request)
         #expect(query["mid"] == "10001")
         #expect(query["pn"] == "2")
         #expect(query["ps"] == "30")

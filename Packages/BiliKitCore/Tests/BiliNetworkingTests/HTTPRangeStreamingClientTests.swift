@@ -3,6 +3,12 @@ import Testing
 
 @testable import BiliNetworking
 
+/// 固定流式 Range 读取的契约：响应头先按状态码、Content-Range、总长、Content-Length 与类型验证，通过之后才交付
+/// 正文回调。
+///
+/// 请求去掉 Cookie 与 Authorization、只带自己的 Range（见 SECURITY-MODEL §4）；被拒绝的重定向不等 3xx 正文；
+/// 正文长度必须与区间完全一致；只有要求时才拒绝缺少 Content-Length 的响应；下游阻塞时回调串行、正文完整有序；
+/// 取消会停掉上游任务。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct HTTPRangeStreamingClientTests {
     @Test

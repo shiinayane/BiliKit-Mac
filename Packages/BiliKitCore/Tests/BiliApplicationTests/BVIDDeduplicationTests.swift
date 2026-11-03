@@ -2,6 +2,7 @@ import Testing
 
 @testable import BiliApplication
 
+/// 按 BVID 去重保留首次出现的顺序，并去掉已在列表里的条目。
 struct BVIDDeduplicationTests {
     @Test(
         arguments: [

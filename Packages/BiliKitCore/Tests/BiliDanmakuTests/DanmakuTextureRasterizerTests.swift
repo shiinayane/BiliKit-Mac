@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliDanmaku
 
+/// 固定弹幕纹理的契约：缓存键随每一项视觉输入变化，布局测量与栅格化的纹理尺寸逐像素一致。
+///
+/// 高赞与 UP 主装饰只加宽、不加高；大会员彩色弹幕的键与普通弹幕区分、填充固定为白色，描边从左段偏粉渐变到
+/// 右段偏蓝；纹理按像素字节判等；纹理缓存按字节有界、按 LRU 淘汰并拒绝单项超限。
 @Suite
 struct DanmakuTextureRasterizerTests {
     @Test
@@ -29,18 +33,7 @@ struct DanmakuTextureRasterizerTests {
         let base = try key(baseEvent)
         let variants = [
             try key(
-                DanmakuEvent(
-                    id: "key-2",
-                    timeSeconds: 1,
-                    mode: .top,
-                    text: "different",
-                    fontSize: 25,
-                    colorRGB: 0xFFFFFF,
-                    colorStyle: .solid,
-                    weight: 1,
-                    isHighLike: false,
-                    isUploader: false
-                )
+                danmakuEvent(id: "key-2", mode: .top, text: "different")
             ),
             try key(baseEvent, backingScale: 1),
             try key(
@@ -91,17 +84,14 @@ struct DanmakuTextureRasterizerTests {
                 isHighLike: true,
                 isUploader: false
             ),
-            DanmakuEvent(
+            danmakuEvent(
                 id: "vip",
-                timeSeconds: 1,
                 mode: .bottom,
                 text: "大会员 VIP",
                 fontSize: 36,
                 colorRGB: 0x00FF00,
                 colorStyle: .vipGradient,
-                weight: 1,
-                isHighLike: true,
-                isUploader: false
+                isHighLike: true
             )
         ]
         var cache = DanmakuTextMeasurementCache()
@@ -144,18 +134,7 @@ struct DanmakuTextureRasterizerTests {
     @Test
     func vipGradientKeyIsDistinctAndAlwaysWhite() throws {
         func event(_ style: DanmakuColorStyle, colorRGB: UInt32) -> DanmakuEvent {
-            DanmakuEvent(
-                id: "vip",
-                timeSeconds: 1,
-                mode: .scrolling,
-                text: "彩色弹幕",
-                fontSize: 25,
-                colorRGB: colorRGB,
-                colorStyle: style,
-                weight: 1,
-                isHighLike: false,
-                isUploader: false
-            )
+            danmakuEvent(id: "vip", text: "彩色弹幕", colorRGB: colorRGB, colorStyle: style)
         }
         let solid = try #require(
             DanmakuTextureRasterizer.key(event: event(.solid, colorRGB: 0xFFFFFF), backingScale: 2)

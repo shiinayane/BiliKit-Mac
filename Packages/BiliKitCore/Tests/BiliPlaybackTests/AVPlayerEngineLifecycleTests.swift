@@ -21,31 +21,9 @@ extension AVPlayerEngineSuites {
         @Test
         @MainActor
         func enginePublishesTimelineAndClearsItWhenStopped() async throws {
-            let videoData = try fixtureData(named: "video-avc")
-            let audioData = try fixtureData(named: "audio-aac")
-            let videoURL = try #require(URL(string: "https://timeline.fixture.bilivideo.com/video"))
-            let audioURL = try #require(URL(string: "https://timeline.fixture.bilivideo.com/audio"))
-            let video = try makeFixtureTrack(
-                id: 80,
-                kind: .video,
-                codecs: "avc1.4d400b",
-                bandwidth: 50_000,
-                data: videoData,
-                primaryURL: videoURL
-            ).representation
-            let audio = try makeFixtureTrack(
-                id: 30_280,
-                kind: .audio,
-                codecs: "mp4a.40.2",
-                bandwidth: 96_000,
-                data: audioData,
-                primaryURL: audioURL
-            ).representation
-            let transport = FixtureRangeTransport(
-                media: [videoURL: videoData, audioURL: audioData]
-            )
+            let fixture = try makeSimpleMedia(host: "timeline.fixture.bilivideo.com")
             let engine = makeFixtureEngine(
-                bridge: makeFixtureBridge(transport)
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
             )
             engine.player.isMuted = true
             let identity = PlaybackItemIdentity(
@@ -55,8 +33,10 @@ extension AVPlayerEngineSuites {
             let request = PlaybackRequest(
                 media: .dash(
                     PlaybackManifest(
-                        videoRepresentations: [video],
-                        audioTracks: [.original(representations: [audio], loudnessMetadata: nil)]
+                        videoRepresentations: [fixture.video],
+                        audioTracks: [
+                            .original(representations: [fixture.audio], loudnessMetadata: nil)
+                        ]
                     )
                 )
             )
@@ -179,42 +159,9 @@ extension AVPlayerEngineSuites {
         @Test
         @MainActor
         func engineDeduplicatesFailureNotificationAfterReady() async throws {
-            let videoData = try fixtureBase64Data(
-                named: "video-avc-256x144-4s-global-sidx.mp4"
-            )
-            let audioData = try fixtureBase64Data(
-                named: "audio-aac-4s-global-sidx.mp4"
-            )
-            let videoURL = try #require(
-                URL(string: "https://failure-event.fixture.bilivideo.com/video.mp4")
-            )
-            let audioURL = try #require(
-                URL(string: "https://failure-event.fixture.bilivideo.com/audio.mp4")
-            )
-            let video = try makeFixtureTrack(
-                id: 80,
-                kind: .video,
-                codecs: "avc1.4d400c",
-                bandwidth: 100_000,
-                data: videoData,
-                primaryURL: videoURL
-            ).representation
-            let audio = try makeFixtureTrack(
-                id: 30_280,
-                kind: .audio,
-                codecs: "mp4a.40.2",
-                bandwidth: 32_000,
-                data: audioData,
-                primaryURL: audioURL
-            ).representation
-            let transport = FixtureRangeTransport(
-                media: [
-                    videoURL: videoData,
-                    audioURL: audioData
-                ]
-            )
+            let fixture = try makeFourSecondMedia(host: "failure-event.fixture.bilivideo.com")
             let engine = makeFixtureEngine(
-                bridge: makeFixtureBridge(transport)
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
             )
             let failureRecorder = PlaybackFailureRecorder()
             let failureEvents = engine.playbackFailureEvents()
@@ -236,9 +183,9 @@ extension AVPlayerEngineSuites {
                 PlaybackRequest(
                     media: .dash(
                         PlaybackManifest(
-                            videoRepresentations: [video],
+                            videoRepresentations: [fixture.video],
                             audioTracks: [
-                                .original(representations: [audio], loudnessMetadata: nil)
+                                .original(representations: [fixture.audio], loudnessMetadata: nil)
                             ]
                         )
                     )

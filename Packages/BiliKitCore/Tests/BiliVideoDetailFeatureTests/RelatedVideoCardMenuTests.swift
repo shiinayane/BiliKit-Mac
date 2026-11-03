@@ -23,15 +23,7 @@ struct RelatedVideoCardMenuTests {
                     opened.append(url)
                     return .handled
                 },
-                writing: VideoCardAccountWriting(
-                    isAvailable: { false },
-                    addToWatchLater: { _ in },
-                    removeFromWatchLater: { _ in },
-                    chooseFavoriteFolders: { _ in },
-                    removeFromFavoriteFolder: { _ in },
-                    dislikeRecommendation: { _ in },
-                    cancelRecommendationDislike: { _ in }
-                )
+                writing: .unavailable
             )
         )
 

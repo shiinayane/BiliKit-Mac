@@ -88,11 +88,3 @@ struct FavoriteCardFormattingTests {
         )
     }
 }
-
-private func localized(_ key: String.LocalizationValue) -> String {
-    String(
-        localized: key,
-        bundle: LibraryFeatureStrings.bundle,
-        locale: Locale(identifier: "zh-Hans")
-    )
-}

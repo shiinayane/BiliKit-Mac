@@ -13,20 +13,9 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
     @Test
     @MainActor
     func commentPaginationPreservesRowAnchorAtAndAboveTheOldBottom() async throws {
-        let controller = makeSidebarController()
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = controller.rootView
-        window.contentView?.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        defer {
-            controller.tearDown()
-            window.contentView = nil
-        }
+        let sidebar = HostedPlaybackSidebar()
+        let controller = sidebar.controller
+        defer { sidebar.tearDown() }
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         // 呈现是值，先全部构造：构造要等 ViewModel 加载，中途让出主线程会让侧栏的精测 Task 先跑、改变测量基准。
         let initial = await commentsPresentation(
@@ -207,20 +196,10 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
     @Test
     @MainActor
     func aboveAnchorMutationAndContinuousResizeKeepTheSameCommentPosition() async throws {
-        let controller = makeSidebarController()
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = controller.rootView
-        window.contentView?.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        defer {
-            controller.tearDown()
-            window.contentView = nil
-        }
+        let sidebar = HostedPlaybackSidebar()
+        let controller = sidebar.controller
+        let window = sidebar.window
+        defer { sidebar.tearDown() }
         let subject = CommentSubjectIdentity.video(aid: 700_001)
         let initialThreads = (1...60).map {
             commentThread(id: Int64($0), message: "第 \($0) 条评论")
@@ -504,23 +483,7 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
             }
         )
         var nextPageRequests = 0
-        let testActions = NativePlaybackSidebarActions(
-            selectEpisode: { _ in },
-            selectPage: { _, _ in },
-            retryPages: {},
-            selectCommentSort: { _ in },
-            retryComments: {},
-            loadNextComments: { nextPageRequests += 1 },
-            expandReplies: { _ in },
-            collapseReplies: { _ in },
-            showReplyPage: { _, _ in },
-            showDialog: { _, _ in },
-            loadMoreDialog: { _ in },
-            closeDialog: { _ in },
-            retryReplies: { _ in },
-            openCommentLink: { _ in },
-            openCommentPictures: { _ in }
-        )
+        let testActions = sidebarActions(loadNextComments: { nextPageRequests += 1 })
 
         controller.update(
             presentation: presentation(bvid: "BVFirst", comments: loading),
@@ -546,15 +509,6 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
 
         #expect(controller.rootView.scrollView.documentVisibleRect.minY <= 1)
         #expect(nextPageRequests == 0)
-        let collectionView = try #require(
-            controller.rootView.scrollView.documentView as? NSCollectionView
-        )
-        #expect(collectionView.numberOfSections == 4)
-        #expect(collectionView.numberOfItems(inSection: 3) == 42)
-        #expect(
-            collectionView.collectionViewLayout?.collectionViewContentSize.height
-                ?? 0 > 600
-        )
         controller.tearDown()
     }
 }

@@ -3,6 +3,9 @@ import BiliModels
 import Synchronization
 import Testing
 
+/// 字幕只给自动生成的轨道标（AI）并保持目录顺序，不合法的轨道或分 P 身份不发请求。
+///
+/// 目录读取的失败里只有凭据失效报告给账户复核。
 @Suite(.timeLimit(.minutes(1)))
 struct SubtitleUseCaseTests {
     @Test(arguments: [

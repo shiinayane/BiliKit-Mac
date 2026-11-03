@@ -142,12 +142,7 @@ struct SignedRequestSessionEpochTests {
             switch self {
             case .videoDetail: try fixtureResponse("view")
             case .commentRoot: try fixtureResponse("comment-main")
-            case .subtitleCatalog:
-                // fixture 的字幕主机是占位域名，换成允许的来源才能完成目录解析。
-                try fixtureResponse("subtitle-catalog").replacingBody(
-                    "subtitle.example.invalid",
-                    with: "aisubtitle.hdslb.com"
-                )
+            case .subtitleCatalog: try allowedSubtitleCatalogResponse()
             case .danmakuSegment: try hexFixtureResponse("danmaku-segment-minimal")
             }
         }
@@ -168,18 +163,5 @@ struct SignedRequestSessionEpochTests {
                 _ = try await client.danmakuSegmentData(index: 1, for: Self.identity)
             }
         }
-    }
-}
-
-extension HTTPResponse {
-    fileprivate func replacingBody(_ target: String, with replacement: String) -> HTTPResponse {
-        HTTPResponse(
-            statusCode: statusCode,
-            headers: headers,
-            body: Data(
-                String(decoding: body, as: UTF8.self)
-                    .replacingOccurrences(of: target, with: replacement).utf8
-            )
-        )
     }
 }

@@ -396,18 +396,7 @@ struct DanmakuLaneAllocatorTests {
         duration: Double = 8
     ) -> DanmakuLaneRequest {
         DanmakuLaneRequest(
-            event: DanmakuEvent(
-                id: id,
-                timeSeconds: time,
-                mode: mode,
-                text: "fixture",
-                fontSize: 24,
-                colorRGB: 0xFF_FF_FF,
-                colorStyle: .solid,
-                weight: 5,
-                isHighLike: false,
-                isUploader: false
-            ),
+            event: danmakuEvent(id: id, time: time, mode: mode, fontSize: 24, weight: 5),
             width: width,
             height: height,
             durationSeconds: duration,

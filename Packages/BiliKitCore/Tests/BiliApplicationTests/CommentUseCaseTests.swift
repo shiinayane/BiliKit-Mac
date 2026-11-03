@@ -2,6 +2,9 @@ import BiliApplication
 import BiliModels
 import Testing
 
+/// 评论用例去掉已显示与重复的条目而不改变顺序，空页停止自动翻页但保留游标以便重试。
+///
+/// 楼中楼与对话页校验服务端给出的页码、页大小与下一页起点，不合法的页码或起点不发请求。
 @Suite(.timeLimit(.minutes(1)))
 struct CommentUseCaseTests {
     @Test

@@ -12,6 +12,9 @@ import Testing
 
 @testable import BiliKit
 
+/// 播放页挂进真实窗口后的生命周期：播放失败停止弹幕、重试重新开始，返回取消在途的名片请求。
+///
+/// 只有解析出的账户边界才关闭播放；凭据失效触发复核并关闭播放；评论按 aid 激活、返回时清空。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct VideoDetailLifecycleTests {
     @Test(.timeLimit(.minutes(1)))
@@ -27,8 +30,8 @@ struct VideoDetailLifecycleTests {
         )
         let presentation = RecordingDanmakuPresentation()
         let danmakuModel = DanmakuControlsViewModel(presentation: presentation)
-        let hostingView = NSHostingView(
-            rootView: AnyView(
+        let window = mountedWindow(
+            AnyView(
                 VideoPlaybackView(
                     model: videoModel,
                     danmakuModel: danmakuModel,
@@ -41,16 +44,10 @@ struct VideoDetailLifecycleTests {
                 ) {
                     EmptyView()
                 }
-            )
+            ),
+            width: 800,
+            height: 600
         )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
         await presentation.waitForStopCount(1)
         let baselineStopCount = presentation.stopCount
 
@@ -139,15 +136,11 @@ struct VideoDetailLifecycleTests {
         let videoModel = composition.videoModel
         let authenticationModel = composition.authenticationModel
         let coordinator = composition.navigationCoordinator
-        let hostingView = NSHostingView(rootView: AppRootView(window: composition))
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
+        let window = mountedWindow(
+            AppRootView(window: composition),
+            width: 800,
+            height: 600
         )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
         try await authenticationService.waitForFirstRestoreStart()
         #expect(authenticationModel.sessionState == .unresolved)
         #expect(watchProgressProbe.startCount == 1)
@@ -252,15 +245,11 @@ struct VideoDetailLifecycleTests {
         let commentsModel = composition.commentsModel
         let authenticationModel = composition.authenticationModel
         let coordinator = composition.navigationCoordinator
-        let hostingView = NSHostingView(rootView: AppRootView(window: composition))
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1_080, height: 680),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
+        let window = mountedWindow(
+            AppRootView(window: composition),
+            width: 1_080,
+            height: 680
         )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
         await authenticationService.waitForRestoreCallCount(1)
         await authenticationModel.waitForCurrentTask()
         #expect(authenticationModel.sessionState == .signedIn(nil))
@@ -315,15 +304,11 @@ struct VideoDetailLifecycleTests {
         let videoModel = composition.videoModel
         let commentsModel = composition.commentsModel
         let coordinator = composition.navigationCoordinator
-        let hostingView = NSHostingView(rootView: AppRootView(window: composition))
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 680),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
+        let window = mountedWindow(
+            AppRootView(window: composition),
+            width: 1_080,
+            height: 680
         )
-        window.contentView = hostingView
-        window.layoutIfNeeded()
 
         coordinator.openPlayback(first.bvid)
         await waitUntilSettled(videoModel)
@@ -354,6 +339,21 @@ struct VideoDetailLifecycleTests {
         #expect(videoModel.state == .idle)
         window.contentView = NSView()
     }
+}
+
+/// 把 SwiftUI 根视图挂进一个无边框窗口并完成一次布局，让视图的出现与消失回调真正运行；调用方结束时把
+/// `contentView` 换成空视图，触发消失回调。
+@MainActor
+private func mountedWindow(_ rootView: some View, width: CGFloat, height: CGFloat) -> NSWindow {
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = NSHostingView(rootView: rootView)
+    window.layoutIfNeeded()
+    return window
 }
 
 enum VideoDetailCredentialFailureSource: CaseIterable, Sendable {

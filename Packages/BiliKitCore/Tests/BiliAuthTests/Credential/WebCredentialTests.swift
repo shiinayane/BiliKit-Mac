@@ -4,6 +4,10 @@ import Testing
 
 @testable import BiliAuth
 
+/// 凭据以带版本的信封编解码，诊断输出不含 Cookie 值，Cookie 不全或不安全时拒绝。
+///
+/// Keychain 条目放在数据保护钥匙串、仅本机解锁时可用且不同步，覆盖写入走原子更新；
+/// 读取错误映射为不可用或不允许交互。
 struct WebCredentialTests {
     @Test
     func versionedEnvelopeRoundTripsWithoutPublicDiagnostics() throws {

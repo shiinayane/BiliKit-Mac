@@ -4,6 +4,10 @@ import Testing
 
 @testable import BiliVideoCollectionUI
 
+/// 卡片文字层复用时不残留上一张卡片的文字与样式。
+///
+/// 标题与页脚以纯字符串绘制，换配置与 `reset` 清掉文字、胶囊样式与尾部图标；尾部图标计入尾部宽度；卡片 `reset` 后
+/// 仍是读屏按钮，标签与说明清空。
 struct NativeVideoCardTextLayoutTests {
     @Test @MainActor
     func rendererUsesPlainStringsAndClearsReusedContent() throws {

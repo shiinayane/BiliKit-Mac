@@ -36,30 +36,12 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
                 thread: commentThread(id: 3, message: "根评论", replyCount: 2),
                 replyState: state
             )
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onShowPage: { _ in },
-                onRetry: {},
+            configureThreadItem(
+                item,
+                with: row,
                 onShowDialog: { shownDialogs.append($0) },
-                onLoadMoreDialog: {},
-                onCloseDialog: { closedCount += 1 },
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in },
-                onOpenAuthorSpace: nil
+                onCloseDialog: { closedCount += 1 }
             )
-            item.view.layoutSubtreeIfNeeded()
         }
 
         func visibleButton(_ title: String) -> NSButton? {
@@ -112,30 +94,7 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
                 thread: commentThread(id: 3, message: "根评论", replyCount: 2),
                 replyState: state
             )
-            item.view.frame = NSRect(
-                x: 0,
-                y: 0,
-                width: 408,
-                height: NativePlaybackCommentsItemMeasurement.thread(row, width: 408)
-            )
-            item.configure(
-                presentation: row,
-                textRenderer: makeCommentTextRenderer(),
-                avatarLoader: makeCommentAvatarLoader(),
-                pictureLoader: makeCommentPictureLoader(),
-                onTextLayoutChange: {},
-                onExpand: {},
-                onCollapse: {},
-                onShowPage: { _ in },
-                onRetry: {},
-                onShowDialog: { _ in },
-                onLoadMoreDialog: {},
-                onCloseDialog: {},
-                onOpenLink: { _ in },
-                onOpenPictures: { _ in },
-                onOpenAuthorSpace: nil
-            )
-            item.view.layoutSubtreeIfNeeded()
+            configureThreadItem(item, with: row)
             // 第一行是根评论，其余是面板里的回复行。
             return Array(
                 descendants(of: item.view).compactMap { $0 as? NativePlaybackCommentRowView }

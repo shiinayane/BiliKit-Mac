@@ -6,6 +6,7 @@ import Testing
 @testable import BiliKit
 @testable import BiliModels
 
+/// 评论链接目标翻译成 App 路由：视频链接带上分 P 与起播秒数，短链给出解析闭包并以原地址兜底。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct CommentLinkRoutingTests {
@@ -51,6 +52,7 @@ struct CommentLinkRoutingTests {
     }
 }
 
+/// 短链解析只打开最后一次点击的结果：新的点击或取消之后，在途解析即使返回了路由也不再打开。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct CommentShortLinkResolutionTests {

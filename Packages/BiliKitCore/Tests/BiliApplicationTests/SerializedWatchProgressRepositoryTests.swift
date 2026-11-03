@@ -3,8 +3,9 @@ import Testing
 
 @testable import BiliApplication
 
+/// 进程级观看进度写入一次只发一个，多个窗口同时退出的写入都会送达，登出后在途与排队的旧会话写入被取消、不再重放。
 @Suite(.timeLimit(.minutes(1)))
-struct WatchProgressUseCaseTests {
+struct SerializedWatchProgressRepositoryTests {
     @Test
     func authenticationGenerationCancelsQueuedOldSessionWithoutReplay() async throws {
         let base = ProgressRepositoryStub(blocking: .all)
@@ -42,7 +43,7 @@ struct WatchProgressUseCaseTests {
             await base.releaseNext()
             if await base.nextReport().event == .ended { terminalCount += 1 }
         }
-        // Final release completes the last terminal request and has no successor event.
+        // 最后一次放行让最后那个 ended 请求完成；它之后不再有事件。
         await base.releaseNext()
         #expect(terminalCount == 2)
         #expect(await base.maximumActiveCount == 1)
@@ -97,16 +98,11 @@ private final class WindowProgressHarness {
                 loadIntent: intent
             )
         )
-        let probe = probe
-        session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: writer),
+        session = WatchProgressSession.fixture(
+            repository: writer,
             timeline: timeline,
-            resolveTarget: { candidate, candidateIntent in
-                probe.observe()
-                return candidate == identity && candidateIntent == intent
-                    ? target : nil
-            },
-            environment: .fixture()
+            targets: [target],
+            resolutions: probe
         )
         token = timeline.store.beginItem(identity: identity, loadIntent: intent)
         timeline.store.markReady(token: token, durationSeconds: 120)

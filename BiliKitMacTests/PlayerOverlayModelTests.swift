@@ -7,6 +7,10 @@ import Testing
 
 @testable import BiliKit
 
+/// 播放器浮层的临时提示、续播提示与转圈各自只在该出现时出现。
+///
+/// 按住的临时倍速徽章留到松开，其他徽章按各自计时消失；关掉的续播提示在撤回前不再出现，跳离续播位置即关闭；
+/// 转圈只覆盖准备期没有 item 与等待画面且延迟到期仍在等的时候；浮层只在可交互区域拦截点击。
 @MainActor
 struct PlayerOverlayModelTests {
     @Test

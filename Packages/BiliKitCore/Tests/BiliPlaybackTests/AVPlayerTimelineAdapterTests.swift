@@ -5,6 +5,11 @@ import Testing
 
 @testable import BiliPlayback
 
+/// 播放时间线只在真实的不连续处推进 generation，用户交互只按真实操作计数。
+///
+/// 覆盖 `AVPlayerTimelineAdapter` 的 seek 落点吸收与取代、旧回调隔离、结束通知与观察者注销，
+/// `TransportSeekOperationState` 的累加、夹取与旧完成回调拒绝，`PlaybackInteractionTracker` 对系统
+/// 跳变、起播位置与内部 seek 的排除，以及临时倍速结束后的恢复策略。
 @Suite(.timeLimit(.minutes(1)))
 struct AVPlayerTimelineAdapterTests {
     @Test

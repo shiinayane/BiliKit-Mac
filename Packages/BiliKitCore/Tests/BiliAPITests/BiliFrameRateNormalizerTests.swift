@@ -2,6 +2,8 @@ import Testing
 
 @testable import BiliAPI
 
+/// 固定帧率归一：标准帧率与无歧义的整数帧率原样保留，B 站时间刻度桶与小幅漂移归到最近的标准帧率，
+/// 空值、非正、除零、非标准小数与超出上限的值给 nil。
 struct BiliFrameRateNormalizerTests {
     @Test(arguments: [
         FrameRateCase(rawValue: "24000/1001", expected: 24_000.0 / 1_001.0),

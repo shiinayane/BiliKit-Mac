@@ -2,6 +2,9 @@ import BiliApplication
 import Foundation
 import Testing
 
+/// 搜索条件规范化关键词，发布时间按日历时区的自然日解析为整日闭区间。
+///
+/// 跨夏令时按日历日计算；自定义区间拒绝开始晚于结束与晚于今天的日期。
 struct VideoSearchCriteriaTests {
     private var tokyoCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)

@@ -6,6 +6,10 @@ import Testing
 @testable import BiliLibraryFeature
 @testable import BiliUI
 
+/// 观看历史卡片的进度、观看时间与观看设备的写法。
+///
+/// 进度写成“已看/总时长”或“已看完”；观看时间按今天、昨天、同年、跨年分写，年界与日界按日历时区；设备在日期前显示
+/// 图标并在读屏末尾读出。列表的已加载与加载更多状态投影到同一份已加载界面。
 struct WatchHistoryCardFormattingTests {
     /// 固定的观看时刻 2023-11-14 22:13:20 UTC，与执行日期相隔多年。
     ///
@@ -192,8 +196,5 @@ private let tokyoCalendar: Calendar = {
     return calendar
 }()
 
-private let completedText = localized("已看完")
-
-private func localized(_ key: String.LocalizationValue) -> String {
-    String(localized: key, bundle: LibraryFeatureStrings.bundle)
-}
+/// `LibraryCardFormatting.progress` 在这里不传 locale，按当前语言给出“已看完”。
+private let completedText = localized("已看完", locale: .current)

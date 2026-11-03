@@ -102,11 +102,3 @@ struct WatchLaterCardFormattingTests {
 }
 
 private let completedText = localized("已看完")
-
-private func localized(_ key: String.LocalizationValue) -> String {
-    String(
-        localized: key,
-        bundle: LibraryFeatureStrings.bundle,
-        locale: Locale(identifier: "zh-Hans")
-    )
-}

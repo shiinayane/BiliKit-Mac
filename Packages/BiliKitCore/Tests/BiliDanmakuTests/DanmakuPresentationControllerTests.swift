@@ -106,7 +106,7 @@ struct DanmakuPresentationControllerTests {
         move(controller, to: 1_000, generation: 2, state: .paused)
         #expect(backend.installed.isEmpty)
 
-        let far = (0..<200).map { timedEvent(id: "far-\($0)", time: 990 + Double($0) * 0.1) }
+        let far = (0..<200).map { danmakuEvent(id: "far-\($0)", time: 990 + Double($0) * 0.1) }
         controller.setSegments([1: events(), 3: far], for: identity)
         await backend.waitUntil { !backend.installed.isEmpty }
         #expect(backend.installedEventIDs == expectedIDs(at: 1_000, in: controller))
@@ -608,7 +608,7 @@ struct DanmakuPresentationControllerTests {
 
     private func events() -> [DanmakuEvent] {
         (0..<600).map { offset in
-            timedEvent(
+            danmakuEvent(
                 id: "event-\(offset)",
                 time: Double(offset) * 0.6,
                 mode: offset % 4 == 0 ? .top : .scrolling

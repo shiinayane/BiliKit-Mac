@@ -5,6 +5,10 @@ import Testing
 @testable import BiliUI
 @testable import BiliVideoDetailFeature
 
+/// 相关推荐卡片的展示值。
+///
+/// 封面上的计数与时长用紧凑格式，缺时长时不显示时长；读屏 label 读出每个可见项，时长读带单位的说法而不是封面上的
+/// 「12:34」。
 struct RelatedVideoShelfTests {
     @Test
     func presentationFillsAndReadsEveryVisibleSlot() {

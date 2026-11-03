@@ -51,9 +51,9 @@ struct DanmakuLayoutCoordinatorTests {
         let changes = TableChangeRecorder(coordinator)
         let original = denseEvents(segment: 1, count: 120, seed: 6)
         let replacement = original.map {
-            DanmakuEvent(
+            danmakuEvent(
                 id: "replacement-" + $0.id,
-                timeSeconds: $0.timeSeconds,
+                time: $0.timeSeconds,
                 mode: $0.mode,
                 text: $0.text,
                 fontSize: $0.fontSize,

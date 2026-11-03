@@ -158,6 +158,42 @@ func makeSimpleMedia(
     return (video, audio, [videoURL: videoData, audioURL: audioData])
 }
 
+/// 四秒 256x144 AVC 与 AAC fixture（全局 SIDX），挂在给定 host 的独立远端 URL 上。
+func makeFourSecondMedia(
+    host: String
+) throws -> (
+    video: MediaRepresentation,
+    audio: MediaRepresentation,
+    media: [URL: Data]
+) {
+    let videoData = try fixtureBase64Data(named: "video-avc-256x144-4s-global-sidx.mp4")
+    let audioData = try fixtureBase64Data(named: "audio-aac-4s-global-sidx.mp4")
+    let videoURL = try #require(URL(string: "https://\(host)/video"))
+    let audioURL = try #require(URL(string: "https://\(host)/audio"))
+    let video = try makeFixtureTrack(
+        id: 80,
+        kind: .video,
+        codecs: "avc1.4d400c",
+        bandwidth: 100_000,
+        data: videoData,
+        primaryURL: videoURL,
+        videoAttributes: try VideoRepresentationAttributes(
+            width: 256,
+            height: 144,
+            frameRate: 24
+        )
+    ).representation
+    let audio = try makeFixtureTrack(
+        id: 30_280,
+        kind: .audio,
+        codecs: "mp4a.40.2",
+        bandwidth: 32_000,
+        data: audioData,
+        primaryURL: audioURL
+    ).representation
+    return (video, audio, [videoURL: videoData, audioURL: audioData])
+}
+
 func makeSelectedAudioTrack(
     trackID: String = "original",
     displayName: String = "原声",
@@ -540,6 +576,18 @@ func makeFixtureBridge(_ transport: FixtureRangeTransport) -> DASHToHLSBridge {
     )
 }
 
+/// 与 `makeFixtureBridge` 一样经 fixture 替身读 SIDX，但 server 由 registry 创建并记录、不转发媒体；
+/// 用于断言失败的 prepare 没有启动 server。
+func makeFixtureBridge(
+    _ transport: FixtureRangeTransport,
+    serversIn registry: LoopbackServerRegistry
+) -> DASHToHLSBridge {
+    DASHToHLSBridge(
+        rangeClient: HTTPRangeClient(streamer: transport),
+        serverFactory: { registry.create() }
+    )
+}
+
 /// 用 fixture bridge 组装与生产同形的 engine：字幕目录默认为空，线路与响度取各自的关闭值。
 @MainActor
 func makeFixtureEngine(
@@ -638,6 +686,9 @@ actor FixtureSubtitleRepository: SubtitleRepository {
     }
 }
 
+/// 记录 bridge 经 `serverFactory` 创建过的每个 server，供测试断言失败路径没有启动 server。
+///
+/// `Sendable` 由 `Mutex` 保护的数组保证。
 final class LoopbackServerRegistry: Sendable {
     private let storage = Mutex<[LoopbackPlaybackServer]>([])
 

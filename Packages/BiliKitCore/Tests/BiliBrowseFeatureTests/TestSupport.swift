@@ -1,5 +1,6 @@
 import BiliApplication
 import BiliModels
+import BiliUI
 import Foundation
 import Observation
 
@@ -403,5 +404,26 @@ extension FeedRepositoryStub {
         case .popular: popularPages
         case .search: searchRequests.map(\.page)
         }
+    }
+}
+
+/// 卡片写入口 `VideoCardAccountWriting` 的记录替身（本 target 唯一一份）：写入门槛恒满足，按到达顺序记录加入稍后再看的
+/// BVID、「不感兴趣」与撤销；闭包在主线程调用。
+@MainActor
+final class RecordedWrites {
+    var addedToWatchLater: [String] = []
+    var disliked: [RecommendationFeedback] = []
+    var cancelled: [RecommendationFeedback] = []
+
+    var writing: VideoCardAccountWriting {
+        VideoCardAccountWriting(
+            isAvailable: { true },
+            addToWatchLater: { [weak self] in self?.addedToWatchLater.append($0) },
+            removeFromWatchLater: { _ in },
+            chooseFavoriteFolders: { _ in },
+            removeFromFavoriteFolder: { _ in },
+            dislikeRecommendation: { [weak self] in self?.disliked.append($0) },
+            cancelRecommendationDislike: { [weak self] in self?.cancelled.append($0) }
+        )
     }
 }

@@ -2,6 +2,10 @@ import Testing
 
 @testable import BiliVideoCollectionUI
 
+/// 近尾自动翻页的判定：同一尾标只请求一次，加载中与没有更多内容时不请求。
+///
+/// 换尾标后按来源策略重新布防（仍在阈值内时列表须先离开阈值、网格立即布防），一次实时滚动手势最多自动加载一页，
+/// `reset` 解除背压并重新布防。
 struct NearEndPaginationTests {
     enum Step: CustomStringConvertible, Sendable {
         /// 以给定阈值状态评估一次，并断言是否请求下一页。

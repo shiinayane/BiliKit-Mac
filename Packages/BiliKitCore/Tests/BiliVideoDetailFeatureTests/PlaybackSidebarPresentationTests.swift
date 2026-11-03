@@ -34,37 +34,25 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
     @Test
     @MainActor
     func browsingAnotherSectionKeepsPagesOnlyForTheSelectedEpisodeSection() {
-        let collection = VideoCollection(
-            id: 1,
-            title: "合集",
-            reportedEpisodeCount: 2,
-            sections: [
-                collectionSection(
-                    id: 10,
-                    title: "正片",
-                    episodes: [
-                        collectionEpisode(
-                            sectionID: 10,
-                            episodeID: 100,
-                            bvid: "BVCurrent",
-                            title: "第一集"
-                        )
-                    ]
-                ),
-                collectionSection(
-                    id: 11,
-                    title: "花絮",
-                    episodes: [
-                        collectionEpisode(
-                            sectionID: 11,
-                            episodeID: 101,
-                            bvid: "BVOther",
-                            title: "幕后花絮"
-                        )
-                    ]
+        let collection = makeTestCollection(sections: [
+            [
+                makeTestEpisode(
+                    ordinal: 0,
+                    bvid: "BVCurrent",
+                    pages: [makeTestPage(1)],
+                    title: "第一集"
+                )
+            ],
+            [
+                makeTestEpisode(
+                    ordinal: 1,
+                    bvid: "BVOther",
+                    pages: [makeTestPage(1)],
+                    section: 1,
+                    title: "幕后花絮"
                 )
             ]
-        )
+        ])
         let projection = selectionProjection(
             context: context(bvid: "BVCurrent", collection: collection)
         )

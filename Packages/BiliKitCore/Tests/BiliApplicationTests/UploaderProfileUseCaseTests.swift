@@ -3,6 +3,7 @@ import BiliModels
 import Foundation
 import Testing
 
+/// UP 主名片规范化名字与签名、其余字段原样保留，非正的 UP 主 ID 不发请求。
 @Suite(.timeLimit(.minutes(1)))
 struct UploaderProfileUseCaseTests {
     /// 名字与签名同一规则：折叠空白，空白视为缺省；用例重建名片时头像、大会员与计数原样保留。

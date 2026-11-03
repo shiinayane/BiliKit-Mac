@@ -4,6 +4,10 @@ import Testing
 
 @testable import BiliAuth
 
+/// 扫码登录只在 nav 校验成功后保存凭据，且只保存白名单内的 Cookie。
+///
+/// 二维码 URL 须落在账号站白名单内；状态描述与诊断不含 QR key、链接参数或响应里的秘密；
+/// 没有挑战时不轮询，过期后挑战作废；旧的二维码、轮询与校验结果不能覆盖新的代次；取消清空状态。
 @Suite(.timeLimit(.minutes(1)))
 struct WebQRLoginSessionTests {
     @Test

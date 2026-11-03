@@ -11,7 +11,7 @@ import Testing
 struct SeekTrackingPlayerTests {
     @Test
     func everyEntryLandsExactlyOnce() async throws {
-        let fixture = try MediaFixture()
+        let fixture = try SilentAudioFixture(seconds: 8)
         defer { fixture.remove() }
         let player = SeekTrackingPlayer()
         player.replaceCurrentItem(with: AVPlayerItem(url: fixture.mediaURL))
@@ -43,7 +43,7 @@ struct SeekTrackingPlayerTests {
 
     @Test
     func nonFiniteSeekIsNeverPending() async throws {
-        let fixture = try MediaFixture()
+        let fixture = try SilentAudioFixture(seconds: 8)
         defer { fixture.remove() }
         let item = AVPlayerItem(url: fixture.mediaURL)
         let player = SeekTrackingPlayer(playerItem: item)
@@ -58,9 +58,10 @@ struct SeekTrackingPlayerTests {
 
     @Test
     func seekOnFailedItemDoesNotOutliveTheItem() async throws {
-        let fixture = try MediaFixture()
+        let fixture = try SilentAudioFixture(seconds: 8)
         defer { fixture.remove() }
-        let failed = AVPlayerItem(url: fixture.missingURL)
+        // 同目录下不存在的文件：item 加载失败。
+        let failed = AVPlayerItem(url: fixture.directory.appendingPathComponent("missing.caf"))
         let player = SeekTrackingPlayer(playerItem: failed)
         #expect(await waitUntil(timeout: .seconds(10)) { failed.status == .failed })
 
@@ -85,24 +86,5 @@ private func issueSeek(_ player: AVPlayer, to time: CMTime, tolerance: CMTime? =
         player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance)
     } else {
         player.seek(to: time)
-    }
-}
-
-/// 一段可播放的静音媒体与同目录下一个不存在的文件地址；测试结束时调用 `remove`。
-private struct MediaFixture {
-    let directory: URL
-    let mediaURL: URL
-    let missingURL: URL
-
-    init() throws {
-        directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("seek-tracking-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        mediaURL = try writeSilentAudio(seconds: 8, in: directory)
-        missingURL = directory.appendingPathComponent("missing.caf")
-    }
-
-    func remove() {
-        try? FileManager.default.removeItem(at: directory)
     }
 }

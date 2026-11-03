@@ -2,6 +2,7 @@ import Testing
 
 @testable import BiliKit
 
+/// 搜索联想把最多 3 条历史放在前面并跳过历史里已有的词，空白或过长的输入不请求联想。
 struct SearchSuggestionPolicyTests {
     @Test
     func historyComesFirstAndSuggestionsSkipItsWords() {

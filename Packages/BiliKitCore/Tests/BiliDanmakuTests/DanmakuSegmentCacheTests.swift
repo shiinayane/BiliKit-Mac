@@ -54,7 +54,7 @@ struct DanmakuSegmentCacheTests {
             snapshot(identity: identity, position: 1_900, generation: 2)
         )
         cache.store(
-            DanmakuSegment(index: 6, events: [timedEvent(id: "far", time: 1_900)]),
+            DanmakuSegment(index: 6, events: [danmakuEvent(id: "far", time: 1_900)]),
             for: identity,
             displayTime: nil
         )

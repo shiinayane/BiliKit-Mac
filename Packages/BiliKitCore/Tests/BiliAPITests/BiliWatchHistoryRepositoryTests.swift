@@ -4,6 +4,8 @@ import BiliNetworking
 import Foundation
 import Testing
 
+/// 观看历史 adapter 的失败分类：没有授权器是需要登录，带凭据的 -101 是凭据失效，Keychain 不可用单独归类，
+/// -412／-403 是受限，非法页大小在发出前拒绝，未知传输错误是传输失败。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliWatchHistoryRepositoryTests {
     @Test(

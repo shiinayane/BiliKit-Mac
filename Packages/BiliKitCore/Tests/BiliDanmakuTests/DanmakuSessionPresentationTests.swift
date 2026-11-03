@@ -13,7 +13,7 @@ struct DanmakuSessionPresentationTests {
     @Test
     func presentationSinkReceivesEveryAcceptedSnapshot() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1PresentationFixture", cid: 3)
-        let (session, timeline, sink) = makeSession(repository: StubDanmakuRepository())
+        let (session, timeline, sink) = makeDanmakuSession(repository: StubDanmakuRepository())
 
         session.start(for: identity)
         let paused = snapshot(
@@ -43,7 +43,7 @@ struct DanmakuSessionPresentationTests {
 
     @Test
     func controlsReachThePresentationSynchronously() throws {
-        let (session, _, sink) = makeSession(repository: StubDanmakuRepository())
+        let (session, _, sink) = makeDanmakuSession(repository: StubDanmakuRepository())
 
         session.setEnabled(false)
         session.setEnabled(false)
@@ -70,12 +70,12 @@ struct DanmakuSessionPresentationTests {
     func pausedSessionDeliversSegmentsAndKeepsLoadingWithoutAnotherSnapshot() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1PausedSegments", cid: 5)
         let events: [Int: [DanmakuEvent]] = [
-            1: [timedEvent(id: "previous", time: 350)],
-            2: [timedEvent(id: "current", time: 370)],
-            3: [timedEvent(id: "next", time: 730)]
+            1: [danmakuEvent(id: "previous", time: 350)],
+            2: [danmakuEvent(id: "current", time: 370)],
+            3: [danmakuEvent(id: "next", time: 730)]
         ]
         let repository = StubDanmakuRepository(eventsBySegment: events)
-        let (session, timeline, sink) = makeSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         timeline.publish(
@@ -96,16 +96,10 @@ struct DanmakuSessionPresentationTests {
     @Test
     func commandsDeliverCardsAndFoldUploaderDanmakuIntoItsSegment() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1CommandSession", cid: 6)
-        let uploader = DanmakuEvent(
+        let uploader = danmakuEvent(
             id: "command:up",
-            timeSeconds: 370,
-            mode: .scrolling,
+            time: 370,
             text: "UP 主说",
-            fontSize: 25,
-            colorRGB: 0xFFFFFF,
-            colorStyle: .solid,
-            weight: 1,
-            isHighLike: false,
             isUploader: true
         )
         let card = DanmakuCommandCard(
@@ -118,10 +112,10 @@ struct DanmakuSessionPresentationTests {
             )
         )
         let repository = StubDanmakuRepository(
-            eventsBySegment: [2: [timedEvent(id: "current", time: 380)]],
+            eventsBySegment: [2: [danmakuEvent(id: "current", time: 380)]],
             commands: .success(DanmakuCommands(uploaderEvents: [uploader], cards: [card]))
         )
-        let (session, timeline, sink) = makeSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
 
         session.start(for: identity)
         timeline.publish(
@@ -145,10 +139,10 @@ struct DanmakuSessionPresentationTests {
     func failedCommandsLeaveSegmentsAndReportRevalidationOnce() async throws {
         let identity = PlaybackItemIdentity(bvid: "BV1CommandFailure", cid: 7)
         let repository = StubDanmakuRepository(
-            eventsBySegment: [1: [timedEvent(id: "segment", time: 10)]],
+            eventsBySegment: [1: [danmakuEvent(id: "segment", time: 10)]],
             commands: .failure(.authenticationInvalid)
         )
-        let (session, timeline, sink) = makeSession(repository: repository)
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
         var revalidationCount = 0
         session.setAuthenticationInvalidationHandler { revalidationCount += 1 }
 
@@ -163,19 +157,5 @@ struct DanmakuSessionPresentationTests {
         #expect(sink.commandCardDeliveries.isEmpty)
         #expect(revalidationCount == 1)
         session.stop()
-    }
-
-    private func makeSession(
-        repository: StubDanmakuRepository
-    ) -> (DanmakuSession, SessionTimeline, SessionPresentationSink) {
-        let timeline = SessionTimeline()
-        let sink = SessionPresentationSink()
-        let session = DanmakuSession(
-            useCase: DanmakuSegmentUseCase(repository: repository),
-            commandUseCase: DanmakuCommandUseCase(repository: repository),
-            timeline: timeline,
-            presentationSink: sink
-        )
-        return (session, timeline, sink)
     }
 }

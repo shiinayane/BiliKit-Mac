@@ -19,43 +19,10 @@ extension AVPlayerEngineSuites {
         @Test
         @MainActor
         func dashItemStartsAtPlaylistStartOffset() async throws {
-            let videoData = try fixtureBase64Data(
-                named: "video-avc-256x144-4s-global-sidx.mp4"
+            let fixture = try makeFourSecondMedia(host: "start-offset.fixture.bilivideo.com")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
             )
-            let audioData = try fixtureBase64Data(
-                named: "audio-aac-4s-global-sidx.mp4"
-            )
-            let videoURL = try #require(
-                URL(string: "https://start-offset.fixture.bilivideo.com/video")
-            )
-            let audioURL = try #require(
-                URL(string: "https://start-offset.fixture.bilivideo.com/audio")
-            )
-            let video = try makeFixtureTrack(
-                id: 80,
-                kind: .video,
-                codecs: "avc1.4d400c",
-                bandwidth: 100_000,
-                data: videoData,
-                primaryURL: videoURL,
-                videoAttributes: try VideoRepresentationAttributes(
-                    width: 256,
-                    height: 144,
-                    frameRate: 24
-                )
-            ).representation
-            let audio = try makeFixtureTrack(
-                id: 30_280,
-                kind: .audio,
-                codecs: "mp4a.40.2",
-                bandwidth: 32_000,
-                data: audioData,
-                primaryURL: audioURL
-            ).representation
-            let transport = FixtureRangeTransport(
-                media: [videoURL: videoData, audioURL: audioData]
-            )
-            let engine = makeFixtureEngine(bridge: makeFixtureBridge(transport))
             engine.player.isMuted = true
             defer { engine.stop() }
             let identity = PlaybackItemIdentity(bvid: "BV1StartOffset", cid: 900_010)
@@ -65,9 +32,9 @@ extension AVPlayerEngineSuites {
                 let request = PlaybackRequest(
                     media: .dash(
                         PlaybackManifest(
-                            videoRepresentations: [video],
+                            videoRepresentations: [fixture.video],
                             audioTracks: [
-                                .original(representations: [audio], loudnessMetadata: nil)
+                                .original(representations: [fixture.audio], loudnessMetadata: nil)
                             ]
                         )
                     ),
@@ -101,45 +68,9 @@ extension AVPlayerEngineSuites {
         @Test
         @MainActor
         func engineBeginPlaybackIsIntentGuardedAndRestartsOnce() async throws {
-            let videoData = try fixtureBase64Data(
-                named: "video-avc-256x144-4s-global-sidx.mp4"
-            )
-            let audioData = try fixtureBase64Data(
-                named: "audio-aac-4s-global-sidx.mp4"
-            )
-            let videoURL = try #require(
-                URL(string: "https://begin-playback.fixture.bilivideo.com/video")
-            )
-            let audioURL = try #require(
-                URL(string: "https://begin-playback.fixture.bilivideo.com/audio")
-            )
-            let video = try makeFixtureTrack(
-                id: 80,
-                kind: .video,
-                codecs: "avc1.4d400c",
-                bandwidth: 100_000,
-                data: videoData,
-                primaryURL: videoURL,
-                videoAttributes: try VideoRepresentationAttributes(
-                    width: 256,
-                    height: 144,
-                    frameRate: 24
-                )
-            ).representation
-            let audio = try makeFixtureTrack(
-                id: 30_280,
-                kind: .audio,
-                codecs: "mp4a.40.2",
-                bandwidth: 32_000,
-                data: audioData,
-                primaryURL: audioURL
-            ).representation
+            let fixture = try makeFourSecondMedia(host: "begin-playback.fixture.bilivideo.com")
             let engine = makeFixtureEngine(
-                bridge: makeFixtureBridge(
-                    FixtureRangeTransport(
-                        media: [videoURL: videoData, audioURL: audioData]
-                    )
-                )
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
             )
             engine.player.isMuted = true
             defer { engine.stop() }
@@ -150,8 +81,10 @@ extension AVPlayerEngineSuites {
             let request = PlaybackRequest(
                 media: .dash(
                     PlaybackManifest(
-                        videoRepresentations: [video],
-                        audioTracks: [.original(representations: [audio], loudnessMetadata: nil)]
+                        videoRepresentations: [fixture.video],
+                        audioTracks: [
+                            .original(representations: [fixture.audio], loudnessMetadata: nil)
+                        ]
                     )
                 )
             )

@@ -4,6 +4,7 @@ import Testing
 
 @testable import BiliPlayback
 
+/// WebVTT 编码按媒体起始时间写 `X-TIMESTAMP-MAP` 并转义 cue 里的标记字符，乱序、不安全文本与时间戳溢出都拒绝。
 struct WebVTTEncoderTests {
     @Test
     func encodesNonZeroPresentationTimeAndEscapesCueMarkup() throws {

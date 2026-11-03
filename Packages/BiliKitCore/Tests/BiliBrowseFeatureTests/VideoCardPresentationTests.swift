@@ -5,6 +5,7 @@ import Testing
 
 @testable import BiliBrowseFeature
 
+/// 热门与推荐卡片的读屏标签读出卡片上的全部可见信息，推荐理由只在存在时读出。
 struct VideoCardPresentationTests {
     private let locale = Locale(
         identifier: BrowseFeatureStrings.bundle.preferredLocalizations.first ?? "en"

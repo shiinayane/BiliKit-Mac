@@ -10,6 +10,11 @@ import Testing
 // Swift Testing macros reference their diagnostic comment type without qualification.
 private typealias Comment = Testing.Comment
 
+/// DASH→HLS bridge 只发布能完整播放的路线，非法输入在启动 server 之前拒绝。
+///
+/// 覆盖 I-frame 引用完整 SIDX 分段、语义音轨角色校验、SIDX 读取前的媒体来源白名单复核（见 SECURITY-MODEL §4）、
+/// AI 配音的长度与时间线校验、音频格式不跨 CDN 借用、loopback 沿用 SIDX 读取成功的 CDN，
+/// 以及视频档读取失败时丢档、全部失败时报首档错误、取消不算失败。
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct DASHBridgeRouteTests {
     @Test
@@ -107,10 +112,7 @@ struct DASHBridgeRouteTests {
             data: try fixtureData(named: "audio-aac")
         ).representation
         let registry = LoopbackServerRegistry()
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(),
-            serverFactory: { registry.create() }
-        )
+        let bridge = makeFixtureBridge(FixtureRangeTransport(media: [:]), serversIn: registry)
         let original = makeSelectedAudioTrack(representation: audio)
         let audioTracks: [SelectedPlaybackAudioTrack]
         let expectedError: DASHToHLSBridgeError
@@ -197,10 +199,7 @@ struct DASHBridgeRouteTests {
         ).representation
         let transport = FixtureRangeTransport(media: [:])
         let registry = LoopbackServerRegistry()
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(streamer: transport),
-            serverFactory: { registry.create() }
-        )
+        let bridge = makeFixtureBridge(transport, serversIn: registry)
 
         await #expect(
             throws: DASHToHLSBridgeError.disallowedMediaSource(
@@ -570,10 +569,7 @@ struct DASHBridgeRouteTests {
             failingURLs: [tiers.highURL, tiers.lowURL]
         )
         let registry = LoopbackServerRegistry()
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(streamer: transport),
-            serverFactory: { registry.create() }
-        )
+        let bridge = makeFixtureBridge(transport, serversIn: registry)
 
         await #expect(
             throws: HTTPRangeClientError.allCandidatesFailed([
@@ -600,10 +596,7 @@ struct DASHBridgeRouteTests {
             blockingURLIndexRanges: [tiers.highURL: try MediaByteRange(start: 0, endInclusive: 0)]
         )
         let registry = LoopbackServerRegistry()
-        let bridge = DASHToHLSBridge(
-            rangeClient: HTTPRangeClient(streamer: transport),
-            serverFactory: { registry.create() }
-        )
+        let bridge = makeFixtureBridge(transport, serversIn: registry)
 
         let preparation = Task {
             try await bridge.prepare(

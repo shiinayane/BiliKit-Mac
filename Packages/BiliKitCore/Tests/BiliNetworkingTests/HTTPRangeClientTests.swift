@@ -3,6 +3,11 @@ import Testing
 
 @testable import BiliNetworking
 
+/// 固定逐候选 Range 读取的契约：按顺序尝试候选，返回第一个完全验证的响应，全部失败时逐个报告原因。
+///
+/// 不安全的候选（loopback 的各种 IP 写法、明文 HTTP）到达 transport 之前就被跳过；请求只带自己的 Range、不带
+/// Cookie（见 SECURITY-MODEL §4）；忽略 Range 的 200 在响应头阶段失败；调用方取消时立即以取消结束，不再尝试
+/// 后备候选。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct HTTPRangeClientTests {
     @Test

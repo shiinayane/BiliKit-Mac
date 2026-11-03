@@ -8,6 +8,9 @@ import Testing
 
 @testable import BiliKit
 
+/// 手动线路与响度开关持久化、损坏时回退默认，测速结果只用于排序展示、从不改动手动选择。
+///
+/// 测速只在所有窗口都已登录时进行；取消、登出与 owner 释放都停止测速，失败只映射为不可识别的状态。
 @Suite(.timeLimit(.minutes(1)))
 struct PlaybackSourceSettingsTests {
     @Test
@@ -274,16 +277,7 @@ struct PlaybackSourceSettingsTests {
         )
         let model = makeSettingsModel(
             store: store,
-            discover: { _ in
-                await invocation.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: invocation, cancelled: cancellation),
             run: { _, _ in [] }
         )
         model.startBenchmark()
@@ -299,16 +293,7 @@ struct PlaybackSourceSettingsTests {
         let cancellation = TestEventCounter()
         let invocation = TestEventCounter()
         var model: AppSettingsModel? = makeSettingsModel(
-            discover: { _ in
-                await invocation.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: invocation, cancelled: cancellation),
             run: { _, _ in [] }
         )
         weak let owner = model
@@ -327,16 +312,7 @@ struct PlaybackSourceSettingsTests {
         let reset = TestEventCounter()
         let model = makeSettingsModel(
             signedIn: false,
-            discover: { _ in
-                await discovery.record()
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                    return []
-                } catch is CancellationError {
-                    await cancellation.record()
-                    throw CancellationError()
-                }
-            },
+            discover: Self.discoverUntilCancelled(started: discovery, cancelled: cancellation),
             resetDiscovery: { await reset.record() },
             run: { _, _ in [] }
         )
@@ -376,6 +352,23 @@ struct PlaybackSourceSettingsTests {
             model.synchronizeAuthentication(.signedIn, ownerID: UUID())
         }
         return model
+    }
+
+    /// 样本发现：开始时记一次 `started`，然后挂起到任务被取消，取消时记一次 `cancelled` 再抛出取消。
+    private static func discoverUntilCancelled(
+        started: TestEventCounter,
+        cancelled: TestEventCounter
+    ) -> AppSettingsModel.Discover {
+        { _ in
+            await started.record()
+            do {
+                try await Task.sleep(for: .seconds(60))
+                return []
+            } catch is CancellationError {
+                await cancelled.record()
+                throw CancellationError()
+            }
+        }
     }
 
     private static func sample() throws -> PlaybackRouteBenchmarkSample {

@@ -58,7 +58,7 @@ struct DanmakuViewportTests {
     ) -> DanmakuLanePlacement {
         DanmakuLanePlacement(
             request: DanmakuLaneRequest(
-                event: timedEvent(id: "viewport", time: 10, mode: mode),
+                event: danmakuEvent(id: "viewport", time: 10, mode: mode),
                 width: width,
                 height: height,
                 durationSeconds: duration,

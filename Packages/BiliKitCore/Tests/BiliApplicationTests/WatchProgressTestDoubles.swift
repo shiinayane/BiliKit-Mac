@@ -42,6 +42,29 @@ extension WatchProgressSession.Environment {
     }
 }
 
+extension WatchProgressSession {
+    /// 本 target 唯一的会话组装：经 `repository` 写入，`resolutions` 记下每一次目标解析。
+    ///
+    /// identity 与 load intent 都和 `targets` 里某一项相同的快照解析为那一项，其余解析为 nil。
+    static func fixture(
+        repository: any WatchProgressRepository,
+        timeline: StoreProgressTimeline,
+        targets: [WatchProgressTarget],
+        resolutions: ResolutionProbe,
+        environment: Environment = .fixture()
+    ) -> WatchProgressSession {
+        WatchProgressSession(
+            useCase: WatchProgressUseCase(repository: repository),
+            timeline: timeline,
+            resolveTarget: { identity, loadIntent in
+                resolutions.observe()
+                return targets.first { $0.identity == identity && $0.loadIntent == loadIntent }
+            },
+            environment: environment
+        )
+    }
+}
+
 /// 在 target resolver 内同步计数，证明某个时间线快照已被 session 消费。
 @MainActor
 final class ResolutionProbe {

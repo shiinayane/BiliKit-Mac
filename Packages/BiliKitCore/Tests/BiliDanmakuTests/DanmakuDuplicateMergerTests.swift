@@ -149,15 +149,11 @@ struct DanmakuDuplicateMergerTests {
         isHighLike: Bool = false,
         isUploader: Bool = false
     ) -> DanmakuEvent {
-        DanmakuEvent(
+        danmakuEvent(
             id: id,
-            timeSeconds: time,
+            time: time,
             mode: mode,
             text: text,
-            fontSize: 25,
-            colorRGB: 0xFFFFFF,
-            colorStyle: .solid,
-            weight: 1,
             isHighLike: isHighLike,
             isUploader: isUploader
         )

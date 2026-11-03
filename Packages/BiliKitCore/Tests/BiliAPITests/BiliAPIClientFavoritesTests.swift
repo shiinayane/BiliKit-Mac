@@ -21,7 +21,7 @@ struct BiliAPIClientFavoritesTests {
         let requests = transport.capturedRequests()
         #expect(requests.map(\.url.path) == ["/x/v3/fav/folder/created/list-all"])
         let request = try #require(requests.first)
-        #expect(query(of: request) == ["up_mid": "10001"])
+        #expect(queryFields(request) == ["up_mid": "10001"])
     }
 
     @Test
@@ -102,7 +102,7 @@ struct BiliAPIClientFavoritesTests {
         #expect(requests.map(\.url.path) == ["/x/v3/fav/resource/list"])
         let request = try #require(requests.first)
         #expect(
-            query(of: request) == [
+            queryFields(request) == [
                 "media_id": "3001",
                 "pn": "1",
                 "ps": "40",
@@ -129,8 +129,8 @@ struct BiliAPIClientFavoritesTests {
         )
 
         let sent = try #require(transport.capturedRequests().first)
-        #expect(query(of: sent)["order"] == expected)
-        #expect(query(of: sent)["pn"] == "2")
+        #expect(queryFields(sent)["order"] == expected)
+        #expect(queryFields(sent)["pn"] == "2")
     }
 
     /// 关键词按 unreserved 编码：`+` 不会被服务端当成空格。
@@ -145,7 +145,7 @@ struct BiliAPIClientFavoritesTests {
 
         let sent = try #require(transport.capturedRequests().first)
         #expect(sent.url.query?.contains("keyword=C%2B%2B%20%E7%8C%AB") == true)
-        #expect(query(of: sent)["keyword"] == "C++ 猫")
+        #expect(queryFields(sent)["keyword"] == "C++ 猫")
     }
 
     @Test(arguments: [
@@ -302,12 +302,5 @@ struct BiliAPIClientFavoritesTests {
         await #expect(throws: ContentApplicationError.requestRestricted) {
             try await repository.favoriteFolders(ownerID: 10_001)
         }
-    }
-
-    private func query(of request: HTTPRequest) -> [String: String] {
-        Dictionary(
-            uniqueKeysWithValues: (URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
-                .queryItems ?? []).map { ($0.name, $0.value ?? "") }
-        )
     }
 }

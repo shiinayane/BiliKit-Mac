@@ -5,6 +5,12 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
+/// UP 主空间视图模型的翻页、排序与重开规则。
+///
+/// 打开时读最新排序第 1 页；同一 UP 主再次打开保持当前页并更新资料、失败时顺带重试，换 UP 主回到默认排序与第 1 页，
+/// 换排序回到第 1 页；越界或正在显示／加载的页不发请求，重载与另选页取代在途请求，旧请求与关闭后的迟到结果不写回；
+/// 页数在翻页与失败期间保持，总数变少时落到最后一页；只有 MID 的入口先打开、名片到达后补名字；未登录给登录入口，
+/// 凭据失效请求窗口复核，会话在请求途中切换时关闭空间。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct UploaderSpaceViewModelTests {
@@ -426,21 +432,10 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         if let error = failingPages[page] {
             throw error
         }
-        let videos =
+        let videos: [UploaderVideo] =
             totalCount == 0
             ? []
-            : [
-                UploaderVideo(
-                    bvid: "BV1Page\(page)Fixture",
-                    title: "第 \(page) 页",
-                    coverURL: nil,
-                    durationSeconds: 60,
-                    viewCount: 1,
-                    danmakuCount: 0,
-                    publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                    isCollaboration: false
-                )
-            ]
+            : [.testFixture(bvid: "BV1Page\(page)Fixture", title: "第 \(page) 页")]
         return UploaderVideoPage(
             videos: videos,
             pageNumber: page,

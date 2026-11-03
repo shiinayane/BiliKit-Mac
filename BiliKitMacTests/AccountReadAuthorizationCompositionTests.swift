@@ -8,6 +8,9 @@ import Testing
 @testable import BiliAuth
 @testable import BiliKit
 
+/// 账户读取的组装只给各 API client 恰好需要的 path，每个读 path 都能被真实授权器授权为只带 Cookie 的 GET。
+///
+/// 只有窗口已确认未登录、没有进行中或失败的复核、进程内也没有窗口登录时，才把 Keychain 不可用当作无凭据。
 @Suite(.timeLimit(.minutes(1)))
 struct AccountReadAuthorizationCompositionTests {
     /// 窗口状态、复核阶段、进程状态与期望结果。

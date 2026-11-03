@@ -5,6 +5,10 @@ import Testing
 
 @testable import BiliKit
 
+/// 系统 Now Playing 只发布最少的公开元数据，不含 BV 号、cid 与任何地址。
+///
+/// 只有时间线跳变才重新发布，暂停保留元数据，迟到的封面不覆盖新视频；远程命令按当前内容与状态校验，正在播放的
+/// 窗口优先；进程 owner 释放时移除命令处理。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct SystemNowPlayingControllerTests {
@@ -337,12 +341,12 @@ struct SystemNowPlayingControllerTests {
             center: RecordingNowPlayingCenter(),
             remoteCommands: commands
         )
-        let weakController = WeakSystemNowPlayingControllerBox(controller)
+        weak let weakController = controller
 
         #expect(commands.installationCount == 1)
         controller = nil
 
-        #expect(weakController.value == nil)
+        #expect(weakController == nil)
         #expect(commands.removalCount == 1)
     }
 
@@ -488,15 +492,6 @@ private final class SessionFixture {
             self.performed.append(command)
             return true
         }
-    }
-}
-
-@MainActor
-private final class WeakSystemNowPlayingControllerBox {
-    weak var value: SystemNowPlayingController?
-
-    init(_ value: SystemNowPlayingController?) {
-        self.value = value
     }
 }
 

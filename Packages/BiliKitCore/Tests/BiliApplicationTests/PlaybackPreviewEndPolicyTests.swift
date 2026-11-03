@@ -2,6 +2,7 @@ import Testing
 
 @testable import BiliApplication
 
+/// 只有当前 item 的充电试看片段播完时才提示试看结束。
 struct PlaybackPreviewEndPolicyTests {
     private let identity = PlaybackItemIdentity(bvid: "BV-preview", cid: 7)
 

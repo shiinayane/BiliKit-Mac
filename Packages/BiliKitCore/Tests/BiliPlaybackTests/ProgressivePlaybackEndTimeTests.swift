@@ -3,6 +3,7 @@ import Testing
 
 @testable import BiliPlayback
 
+/// progressive 播放的正向结束时间取音视频轨里最晚的实际结束点，不减去容差。
 @Suite(.timeLimit(.minutes(1)))
 struct ProgressivePlaybackEndTimeTests {
     @Test(arguments: ["video-avc", "audio-aac"])

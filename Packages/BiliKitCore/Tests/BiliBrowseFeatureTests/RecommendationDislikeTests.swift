@@ -97,7 +97,7 @@ struct RecommendationDislikeTests {
         #expect(card.availability == .unavailable(badge: VideoCardMenuText.dislikedBadge))
         #expect(card.accessibilityLabel.hasPrefix(VideoCardMenuText.dislikedBadge))
 
-        let writes = RecordedFeedback()
+        let writes = RecordedWrites()
         let menu = try #require(
             BrowseVideoCardMenu.menu(
                 for: card,
@@ -117,7 +117,7 @@ struct RecommendationDislikeTests {
         let card = try #require(
             RecommendedNativeGridView.makePresentations([video], disliked: [:]).first
         )
-        let writes = RecordedFeedback()
+        let writes = RecordedWrites()
         let menu = try #require(
             BrowseVideoCardMenu.menu(
                 for: card,
@@ -154,7 +154,7 @@ struct RecommendationDislikeTests {
         let card = try #require(
             RecommendedNativeGridView.makePresentations([video], disliked: [:]).first
         )
-        let writes = RecordedFeedback()
+        let writes = RecordedWrites()
         let menu = try #require(
             BrowseVideoCardMenu.menu(
                 for: card,
@@ -220,25 +220,6 @@ struct RecommendationDislikeTests {
                 trackID: "track",
                 reason: reason
             )
-        )
-    }
-}
-
-/// 记录写入口收到的「不感兴趣」与撤销；闭包在主线程调用。
-@MainActor
-private final class RecordedFeedback {
-    var disliked: [RecommendationFeedback] = []
-    var cancelled: [RecommendationFeedback] = []
-
-    var writing: VideoCardAccountWriting {
-        VideoCardAccountWriting(
-            isAvailable: { true },
-            addToWatchLater: { _ in },
-            removeFromWatchLater: { _ in },
-            chooseFavoriteFolders: { _ in },
-            removeFromFavoriteFolder: { _ in },
-            dislikeRecommendation: { [weak self] in self?.disliked.append($0) },
-            cancelRecommendationDislike: { [weak self] in self?.cancelled.append($0) }
         )
     }
 }

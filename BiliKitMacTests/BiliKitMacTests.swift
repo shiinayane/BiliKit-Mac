@@ -5,6 +5,9 @@ import Testing
 
 @testable import BiliKit
 
+/// 窗口组装关闭后不可逆且整个对象图随之释放，adapter 只在打开过之后清理一次。
+///
+/// 字幕凭据失效只交给最新的 stream；观看进度只上报到当前呈现的那个分 P，账户会话失效时旧会话的在途上报以取消结束。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliKitMacTests {
     /// 生产窗口组装（真实 adapter）可以构造、打开与关闭；关闭不可逆，之后再 open 也保持关闭，AppRootView 据此

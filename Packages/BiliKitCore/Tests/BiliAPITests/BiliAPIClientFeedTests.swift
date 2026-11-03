@@ -47,12 +47,9 @@ struct BiliAPIClientFeedTests {
 
     @Test
     func rejectsHTMLRiskControlPageBeforeDecoding() async {
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "text/html; charset=utf-8"],
-            body: Data("<html>risk control</html>".utf8)
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [htmlRiskControlResponse()])
         )
-        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
         await #expect(throws: BiliAPIError.nonJSONResponse) {
             try await client.popular(page: 1, pageSize: 20)
@@ -61,13 +58,8 @@ struct BiliAPIClientFeedTests {
 
     @Test
     func preservesAPIErrorCodeWithoutLeakingBody() async {
-        let body = Data(
-            #"{"code":-412,"message":"请求被拦截","data":{"unexpected":true}}"#.utf8
-        )
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: body
+        let response = jsonResponse(
+            #"{"code":-412,"message":"请求被拦截","data":{"unexpected":true}}"#
         )
         let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
@@ -80,13 +72,8 @@ struct BiliAPIClientFeedTests {
 
     @Test
     func missingRequiredContractFieldFailsDecoding() async {
-        let body = Data(
-            #"{"code":0,"message":"OK","data":{"list":[{"bvid":"BV1FixtureA1"}]}}"#.utf8
-        )
-        let response = HTTPResponse(
-            statusCode: 200,
-            headers: ["Content-Type": "application/json"],
-            body: body
+        let response = jsonResponse(
+            #"{"code":0,"message":"OK","data":{"list":[{"bvid":"BV1FixtureA1"}]}}"#
         )
         let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 

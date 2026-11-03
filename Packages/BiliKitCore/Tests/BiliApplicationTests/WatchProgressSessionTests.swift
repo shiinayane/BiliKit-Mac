@@ -3,6 +3,10 @@ import Testing
 
 @testable import BiliApplication
 
+/// 观看进度会话把时间线收敛为按序、有界的 heartbeat，写入失败只关闭本会话的报告、不控制播放。
+///
+/// 开始、周期、暂停、恢复与结束各报一次，播完再播另起会话；未登录不写入；挂起冻结计时与周期报告；
+/// 待发队列饱和或窗口退出时仍保留当前位置的最终 ended；迟到的失败不能关闭或重放后来的会话。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct WatchProgressSessionTests {
@@ -284,15 +288,11 @@ struct WatchProgressSessionTests {
         let target = try #require(
             WatchProgressTarget(aid: 11, identity: identity, loadIntent: loadIntent)
         )
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { candidateIdentity, candidateIntent in
-                resolutions.observe()
-                return candidateIdentity == identity && candidateIntent == loadIntent
-                    ? target : nil
-            },
-            environment: .fixture()
+            targets: [target],
+            resolutions: resolutions
         )
         session.start()
         session.setReportingAccess(signedIn: true)
@@ -336,24 +336,16 @@ struct WatchProgressSessionTests {
         let intentA1 = PlaybackLoadIntent()
         let intentB = PlaybackLoadIntent()
         let intentA2 = PlaybackLoadIntent()
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let targets = [
+            WatchProgressTarget(aid: 11, identity: identityA, loadIntent: intentA1),
+            WatchProgressTarget(aid: 33, identity: identityB, loadIntent: intentB),
+            WatchProgressTarget(aid: 11, identity: identityA, loadIntent: intentA2)
+        ].compactMap { $0 }
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { identity, intent in
-                resolutions.observe()
-                let aid: Int64? =
-                    if identity == identityA,
-                        intent == intentA1 || intent == intentA2
-                    { 11 } else if identity == identityB, intent == intentB {
-                        33
-                    } else {
-                        nil
-                    }
-                return aid.flatMap {
-                    WatchProgressTarget(aid: $0, identity: identity, loadIntent: intent)
-                }
-            },
-            environment: .fixture()
+            targets: targets,
+            resolutions: resolutions
         )
         session.start()
         session.setReportingAccess(signedIn: true)
@@ -404,14 +396,11 @@ struct WatchProgressSessionTests {
                 loadIntent: loadIntent
             )
         )
-        let session = WatchProgressSession(
-            useCase: WatchProgressUseCase(repository: repository),
+        let session = WatchProgressSession.fixture(
+            repository: repository,
             timeline: timeline,
-            resolveTarget: { candidateIdentity, candidateIntent in
-                resolutions.observe()
-                return candidateIdentity == identity && candidateIntent == loadIntent
-                    ? target : nil
-            },
+            targets: [target],
+            resolutions: resolutions,
             environment: .fixture(
                 monotonicTime: { time.value },
                 periodicTicks: { ticks.stream(every: $0) }
