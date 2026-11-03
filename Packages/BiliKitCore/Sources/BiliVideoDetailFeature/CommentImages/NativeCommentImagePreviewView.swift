@@ -1,5 +1,6 @@
 import AppKit
 import BiliModels
+import BiliUI
 import BiliVideoCollectionUI
 import SwiftUI
 
@@ -197,14 +198,14 @@ private struct NativeCommentImagePreviewContent: View {
             }
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: Self.buttonSpacing) {
-                    iconButton(
+                    FloatingIconButton(
                         "square.and.arrow.down",
                         label: VideoDetailFeatureStrings.localized("保存图片"),
                         action: saveCurrentImage
                     )
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(phase.image == nil || saver.isBusy)
-                    iconButton(
+                    FloatingIconButton(
                         "xmark",
                         label: VideoDetailFeatureStrings.localized("关闭图片预览"),
                         action: onDismiss
@@ -318,14 +319,14 @@ private struct NativeCommentImagePreviewContent: View {
     private var navigation: some View {
         if selection.count > 1 {
             HStack {
-                iconButton(
+                FloatingIconButton(
                     "chevron.left",
                     label: VideoDetailFeatureStrings.localized("上一张图片"),
                     action: selectPrevious
                 )
                 .disabled(!selection.canSelectPrevious)
                 Spacer()
-                iconButton(
+                FloatingIconButton(
                     "chevron.right",
                     label: VideoDetailFeatureStrings.localized("下一张图片"),
                     action: selectNext
@@ -349,28 +350,6 @@ private struct NativeCommentImagePreviewContent: View {
                 "评论图片，第 \(selection.index + 1) 张，共 \(selection.count) 张"
             )
             : VideoDetailFeatureStrings.localized("评论图片")
-    }
-
-    private func iconButton(
-        _ systemImage: String,
-        label: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        let button = Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.title3)
-                .frame(width: 24, height: 24)
-        }
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .accessibilityLabel(label)
-        return Group {
-            if #available(macOS 26.0, *) {
-                button.buttonStyle(.glass)
-            } else {
-                button.buttonStyle(.bordered)
-            }
-        }
     }
 
     /// 保存当前这张的原图，保存面板挂在预览自己的面板上。

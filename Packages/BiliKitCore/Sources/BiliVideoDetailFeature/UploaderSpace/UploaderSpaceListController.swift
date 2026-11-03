@@ -19,17 +19,15 @@ struct UploaderSpaceListContent: Equatable {
     let reservesPagerSpace: Bool
 }
 
-/// 空间列表的用户动作：返回详情、切换排序、选择投稿，以及投稿行的卡片菜单；由 `UploaderSpaceSidebarView` 接到
+/// 空间列表的用户动作：切换排序、选择投稿，以及投稿行的卡片菜单；由 `UploaderSpaceSidebarView` 接到
 /// ViewModel 与 App 回调。
 struct UploaderSpaceListActions {
-    let close: () -> Void
     let selectOrder: (UploaderVideoOrder) -> Void
     let selectVideo: (String) -> Void
     /// 按投稿行取卡片菜单；每次右键、读屏询问或执行时调用，返回 nil 时不弹菜单。
     let cardMenu: (UploaderVideoRowPresentation) -> NativeVideoCardMenu?
 
     @MainActor static let none = UploaderSpaceListActions(
-        close: {},
         selectOrder: { _ in },
         selectVideo: { _ in },
         cardMenu: { _ in nil }
@@ -194,7 +192,6 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         item.configure(
             content: content.header,
             imagePipeline: imagePipeline,
-            onClose: { [weak self] in self?.actions.close() },
             onSelectOrder: { [weak self] in self?.actions.selectOrder($0) }
         )
     }

@@ -11,9 +11,9 @@ struct UploaderSpaceHeaderContent: Equatable {
     let order: UploaderVideoOrder
 }
 
-/// 空间层头部：返回、头像、名字与投稿数，右侧三段排序。
+/// 空间层头部：头像、名字与投稿数，右侧三段排序；左侧留空给 `UploaderSpaceSidebarView` 的悬浮返回按钮。
 ///
-/// 随列表一起滚动，滚到工具栏下由系统做边缘模糊。
+/// 随列表一起滚动，滚到工具栏下由系统做边缘模糊；返回按钮不在头部里，所以滚走后仍可点。
 @MainActor
 final class UploaderSpaceHeaderItem: NSCollectionViewItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceHeaderItem")
@@ -28,11 +28,9 @@ final class UploaderSpaceHeaderItem: NSCollectionViewItem {
     func configure(
         content: UploaderSpaceHeaderContent,
         imagePipeline: any VideoDetailImageLoading,
-        onClose: @escaping () -> Void,
         onSelectOrder: @escaping (UploaderVideoOrder) -> Void
     ) {
         headerView.configure(content: content, imagePipeline: imagePipeline)
-        headerView.onClose = onClose
         headerView.onSelectOrder = onSelectOrder
     }
 
@@ -41,7 +39,7 @@ final class UploaderSpaceHeaderItem: NSCollectionViewItem {
     }
 }
 
-/// 空间头部的内容视图：返回按钮、头像、名字、投稿数与三段排序。
+/// 空间头部的内容视图：头像、名字、投稿数与三段排序。
 ///
 /// 拥有头像加载 Task：换头像地址时取消上一次，到达的头像只在地址仍相同时显示；`cancelAvatarRequest` 经条目的
 /// `invalidateImageRequests` 在头部离屏（`didEndDisplaying`）与列表拆除时调用。
@@ -49,17 +47,8 @@ final class UploaderSpaceHeaderItem: NSCollectionViewItem {
 private final class UploaderSpaceHeaderView: NSView {
     override var isFlipped: Bool { true }
 
-    var onClose: (() -> Void)?
     var onSelectOrder: ((UploaderVideoOrder) -> Void)?
 
-    private let backButton = NSButton(
-        image: NSImage(
-            systemSymbolName: "chevron.left",
-            accessibilityDescription: VideoDetailFeatureStrings.localized("返回详情")
-        ) ?? NSImage(),
-        target: nil,
-        action: nil
-    )
     private let avatar = NativeVideoLayerImageView(
         placeholderSystemSymbolName: NativeAvatarPlaceholder.systemSymbolName,
         placeholderTintColor: NativeAvatarPlaceholder.tintColor
@@ -81,14 +70,6 @@ private final class UploaderSpaceHeaderView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        backButton.isBordered = false
-        backButton.imagePosition = .imageOnly
-        backButton.symbolConfiguration = .init(textStyle: .title3, scale: .medium)
-        backButton.target = self
-        backButton.action = #selector(close)
-        backButton.toolTip = VideoDetailFeatureStrings.localized("返回详情")
-        backButton.setAccessibilityLabel(VideoDetailFeatureStrings.localized("返回详情"))
-
         avatar.layer?.cornerRadius = UploaderSpaceGeometry.avatarSize / 2
         avatar.setAccessibilityElement(false)
 
@@ -102,7 +83,7 @@ private final class UploaderSpaceHeaderView: NSView {
         orderControl.action = #selector(selectOrder)
         orderControl.setAccessibilityLabel(VideoDetailFeatureStrings.localized("排序"))
 
-        for subview in [backButton, avatar, nameLabel, countLabel, orderControl] {
+        for subview in [avatar, nameLabel, countLabel, orderControl] {
             addSubview(subview)
         }
     }
@@ -142,17 +123,9 @@ private final class UploaderSpaceHeaderView: NSView {
         let padding = UploaderSpaceGeometry.headerHorizontalPadding
         let spacing = UploaderSpaceGeometry.headerSpacing
         let midY = bounds.midY
-        let backSize = UploaderSpaceGeometry.backButtonSize
-        backButton.frame = NSRect(
-            x: padding,
-            y: midY - backSize / 2,
-            width: backSize,
-            height: backSize
-        )
-
         let avatarSize = UploaderSpaceGeometry.avatarSize
         avatar.frame = NSRect(
-            x: backButton.frame.maxX + spacing,
+            x: padding + UploaderSpaceGeometry.backButtonSlotWidth + spacing,
             y: midY - avatarSize / 2,
             width: avatarSize,
             height: avatarSize
@@ -178,10 +151,6 @@ private final class UploaderSpaceHeaderView: NSView {
             width: textWidth,
             height: countHeight
         )
-    }
-
-    @objc private func close() {
-        onClose?()
     }
 
     @objc private func selectOrder() {
