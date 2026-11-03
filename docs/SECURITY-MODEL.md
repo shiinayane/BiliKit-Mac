@@ -126,7 +126,8 @@
 - 目前只有稍后再看的加入（`POST /x/v2/history/toview/add`）与移除（`POST /x/v2/history/toview/del`），收藏的归属改动
   （`POST /x/v3/fav/resource/deal`）与夹内移除（`POST /x/v3/fav/resource/batch-del`），以及播放页的点赞
   （`POST /x/web-interface/archive/like`，`like` 只能是 1 或 2）、投币（`POST /x/web-interface/coin/add`，`multiply` 只能是 1
-  或 2、`select_like` 0 或 1）与三连（`POST /x/web-interface/archive/like/triple`，只有 `aid`），首页推荐的「不感兴趣」与撤销
+  或 2、`select_like` 0 或 1）与三连（`POST /x/web-interface/archive/like/triple`，只有 `aid`），播放页侧栏的关注与取消关注（`POST /x/relation/modify`，只收单个 UP 主
+  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝），首页推荐的「不感兴趣」与撤销
   （`POST /x/web-interface/feedback/dislike` 与 `.../dislike/cancel`，推荐流的固定字段之外只收单个稿件 `id`、它的 UP 主
   `mid`（正整数）、只含字母数字与 `._-` 且有长度上限的 `track_id`，`reason_id` 只能是 1 或 4；网页对它签 WBI，这里不签）。`toview/del` 的 `aid` 在接口文档里
   可选、带 `viewed=true` 会删除全部已看完的视频；schema 强制要求 `aid` 并拒绝 `viewed`，所以发不出“一次清空”，不得把 `aid`

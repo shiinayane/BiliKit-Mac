@@ -8,7 +8,8 @@ import Testing
 /// 播放页互动状态：有可写入账户时按展示的视频读取，没有时不读、按钮不可用；换视频先丢掉旧状态；点赞乐观改动与计数，
 /// 回滚只放回同一次状态，之后有重读、新详情或投币三连写回时不放回；写入成功时有读取在途就不算已在本地改过；投币与
 /// 三连按结果增加且不超过上限，在途的旧读取换成写入之后的重读；重读发现别处的改动时计数随之增减；读取失败后再次展示
-/// 同一视频会重读；凭据失败只自动复核重读一次。
+/// 同一视频会重读；凭据失败只自动复核重读一次；关注 UP 主与点赞同一套乐观改动与回滚，关注状态未知时不改；自己的视频
+/// 不显示关注按钮；别处关注了正在显示的视频的 UP 主时重读。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct VideoEngagementModelTests {
@@ -63,13 +64,89 @@ struct VideoEngagementModelTests {
         let snapshot = try #require(model.applyLike(true, bvid: Self.bvid))
         #expect(model.engagement?.isLiked == true)
         #expect(model.likeCount == 101)
-        #expect(model.stillShowsLike(snapshot))
+        #expect(model.stillShows(snapshot))
         #expect(model.applyLike(true, bvid: Self.bvid) == nil)
         #expect(model.applyLike(false, bvid: "BV1xx411c7mD") == nil)
 
         model.restore(snapshot)
         #expect(model.engagement?.isLiked == false)
         #expect(model.likeCount == 100)
+    }
+
+    @Test
+    func followIsOptimisticAndRollsBackToTheSameState() async throws {
+        let repository = EngagementRepositoryStub()
+        await repository.setState(
+            VideoEngagementState(
+                isLiked: false,
+                coinCount: 1,
+                isFavorited: false,
+                isFollowingUploader: false
+            )
+        )
+        let model = makeModel(repository: repository, account: MutableAccount(id: 7))
+        model.present(detail(Self.bvid))
+        await loaded(model)
+
+        let snapshot = try #require(model.applyFollow(true, bvid: Self.bvid))
+        #expect(model.isFollowingUploader == true)
+        #expect(model.stillShows(snapshot))
+        #expect(model.applyFollow(true, bvid: Self.bvid) == nil)
+        #expect(model.applyFollow(false, bvid: "BV1xx411c7mD") == nil)
+
+        model.restore(snapshot)
+        #expect(model.isFollowingUploader == false)
+    }
+
+    @Test
+    func unknownFollowStateIsNotChanged() async {
+        let model = makeModel(
+            repository: EngagementRepositoryStub(),
+            account: MutableAccount(id: 7)
+        )
+        model.present(detail(Self.bvid))
+        await loaded(model)
+
+        #expect(model.isFollowingUploader == nil)
+        #expect(model.applyFollow(true, bvid: Self.bvid) == nil)
+        #expect(model.isFollowingUploader == nil)
+    }
+
+    @Test
+    func followButtonIsHiddenOnlyOnYourOwnVideo() {
+        let account = MutableAccount()
+        let model = makeModel(repository: EngagementRepositoryStub(), account: account)
+        #expect(!model.showsFollowButton)
+
+        model.present(detail(Self.bvid))
+        #expect(model.showsFollowButton)
+        account.id = 7
+        #expect(model.showsFollowButton)
+        account.id = 1
+        #expect(!model.showsFollowButton)
+    }
+
+    @Test
+    func followElsewhereReloadsOnlyTheSameUploader() async {
+        let repository = EngagementRepositoryStub()
+        let model = makeModel(repository: repository, account: MutableAccount(id: 7))
+        model.present(detail(Self.bvid))
+        await loaded(model)
+
+        await repository.setState(
+            VideoEngagementState(
+                isLiked: false,
+                coinCount: 1,
+                isFavorited: false,
+                isFollowingUploader: true
+            )
+        )
+
+        model.markNeedsReload(uploaderID: 99)
+        model.markNeedsReload(uploaderID: 1)
+        await waitForObservedState { model.isFollowingUploader == true }
+
+        #expect(await repository.reads == [Self.bvid, Self.bvid])
     }
 
     @Test
@@ -84,7 +161,7 @@ struct VideoEngagementModelTests {
         )
 
         model.reload()
-        #expect(!model.stillShowsLike(snapshot))
+        #expect(!model.stillShows(snapshot))
         await waitForObservedState { model.engagement?.coinCount == 2 }
         model.restore(snapshot)
 
@@ -155,7 +232,7 @@ struct VideoEngagementModelTests {
         await repository.holdReads()
         model.reload()
         await repository.waitForReadCount(2)
-        #expect(!model.stillShowsLike(snapshot))
+        #expect(!model.stillShows(snapshot))
 
         await repository.setState(
             VideoEngagementState(isLiked: true, coinCount: 2, isFavorited: true)
@@ -325,4 +402,10 @@ private actor EngagementRepositoryStub: VideoEngagementRepository {
     func triple(target: VideoWriteTarget, accountID: Int64) async throws -> VideoTripleOutcome {
         VideoTripleOutcome(isLiked: true, isCoined: true, isFavorited: true, addedCoinCount: 2)
     }
+
+    func setFollowing(
+        _ isFollowing: Bool,
+        uploader: UploaderWriteTarget,
+        accountID: Int64
+    ) async throws {}
 }

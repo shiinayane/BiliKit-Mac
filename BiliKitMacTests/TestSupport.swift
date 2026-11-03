@@ -288,6 +288,14 @@ actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepos
         return tripleOutcome
     }
 
+    func setFollowing(
+        _ isFollowing: Bool,
+        uploader: UploaderWriteTarget,
+        accountID: Int64
+    ) async throws {
+        try await record("\(isFollowing ? "follow" : "unfollow") \(uploader.mid) \(accountID)")
+    }
+
     func add(_ target: VideoWriteTarget, accountID: Int64) async throws {
         try await record("add \(target.bvid) \(accountID)")
     }

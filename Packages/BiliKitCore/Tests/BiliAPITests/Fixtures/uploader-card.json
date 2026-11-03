@@ -11,6 +11,9 @@
       "likes": 456,
       "vip": { "type": 2, "status": 1, "vipType": 2, "vipStatus": 1 },
       "sex": "保密"
-    }
+    },
+    "following": true,
+    "archive_count": 78,
+    "follower": 123456
   }
 }

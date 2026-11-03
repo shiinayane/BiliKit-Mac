@@ -176,6 +176,9 @@ struct AccountWriteAuthorizationCompositionTests {
                 "https://www.bilibili.com/", "aid=170001&multiply=1&select_like=1"
             ),
             BiliAccountWritePath.videoTriple: ("https://www.bilibili.com/", "aid=170001"),
+            BiliAccountWritePath.relationModify: (
+                "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
+            ),
             BiliAccountWritePath.recommendationDislike: (
                 "https://www.bilibili.com/", Self.recommendationFeedbackBody
             ),

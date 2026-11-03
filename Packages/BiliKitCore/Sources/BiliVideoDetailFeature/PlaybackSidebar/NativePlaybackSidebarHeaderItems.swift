@@ -3,7 +3,7 @@ import BiliModels
 import BiliUI
 import BiliVideoCollectionUI
 
-/// 侧栏顶部的 UP 主名片条目：头像、名字、签名与进入空间的入口。
+/// 侧栏顶部的 UP 主名片条目：头像、名字、粉丝与投稿数、签名、进入空间的入口与关注按钮。
 ///
 /// 内容视图拥有头像加载 Task；复用前（`prepareForReuse`）与离屏（控制器在条目结束显示时调用
 /// `releaseOffscreenResources`）取消并放下图片。
@@ -19,16 +19,19 @@ final class NativePlaybackSidebarUploaderItem: NSCollectionViewItem {
         view = contentView
     }
 
+    /// `onSetFollowing` 收到点按后的目标状态（true 为关注）；只转发意图，门槛与写入在 App 的写入协调者。
     func configure(
         content: VideoUploaderHeaderContent,
         imagePipeline: any VideoDetailImageLoading,
-        onOpenSpace: (() -> Void)?
+        onOpenSpace: (() -> Void)?,
+        onSetFollowing: ((Bool) -> Void)? = nil
     ) {
         representedObject = content
         contentView.configure(
             content: content,
             imagePipeline: imagePipeline,
-            onOpenSpace: onOpenSpace
+            onOpenSpace: onOpenSpace,
+            onSetFollowing: onSetFollowing
         )
     }
 
@@ -52,8 +55,10 @@ private final class NativePlaybackSidebarUploaderView: NSView {
 
     private let avatar = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
-    /// 签名只显示一行，超出省略；被截断时指针移上去由系统原地浮出完整文字（expansion tooltip）。
+    /// 计数与签名都只显示一行，超出省略；被截断时指针移上去由系统原地浮出完整文字（expansion tooltip）。
+    private let statsLabel = NativePlaybackUploaderGeometry.makeStatsLabel()
     private let signatureLabel = NativePlaybackUploaderGeometry.makeSignatureLabel()
+    private let statsLoadingBar = NSView()
     private let signatureLoadingBar = NSView()
     /// 头像与名字这一行可点进入 UP 主空间；右侧箭头同时是给键盘与 VoiceOver 的显式按钮。
     private let spaceButton = NSButton(
@@ -64,7 +69,10 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         target: nil,
         action: nil
     )
+    /// 关注与取消关注；不在空间入口的可点区域里，点它不会进空间。
+    private let followButton = NativePlaybackUploaderGeometry.makeFollowButton()
     private var onOpenSpace: (() -> Void)?
+    private var onSetFollowing: ((Bool) -> Void)?
     /// 只认头像与名字这一行，点签名不会进空间。
     private let spaceRegion = NativeClickRegion()
     private var imageTask: Task<Void, Never>?
@@ -96,18 +104,30 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         spaceButton.isHidden = true
         spaceRegion.attach(to: self) { [weak self] in self?.openSpace() }
 
-        signatureLoadingBar.wantsLayer = true
-        signatureLoadingBar.layer?.cornerRadius = 3
+        followButton.target = self
+        followButton.action = #selector(toggleFollowing)
+        followButton.isHidden = true
+
+        for bar in [statsLoadingBar, signatureLoadingBar] {
+            bar.wantsLayer = true
+            bar.layer?.cornerRadius = 3
+        }
+        // 两条占位属于同一次名片加载，只让签名那条向读屏报告一次“正在加载”。
+        statsLoadingBar.setAccessibilityElement(false)
         refreshLoadingBarColor()
 
+        statsLabel.setAccessibilityLabel(VideoDetailFeatureStrings.localized("粉丝与投稿"))
         signatureLabel.setAccessibilityLabel(VideoDetailFeatureStrings.localized("UP 主签名"))
 
         for subview in [
             avatar,
             nameLabel,
+            statsLabel,
             signatureLabel,
+            statsLoadingBar,
             signatureLoadingBar,
-            spaceButton
+            spaceButton,
+            followButton
         ] {
             addSubview(subview)
         }
@@ -125,16 +145,19 @@ private final class NativePlaybackSidebarUploaderView: NSView {
     }
 
     private func refreshLoadingBarColor() {
-        signatureLoadingBar.layer?.backgroundColor =
-            NSColor.quaternaryLabelColor.cgColor(for: effectiveAppearance)
+        let color = NSColor.quaternaryLabelColor.cgColor(for: effectiveAppearance)
+        statsLoadingBar.layer?.backgroundColor = color
+        signatureLoadingBar.layer?.backgroundColor = color
     }
 
     func configure(
         content: VideoUploaderHeaderContent,
         imagePipeline: any VideoDetailImageLoading,
-        onOpenSpace: (() -> Void)?
+        onOpenSpace: (() -> Void)?,
+        onSetFollowing: ((Bool) -> Void)?
     ) {
         self.onOpenSpace = onOpenSpace
+        self.onSetFollowing = onSetFollowing
         spaceButton.isHidden = onOpenSpace == nil
         let avatarChanged = self.content?.avatarURL != content.avatarURL
         if NativePlaybackUploaderProfileReveal.fades(from: self.content, to: content) {
@@ -152,20 +175,15 @@ private final class NativePlaybackSidebarUploaderView: NSView {
                 : VideoDetailFeatureStrings.localized("UP 主，\(content.name)")
         )
 
-        switch content.signature {
-        case .loading:
-            signatureLabel.isHidden = true
-            signatureLoadingBar.isHidden = false
+        apply(content.stats, to: statsLabel, loadingBar: statsLoadingBar)
+        apply(content.signature, to: signatureLabel, loadingBar: signatureLoadingBar)
+        if content.signature == .loading {
             signatureLoadingBar.setAccessibilityElement(true)
-            signatureLoadingBar.setAccessibilityLabel(VideoDetailFeatureStrings.localized("签名正在加载"))
-        case .hidden:
-            signatureLabel.isHidden = true
-            signatureLoadingBar.isHidden = true
-        case .text(let signature):
-            signatureLabel.stringValue = signature
-            signatureLabel.isHidden = false
-            signatureLoadingBar.isHidden = true
+            signatureLoadingBar.setAccessibilityLabel(
+                VideoDetailFeatureStrings.localized("签名正在加载")
+            )
         }
+        configureFollowButton(content.follow)
         needsLayout = true
         spaceRegion.setRects([spaceHitRect])
         if avatarChanged || avatar.image == nil {
@@ -173,12 +191,66 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         }
     }
 
+    private func apply(
+        _ line: VideoUploaderLineContent,
+        to label: NSTextField,
+        loadingBar: NSView
+    ) {
+        switch line {
+        case .loading:
+            label.isHidden = true
+            loadingBar.isHidden = false
+        case .hidden:
+            label.isHidden = true
+            loadingBar.isHidden = true
+        case .text(let text):
+            label.stringValue = text
+            label.isHidden = false
+            loadingBar.isHidden = true
+        }
+    }
+
+    /// 标题说明现状（「关注」／「已关注」），提示与读屏的值说明点按的结果与当前状态；未关注且可点时用强调色（与网页
+    /// 一致），禁用时不用：强调色的禁用按钮在侧栏里仍像可点。
+    private func configureFollowButton(_ follow: VideoUploaderFollowContent?) {
+        guard let follow else {
+            followButton.isHidden = true
+            return
+        }
+        followButton.isHidden = false
+        followButton.title =
+            follow.isFollowing
+            ? NativePlaybackUploaderGeometry.followingTitle
+            : NativePlaybackUploaderGeometry.followTitle
+        followButton.bezelColor =
+            follow.isFollowing || !follow.isEnabled ? nil : .controlAccentColor
+        followButton.isEnabled = follow.isEnabled
+        followButton.toolTip =
+            follow.isFollowing
+            ? VideoDetailFeatureStrings.localized("取消关注")
+            : VideoDetailFeatureStrings.localized("关注")
+        followButton.setAccessibilityLabel(VideoDetailFeatureStrings.localized("关注"))
+        followButton.setAccessibilityValue(
+            follow.isFollowing
+                ? VideoDetailFeatureStrings.localized("已关注")
+                : VideoDetailFeatureStrings.localized("未关注")
+        )
+        followButton.setAccessibilityHelp(followButton.toolTip)
+    }
+
     override func layout() {
         super.layout()
-        let avatarSize = NativePlaybackSidebarItemMeasurement.avatarSize
-        avatar.frame = NSRect(x: 0, y: 0, width: avatarSize, height: avatarSize)
-        guard let content else { return }
+        guard let content else {
+            avatar.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: NativePlaybackSidebarItemMeasurement.avatarSize,
+                height: NativePlaybackSidebarItemMeasurement.avatarSize
+            )
+            return
+        }
         let geometry = NativePlaybackUploaderGeometry(content: content, width: bounds.width)
+        avatar.frame = geometry.avatarFrame
         nameLabel.frame = geometry.nameFrame
         if !spaceButton.isHidden {
             let buttonSize = NativePlaybackUploaderGeometry.spaceButtonSize
@@ -188,24 +260,33 @@ private final class NativePlaybackSidebarUploaderView: NSView {
                     - NativePlaybackUploaderGeometry.spaceButtonSpacing
             )
             spaceButton.frame = NSRect(
-                x: bounds.width - buttonSize,
+                x: geometry.nameFrame.maxX - buttonSize,
                 y: geometry.nameFrame.midY - buttonSize / 2,
                 width: buttonSize,
                 height: buttonSize
             )
         }
+        statsLabel.frame = geometry.statsFrame
         signatureLabel.frame = geometry.signatureTextFrame
-        signatureLoadingBar.frame = geometry.loadingBarFrame
+        statsLoadingBar.frame = geometry.statsLoadingBarFrame
+        signatureLoadingBar.frame = geometry.signatureLoadingBarFrame
+        followButton.frame = geometry.followButtonFrame
         spaceRegion.setRects([spaceHitRect])
     }
 
-    /// 头像加上名字所在整行；没有签名时整块都可点；没有空间入口时为空。
+    /// 头像加上名字所在整行；没有计数与签名时文字左侧整块都可点；关注按钮不在其中；没有空间入口时为空。
     private var spaceHitRect: NSRect {
         guard onOpenSpace != nil, let content else { return .zero }
-        if content.signature == .hidden {
-            return bounds
+        let textMaxX = max(nameLabel.frame.maxX, spaceButton.isHidden ? 0 : spaceButton.frame.maxX)
+        if content.stats == .hidden, content.signature == .hidden {
+            return NSRect(x: 0, y: 0, width: textMaxX, height: bounds.height)
         }
-        let nameRow = NSRect(x: 0, y: 0, width: bounds.width, height: nameLabel.frame.maxY)
+        let nameRow = NSRect(
+            x: 0,
+            y: nameLabel.frame.minY,
+            width: textMaxX,
+            height: nameLabel.frame.height
+        )
         return nameRow.union(avatar.frame)
     }
 
@@ -224,11 +305,15 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         cancelImageRequest()
         content = nil
         onOpenSpace = nil
+        onSetFollowing = nil
         spaceButton.isHidden = true
+        followButton.isHidden = true
         spaceRegion.setRects([spaceHitRect])
         avatar.image = nil
         nameLabel.stringValue = ""
+        statsLabel.stringValue = ""
         signatureLabel.stringValue = ""
+        statsLoadingBar.isHidden = true
         signatureLoadingBar.isHidden = true
     }
 
@@ -262,6 +347,11 @@ private final class NativePlaybackSidebarUploaderView: NSView {
 
     @objc private func openSpace() {
         onOpenSpace?()
+    }
+
+    @objc private func toggleFollowing() {
+        guard let follow = content?.follow, follow.isEnabled else { return }
+        onSetFollowing?(!follow.isFollowing)
     }
 }
 

@@ -31,6 +31,11 @@ public enum BiliAccountWritePath {
     public static let videoCoin = "/x/web-interface/coin/add"
     /// 三连（`aid`、`csrf`，urlencoded，不签 WBI）；收藏进默认收藏夹。
     public static let videoTriple = "/x/web-interface/archive/like/triple"
+    /// 关注或取消关注一个 UP 主（`fid`、`act=1|2`、`re_src=11`、`csrf`，urlencoded，不签 WBI）。
+    ///
+    /// 网页从空间页发出时还带 `gaia_source`、`spmid`、`extend_content` 等统计字段，这里不发；`re_src=11`（空间）是网页与
+    /// 多个第三方客户端共同的取值。Origin 与 Referer 与其他写入一样用 www。
+    public static let relationModify = "/x/relation/modify"
     /// 首页推荐的「不感兴趣」（推荐流固定字段加 `id`、`mid`、`track_id`、`reason_id`、`csrf`，urlencoded）。
     ///
     /// 网页签 WBI，这里不签，见授权器 schema 表的说明。

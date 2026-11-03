@@ -91,6 +91,8 @@ package enum AccountWriteStatusText {
                     ? BiliUIStrings.localized("已投 \(count) 枚硬币并点赞")
                     : BiliUIStrings.localized("已投 \(count) 枚硬币")
             case .tripled: BiliUIStrings.localized("已三连")
+            case .followChanged(_, let isFollowing):
+                isFollowing ? BiliUIStrings.localized("已关注") : BiliUIStrings.localized("已取消关注")
             case .recommendationDisliked: VideoCardMenuText.dislikedBadge
             case .recommendationDislikeCancelled: BiliUIStrings.localized("已撤销不感兴趣")
             }
@@ -107,6 +109,10 @@ package enum AccountWriteStatusText {
                 : BiliUIStrings.localized("无法取消点赞：\(reason)")
         case .coinsAdded: BiliUIStrings.localized("无法投币：\(reason)")
         case .tripled: BiliUIStrings.localized("无法三连：\(reason)")
+        case .followChanged(_, let isFollowing):
+            isFollowing
+                ? BiliUIStrings.localized("无法关注：\(reason)")
+                : BiliUIStrings.localized("无法取消关注：\(reason)")
         case .recommendationDisliked: BiliUIStrings.localized("无法提交不感兴趣：\(reason)")
         case .recommendationDislikeCancelled: BiliUIStrings.localized("无法撤销不感兴趣：\(reason)")
         }
@@ -117,10 +123,12 @@ package enum AccountWriteStatusText {
         let isFavorites =
             switch change {
             case .watchLaterAdded, .watchLaterRemoved, .likeChanged, .coinsAdded, .tripled,
-                .recommendationDisliked, .recommendationDislikeCancelled:
+                .recommendationDisliked, .recommendationDislikeCancelled, .followChanged:
                 false
             case .favoriteMembershipChanged, .removedFromFavoriteFolder: true
             }
+        let isFollow =
+            if case .followChanged = change { true } else { false }
         return switch failure {
         case .authenticationRequired, .authenticationInvalid:
             BiliUIStrings.localized("登录状态可能已失效。")
@@ -129,14 +137,23 @@ package enum AccountWriteStatusText {
         case .restricted:
             BiliUIStrings.localized("请求受到限制，请稍后再试。")
         case .listFull:
-            isFavorites
-                ? BiliUIStrings.localized("收藏夹已满。") : BiliUIStrings.localized("稍后再看已满。")
+            if isFavorites {
+                BiliUIStrings.localized("收藏夹已满。")
+            } else if isFollow {
+                BiliUIStrings.localized("关注数已达上限。")
+            } else {
+                BiliUIStrings.localized("稍后再看已满。")
+            }
         case .unsupportedContent:
             BiliUIStrings.localized("这个视频不能加入稍后再看。")
         case .contentUnavailable:
-            isFavorites
-                ? BiliUIStrings.localized("收藏夹或视频已不存在。")
-                : BiliUIStrings.localized("视频不存在或已删除。")
+            if isFavorites {
+                BiliUIStrings.localized("收藏夹或视频已不存在。")
+            } else if isFollow {
+                BiliUIStrings.localized("UP 主不存在或已注销。")
+            } else {
+                BiliUIStrings.localized("视频不存在或已删除。")
+            }
         case .coinsInsufficient:
             BiliUIStrings.localized("硬币不足。")
         case .coinLimitReached:

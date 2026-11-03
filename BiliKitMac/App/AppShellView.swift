@@ -190,14 +190,15 @@ struct AppShellView: View {
         )
     }
 
-    /// 播放页点赞、投币、收藏按钮的写入口：门槛在按钮求值时读取，动作转给窗口的写入协调者。
+    /// 播放页点赞、投币、收藏按钮与侧栏关注按钮的写入口：门槛在按钮求值时读取，动作转给窗口的写入协调者。
     private var engagementActions: VideoEngagementActions {
         let accountWrites = accountWrites
         return VideoEngagementActions(
             isAvailable: { accountWrites.isWritable },
             setLiked: { accountWrites.setLiked($0, bvid: $1) },
             addCoins: { accountWrites.addCoins($0, alsoLike: $1, bvid: $2) },
-            chooseFavoriteFolders: { accountWrites.chooseFavoriteFolders(bvid: $0) }
+            chooseFavoriteFolders: { accountWrites.chooseFavoriteFolders(bvid: $0) },
+            setFollowing: { accountWrites.setFollowing($0, bvid: $1) }
         )
     }
 
@@ -259,6 +260,7 @@ struct AppShellView: View {
     private var playbackSidebar: some View {
         NativePlaybackSidebarView(
             model: videoModel,
+            engagementModel: engagementModel,
             commentsModel: commentsModel,
             commentAssetURLResolver: commentAssetURLResolver,
             commentImagePipeline: imagePipeline,

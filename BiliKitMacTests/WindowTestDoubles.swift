@@ -300,3 +300,52 @@ func makeTestAdapters(
         synchronizeSignedOutConfirmation: { _ in }
     )
 }
+
+/// 账户写入测试的窗口：账户 7 已登录并确认，稍后再看、收藏与播放页互动的写入都经 `writes`；窗口已打开，调用方负责关闭。
+@MainActor
+func signedInWindow(
+    process: ProcessComposition,
+    video: any VideoRepository = FixtureVideoRepository(fixtures: []),
+    writes: AccountWriteRepositoryStub = AccountWriteRepositoryStub(),
+    watchLater bvids: [String] = [],
+    favorites: FavoritesRepositoryStub = FavoritesRepositoryStub()
+) async throws -> WindowComposition {
+    let window = WindowComposition(
+        process: process,
+        adapters: makeTestAdapters(
+            video: video,
+            favorites: favorites,
+            watchLater: WatchLaterRepositoryStub(bvids: bvids),
+            watchLaterWrite: writes,
+            favoritesWrite: writes,
+            videoEngagement: writes,
+            authentication: AuthenticationServiceStub(
+                restoreState: .signedIn(
+                    AccountIdentity(id: 7, displayName: "账号", avatarURL: nil)
+                )
+            )
+        )
+    )
+    window.authenticationModel.restoreIfNeeded()
+    await window.authenticationModel.waitForCurrentTask()
+    window.open()
+    return window
+}
+
+/// 给播放页一个 `BV17x411w7KC` 的视频详情（UP 主为 `ownerID`）并等互动状态读到。
+@MainActor
+func presentEngagement(in window: WindowComposition, ownerID: Int64 = 1) async {
+    window.engagementModel.present(
+        VideoDetail(
+            bvid: "BV17x411w7KC",
+            title: "标题",
+            summary: "",
+            coverURL: nil,
+            owner: VideoOwner(id: ownerID, name: "作者"),
+            statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
+            durationSeconds: 60,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    )
+    await waitForObservedState { window.engagementModel.engagement != nil }
+}

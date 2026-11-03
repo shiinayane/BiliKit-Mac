@@ -110,8 +110,33 @@ struct OwnerPayload: Decodable, Sendable {
 
 /// UP 主名片（`/x/web-interface/card`）的 `data`，由 `BiliAPIClient.uploaderProfile` 映射为
 /// `UploaderProfile`。
+///
+/// 粉丝数（`follower`）与投稿数（`archive_count`）在 `data` 这一层；它们只是展示，缺失、为负或形状不对时按缺省，
+/// 不拖累签名。登录时同一响应还带 `following`，这里刻意不取：名片按 UP 主沿用、不随账户重读，关注状态来自播放页的互动
+/// 读取。
 struct UploaderCardDataPayload: Decodable, Sendable {
     let card: UploaderCardPayload
+    let follower: Int64?
+    let archiveCount: Int64?
+
+    private enum CodingKeys: String, CodingKey {
+        case card
+        case follower
+        case archiveCount = "archive_count"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        card = try container.decode(UploaderCardPayload.self, forKey: .card)
+        follower = container.decodeLossyIfPresent(Int64.self, forKey: .follower)
+            .flatMap { $0 >= 0 ? $0 : nil }
+        archiveCount = container.decodeLossyIfPresent(Int64.self, forKey: .archiveCount)
+            .flatMap { $0 >= 0 ? $0 : nil }
+    }
+
+    func model() -> UploaderProfile {
+        card.model(followerCount: follower, videoCount: archiveCount)
+    }
 }
 
 /// 名片的 `card`：MID、昵称、头像、签名与大会员状态。
@@ -150,12 +175,14 @@ struct UploaderCardPayload: Decodable, Sendable {
         vip = try? container.decodeIfPresent(MemberVIPPayload.self, forKey: .vip)
     }
 
-    func model() -> UploaderProfile {
+    func model(followerCount: Int64?, videoCount: Int64?) -> UploaderProfile {
         UploaderProfile(
             name: name,
             avatarURL: face.flatMap(WebImageURL.parse),
             signature: sign,
-            isVIP: vip?.isActive == true
+            isVIP: vip?.isActive == true,
+            followerCount: followerCount,
+            videoCount: videoCount
         )
     }
 }

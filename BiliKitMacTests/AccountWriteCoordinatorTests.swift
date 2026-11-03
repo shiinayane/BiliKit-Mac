@@ -245,6 +245,7 @@ struct AccountWriteCoordinatorTests {
                 "/x/web-interface/archive/like",
                 "/x/web-interface/coin/add",
                 "/x/web-interface/archive/like/triple",
+                "/x/relation/modify",
                 "/x/web-interface/feedback/dislike",
                 "/x/web-interface/feedback/dislike/cancel"
             ]
@@ -695,23 +696,6 @@ struct AccountWriteCoordinatorTests {
         #expect(shortcuts.toggleLike() == .liked)
     }
 
-    /// 给播放页一个视频详情并等互动状态读到。
-    private func presentEngagement(in window: WindowComposition) async {
-        window.engagementModel.present(
-            VideoDetail(
-                bvid: "BV17x411w7KC",
-                title: "标题",
-                summary: "",
-                coverURL: nil,
-                owner: VideoOwner(id: 1, name: "作者"),
-                statistics: VideoStatistics(viewCount: 1, danmakuCount: 1, likeCount: 1),
-                durationSeconds: 60,
-                publishedAt: Date(timeIntervalSince1970: 1_700_000_000)
-            )
-        )
-        await waitForObservedState { window.engagementModel.engagement != nil }
-    }
-
     /// 同一视频的点赞、投币、三连同时只发一个；投币不超过此刻的可投数。
     @Test
     func oneEngagementWritePerVideoAndCoinsWithinTheRemainder() async throws {
@@ -730,35 +714,6 @@ struct AccountWriteCoordinatorTests {
         #expect(window.engagementModel.remainingCoins == 0)
         #expect(!window.accountWrites.addCoins(1, alsoLike: false, bvid: "BV17x411w7KC"))
         #expect(await writes.calls == ["triple BV17x411w7KC 7"])
-    }
-
-    private func signedInWindow(
-        process: ProcessComposition,
-        video: any VideoRepository = FixtureVideoRepository(fixtures: []),
-        writes: AccountWriteRepositoryStub = AccountWriteRepositoryStub(),
-        watchLater bvids: [String] = [],
-        favorites: FavoritesRepositoryStub = FavoritesRepositoryStub()
-    ) async throws -> WindowComposition {
-        let window = WindowComposition(
-            process: process,
-            adapters: makeTestAdapters(
-                video: video,
-                favorites: favorites,
-                watchLater: WatchLaterRepositoryStub(bvids: bvids),
-                watchLaterWrite: writes,
-                favoritesWrite: writes,
-                videoEngagement: writes,
-                authentication: AuthenticationServiceStub(
-                    restoreState: .signedIn(
-                        AccountIdentity(id: 7, displayName: "账号", avatarURL: nil)
-                    )
-                )
-            )
-        )
-        window.authenticationModel.restoreIfNeeded()
-        await window.authenticationModel.waitForCurrentTask()
-        window.open()
-        return window
     }
 
     private func load(_ model: WatchLaterViewModel) async {

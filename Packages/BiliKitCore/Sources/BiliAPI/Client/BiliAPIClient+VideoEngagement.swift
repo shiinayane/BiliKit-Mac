@@ -2,13 +2,16 @@ import BiliApplication
 import BiliModels
 import Foundation
 
-/// 播放页的点赞、投币与三连：读当前账户对视频的互动，以及三种用户发起的写入。
+/// 播放页的点赞、投币、三连与关注 UP 主：读当前账户对视频的互动（含是否关注 UP 主），以及四种用户发起的写入。
 ///
 /// 读取只按账户读取，本地无凭据时直接失败。写入经共用的写管线 `postForm`、账户写授权器绑定窗口账户，表单只带最少的
-/// 字段（不带网页的统计字段），并在授权之后附加进程内随机的 `buvid3`：这三个接口缺它会触发风控（见 SECURITY-MODEL §3）。
-/// 都不签 WBI，与网页一致。
+/// 字段（不带网页的统计字段）；点赞、投币、三连在授权之后附加进程内随机的 `buvid3`：这三个接口缺它会触发风控，关注不附加
+/// （见 SECURITY-MODEL §3）。都不签 WBI，与网页一致。
 extension BiliAPIClient {
-    /// 点赞、投币与三连的 Referer：播放页的按钮与快捷键，用固定的站点首页，不随视频变化（授权器每个 path 只认一个
+    /// 关注的来源代码：11（空间），网页空间页与多个第三方客户端都用它。
+    private static let followSourceCode = "11"
+
+    /// 点赞、投币、三连与关注的 Referer：播放页的按钮与快捷键，用固定的站点首页，不随视频变化（授权器每个 path 只认一个
     /// 固定 Referer）。
     private static let engagementWriteReferer = "https://www.bilibili.com/"
 
@@ -75,6 +78,31 @@ extension BiliAPIClient {
             throw BiliAPIError.missingData
         }
         return try payload.model()
+    }
+
+    /// 关注（`isFollowing`，`act=1`）或取消关注（`act=2`）UP 主 `mid`。
+    public func setUploaderFollowing(
+        _ isFollowing: Bool,
+        mid: Int64,
+        accountID: Int64
+    ) async throws {
+        guard hasAccountWriteAuthorizer else {
+            throw BiliAPIError.authorizationRequired
+        }
+        guard accountID > 0, mid > 0, mid != accountID else {
+            throw BiliAPIError.invalidRequest
+        }
+        try await postForm(
+            url: try endpoint(path: BiliAccountWritePath.relationModify),
+            fields: [
+                ("fid", String(mid)),
+                ("act", isFollowing ? "1" : "2"),
+                ("re_src", Self.followSourceCode)
+            ],
+            referer: Self.engagementWriteReferer,
+            origin: Self.accountWriteOrigin,
+            access: .accountWrite(expectedAccountID: accountID)
+        )
     }
 
     private func engagementWriteAID(bvid: String, accountID: Int64) throws -> Int64 {

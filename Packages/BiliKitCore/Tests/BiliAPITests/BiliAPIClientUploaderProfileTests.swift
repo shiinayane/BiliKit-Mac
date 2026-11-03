@@ -7,7 +7,7 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 UP 主名片契约：只请求 `/x/web-interface/card`，MID 必须与请求一致，
-/// 大会员、名字与头像异常时按缺省处理而签名照常返回。
+/// 大会员、名字、头像、粉丝数与投稿数异常时按缺省处理而签名照常返回。
 struct BiliAPIClientUploaderProfileTests {
     @Test
     func uploaderProfileUsesExactCardEndpoint() async throws {
@@ -24,7 +24,9 @@ struct BiliAPIClientUploaderProfileTests {
                     name: "虚构作者",
                     avatarURL: URL(string: "https://image.example.invalid/avatar.jpg"),
                     signature: "用影像记录生活",
-                    isVIP: true
+                    isVIP: true,
+                    followerCount: 123_456,
+                    videoCount: 78
                 )
         )
         let request = try #require(transport.capturedRequests().first)
@@ -55,6 +57,17 @@ struct BiliAPIClientUploaderProfileTests {
             try await client.uploaderProfile(for: 10_001)
                 == UploaderProfile(signature: "签名", isVIP: false)
         )
+    }
+
+    /// 粉丝数与投稿数只是展示：缺失、为负或形状不对时按缺省，签名照常返回。
+    @Test(arguments: [#""follower":-1,"archive_count":"many""#, #""follower":null"#])
+    func uploaderProfileTreatsMalformedCountsAsMissing(counts: String) async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"card":{"mid":10001,"sign":"签名"},"# + counts + "}}"
+        )
+        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
+
+        #expect(try await client.uploaderProfile(for: 10_001) == UploaderProfile(signature: "签名"))
     }
 
     /// 大会员只是名字颜色的增强：过期或字段异常都按非大会员处理，签名照常返回。
