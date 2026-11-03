@@ -23,12 +23,27 @@ struct AppNavigationSidebar: View {
     let onPresentAuthentication: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        sidebarContent
+            .task(id: accountScope) {
+                favoriteFolderList.synchronize()
+            }
+    }
+
+    /// 账号行钉在侧栏底部；macOS 26 起挂成列表的 `safeAreaBar`，列表从它下方滚过，由系统滚动边缘效果垫底。
+    ///
+    /// macOS 15 没有滚动边缘效果，`safeAreaInset` 会让滚过的行透出账号行，所以仍与列表上下并列、不重叠。
+    @ViewBuilder
+    private var sidebarContent: some View {
+        if #available(macOS 26, *) {
             navigationList
-            accountBar
-        }
-        .task(id: accountScope) {
-            favoriteFolderList.synchronize()
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    accountBar
+                }
+        } else {
+            VStack(spacing: 0) {
+                navigationList
+                accountBar
+            }
         }
     }
 
