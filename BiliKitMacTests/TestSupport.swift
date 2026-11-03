@@ -47,18 +47,6 @@ func writeSilentAudio(seconds: Double, in directory: URL) throws -> URL {
     return url
 }
 
-/// 在一次性的 UserDefaults suite 中执行；前后都清空，测试之间、测试与真实偏好互不影响。
-func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
-    let suiteName = "BiliKitMacTests.\(UUID().uuidString)"
-    guard let defaults = UserDefaults(suiteName: suiteName) else {
-        Issue.record("无法创建隔离的 UserDefaults suite")
-        return
-    }
-    defaults.removePersistentDomain(forName: suiteName)
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    try body(defaults)
-}
-
 /// 等待 AppKit 在后续 main actor 回合完成的布局或 diff 应用；只让出执行权，不按固定时长轮询。
 @MainActor
 func waitUntil(
@@ -741,16 +729,14 @@ actor WatchProgressRepositoryStub: WatchProgressRepository {
 
 /// 测试用的进程级组装：与生产同一个类型，换成不碰网络、系统 Now Playing 与真实偏好的替身。
 ///
-/// 搜索历史用一次性的 UserDefaults suite，按 `withIsolatedDefaults` 的约定在使用前后清空：构造前清一次，搜索历史
-/// 读完初值后再清一次。经它构造的窗口不写入搜索历史（测试的搜索会话各自注入写入闭包）。
+/// 搜索历史用一份 `ScratchDefaults`，搜索历史在构造时读完初值后即丢弃。经它构造的窗口不写入搜索历史
+/// （测试的搜索会话各自注入写入闭包）。
 @MainActor
 func makeTestProcess() -> ProcessComposition {
-    let suiteName = "BiliKitMacTests.process.\(UUID().uuidString)"
-    guard let defaults = UserDefaults(suiteName: suiteName) else {
-        preconditionFailure("无法创建隔离的 UserDefaults suite")
+    guard let scratch = ScratchDefaults() else {
+        preconditionFailure("无法创建隔离的 UserDefaults")
     }
-    defaults.removePersistentDomain(forName: suiteName)
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { scratch.discard() }
     return ProcessComposition(
         accountSession: AccountSessionCoordinator(),
         watchProgressRepository: WatchProgressRepositoryStub(holdsReports: false),
@@ -765,7 +751,7 @@ func makeTestProcess() -> ProcessComposition {
             remoteCommands: RecordingRemoteCommands(),
             artworkLoader: { _ in nil }
         ),
-        searchHistory: SearchHistoryStore(defaults: defaults),
+        searchHistory: SearchHistoryStore(defaults: scratch.defaults),
         updater: AppUpdater()
     )
 }
