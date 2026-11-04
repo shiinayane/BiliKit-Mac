@@ -18,6 +18,14 @@ struct RecommendedNativeGridView: View {
     let content: LoadedFeedContent<RecommendedVideo>
     let disliked: [String: RecommendationFeedback]
     let host: NativeVideoGridHostContext
+    /// 卡片展示数据按位置缓存，翻页时只格式化新追加的条目，见 `NativeVideoCardCache`。
+    @State private var cards = NativeVideoCardCache<CardSource>()
+
+    /// 决定一张卡片外观的全部输入：条目本身与是否标为「不感兴趣」。
+    struct CardSource: Equatable {
+        let video: RecommendedVideo
+        let isDisliked: Bool
+    }
 
     var body: some View {
         let videos = Dictionary(
@@ -25,7 +33,12 @@ struct RecommendedNativeGridView: View {
             uniquingKeysWith: { first, _ in first }
         )
         NativeVideoGridView(
-            items: Self.makePresentations(content.items, disliked: disliked),
+            items: cards.cards(
+                for: content.items.map {
+                    CardSource(video: $0, isDisliked: disliked[$0.bvid] != nil)
+                },
+                make: { Self.makePresentation($0.video, isDisliked: $0.isDisliked) }
+            ),
             accessibilityLabel: BrowseFeatureStrings.localized("首页推荐视频", locale: locale),
             tailState: content.tailState,
             host: host,
@@ -44,42 +57,41 @@ struct RecommendedNativeGridView: View {
     }
 
     /// 标为「不感兴趣」的卡片不可进入播放，封面角标与读屏标签开头说明「将减少此类推荐」。
-    static func makePresentations(
-        _ videos: [RecommendedVideo],
-        disliked: [String: RecommendationFeedback],
+    ///
+    /// 条目已由 `PagedVideoList` 按 BVID 去重，卡片 ID 因此唯一。
+    static func makePresentation(
+        _ video: RecommendedVideo,
+        isDisliked: Bool,
         locale: Locale = InterfaceLocale.current
-    ) -> [NativeVideoCardPresentation] {
-        // 条目已由 `PagedVideoList` 按 BVID 去重，卡片 ID 因此唯一。
-        videos.map { video in
-            let presentation = RecommendedVideoCardPresentation(video: video, locale: locale)
-            let dislikedBadge = disliked[video.bvid] == nil ? nil : VideoCardMenuText.dislikedBadge
-            return NativeVideoCardPresentation(
-                id: presentation.bvid,
-                title: presentation.title,
-                coverURL: presentation.coverURL,
-                avatarURL: presentation.avatarURL,
-                showsAvatar: true,
-                coverMetrics: [
-                    NativeVideoCardMetric(
-                        text: presentation.viewCountText,
-                        systemImage: "play.fill"
-                    ),
-                    NativeVideoCardMetric(
-                        text: presentation.danmakuCountText,
-                        systemImage: "text.bubble.fill"
-                    )
-                ],
-                coverTrailingText: presentation.durationText,
-                footerLeadingText: presentation.footerText,
-                footerTrailingText: presentation.recommendationReason,
-                footerTrailingStyle: presentation.recommendationReason == nil
-                    ? .plain
-                    : .brandOutlinedCapsule,
-                accessibilityLabel: dislikedBadge.map {
-                    ListFormatter.localizedString(byJoining: [$0, presentation.accessibilityLabel])
-                } ?? presentation.accessibilityLabel,
-                availability: dislikedBadge.map { .unavailable(badge: $0) } ?? .available
-            )
-        }
+    ) -> NativeVideoCardPresentation {
+        let presentation = RecommendedVideoCardPresentation(video: video, locale: locale)
+        let dislikedBadge = isDisliked ? VideoCardMenuText.dislikedBadge : nil
+        return NativeVideoCardPresentation(
+            id: presentation.bvid,
+            title: presentation.title,
+            coverURL: presentation.coverURL,
+            avatarURL: presentation.avatarURL,
+            showsAvatar: true,
+            coverMetrics: [
+                NativeVideoCardMetric(
+                    text: presentation.viewCountText,
+                    systemImage: "play.fill"
+                ),
+                NativeVideoCardMetric(
+                    text: presentation.danmakuCountText,
+                    systemImage: "text.bubble.fill"
+                )
+            ],
+            coverTrailingText: presentation.durationText,
+            footerLeadingText: presentation.footerText,
+            footerTrailingText: presentation.recommendationReason,
+            footerTrailingStyle: presentation.recommendationReason == nil
+                ? .plain
+                : .brandOutlinedCapsule,
+            accessibilityLabel: dislikedBadge.map {
+                ListFormatter.localizedString(byJoining: [$0, presentation.accessibilityLabel])
+            } ?? presentation.accessibilityLabel,
+            availability: dislikedBadge.map { .unavailable(badge: $0) } ?? .available
+        )
     }
 }

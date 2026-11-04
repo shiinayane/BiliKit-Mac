@@ -17,35 +17,29 @@ struct BrowseVideoCardMenuTests {
     @Test @MainActor
     func everyBrowseSourceOffersTheVideoLinks() throws {
         let cards = [
-            try #require(
-                RecommendedNativeGridView.makePresentations(
-                    [
-                        RecommendedVideo(
-                            bvid: "BV1Recommended",
-                            title: "首页推荐",
-                            coverURL: nil,
-                            owner: Self.owner,
-                            statistics: Self.statistics,
-                            durationSeconds: 60,
-                            publishedAt: Self.publishedAt,
-                            recommendationReason: nil
-                        )
-                    ],
-                    disliked: [:]
-                ).first
+            RecommendedNativeGridView.makePresentation(
+                RecommendedVideo(
+                    bvid: "BV1Recommended",
+                    title: "首页推荐",
+                    coverURL: nil,
+                    owner: Self.owner,
+                    statistics: Self.statistics,
+                    durationSeconds: 60,
+                    publishedAt: Self.publishedAt,
+                    recommendationReason: nil
+                ),
+                isDisliked: false
             ),
-            try #require(
-                PopularNativeGridView.makePresentations([
-                    PopularVideo(
-                        bvid: "BV1Popular",
-                        title: "热门",
-                        coverURL: nil,
-                        owner: Self.owner,
-                        statistics: Self.statistics,
-                        durationSeconds: 60,
-                        publishedAt: Self.publishedAt
-                    )
-                ]).first
+            PopularNativeGridView.makePresentation(
+                PopularVideo(
+                    bvid: "BV1Popular",
+                    title: "热门",
+                    coverURL: nil,
+                    owner: Self.owner,
+                    statistics: Self.statistics,
+                    durationSeconds: 60,
+                    publishedAt: Self.publishedAt
+                )
             ),
             SearchNativeGridView.makePresentation(
                 SearchVideoCardPresentation(
@@ -93,18 +87,16 @@ struct BrowseVideoCardMenuTests {
 
     @Test @MainActor
     func cardWithoutAValidBVIDHasNoMenu() throws {
-        let card = try #require(
-            PopularNativeGridView.makePresentations([
-                PopularVideo(
-                    bvid: "BV-not/valid",
-                    title: "形状不对",
-                    coverURL: nil,
-                    owner: Self.owner,
-                    statistics: Self.statistics,
-                    durationSeconds: 60,
-                    publishedAt: Self.publishedAt
-                )
-            ]).first
+        let card = PopularNativeGridView.makePresentation(
+            PopularVideo(
+                bvid: "BV-not/valid",
+                title: "形状不对",
+                coverURL: nil,
+                owner: Self.owner,
+                statistics: Self.statistics,
+                durationSeconds: 60,
+                publishedAt: Self.publishedAt
+            )
         )
 
         let openURL = OpenURLAction { _ in .handled }
