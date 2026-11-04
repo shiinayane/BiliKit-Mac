@@ -36,6 +36,9 @@ CASK_URL = ('url "https://github.com/' + REPO + '/releases/download/v#{version.c
             'BiliKit-#{version.csv.first}-#{version.csv.second}-arm64.dmg"')
 CASK_VERSION = re.compile(r'^  version "([^",]+),(\d+)"$', re.M)
 CASK_SHA256 = re.compile(r'^  sha256 "([0-9a-f]{64})"$', re.M)
+# 主程序允许的弱链接符号；为什么要拦、怎样加条目写在文件头里。
+WEAK_IMPORTS = ROOT / 'Scripts/release/weak-imports.txt'
+WEAK_IMPORT = re.compile(r'^\s*\(undefined\) weak external (\S+) \(from [^)]+\)$')
 
 
 def require(ok, message):
@@ -209,6 +212,21 @@ def verify_architectures(architectures, *, is_app):
             'App 必须仅含 arm64；嵌套组件必须支持 arm64 且不得包含未知架构')
 
 
+def weak_imports(nm_output):
+    """`nm -m` 输出里由其他库提供、弱链接的符号（mangled 名）；本程序自己定义的 weak 符号不算。"""
+    return {m.group(1) for line in nm_output.splitlines() if (m := WEAK_IMPORT.match(line))}
+
+
+def allowed_weak_imports(text):
+    return {line.split('#', 1)[0].strip() for line in text.splitlines() if line.split('#', 1)[0].strip()}
+
+
+def verify_weak_imports(names, allowed):
+    # 弱链接符号在版本号已到、实际还没有该符号的测试版系统上为空地址，调用即崩溃，见 ARCHITECTURE「平台与命名」。
+    unexpected = sorted(names - allowed)
+    require(not unexpected, '主程序有未裁决的弱链接符号，先查引入它的代码（见 weak-imports.txt）：' + ', '.join(unexpected))
+
+
 def verify_app(app, state, notarized=True):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], int(info['CFBundleVersion']), info['LSMinimumSystemVersion']) ==
@@ -220,6 +238,8 @@ def verify_app(app, state, notarized=True):
             and all(info.get(k) is False for k in ('SUEnableDownloaderService', 'SUEnableSystemProfiling'))
             and info.get('SUSignedFeedFailureExpirationInterval') == 0, '更新验签或 Sparkle 安全配置错误')
     run('codesign', '--verify', '--deep', '--strict', app)
+    verify_weak_imports(weak_imports(run('nm', '-m', '-arch', 'arm64', app / 'Contents/MacOS/BiliKit')),
+                        allowed_weak_imports(WEAK_IMPORTS.read_text()))
     binaries = []
     for path in sorted(app.rglob('*')):
         if path.is_symlink() or not path.is_file() or 'Mach-O' not in run('file', '-b', path):

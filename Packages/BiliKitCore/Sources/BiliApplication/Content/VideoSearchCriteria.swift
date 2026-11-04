@@ -74,7 +74,9 @@ public enum VideoPublicationRangeResolver {
 
         let today = calendar.startOfDay(for: now)
         let endDay = filter == .custom ? calendar.startOfDay(for: customEnd) : today
-        guard endDay <= today else {
+        // `Date` 不用 `<=`／`>=`：Xcode 27.2 SDK 把它们编译成 macOS 27.2 才有的弱链接符号，
+        // 见 ARCHITECTURE「平台与命名」。
+        guard !(today < endDay) else {
             throw DateRangeFilterError.futureDate
         }
 
@@ -98,7 +100,7 @@ public enum VideoPublicationRangeResolver {
             beginDay = calendar.startOfDay(for: customStart)
         }
 
-        guard beginDay <= endDay else {
+        guard !(endDay < beginDay) else {
             throw DateRangeFilterError.startAfterEnd
         }
         guard let endExclusive = calendar.date(byAdding: .day, value: 1, to: endDay) else {

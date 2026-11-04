@@ -80,7 +80,9 @@ public enum WatchLaterAddedTimeRangeResolver {
         case .custom:
             let startDay = calendar.startOfDay(for: customStart)
             let endDay = calendar.startOfDay(for: customEnd)
-            guard startDay <= endDay else {
+            // `Date` 不用 `<=`／`>=`：Xcode 27.2 SDK 把它们编译成 macOS 27.2 才有的弱链接符号，
+            // 见 ARCHITECTURE「平台与命名」。
+            guard !(endDay < startDay) else {
                 throw DateRangeFilterError.startAfterEnd
             }
             start = startDay

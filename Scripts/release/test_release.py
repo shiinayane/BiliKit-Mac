@@ -23,6 +23,20 @@ class ReleaseSafetyTests(unittest.TestCase):
             with self.subTest(architectures=architectures, is_app=is_app), self.assertRaises(ValueError):
                 release.verify_architectures(architectures, is_app=is_app)
 
+    def test_unreviewed_weak_imports_stop_the_release(self):
+        nm = '\n'.join([
+            '                 (undefined) weak external _$s10Foundation4DateV2leoiySbAC_ACtFZ (from Foundation)',
+            '                 (undefined) weak external _$s7SwiftUI16GlassButtonStyleVACycfC (from SwiftUI)',
+            '                 (undefined) external _$s10Foundation4DateV3nowACvgZ (from Foundation)',
+            '0000000100188f2c (__TEXT,__text) weak external _$s21BiliVideoCollectionUI4ownN (owned)',
+        ])
+        names = release.weak_imports(nm)
+        self.assertEqual(names, {'_$s10Foundation4DateV2leoiySbAC_ACtFZ', '_$s7SwiftUI16GlassButtonStyleVACycfC'})
+        allowed = release.allowed_weak_imports(release.WEAK_IMPORTS.read_text())
+        release.verify_weak_imports({'_$s7SwiftUI16GlassButtonStyleVACycfC'}, allowed)
+        with self.assertRaises(ValueError):
+            release.verify_weak_imports(names, allowed)
+
     def test_ci_requires_all_apple_silicon_jobs(self):
         runs = {'workflow_runs': [{'head_branch': 'main', 'conclusion': 'success',
                                   'jobs_url': 'jobs', 'html_url': 'run'}]}

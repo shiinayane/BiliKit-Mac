@@ -61,7 +61,9 @@ struct WebCredential: Sendable, Equatable,
     }
 
     func isExpired(at date: Date = .now) -> Bool {
-        cookies.contains { $0.expiresAt <= date }
+        // `Date` 不用 `<=`／`>=`：Xcode 27.2 SDK 把它们编译成 macOS 27.2 才有的弱链接符号，
+        // 见 ARCHITECTURE「平台与命名」。
+        cookies.contains { !(date < $0.expiresAt) }
     }
 
     var description: String { "<web-credential>" }

@@ -46,6 +46,8 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
 候选必须满足，任一不满足即停止：
 
 - Archive 为 macOS App Archive，Products 只有预期 App；App 主程序仅 `arm64`，嵌套 Mach-O 均含 `arm64`。
+- App 主程序的弱链接符号都在 [`Scripts/release/weak-imports.txt`](../../Scripts/release/weak-imports.txt) 白名单内；
+  多出的符号在版本号已到、实际还没有它的测试版系统上为空地址，会让 App 一调用就崩溃。
 - Developer ID、Hardened Runtime、secure timestamp 与嵌套签名正确；entitlement 只含最小能力，无
   `get-task-allow`、用户选择文件读写以外的文件权限、App Group 或 runtime exception。
 - App／DMG 不含源码、fixture、reference、trace、日志、dSYM、凭据或开发产物。
