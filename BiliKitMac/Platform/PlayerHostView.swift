@@ -222,18 +222,6 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     }
 }
 
-/// 播放准备期间（换视频、切分 P、准备播放）不显示 AVKit 原生控制条。
-///
-/// 与 `NativePlayerHostView` 在同一状态下屏蔽命中测试、第一响应者、快捷键与读屏一起，
-/// 阻止操作正在被替换的播放。
-enum PlayerPlaybackPreparationPolicy {
-    static func controlsStyle(
-        blocksNativePlaybackInteraction: Bool
-    ) -> AVPlayerViewControlsStyle {
-        blocksNativePlaybackInteraction ? .none : .default
-    }
-}
-
 /// 唯一的播放器 AppKit 宿主：`AVPlayerView` 子类，在 content overlay 上挂弹幕层与 SwiftUI
 /// 提示浮层。
 ///
@@ -307,6 +295,10 @@ final class NativePlayerHostView: AVPlayerView {
         )
         super.init(frame: .zero)
         delegate = self
+        // 控制条样式只设这一次。准备播放期间不切到 `.none`：每次从 `.none` 切回，AVKit 都重建整套控制条视图控制器，
+        // 每打开或换一次视频主线程多挡约 30ms。准备期间改由 `setPlaybackPreparationBlocked` 屏蔽命中、第一响应者、
+        // 快捷键与读屏，控制条照常显示但操作不到正在被替换的播放。
+        controlsStyle = .default
         // 系统 Now Playing 只由进程级 `SystemNowPlayingController` 发布，AVKit
         // 自动更新会与它争写同一份信息。
         updatesNowPlayingInfoCenter = false
@@ -397,12 +389,11 @@ final class NativePlayerHostView: AVPlayerView {
         return super.hitTest(point)
     }
 
+    /// 播放准备期间（换视频、切分 P、准备播放）屏蔽命中测试、第一响应者、快捷键与读屏，阻止操作正在被替换的播放；
+    /// 原生控制条照常显示，不改控制条样式（理由见 `init`）。
     func setPlaybackPreparationBlocked(_ blocked: Bool) {
         let stateChanged = blocksNativePlaybackInteraction != blocked
         blocksNativePlaybackInteraction = blocked
-        controlsStyle = PlayerPlaybackPreparationPolicy.controlsStyle(
-            blocksNativePlaybackInteraction: blocked
-        )
         setAccessibilityHidden(blocked)
         keyboardShortcuts.setKeyboardInputEnabled(!blocked)
         updatePlaybackActivity()
