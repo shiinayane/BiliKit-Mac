@@ -16,6 +16,10 @@ struct NativePlaybackCommentTextScope: Hashable {
 /// 侧栏控制器持有一个，所有评论行共用；拥有“哪些表情或图标在哪个作用域里加载失败”的有界记录（最多 512 条，
 /// 按先进先出淘汰；控制器每次更新只保留仍在呈现列表里的作用域，拆除时清空）。失败的附件在该作用域内改回原文，
 /// 不再请求。图片加载经取图 port，不缓存图片。
+///
+/// 还拥有正文高度的有界缓存：行高测量与评论行的 `layout()` 都经 `height(_:commentID:width:scope:)` 取正文高度，
+/// 同一宽度下只渲染、排版一次。失败记录一变（记下新的失败、丢掉不再呈现的作用域的记录、清空）缓存键里的
+/// `failureRevision` 就递增，改回原文或重新加载后的高度不会沿用旧值。
 @MainActor
 final class NativePlaybackCommentTextRenderer {
     /// 一个需要加载的附件：资源引用与解析出的地址；同一引用在一次渲染里只加载一次。
@@ -55,6 +59,24 @@ final class NativePlaybackCommentTextRenderer {
     /// 链接前置小图标的边长，与正文字号相近。
     private static let linkIconSide: CGFloat = 16
     private static let largePlaceholder = placeholderImage(side: 36)
+
+    /// 正文高度缓存的键。
+    ///
+    /// 宽度按原值比较：测量与布局给同一条评论的宽度来自同一套几何计算，相等即可命中；
+    /// 不按宽度桶取整，避免把相差不到半点、换行却不同的宽度当成一样。
+    private struct BodyHeightKey: Hashable {
+        let scope: NativePlaybackCommentTextScope
+        let commentID: CommentID
+        let width: CGFloat
+        let failureRevision: Int
+    }
+
+    private let bodyHeights = CostBoundedLRUCache<BodyHeightKey, CGFloat>(
+        limits: .commentBodyHeights
+    )
+    /// 失败记录的版本：`markUnavailable` 记下新失败、`retainFailureScopes` 丢掉失败记录与 `removeAllFailures`
+    /// 时递增；正文高度缓存只认当前版本的条目。
+    private var failureRevision = 0
 
     init(
         imagePipeline: any VideoDetailImageLoading,
@@ -155,24 +177,31 @@ final class NativePlaybackCommentTextRenderer {
         if unavailableAssets.insert(key).inserted {
             unavailableAssetOrder.append(key)
             trimUnavailableAssetsIfNeeded()
+            failureRevision &+= 1
         }
         return true
     }
 
     func retainFailureScopes(_ scopes: Set<NativePlaybackCommentTextScope>) {
         activeScopes = scopes
-        unavailableAssets = unavailableAssets.filter { scopes.contains($0.scope) }
+        let retained = unavailableAssets.filter { scopes.contains($0.scope) }
+        // 每次侧栏更新都会调到这里；只有真的丢掉了失败记录才作废正文高度，否则同一宽度下的缓存照常命中。
+        if retained.count != unavailableAssets.count { failureRevision &+= 1 }
+        unavailableAssets = retained
         unavailableAssetOrder = unavailableAssetOrder[
             unavailableAssetOrderHead...
         ].filter { unavailableAssets.contains($0) }
         unavailableAssetOrderHead = 0
     }
 
+    /// 拆除时清空失败记录与正文高度缓存。
     func removeAllFailures() {
         activeScopes.removeAll(keepingCapacity: false)
         unavailableAssets.removeAll(keepingCapacity: false)
         unavailableAssetOrder.removeAll(keepingCapacity: false)
         unavailableAssetOrderHead = 0
+        failureRevision &+= 1
+        bodyHeights.removeAll()
     }
 
     func apply(
@@ -184,15 +213,26 @@ final class NativePlaybackCommentTextRenderer {
         }
     }
 
+    /// 正文在 `width` 下的高度；同一作用域、同一条评论、同一宽度且失败记录未变时取缓存，否则渲染并排版一次。
     func height(
         _ content: CommentContent,
+        commentID: CommentID,
         width: CGFloat,
         scope: NativePlaybackCommentTextScope
     ) -> CGFloat {
-        NativePlaybackSidebarTextLayout.height(
+        let key = BodyHeightKey(
+            scope: scope,
+            commentID: commentID,
+            width: width,
+            failureRevision: failureRevision
+        )
+        if let height = bodyHeights.value(for: key) { return height }
+        let height = NativePlaybackSidebarTextLayout.height(
             render(content, scope: scope).attributedString,
             width: width
         )
+        bodyHeights.insert(height, for: key)
+        return height
     }
 
     private func trimUnavailableAssetsIfNeeded() {
@@ -376,4 +416,15 @@ final class NativePlaybackCommentTextRenderer {
             return true
         }
     }
+}
+
+extension CostBoundedLRUCacheLimits {
+    /// 评论正文高度缓存：每项成本记 1，总上限即条目上限 4096（作用域 × 评论 × 宽度）。
+    ///
+    /// 拖动改宽度时每个宽度、每条可见评论（含楼中楼回复）各占一项，最久未用的先淘汰；调小则同一宽度下的几轮布局
+    /// 更可能重新排版，调大只多占少量内存（每项一个 key 与一个 CGFloat）。
+    static let commentBodyHeights = CostBoundedLRUCacheLimits(
+        maximumItemCost: 1,
+        maximumTotalCost: 4_096
+    )
 }

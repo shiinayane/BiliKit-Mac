@@ -182,6 +182,7 @@ final class NativePlaybackCommentRowView: NSView {
             unavailableLabel.frame = bounds
         case .available(let details):
             let geometry = NativePlaybackCommentRowGeometry(
+                commentID: comment.id,
                 details: details,
                 width: bounds.width,
                 isReply: isReply,

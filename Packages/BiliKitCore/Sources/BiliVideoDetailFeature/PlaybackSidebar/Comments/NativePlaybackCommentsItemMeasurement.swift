@@ -112,6 +112,7 @@ enum NativePlaybackCommentsItemMeasurement {
             return isReply ? 22 : 30
         case .available(let details):
             return NativePlaybackCommentRowGeometry(
+                commentID: comment.id,
                 details: details,
                 width: width,
                 isReply: isReply,
@@ -184,29 +185,38 @@ enum NativePlaybackCommentsItemMeasurement {
 
     static let authorBadgeSpacing: CGFloat = 4
 
+    /// 作者名单行文字宽度，不超过 `maximumWidth`。
+    ///
+    /// 与行宽无关，按名字与字号缓存；拖动改宽度时每条可见评论每帧都要量，不缓存就每次都排一遍字形。
     static func authorNameTextWidth(
         _ author: CommentAuthor,
         maximumWidth: CGFloat
     ) -> CGFloat {
-        let font = NSFont.systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
-            weight: .semibold
-        )
-        return min(
-            maximumWidth,
-            ceil((author.name as NSString).size(withAttributes: [.font: font]).width)
-        )
+        let pointSize = NSFont.preferredFont(forTextStyle: .body).pointSize
+        let key = AuthorNameWidthKey(name: author.name, pointSize: pointSize)
+        if let width = authorNameWidths.value(for: key) {
+            return min(maximumWidth, width)
+        }
+        let font = NSFont.systemFont(ofSize: pointSize, weight: .semibold)
+        let width = ceil((author.name as NSString).size(withAttributes: [.font: font]).width)
+        authorNameWidths.insert(width, for: key)
+        return min(maximumWidth, width)
     }
 
-    static func authorNameWidth(
-        _ author: CommentAuthor,
-        maximumWidth: CGFloat
-    ) -> CGFloat {
-        min(
-            maximumWidth,
-            authorNameTextWidth(author, maximumWidth: maximumWidth) + 12
-        )
+    /// 作者名标签的宽度：文字宽度加点按区域的余量，不超过 `maximumWidth`。
+    static func authorNameWidth(textWidth: CGFloat, maximumWidth: CGFloat) -> CGFloat {
+        min(maximumWidth, textWidth + 12)
     }
+
+    private struct AuthorNameWidthKey: Hashable {
+        let name: String
+        let pointSize: CGFloat
+    }
+
+    /// 进程内共用的作者名宽度缓存，只是“名字与字号 → 宽度”的映射，不随侧栏拆除清空。
+    private static let authorNameWidths = CostBoundedLRUCache<AuthorNameWidthKey, CGFloat>(
+        limits: .commentAuthorWidths
+    )
 }
 
 /// 可用评论行的唯一几何来源；`NativePlaybackCommentsItemMeasurement.comment` 的高度与
@@ -236,6 +246,7 @@ struct NativePlaybackCommentRowGeometry {
     let height: CGFloat
 
     init(
+        commentID: CommentID,
         details: CommentDetails,
         width: CGFloat,
         isReply: Bool,
@@ -268,7 +279,10 @@ struct NativePlaybackCommentRowGeometry {
         authorFrame = NSRect(
             x: contentX,
             y: 0,
-            width: Measurement.authorNameWidth(details.author, maximumWidth: contentWidth),
+            width: Measurement.authorNameWidth(
+                textWidth: authorTextWidth,
+                maximumWidth: contentWidth
+            ),
             height: Self.lineHeight
         )
         badgesFrame = NSRect(
@@ -286,7 +300,12 @@ struct NativePlaybackCommentRowGeometry {
             Self.lineHeight,
             textRenderer.flatMap { renderer in
                 textScope.map {
-                    renderer.height(details.content, width: contentWidth, scope: $0)
+                    renderer.height(
+                        details.content,
+                        commentID: commentID,
+                        width: contentWidth,
+                        scope: $0
+                    )
                 }
             }
                 ?? NativePlaybackSidebarTextLayout.height(
@@ -380,4 +399,14 @@ enum NativePlaybackCommentRepliesFooter: Equatable {
             self = .pager
         }
     }
+}
+
+extension CostBoundedLRUCacheLimits {
+    /// 评论作者名宽度与作者标记宽度的缓存：每项成本记 1，各最多 1024 项。
+    ///
+    /// 一屏评论的作者通常远少于这个数；调小则滚过较多评论后回到前面时重新量字，调大只多占少量内存。
+    static let commentAuthorWidths = CostBoundedLRUCacheLimits(
+        maximumItemCost: 1,
+        maximumTotalCost: 1_024
+    )
 }

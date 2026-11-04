@@ -524,6 +524,43 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         #expect(rendered.attributedString.string == "\u{fffc}[未知]")
         #expect(attachment.bounds.size == NSSize(width: 36, height: 36))
         #expect(attachment.bounds.origin.y == NSFont.preferredFont(forTextStyle: .body).descender)
-        #expect(renderer.height(content, width: 200, scope: scope) >= 36)
+        #expect(
+            renderer.height(content, commentID: CommentID(rawValue: 11), width: 200, scope: scope)
+                >= 36
+        )
+    }
+
+    /// 大表情在本作用域加载失败、改回原文后，同一宽度下的正文高度按原文重新计算，不沿用带表情时的高度。
+    @Test
+    @MainActor
+    func bodyHeightFollowsTheFallbackAfterAnEmoteFails() throws {
+        let asset = fixtureAssetReference()
+        let url = try #require(URL(string: "https://i0.hdslb.com/bfs/emote/large.png"))
+        let renderer = makeCommentTextRenderer { _, _ in url }
+        let content = CommentContent(
+            message: "[大]",
+            emotes: [
+                CommentEmote(
+                    text: "[大]",
+                    range: CommentTextRange(location: 0, length: 3),
+                    asset: asset,
+                    size: .large
+                )
+            ]
+        )
+        let scope = NativePlaybackCommentTextScope(
+            subject: .video(aid: 1),
+            rootID: CommentID(rawValue: 11),
+            revision: 1
+        )
+        let commentID = CommentID(rawValue: 11)
+        renderer.retainFailureScopes([scope])
+        let withEmote = renderer.height(content, commentID: commentID, width: 200, scope: scope)
+
+        #expect(renderer.markUnavailable(asset, in: scope))
+        let fallback = renderer.height(content, commentID: commentID, width: 200, scope: scope)
+
+        #expect(withEmote >= 36)
+        #expect(fallback < withEmote)
     }
 }

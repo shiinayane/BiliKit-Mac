@@ -1,4 +1,5 @@
 import AppKit
+import BiliApplication
 import BiliModels
 import CoreText
 
@@ -51,10 +52,26 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
 
     var preferredWidth: CGFloat { cachedPreferredWidth }
 
+    /// 标记合计宽度，供行几何在不建视图时使用；只取决于各标记文字与是否为回复，按这两者缓存。
     static func preferredWidth(for author: CommentAuthor, isReply: Bool) -> CGFloat {
+        let segments = segments(for: author)
+        let key = WidthKey(texts: segments.map(\.text), isReply: isReply)
+        if let width = preferredWidths.value(for: key) { return width }
         let font = NSFont.systemFont(ofSize: isReply ? 9 : 10, weight: .bold)
-        return preferredWidth(segments: segments(for: author), font: font)
+        let width = preferredWidth(segments: segments, font: font)
+        preferredWidths.insert(width, for: key)
+        return width
     }
+
+    private struct WidthKey: Hashable {
+        let texts: [String]
+        let isReply: Bool
+    }
+
+    /// 进程内共用的标记宽度缓存，只是“标记文字 → 宽度”的映射，不随侧栏拆除清空。
+    private static let preferredWidths = CostBoundedLRUCache<WidthKey, CGFloat>(
+        limits: .commentAuthorWidths
+    )
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
