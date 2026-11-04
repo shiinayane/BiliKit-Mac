@@ -8,7 +8,7 @@ import Testing
 
 @testable import BiliKit
 
-/// 播放器宿主视图与弹幕 overlay 的生命周期：Now Playing 交给进程级控制器，准备播放期间挡住原生控件。
+/// 播放器宿主视图与弹幕 overlay 的生命周期：Now Playing 交给进程级控制器，准备播放期间屏蔽原生控件的操作。
 ///
 /// overlay 释放时呈现控制器与时钟随之释放；弹幕 surface 在窗口间挪动时保留已挂的弹幕；换 item 时在同一次调用
 /// 里清屏并把时钟换绑到新 item。
@@ -53,7 +53,8 @@ struct NativePlayerHostViewTests {
         #expect(!view.isAccessibilityHidden())
 
         view.setPlaybackPreparationBlocked(true)
-        #expect(view.controlsStyle == .none)
+        // 控制条样式不随准备状态切换：切回时 AVKit 会重建整套控制条。
+        #expect(view.controlsStyle == .default)
         #expect(!view.acceptsFirstResponder)
         #expect(view.hitTest(.zero) == nil)
         #expect(view.isAccessibilityHidden())
