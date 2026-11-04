@@ -28,9 +28,9 @@ final class NativePlaybackSidebarSnapshotTracker {
 
 /// 侧栏行高的分批精测：私有持有精测 Task 与它的代次，只暴露开始与取消。
 ///
-/// 每次 `start` 或 `cancel` 都递增代次并让旧循环在下一批之前停下；循环每批调用一次 `step`（返回 false 即
-/// 停止），批间让出 main actor。只有代次仍相等时结束的循环才清空 Task。由侧栏控制器持有，控制器在更新、
-/// 改宽度与拆除时取消。
+/// 每次 `start` 或 `cancel` 都递增代次并让旧循环在下一批之前停下（含仍在 `delay` 里等待的循环）；循环每批调用
+/// 一次 `step`（返回 false 即停止），批间让出 main actor。只有代次仍相等时结束的循环才清空 Task。由侧栏控制器
+/// 持有，控制器在更新、改宽度与拆除时取消。
 @MainActor
 final class NativePlaybackSidebarRefinementScheduler {
     private var generation: UInt64 = 0
@@ -42,10 +42,13 @@ final class NativePlaybackSidebarRefinementScheduler {
         task = nil
     }
 
-    func start(step: @escaping @MainActor () -> Bool) {
+    func start(after delay: Duration = .zero, step: @escaping @MainActor () -> Bool) {
         generation &+= 1
         let currentGeneration = generation
         task = Task { @MainActor [weak self] in
+            if delay > .zero {
+                try? await Task.sleep(for: delay)
+            }
             while !Task.isCancelled, self?.generation == currentGeneration, step() {
                 await Task.yield()
             }

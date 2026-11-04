@@ -195,6 +195,52 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
 
     @Test
     @MainActor
+    func continuousResizeRefinesVisibleRowsAtOnceAndOffscreenRowsAfterWidthSettles() async throws {
+        let sidebar = HostedPlaybackSidebar()
+        let controller = sidebar.controller
+        let window = sidebar.window
+        defer { sidebar.tearDown() }
+        let comments = await commentsPresentation(
+            subject: .video(aid: 700_001),
+            threads: (1...60).map { commentThread(id: Int64($0), message: "第 \($0) 条评论") }
+        )
+        controller.update(
+            presentation: presentation(bvid: "BVResizeRefinement", comments: comments),
+            actions: actions
+        )
+        let layout = controller.layout
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                layout.collectionViewContentSize.height > 600
+                    && layout.pendingRefinementIndexes.isEmpty
+            }
+        )
+
+        for width in [420.0, 400.0, 380.0] {
+            window.setContentSize(NSSize(width: width, height: 600))
+            window.contentView?.layoutSubtreeIfNeeded()
+            let visibleRect = controller.rootView.scrollView.documentVisibleRect
+            // 待精测集合按条目顺序编号，与全部属性的顺序一致。
+            let allAttributes = layout.layoutAttributesForElements(
+                in: NSRect(x: 0, y: 0, width: 10_000, height: 1_000_000)
+            )
+            let visiblePending = layout.pendingRefinementIndexes.filter {
+                allAttributes[$0].frame.intersects(visibleRect)
+            }
+            #expect(visiblePending.isEmpty, "width \(width)")
+            let pendingCount = layout.pendingRefinementIndexes.count
+            #expect(pendingCount > 0, "width \(width)")
+            // 宽度还在变：几轮 main actor 之后视野外的行仍未精测，没有每次变化都白测一批。
+            for _ in 0..<5 { await Task.yield() }
+            #expect(layout.pendingRefinementIndexes.count == pendingCount, "width \(width)")
+        }
+        #expect(
+            await waitUntil(timeout: .seconds(5)) { layout.pendingRefinementIndexes.isEmpty }
+        )
+    }
+
+    @Test
+    @MainActor
     func aboveAnchorMutationAndContinuousResizeKeepTheSameCommentPosition() async throws {
         let sidebar = HostedPlaybackSidebar()
         let controller = sidebar.controller

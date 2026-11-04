@@ -19,7 +19,21 @@ extension NativePlaybackSidebarController {
         if let anchor {
             restore(anchor)
         }
-        scheduleRefinement()
+        refineVisibleItems(keeping: anchor)
+        scheduleRefinement(after: NativePlaybackSidebarLayout.refinementSettleDelay)
+    }
+
+    /// 当场精测视野内仍是估算高度的行，每轮之后按锚点恢复，直到视野内没有待精测的行。
+    ///
+    /// 改宽度时视野外的行留给宽度稳定后的分批精测；视野内的行不能等，否则拖动期间看到的正文会被估算高度截断或留空。
+    private func refineVisibleItems(keeping anchor: Anchor?) {
+        while layout.refinePendingItems(
+            intersecting: rootView.scrollView.documentVisibleRect
+        ) {
+            collectionView.layoutSubtreeIfNeeded()
+            synchronizeDocumentFrame()
+            if let anchor { restore(anchor) }
+        }
     }
 
     /// 语义锚点：视野内最靠上的条目及其顶边到视口顶边的距离，或者视口贴底。
@@ -104,12 +118,13 @@ extension NativePlaybackSidebarController {
 
     /// 按批精测估算行高，每批之后恢复锚点并让出 main actor，长评论列表的重测不会一次卡住界面。
     ///
-    /// 优先精测锚点所在的行；代次不再相等（被取消或重新安排）、拆除或没有待精测的行时停止。
-    func scheduleRefinement() {
+    /// 等 `delay` 之后才开始（改宽度时用来等宽度稳定）；优先精测锚点所在的行；代次不再相等（被取消或重新安排）、
+    /// 拆除或没有待精测的行时停止。
+    func scheduleRefinement(after delay: Duration = .zero) {
         guard !isTornDown, !layout.pendingRefinementIndexes.isEmpty else {
             return
         }
-        refinement.start { [weak self] in
+        refinement.start(after: delay) { [weak self] in
             guard let self, !self.isTornDown,
                 !self.layout.pendingRefinementIndexes.isEmpty
             else { return false }
