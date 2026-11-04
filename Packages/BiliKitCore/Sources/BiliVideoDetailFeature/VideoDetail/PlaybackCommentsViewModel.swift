@@ -1,5 +1,6 @@
 import BiliApplication
 import BiliModels
+import BiliUI
 import Foundation
 import Observation
 
@@ -27,7 +28,7 @@ public struct PlaybackCommentReplyState: Sendable, Equatable {
     public var dialog: PlaybackCommentDialogState?
     /// 这一页或对话这一页的加载提示是否已经露出；加载结束、收起与关掉对话时复位。
     ///
-    /// 面板里还有回复可看（翻页、对话加载更多）时，提示要等 `PlaybackCommentsViewModel.loadingStatusDelay`
+    /// 面板里还有回复可看（翻页、对话加载更多）时，提示要等 `LoadingIndicatorPolicy.presentationDelay`
     /// 后仍在加载才露出，期间保留原来的页码条或「加载更多」，快速返回时不闪；面板原本就空、或是失败后的重试，
     /// 加载开始时就露出。面板与行高测量都经 `NativePlaybackCommentRepliesFooter` 读它，两边一致。
     public var isLoadingStatusVisible = false
@@ -112,9 +113,6 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
     @ObservationIgnored private var rootGeneration = 0
     private static let maximumRetainedRootThreads = 1_000
     private static let maximumConcurrentReplyRequests = 4
-    /// 面板里还有回复时，加载提示延迟这么久才露出：多数翻页在这之内返回，不会闪一下「回复加载中…」；
-    /// 再长就会让慢请求看起来像没有响应。
-    static let loadingStatusDelay: Duration = .milliseconds(300)
 
     public init(useCase: CommentUseCase) {
         self.useCase = useCase
@@ -434,7 +432,7 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         replyStates[rootID]?.isLoadingStatusVisible = revealsNow
         guard !revealsNow else { return }
         loadingStatusTasks[rootID] = Task { [weak self] in
-            try? await Task.sleep(for: Self.loadingStatusDelay)
+            try? await Task.sleep(for: LoadingIndicatorPolicy.presentationDelay)
             guard !Task.isCancelled else { return }
             self?.revealLoadingStatus(for: rootID, token: token)
         }

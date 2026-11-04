@@ -45,6 +45,7 @@ package struct PaginationStatusOverlay: View {
                     .padding(Geometry.contentPadding)
                     .background(.regularMaterial, in: Capsule())
                     .accessibilityLabel(label)
+                    .revealsAfterLoadingDelay()
                     .transition(.opacity)
             case .failed(let message, let retry):
                 HStack(spacing: Geometry.spacing) {

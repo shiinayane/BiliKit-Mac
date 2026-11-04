@@ -182,6 +182,7 @@ public struct UploaderSpaceSidebarView: View {
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel(VideoDetailFeatureStrings.localized("正在加载投稿"))
+                .revealsAfterLoadingDelay()
         case .empty:
             message(VideoDetailFeatureStrings.localized("还没有投稿"))
         case .signIn:

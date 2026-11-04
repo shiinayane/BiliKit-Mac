@@ -1,6 +1,7 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import BiliUI
 import SwiftUI
 
 /// 播放态侧栏：把视频、互动状态与评论 ViewModel 投影成原生集合视图的呈现，用户操作转回 ViewModel 或 App 给的回调。
@@ -325,9 +326,11 @@ private struct NativePlaybackSidebarOverlayView: View {
         case .none:
             EmptyView()
         case .loading(let label):
+            // 占满侧栏的加载与评论首次加载、UP 主空间一样用大转圈。
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.large)
                 .accessibilityLabel(label)
+                .revealsAfterLoadingDelay()
         case .failure(let title, let message):
             ContentUnavailableView {
                 Text(title)
