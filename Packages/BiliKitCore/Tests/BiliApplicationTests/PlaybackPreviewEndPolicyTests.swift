@@ -46,6 +46,18 @@ struct PlaybackPreviewEndPolicyTests {
         )
     }
 
+    /// 只有充电试看需要跟随时间线：其他访问状态（含没有限制）连订阅都不必。
+    @Test
+    func onlyUpowerPreviewNeedsTheTimeline() {
+        #expect(
+            PlaybackPreviewEndPolicy.canPresentNotice(
+                for: .upowerPreview(previewDurationSeconds: 884, fullDurationSeconds: 2_255)
+            )
+        )
+        #expect(!PlaybackPreviewEndPolicy.canPresentNotice(for: .upowerExclusive))
+        #expect(!PlaybackPreviewEndPolicy.canPresentNotice(for: nil))
+    }
+
     private func snapshot(
         identity: PlaybackItemIdentity,
         state: PlaybackTimelineState
