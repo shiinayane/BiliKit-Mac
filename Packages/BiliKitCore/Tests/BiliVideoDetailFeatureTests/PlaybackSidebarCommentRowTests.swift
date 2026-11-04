@@ -469,4 +469,29 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
             }
         #expect(summary != nil)
     }
+
+    /// 头像角标按种类、根评论或回复、屏幕倍数与外观渲染一次，之后共用同一张图；深浅色各有一张。
+    @Test
+    @MainActor
+    func avatarMarkImagesAreRenderedOncePerKindScaleAndAppearance() throws {
+        let light = try #require(NSAppearance(named: .aqua))
+        let dark = try #require(NSAppearance(named: .darkAqua))
+        let first = try #require(
+            NativeCommentAvatarMark.vip.image(isReply: false, scale: 2, appearance: light)
+        )
+        let again = try #require(
+            NativeCommentAvatarMark.vip.image(isReply: false, scale: 2, appearance: light)
+        )
+        let darkImage = try #require(
+            NativeCommentAvatarMark.vip.image(isReply: false, scale: 2, appearance: dark)
+        )
+        let reply = try #require(
+            NativeCommentAvatarMark.vip.image(isReply: true, scale: 2, appearance: light)
+        )
+
+        #expect(first === again)
+        #expect(first !== darkImage)
+        #expect(first.width == Int((NativeCommentAvatarMark.size(isReply: false) * 2).rounded(.up)))
+        #expect(reply.width == Int((NativeCommentAvatarMark.size(isReply: true) * 2).rounded(.up)))
+    }
 }

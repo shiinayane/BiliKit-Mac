@@ -5,7 +5,7 @@ import BiliVideoCollectionUI
 /// 评论头像右下角的身份角标：认证为黄／蓝底白色闪电，大会员为粉底白色“大”字。
 ///
 /// 认证优先于大会员，只显示一个；普通用户没有角标。
-enum NativeCommentAvatarMark: Equatable {
+enum NativeCommentAvatarMark: Hashable {
     case personalVerification
     case organizationVerification
     case vip
@@ -181,27 +181,24 @@ final class NativePlaybackCommentAvatarView: NSView {
     }
 }
 
-/// 画出 `NativeCommentAvatarMark`：彩色圆底加白色字形；与头像之间的缝隙由头像遮罩抠出。
+/// 显示 `NativeCommentAvatarMark`：图层内容直接用渲染好的角标图，不在每次显示时重画；与头像之间的缝隙由头像遮罩抠出。
+///
+/// 滚动时每条新露出的评论都要显示一次角标；改用 `updateLayer` 后只换图层内容，不再为它建位图上下文、画字形。
 @MainActor
 private final class NativePlaybackCommentAvatarMarkView: NSView {
-    private static let rootSize: CGFloat = 13
-    private static let replySize: CGFloat = 10
-    private static let rootGap: CGFloat = 1.5
-    private static let replyGap: CGFloat = 1
-    private static let rootGlyphPointSize: CGFloat = 8
-    private static let replyGlyphPointSize: CGFloat = 6
-    /// 大会员标志字形，不随语言变化。
-    private static let vipGlyph = "大"
+    override var isFlipped: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
 
     static func size(isReply: Bool) -> CGFloat {
-        isReply ? replySize : rootSize
+        NativeCommentAvatarMark.size(isReply: isReply)
     }
+
+    private static let rootGap: CGFloat = 1.5
+    private static let replyGap: CGFloat = 1
 
     static func gap(isReply: Bool) -> CGFloat {
         isReply ? replyGap : rootGap
     }
-
-    override var isFlipped: Bool { true }
 
     var kind: NativeCommentAvatarMark? {
         didSet {
@@ -220,6 +217,7 @@ private final class NativePlaybackCommentAvatarMarkView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
         isHidden = true
         setAccessibilityElement(false)
     }
@@ -227,13 +225,91 @@ private final class NativePlaybackCommentAvatarMarkView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard let kind else { return }
-        kind.background.setFill()
+    override func updateLayer() {
+        guard let layer else { return }
+        layer.contentsGravity = .resize
+        layer.contents = kind?.image(
+            isReply: isReply,
+            scale: window?.backingScaleFactor ?? layer.contentsScale,
+            appearance: effectiveAppearance
+        )
+    }
+
+    // 换屏幕时缩放倍数变了，要换一张对应分辨率的图。
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsDisplay = true
+    }
+}
+
+extension NativeCommentAvatarMark {
+    private static let rootSize: CGFloat = 13
+    private static let replySize: CGFloat = 10
+    private static let rootGlyphPointSize: CGFloat = 8
+    private static let replyGlyphPointSize: CGFloat = 6
+    /// 大会员标志字形，不随语言变化。
+    private static let vipGlyph = "大"
+
+    static func size(isReply: Bool) -> CGFloat {
+        isReply ? replySize : rootSize
+    }
+
+    private struct ImageKey: Hashable {
+        let mark: NativeCommentAvatarMark
+        let isReply: Bool
+        let scale: CGFloat
+        let appearance: NSAppearance.Name
+    }
+
+    /// 渲染好的角标图，进程内共用；键只有 3 种角标 × 根评论／回复 × 屏幕倍数 × 外观，条目数天然有界。
+    @MainActor private static var images: [ImageKey: CGImage] = [:]
+
+    /// 这种角标在给定倍数与外观下的图；同样的组合只渲染一次。
+    ///
+    /// 底色是随外观变化的系统色，按外观分别渲染，深浅色与高对比度下各取对应的颜色。
+    @MainActor
+    func image(isReply: Bool, scale: CGFloat, appearance: NSAppearance) -> CGImage? {
+        let key = ImageKey(mark: self, isReply: isReply, scale: scale, appearance: appearance.name)
+        if let image = Self.images[key] { return image }
+        let side = Self.size(isReply: isReply)
+        let pixels = max(1, Int((side * scale).rounded(.up)))
+        guard
+            let context = CGContext(
+                data: nil,
+                width: pixels,
+                height: pixels,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else { return nil }
+        context.scaleBy(x: CGFloat(pixels) / side, y: CGFloat(pixels) / side)
+        let previous = NSGraphicsContext.current
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        appearance.performAsCurrentDrawingAppearance {
+            draw(in: NSRect(x: 0, y: 0, width: side, height: side), isReply: isReply)
+        }
+        NSGraphicsContext.current = previous
+        guard let image = context.makeImage() else { return nil }
+        Self.images[key] = image
+        return image
+    }
+
+    /// 彩色圆底加白色字形。
+    private func draw(in bounds: NSRect, isReply: Bool) {
+        background.setFill()
         NSBezierPath(ovalIn: bounds).fill()
         let glyphPointSize = isReply ? Self.replyGlyphPointSize : Self.rootGlyphPointSize
-        switch kind {
+        func centered(_ size: NSSize) -> NSRect {
+            NSRect(
+                x: bounds.midX - size.width / 2,
+                y: bounds.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        }
+        switch self {
         case .personalVerification, .organizationVerification:
             let configuration = NSImage.SymbolConfiguration(
                 pointSize: glyphPointSize,
@@ -256,14 +332,5 @@ private final class NativePlaybackCommentAvatarMarkView: NSView {
             )
             text.draw(in: centered(text.size()))
         }
-    }
-
-    private func centered(_ size: NSSize) -> NSRect {
-        NSRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
     }
 }
