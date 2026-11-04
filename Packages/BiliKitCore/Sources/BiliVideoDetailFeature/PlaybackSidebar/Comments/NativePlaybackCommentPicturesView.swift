@@ -152,16 +152,13 @@ public struct NativePlaybackCommentPictureGallery {
 @MainActor
 final class NativePlaybackCommentPicturesView: NSView {
     nonisolated override var isFlipped: Bool { true }
-    private let tiles = (0..<9).map { _ in NativePlaybackCommentPictureTileView() }
+    /// 按需建出的格子：只建到用过的最多张数，没有图片的评论一个也不建；建出的格子留着复用。
+    private var tiles: [NativePlaybackCommentPictureTileView] = []
     private var slots: [NativePlaybackCommentPictureSlot] = []
     private var onOpen: ((NativePlaybackCommentPictureGallery) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        for tile in tiles {
-            tile.isHidden = true
-            addSubview(tile)
-        }
         setAccessibilityElement(false)
     }
 
@@ -179,6 +176,11 @@ final class NativePlaybackCommentPicturesView: NSView {
             images: images,
             count: count
         )
+        while tiles.count < slots.count {
+            let tile = NativePlaybackCommentPictureTileView()
+            addSubview(tile)
+            tiles.append(tile)
+        }
         for (index, tile) in tiles.enumerated() {
             guard slots.indices.contains(index) else {
                 tile.isHidden = true

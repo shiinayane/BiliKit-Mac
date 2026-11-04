@@ -84,7 +84,7 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
         #expect(visibleButton(VideoDetailFeatureStrings.localized("加载更多")) == nil)
     }
 
-    /// 同一条目原地重配时，新出现的回复行带上淡入动画；回复不变的重配与复用后的首次配置都不带。
+    /// 同一条目原地重配时，新出现的回复行带上淡入动画；回复不变的重配沿用原来的行、不重新淡入，复用后的首次配置不带。
     @Test
     func inPlaceReconfigureFadesInOnlyNewReplyRows() {
         let item = NativePlaybackCommentThreadItem()
@@ -114,13 +114,48 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
 
         state.replies = [comment(id: 32, message: "第二页")]
         state.pageNumber = 2
-        #expect(fades(configure(state)) == [fadesAreAllowed])
+        let secondPage = configure(state)
+        #expect(fades(secondPage) == [fadesAreAllowed])
 
-        #expect(fades(configure(state)) == [false])
+        let unchanged = configure(state)
+        #expect(unchanged.count == secondPage.count)
+        #expect(zip(unchanged, secondPage).allSatisfy { $0 === $1 })
 
         item.prepareForReuse()
         state.replies = [comment(id: 33, message: "复用后")]
         #expect(fades(configure(state)) == [false])
+    }
+
+    /// 原地重配时仍显示的回复沿用原来的行视图，新回复的行按回复顺序排在子视图里（读屏按这个顺序朗读）。
+    @Test
+    func reconfigureKeepsRowsOfRepliesStillShownInReplyOrder() {
+        let item = NativePlaybackCommentThreadItem()
+        func configure(_ replyIDs: [Int64]) -> [NativePlaybackCommentRowView] {
+            var state = PlaybackCommentReplyState()
+            state.isExpanded = true
+            state.replies = replyIDs.map { comment(id: $0, message: "回复 \($0)") }
+            state.totalCount = 10
+            configureThreadItem(
+                item,
+                with: NativePlaybackCommentThreadPresentation(
+                    subject: .video(aid: 700_001),
+                    thread: commentThread(id: 4, message: "根评论", replyCount: 10),
+                    replyState: state
+                )
+            )
+            // 第一行是根评论，其余是面板里按子视图顺序排列的回复行。
+            return Array(
+                descendants(of: item.view).compactMap { $0 as? NativePlaybackCommentRowView }
+                    .dropFirst()
+            )
+        }
+
+        let before = configure([41, 42])
+        let after = configure([43, 41, 42])
+
+        #expect(after.map { $0.commentForLayout?.id.rawValue } == [43, 41, 42])
+        #expect(after[1] === before[0])
+        #expect(after[2] === before[1])
     }
 
     /// 进出对话、对话加载状态变化都改变这一行的 revision，侧栏据此重载这一行。

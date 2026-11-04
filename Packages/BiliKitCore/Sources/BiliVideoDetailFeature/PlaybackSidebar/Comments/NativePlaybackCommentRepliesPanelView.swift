@@ -6,7 +6,8 @@ import BiliModels
 ///
 /// 看对话时原地换成那串对话：顶部「返回全部回复」，底部「加载更多」，回复行不再提供「查看对话」。
 ///
-/// 每次配置都按回复重建行视图（`resetRows` 先移除旧行）；回复状态与动作回调由条目传入，分页请求归 ViewModel。
+/// 每次配置按回复 ID 复用行视图：仍显示的回复沿用原来的行，新出现的回复从备用行里取、不够才新建，退出显示的行
+/// 释放图片与正文后留作备用（最多 `spareRowLimit` 行）；回复状态与动作回调由条目传入，分页请求归 ViewModel。
 /// 同一楼原地重配时，之前没显示过的回复行淡入（见 `newlyShownReplyIDs`），展开、翻页、进出对话与加载更多因此
 /// 都有过渡；收起后显示的预览不在原页里时同样淡入。行高不做动画，变化即时完成。控制器只对可见的楼原地重配，
 /// 复用前的 `reset` 清掉记录，滚动进来的行不淡入。
@@ -38,7 +39,15 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         target: nil,
         action: nil
     )
+    /// 一页回复的条数：备用行留到这么多，展开、翻页与收起来回切换时不再新建行视图。
+    ///
+    /// 调大只在看长对话后多留几行空闲视图；调小则翻页时更常新建行。
+    static let spareRowLimit = 10
+
+    /// 正在显示的回复行，顺序与回复一致。
     private var replyRows: [NativePlaybackCommentRowView] = []
+    /// 退出显示、留作复用的行：已移出视图层级，图片、正文与动画都已释放。
+    private var spareRows: [NativePlaybackCommentRowView] = []
     /// 上一次配置显示的是哪一楼的哪些回复；只用来判断这次哪些行是新出现的。
     private var shownRootID: CommentID?
     private var shownReplyIDs: Set<CommentID> = []
@@ -139,7 +148,6 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void,
         onOpenAuthorSpace: ((CommentAuthor) -> Void)?
     ) {
-        resetRows()
         self.thread = thread
         self.replyState = replyState
         self.textRenderer = textRenderer
@@ -154,6 +162,8 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         guard case .available(let details) = thread.root.payload,
             details.replyCount > 0
         else {
+            retireRows(replyRows)
+            replyRows = []
             isHidden = true
             shownRootID = thread.id
             shownReplyIDs = []
@@ -177,10 +187,22 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         )
         shownRootID = thread.id
         shownReplyIDs = Set(replies.map(\.id))
+        var rowsByReplyID: [CommentID: NativePlaybackCommentRowView] = [:]
+        for row in replyRows {
+            guard let replyID = row.commentForLayout?.id, rowsByReplyID[replyID] == nil else {
+                continue
+            }
+            rowsByReplyID[replyID] = row
+        }
+        var rows: [NativePlaybackCommentRowView] = []
         for reply in replies {
-            let row = NativePlaybackCommentRowView()
-            // 面板虽是 layer-backed，子视图的图层要到上屏绘制时才建；淡入要在加入时就挂上动画，所以行自己要图层。
-            row.wantsLayer = true
+            let row: NativePlaybackCommentRowView
+            if let shown = rowsByReplyID.removeValue(forKey: reply.id) {
+                row = shown
+            } else {
+                row = takeSpareRow()
+                addSubview(row)
+            }
             row.configure(
                 comment: reply,
                 isReply: true,
@@ -196,12 +218,14 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
                     ? { [weak self] in self?.onShowDialog?(reply) }
                     : nil
             )
-            addSubview(row)
-            replyRows.append(row)
+            rows.append(row)
             if fadingReplyIDs.contains(reply.id) {
                 NativePlaybackSidebarFade.fadeIn(row)
             }
         }
+        retireRows(replyRows.filter { row in !rows.contains { $0 === row } })
+        replyRows = rows
+        orderRowSubviews()
         headerLabel.isHidden = !expanded || dialog != nil
         backButton.isHidden = dialog == nil
         collapseButton.isHidden = !expanded
@@ -361,7 +385,8 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
     }
 
     func reset() {
-        resetRows()
+        retireRows(replyRows)
+        replyRows = []
         // 复用后的下一次配置按首次显示处理，不淡入。
         shownRootID = nil
         shownReplyIDs = []
@@ -394,12 +419,39 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         return Set(replyIDs).subtracting(previousReplyIDs)
     }
 
-    private func resetRows() {
-        for row in replyRows {
+    private func takeSpareRow() -> NativePlaybackCommentRowView {
+        if let row = spareRows.popLast() { return row }
+        let row = NativePlaybackCommentRowView()
+        // 面板虽是 layer-backed，子视图的图层要到上屏绘制时才建；淡入要在加入时就挂上动画，所以行自己要图层。
+        row.wantsLayer = true
+        return row
+    }
+
+    /// 让退出显示的行释放资源并移出视图层级，留作备用直到 `spareRowLimit`；残留的淡入一并去掉，
+    /// 否则复用时不该淡入的行也会从透明开始。
+    private func retireRows(_ rows: [NativePlaybackCommentRowView]) {
+        for row in rows {
             row.releaseOffscreenResources()
+            row.reset()
+            row.layer?.removeAllAnimations()
             row.removeFromSuperview()
+            if spareRows.count < Self.spareRowLimit { spareRows.append(row) }
         }
-        replyRows.removeAll(keepingCapacity: true)
+    }
+
+    /// 让回复行在子视图里的先后与回复顺序一致：读屏按子视图顺序朗读，沿用的行原本排在新加入的行之前。
+    private func orderRowSubviews() {
+        var previous: NativePlaybackCommentRowView?
+        for row in replyRows {
+            if let previous,
+                let rowIndex = subviews.firstIndex(of: row),
+                let previousIndex = subviews.firstIndex(of: previous),
+                rowIndex < previousIndex
+            {
+                addSubview(row, positioned: .above, relativeTo: previous)
+            }
+            previous = row
+        }
     }
 
     @objc private func expand() { onExpand?() }
