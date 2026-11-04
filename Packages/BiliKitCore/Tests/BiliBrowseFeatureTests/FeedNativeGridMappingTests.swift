@@ -20,9 +20,7 @@ struct FeedNativeGridMappingTests {
             recommendationReason: "正在流行"
         )
 
-        let content = try #require(
-            RecommendedNativeGridView.makePresentations([video], disliked: [:]).first
-        )
+        let content = RecommendedNativeGridView.makePresentation(video, isDisliked: false)
         #expect(content.footerTrailingText == "正在流行")
         #expect(content.footerTrailingStyle == .brandOutlinedCapsule)
         #expect(
@@ -40,9 +38,7 @@ struct FeedNativeGridMappingTests {
             publishedAt: video.publishedAt,
             recommendationReason: nil
         )
-        let plain = try #require(
-            RecommendedNativeGridView.makePresentations([withoutReason], disliked: [:]).first
-        )
+        let plain = RecommendedNativeGridView.makePresentation(withoutReason, isDisliked: false)
         #expect(plain.footerTrailingText == nil)
         #expect(plain.footerTrailingStyle == .plain)
     }

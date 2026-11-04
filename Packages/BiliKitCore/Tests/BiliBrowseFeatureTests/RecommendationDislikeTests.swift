@@ -88,12 +88,7 @@ struct RecommendationDislikeTests {
     func dislikedCardStaysInPlaceUnavailableWithOnlyUndo() throws {
         let feedback = try Self.feedback(reason: .uploader)
         let video = Self.trackedVideo()
-        let card = try #require(
-            RecommendedNativeGridView.makePresentations(
-                [video],
-                disliked: [video.bvid: feedback]
-            ).first
-        )
+        let card = RecommendedNativeGridView.makePresentation(video, isDisliked: true)
         #expect(card.availability == .unavailable(badge: VideoCardMenuText.dislikedBadge))
         #expect(card.accessibilityLabel.hasPrefix(VideoCardMenuText.dislikedBadge))
 
@@ -114,9 +109,7 @@ struct RecommendationDislikeTests {
     @Test
     func shownCardOffersBothReasonsAsASubmenu() throws {
         let video = Self.trackedVideo()
-        let card = try #require(
-            RecommendedNativeGridView.makePresentations([video], disliked: [:]).first
-        )
+        let card = RecommendedNativeGridView.makePresentation(video, isDisliked: false)
         let writes = RecordedWrites()
         let menu = try #require(
             BrowseVideoCardMenu.menu(
@@ -151,9 +144,7 @@ struct RecommendationDislikeTests {
     @Test
     func noTrackingIDMeansNoFeedback() throws {
         let video = Self.trackedFixture.recommendedVideo
-        let card = try #require(
-            RecommendedNativeGridView.makePresentations([video], disliked: [:]).first
-        )
+        let card = RecommendedNativeGridView.makePresentation(video, isDisliked: false)
         let writes = RecordedWrites()
         let menu = try #require(
             BrowseVideoCardMenu.menu(

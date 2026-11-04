@@ -15,10 +15,12 @@ struct PopularNativeGridView: View {
     @Environment(\.videoCardAccountWriting) private var accountWriting
     let content: LoadedFeedContent<PopularVideo>
     let host: NativeVideoGridHostContext
+    /// 卡片展示数据按位置缓存，翻页时只格式化新追加的条目，见 `NativeVideoCardCache`。
+    @State private var cards = NativeVideoCardCache<PopularVideo>()
 
     var body: some View {
         NativeVideoGridView(
-            items: Self.makePresentations(content.items),
+            items: cards.cards(for: content.items, make: { Self.makePresentation($0) }),
             accessibilityLabel: BrowseFeatureStrings.localized("热门视频", locale: locale),
             tailState: content.tailState,
             host: host,
@@ -30,33 +32,31 @@ struct PopularNativeGridView: View {
         )
     }
 
-    static func makePresentations(
-        _ videos: [PopularVideo],
+    /// 条目已由 `PagedVideoList` 按 BVID 去重，卡片 ID 因此唯一。
+    static func makePresentation(
+        _ video: PopularVideo,
         locale: Locale = InterfaceLocale.current
-    ) -> [NativeVideoCardPresentation] {
-        // 条目已由 `PagedVideoList` 按 BVID 去重，卡片 ID 因此唯一。
-        videos.map { video in
-            let presentation = PopularVideoCardPresentation(video: video, locale: locale)
-            return NativeVideoCardPresentation(
-                id: presentation.bvid,
-                title: presentation.title,
-                coverURL: presentation.coverURL,
-                avatarURL: presentation.avatarURL,
-                showsAvatar: true,
-                coverMetrics: [
-                    NativeVideoCardMetric(
-                        text: presentation.viewCountText,
-                        systemImage: "play.fill"
-                    ),
-                    NativeVideoCardMetric(
-                        text: presentation.danmakuCountText,
-                        systemImage: "text.bubble.fill"
-                    )
-                ],
-                coverTrailingText: presentation.durationText,
-                footerLeadingText: presentation.footerText,
-                accessibilityLabel: presentation.accessibilityLabel
-            )
-        }
+    ) -> NativeVideoCardPresentation {
+        let presentation = PopularVideoCardPresentation(video: video, locale: locale)
+        return NativeVideoCardPresentation(
+            id: presentation.bvid,
+            title: presentation.title,
+            coverURL: presentation.coverURL,
+            avatarURL: presentation.avatarURL,
+            showsAvatar: true,
+            coverMetrics: [
+                NativeVideoCardMetric(
+                    text: presentation.viewCountText,
+                    systemImage: "play.fill"
+                ),
+                NativeVideoCardMetric(
+                    text: presentation.danmakuCountText,
+                    systemImage: "text.bubble.fill"
+                )
+            ],
+            coverTrailingText: presentation.durationText,
+            footerLeadingText: presentation.footerText,
+            accessibilityLabel: presentation.accessibilityLabel
+        )
     }
 }
