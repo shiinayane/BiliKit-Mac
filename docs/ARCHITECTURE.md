@@ -113,6 +113,8 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
 - 附加档位失败不拖垮播放：某一档视频 SIDX 读取失败只丢弃该档，某个 AI 配音语言失败就停止后续配音请求；
   全部视频档失败、原声音轨失败、凭据失效或会话变化才让播放失败。读取成功之后生成 playlist 出错仍让整次播放失败。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
+- 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
+  AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。
 - 音轨与字幕都写成 master 里的原生 rendition，由系统菜单选择；名称标注按 HLS 媒体特征交给系统本地化，
   原声不写 LANGUAGE（B 站不给可验证的原声语言）。起播总是原声：配音 `AUTOSELECT=NO`，播放器关闭自动媒体
   选择，只按 DEFAULT 起播。系统可能在字幕菜单里插入不在 BiliKit 目录里的翻译轨，没有公开 API 可以关掉。

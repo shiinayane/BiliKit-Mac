@@ -8,7 +8,6 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case nonIndependentIFrameSegments
     case duplicateIFrameVariant(Int)
     case unknownIFrameVariant(Int)
-    case unsupportedAudioRenditionCount(Int)
     case duplicateAudioTrackID(String)
     case duplicateAudioRenditionName(String)
     case invalidDefaultAudioRenditionCount(Int)
@@ -254,7 +253,7 @@ public struct HLSSubtitlePlaylistBuilder: Sendable {
     }
 }
 
-/// 把一个或多个视频 variant 与语义音轨 rendition 集合组合成 AVPlayer 的 ABR master playlist。
+/// 把一个或多个视频 variant 与语义音轨 rendition 集合（稿件没有声音时为空）组合成 AVPlayer 的 ABR master playlist。
 ///
 /// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
 public struct HLSMasterPlaylistBuilder: Sendable {
@@ -271,15 +270,11 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         guard !videoVariants.isEmpty else {
             throw HLSPlaylistBuilderError.noVideoVariants
         }
-        guard !audioRenditions.isEmpty else {
-            throw HLSPlaylistBuilderError.unsupportedAudioRenditionCount(
-                audioRenditions.count
-            )
-        }
+        // 没有声音的稿件没有音频 rendition：master 只写视频 variant，不声明 AUDIO group。
         let defaultCount = audioRenditions.filter {
             $0.selectedTrack.track.isDefault
         }.count
-        guard defaultCount == 1 else {
+        guard audioRenditions.isEmpty || defaultCount == 1 else {
             throw HLSPlaylistBuilderError.invalidDefaultAudioRenditionCount(
                 defaultCount
             )
@@ -449,7 +444,10 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             if let frameRate {
                 streamAttributes += ",FRAME-RATE=\(frameRate)"
             }
-            streamAttributes += ",CODECS=\"\(codecs)\",AUDIO=\"\(audioGroupID)\""
+            streamAttributes += ",CODECS=\"\(codecs)\""
+            if !audioRenditions.isEmpty {
+                streamAttributes += ",AUDIO=\"\(audioGroupID)\""
+            }
             if !subtitleRenditions.isEmpty {
                 streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
             }

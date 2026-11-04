@@ -310,9 +310,11 @@ struct AudioLanguageItemPayload: Decodable, Sendable {
 }
 
 /// playurl 的 `dash`：视频与音频 representation 列表，调用方只取其中的 AVC 视频与 AAC 音频。
+///
+/// 没有声音的稿件（录屏之类）`audio` 是 `null`。
 struct DASHPayload: Decodable, Sendable {
     let video: [DASHRepresentationPayload]
-    let audio: [DASHRepresentationPayload]
+    let audio: [DASHRepresentationPayload]?
 }
 
 /// DASH 的一路 representation，映射为 `MediaRepresentation`；snake_case 与 camelCase 字段名都接受。

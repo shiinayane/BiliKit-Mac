@@ -65,6 +65,37 @@ extension AVPlayerEngineSuites {
             }
         }
 
+        /// 没有音轨的 DASH 稿件（录屏之类）也能就绪并播放：master 只有视频 variant，不要求原声。
+        @Test
+        @MainActor
+        func dashItemWithoutAudioTracksPlays() async throws {
+            let fixture = try makeFourSecondMedia(host: "no-audio.fixture.bilivideo.com")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
+            )
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            let identity = PlaybackItemIdentity(bvid: "BV1NoAudioFixture", cid: 900_011)
+            let request = PlaybackRequest(
+                media: .dash(
+                    PlaybackManifest(videoRepresentations: [fixture.video], audioTracks: [])
+                )
+            )
+            let intent = PlaybackLoadIntent()
+            // 没有音轨时播放时钟靠视频渲染推进：不接显示目标的 player 会一直停在
+            // WaitingToMinimizeStalls。App 里由 AVPlayerView 提供这个目标，这里用 AVPlayerLayer 代替。
+            let videoLayer = AVPlayerLayer(player: engine.player)
+            defer { videoLayer.player = nil }
+
+            try await engine.load(request, identity: identity, intent: intent)
+            _ = await engine.beginPlayback(identity: identity, intent: intent)
+
+            try await waitUntilTimeControlStatus(of: engine.player, is: .playing)
+            try await waitForTimeline(of: engine) { snapshot in
+                snapshot.positionSeconds > 0.2
+            }
+        }
+
         @Test
         @MainActor
         func engineBeginPlaybackIsIntentGuardedAndRestartsOnce() async throws {

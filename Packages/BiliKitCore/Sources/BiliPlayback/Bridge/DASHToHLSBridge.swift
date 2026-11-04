@@ -140,8 +140,8 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
         }
-        // 非空、ID 唯一、恰好一条默认轨与音频 representation 由 AVPlayerEngine 在释放旧 item 前验证；
-        // 这里只守住 bridge 自己的 HLS 角色约束。
+        // ID 唯一、有音轨时恰好一条默认轨与音频 representation 由 AVPlayerEngine 在释放旧 item 前验证；
+        // 这里只守住 bridge 自己的 HLS 角色约束。没有音轨（稿件没有声音）时 master 只有视频。
         for selectedAudio in audioTracks {
             guard
                 selectedAudio.track.representations.contains(
@@ -198,17 +198,17 @@ public struct DASHToHLSBridge: Sendable {
         let loadedAudioRenditions = try await audioRenditionsTask
         let videoVariants = try await loadedVideoVariants
         let subtitleCatalog = try await freezeCatalog(catalogTask)
-        guard
-            let canonicalAudio = loadedAudioRenditions.first(where: {
-                $0.selectedTrack.track.isDefault
-            })
-        else {
+        let canonicalAudio = loadedAudioRenditions.first(where: {
+            $0.selectedTrack.track.isDefault
+        })
+        guard canonicalAudio != nil || audioTracks.isEmpty else {
             throw DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
         }
         // 同一 AUDIO group 的音轨按同一条时间线互相切换，以原声 SIDX 起点为准；起点不一致的 AI 音轨在生成
         // master 前丢弃，与配音请求失败一样只少一条配音，不让播放失败。
         let audioRenditions = loadedAudioRenditions.filter { rendition in
-            rendition.selectedTrack.track.isDefault
+            guard let canonicalAudio else { return false }
+            return rendition.selectedTrack.track.isDefault
                 || hasMatchingAudioTimeline(
                     rendition.index.index,
                     canonical: canonicalAudio.index.index
