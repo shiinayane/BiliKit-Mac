@@ -5,7 +5,7 @@ import BiliVideoCollectionUI
 /// 侧栏的单列布局：按条目顺序纵向排列，行高由控制器经 `heightProvider` 提供（带缓存的精确测量）。
 ///
 /// 能增量就增量：宽度不变时只重测被失效的行，或只排新追加的行（含插在稳定页脚之前的评论）；宽度变化时先按
-/// 宽度比例估算全部行高、立即可用，再由控制器精测：可见的行当场精测（`refinePendingItems(intersecting:)`），
+/// 宽度比例估算全部行高、立即可用，再由控制器精测：会被画出来的行当场精测（`refinePendingItems(intersecting:)`），
 /// 其余等宽度稳定后分批精测（`refineNextBatch`）；其余变化整体重排。拥有已排好的属性与待精测集合，不拥有条目
 /// 数据与测量（交给控制器）。
 ///
@@ -21,7 +21,7 @@ final class NativePlaybackSidebarLayout: NSCollectionViewLayout {
     ///
     /// 拖分隔条或缩放窗口时宽度每帧都在变，每次变化都让已精测的行高作废；不等它稳定就开始分批精测，每帧都会白测
     /// 一整批（1.6.1 的 Time Profiler 里拖动期间主线程八成以上被占满，约三成是这些作废的精测）。调短会在拖动的停顿
-    /// 间隙里白测，调长则松手后视野外的行更晚才是准确高度（视野内的行不受影响，改宽度当场精测）。
+    /// 间隙里白测，调长则松手后其余的行更晚才是准确高度（会被画出来的行不受影响，改宽度当场精测）。
     static let refinementSettleDelay: Duration = .milliseconds(200)
 
     /// 一个条目在布局里的位置与身份；身份用来跨更新找到同一行（失效、优先精测）。

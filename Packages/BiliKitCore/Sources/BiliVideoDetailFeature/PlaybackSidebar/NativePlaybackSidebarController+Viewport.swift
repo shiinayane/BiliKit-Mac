@@ -19,20 +19,28 @@ extension NativePlaybackSidebarController {
         if let anchor {
             restore(anchor)
         }
-        refineVisibleItems(keeping: anchor)
+        refineDisplayedItems(keeping: anchor)
         scheduleRefinement(after: NativePlaybackSidebarLayout.refinementSettleDelay)
     }
 
-    /// 当场精测视野内仍是估算高度的行，每轮之后按锚点恢复，直到视野内没有待精测的行。
+    /// 当场精测会被画出来的行：视野内的行与集合视图已建出视图的行；
+    /// 每轮之后按锚点恢复，直到这些行里没有待精测的。
     ///
-    /// 改宽度时视野外的行留给宽度稳定后的分批精测；视野内的行不能等，否则拖动期间看到的正文会被估算高度截断或留空。
-    private func refineVisibleItems(keeping anchor: Anchor?) {
-        while layout.refinePendingItems(
-            intersecting: rootView.scrollView.documentVisibleRect
-        ) {
+    /// 其余的行留给宽度稳定后的分批精测。已建出视图的行不能等：屏幕上的集合视图会为视野上下各多建一段条目视图，
+    /// 条目视图不裁剪子视图（macOS 14 起的默认），视野上方一行按估算高度排、内容却按实际宽度排时，下半截会画到
+    /// 视野里的下一行上；只精测视野内的行，拖动期间就会看到上一条评论压在当前评论上。
+    private func refineDisplayedItems(keeping anchor: Anchor?) {
+        while layout.refinePendingItems(intersecting: displayedContentRect()) {
             collectionView.layoutSubtreeIfNeeded()
             synchronizeDocumentFrame()
             if let anchor { restore(anchor) }
+        }
+    }
+
+    /// 视野与已建出视图的条目合起来覆盖的范围；单列纵向排列，已建出视图的条目是连续的一段。
+    private func displayedContentRect() -> NSRect {
+        collectionView.visibleItems().reduce(rootView.scrollView.documentVisibleRect) {
+            $0.union($1.view.frame)
         }
     }
 

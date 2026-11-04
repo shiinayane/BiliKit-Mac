@@ -195,7 +195,7 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
 
     @Test
     @MainActor
-    func continuousResizeRefinesVisibleRowsAtOnceAndOffscreenRowsAfterWidthSettles() async throws {
+    func continuousResizeRefinesRowsWithViewsAtOnceAndTheRestAfterWidthSettles() async throws {
         let sidebar = HostedPlaybackSidebar()
         let controller = sidebar.controller
         let window = sidebar.window
@@ -216,18 +216,25 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
             }
         )
 
-        for width in [420.0, 400.0, 380.0] {
+        // 停在列表中段：视野上方也有已建出视图的行，它们按估算高度排时内容会画进视野。
+        controller.scroll(to: layout.collectionViewContentSize.height / 2)
+
+        for width in [520.0, 600.0, 680.0] {
+            // 屏幕上的窗口会为视野上下各多建一段条目视图（responsive scrolling 的预备区），离屏测试窗口不会；
+            // 这里显式扩大预备区，模拟上方有已建出视图、却在视野外的行。
+            let visibleRect = controller.rootView.scrollView.documentVisibleRect
+            controller.collectionView.prepareContent(in: visibleRect.insetBy(dx: 0, dy: -400))
             window.setContentSize(NSSize(width: width, height: 600))
             window.contentView?.layoutSubtreeIfNeeded()
-            let visibleRect = controller.rootView.scrollView.documentVisibleRect
             // 待精测集合按条目顺序编号，与全部属性的顺序一致。
             let allAttributes = layout.layoutAttributesForElements(
                 in: NSRect(x: 0, y: 0, width: 10_000, height: 1_000_000)
             )
-            let visiblePending = layout.pendingRefinementIndexes.filter {
-                allAttributes[$0].frame.intersects(visibleRect)
+            let rowsWithViews = Set(controller.collectionView.indexPathsForVisibleItems())
+            let pendingWithViews = layout.pendingRefinementIndexes.filter {
+                allAttributes[$0].indexPath.map(rowsWithViews.contains) ?? false
             }
-            #expect(visiblePending.isEmpty, "width \(width)")
+            #expect(pendingWithViews.isEmpty, "width \(width)")
             let pendingCount = layout.pendingRefinementIndexes.count
             #expect(pendingCount > 0, "width \(width)")
             // 宽度还在变：几轮 main actor 之后视野外的行仍未精测，没有每次变化都白测一批。
