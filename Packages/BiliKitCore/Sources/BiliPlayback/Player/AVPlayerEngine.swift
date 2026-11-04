@@ -6,7 +6,6 @@ import Foundation
 /// 播放准备与控制的失败分类：媒体表示缺失或不一致、item 失败（只带错误类型名）与非法倍速。
 public enum AVPlayerEngineError: Error, Sendable, Equatable {
     case missingVideoRepresentation
-    case missingAudioRepresentation
     case missingAudioTrackRepresentation(String)
     case duplicateAudioTrackID(String)
     case invalidDefaultAudioTrackCount(Int)

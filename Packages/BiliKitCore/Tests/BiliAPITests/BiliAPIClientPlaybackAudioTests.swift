@@ -7,7 +7,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 playurl 音轨契约：AI 配音只在带凭据且响应确认制作类型时作为语义音轨加入，
-/// 配音失败保留原声并停止后续配音请求，响度元数据按音轨各自绑定且必须是完整有界的一组。
+/// 配音失败保留原声并停止后续配音请求，响度元数据按音轨各自绑定且必须是完整有界的一组；
+/// 没有音轨的稿件映射为只有视频的清单。
 struct BiliAPIClientPlaybackAudioTests {
     @Test
     func playURLBindsLoudnessMetadataToEachSemanticTrackResponse() async throws {
@@ -110,6 +111,34 @@ struct BiliAPIClientPlaybackAudioTests {
         )
 
         #expect(payload?.model?.measuredIntegratedLUFS == expectedIntegratedLUFS)
+    }
+
+    /// 录屏之类没有声音的稿件 `dash.audio` 是 `null`：照常映射视频、没有音轨，即使目录里列着配音也不去请求。
+    @Test
+    func playURLWithoutAudioMapsVideoOnlyManifest() async throws {
+        let transport = StubTransport(
+            responses: [
+                try semanticAudioResponse(
+                    audioPath: nil,
+                    languageCatalog: machineGeneratedEnglishCatalog
+                )
+            ],
+            answersWBINavOnce: true
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: StubAuthorizer()
+        )
+
+        let playback = try await client.playback(
+            for: "BV1FixtureA1",
+            cid: 900_001
+        )
+
+        let manifest = try #require(playback.dashManifest)
+        #expect(manifest.videoRepresentations.map(\.id) == [32])
+        #expect(manifest.audioTracks.isEmpty)
+        #expect(playURLRequests(transport).count == 1)
     }
 
     @Test

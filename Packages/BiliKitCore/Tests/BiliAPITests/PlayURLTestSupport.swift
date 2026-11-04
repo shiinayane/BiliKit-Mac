@@ -22,8 +22,10 @@ var machineGeneratedEnglishCatalog: [String: Any] {
 }
 
 /// 一个视频轨、一个音轨的 DASH playurl 响应；可附带语言目录、当前语言与制作类型、响度元数据。
+///
+/// `audioPath` 为 nil 时 `dash.audio` 是 `null`，即没有音轨的稿件。
 func semanticAudioResponse(
-    audioPath: String,
+    audioPath: String?,
     languageCatalog: [String: Any]? = nil,
     currentLanguage: String? = nil,
     currentProductionType: Int? = nil,
@@ -49,22 +51,24 @@ func semanticAudioResponse(
                     ]
                 ]
             ],
-            "audio": [
+            "audio": audioPath.map { audioPath -> Any in
                 [
-                    "id": 30_280,
-                    "codecid": 0,
-                    "codecs": "mp4a.40.2",
-                    "mime_type": "audio/mp4",
-                    "bandwidth": 192_000,
-                    "base_url":
-                        "https://media.fixture.bilivideo.com/\(audioPath)",
-                    "backup_url": [],
-                    "segment_base": [
-                        "initialization": "0-99",
-                        "index_range": "100-199"
+                    [
+                        "id": 30_280,
+                        "codecid": 0,
+                        "codecs": "mp4a.40.2",
+                        "mime_type": "audio/mp4",
+                        "bandwidth": 192_000,
+                        "base_url":
+                            "https://media.fixture.bilivideo.com/\(audioPath)",
+                        "backup_url": [],
+                        "segment_base": [
+                            "initialization": "0-99",
+                            "index_range": "100-199"
+                        ]
                     ]
                 ]
-            ]
+            } ?? NSNull()
         ]
     ]
     if let languageCatalog {

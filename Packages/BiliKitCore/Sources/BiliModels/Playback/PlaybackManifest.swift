@@ -220,8 +220,8 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
 /// DASH 播放所需的视频表示与语义音轨，由 `BiliAPIClient` 的 playurl 映射组装，`DASHToHLSBridge`
 /// 消费。
 ///
-/// BiliAPI 只保留 AVC 视频与 AAC 音频，两者都非空才组装；首条音轨是默认原声，已认证时可追加 AI
-/// 配音音轨。
+/// BiliAPI 只保留 AVC 视频与 AAC 音频，视频非空才组装；有音轨时首条是默认原声，已认证时可追加 AI
+/// 配音音轨。没有声音的稿件 `audioTracks` 为空，只播视频。
 public struct PlaybackManifest: Sendable, Equatable {
     public let videoRepresentations: [MediaRepresentation]
     public let audioTracks: [PlaybackAudioTrack]

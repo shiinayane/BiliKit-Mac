@@ -50,12 +50,12 @@ extension PlaybackManifest {
 
     /// 每条语义音轨取其码率最高的 representation，并在释放旧播放项之前验证音轨契约。
     ///
+    /// 没有音轨（稿件没有声音）时返回空，交给 bridge 生成只有视频的 master。
+    ///
     /// playurl 的 `dash.audio` 不按码率排序（首条常是 30232 而非更高的 30280），所以不能取首个。
     /// 有 `bandwidth` 的候选优先于缺失的；码率相同或都缺失时保留输入中靠前的一条，结果只由输入决定。
     func selectedAudioTracks() throws -> [SelectedPlaybackAudioTrack] {
-        guard !audioTracks.isEmpty else {
-            throw AVPlayerEngineError.missingAudioRepresentation
-        }
+        guard !audioTracks.isEmpty else { return [] }
         var trackIDs = Set<String>()
         for track in audioTracks {
             guard trackIDs.insert(track.id).inserted else {

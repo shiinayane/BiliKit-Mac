@@ -229,29 +229,32 @@ extension BiliAPIClient {
         let video = try dash.video
             .filter(\.isAVCVideo)
             .map { try $0.model(kind: .video) }
-        let audio = try dash.audio
-            .filter(\.isAACAudio)
-            .map { try $0.model(kind: .audio) }
+        let remoteAudio = dash.audio ?? []
+        let audio = try remoteAudio.filter(\.isAACAudio).map { try $0.model(kind: .audio) }
         guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
-        guard !audio.isEmpty else { throw BiliAPIError.noAACAudio }
-
-        var audioTracks = [
-            PlaybackAudioTrack.original(
-                representations: audio,
-                loudnessMetadata: payload.volume?.model
+        // `dash.audio` 为 null 或空是稿件本身没有声音，只播视频；列出了音频却没有 AAC 才算不支持。
+        guard remoteAudio.isEmpty || !audio.isEmpty else { throw BiliAPIError.noAACAudio }
+        var audioTracks: [PlaybackAudioTrack] = []
+        // 没有原声就没有可以并列的配音，不请求配音目录里的语言。
+        if !audio.isEmpty {
+            audioTracks.append(
+                .original(
+                    representations: audio,
+                    loudnessMetadata: payload.volume?.model
+                )
             )
-        ]
-        if authorizationProvenance == .authenticated {
-            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
-            audioTracks += try await machineGeneratedAudioTracks(
-                catalog: payload.languageCatalog,
-                originalAudio: audio,
-                bvid: bvid,
-                cid: cid,
-                quality: quality,
-                sessionEpoch: playbackSessionEpoch
-            )
-            try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+            if authorizationProvenance == .authenticated {
+                try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+                audioTracks += try await machineGeneratedAudioTracks(
+                    catalog: payload.languageCatalog,
+                    originalAudio: audio,
+                    bvid: bvid,
+                    cid: cid,
+                    quality: quality,
+                    sessionEpoch: playbackSessionEpoch
+                )
+                try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+            }
         }
 
         return VideoPlayback(
@@ -326,7 +329,7 @@ extension BiliAPIClient {
             }
             let representations: [MediaRepresentation]
             do {
-                representations = try dash.audio
+                representations = try (dash.audio ?? [])
                     .filter(\.isAACAudio)
                     .map { try $0.model(kind: .audio) }
             } catch {
