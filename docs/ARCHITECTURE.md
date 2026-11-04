@@ -13,6 +13,10 @@
   `NonisolatedNonsendingByDefault`（`Scripts/check-project-contract.sh` 固定）。因此 `nonisolated async`
   不继承调用方 actor：bridge 解析、授权器读 Keychain、Range 流、图片解码这类工作在 `@MainActor`
   调用时仍离开主线程。代码在 App 与 Package 之间移动时不改变执行位置。
+- 最低系统低于 SDK 时，编译器会把部分系统 API 编成“新系统调用新符号、旧系统走内联”的弱链接分支；新符号在
+  版本号已到、实际却还没有它的测试版系统上为空地址，一调用就崩溃。Xcode 27.2 SDK 的 `Date` `<=`／`>=` 即如此
+  （macOS 27.2 测试版扫码登录闪退），所以 `Date` 只用 `<`／`>` 比较。发版时 `release.py prepare` 列出主程序的
+  弱链接符号，不在白名单里的就停止，见 `docs/release/README.md`。
 - 用户可见 App、构建产品与 Swift app module 为 `BiliKit`；仓库、Xcode 工程、内部 App target
   和 `BiliKitMacTests` 保留 `BiliKitMac`，与原 BiliKit userscript 仓库区分。
 - Bundle ID `com.shiinayane.BiliKit`；Debug／Release 相同。Keychain access group 固定为

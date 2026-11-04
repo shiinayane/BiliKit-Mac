@@ -1,0 +1,77 @@
+# 主程序允许的弱链接符号；release.py prepare 遇到不在这里的弱链接符号就停止。
+#
+# 弱链接符号在“版本号已到、实际还没有该符号”的测试版系统上为空地址，调用即崩溃（见 ARCHITECTURE「平台与命名」）。
+# 这里收录 1.6.1 已随正式版发布、最低到 macOS 15 未出问题的符号：代码里用 `if #available` 有意调用的新 API
+# （SwiftUI glass、safeAreaBar 等）、编译器为并发与 AVFoundation 生成的回退分支，以及系统库自带的加载标记。
+# Foundation `Date` 的 `<=`／`>=`（macOS 27.2 才有）不在其中。升级 Xcode 或新增代码后出现新条目时，先查它由
+# 哪行代码引入、在旧系统与测试版上是否安全，能改写就改写，确需保留再加进来。
+# 每行：mangled 名，`#` 后是来源库与可读名。
+__swift_FORCE_LOAD_$_swiftFoundation  # Foundation: _swift_FORCE_LOAD_$_swiftFoundation
+_$s7SwiftUI13NSHostingViewC5coder04rootD0ACyxGSgSo7NSCoderC_xtcfCTq  # SwiftUI: method descriptor for SwiftUI.NSHostingView.__allocating_init(coder: __C.NSCoder, rootView: A) -> SwiftUI.NSHostingView<A>?
+_$s7SwiftUI13NSHostingViewC5coder04rootD0ACyxGSgSo7NSCoderC_xtcfc  # SwiftUI: SwiftUI.NSHostingView.init(coder: __C.NSCoder, rootView: A) -> SwiftUI.NSHostingView<A>?
+_$s7SwiftUI14_TaskModifier2V4name18executorPreference8priority6actionACSS_Sch_pSgScPyyYaYAcntcfC  # SwiftUI: SwiftUI._TaskModifier2.init(name: Swift.String, executorPreference: Swift.TaskExecutor?, priority: Swift.TaskPriority, action: __owned @isolated(any) () async -> ()) -> SwiftUI._TaskModifier2
+_$s7SwiftUI14_TaskModifier2VAA12ViewModifierAAMc  # SwiftUI: protocol conformance descriptor for SwiftUI._TaskModifier2 : SwiftUI.ViewModifier in SwiftUI
+_$s7SwiftUI14_TaskModifier2VMa  # SwiftUI: type metadata accessor for SwiftUI._TaskModifier2
+_$s7SwiftUI14_TaskModifier2VMn  # SwiftUI: nominal type descriptor for SwiftUI._TaskModifier2
+_$s7SwiftUI16GlassButtonStyleVAA09PrimitivedE0AAMc  # SwiftUI: protocol conformance descriptor for SwiftUI.GlassButtonStyle : SwiftUI.PrimitiveButtonStyle in SwiftUI
+_$s7SwiftUI16GlassButtonStyleVACycfC  # SwiftUI: SwiftUI.GlassButtonStyle.init() -> SwiftUI.GlassButtonStyle
+_$s7SwiftUI16GlassButtonStyleVMa  # SwiftUI: type metadata accessor for SwiftUI.GlassButtonStyle
+_$s7SwiftUI16GlassButtonStyleVMn  # SwiftUI: nominal type descriptor for SwiftUI.GlassButtonStyle
+_$s7SwiftUI19_TaskValueModifier2V2id4name18executorPreference8priority6actionACyxGx_SSSch_pSgScPyyYaYAcntcfC  # SwiftUI: SwiftUI._TaskValueModifier2.init(id: A, name: Swift.String, executorPreference: Swift.TaskExecutor?, priority: Swift.TaskPriority, action: __owned @isolated(any) () async -> ()) -> SwiftUI._TaskValueModifier2<A>
+_$s7SwiftUI19_TaskValueModifier2VMa  # SwiftUI: type metadata accessor for SwiftUI._TaskValueModifier2
+_$s7SwiftUI19_TaskValueModifier2VMn  # SwiftUI: nominal type descriptor for SwiftUI._TaskValueModifier2
+_$s7SwiftUI19_TaskValueModifier2VyxGAA12ViewModifierAAMc  # SwiftUI: protocol conformance descriptor for SwiftUI._TaskValueModifier2<A> : SwiftUI.ViewModifier in SwiftUI
+_$s7SwiftUI24_TagTraitWritingModifierVMa  # SwiftUI: type metadata accessor for SwiftUI._TagTraitWritingModifier
+_$s7SwiftUI24_TagTraitWritingModifierVMn  # SwiftUI: nominal type descriptor for SwiftUI._TagTraitWritingModifier
+_$s7SwiftUI24_TagTraitWritingModifierVyxGAA04ViewF0AAMc  # SwiftUI: protocol conformance descriptor for SwiftUI._TagTraitWritingModifier<A> : SwiftUI.ViewModifier in SwiftUI
+_$s7SwiftUI25GlassProminentButtonStyleVAA09PrimitiveeF0AAMc  # SwiftUI: protocol conformance descriptor for SwiftUI.GlassProminentButtonStyle : SwiftUI.PrimitiveButtonStyle in SwiftUI
+_$s7SwiftUI25GlassProminentButtonStyleVACycfC  # SwiftUI: SwiftUI.GlassProminentButtonStyle.init() -> SwiftUI.GlassProminentButtonStyle
+_$s7SwiftUI25GlassProminentButtonStyleVMa  # SwiftUI: type metadata accessor for SwiftUI.GlassProminentButtonStyle
+_$s7SwiftUI25GlassProminentButtonStyleVMn  # SwiftUI: nominal type descriptor for SwiftUI.GlassProminentButtonStyle
+_$s7SwiftUI4ViewPAAE11glassEffect_2inQrAA5GlassV_qd__tAA5ShapeRd__lF  # SwiftUI: (extension in SwiftUI):SwiftUI.View.glassEffect<A where A1: SwiftUI.Shape>(_: SwiftUI.Glass, in: A1) -> some
+_$s7SwiftUI4ViewPAAE11glassEffect_2inQrAA5GlassV_qd__tAA5ShapeRd__lFQOMQ  # SwiftUI: opaque type descriptor for <<opaque return type of (extension in SwiftUI):SwiftUI.View.glassEffect<A where A1: SwiftUI.Shape>(_: SwiftUI.Glass, in: A1) -> some>>
+_$s7SwiftUI4ViewPAAE11popoverCore11isPresented16attachmentAnchor10arrowEdges0F10Detachable7contentQrAA7BindingVySbG_AA017PopoverAttachmentI0OAA4EdgeO3SetVSgSbqd__yctAaBRd__lF  # SwiftUI: (extension in SwiftUI):SwiftUI.View.popoverCore<A where A1: SwiftUI.View>(isPresented: SwiftUI.Binding<Swift.Bool>, attachmentAnchor: SwiftUI.PopoverAttachmentAnchor, arrowEdges: SwiftUI.Edge.Set?, isDetachable: Swift.Bool, content: () -> A1) -> some
+_$s7SwiftUI4ViewPAAE11popoverCore11isPresented16attachmentAnchor10arrowEdges0F10Detachable7contentQrAA7BindingVySbG_AA017PopoverAttachmentI0OAA4EdgeO3SetVSgSbqd__yctAaBRd__lFQOMQ  # SwiftUI: opaque type descriptor for <<opaque return type of (extension in SwiftUI):SwiftUI.View.popoverCore<A where A1: SwiftUI.View>(isPresented: SwiftUI.Binding<Swift.Bool>, attachmentAnchor: SwiftUI.PopoverAttachmentAnchor, arrowEdges: SwiftUI.Edge.Set?, isDetachable: Swift.Bool, content: () -> A1) -> some>>
+_$s7SwiftUI4ViewPAAE11safeAreaBar4edge9alignment7spacing7contentQrAA12VerticalEdgeO_AA19HorizontalAlignmentV12CoreGraphics7CGFloatVSgqd__yXEtAaBRd__lF  # SwiftUI: (extension in SwiftUI):SwiftUI.View.safeAreaBar<A where A1: SwiftUI.View>(edge: SwiftUI.VerticalEdge, alignment: SwiftUI.HorizontalAlignment, spacing: CoreGraphics.CGFloat?, content: () -> A1) -> some
+_$s7SwiftUI4ViewPAAE11safeAreaBar4edge9alignment7spacing7contentQrAA12VerticalEdgeO_AA19HorizontalAlignmentV12CoreGraphics7CGFloatVSgqd__yXEtAaBRd__lFQOMQ  # SwiftUI: opaque type descriptor for <<opaque return type of (extension in SwiftUI):SwiftUI.View.safeAreaBar<A where A1: SwiftUI.View>(edge: SwiftUI.VerticalEdge, alignment: SwiftUI.HorizontalAlignment, spacing: CoreGraphics.CGFloat?, content: () -> A1) -> some>>
+_$s7SwiftUI5GlassV7regularACvgZ  # SwiftUI: static SwiftUI.Glass.regular.getter : SwiftUI.Glass
+_$s7SwiftUI5GlassVMa  # SwiftUI: type metadata accessor for SwiftUI.Glass
+_$s7SwiftUI7ForEachVAA7Element_2IDQZRs_s12IdentifiableADRpzrlE6create_7contentACyxq_q0_Gx_q0_AHctFZ  # SwiftUI: static (extension in SwiftUI):SwiftUI.ForEach< where B == A.Element.ID, A.Element: Swift.Identifiable>.create(_: A, content: (A.Element) -> C) -> SwiftUI.ForEach<A, B, C>
+_$s7SwiftUI7ForEachVAAE6create_2id7contentACyxq_q0_Gx_s7KeyPathCy7ElementQzq_Gq0_AKctFZ  # SwiftUI: static (extension in SwiftUI):SwiftUI.ForEach.create(_: A, id: Swift.KeyPath<A.Element, B>, content: (A.Element) -> C) -> SwiftUI.ForEach<A, B, C>
+_$s7SwiftUI7SectionV6create10isExpanded7content6header6footerACyxq_q0_GAA7BindingVySbGSg_q_xq0_tFZ  # SwiftUI: static SwiftUI.Section.create(isExpanded: SwiftUI.Binding<Swift.Bool>?, content: B, header: A, footer: C) -> SwiftUI.Section<A, B, C>
+__availability_version_check  # libSystem: _availability_version_check
+_os_release  # libSystem: _os_release
+_voucher_adopt  # libSystem: _voucher_adopt
+_$s12AVFoundation22AVPartialAsyncPropertyC15backDeployedKeySSvg  # libswiftAVFoundation: AVFoundation.AVPartialAsyncProperty.backDeployedKey.getter : Swift.String
+_$sSo29AVAsynchronousKeyValueLoadingP12AVFoundationE4load_9isolationqd__AC15AVAsyncPropertyCyxqd__G_ScA_pSgYitYaKlF  # libswiftAVFoundation: (extension in AVFoundation):__C.AVAsynchronousKeyValueLoading.load<A>(_: AVFoundation.AVAsyncProperty<A, A1>, isolation: isolated Swift.Actor?) async throws -> A1
+_$sSo29AVAsynchronousKeyValueLoadingP12AVFoundationE4load_9isolationqd__AC15AVAsyncPropertyCyxqd__G_ScA_pSgYitYaKlFTu  # libswiftAVFoundation: async function pointer to (extension in AVFoundation):__C.AVAsynchronousKeyValueLoading.load<A>(_: AVFoundation.AVAsyncProperty<A, A1>, isolation: isolated Swift.Actor?) async throws -> A1
+_$sSo29AVAsynchronousKeyValueLoadingP12AVFoundationE5value2ofqd__AC15AVAsyncPropertyCyxqd__G_tKlF  # libswiftAVFoundation: (extension in AVFoundation):__C.AVAsynchronousKeyValueLoading.value<A>(of: AVFoundation.AVAsyncProperty<A, A1>) throws -> A1
+__swift_FORCE_LOAD_$_swiftAVFoundation  # libswiftAVFoundation: _swift_FORCE_LOAD_$_swiftAVFoundation
+__swift_FORCE_LOAD_$_swiftAccelerate  # libswiftAccelerate: _swift_FORCE_LOAD_$_swiftAccelerate
+_$ss8DurationV10componentss5Int64V7seconds_AE11attosecondstvg  # libswiftCore: Swift.Duration.components.getter : (seconds: Swift.Int64, attoseconds: Swift.Int64)
+_$ss8DurationV16secondsComponent011attosecondsC0ABs5Int64V_AFtcfC  # libswiftCore: Swift.Duration.init(secondsComponent: Swift.Int64, attosecondsComponent: Swift.Int64) -> Swift.Duration
+_swift_coroFrameAlloc  # libswiftCore: _swift_coroFrameAlloc
+_swift_runtimeSupportsNoncopyableTypes  # libswiftCore: _swift_runtimeSupportsNoncopyableTypes
+__swift_FORCE_LOAD_$_swiftCoreAudio  # libswiftCoreAudio: _swift_FORCE_LOAD_$_swiftCoreAudio
+__swift_FORCE_LOAD_$_swiftCoreFoundation  # libswiftCoreFoundation: _swift_FORCE_LOAD_$_swiftCoreFoundation
+__swift_FORCE_LOAD_$_swiftCoreImage  # libswiftCoreImage: _swift_FORCE_LOAD_$_swiftCoreImage
+__swift_FORCE_LOAD_$_swiftCoreMIDI  # libswiftCoreMIDI: _swift_FORCE_LOAD_$_swiftCoreMIDI
+__swift_FORCE_LOAD_$_swiftDispatch  # libswiftDispatch: _swift_FORCE_LOAD_$_swiftDispatch
+__swift_FORCE_LOAD_$_swiftIOKit  # libswiftIOKit: _swift_FORCE_LOAD_$_swiftIOKit
+__swift_FORCE_LOAD_$_swiftMetal  # libswiftMetal: _swift_FORCE_LOAD_$_swiftMetal
+__swift_FORCE_LOAD_$_swiftOSLog  # libswiftOSLog: _swift_FORCE_LOAD_$_swiftOSLog
+__swift_FORCE_LOAD_$_swiftObjectiveC  # libswiftObjectiveC: _swift_FORCE_LOAD_$_swiftObjectiveC
+__swift_FORCE_LOAD_$_swiftQuartzCore  # libswiftQuartzCore: _swift_FORCE_LOAD_$_swiftQuartzCore
+__swift_FORCE_LOAD_$_swiftSpatial  # libswiftSpatial: _swift_FORCE_LOAD_$_swiftSpatial
+__swift_FORCE_LOAD_$_swiftUniformTypeIdentifiers  # libswiftUniformTypeIdentifiers: _swift_FORCE_LOAD_$_swiftUniformTypeIdentifiers
+__swift_FORCE_LOAD_$_swiftXPC  # libswiftXPC: _swift_FORCE_LOAD_$_swiftXPC
+__swift_FORCE_LOAD_$_swift_Builtin_float  # libswift_Builtin_float: _swift_FORCE_LOAD_$_swift_Builtin_float
+_$s7FailureScITl  # libswift_Concurrency: associated type descriptor for Swift.AsyncIteratorProtocol.Failure
+_$s7FailureSciTl  # libswift_Concurrency: associated type descriptor for Swift.AsyncSequence.Failure
+_$sScI4next9isolation7ElementQzSgScA_pSgYi_tYa7FailureQzYKFTq  # libswift_Concurrency: method descriptor for Swift.AsyncIteratorProtocol.next(isolation: isolated Swift.Actor?) async throws(A.Failure) -> A.Element?
+_$sScI7FailureScI_s5ErrorTn  # libswift_Concurrency: associated conformance descriptor for Swift.AsyncIteratorProtocol.Swift.AsyncIteratorProtocol.Failure: Swift.Error
+_$sScIsE4next9isolation7ElementQzSgScA_pSgYi_tYa7FailureQzYKF  # libswift_Concurrency: (extension in Swift):Swift.AsyncIteratorProtocol.next(isolation: isolated Swift.Actor?) async throws(A.Failure) -> A.Element?
+_$sScIsE4next9isolation7ElementQzSgScA_pSgYi_tYa7FailureQzYKFTu  # libswift_Concurrency: async function pointer to (extension in Swift):Swift.AsyncIteratorProtocol.next(isolation: isolated Swift.Actor?) async throws(A.Failure) -> A.Element?
+_swift_task_deinitOnExecutor  # libswift_Concurrency: _swift_task_deinitOnExecutor
+__swift_FORCE_LOAD_$_swiftos  # libswiftos: _swift_FORCE_LOAD_$_swiftos
+__swift_FORCE_LOAD_$_swiftsimd  # libswiftsimd: _swift_FORCE_LOAD_$_swiftsimd
