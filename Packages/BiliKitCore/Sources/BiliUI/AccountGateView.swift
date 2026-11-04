@@ -67,6 +67,7 @@ package struct AccountGateView<SignedInContent: View>: View {
             }
         case .progress:
             ProgressView(BiliUIStrings.localized("正在检查登录状态…", locale: locale))
+                .revealsAfterLoadingDelay()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unavailable:
             ContentUnavailableView {

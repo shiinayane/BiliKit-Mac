@@ -135,6 +135,7 @@ public struct AuthenticationView: View {
             Text(title)
                 .foregroundStyle(.secondary)
         }
+        .revealsAfterLoadingDelay()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -154,6 +155,7 @@ public struct AuthenticationView: View {
                 .accessibilityHint(AuthFeatureStrings.localized("使用手机客户端扫描"))
             } else {
                 ProgressView()
+                    .revealsAfterLoadingDelay()
                     .frame(width: 240, height: 240)
             }
             Text(title)

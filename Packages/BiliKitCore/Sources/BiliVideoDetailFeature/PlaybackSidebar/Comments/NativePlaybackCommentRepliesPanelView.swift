@@ -17,6 +17,11 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
     nonisolated override var isFlipped: Bool { true }
     private let headerLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
+    /// 加载中的小转圈，与评论列表页脚一致。
+    ///
+    /// 何时露出已由 `NativePlaybackCommentRepliesFooter.loading` 决定
+    /// （`PlaybackCommentReplyState.isLoadingStatusVisible`），这里不再延迟。读屏读它的标签。
+    private let loadingSpinner = NSProgressIndicator.sidebarLoadingSpinner(controlSize: .small)
     private let expandButton = NSButton(title: "", target: nil, action: nil)
     private let collapseButton = NSButton(
         title: VideoDetailFeatureStrings.localized("收起"),
@@ -104,9 +109,12 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         backButton.action = #selector(closeDialog)
         loadMoreButton.target = self
         loadMoreButton.action = #selector(loadMoreDialog)
+        loadingSpinner.setAccessibilityElement(true)
+        loadingSpinner.setAccessibilityLabel(VideoDetailFeatureStrings.localized("回复加载中…"))
         for subview in [
             headerLabel,
             statusLabel,
+            loadingSpinner,
             expandButton,
             collapseButton,
             retryButton,
@@ -232,6 +240,7 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         expandButton.isHidden = expanded
         retryButton.isHidden = true
         statusLabel.isHidden = true
+        loadingSpinner.setSpinning(false)
         pager.isHidden = true
         loadMoreButton.isHidden = true
         if expanded, let replyState {
@@ -242,8 +251,7 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
                 )
             switch NativePlaybackCommentRepliesFooter(replyState) {
             case .loading:
-                statusLabel.stringValue = VideoDetailFeatureStrings.localized("回复加载中…")
-                statusLabel.isHidden = false
+                loadingSpinner.setSpinning(true)
             case .emptyDialog:
                 statusLabel.stringValue = VideoDetailFeatureStrings.localized(
                     "这串对话暂时没有可显示的回复"
@@ -326,7 +334,16 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         if !replyRows.isEmpty { y -= NativePlaybackCommentsItemMeasurement.replyRowSpacing }
         if expanded, let replyState {
             switch NativePlaybackCommentRepliesFooter(replyState) {
-            case .loading, .emptyDialog:
+            case .loading:
+                loadingSpinner.frame = loadingSpinner.centeredFrame(
+                    in: NSRect(
+                        x: padding,
+                        y: y,
+                        width: width,
+                        height: NativePlaybackCommentsItemMeasurement.replyStatusHeight
+                    )
+                )
+            case .emptyDialog:
                 statusLabel.frame = NSRect(
                     x: padding,
                     y: y,
@@ -404,6 +421,7 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         onCloseDialog = nil
         headerLabel.stringValue = ""
         statusLabel.stringValue = ""
+        loadingSpinner.setSpinning(false)
     }
 
     /// 同一楼原地重配时之前没显示过的回复；换了一楼或刚复用（`previousRootID` 为 nil）时为空，不淡入。

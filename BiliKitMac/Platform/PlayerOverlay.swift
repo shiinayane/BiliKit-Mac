@@ -166,10 +166,9 @@ private struct PlayerGlassCapsuleBackground: ViewModifier {
 /// item 不再“可能跟得上”。不看等待原因：seek 后先是 `evaluatingBufferingRate` 再转为 `toMinimizeStalls`，
 /// 两者都是在等数据；而 HLS 源播完后再调用播放会一直停在 `toMinimizeStalls`，却已“可能跟得上”，那不是在等画面。
 /// 准备期间与 item 未就绪时分别由准备转圈与 AVKit 自己的转圈负责，这里都不算。
-/// 等待持续 `presentationDelay` 才呈现，期间恢复则不出现：开播、变速与已缓冲区内 seek 的瞬时等待都在
+/// 等待持续 `LoadingIndicatorPolicy.presentationDelay` 才呈现，期间恢复则不出现：开播、变速与已缓冲区内 seek 的瞬时等待都在
 /// 几十毫秒内结束，不会闪一下。
 enum PlayerLoadingPolicy {
-    static let presentationDelay: Duration = .milliseconds(300)
     static let fadeDurationSeconds: TimeInterval = 0.2
 
     static func isWaitingForPicture(
@@ -463,7 +462,7 @@ struct PlayerOverlayView: View {
             )
             .task(id: model.loadingID) {
                 guard let loadingID = model.loadingID else { return }
-                try? await Task.sleep(for: PlayerLoadingPolicy.presentationDelay)
+                try? await Task.sleep(for: LoadingIndicatorPolicy.presentationDelay)
                 guard !Task.isCancelled else { return }
                 model.presentLoading(id: loadingID)
             }

@@ -61,6 +61,7 @@ public struct FavoritePickerView: View {
         switch model.phase {
         case .loading:
             ProgressView(LibraryFeatureStrings.localized("正在加载收藏夹…", locale: locale))
+                .revealsAfterLoadingDelay()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let error):
             LibraryContentFailure(isAwaitingRevalidation: false, locale: locale)

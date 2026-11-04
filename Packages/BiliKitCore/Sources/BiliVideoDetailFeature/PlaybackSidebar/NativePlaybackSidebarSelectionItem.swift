@@ -83,7 +83,14 @@ private final class NativePlaybackSidebarSelectionView: NSView {
     private let pageLabel = NSTextField(labelWithString: VideoDetailFeatureStrings.localized("分 P"))
     private let pagePopUp = NSPopUpButton()
     private let pageStatusLabel = NSTextField(labelWithString: "")
-    private let progress = NSProgressIndicator()
+    private let progress = NSProgressIndicator.sidebarLoadingSpinner(controlSize: .small)
+    /// 分 P 加载中的转圈与说明一起延迟露出；露出前这一行只有「分 P」标签。
+    private lazy var pageLoadingReveal = NativeLoadingReveal { [weak self] revealed in
+        guard let self else { return }
+        progress.setSpinning(revealed)
+        if revealed { pageStatusLabel.isHidden = false }
+        needsLayout = true
+    }
     private let retryButton = NSButton(
         title: VideoDetailFeatureStrings.localized("重试"),
         target: nil,
@@ -113,8 +120,6 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         placeholderLabel.textColor = .secondaryLabelColor
         pageStatusLabel.font = .preferredFont(forTextStyle: .callout)
         pageStatusLabel.textColor = .secondaryLabelColor
-        progress.style = .spinning
-        progress.controlSize = .small
         retryButton.bezelStyle = .rounded
         retryButton.controlSize = .small
         retryButton.target = self
@@ -274,7 +279,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         positionLabel.stringValue = ""
         placeholderLabel.stringValue = ""
         pageStatusLabel.stringValue = ""
-        progress.stopAnimation(nil)
+        pageLoadingReveal.setLoading(false)
     }
 
     private func resolvedSectionID(
@@ -391,10 +396,10 @@ private final class NativePlaybackSidebarSelectionView: NSView {
         pagePopUp.menu = nil
         pagePopUp.isHidden = true
         pageStatusLabel.isHidden = true
-        progress.isHidden = true
-        progress.stopAnimation(nil)
         retryButton.isHidden = true
         pageLabel.isHidden = true
+        var isLoadingPages = false
+        defer { pageLoadingReveal.setLoading(isLoadingPages) }
         guard isBrowsingSelectedSection else { return }
 
         switch projection.selectedPages {
@@ -438,9 +443,7 @@ private final class NativePlaybackSidebarSelectionView: NSView {
             pagePopUp.setAccessibilityLabel(VideoDetailFeatureStrings.localized("分 P"))
         case .loading:
             pageLabel.isHidden = false
-            pageStatusLabel.isHidden = false
-            progress.isHidden = false
-            progress.startAnimation(nil)
+            isLoadingPages = true
             pageStatusLabel.stringValue = VideoDetailFeatureStrings.localized("正在加载所选视频的分 P")
         case .failed:
             pageLabel.isHidden = false

@@ -141,6 +141,7 @@ struct SearchStartView: View {
                 .accessibilityLabel(
                     BrowseFeatureStrings.localized("正在加载热搜", locale: locale)
                 )
+                .revealsAfterLoadingDelay()
         case .failed(let error):
             HStack(spacing: SearchStartLayout.inlineSpacing) {
                 Text(ContentFailureText.message(for: error, locale: locale))

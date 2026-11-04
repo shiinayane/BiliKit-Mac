@@ -254,6 +254,7 @@ private struct NativeCommentImagePreviewContent: View {
         } else {
             ProgressView()
                 .accessibilityLabel(VideoDetailFeatureStrings.localized("评论图片加载中"))
+                .revealsAfterLoadingDelay()
         }
     }
 
@@ -305,6 +306,7 @@ private struct NativeCommentImagePreviewContent: View {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel(VideoDetailFeatureStrings.localized("正在加载原图"))
+                    .revealsAfterLoadingDelay()
             }
         }
         .font(.callout)

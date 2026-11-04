@@ -146,6 +146,7 @@ public struct FavoriteFolderSidebarSection<Tag: Hashable>: View {
                 .controlSize(.small)
         }
         .foregroundStyle(.secondary)
+        .revealsAfterLoadingDelay()
         .selectionDisabled()
     }
 }

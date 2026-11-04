@@ -27,6 +27,7 @@ package struct RefreshStatusCapsule: View {
                     .padding(Geometry.contentPadding)
                     .background(.regularMaterial, in: Capsule())
                     .accessibilityLabel(refreshingLabel)
+                    .revealsAfterLoadingDelay()
                     .transition(.opacity)
             } else if let errorMessage {
                 Text(errorMessage)

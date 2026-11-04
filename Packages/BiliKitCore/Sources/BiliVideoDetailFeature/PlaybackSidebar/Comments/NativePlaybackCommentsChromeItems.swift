@@ -163,13 +163,16 @@ final class NativePlaybackCommentsStateItem: NativeLayoutSizedCollectionItem {
 
 /// 状态条目的内容视图：按状态切换文字与重试按钮，加载中在行内居中转圈，并给出与显示一致的读屏标签。
 ///
-/// 加载不画骨架：评论形态不一，占位行会误导条数与长度，与 UP 主空间一致用转圈。转圈只在加载中转动，
-/// 其他状态与 `reset()`（条目复用）停止并隐藏。
+/// 加载不画骨架：评论形态不一，占位行会误导条数与长度，与 UP 主空间一致用转圈。转圈经 `NativeLoadingReveal`
+/// 延迟露出，请求很快时这一行先空着、评论直接出现；其他状态与 `reset()`（条目复用）停止并隐藏。
 @MainActor
 private final class NativePlaybackCommentsStateView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
-    private let spinner = NSProgressIndicator.commentsLoadingSpinner(controlSize: .large)
+    private let spinner = NSProgressIndicator.sidebarLoadingSpinner(controlSize: .large)
+    private lazy var loadingReveal = NativeLoadingReveal { [weak self] in
+        self?.spinner.setSpinning($0)
+    }
     private let titleLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(wrappingLabelWithString: "")
     private let retryButton = NSButton(
@@ -235,7 +238,7 @@ private final class NativePlaybackCommentsStateView: NSView {
             retryButton.isHidden = !error.isRetryable
             setAccessibilityLabel(title)
         }
-        spinner.setCommentsLoading(kind == .loading)
+        loadingReveal.setLoading(kind == .loading)
         setAccessibilityElement(true)
         needsLayout = true
     }
@@ -267,7 +270,7 @@ private final class NativePlaybackCommentsStateView: NSView {
         titleLabel.stringValue = ""
         detailLabel.stringValue = ""
         retryButton.isHidden = true
-        spinner.setCommentsLoading(false)
+        loadingReveal.setLoading(false)
     }
 
     @objc private func retry() { onRetry?() }
@@ -316,12 +319,16 @@ extension NativePlaybackCommentsFooter {
 
 /// 页脚的内容视图：持有重试与加载更多回调，按页脚状态切换文字与按钮，追加加载中在行内居中转圈。
 ///
-/// 转圈只在加载中转动，其他状态与 `reset()`（条目复用）停止并隐藏；读屏只读页脚自己的“后续评论加载中”。
+/// 转圈经 `NativeLoadingReveal` 延迟露出，露出前页脚空着；其他状态与 `reset()`（条目复用）停止并隐藏。
+/// 读屏只读页脚自己的“后续评论加载中”。
 @MainActor
 private final class NativePlaybackCommentsFooterView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
-    private let spinner = NSProgressIndicator.commentsLoadingSpinner(controlSize: .small)
+    private let spinner = NSProgressIndicator.sidebarLoadingSpinner(controlSize: .small)
+    private lazy var loadingReveal = NativeLoadingReveal { [weak self] in
+        self?.spinner.setSpinning($0)
+    }
     private let label = NSTextField(labelWithString: "")
     private let actionButton = NSButton(
         title: VideoDetailFeatureStrings.localized("重试"),
@@ -392,7 +399,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
             setAccessibilityElement(false)
             setAccessibilityValue(nil)
         }
-        spinner.setCommentsLoading(footer == .loading)
+        loadingReveal.setLoading(footer == .loading)
         needsLayout = true
     }
 
@@ -424,7 +431,7 @@ private final class NativePlaybackCommentsFooterView: NSView {
         onLoadMore = nil
         label.stringValue = ""
         actionButton.isHidden = true
-        spinner.setCommentsLoading(false)
+        loadingReveal.setLoading(false)
         setAccessibilityElement(false)
         setAccessibilityValue(nil)
     }
@@ -438,46 +445,5 @@ private final class NativePlaybackCommentsFooterView: NSView {
         case .loading, .end:
             break
         }
-    }
-}
-
-extension NSProgressIndicator {
-    /// 评论状态行与页脚共用的加载转圈：系统转圈样式，停止时不绘制，初始隐藏。
-    ///
-    /// 不作为读屏元素：所在行已经读出“评论加载中”或“后续评论加载中”，转圈再读会重复。
-    fileprivate static func commentsLoadingSpinner(
-        controlSize: NSControl.ControlSize
-    ) -> NSProgressIndicator {
-        let spinner = NSProgressIndicator()
-        spinner.style = .spinning
-        spinner.controlSize = controlSize
-        spinner.isDisplayedWhenStopped = false
-        spinner.isHidden = true
-        spinner.setAccessibilityElement(false)
-        return spinner
-    }
-
-    /// 加载中显示并转动，否则停止并隐藏。
-    ///
-    /// 条目离屏后被复用时由 `reset()` 走到停止分支，不留下仍在转的转圈。
-    fileprivate func setCommentsLoading(_ isLoading: Bool) {
-        isHidden = !isLoading
-        if isLoading {
-            startAnimation(nil)
-        } else {
-            stopAnimation(nil)
-        }
-    }
-
-    /// 按系统给出的转圈尺寸居中在行内；行高由 `NativePlaybackCommentsItemMeasurement` 决定，
-    /// 布局与测量因此用同一个高度。
-    fileprivate func centeredFrame(in bounds: NSRect) -> NSRect {
-        let size = intrinsicContentSize
-        return NSRect(
-            x: round((bounds.width - size.width) / 2),
-            y: round((bounds.height - size.height) / 2),
-            width: size.width,
-            height: size.height
-        )
     }
 }
