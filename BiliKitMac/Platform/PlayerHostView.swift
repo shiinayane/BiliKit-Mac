@@ -91,8 +91,11 @@ struct PlayerHostView: View {
         )
         .task(id: previewProjectionIdentity) {
             previewEndedNotice = nil
+            // 只有充电试看会出现这条提示，其他视频不订阅时间线：时间线按媒体时间刷新（倍速时更频繁），每次写入
+            // 都会让整个播放器区域重新求值一次。
             guard let timelineUpdates,
-                let context = videoModel?.presentedContext
+                let context = videoModel?.presentedContext,
+                PlaybackPreviewEndPolicy.canPresentNotice(for: context.accessNotice)
             else { return }
             let identity = PlaybackItemIdentity(
                 bvid: context.detail.bvid,
@@ -100,7 +103,7 @@ struct PlayerHostView: View {
             )
             for await snapshot in timelineUpdates() {
                 guard !Task.isCancelled else { return }
-                previewEndedNotice =
+                let notice =
                     PlaybackPreviewEndPolicy.shouldPresentNotice(
                         accessNotice: context.accessNotice,
                         expectedIdentity: identity,
@@ -109,6 +112,8 @@ struct PlayerHostView: View {
                     ? AppStrings.localized(
                         "试看已结束，此视频为充电专属，BiliKit 暂不提供充电操作。"
                     ) : nil
+                // 只在提示真的变化时写入，不让每个时间线刷新都触发一次重新求值。
+                if previewEndedNotice != notice { previewEndedNotice = notice }
             }
         }
     }
@@ -178,6 +183,20 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         view.setPreviewEndedNotice(previewEndedNotice)
         view.requestInitialKeyboardFocus(for: focusIdentity)
         return view
+    }
+
+    /// 给了确定的宽高就直接采用：播放器总是铺满布局给它的区域，不需要 SwiftUI 量它的固有尺寸。
+    ///
+    /// 不实现时，SwiftUI 每次布局都经 Auto Layout 量一遍 `AVPlayerView` 连同原生控制条的整棵约束；控制条的剩余
+    /// 时间每变一次（播放每秒一次、倍速更频繁、拖进度条时连续）都让固有尺寸失效，主线程跟着重量一遍。宽或高未定
+    /// 的询问（理想尺寸）返回 nil，沿用系统的测量。
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: NativePlayerHostView,
+        context: Context
+    ) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height else { return nil }
+        return CGSize(width: width, height: height)
     }
 
     func updateNSView(_ view: NativePlayerHostView, context: Context) {
