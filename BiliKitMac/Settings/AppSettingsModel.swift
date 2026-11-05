@@ -67,10 +67,10 @@ enum PlaybackRouteBenchmarkOperationError: Error {
     }
 }
 
-/// 设置窗口的模型：播放线路选择的读写，以及线路测速的运行与结果。
+/// 设置窗口的模型：播放线路选择、“HDR 视频”与“无损音频”开关的读写，以及线路测速的运行与结果。
 ///
 /// 进程唯一，由 `ProcessComposition` 构造；各窗口的播放引擎每次新 load 读取
-/// `playbackSourcePreference`。偏好经 `PlaybackSourcePreferenceStoring` 持久化；
+/// `playbackSourcePreference` 与两个开关。偏好经 `PlaybackSourcePreferenceStoring` 持久化；
 /// 测速状态与结果只在内存，设置窗口消失（`closeSettings()`）时清空，从不自动改选（见
 /// docs/ARCHITECTURE.md「播放线路偏好与测速」）。不拥有样本发现与测速实现，
 /// 只持有构造时注入的闭包（生产实现用进程级测速 API client）。
@@ -164,11 +164,26 @@ final class AppSettingsModel {
 
     var selection: PlaybackSourceSelection {
         get { record.selection }
-        set {
-            let updated = PlaybackSourcePreferenceRecord(selection: newValue)
-            record = updated
-            store.save(updated)
-        }
+        set { update { $0.selection = newValue } }
+    }
+
+    /// “HDR 视频”开关；与线路选择一样只影响之后新开始的播放。
+    var hdrVideoEnabled: Bool {
+        get { record.hdrVideoEnabled }
+        set { update { $0.hdrVideoEnabled = newValue } }
+    }
+
+    /// “无损音频”开关；只影响之后新开始的播放。
+    var losslessAudioEnabled: Bool {
+        get { record.losslessAudioEnabled }
+        set { update { $0.losslessAudioEnabled = newValue } }
+    }
+
+    private func update(_ change: (inout PlaybackSourcePreferenceRecord) -> Void) {
+        var updated = record
+        change(&updated)
+        record = updated
+        store.save(updated)
     }
 
     var playbackSourcePreference: PlaybackSourcePreference {

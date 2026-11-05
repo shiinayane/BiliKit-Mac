@@ -96,14 +96,16 @@ struct HLSPlaylistBuilderTests {
 
         let playlist = try HLSMasterPlaylistBuilder().build(
             videoVariants: [try makeVideoVariant(video, index: videoIndex)],
-            audioRenditions: [
-                try makeAudioRendition(
-                    representation: makeAudio(),
-                    channelCount: 2,
-                    bitDepth: 16,
-                    sampleRate: 48_000,
-                    index: audioIndex
-                )
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(
+                        representation: makeAudio(),
+                        channelCount: 2,
+                        bitDepth: 16,
+                        sampleRate: 48_000,
+                        index: audioIndex
+                    )
+                ])
             ],
             iFrameVariants: [try makeIFrameVariant(video, index: videoIndex)],
             localizedRenditionNamesURI: URL(
@@ -123,14 +125,16 @@ struct HLSPlaylistBuilderTests {
         ] as [(Double, String?)] {
             let startPlaylist = try HLSMasterPlaylistBuilder().build(
                 videoVariants: [try makeVideoVariant(video, index: videoIndex)],
-                audioRenditions: [
-                    try makeAudioRendition(
-                        representation: makeAudio(),
-                        channelCount: 2,
-                        bitDepth: 16,
-                        sampleRate: 48_000,
-                        index: audioIndex
-                    )
+                audioGroups: [
+                    HLSAudioGroup(renditions: [
+                        try makeAudioRendition(
+                            representation: makeAudio(),
+                            channelCount: 2,
+                            bitDepth: 16,
+                            sampleRate: 48_000,
+                            index: audioIndex
+                        )
+                    ])
                 ],
                 startOffsetSeconds: offset
             )
@@ -195,11 +199,13 @@ struct HLSPlaylistBuilderTests {
 
         let playlist = try HLSMasterPlaylistBuilder().build(
             videoVariants: [try makeVideoVariant(video, index: videoIndex)],
-            audioRenditions: [
-                try makeAudioRendition(
-                    representation: makeAudio(),
-                    index: makeIndex(byteCounts: [100], durations: [1])
-                )
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(
+                        representation: makeAudio(),
+                        index: makeIndex(byteCounts: [100], durations: [1])
+                    )
+                ])
             ],
             iFrameVariants: [try makeIFrameVariant(video, index: videoIndex)]
         )
@@ -224,10 +230,34 @@ struct HLSPlaylistBuilderTests {
         #expect(throws: HLSPlaylistBuilderError.unknownIFrameVariant(80)) {
             try HLSMasterPlaylistBuilder().build(
                 videoVariants: [try makeVideoVariant(makeVideo(), index: index)],
-                audioRenditions: [
-                    try makeAudioRendition(representation: makeAudio(), index: index)
+                audioGroups: [
+                    HLSAudioGroup(renditions: [
+                        try makeAudioRendition(representation: makeAudio(), index: index)
+                    ])
                 ],
                 iFrameVariants: [try makeIFrameVariant(mismatchedVideo, index: index)]
+            )
+        }
+    }
+
+    /// `VIDEO-RANGE` 只给部分视频档或 I-frame 行写时拒绝生成：没写的档会被当成 SDR 与写明的档混用。
+    @Test
+    func rejectsPartiallyDeclaredVideoRange() throws {
+        let index = try makeIndex(byteCounts: [1_000], durations: [1])
+        let video = try makeVideo()
+        let tagged = HLSVideoVariant(
+            representation: video,
+            index: index,
+            playlistURI: try playlistURL("video/\(video.id).m3u8"),
+            videoRange: .sdr
+        )
+        let audio = [try makeAudioRendition(representation: makeAudio(), index: index)]
+
+        #expect(throws: HLSPlaylistBuilderError.inconsistentVideoRange) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [tagged],
+                audioGroups: [HLSAudioGroup(renditions: audio)],
+                iFrameVariants: [try makeIFrameVariant(video, index: index)]
             )
         }
     }
@@ -246,7 +276,68 @@ struct HLSPlaylistBuilderTests {
         ) {
             try HLSMasterPlaylistBuilder().build(
                 videoVariants: [variant],
-                audioRenditions: [rendition, rendition]
+                audioGroups: [HLSAudioGroup(renditions: [rendition, rendition])]
+            )
+        }
+    }
+
+    /// 每个视频档配每个音频组各写一行，CODECS 与带宽只计这一组的成员；成员不同的组拒绝。
+    @Test
+    func buildsOneVariantPerAudioGroupWithThatGroupsCodecsAndBandwidth() throws {
+        let variant = try makeVideoVariant(
+            makeVideo(),
+            index: makeIndex(byteCounts: [2_000], durations: [1])
+        )
+        let dub = try makeAudioRendition(
+            representation: makeAudio(),
+            trackID: "machine-generated:en",
+            displayName: "English（AI）",
+            languageTag: "en",
+            role: .machineGenerated,
+            isDefault: false,
+            isAutoselect: false,
+            index: makeIndex(byteCounts: [500], durations: [1]),
+            playlistPath: "audio/1/30280.m3u8"
+        )
+        let aac = try makeAudioRendition(
+            representation: makeAudio(),
+            index: makeIndex(byteCounts: [250], durations: [1]),
+            playlistPath: "audio/0/30280.m3u8"
+        )
+        let surround = try makeAudioRendition(
+            representation: makeRepresentation(
+                id: 30_250,
+                kind: .audio,
+                codecs: "ec-3",
+                bandwidth: nil
+            ),
+            channelCount: 6,
+            index: makeIndex(byteCounts: [1_000], durations: [1]),
+            playlistPath: "audio/original/30250.m3u8"
+        )
+
+        let playlist = try HLSMasterPlaylistBuilder().build(
+            videoVariants: [variant],
+            audioGroups: [
+                HLSAudioGroup(renditions: [aac, dub]),
+                HLSAudioGroup(renditions: [surround, dub])
+            ]
+        )
+
+        let streams = playlist.split(separator: "\n").filter { $0.hasPrefix("#EXT-X-STREAM-INF:") }
+        #expect(streams.count == 2)
+        #expect(streams[0].contains(#"BANDWIDTH=20000,"#))
+        #expect(streams[0].contains(#"CODECS="avc1.640032,mp4a.40.2",AUDIO="audio-30280""#))
+        #expect(streams[1].contains(#"BANDWIDTH=24000,"#))
+        #expect(streams[1].contains(#"CODECS="avc1.640032,ec-3,mp4a.40.2",AUDIO="audio-30250""#))
+
+        #expect(throws: HLSPlaylistBuilderError.inconsistentAudioGroupMembers) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [variant],
+                audioGroups: [
+                    HLSAudioGroup(renditions: [aac, dub]),
+                    HLSAudioGroup(renditions: [surround])
+                ]
             )
         }
     }
@@ -260,38 +351,40 @@ struct HLSPlaylistBuilderTests {
                     index: makeIndex(byteCounts: [2_000], durations: [1])
                 )
             ],
-            audioRenditions: [
-                try makeAudioRendition(
-                    representation: makeAudio(),
-                    index: makeIndex(byteCounts: [500], durations: [1]),
-                    playlistPath: "audio/0/30280.m3u8"
-                ),
-                try makeAudioRendition(
-                    representation: makeAudio(),
-                    trackID: "machine-generated:en",
-                    displayName: "English（AI）",
-                    languageTag: "en",
-                    role: .machineGenerated,
-                    isDefault: false,
-                    isAutoselect: false,
-                    index: makeIndex(byteCounts: [750], durations: [1]),
-                    playlistPath: "audio/1/30280.m3u8"
-                )
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(
+                        representation: makeAudio(),
+                        index: makeIndex(byteCounts: [500], durations: [1]),
+                        playlistPath: "audio/0/30280.m3u8"
+                    ),
+                    try makeAudioRendition(
+                        representation: makeAudio(),
+                        trackID: "machine-generated:en",
+                        displayName: "English（AI）",
+                        languageTag: "en",
+                        role: .machineGenerated,
+                        isDefault: false,
+                        isAutoselect: false,
+                        index: makeIndex(byteCounts: [750], durations: [1]),
+                        playlistPath: "audio/1/30280.m3u8"
+                    )
+                ])
             ]
         )
 
         #expect(
             playlist.contains(
-                #"GROUP-ID="audio",NAME="原声",CHARACTERISTICS="public.original-content",DEFAULT=YES,AUTOSELECT=YES"#
+                #"GROUP-ID="audio-30280",NAME="原声",CHARACTERISTICS="public.original-content",DEFAULT=YES,AUTOSELECT=YES"#
             )
         )
         #expect(
             playlist.contains(
-                #"GROUP-ID="audio",NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated",DEFAULT=NO,AUTOSELECT=NO"#
+                #"GROUP-ID="audio-30280",NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated",DEFAULT=NO,AUTOSELECT=NO"#
             )
         )
         #expect(!playlist.contains("public.translation"))
-        #expect(playlist.contains(#"AUDIO="audio""#))
+        #expect(playlist.contains(#"AUDIO="audio-30280""#))
         #expect(playlist.contains("BANDWIDTH=22000"))
     }
 
@@ -313,8 +406,10 @@ struct HLSPlaylistBuilderTests {
                     index: makeIndex(byteCounts: [1_000], durations: [1])
                 )
             ],
-            audioRenditions: [
-                try makeAudioRendition(representation: makeAudio(), index: audioIndex)
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(representation: makeAudio(), index: audioIndex)
+                ])
             ]
         )
 
@@ -349,8 +444,10 @@ struct HLSPlaylistBuilderTests {
 
         let playlist = try HLSMasterPlaylistBuilder().build(
             videoVariants: [try makeVideoVariant(makeVideo(), index: index)],
-            audioRenditions: [
-                try makeAudioRendition(representation: makeAudio(), index: index)
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(representation: makeAudio(), index: index)
+                ])
             ],
             subtitleRenditions: subtitleRenditions
         )
@@ -404,8 +501,10 @@ struct HLSPlaylistBuilderTests {
         #expect(throws: HLSPlaylistBuilderError.unsafeAttributeValue) {
             try HLSMasterPlaylistBuilder().build(
                 videoVariants: [try makeVideoVariant(makeVideo(), index: index)],
-                audioRenditions: [
-                    try makeAudioRendition(representation: makeAudio(), index: index)
+                audioGroups: [
+                    HLSAudioGroup(renditions: [
+                        try makeAudioRendition(representation: makeAudio(), index: index)
+                    ])
                 ],
                 subtitleRenditions: [
                     HLSSubtitleRendition(
@@ -448,11 +547,13 @@ struct HLSPlaylistBuilderTests {
         ) {
             try HLSMasterPlaylistBuilder().build(
                 videoVariants: [try makeVideoVariant(video, index: index)],
-                audioRenditions: [
-                    try makeAudioRendition(
-                        representation: makeAudio(bandwidth: 192_000),
-                        index: index
-                    )
+                audioGroups: [
+                    HLSAudioGroup(renditions: [
+                        try makeAudioRendition(
+                            representation: makeAudio(bandwidth: 192_000),
+                            index: index
+                        )
+                    ])
                 ]
             )
         }
@@ -612,8 +713,10 @@ struct HLSPlaylistBuilderTests {
                     index: index
                 )
             ],
-            audioRenditions: [
-                try makeAudioRendition(representation: makeAudio(), index: index)
+            audioGroups: [
+                HLSAudioGroup(renditions: [
+                    try makeAudioRendition(representation: makeAudio(), index: index)
+                ])
             ]
         )
     }
@@ -642,10 +745,8 @@ struct HLSPlaylistBuilderTests {
             representations: [representation]
         )
         return HLSAudioRendition(
-            selectedTrack: SelectedPlaybackAudioTrack(
-                track: track,
-                representation: representation
-            ),
+            track: track,
+            representation: representation,
             channelCount: channelCount,
             bitDepth: bitDepth,
             sampleRate: sampleRate,

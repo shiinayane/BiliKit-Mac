@@ -261,12 +261,71 @@ struct AudioLanguageItemPayload: Decodable, Sendable {
     }
 }
 
-/// playurl 的 `dash`：视频与音频 representation 列表，调用方只取其中的 AVC 视频与 AAC 音频。
+/// playurl 的 `dash`：视频、音频 representation 列表，以及杜比音频与无损音频；视频按 `DASHVideoLadder`
+/// 选编码，音频按 `DASHAudioCodec` 分类。
 ///
-/// 没有声音的稿件（录屏之类）`audio` 是 `null`。
+/// 没有声音的稿件（录屏之类）`audio` 是 `null`。`video` 逐条宽松解码：请求的档位多于能播放的
+/// （8K、HDR、AV1），形状不认识的单条只丢这一条，不让整份响应失败。`dolby`（`audio` 是数组）与
+/// `flac`（`audio` 是单个对象）是原声的附加版本，每一层都可能缺失或为 `null`，任何一层解码失败都按
+/// 没有处理。
 struct DASHPayload: Decodable, Sendable {
     let video: [DASHRepresentationPayload]
     let audio: [DASHRepresentationPayload]?
+    let dolbyAudio: [DASHRepresentationPayload]
+    let losslessAudio: DASHRepresentationPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case video
+        case audio
+        case dolby
+        case flac
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        video = try container.decodeLossyElements(
+            DASHRepresentationPayload.self,
+            forKey: .video
+        )
+        audio = try container.decodeIfPresent(
+            [DASHRepresentationPayload].self,
+            forKey: .audio
+        )
+        dolbyAudio =
+            container.decodeLossyIfPresent(DASHDolbyPayload.self, forKey: .dolby)?.audio ?? []
+        losslessAudio =
+            container.decodeLossyIfPresent(DASHFLACPayload.self, forKey: .flac)?.audio
+    }
+}
+
+/// `dash.dolby`：杜比音频（ec-3）representation 数组，逐条宽松解码；`audio` 缺失或为 `null` 时为空。
+private struct DASHDolbyPayload: Decodable, Sendable {
+    let audio: [DASHRepresentationPayload]
+
+    private enum CodingKeys: String, CodingKey {
+        case audio
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        audio =
+            (try? container.decodeLossyElements(DASHRepresentationPayload.self, forKey: .audio))
+            ?? []
+    }
+}
+
+/// `dash.flac`：无损音频（FLAC）的单个 representation；`audio` 缺失、为 `null` 或形状不对时为 nil。
+private struct DASHFLACPayload: Decodable, Sendable {
+    let audio: DASHRepresentationPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case audio
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        audio = container.decodeLossyIfPresent(DASHRepresentationPayload.self, forKey: .audio)
+    }
 }
 
 /// DASH 的一路 representation，映射为 `MediaRepresentation`；snake_case 与 camelCase 字段名都接受。
@@ -284,15 +343,6 @@ struct DASHRepresentationPayload: Decodable, Sendable {
     let baseURL: String
     let backupURLs: [String]
     let segmentBase: DASHSegmentBasePayload
-
-    var isAVCVideo: Bool {
-        mimeType == "video/mp4"
-            && (codecid == 7 || codecs.lowercased().hasPrefix("avc1"))
-    }
-
-    var isAACAudio: Bool {
-        mimeType == "audio/mp4" && codecs.lowercased().hasPrefix("mp4a")
-    }
 
     private enum CodingKeys: String, CodingKey {
         case id

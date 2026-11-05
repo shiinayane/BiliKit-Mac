@@ -3,7 +3,8 @@ import Testing
 
 @testable import BiliPlayback
 
-/// 音频格式元数据从 init 段的 AAC sample entry 读出声道、位深与采样率，非音频或截断的 init 段报错。
+/// 音频格式元数据从 init 段的 sample entry 读出声道、位深与采样率：AAC 读 AudioSampleEntry，E-AC-3 的
+/// 声道读 `dec3`，FLAC 读 `dfLa` 的 STREAMINFO；非音频、截断或写不出正确声道数的 init 段报错。
 struct AudioFormatMetadataParserTests {
     @Test
     func readsAACSampleEntryMetadataFromInitialization() throws {
@@ -16,6 +17,39 @@ struct AudioFormatMetadataParserTests {
         #expect(metadata.channelCount == 2)
         #expect(metadata.bitDepth == 16)
         #expect(metadata.sampleRate == 48_000)
+    }
+
+    @Test
+    func readsEAC3ChannelsAndFLACStreamInfo() throws {
+        let surround = try AudioFormatMetadataParser().parse(
+            makeAudioInitialization(
+                sampleEntry: "ec-3",
+                children: eac3Configuration(acmod: 7, lfe: true)
+            )
+        )
+        #expect(surround == AudioFormatMetadata(channelCount: 6, bitDepth: 16, sampleRate: 48_000))
+
+        // 96 kHz 超过 AudioSampleEntry 16.16 采样率字段能表示的范围，必须取 STREAMINFO 的值。
+        let lossless = try AudioFormatMetadataParser().parse(
+            makeAudioInitialization(
+                sampleEntry: "fLaC",
+                children: flacConfiguration(sampleRate: 96_000, channels: 2, bitDepth: 24)
+            )
+        )
+        #expect(lossless == AudioFormatMetadata(channelCount: 2, bitDepth: 24, sampleRate: 96_000))
+    }
+
+    /// 依赖子流带来的额外声道（7.1 等）只读独立子流会少算；写错的 `CHANNELS` 会让 AVPlayer 选错，宁可报错。
+    @Test
+    func rejectsEAC3LayoutsWithDependentSubstreams() {
+        #expect(throws: AudioFormatMetadataParserError.invalidFormatValues) {
+            try AudioFormatMetadataParser().parse(
+                makeAudioInitialization(
+                    sampleEntry: "ec-3",
+                    children: eac3Configuration(acmod: 7, lfe: true, dependentSubstreams: 1)
+                )
+            )
+        }
     }
 
     @Test

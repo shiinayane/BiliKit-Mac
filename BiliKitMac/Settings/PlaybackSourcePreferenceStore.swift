@@ -96,34 +96,46 @@ extension BilivideoRoute {
     }
 }
 
-/// 一次读写的播放偏好整体：线路选择；`defaults` 是没有存过或读到损坏值时的回退。
+/// 一次读写的播放偏好整体：线路选择、“HDR 视频”与“无损音频”开关；`defaults` 是没有存过或读到损坏值
+/// 时的回退。
 struct PlaybackSourcePreferenceRecord: Sendable, Equatable {
-    static let defaults = Self(selection: .serverDefault)
-    let selection: PlaybackSourceSelection
+    static let defaults = Self(
+        selection: .serverDefault,
+        hdrVideoEnabled: true,
+        losslessAudioEnabled: false
+    )
+    var selection: PlaybackSourceSelection
+    /// 默认开：只有窗口所在屏幕能显示 HDR 等条件都满足时才会真的加入 HDR 档（见 `PlaybackHDREnvironment`）。
+    var hdrVideoEnabled: Bool
+    /// 默认关：无损音频约 3.4 Mbps、AVPlayer 选中后会大量预取，只给明确想要的人。
+    var losslessAudioEnabled: Bool
 }
 
 /// 播放偏好的持久化 port：`load` 不抛错，读不到或值损坏时返回
 /// `PlaybackSourcePreferenceRecord.defaults`，`save` 整体覆盖。
 ///
-/// `AppSettingsModel` 构造时读取一次，每次改选写入一次。
+/// `AppSettingsModel` 构造时读取一次，改选线路或切换开关时各写入一次。
 protocol PlaybackSourcePreferenceStoring: AnyObject, Sendable {
     func load() -> PlaybackSourcePreferenceRecord
     func save(_ record: PlaybackSourcePreferenceRecord)
 }
 
-/// 播放偏好的 UserDefaults 实现：schema 版本与线路选择两个键（见 SECURITY-MODEL §6）。
+/// 播放偏好的 UserDefaults 实现：schema 版本、线路选择、HDR 与无损音频开关四个键（见 SECURITY-MODEL §6）。
 ///
-/// 两个键都只接受类型严格匹配的值：schema 不符或类型错写、线路选择不是字符串或是未知值时，
-/// 整体回退默认。每次读取都删除已移除功能留下的响度开关键（`retiredKeys`），不读取它们的值。
+/// 都只接受类型严格匹配的值：schema 不符或类型错写、线路选择不是字符串或是未知值时，线路回退默认；
+/// 两个开关各自独立读取，缺失或不是布尔值时取 `PlaybackSourcePreferenceRecord.defaults`（HDR 开、无损关）。
+/// 每次读取都删除已移除功能留下的响度开关键（`retiredKeys`），不读取它们的值。
 ///
 /// `@unchecked Sendable`：只持有不可变的 `let defaults`，`UserDefaults` 本身可以跨线程读写；
-/// 两个键不是原子写入，生产调用方只有 MainActor 上的 `AppSettingsModel`。
+/// 几个键不是原子写入，生产调用方只有 MainActor 上的 `AppSettingsModel`。
 final class UserDefaultsPlaybackSourcePreferenceStore:
     PlaybackSourcePreferenceStoring, @unchecked Sendable
 {
     private enum Key {
         static let schema = "playbackSourcePreference.schema"
         static let selection = "playbackSourcePreference.selection"
+        static let hdrVideoEnabled = "playback.hdrVideo.enabled"
+        static let losslessAudioEnabled = "playback.losslessAudio.enabled"
         /// 已移除的响度均一化留下的开关：先后两版（可放大的实验开关、只压低的开关），读取时清掉残留。
         static let retiredKeys = [
             "playback.loudnessNormalization.enabled",
@@ -139,17 +151,29 @@ final class UserDefaultsPlaybackSourcePreferenceStore:
         for key in Key.retiredKeys {
             defaults.removeObject(forKey: key)
         }
+        let fallback = PlaybackSourcePreferenceRecord.defaults
         // 不用 `integer(forKey:)`／`string(forKey:)`：它们会把字符串 "1"、`true`、`1.9` 读成 schema 1，
         // 把数字转成字符串，类型错写的值就不再回退默认（见 SECURITY-MODEL §6）。
-        guard defaults.strictInteger(forKey: Key.schema) == Self.schemaVersion,
+        var selection = fallback.selection
+        if defaults.strictInteger(forKey: Key.schema) == Self.schemaVersion,
             let raw = defaults.object(forKey: Key.selection) as? String,
-            let selection = PlaybackSourceSelection(rawValue: raw)
-        else { return .defaults }
-        return PlaybackSourcePreferenceRecord(selection: selection)
+            let stored = PlaybackSourceSelection(rawValue: raw)
+        {
+            selection = stored
+        }
+        return PlaybackSourcePreferenceRecord(
+            selection: selection,
+            hdrVideoEnabled: defaults.strictBool(forKey: Key.hdrVideoEnabled)
+                ?? fallback.hdrVideoEnabled,
+            losslessAudioEnabled: defaults.strictBool(forKey: Key.losslessAudioEnabled)
+                ?? fallback.losslessAudioEnabled
+        )
     }
 
     func save(_ record: PlaybackSourcePreferenceRecord) {
         defaults.set(Self.schemaVersion, forKey: Key.schema)
         defaults.set(record.selection.rawValue, forKey: Key.selection)
+        defaults.set(record.hdrVideoEnabled, forKey: Key.hdrVideoEnabled)
+        defaults.set(record.losslessAudioEnabled, forKey: Key.losslessAudioEnabled)
     }
 }

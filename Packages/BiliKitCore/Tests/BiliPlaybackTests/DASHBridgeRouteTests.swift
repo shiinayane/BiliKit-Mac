@@ -284,7 +284,7 @@ struct DASHBridgeRouteTests {
         let masterData = try await URLSession.shared.data(from: prepared.url).0
         let master = try #require(String(data: masterData, encoding: .utf8))
 
-        #expect(master.contains(#"GROUP-ID="audio",NAME="原声""#))
+        #expect(master.contains(#"GROUP-ID="audio-30280",NAME="原声""#))
         #expect(
             master.contains(
                 #"NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated""#
@@ -691,35 +691,6 @@ struct DASHBridgeRouteTests {
                 throw PlaybackFixtureError.invalidFixture
             }
             result[sapOffset] = (result[sapOffset] & 0x8f) | 0x10
-        }
-        return result
-    }
-
-    private func settingSIDXEarliestPresentationTime(
-        _ value: UInt64,
-        in data: Data
-    ) throws -> Data {
-        var result = data
-        let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
-        let valueOffset = sidx.offset + 20
-        switch result[sidx.offset + 8] {
-        case 0:
-            guard value <= UInt32.max else {
-                throw PlaybackFixtureError.invalidFixture
-            }
-            var encoded = UInt32(value).bigEndian
-            result.replaceSubrange(
-                valueOffset..<(valueOffset + 4),
-                with: withUnsafeBytes(of: &encoded) { Data($0) }
-            )
-        case 1:
-            var encoded = value.bigEndian
-            result.replaceSubrange(
-                valueOffset..<(valueOffset + 8),
-                with: withUnsafeBytes(of: &encoded) { Data($0) }
-            )
-        default:
-            throw PlaybackFixtureError.invalidFixture
         }
         return result
     }

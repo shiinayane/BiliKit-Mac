@@ -601,7 +601,13 @@ func makeFixtureEngine(
             repository: subtitleRepository,
             reportAuthenticationInvalidation: {}
         ),
-        sourcePreferenceProvider: { .serverDefault }
+        loadPreferencesProvider: {
+            PlaybackLoadPreferences(
+                sourcePreference: .serverDefault,
+                allowsHDRVideo: false,
+                allowsLosslessAudio: false
+            )
+        }
     )
 }
 

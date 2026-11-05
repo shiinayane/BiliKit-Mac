@@ -158,12 +158,12 @@ public actor CDNBenchmarkSampleDiscoverer {
         seenBVIDs.removeAll()
     }
 
-    /// 只影响单个候选的失败（稿件不存在、缺数据、媒体数据不合规、没有 AVC）跳过该候选；认证、
+    /// 只影响单个候选的失败（稿件不存在、缺数据、媒体数据不合规、没有 AVC 视频）跳过该候选；认证、
     /// 风控与网络等其他失败终止整轮。
     private static func isCandidateLocalFailure(_ error: BiliAPIError) -> Bool {
         switch error {
         case .httpStatus(404), .apiRejected(code: -404, _), .missingData,
-            .invalidMediaData, .noAVCVideo:
+            .invalidMediaData, .noSupportedVideo:
             true
         default:
             false

@@ -34,7 +34,7 @@ public final class AVPlayerEngine:
 
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase
-    private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
+    private let loadPreferencesProvider: @MainActor @Sendable () -> PlaybackLoadPreferences
     private let failureEvents = AsyncBroadcast<PlaybackFailureEvent>()
     private let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
@@ -70,13 +70,13 @@ public final class AVPlayerEngine:
         player: AVPlayer,
         bridge: DASHToHLSBridge = DASHToHLSBridge(),
         subtitleUseCase: SubtitleUseCase,
-        sourcePreferenceProvider: @escaping @MainActor @Sendable () -> PlaybackSourcePreference
+        loadPreferencesProvider: @escaping @MainActor @Sendable () -> PlaybackLoadPreferences
     ) {
         self.player = player
         player.preventsDisplaySleepDuringVideoPlayback = true
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
-        self.sourcePreferenceProvider = sourcePreferenceProvider
+        self.loadPreferencesProvider = loadPreferencesProvider
         // 起播的媒体选择只按播放列表的 DEFAULT：音频总是原声，字幕默认关闭。打开后系统会按界面语言
         // 挑 AUTOSELECT=YES 的 rendition，语言等于界面语言的 AI 配音会压过不写语言的原声。AI 配音另写
         // AUTOSELECT=NO，与这里共同保证起播是原声。
@@ -222,9 +222,12 @@ public final class AVPlayerEngine:
         generation: UUID
     ) async throws {
         // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
-        let sourcePreference = sourcePreferenceProvider()
+        let preferences = loadPreferencesProvider()
+        let sourcePreference = preferences.sourcePreference
         let progressiveSource: ProgressivePlaybackSource?
         let videos: [MediaRepresentation]
+        let fallbackVideos: [MediaRepresentation]
+        let hdrVideos: [MediaRepresentation]
         let audioTracks: [SelectedPlaybackAudioTrack]
         switch request.media {
         case .dash(let manifest):
@@ -232,10 +235,22 @@ public final class AVPlayerEngine:
             videos = try manifest.selectedVideos().map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
-            audioTracks = try manifest.selectedAudioTracks()
+            fallbackVideos = manifest.fallbackVideoRepresentations.map {
+                PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+            }
+            // `eligibleForHDRPlayback` 由系统按已连接的显示器与解码能力给出；App 的条件看不到它。
+            let allowsHDR = preferences.allowsHDRVideo && AVPlayer.eligibleForHDRPlayback
+            hdrVideos = (allowsHDR ? manifest.hdrVideoCandidates : []).map {
+                PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+            }
+            audioTracks = try manifest.selectedAudioTracks(
+                allowsLosslessAudio: preferences.allowsLosslessAudio
+            )
         case .progressive(let source):
             progressiveSource = source
             videos = []
+            fallbackVideos = []
+            hdrVideos = []
             audioTracks = []
         }
         try Task.checkCancellation()
@@ -263,45 +278,34 @@ public final class AVPlayerEngine:
         if subtitleSource != nil {
             subtitleIdentity = identity
         }
-        let task = Task {
-            if let progressiveSource {
-                try await bridge.prepare(
-                    progressive: progressiveSource,
-                    headers: request.mediaHeaders
-                )
-            } else {
-                try await bridge.prepare(
-                    videos: videos,
-                    audioTracks: audioTracks,
-                    headers: request.mediaHeaders,
-                    subtitleSource: subtitleSource,
-                    startPositionSeconds: startPositionSeconds
-                )
-            }
-        }
-        loadTask = task
+        let preparation = BridgePreparation(
+            progressiveSource: progressiveSource,
+            videos: videos,
+            hdrVideos: hdrVideos,
+            audioTracks: audioTracks,
+            headers: request.mediaHeaders,
+            subtitleSource: subtitleSource,
+            startPositionSeconds: startPositionSeconds
+        )
 
         do {
-            let prepared = try await task.value
-            try Task.checkCancellation()
-            guard loadGeneration == generation else {
-                prepared.stop()
-                throw CancellationError()
-            }
-
-            loadTask = nil
-            preparedAsset = prepared
-            let item = AVPlayerItem(url: prepared.url)
-            player.replaceCurrentItem(with: item)
-            timeline.installObservers(for: item)
-            let readinessTask = Task {
-                try await AVPlayerItemReadiness.wait(untilReady: item)
-            }
-            self.readinessTask = readinessTask
-            try await readinessTask.value
-            try Task.checkCancellation()
-            guard loadGeneration == generation else {
-                throw CancellationError()
+            let item: AVPlayerItem
+            do {
+                item = try await installReadyItem(preparation, generation: generation)
+            } catch AVPlayerEngineError.itemFailed where !fallbackVideos.isEmpty {
+                // 主阶梯（HEVC）的 item 在就绪前失败时，用同一份 playurl 的 AVC 阶梯在同一 generation 内
+                // 重建一次：这台 Mac 不接受这种编码时，否则整条视频都放不了。错误里只有类型名，分不出是
+                // 编码还是网络，所以凡是就绪前的 item 失败都回退；回退也失败就按普通失败处理，不再重试。
+                // 失败从 readiness 传到这里要经过一次挂起：期间换了视频或这次 load 被取消时不得再回退，
+                // 否则会动到新 load 的状态，或留下一个没人取消的准备与 loopback server。
+                guard loadGeneration == generation, !Task.isCancelled else {
+                    throw CancellationError()
+                }
+                discardFailedItem()
+                item = try await installReadyItem(
+                    preparation.replacingVideos(fallbackVideos),
+                    generation: generation
+                )
             }
             if progressiveSource != nil,
                 let endTime = try await Self.lastPresentableMediaEndTime(
@@ -329,6 +333,53 @@ public final class AVPlayerEngine:
             }
             throw error
         }
+    }
+
+    /// 准备 loopback 会话、安装 item 并等到就绪，返回就绪的 item。
+    ///
+    /// 每次 await 之后比对 generation，不一致时停掉迟到的会话并抛 `CancellationError`。失败时会话与
+    /// item 仍挂在 engine 上，由调用方释放或交给 `discardFailedItem` 后重试。
+    private func installReadyItem(
+        _ preparation: BridgePreparation,
+        generation: UUID
+    ) async throws -> AVPlayerItem {
+        let task = Task { [bridge] in
+            try await preparation.prepare(using: bridge)
+        }
+        loadTask = task
+        let prepared = try await task.value
+        try Task.checkCancellation()
+        guard loadGeneration == generation else {
+            prepared.stop()
+            throw CancellationError()
+        }
+
+        loadTask = nil
+        preparedAsset = prepared
+        let item = AVPlayerItem(url: prepared.url)
+        item.variantPreferences = preparation.variantPreferences
+        player.replaceCurrentItem(with: item)
+        timeline.installObservers(for: item)
+        let readinessTask = Task {
+            try await AVPlayerItemReadiness.wait(untilReady: item)
+        }
+        self.readinessTask = readinessTask
+        try await readinessTask.value
+        try Task.checkCancellation()
+        guard loadGeneration == generation else {
+            throw CancellationError()
+        }
+        return item
+    }
+
+    /// 释放就绪前失败的 item 与它的 loopback 会话，保留 generation、intent 与时间线，供回退阶梯重建。
+    ///
+    /// 与 `releaseCurrentPlayback` 一样先移除 item 再停止会话。
+    private func discardFailedItem() {
+        readinessTask = nil
+        player.replaceCurrentItem(with: nil)
+        preparedAsset?.stop()
+        preparedAsset = nil
     }
 
     private func cancelLoad(generation: UUID) {

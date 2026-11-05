@@ -173,7 +173,7 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 
 | 用途 | 允许来源 | 其他限制 |
 | --- | --- | --- |
-| 媒体（DASH、progressive） | `BiliMediaCDNURLPolicy`：`bilivideo.com`／`bilivideo.cn`／`szbdyd.com` 及子域、`upos-*.akamaized.net` | DTO 映射时、bridge 读取 SIDX 前与 loopback 媒体资源构造时各检查一次；Range client 本身只执行 `PublicHTTPSURLPolicy`。响应须为精确 206 与起止一致的 `Content-Range`，正文逐字节计数、长度必须精确；媒体分段另核对 `Content-Range` 完整长度、不要求 `Content-Length`（部分 CDN 省略），progressive 另要求 `Content-Length` 与 `Content-Type`；SIDX 与音频 init 区间有上限，超限时不发请求。读取都先验证响应头再接收正文，超出区间立即取消。构造每个 Range 请求时统一去除调用方 headers 里的 `Cookie`／`Authorization` |
+| 媒体（DASH、progressive） | `BiliMediaCDNURLPolicy`：`bilivideo.com`／`bilivideo.cn`／`szbdyd.com` 及子域、`upos-*.akamaized.net` | DTO 映射时、bridge 读取 SIDX 前与 loopback 媒体资源构造时各检查一次；Range client 本身只执行 `PublicHTTPSURLPolicy`。响应须为精确 206 与起止一致的 `Content-Range`，正文逐字节计数、长度必须精确；媒体分段另核对 `Content-Range` 完整长度、不要求 `Content-Length`（部分 CDN 省略），progressive 另要求 `Content-Length` 与 `Content-Type`；SIDX 与 init（音频格式、HDR 档的动态范围）区间有上限，超限时不发请求。读取都先验证响应头再接收正文，超出区间立即取消。构造每个 Range 请求时统一去除调用方 headers 里的 `Cookie`／`Authorization` |
 | 字幕正文 | `SubtitleURLPolicy`：`https://aisubtitle.hdslb.com/bfs/...` | 正文 ≤ 2 MiB；新主机先失败关闭 |
 | 评论头像、表情、正文图片、链接前置图标，热搜图标 | `BiliBFSImageURLPolicy`：`i0`／`i1`／`i2.hdslb.com` 与相册域名 `album.biliimg.com` 的 `/bfs/` 路径（`http:` 与协议相对地址先升级为 HTTPS） | 拒绝 query、fragment、点段、编码分隔符；缩略参数写在 path 上，加参数后的地址再过一次同一规则；热搜图标不合规时只丢图标、保留文字 |
 | 视频封面，卡片与侧栏账号头像 | 接口返回的 HTTPS URL（`http:`、协议相对地址升级为 HTTPS），映射时与图片管线请求前各过一次 `PublicHTTPSURLPolicy` | 由图片管线限制；加缩略参数后再过一次同一基线 |
@@ -222,7 +222,7 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 防：观看内容、账号关联数据与远端响应留在磁盘上。
 
 - UserDefaults 保存非内容偏好：播放音量、静音、首选倍速、「播放结束后」；弹幕速度、透明度、显示区域、密度、是否合并重复弹幕；
-  版本化播放线路 route identifier；浏览态与播放态的侧栏宽度。未知或损坏值回退默认；已移除功能的偏好键
+  版本化播放线路 route identifier；“HDR 视频”与“无损音频”开关；浏览态与播放态的侧栏宽度。未知或损坏值回退默认；已移除功能的偏好键
   （响度均一化开关）在读取时删除。
 - 本机搜索历史（`SearchHistoryStore`，schema 1）是 UserDefaults 中唯一的内容数据：保存用户提交的
   搜索词原文，只做搜索规则的规范化（去首尾空白、≤ 100 字），因此可能包含用户自己输入的 BV 号或链接；

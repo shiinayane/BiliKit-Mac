@@ -35,6 +35,14 @@ public struct SegmentIndex: Sendable, Equatable {
                 && reference.sapDeltaTime == 0
         }
     }
+
+    /// 至少一段且每段时长大于 0：media playlist 与 master 的码率计算只接受这样的索引。
+    ///
+    /// SIDX 解析本身接受空索引与零时长分段（它们会在生成 playlist 时报错、让整次播放失败）；可选的
+    /// HDR 档与原声附加版本在读取时用这一条判断，不合格只丢那一档或那一组。
+    var hasPlayableSegments: Bool {
+        !references.isEmpty && references.allSatisfy { $0.duration > 0 }
+    }
 }
 
 /// 一个分段的绝对字节范围、以 `timescale` 计的时长与 SAP 信息；独立分段与 I-frame 判定依赖 SAP

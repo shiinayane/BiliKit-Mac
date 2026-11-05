@@ -21,7 +21,7 @@ public enum ContentApplicationError: Error, Sendable, Equatable {
     case contentUnavailable
     case serviceRejected(code: Int)
     case transportFailure
-    /// 播放清单里没有本应用能播放的编码（AVC 视频或 AAC 音频）；重试不会改变结果。
+    /// 播放清单里没有本应用能播放的编码（AVC／HEVC 视频或 AAC 音频）；重试不会改变结果。
     case unsupportedMedia
     /// 播放地址响应没有给出可播放的媒体；可以重试。
     case playbackUnavailable

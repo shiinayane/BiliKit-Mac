@@ -25,17 +25,23 @@ public struct PlaybackRequest: Sendable, Equatable {
 
 /// 一条语义音轨及其在本次加载中选定的媒体 representation。
 ///
-/// `track` 保留用户可选择的语义 identity；`representation` 只能是该轨内部的一个码率候选。
+/// `track` 保留用户可选择的语义 identity；`representation` 是该轨码率最高的 AAC 候选，也是这条音轨在
+/// 默认音频组里的版本。`additionalRepresentations` 只有原声非空：其余 AAC 档（码率从高到低）、杜比音频、
+/// 允许时的无损版本，按这个顺序各成一个音频组；每组的成员与默认组相同，只把原声换成这个版本（见
+/// ARCHITECTURE 的音频组一节）。
 public struct SelectedPlaybackAudioTrack: Sendable, Equatable {
     public let track: PlaybackAudioTrack
     public let representation: MediaRepresentation
+    public let additionalRepresentations: [MediaRepresentation]
 
     public init(
         track: PlaybackAudioTrack,
-        representation: MediaRepresentation
+        representation: MediaRepresentation,
+        additionalRepresentations: [MediaRepresentation] = []
     ) {
         self.track = track
         self.representation = representation
+        self.additionalRepresentations = additionalRepresentations
     }
 }
 
@@ -48,13 +54,15 @@ extension PlaybackManifest {
         return videoRepresentations
     }
 
-    /// 每条语义音轨取其码率最高的 representation，并在释放旧播放项之前验证音轨契约。
+    /// 每条语义音轨取其码率最高的 representation，原声再带上附加音频组的版本，并在释放旧播放项之前验证
+    /// 音轨契约。
     ///
-    /// 没有音轨（稿件没有声音）时返回空，交给 bridge 生成只有视频的 master。
+    /// 没有音轨（稿件没有声音）时返回空，交给 bridge 生成只有视频的 master。`allowsLosslessAudio` 为 false
+    /// 时不带无损版本，bridge 也就不会读它的 SIDX。
     ///
     /// playurl 的 `dash.audio` 不按码率排序（首条常是 30232 而非更高的 30280），所以不能取首个。
     /// 有 `bandwidth` 的候选优先于缺失的；码率相同或都缺失时保留输入中靠前的一条，结果只由输入决定。
-    func selectedAudioTracks() throws -> [SelectedPlaybackAudioTrack] {
+    func selectedAudioTracks(allowsLosslessAudio: Bool) throws -> [SelectedPlaybackAudioTrack] {
         guard !audioTracks.isEmpty else { return [] }
         var trackIDs = Set<String>()
         for track in audioTracks {
@@ -70,8 +78,10 @@ extension PlaybackManifest {
         }
 
         return try audioTracks.map { track in
-            for representation in track.representations
-            where representation.kind != .audio {
+            let versions =
+                track.representations
+                + [track.dolbyRepresentation, track.losslessRepresentation].compactMap { $0 }
+            for representation in versions where representation.kind != .audio {
                 throw AVPlayerEngineError.invalidAudioTrackRepresentation(
                     trackID: track.id,
                     representationID: representation.id
@@ -89,9 +99,44 @@ extension PlaybackManifest {
             }
             return SelectedPlaybackAudioTrack(
                 track: track,
-                representation: representation
+                representation: representation,
+                additionalRepresentations: track.role == .original
+                    ? Self.additionalRepresentations(
+                        of: track,
+                        excluding: representation,
+                        allowsLosslessAudio: allowsLosslessAudio
+                    ) : []
             )
         }
+    }
+
+    /// 原声附加音频组的版本：其余 AAC 档按码率从高到低，再接杜比、允许时的无损。
+    ///
+    /// 缺码率的 AAC 档排最后，同码率保持输入顺序。附加版本只是更多选择，与已选版本 ID 重复的直接略过（它们的 loopback route 以 ID 命名）。
+    private static func additionalRepresentations(
+        of track: PlaybackAudioTrack,
+        excluding selected: MediaRepresentation,
+        allowsLosslessAudio: Bool
+    ) -> [MediaRepresentation] {
+        let otherAAC = track.representations.enumerated()
+            .filter { $0.element != selected }
+            .sorted { lhs, rhs in
+                switch (lhs.element.bandwidth, rhs.element.bandwidth) {
+                case (let left?, let right?) where left != right: left > right
+                case (_?, nil): true
+                case (nil, _?): false
+                default: lhs.offset < rhs.offset
+                }
+            }
+            .map(\.element)
+        let candidates =
+            otherAAC
+            + [
+                track.dolbyRepresentation,
+                allowsLosslessAudio ? track.losslessRepresentation : nil
+            ].compactMap { $0 }
+        var usedIDs: Set<Int> = [selected.id]
+        return candidates.filter { usedIDs.insert($0.id).inserted }
     }
 
     /// 两条候选中保留码率更高者；只有严格更高才替换，相同码率或都缺失时保留先出现的 `current`。

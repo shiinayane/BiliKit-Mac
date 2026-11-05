@@ -45,7 +45,7 @@ public final class PreparedPlaybackAsset: Sendable {
 /// Bridge 只构造内存 playlist 与按需代理，不下载完整媒体；任一步失败都会停止已启动 server。
 public struct DASHToHLSBridge: Sendable {
     let indexLoader: RepresentationIndexLoader
-    let audioFormatLoader: AudioFormatMetadataLoader
+    let initializationLoader: InitializationSegmentLoader
     private let mediaPlaylistBuilder: HLSMediaPlaylistBuilder
     private let iFramePlaylistBuilder: HLSIFramePlaylistBuilder
     let subtitlePlaylistBuilder: HLSSubtitlePlaylistBuilder
@@ -74,7 +74,7 @@ public struct DASHToHLSBridge: Sendable {
         serverFactory: @escaping @Sendable () -> LoopbackPlaybackServer
     ) {
         indexLoader = RepresentationIndexLoader(rangeClient: rangeClient)
-        audioFormatLoader = AudioFormatMetadataLoader(rangeClient: rangeClient)
+        initializationLoader = InitializationSegmentLoader(rangeClient: rangeClient)
         mediaPlaylistBuilder = HLSMediaPlaylistBuilder()
         iFramePlaylistBuilder = HLSIFramePlaylistBuilder()
         subtitlePlaylistBuilder = HLSSubtitlePlaylistBuilder()
@@ -116,8 +116,12 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
+    ///
+    /// `hdrVideos` 是调用方已按设置与环境决定允许加入的 HDR 候选档（杜比视界在前），至多加入其中一档；
+    /// 为空时 master 与以前一样只有 SDR 档、不写 `VIDEO-RANGE`。
     func prepare(
         videos: [MediaRepresentation],
+        hdrVideos: [MediaRepresentation] = [],
         audioTracks: [SelectedPlaybackAudioTrack],
         headers: [String: String],
         subtitleSource: NativeSubtitleSource?,
@@ -127,7 +131,7 @@ public struct DASHToHLSBridge: Sendable {
             throw DASHToHLSBridgeError.missingVideoRepresentation
         }
         var videoIDs = Set<Int>()
-        for video in videos {
+        for video in videos + hdrVideos {
             guard video.kind == .video else {
                 throw DASHToHLSBridgeError.invalidMediaKind(
                     expected: .video,
@@ -153,6 +157,19 @@ public struct DASHToHLSBridge: Sendable {
                     representationID: selectedAudio.representation.id
                 )
             }
+            // 附加版本只属于原声，每个都必须是这条音轨提供的版本，且 ID 互不相同（route 以 ID 命名）。
+            var versionIDs: Set<Int> = [selectedAudio.representation.id]
+            for version in selectedAudio.additionalRepresentations {
+                guard selectedAudio.track.role == .original,
+                    selectedAudio.track.offers(version),
+                    versionIDs.insert(version.id).inserted
+                else {
+                    throw DASHToHLSBridgeError.invalidAudioTrackSelection(
+                        trackID: selectedAudio.track.id,
+                        representationID: version.id
+                    )
+                }
+            }
             switch selectedAudio.track.role {
             case .original:
                 guard selectedAudio.track.isDefault,
@@ -175,7 +192,10 @@ public struct DASHToHLSBridge: Sendable {
 
         // SIDX 读取就是首个上游连接；此前复核每个候选来源，失败关闭，见 SECURITY-MODEL §4。
         let mediaURLPolicy = BiliMediaCDNURLPolicy()
-        for representation in videos + audioTracks.map(\.representation)
+        let audioRepresentations = audioTracks.flatMap {
+            [$0.representation] + $0.additionalRepresentations
+        }
+        for representation in videos + hdrVideos + audioRepresentations
         where !representation.urlCandidates.allSatisfy(mediaURLPolicy.allows) {
             throw DASHToHLSBridgeError.disallowedMediaSource(
                 representationID: representation.id
@@ -195,8 +215,19 @@ public struct DASHToHLSBridge: Sendable {
             videos,
             headers: headers
         )
+        async let loadedHDRVariant = loadHDRVariant(hdrVideos, headers: headers)
         let loadedAudioRenditions = try await audioRenditionsTask
         let videoVariants = try await loadedVideoVariants
+        // HDR 档与 SDR 档在 AVPlayer 换档时按同一条时间线衔接，以排在最前的 SDR 档为准；起点不一致只丢
+        // HDR 档。丢档在生成字幕 route 之前完成，字幕不受影响。
+        var hdrVariant = try await loadedHDRVariant
+        if let hdr = hdrVariant,
+            !(videoVariants.first.map {
+                hasMatchingTimelineOrigin(hdr.video.index.index, canonical: $0.index.index)
+            } ?? false)
+        {
+            hdrVariant = nil
+        }
         let subtitleCatalog = try await freezeCatalog(catalogTask)
         let canonicalAudio = loadedAudioRenditions.first(where: {
             $0.selectedTrack.track.isDefault
@@ -204,8 +235,9 @@ public struct DASHToHLSBridge: Sendable {
         guard canonicalAudio != nil || audioTracks.isEmpty else {
             throw DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
         }
-        // 同一 AUDIO group 的音轨按同一条时间线互相切换，以原声 SIDX 起点为准；起点不一致的 AI 音轨在生成
-        // master 前丢弃，与配音请求失败一样只少一条配音，不让播放失败。
+        // 同一 AUDIO group 的音轨按同一条时间线互相切换，各组之间也一样，都以原声码率最高的 AAC 的 SIDX
+        // 起点为准；起点不一致的 AI 音轨与原声附加版本在生成 master 前丢弃，只少一条配音或一个音频组，
+        // 不让播放失败。
         let audioRenditions = loadedAudioRenditions.filter { rendition in
             guard let canonicalAudio else { return false }
             return rendition.selectedTrack.track.isDefault
@@ -214,6 +246,12 @@ public struct DASHToHLSBridge: Sendable {
                     canonical: canonicalAudio.index.index
                 )
         }
+        let additionalAudioVersions =
+            canonicalAudio.map { canonical in
+                canonical.additionalVersions.filter {
+                    hasMatchingAudioTimeline($0.index.index, canonical: canonical.index.index)
+                }
+            } ?? []
 
         let server = serverFactory()
         do {
@@ -232,50 +270,56 @@ public struct DASHToHLSBridge: Sendable {
                         representationID: audio.id
                     )
                 }
-                let audioPlaylistPath = "audio/\(offset)/\(audio.id).m3u8"
-                let audioPlaylistURL = try server.url(for: audioPlaylistPath)
-                let audioMediaPath = "media/audio/\(offset)/\(audio.id).mp4"
-                let audioMediaURL = try server.url(for: audioMediaPath)
-                registrations.append(
-                    LoopbackRouteRegistration(
-                        relativePath: audioMediaPath,
-                        resource: .remote(
-                            try LoopbackRemoteResource(
-                                sourceURL: loadedAudio.index.sourceURL,
-                                contentLength: audioLength,
-                                contentType: audio.mimeType,
-                                headers: headers
-                            )
-                        )
-                    )
-                )
-                let audioPlaylist = try mediaPlaylistBuilder.build(
-                    representation: audio,
-                    index: loadedAudio.index.index,
-                    mediaURI: audioMediaURL
-                )
-                registrations.append(
-                    LoopbackRouteRegistration(
-                        relativePath: audioPlaylistPath,
-                        resource: playlistResource(audioPlaylist)
-                    )
-                )
                 hlsAudioRenditions.append(
-                    HLSAudioRendition(
-                        selectedTrack: loadedAudio.selectedTrack,
-                        channelCount: loadedAudio.format?.channelCount,
-                        bitDepth: loadedAudio.format?.bitDepth,
-                        sampleRate: loadedAudio.format?.sampleRate,
-                        index: loadedAudio.index.index,
-                        playlistURI: audioPlaylistURL
+                    try registerAudioRoute(
+                        track: loadedAudio.selectedTrack.track,
+                        representation: audio,
+                        index: loadedAudio.index,
+                        completeMediaLength: audioLength,
+                        format: loadedAudio.format,
+                        directory: "\(offset)",
+                        headers: headers,
+                        server: server,
+                        registrations: &registrations
                     )
                 )
             }
+            // 默认组之后每个原声附加版本一组：成员与默认组相同，只把原声换成这个版本；配音引用同一个 route。
+            var audioGroups =
+                hlsAudioRenditions.isEmpty ? [] : [HLSAudioGroup(renditions: hlsAudioRenditions)]
+            if let canonicalAudio {
+                for version in additionalAudioVersions {
+                    let original = try registerAudioRoute(
+                        track: canonicalAudio.selectedTrack.track,
+                        representation: version.representation,
+                        index: version.index,
+                        completeMediaLength: version.completeMediaLength,
+                        format: version.format,
+                        directory: "original",
+                        headers: headers,
+                        server: server,
+                        registrations: &registrations
+                    )
+                    audioGroups.append(
+                        HLSAudioGroup(
+                            renditions: hlsAudioRenditions.map {
+                                $0.track.isDefault ? original : $0
+                            }
+                        )
+                    )
+                }
+            }
             var variants: [HLSVideoVariant] = []
-            variants.reserveCapacity(videoVariants.count)
+            variants.reserveCapacity(videoVariants.count + 1)
             var iFrameVariants: [HLSIFrameVariant] = []
-            iFrameVariants.reserveCapacity(videoVariants.count)
-            for loadedVideo in videoVariants {
+            iFrameVariants.reserveCapacity(videoVariants.count + 1)
+            // 有 HDR 档时每个视频档与 I-frame 行都写 `VIDEO-RANGE`，SDR 档写 `SDR`；没有时都不写。
+            let videoEntries: [(LoadedVideoVariant, VideoDynamicRangeMetadata?)] =
+                videoVariants.map { ($0, nil) }
+                + (hdrVariant.map { [($0.video, $0.metadata)] } ?? [])
+            for (loadedVideo, dynamicRange) in videoEntries {
+                let videoRange =
+                    hdrVariant == nil ? nil : (dynamicRange?.range ?? .sdr)
                 let video = loadedVideo.representation
                 let videoIndex = loadedVideo.index
                 let videoPlaylistURL = try server.url(
@@ -311,7 +355,9 @@ public struct DASHToHLSBridge: Sendable {
                     HLSVideoVariant(
                         representation: video,
                         index: videoIndex.index,
-                        playlistURI: videoPlaylistURL
+                        playlistURI: videoPlaylistURL,
+                        videoRange: videoRange,
+                        supplementalCodecs: dynamicRange?.supplementalCodecs
                     )
                 )
                 if isEligibleForIFramePlaylist(videoIndex.index) {
@@ -334,7 +380,8 @@ public struct DASHToHLSBridge: Sendable {
                         HLSIFrameVariant(
                             representation: video,
                             index: videoIndex.index,
-                            playlistURI: iFramePlaylistURL
+                            playlistURI: iFramePlaylistURL,
+                            videoRange: videoRange
                         )
                     )
                 }
@@ -353,7 +400,7 @@ public struct DASHToHLSBridge: Sendable {
                 )
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: hlsAudioRenditions,
+                    audioGroups: audioGroups,
                     subtitleRenditions: subtitleRenditions,
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL,
@@ -366,7 +413,7 @@ public struct DASHToHLSBridge: Sendable {
                 registrations.removeSubrange(mediaRegistrationCount...)
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: hlsAudioRenditions,
+                    audioGroups: audioGroups,
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL,
                     startOffsetSeconds: startPositionSeconds
@@ -399,6 +446,60 @@ public struct DASHToHLSBridge: Sendable {
             server.stop()
             throw error
         }
+    }
+
+    /// 为一条音频 rendition 登记媒体与 media playlist 两个 route（`audio/<directory>/<id>.m3u8`），返回它在
+    /// master 里的描述。
+    ///
+    /// `directory` 区分音轨（音轨序号）与原声附加版本（`original`），同一目录内以
+    /// representation ID 区分。
+    private func registerAudioRoute(
+        track: PlaybackAudioTrack,
+        representation: MediaRepresentation,
+        index: LoadedSegmentIndex,
+        completeMediaLength: Int64,
+        format: AudioFormatMetadata?,
+        directory: String,
+        headers: [String: String],
+        server: LoopbackPlaybackServer,
+        registrations: inout [LoopbackRouteRegistration]
+    ) throws -> HLSAudioRendition {
+        let playlistPath = "audio/\(directory)/\(representation.id).m3u8"
+        let mediaPath = "media/audio/\(directory)/\(representation.id).mp4"
+        let mediaURL = try server.url(for: mediaPath)
+        registrations.append(
+            LoopbackRouteRegistration(
+                relativePath: mediaPath,
+                resource: .remote(
+                    try LoopbackRemoteResource(
+                        sourceURL: index.sourceURL,
+                        contentLength: completeMediaLength,
+                        contentType: representation.mimeType,
+                        headers: headers
+                    )
+                )
+            )
+        )
+        let playlist = try mediaPlaylistBuilder.build(
+            representation: representation,
+            index: index.index,
+            mediaURI: mediaURL
+        )
+        registrations.append(
+            LoopbackRouteRegistration(
+                relativePath: playlistPath,
+                resource: playlistResource(playlist)
+            )
+        )
+        return HLSAudioRendition(
+            track: track,
+            representation: representation,
+            channelCount: format?.channelCount,
+            bitDepth: format?.bitDepth,
+            sampleRate: format?.sampleRate,
+            index: index.index,
+            playlistURI: try server.url(for: playlistPath)
+        )
     }
 
     /// 非空且每段都以独立帧开始时才发布 I-frame rendition；不合格只是不提供快进预览，不让播放失败。
@@ -438,74 +539,10 @@ public struct DASHToHLSBridge: Sendable {
         return abs(candidateStart - canonicalStart) <= 1.0 / 90_000.0
     }
 
-    /// 并行读取各档视频 SIDX；某一档失败（全部候选失败或缺少完整长度）时丢弃该档，只要还有一档
-    /// 可用就继续播放。
-    ///
-    /// 与 AI 配音一致，附加内容失败不拖垮播放。取消原样传播，不当成某一档失败；全部失败时抛出排在
-    /// 最前的那一档的错误。
-    private func loadVideoVariants(
-        _ videos: [MediaRepresentation],
-        headers: [String: String]
-    ) async throws -> [LoadedVideoVariant] {
-        try await withThrowingTaskGroup(
-            of: (Int, Result<LoadedVideoVariant, any Error>).self
-        ) { group in
-            for (offset, video) in videos.enumerated() {
-                group.addTask {
-                    do {
-                        let index = try await indexLoader.load(
-                            for: video,
-                            headers: headers
-                        )
-                        guard let completeMediaLength = index.completeMediaLength else {
-                            throw DASHToHLSBridgeError.missingCompleteMediaLength(
-                                representationID: video.id
-                            )
-                        }
-                        return (
-                            offset,
-                            .success(
-                                LoadedVideoVariant(
-                                    representation: video,
-                                    index: index,
-                                    completeMediaLength: completeMediaLength
-                                )
-                            )
-                        )
-                    } catch {
-                        if Task.isCancelled || error is CancellationError {
-                            throw CancellationError()
-                        }
-                        return (offset, .failure(error))
-                    }
-                }
-            }
-
-            var ordered = [Result<LoadedVideoVariant, any Error>?](
-                repeating: nil,
-                count: videos.count
-            )
-            for try await (offset, result) in group {
-                ordered[offset] = result
-            }
-            let loaded = ordered.compactMap { try? $0?.get() }
-            if loaded.isEmpty, case .failure(let error)? = ordered.first {
-                throw error
-            }
-            return loaded
-        }
-    }
-
     func playlistResource(_ playlist: String) -> LoopbackPlaybackResource {
         .inMemory(
             data: Data(playlist.utf8),
             contentType: "application/vnd.apple.mpegurl"
         )
     }
-}
-
-private struct LoadedVideoVariant: Sendable {
-    let representation: MediaRepresentation
-    let index: LoadedSegmentIndex
-    let completeMediaLength: Int64
 }

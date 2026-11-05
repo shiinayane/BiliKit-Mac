@@ -32,7 +32,7 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
     case invalidSubtitleData
     case untrustedSubtitleOrigin
     case invalidDanmakuData
-    case noAVCVideo
+    case noSupportedVideo
     case noAACAudio
 
     public var description: String {
@@ -79,8 +79,8 @@ public enum BiliAPIError: Error, Sendable, Equatable, CustomStringConvertible {
             "untrusted-subtitle-origin"
         case .invalidDanmakuData:
             "invalid-danmaku-data"
-        case .noAVCVideo:
-            "no-avc-video"
+        case .noSupportedVideo:
+            "no-supported-video"
         case .noAACAudio:
             "no-aac-audio"
         }
@@ -152,7 +152,7 @@ extension BiliAPIError {
             .contentUnavailable(code: code)
         case .apiRejected(let code, _):
             .rejected(code: code)
-        case .noAVCVideo, .noAACAudio:
+        case .noSupportedVideo, .noAACAudio:
             .unsupportedMedia
         case .noPlayableMedia:
             .noPlayableMedia

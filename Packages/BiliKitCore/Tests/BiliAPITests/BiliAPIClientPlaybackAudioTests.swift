@@ -7,7 +7,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 playurl 音轨契约：AI 配音只在带凭据且响应确认制作类型时作为语义音轨加入，
-/// 配音失败保留原声并停止后续配音请求；没有音轨的稿件映射为只有视频的清单。
+/// 配音失败保留原声并停止后续配音请求；没有音轨的稿件映射为只有视频的清单；`dash.dolby`、`dash.flac`
+/// 映射为原声的杜比与无损版本，形状不对时只是没有这个版本。
 struct BiliAPIClientPlaybackAudioTests {
     /// 录屏之类没有声音的稿件 `dash.audio` 是 `null`：照常映射视频、没有音轨，即使目录里列着配音也不去请求。
     @Test
@@ -35,6 +36,76 @@ struct BiliAPIClientPlaybackAudioTests {
         #expect(manifest.videoRepresentations.map(\.id) == [32])
         #expect(manifest.audioTracks.isEmpty)
         #expect(playURLRequests(transport).count == 1)
+    }
+
+    enum AdditionalAudioShape: CaseIterable, Sendable {
+        case present
+        case nullAudio
+        case malformed
+
+        var dash: [String: Any] {
+            switch self {
+            case .present:
+                [
+                    "dolby": [
+                        "type": 2,
+                        "audio": [
+                            audioRepresentationPayload(
+                                id: 30_250,
+                                codecs: "ec-3",
+                                path: "dolby.m4s"
+                            )
+                        ]
+                    ],
+                    "flac": [
+                        "display": true,
+                        "audio": audioRepresentationPayload(
+                            id: 30_251,
+                            codecs: "fLaC",
+                            path: "flac.m4s"
+                        )
+                    ]
+                ]
+            case .nullAudio:
+                [
+                    "dolby": ["type": 0, "audio": NSNull()],
+                    "flac": ["display": false, "audio": NSNull()]
+                ]
+            case .malformed:
+                [
+                    "dolby": [
+                        "audio": [
+                            audioRepresentationPayload(
+                                id: 30_250,
+                                codecs: "mp4a.40.2",
+                                path: "aac.m4s"
+                            )
+                        ]
+                    ],
+                    "flac": "unexpected"
+                ]
+            }
+        }
+    }
+
+    @Test(arguments: AdditionalAudioShape.allCases)
+    func dolbyAndFLACMapToOriginalVersionsOnlyWhenWellFormed(
+        _ shape: AdditionalAudioShape
+    ) async throws {
+        let transport = StubTransport(
+            responses: [
+                try semanticAudioResponse(audioPath: "audio.m4s", additionalDash: shape.dash)
+            ],
+            answersWBINavOnce: true
+        )
+        let client = BiliAPIClient(transport: transport, requestAuthorizer: StubAuthorizer())
+
+        let playback = try await client.playback(for: "BV1FixtureA1", cid: 900_001)
+
+        let original = try #require(playback.dashManifest?.audioTracks.first)
+        #expect(original.representations.map(\.id) == [30_280])
+        #expect(original.dolbyRepresentation?.id == (shape == .present ? 30_250 : nil))
+        #expect(original.losslessRepresentation?.id == (shape == .present ? 30_251 : nil))
     }
 
     @Test

@@ -18,6 +18,14 @@ extension KeyedDecodingContainer {
         try? decodeIfPresent(type, forKey: key)
     }
 
+    /// 数组字段逐个元素宽松解码，丢掉解码失败的元素；字段缺失或本身不是数组时抛错，由外层对象一起失败。
+    func decodeLossyElements<Value: Decodable & Sendable>(
+        _ type: Value.Type,
+        forKey key: Key
+    ) throws -> [Value] {
+        try decode([LossyDecodable<Value>].self, forKey: key).compactMap(\.value)
+    }
+
     func decodeLossyBool(forKey key: Key) -> Bool? {
         if let value = try? decodeIfPresent(Bool.self, forKey: key) {
             return value

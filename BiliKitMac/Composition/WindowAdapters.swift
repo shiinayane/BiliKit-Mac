@@ -15,9 +15,10 @@ import SwiftUI
 /// 的连接，以及窗口打开、关闭时 adapter 自己的登记与清理。
 ///
 /// `WindowComposition` 只经它拿到具体实现；生产实现只由 `live(process:)` 一处构造。
-/// 本类型不持有状态；live 的具体对象（窗口 API、`AVPlayerEngine`、播放偏好、弹幕 renderer 与会话、
-/// 内存压力监听）由这些闭包捕获，随 `WindowComposition` 存活，`close` 依次取消内存压力监听、
-/// 停止播放偏好的持久化、注销会话并失效短链 session。
+/// 本类型不持有状态；live 的具体对象（窗口 API、`AVPlayerEngine`、播放偏好、`PlaybackHDREnvironment`、
+/// 弹幕 renderer 与会话、内存压力监听）由这些闭包捕获，随 `WindowComposition` 存活，`close` 依次取消
+/// 内存压力监听、停止播放偏好的持久化、注销会话并失效短链 session。`PlaybackHDREnvironment` 的网络
+/// 监听不在 `close` 里停：它只记录网络状态，随窗口释放时在自己的 `deinit` 取消。
 @MainActor
 struct WindowAdapters {
     let feedRepository: any FeedRepository
@@ -93,13 +94,20 @@ extension WindowAdapters {
         // 显式停止，音量快捷键也经它调整。
         let playbackPreferences = PlaybackPreferencesController(player: player)
         let subtitleAuthenticationInvalidations = SubtitleAuthenticationInvalidationRelay()
+        let hdrEnvironment = PlaybackHDREnvironment()
         let playerEngine = AVPlayerEngine(
             player: player,
             subtitleUseCase: SubtitleUseCase(
                 repository: BiliSubtitleRepository(client: api),
                 reportAuthenticationInvalidation: subtitleAuthenticationInvalidations.report
             ),
-            sourcePreferenceProvider: { settings.playbackSourcePreference }
+            loadPreferencesProvider: {
+                PlaybackLoadPreferences(
+                    sourcePreference: settings.playbackSourcePreference,
+                    allowsHDRVideo: settings.hdrVideoEnabled && hdrEnvironment.allowsHDR,
+                    allowsLosslessAudio: settings.losslessAudioEnabled
+                )
+            }
         )
         // 「播放结束后」偏好：设备级，动作菜单与播完的处理读写同一处。
         let endBehavior = PlaybackEndBehaviorStore()
@@ -188,7 +196,8 @@ extension WindowAdapters {
                         ),
                         timelineUpdates: {
                             playerEngine.timelineUpdates()
-                        }
+                        },
+                        hdrEnvironment: hdrEnvironment
                     )
                 )
             },

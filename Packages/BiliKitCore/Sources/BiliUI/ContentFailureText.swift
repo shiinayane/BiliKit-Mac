@@ -64,7 +64,7 @@ public struct ContentFailureText: Sendable, Equatable {
         case .transportFailure:
             BiliUIStrings.localized("请检查网络连接后重试。", locale: locale)
         case .unsupportedMedia:
-            BiliUIStrings.localized("该视频在当前服务授权范围内没有 AVPlayer 可用的 AVC/AAC 轨道。", locale: locale)
+            BiliUIStrings.localized("该视频在当前服务授权范围内没有 AVPlayer 可用的 AVC/HEVC/AAC 轨道。", locale: locale)
         case .fullViewingEntitlementRequired:
             BiliUIStrings.localized("当前账户没有完整观看权益。", locale: locale)
         case .playbackUnavailable:
