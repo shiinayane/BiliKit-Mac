@@ -74,6 +74,10 @@ struct ISOBoxReader {
         try boxes(in: parent.payload).first { $0.type == name }
     }
 
+    func unsigned8(at offset: Int) throws -> UInt8 {
+        try bytes(at: offset, count: 1).first ?? 0
+    }
+
     func unsigned16(at offset: Int) throws -> UInt16 {
         try bytes(at: offset, count: 2).reduce(0) { ($0 << 8) | UInt16($1) }
     }

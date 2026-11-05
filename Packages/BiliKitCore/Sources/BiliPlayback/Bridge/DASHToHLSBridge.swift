@@ -116,8 +116,12 @@ public struct DASHToHLSBridge: Sendable {
     }
 
     /// 并行解析各 representation，注册随机 loopback route，并返回会话 owner。
+    ///
+    /// `hdrVideos` 是调用方已按设置与环境决定允许加入的 HDR 候选档（杜比视界在前），至多加入其中一档；
+    /// 为空时 master 与以前一样只有 SDR 档、不写 `VIDEO-RANGE`。
     func prepare(
         videos: [MediaRepresentation],
+        hdrVideos: [MediaRepresentation] = [],
         audioTracks: [SelectedPlaybackAudioTrack],
         headers: [String: String],
         subtitleSource: NativeSubtitleSource?,
@@ -127,7 +131,7 @@ public struct DASHToHLSBridge: Sendable {
             throw DASHToHLSBridgeError.missingVideoRepresentation
         }
         var videoIDs = Set<Int>()
-        for video in videos {
+        for video in videos + hdrVideos {
             guard video.kind == .video else {
                 throw DASHToHLSBridgeError.invalidMediaKind(
                     expected: .video,
@@ -175,7 +179,7 @@ public struct DASHToHLSBridge: Sendable {
 
         // SIDX 读取就是首个上游连接；此前复核每个候选来源，失败关闭，见 SECURITY-MODEL §4。
         let mediaURLPolicy = BiliMediaCDNURLPolicy()
-        for representation in videos + audioTracks.map(\.representation)
+        for representation in videos + hdrVideos + audioTracks.map(\.representation)
         where !representation.urlCandidates.allSatisfy(mediaURLPolicy.allows) {
             throw DASHToHLSBridgeError.disallowedMediaSource(
                 representationID: representation.id
@@ -195,8 +199,19 @@ public struct DASHToHLSBridge: Sendable {
             videos,
             headers: headers
         )
+        async let loadedHDRVariant = loadHDRVariant(hdrVideos, headers: headers)
         let loadedAudioRenditions = try await audioRenditionsTask
         let videoVariants = try await loadedVideoVariants
+        // HDR 档与 SDR 档在 AVPlayer 换档时按同一条时间线衔接，以排在最前的 SDR 档为准；起点不一致只丢
+        // HDR 档。丢档在生成字幕 route 之前完成，字幕不受影响。
+        var hdrVariant = try await loadedHDRVariant
+        if let hdr = hdrVariant,
+            !(videoVariants.first.map {
+                hasMatchingTimelineOrigin(hdr.video.index.index, canonical: $0.index.index)
+            } ?? false)
+        {
+            hdrVariant = nil
+        }
         let subtitleCatalog = try await freezeCatalog(catalogTask)
         let canonicalAudio = loadedAudioRenditions.first(where: {
             $0.selectedTrack.track.isDefault
@@ -272,10 +287,16 @@ public struct DASHToHLSBridge: Sendable {
                 )
             }
             var variants: [HLSVideoVariant] = []
-            variants.reserveCapacity(videoVariants.count)
+            variants.reserveCapacity(videoVariants.count + 1)
             var iFrameVariants: [HLSIFrameVariant] = []
-            iFrameVariants.reserveCapacity(videoVariants.count)
-            for loadedVideo in videoVariants {
+            iFrameVariants.reserveCapacity(videoVariants.count + 1)
+            // 有 HDR 档时每个视频档与 I-frame 行都写 `VIDEO-RANGE`，SDR 档写 `SDR`；没有时都不写。
+            let videoEntries: [(LoadedVideoVariant, VideoDynamicRangeMetadata?)] =
+                videoVariants.map { ($0, nil) }
+                + (hdrVariant.map { [($0.video, $0.metadata)] } ?? [])
+            for (loadedVideo, dynamicRange) in videoEntries {
+                let videoRange =
+                    hdrVariant == nil ? nil : (dynamicRange?.range ?? .sdr)
                 let video = loadedVideo.representation
                 let videoIndex = loadedVideo.index
                 let videoPlaylistURL = try server.url(
@@ -311,7 +332,9 @@ public struct DASHToHLSBridge: Sendable {
                     HLSVideoVariant(
                         representation: video,
                         index: videoIndex.index,
-                        playlistURI: videoPlaylistURL
+                        playlistURI: videoPlaylistURL,
+                        videoRange: videoRange,
+                        supplementalCodecs: dynamicRange?.supplementalCodecs
                     )
                 )
                 if isEligibleForIFramePlaylist(videoIndex.index) {
@@ -334,7 +357,8 @@ public struct DASHToHLSBridge: Sendable {
                         HLSIFrameVariant(
                             representation: video,
                             index: videoIndex.index,
-                            playlistURI: iFramePlaylistURL
+                            playlistURI: iFramePlaylistURL,
+                            videoRange: videoRange
                         )
                     )
                 }

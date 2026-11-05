@@ -30,6 +30,8 @@ struct PlayerHostView: View {
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
     let timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)?
+    /// 登记宿主视图，供加载时按播放器所在屏幕判断 HDR。
+    let hdrEnvironment: PlaybackHDREnvironment?
 
     init(
         player: SeekTrackingPlayer,
@@ -47,7 +49,8 @@ struct PlayerHostView: View {
         openDanmakuLinkedVideo: ((String) -> Void)? = nil,
         actionMenu: PlayerActionMenuActions,
         playbackEnd: PlayerPlaybackEndActions,
-        timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)? = nil
+        timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)? = nil,
+        hdrEnvironment: PlaybackHDREnvironment? = nil
     ) {
         self.player = player
         self.danmakuRenderer = danmakuRenderer
@@ -65,6 +68,7 @@ struct PlayerHostView: View {
         self.actionMenu = actionMenu
         self.playbackEnd = playbackEnd
         self.timelineUpdates = timelineUpdates
+        self.hdrEnvironment = hdrEnvironment
     }
 
     var body: some View {
@@ -87,7 +91,8 @@ struct PlayerHostView: View {
             openDanmakuLinkedVideo: openDanmakuLinkedVideo,
             actionMenu: actionMenu,
             playbackEnd: playbackEnd,
-            focusIdentity: videoModel?.presentedBVID
+            focusIdentity: videoModel?.presentedBVID,
+            hdrEnvironment: hdrEnvironment
         )
         .task(id: previewProjectionIdentity) {
             previewEndedNotice = nil
@@ -155,6 +160,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
     let focusIdentity: String?
+    let hdrEnvironment: PlaybackHDREnvironment?
 
     func makeNSView(context: Context) -> NativePlayerHostView {
         let view = NativePlayerHostView(
@@ -182,6 +188,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         )
         view.setPreviewEndedNotice(previewEndedNotice)
         view.requestInitialKeyboardFocus(for: focusIdentity)
+        hdrEnvironment?.playerView = view
         return view
     }
 

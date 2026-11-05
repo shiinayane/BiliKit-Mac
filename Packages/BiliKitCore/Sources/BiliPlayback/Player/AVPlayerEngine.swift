@@ -34,7 +34,7 @@ public final class AVPlayerEngine:
 
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase
-    private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
+    private let loadPreferencesProvider: @MainActor @Sendable () -> PlaybackLoadPreferences
     private let failureEvents = AsyncBroadcast<PlaybackFailureEvent>()
     private let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
@@ -70,13 +70,13 @@ public final class AVPlayerEngine:
         player: AVPlayer,
         bridge: DASHToHLSBridge = DASHToHLSBridge(),
         subtitleUseCase: SubtitleUseCase,
-        sourcePreferenceProvider: @escaping @MainActor @Sendable () -> PlaybackSourcePreference
+        loadPreferencesProvider: @escaping @MainActor @Sendable () -> PlaybackLoadPreferences
     ) {
         self.player = player
         player.preventsDisplaySleepDuringVideoPlayback = true
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
-        self.sourcePreferenceProvider = sourcePreferenceProvider
+        self.loadPreferencesProvider = loadPreferencesProvider
         // 起播的媒体选择只按播放列表的 DEFAULT：音频总是原声，字幕默认关闭。打开后系统会按界面语言
         // 挑 AUTOSELECT=YES 的 rendition，语言等于界面语言的 AI 配音会压过不写语言的原声。AI 配音另写
         // AUTOSELECT=NO，与这里共同保证起播是原声。
@@ -222,10 +222,12 @@ public final class AVPlayerEngine:
         generation: UUID
     ) async throws {
         // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
-        let sourcePreference = sourcePreferenceProvider()
+        let preferences = loadPreferencesProvider()
+        let sourcePreference = preferences.sourcePreference
         let progressiveSource: ProgressivePlaybackSource?
         let videos: [MediaRepresentation]
         let fallbackVideos: [MediaRepresentation]
+        let hdrVideos: [MediaRepresentation]
         let audioTracks: [SelectedPlaybackAudioTrack]
         switch request.media {
         case .dash(let manifest):
@@ -236,11 +238,17 @@ public final class AVPlayerEngine:
             fallbackVideos = manifest.fallbackVideoRepresentations.map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
+            // `eligibleForHDRPlayback` 由系统按已连接的显示器与解码能力给出；App 的条件看不到它。
+            let allowsHDR = preferences.allowsHDRVideo && AVPlayer.eligibleForHDRPlayback
+            hdrVideos = (allowsHDR ? manifest.hdrVideoCandidates : []).map {
+                PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+            }
             audioTracks = try manifest.selectedAudioTracks()
         case .progressive(let source):
             progressiveSource = source
             videos = []
             fallbackVideos = []
+            hdrVideos = []
             audioTracks = []
         }
         try Task.checkCancellation()
@@ -271,6 +279,7 @@ public final class AVPlayerEngine:
         let preparation = BridgePreparation(
             progressiveSource: progressiveSource,
             videos: videos,
+            hdrVideos: hdrVideos,
             audioTracks: audioTracks,
             headers: request.mediaHeaders,
             subtitleSource: subtitleSource,

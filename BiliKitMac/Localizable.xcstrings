@@ -4536,6 +4536,90 @@
           }
         }
       }
+    },
+    "视频" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "影片"
+          }
+        }
+      }
+    },
+    "HDR 视频" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR Video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR ビデオ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR 视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR 影片"
+          }
+        }
+      }
+    },
+    "窗口所在的屏幕能显示 HDR 时，有 HDR 真彩或杜比视界的视频以 HDR 播放。低电量模式或使用蜂窝数据、个人热点等受限网络时不使用 HDR。改动只影响之后新开始的播放。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the display showing the window supports HDR, videos available in HDR or Dolby Vision play in HDR. HDR isn't used in Low Power Mode or on cellular, Personal Hotspot, and other limited networks. Changes apply to playback started afterward."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウのあるディスプレイが HDR に対応している場合、HDR またはドルビービジョンに対応したビデオを HDR で再生します。低電力モードのとき、またはモバイルデータ通信やインターネット共有などの制限のあるネットワークでは HDR を使いません。変更はこのあと開始する再生から適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "窗口所在的屏幕能显示 HDR 时，有 HDR 真彩或杜比视界的视频以 HDR 播放。低电量模式或使用蜂窝数据、个人热点等受限网络时不使用 HDR。改动只影响之后新开始的播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "視窗所在的螢幕能顯示 HDR 時，有 HDR 真彩或杜比視界的影片會以 HDR 播放。低耗電模式或使用行動數據、個人熱點等受限網路時不使用 HDR。變更只影響之後開始的播放。"
+          }
+        }
+      }
     }
   },
   "version" : "1.2"

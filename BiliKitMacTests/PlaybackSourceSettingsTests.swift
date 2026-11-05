@@ -8,7 +8,8 @@ import Testing
 
 @testable import BiliKit
 
-/// 手动线路持久化、损坏时回退默认、已移除的响度开关残留被清掉，测速结果只用于排序展示、从不改动手动选择。
+/// 手动线路与 HDR 开关持久化、损坏时回退默认（HDR 开关缺失或损坏时按开）、已移除的响度开关残留被清掉，
+/// 测速结果只用于排序展示、从不改动手动选择。
 ///
 /// 测速只在所有窗口都已登录时进行；取消、登出与 owner 释放都停止测速，失败只映射为不可识别的状态。
 @Suite(.timeLimit(.minutes(1)))
@@ -33,7 +34,10 @@ struct PlaybackSourceSettingsTests {
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
             #expect(store.load() == .defaults)
 
-            let saved = PlaybackSourcePreferenceRecord(selection: .huaweiMainland)
+            let saved = PlaybackSourcePreferenceRecord(
+                selection: .huaweiMainland,
+                hdrVideoEnabled: false
+            )
             store.save(saved)
             #expect(store.load() == saved)
         }
@@ -54,12 +58,38 @@ struct PlaybackSourceSettingsTests {
     func storeFallsBackOnDamagedValues(key: String, damaged: any Sendable) {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
-            store.save(PlaybackSourcePreferenceRecord(selection: .huaweiMainland))
+            store.save(
+                PlaybackSourcePreferenceRecord(selection: .huaweiMainland, hdrVideoEnabled: true)
+            )
             // 先移除再写：已存的 schema 是整数 1，UserDefaults 视 `true` 与它相等而不覆盖。
             defaults.removeObject(forKey: key)
             defaults.set(damaged, forKey: key)
 
             #expect(store.load() == .defaults)
+        }
+    }
+
+    /// HDR 开关独立于线路：缺失或类型错写时按开，不影响已存的线路。
+    @Test(arguments: [nil, "false", 0] as [(any Sendable)?])
+    @MainActor
+    func hdrToggleDefaultsOnWhenMissingOrDamaged(damaged: (any Sendable)?) {
+        withIsolatedDefaults { defaults in
+            let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
+            store.save(
+                PlaybackSourcePreferenceRecord(selection: .serverAkamai, hdrVideoEnabled: false)
+            )
+            defaults.removeObject(forKey: "playback.hdrVideo.enabled")
+            if let damaged {
+                defaults.set(damaged, forKey: "playback.hdrVideo.enabled")
+            }
+
+            #expect(
+                store.load()
+                    == PlaybackSourcePreferenceRecord(
+                        selection: .serverAkamai,
+                        hdrVideoEnabled: true
+                    )
+            )
         }
     }
 
@@ -85,10 +115,14 @@ struct PlaybackSourceSettingsTests {
     func retiredLoudnessSettingsAreRemovedOnLoad(key: String) {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
-            store.save(PlaybackSourcePreferenceRecord(selection: .serverAkamai))
+            let saved = PlaybackSourcePreferenceRecord(
+                selection: .serverAkamai,
+                hdrVideoEnabled: true
+            )
+            store.save(saved)
             defaults.set(true, forKey: key)
 
-            #expect(store.load() == PlaybackSourcePreferenceRecord(selection: .serverAkamai))
+            #expect(store.load() == saved)
             #expect(defaults.object(forKey: key) == nil)
         }
     }
@@ -96,7 +130,10 @@ struct PlaybackSourceSettingsTests {
     @Test @MainActor
     func benchmarkResultNeverChangesManualSelection() async throws {
         let store = MemoryPlaybackSourcePreferenceStore(
-            record: PlaybackSourcePreferenceRecord(selection: .alibabaMainland)
+            record: PlaybackSourcePreferenceRecord(
+                selection: .alibabaMainland,
+                hdrVideoEnabled: true
+            )
         )
         let model = makeSettingsModel(
             store: store,
@@ -262,7 +299,7 @@ struct PlaybackSourceSettingsTests {
         let cancellation = TestEventCounter()
         let invocation = TestEventCounter()
         let store = MemoryPlaybackSourcePreferenceStore(
-            record: PlaybackSourcePreferenceRecord(selection: .serverAkamai)
+            record: PlaybackSourcePreferenceRecord(selection: .serverAkamai, hdrVideoEnabled: true)
         )
         let model = makeSettingsModel(
             store: store,

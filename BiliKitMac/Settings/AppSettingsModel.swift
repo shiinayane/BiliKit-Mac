@@ -165,10 +165,31 @@ final class AppSettingsModel {
     var selection: PlaybackSourceSelection {
         get { record.selection }
         set {
-            let updated = PlaybackSourcePreferenceRecord(selection: newValue)
-            record = updated
-            store.save(updated)
+            save(
+                PlaybackSourcePreferenceRecord(
+                    selection: newValue,
+                    hdrVideoEnabled: record.hdrVideoEnabled
+                )
+            )
         }
+    }
+
+    /// “HDR 视频”开关；与线路选择一样只影响之后新开始的播放。
+    var hdrVideoEnabled: Bool {
+        get { record.hdrVideoEnabled }
+        set {
+            save(
+                PlaybackSourcePreferenceRecord(
+                    selection: record.selection,
+                    hdrVideoEnabled: newValue
+                )
+            )
+        }
+    }
+
+    private func save(_ updated: PlaybackSourcePreferenceRecord) {
+        record = updated
+        store.save(updated)
     }
 
     var playbackSourcePreference: PlaybackSourcePreference {

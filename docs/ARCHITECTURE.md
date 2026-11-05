@@ -115,8 +115,17 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
 - 视频编码：每次播放的 SDR 阶梯只用一种编码。按清晰度 ID 比较，HEVC 覆盖 AVC 的全部档位时用 HEVC（8K 等
   HEVC 独有的档位一并加入），同一份 playurl 的 AVC 阶梯留作回退；否则全用 AVC。HEVC 的 item 在就绪前失败时，
   engine 在同一次 load 内换 AVC 阶梯重建一次，回退也失败才算播放失败。阶梯不设分辨率上限，依赖 AVPlayer
-  按 player 视图的像素尺寸限制所选分辨率（实测系统行为，文档没有写）。master 不写 `VIDEO-RANGE`，HDR 真彩与
-  杜比视界档在映射时排除。`dash.video` 逐条宽松解码，认不出的档位只丢这一条。
+  按 player 视图的像素尺寸限制所选分辨率（实测系统行为，文档没有写）。`dash.video` 逐条宽松解码，认不出的
+  档位只丢这一条。
+- HDR：SDR 阶梯是 HEVC 时，master 至多再加一个 HDR 档，有杜比视界（126）就用它，否则 HDR 真彩（125）。
+  AVPlayer 每个 item 只在一个 `VIDEO-RANGE` 内做 ABR，有资格播 HDR 时就选 HDR 且不受视图尺寸限制（实测，与
+  Apple 论坛及 HLS Authoring Spec“每种动态范围给完整阶梯”的要求一致）；B 站 HDR 只有一档，选中后弱网也降不到
+  SDR，所以只在加载时满足全部条件才加入：“HDR 视频”开关开着、`AVPlayer.eligibleForHDRPlayback`、播放器所在
+  屏幕的 EDR 能力大于 1、不在低电量模式、网络不昂贵也不受限。HDR 档的 `VIDEO-RANGE` 取自它的 init：`colr`
+  的 PQ／HLG，或杜比视界 profile 8 基础层（8.4 写 HLG、8.1 写 PQ）加 `SUPPLEMENTAL-CODECS`；有 HDR 档时 SDR
+  档与全部 I-frame 行也写 `VIDEO-RANGE`，要么都写要么都不写。HDR 档缺帧率、init 不是 HDR 或解析失败、时间轴
+  起点与 SDR 档不同时只丢这一档（连同它的 I-frame），在生成字幕 route 之前完成。HEVC 回退到 AVC 时不带 HDR 档。
+  B 站不给 30fps 及以下的 HDR 档，不满足 Authoring Spec 对 HDR 阶梯的要求，这是已知偏离。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
 - 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
   AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。
@@ -447,6 +456,10 @@ Settings 窗口，从不自动改选。
 - mpv 等第二播放后端；AVPlayer + loopback 能满足当前需求。
 - AV1：AVPlayer 只在带 AV1 硬件解码的 Mac（M3 起）上能播，其他机器整条视频放不了。
 - 同一 master 混入 AVC 与 HEVC：ABR 换档时会在两种编码之间切换；只用一种编码，回退规则也只需一条。
+- HDR 卡顿时自动以 SDR 重建播放项：要判断“卡顿是 HDR 档造成的”、重建会打断播放并丢失缓冲；加载时的条件
+  过滤与“HDR 视频”开关已能避开主要情形。
+- 杜比视界（HLG 基础层）不写 `VIDEO-RANGE` 混进 SDR 阶梯以获得降档：它会受视图尺寸上限约束，常见窗口里根本
+  选不到；HDR 真彩（PQ）不写时 item 直接失败。
 - 响度均一化：只能压低不能放大（放大需要限幅器），依赖 playurl 的响度元数据（许多较早的视频没有），
   只在 macOS 27 起有官方接入点；它按“原声只有一条”匹配音轨，音轨按编码与码率分成多组后系统会合并同名选项、
   换组时不发通知，无法确定当前播放的是哪一组。

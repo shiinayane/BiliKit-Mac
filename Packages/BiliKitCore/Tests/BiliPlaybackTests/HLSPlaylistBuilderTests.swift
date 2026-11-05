@@ -232,6 +232,28 @@ struct HLSPlaylistBuilderTests {
         }
     }
 
+    /// `VIDEO-RANGE` 只给部分视频档或 I-frame 行写时拒绝生成：没写的档会被当成 SDR 与写明的档混用。
+    @Test
+    func rejectsPartiallyDeclaredVideoRange() throws {
+        let index = try makeIndex(byteCounts: [1_000], durations: [1])
+        let video = try makeVideo()
+        let tagged = HLSVideoVariant(
+            representation: video,
+            index: index,
+            playlistURI: try playlistURL("video/\(video.id).m3u8"),
+            videoRange: .sdr
+        )
+        let audio = [try makeAudioRendition(representation: makeAudio(), index: index)]
+
+        #expect(throws: HLSPlaylistBuilderError.inconsistentVideoRange) {
+            try HLSMasterPlaylistBuilder().build(
+                videoVariants: [tagged],
+                audioRenditions: audio,
+                iFrameVariants: [try makeIFrameVariant(video, index: index)]
+            )
+        }
+    }
+
     @Test
     func rejectsDuplicateDefaultAudioRenditions() throws {
         let index = try makeIndex(byteCounts: [1_000], durations: [1])

@@ -93,13 +93,19 @@ extension WindowAdapters {
         // 显式停止，音量快捷键也经它调整。
         let playbackPreferences = PlaybackPreferencesController(player: player)
         let subtitleAuthenticationInvalidations = SubtitleAuthenticationInvalidationRelay()
+        let hdrEnvironment = PlaybackHDREnvironment()
         let playerEngine = AVPlayerEngine(
             player: player,
             subtitleUseCase: SubtitleUseCase(
                 repository: BiliSubtitleRepository(client: api),
                 reportAuthenticationInvalidation: subtitleAuthenticationInvalidations.report
             ),
-            sourcePreferenceProvider: { settings.playbackSourcePreference }
+            loadPreferencesProvider: {
+                PlaybackLoadPreferences(
+                    sourcePreference: settings.playbackSourcePreference,
+                    allowsHDRVideo: settings.hdrVideoEnabled && hdrEnvironment.allowsHDR
+                )
+            }
         )
         // 「播放结束后」偏好：设备级，动作菜单与播完的处理读写同一处。
         let endBehavior = PlaybackEndBehaviorStore()
@@ -188,7 +194,8 @@ extension WindowAdapters {
                         ),
                         timelineUpdates: {
                             playerEngine.timelineUpdates()
-                        }
+                        },
+                        hdrEnvironment: hdrEnvironment
                     )
                 )
             },

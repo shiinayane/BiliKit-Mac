@@ -192,15 +192,20 @@ public struct PlaybackManifest: Sendable, Equatable {
     public let videoRepresentations: [MediaRepresentation]
     /// 主阶梯起播失败时 BiliPlayback 换用的同一份 playurl 的 AVC 阶梯，只换一次；主阶梯已是 AVC 时为空。
     public let fallbackVideoRepresentations: [MediaRepresentation]
+    /// 可加入主阶梯的 HDR 档（杜比视界在前），只在主阶梯是 HEVC 时非空；BiliPlayback 按设置与环境
+    /// 决定是否加入，最多加入一档。
+    public let hdrVideoCandidates: [MediaRepresentation]
     public let audioTracks: [PlaybackAudioTrack]
 
     public init(
         videoRepresentations: [MediaRepresentation],
         fallbackVideoRepresentations: [MediaRepresentation] = [],
+        hdrVideoCandidates: [MediaRepresentation] = [],
         audioTracks: [PlaybackAudioTrack]
     ) {
         self.videoRepresentations = videoRepresentations
         self.fallbackVideoRepresentations = fallbackVideoRepresentations
+        self.hdrVideoCandidates = hdrVideoCandidates
         self.audioTracks = audioTracks
     }
 }

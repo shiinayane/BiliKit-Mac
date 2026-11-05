@@ -5,7 +5,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 playurl 视频阶梯的编码规则：HEVC 覆盖 AVC 的全部 SDR 清晰度时播 HEVC 并以 AVC 为回退，否则只播
-/// AVC；HDR 档与 AV1 不进入阶梯，形状不认识的单条档位只丢这一条。
+/// AVC；HDR 档不进 SDR 阶梯，只在主阶梯是 HEVC 时作为候选（杜比视界在前）；AV1 不用，形状不认识的单条
+/// 档位只丢这一条。
 struct DASHVideoLadderTests {
     /// `id`、`codecid`、`codecs` 描述一条 `dash.video`，其余字段照 fixture 的首条视频。
     struct Rung: Sendable, CustomTestStringConvertible {
@@ -33,6 +34,7 @@ struct DASHVideoLadderTests {
         let rungs: [Rung]
         let primary: [Int]
         let fallback: [Int]
+        var hdr: [Int] = []
 
         var testDescription: String { name }
     }
@@ -57,10 +59,17 @@ struct DASHVideoLadderTests {
             fallback: []
         ),
         LadderCase(
-            name: "HDR 真彩与杜比视界不进入 SDR 阶梯",
-            rungs: [.hevc(126), .hevc(125), .hevc(120), .hevc(80), .avc(80)],
+            name: "HDR 档不进 SDR 阶梯，杜比视界排在候选最前",
+            rungs: [.hevc(125), .hevc(126), .hevc(120), .hevc(80), .avc(80)],
             primary: [120, 80],
-            fallback: [80]
+            fallback: [80],
+            hdr: [126, 125]
+        ),
+        LadderCase(
+            name: "主阶梯是 AVC 时没有 HDR 候选",
+            rungs: [.hevc(126), .hevc(80), .avc(80), .avc(64)],
+            primary: [80, 64],
+            fallback: []
         ),
         LadderCase(
             name: "只有 HEVC：播 HEVC，没有回退",
@@ -75,6 +84,7 @@ struct DASHVideoLadderTests {
         let manifest = try #require(playback.dashManifest)
         #expect(manifest.videoRepresentations.map(\.id) == ladder.primary)
         #expect(manifest.fallbackVideoRepresentations.map(\.id) == ladder.fallback)
+        #expect(manifest.hdrVideoCandidates.map(\.id) == ladder.hdr)
         let primaryCodecs = Set(manifest.videoRepresentations.map { $0.codecs.prefix(4) })
         #expect(primaryCodecs.count == 1)
     }

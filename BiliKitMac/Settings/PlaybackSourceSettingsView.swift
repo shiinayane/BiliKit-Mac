@@ -4,7 +4,7 @@ import BiliUI
 import Foundation
 import SwiftUI
 
-/// 设置窗口的表单：新播放优先线路与线路测速参考。
+/// 设置窗口的表单：HDR 视频开关、新播放优先线路与线路测速参考。
 ///
 /// 只绑定进程级 `AppSettingsModel`；窗口消失时调用 `closeSettings()` 取消测速并丢弃结果。
 struct PlaybackSourceSettingsView: View {
@@ -14,6 +14,15 @@ struct PlaybackSourceSettingsView: View {
 
     var body: some View {
         Form {
+            Section("视频") {
+                Toggle("HDR 视频", isOn: $model.hdrVideoEnabled)
+                Text(
+                    "窗口所在的屏幕能显示 HDR 时，有 HDR 真彩或杜比视界的视频以 HDR 播放。低电量模式或使用蜂窝数据、个人热点等受限网络时不使用 HDR。改动只影响之后新开始的播放。"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
             Section("播放线路") {
                 Picker("新播放优先线路", selection: selection) {
                     ForEach(PlaybackSourceSelection.allCases) { item in

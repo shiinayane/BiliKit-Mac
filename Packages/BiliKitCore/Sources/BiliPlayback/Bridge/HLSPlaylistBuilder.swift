@@ -5,6 +5,7 @@ import Foundation
 public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case noMediaSegments
     case noVideoVariants
+    case inconsistentVideoRange
     case nonIndependentIFrameSegments
     case duplicateIFrameVariant(Int)
     case unknownIFrameVariant(Int)

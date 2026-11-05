@@ -1,37 +1,57 @@
 import BiliModels
 import Foundation
 
-/// master playlist 的一个视频档：representation、它的 SIDX 与本机 media playlist URI。
+/// HLS `VIDEO-RANGE` 的取值。
+///
+/// master 里有 HDR 档时，SDR 档与全部 I-frame 行也写明 `SDR`；没有 HDR 档时都不写。AVPlayer 只在一个
+/// 动态范围内做 ABR（实测，见 ARCHITECTURE）。
+public enum HLSVideoRange: String, Sendable, Equatable {
+    case sdr = "SDR"
+    case pq = "PQ"
+    case hlg = "HLG"
+}
+
+/// master playlist 的一个视频档：representation、它的 SIDX、本机 media playlist URI，以及 HDR 时的
+/// 动态范围与杜比视界的 `SUPPLEMENTAL-CODECS`。
 public struct HLSVideoVariant: Sendable, Equatable {
     public let representation: MediaRepresentation
     public let index: SegmentIndex
     public let playlistURI: URL
+    public let videoRange: HLSVideoRange?
+    public let supplementalCodecs: String?
 
     public init(
         representation: MediaRepresentation,
         index: SegmentIndex,
-        playlistURI: URL
+        playlistURI: URL,
+        videoRange: HLSVideoRange? = nil,
+        supplementalCodecs: String? = nil
     ) {
         self.representation = representation
         self.index = index
         self.playlistURI = playlistURI
+        self.videoRange = videoRange
+        self.supplementalCodecs = supplementalCodecs
     }
 }
 
-/// 复用普通 fMP4 fragment 的完整字节范围提供一个 I-frame rendition。
+/// 复用普通 fMP4 fragment 的完整字节范围提供一个 I-frame rendition；动态范围与对应视频档相同。
 public struct HLSIFrameVariant: Sendable, Equatable {
     public let representation: MediaRepresentation
     public let index: SegmentIndex
     public let playlistURI: URL
+    public let videoRange: HLSVideoRange?
 
     public init(
         representation: MediaRepresentation,
         index: SegmentIndex,
-        playlistURI: URL
+        playlistURI: URL,
+        videoRange: HLSVideoRange? = nil
     ) {
         self.representation = representation
         self.index = index
         self.playlistURI = playlistURI
+        self.videoRange = videoRange
     }
 }
 
@@ -106,6 +126,14 @@ public struct HLSMasterPlaylistBuilder: Sendable {
     ) throws -> String {
         guard !videoVariants.isEmpty else {
             throw HLSPlaylistBuilderError.noVideoVariants
+        }
+        // `VIDEO-RANGE` 要么每个视频档与 I-frame 行都写，要么都不写：只给部分档写时，没写的档按 SDR
+        // 处理，与写明的档混在一起时 AVPlayer 的选择取决于它自己的推断。
+        let declaresVideoRange = videoVariants[0].videoRange != nil
+        guard videoVariants.allSatisfy({ ($0.videoRange != nil) == declaresVideoRange }),
+            iFrameVariants.allSatisfy({ ($0.videoRange != nil) == declaresVideoRange })
+        else {
+            throw HLSPlaylistBuilderError.inconsistentVideoRange
         }
         // 没有声音的稿件没有音频 rendition：master 只写视频 variant，不声明 AUDIO group。
         let defaultCount = audioRenditions.filter {
@@ -282,6 +310,13 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 streamAttributes += ",FRAME-RATE=\(frameRate)"
             }
             streamAttributes += ",CODECS=\"\(codecs)\""
+            if let supplementalCodecs = variant.supplementalCodecs {
+                streamAttributes +=
+                    ",SUPPLEMENTAL-CODECS=\"\(try safeAttribute(supplementalCodecs))\""
+            }
+            if let videoRange = variant.videoRange {
+                streamAttributes += ",VIDEO-RANGE=\(videoRange.rawValue)"
+            }
             if !audioRenditions.isEmpty {
                 streamAttributes += ",AUDIO=\"\(audioGroupID)\""
             }
@@ -324,8 +359,9 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             let bitRates = try bitRates(for: variant.index)
             let uri = try safePlaylistURI(variant.playlistURI)
             let codecs = try safeAttribute(video.codecs)
+            let videoRange = variant.videoRange.map { ",VIDEO-RANGE=\($0.rawValue)" } ?? ""
             lines.append(
-                "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=\(bitRates.peak),AVERAGE-BANDWIDTH=\(bitRates.average),RESOLUTION=\(attributes.width)x\(attributes.height),CODECS=\"\(codecs)\",URI=\"\(uri)\""
+                "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=\(bitRates.peak),AVERAGE-BANDWIDTH=\(bitRates.average),RESOLUTION=\(attributes.width)x\(attributes.height),CODECS=\"\(codecs)\"\(videoRange),URI=\"\(uri)\""
             )
         }
 

@@ -255,6 +255,7 @@ extension BiliAPIClient {
                 PlaybackManifest(
                     videoRepresentations: video.primary,
                     fallbackVideoRepresentations: video.fallback,
+                    hdrVideoCandidates: video.hdrCandidates,
                     audioTracks: audioTracks
                 )
             ),
