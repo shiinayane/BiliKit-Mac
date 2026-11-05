@@ -3,16 +3,19 @@ import BiliNetworking
 import Foundation
 
 extension DASHToHLSBridge {
+    /// 音频格式只是 master 里的可选属性：读取或解析失败时返回 nil，不输出相应属性，播放照常；
+    /// 取消原样传播。
     private func optionalAudioFormat(
         for audio: MediaRepresentation,
         sourceURL: URL,
         headers: [String: String]
     ) async throws -> AudioFormatMetadata? {
         do {
-            return try await audioFormatLoader.load(
+            return try await initializationLoader.load(
                 for: audio,
                 sourceURL: sourceURL,
-                headers: headers
+                headers: headers,
+                parse: { try AudioFormatMetadataParser().parse($0) }
             )
         } catch is CancellationError {
             throw CancellationError()
