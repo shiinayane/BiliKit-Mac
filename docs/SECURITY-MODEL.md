@@ -83,8 +83,8 @@
 搜索规则规范化（≤ 100 字），结果只在内存中用于当次菜单。唯一的非凭据 Cookie 是 `buvid3`：搜索
 `/x/web-interface/wbi/search/type` 与点赞、投币、三连三个写接口要求 Cookie 含它（缺它会触发风控），`BiliAPI` 为此在进程内存中
 随机生成一个 `buvid3=<小写 UUID>infoc`，不持久化、不激活、不与账户关联；这几种请求在授权之后附加它（与授权器给出的 Cookie
-并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有四个授权器，均由 Composition 注入
-`BiliAPI`：账户读取、App 端读取、自动的观看进度写入，与用户发起的账户写入。
+并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有五个授权器，均由 Composition 注入
+`BiliAPI`：账户读取、App 端读取、自动的观看进度写入，与用户发起的网页端和 App 端账户写入。
 
 **账户读取**（`BiliCredentialRequestAuthorizer`）
 
@@ -148,9 +148,8 @@
   （`POST /x/v3/fav/resource/deal`）与夹内移除（`POST /x/v3/fav/resource/batch-del`），以及播放页的点赞
   （`POST /x/web-interface/archive/like`，`like` 只能是 1 或 2）、投币（`POST /x/web-interface/coin/add`，`multiply` 只能是 1
   或 2、`select_like` 0 或 1）与三连（`POST /x/web-interface/archive/like/triple`，只有 `aid`），播放页侧栏的关注与取消关注（`POST /x/relation/modify`，只收单个 UP 主
-  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝），首页推荐的「不感兴趣」与撤销
-  （`POST /x/web-interface/feedback/dislike` 与 `.../dislike/cancel`，推荐流的固定字段之外只收单个稿件 `id`、它的 UP 主
-  `mid`（正整数）、只含字母数字与 `._-` 且有长度上限的 `track_id`，`reason_id` 只能是 1 或 4；网页对它签 WBI，这里不签）。`toview/del` 的 `aid` 在接口文档里
+  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝）。
+  `toview/del` 的 `aid` 在接口文档里
   可选、带 `viewed=true` 会删除全部已看完的视频；schema 强制要求 `aid` 并拒绝 `viewed`，所以发不出“一次清空”，不得把 `aid`
   改成可选。`batch-del` 接受逗号分隔的多个条目，schema 只收单个 `<aid>:2`；`deal` 只收单个视频、固定 `type=2`，两侧夹 id
   列表各自不重复、互不相交、至少一侧非空、有上限。换用其他接口时同样只收单个视频，不收批量；需要 WBI 签名或 multipart 正文时，要给 schema 加对应维度
@@ -174,6 +173,23 @@
   `multiply`、风控标记）解码 `data`，三连报告风控时按受限处理：-101、-111 与账户不符为凭据失效，触发
   一次窗口复核；风控按受限；点赞、投币、三连的 -403 是 B 站拒绝这个客户端（不复核、不重试，结果胶囊只经系统打开
   视频网页，见 §4）；其余业务码的分类在 `AccountWriteError`。一律不自动重试、不排队、不持久化待写入请求或结果。
+
+**用户发起的 App 端写入**（`BiliAppWriteRequestAuthorizer`）
+
+防：access_token 被带进 allowlist 与 schema 之外的 App 接口；写入以匿名或另一个账户的身份发出；举报类反馈被当作「不感兴趣」
+发出。
+
+- 目前只有首页推荐的「不感兴趣」与撤销（`GET https://app.bilibili.com/x/feed/dislike` 与 `.../dislike/cancel`）：query 恰为
+  `goto=av`、单个稿件 `id`（正整数）、一个 `reason_id`（正整数，取自卡片给出的原因），以及与首页推荐请求相同的
+  `mobi_app=iphone`、`device=pad`、`build=1`。卡片同一处的举报类反馈以 `feedback_id` 发送，不提供，schema 也不接受。
+- 只有窗口主 API 注入这个授权器，allowlist 由 `LiveAPIClients` 声明、只引用 BiliAPI 的 `BiliAppWritePath`，与 App 端读取的
+  allowlist 分开；新增 App 写操作同样需要 ROADMAP 的产品决定，并在授权器的 schema 表里逐条登记。
+- 目标与 query 的校验与 App 端读取相同（精确主机与端口、GET、无正文、路径规范，调用方自带 `access_key`、签名参数、重复字段
+  或凭据类 header 一律拒绝），授权器拒绝映射为 `invalidRequest`。
+- 写入从不匿名：凭据按写入的规则读取（本地无凭据失败，损坏或过期删除后报告失效，Keychain 不可用失败关闭）；账户绑定与网页
+  写入相同（`RequestAccess.appWrite(expectedAccountID:)`，`DedeUserID` 不符时按凭据失效拒绝、不删除）。通过后把 `access_key`
+  放进 query 再做 APP 签名，签名后的 URL 只能原样发出，见上文 App 端读取。
+- 响应按网页写入的同一规则判定（同一段代码）；发出条件、epoch 与不重试、不排队也相同。
 
 **永不携带凭据**：WBI nav、图片、视频／音频 CDN、字幕正文、loopback server、二维码 URL、评论外链与短链解析、
 Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机，不使用 `*.bilibili.com` 后缀匹配：后缀匹配会把凭据交给任何子域。

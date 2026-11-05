@@ -2,47 +2,38 @@ import BiliApplication
 import BiliModels
 import Foundation
 
-/// 首页推荐的「不感兴趣」与撤销：经共用的写管线 `postForm`、账户写授权器绑定窗口账户。
+/// 首页推荐的「不感兴趣」与撤销：App 端接口，经 App 写管线 `getForWrite`、App 写授权器绑定窗口账户并签名。
 ///
-/// 字段照网页的推荐流反馈发送（`app_id`、`platform`、`spmid` 等是接口必需的固定值，不是可省的统计字段），撤销与反馈
-/// 字段完全相同。网页对这两个接口签 WBI，这里不签，见授权器 schema 表的说明。
+/// 首页推荐来自 App 端，反馈也必须走 App 端：服务端按 access_token 认出是哪位用户的推荐流。`mobi_app`、`device`、
+/// `build` 与首页推荐请求相同，同一位客户端身份；撤销与反馈字段完全相同。
 extension BiliAPIClient {
-    /// 「不感兴趣」的 Referer：首页推荐在站点首页。
-    private static let recommendationFeedbackReferer = "https://www.bilibili.com/"
-
     /// 对首页推荐的一条说「不感兴趣」（`cancel` 为 false），或撤销那次反馈。
     public func sendRecommendationFeedback(
         _ feedback: RecommendationFeedback,
         cancel: Bool,
         accountID: Int64
     ) async throws {
-        guard hasAccountWriteAuthorizer else {
+        guard hasAppWriteAuthorizer else {
             throw BiliAPIError.authorizationRequired
         }
         guard accountID > 0, let aid = BiliVideoAID.aid(fromBVID: feedback.target.bvid) else {
             throw BiliAPIError.invalidRequest
         }
-        try await postForm(
-            url: try endpoint(
+        try await getForWrite(
+            url: try appEndpoint(
                 path: cancel
-                    ? BiliAccountWritePath.recommendationDislikeCancel
-                    : BiliAccountWritePath.recommendationDislike
+                    ? BiliAppWritePath.recommendationDislikeCancel
+                    : BiliAppWritePath.recommendationDislike,
+                queryItems: [
+                    URLQueryItem(name: "goto", value: "av"),
+                    URLQueryItem(name: "id", value: String(aid)),
+                    URLQueryItem(name: "reason_id", value: String(feedback.reason.id)),
+                    URLQueryItem(name: "mobi_app", value: "iphone"),
+                    URLQueryItem(name: "device", value: "pad"),
+                    URLQueryItem(name: "build", value: "1")
+                ]
             ),
-            fields: [
-                ("app_id", "100"),
-                ("platform", "5"),
-                ("from_spmid", ""),
-                ("spmid", "333.1007.0.0"),
-                ("goto", "av"),
-                ("id", String(aid)),
-                ("mid", String(feedback.uploaderID)),
-                ("track_id", feedback.trackID),
-                ("feedback_page", "1"),
-                ("reason_id", String(feedback.reason.rawValue))
-            ],
-            referer: Self.recommendationFeedbackReferer,
-            origin: Self.accountWriteOrigin,
-            access: .accountWrite(expectedAccountID: accountID)
+            access: .appWrite(expectedAccountID: accountID)
         )
     }
 }

@@ -1,31 +1,14 @@
 import BiliModels
 
-/// 「不感兴趣」的原因：网页首页推荐只给这两个，取值是接口的 `reason_id`。
-public enum RecommendationDislikeReason: Int, Sendable, Hashable, CaseIterable {
-    case content = 1
-    case uploader = 4
-}
-
-/// 对首页推荐的一条视频说「不感兴趣」：哪个视频、它的 UP 主与推荐流追踪 ID，以及原因。
+/// 对首页推荐的一条视频说「不感兴趣」：哪个视频，以及从这张卡片给出的原因里选的那一个。
 ///
-/// 撤销必须带同样的字段（接口按它们找到那次反馈），所以 Browse 记下发出的这一份，撤销时原样交回。
+/// 撤销带同样的字段，所以 Browse 记下发出的这一份，撤销时原样交回。
 public struct RecommendationFeedback: Sendable, Hashable {
     public let target: VideoWriteTarget
-    public let uploaderID: Int64
-    public let trackID: String
     public let reason: RecommendationDislikeReason
 
-    /// 追踪 ID 为空或 UP 主 ID 不是正数时为 nil：推荐流没给追踪 ID 的条目不提供反馈，接口也不收没有 UP 主的反馈。
-    public init?(
-        target: VideoWriteTarget,
-        uploaderID: Int64,
-        trackID: String,
-        reason: RecommendationDislikeReason
-    ) {
-        guard !trackID.isEmpty, uploaderID > 0 else { return nil }
+    public init(target: VideoWriteTarget, reason: RecommendationDislikeReason) {
         self.target = target
-        self.uploaderID = uploaderID
-        self.trackID = trackID
         self.reason = reason
     }
 }

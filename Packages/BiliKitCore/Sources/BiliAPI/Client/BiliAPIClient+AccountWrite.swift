@@ -2,11 +2,11 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-/// 写请求共用的表单管线（观看进度 heartbeat 与用户发起的账户写入），以及稍后再看与收藏的写入；点赞、投币与三连在
-/// `BiliAPIClient+VideoEngagement`。
+/// 写请求共用的管线（网页端的表单写入 `postForm`、App 端的 GET 写入 `getForWrite`），以及稍后再看与收藏的写入；点赞、
+/// 投币与三连在 `BiliAPIClient+VideoEngagement`。
 ///
-/// 表单编码、固定 header、响应上限、状态 envelope 与 -101／-111 映射只在 `postForm` 一处；各写 endpoint 只给出 path、
-/// 字段、Referer 与授权方式。用户发起的写入只在注入了账户写授权器的 client（窗口主 API）上可用，并绑定窗口账户的 mid。
+/// 表单编码与固定 header 只在 `postForm`，响应上限、状态 envelope 与 -101／-111 映射只在 `writeResponseBody` 一处，两条
+/// 管线共用；各写 endpoint 只给出 path、字段、Referer 与授权方式。用户发起的写入只在注入了账户写授权器的 client（窗口主 API）上可用，并绑定窗口账户的 mid。
 /// 写入不经 `signedRequest`、不重试；会话 epoch 的比对由请求管线 `response(baseRequest:...)` 统一执行，见
 /// SECURITY-MODEL §3。
 extension BiliAPIClient {
@@ -137,6 +137,28 @@ extension BiliAPIClient {
             maximumResponseSize: Self.maximumWriteResponseSize,
             additionalCookie: additionalCookie
         )
+        return try writeResponseBody(authorizedResponse)
+    }
+
+    /// App 端写入的唯一管线：GET（App 端的写接口也是 GET），固定 `Accept` 与 `User-Agent`，经 `access`（`appWrite`）对应的
+    /// 授权器签名发出，再按与表单写入相同的规则判定状态 envelope。
+    ///
+    /// 调用方只给出不含凭据与签名的 query；access_token 与签名由授权器写入。
+    @discardableResult
+    func getForWrite(url: URL, access: RequestAccess) async throws -> Data {
+        let authorizedResponse = try await response(
+            baseRequest: HTTPRequest(
+                url: url,
+                headers: ["Accept": "application/json", "User-Agent": userAgent]
+            ),
+            access: access,
+            maximumResponseSize: Self.maximumWriteResponseSize
+        )
+        return try writeResponseBody(authorizedResponse)
+    }
+
+    /// 写请求响应的唯一判定，见 `postForm` 的说明：写请求总是带凭据发出，-101／-111 是凭据失效，`v_voucher` 是风控挑战。
+    private func writeResponseBody(_ authorizedResponse: AuthorizedHTTPResponse) throws -> Data {
         guard authorizedResponse.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
         }

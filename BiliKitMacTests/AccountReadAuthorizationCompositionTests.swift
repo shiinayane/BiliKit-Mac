@@ -146,14 +146,11 @@ struct AccountReadAuthorizationCompositionTests {
     }
 }
 
-/// 账户写能力只给窗口主 API，且恰好是这十个 path；每个写 path 都能被真实的账户写授权器按它的 schema 授权：
-/// BiliAuth 的 schema 表与 BiliAPI 的 `BiliAccountWritePath` 各写一份字面量，这里是两边唯一的交叉核对。
+/// 网页与 App 的账户写能力只给窗口主 API，且恰好是这些 path；每个写 path 都能被真实的写授权器按它的 schema 授权：
+/// BiliAuth 的 schema 表与 BiliAPI 的 `BiliAccountWritePath`、`BiliAppWritePath` 各写一份字面量，这里是两边唯一的
+/// 交叉核对。
 @Suite(.timeLimit(.minutes(1)))
 struct AccountWriteAuthorizationCompositionTests {
-    private static let recommendationFeedbackBody =
-        "app_id=100&platform=5&from_spmid=&spmid=333.1007.0.0&goto=av&id=170001&mid=1"
-        + "&track_id=web_rcmd.abc&feedback_page=1&reason_id=1"
-
     @Test
     @MainActor
     func onlyTheWindowAPIGetsTheExactWriteCapability() async throws {
@@ -166,10 +163,11 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/web-interface/archive/like",
                 "/x/web-interface/coin/add",
                 "/x/web-interface/archive/like/triple",
-                "/x/relation/modify",
-                "/x/web-interface/feedback/dislike",
-                "/x/web-interface/feedback/dislike/cancel"
+                "/x/relation/modify"
             ]
+        )
+        #expect(
+            LiveAPIClients.mainAppWriteAllowedPaths == ["/x/feed/dislike", "/x/feed/dislike/cancel"]
         )
         // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
         for client in [LiveAPIClients.cdnBenchmark(), LiveAPIClients.watchProgressWriter()] {
@@ -207,12 +205,6 @@ struct AccountWriteAuthorizationCompositionTests {
             BiliAccountWritePath.videoTriple: ("https://www.bilibili.com/", "aid=170001"),
             BiliAccountWritePath.relationModify: (
                 "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
-            ),
-            BiliAccountWritePath.recommendationDislike: (
-                "https://www.bilibili.com/", Self.recommendationFeedbackBody
-            ),
-            BiliAccountWritePath.recommendationDislikeCancel: (
-                "https://www.bilibili.com/", Self.recommendationFeedbackBody
             )
         ]
         #expect(Set(requests.keys) == LiveAPIClients.mainAccountWriteAllowedPaths)
@@ -235,6 +227,37 @@ struct AccountWriteAuthorizationCompositionTests {
 
             #expect(authorized.headers["Cookie"] == "SESSDATA=FIXTURE_SESSDATA_VALUE")
             #expect(authorized.body == Data("\(body)&csrf=FIXTURE_bili_jct_VALUE".utf8))
+        }
+    }
+
+    @Test
+    @MainActor
+    func everyProductionAppWritePathCanAuthorizeTheRequestTheClientBuilds() async throws {
+        let authorizer = BiliAppWriteRequestAuthorizer(
+            store: CompositionFixtureCredentialStore(
+                credential: try makeCompositionFixtureCredential()
+            ),
+            allowedPaths: LiveAPIClients.mainAppWriteAllowedPaths
+        )
+        for path in LiveAPIClients.mainAppWriteAllowedPaths {
+            let request = HTTPRequest(
+                url: try #require(
+                    URL(
+                        string: "https://app.bilibili.com\(path)?goto=av&id=170001&reason_id=12"
+                            + "&mobi_app=iphone&device=pad&build=1"
+                    )
+                ),
+                headers: [
+                    "Accept": "application/json",
+                    "User-Agent": HTTPUserAgent.browserCompatible
+                ]
+            )
+
+            let authorized = try await authorizer.authorize(request, boundTo: "42")
+
+            #expect(authorized.url.path == path)
+            #expect(authorized.url.query?.contains("access_key=") == true)
+            #expect(authorized.url.query?.contains("&sign=") == true)
         }
     }
 }

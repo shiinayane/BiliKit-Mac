@@ -1,8 +1,8 @@
 import BiliNetworking
 import Foundation
 
-/// 两个写授权器（观看进度 heartbeat、用户发起的账户写入）共用的表单解析、CSRF 编码与凭据读取；App 端读取授权器
-/// 也用这里的 query 解析与凭据删除。
+/// 网页端两个写授权器（观看进度 heartbeat、用户发起的账户写入）共用的表单解析、CSRF 编码与凭据读取；App 端的读取与
+/// 写入授权器也用这里的 query 解析，App 写入另用写凭据读取，App 读取用凭据删除。
 ///
 /// 只放两边逐字相同的规则；各自的 path、header、字段 schema 与 Cookie 白名单仍在各自的授权器里，不因共用这些
 /// 帮手而合并成一个泛化的写授权器（见 SECURITY-MODEL §3）。无状态。

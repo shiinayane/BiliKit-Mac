@@ -11,9 +11,11 @@ import Testing
 struct BiliAPIClientFeedTests {
     /// 一批里：可播放的视频（有 BV 号与只有 av 号各一张）、商业推广（`card_goto` 与 `ad_info` 两种）、没有
     /// `player_args` 的视频与直播；最后一张卡片的 `idx` 是下一批游标。
+    ///
+    /// 第一张卡片的「不感兴趣」原因里混有重复 id、空名字与形状不对的原因，另有不解码的举报类 `feedbacks`。
     static let appFeedBody = #"""
         {"code":0,"message":"0","data":{"items":[
-          {"goto":"av","card_goto":"av","param":"170001","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","cover":"//i0.hdslb.com/a.jpg","args":{"up_id":10001,"up_name":"作者"},"avatar":{"cover":"//i1.hdslb.com/a.jpg"},"player_args":{"aid":170001,"duration":125},"cover_left_text_1":"2:05","cover_left_text_2":"25.4万观看","cover_left_text_3":"13弹幕","desc":"作者 · 6月11日","bottom_rcmd_reason":"已关注","idx":1700000001},
+          {"goto":"av","card_goto":"av","param":"170001","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","cover":"//i0.hdslb.com/a.jpg","args":{"up_id":10001,"up_name":"作者"},"avatar":{"cover":"//i1.hdslb.com/a.jpg"},"player_args":{"aid":170001,"duration":125},"cover_left_text_1":"2:05","cover_left_text_2":"25.4万观看","cover_left_text_3":"13弹幕","desc":"作者 · 6月11日","bottom_rcmd_reason":"已关注","three_point":{"dislike_reasons":[{"id":4,"name":"UP主:作者"},{"id":12,"name":" 此类内容过多 "},{"id":4,"name":"重复"},{"id":13,"name":""},{"id":"x","name":"坏"}],"feedbacks":[{"id":1,"name":"恐怖血腥"}]},"idx":1700000001},
           {"goto":"av","card_goto":"av","param":"170002","title":"只有 av 号","cover":"//i0.hdslb.com/b.jpg","args":{"up_id":10002,"up_name":"另一位"},"player_args":{"aid":170002,"duration":60},"desc":"另一位","idx":1700000002},
           {"goto":"av","card_goto":"ad_av","param":"3","title":"广告","args":{"up_id":3,"up_name":"广告主"},"player_args":{"duration":10},"idx":1700000003},
           {"goto":"av","card_goto":"av","param":"4","title":"推广","args":{"up_id":4,"up_name":"推广主"},"player_args":{"duration":10},"ad_info":{"creative_id":1},"idx":1700000004},
@@ -54,7 +56,13 @@ struct BiliAPIClientFeedTests {
         #expect(first.durationSeconds == 125)
         #expect(first.publishedAt != nil)
         #expect(first.recommendationReason == "已关注")
-        #expect(first.trackID == nil)
+        #expect(
+            first.dislikeReasons == [
+                try #require(RecommendationDislikeReason(id: 4, name: "UP主:作者")),
+                try #require(RecommendationDislikeReason(id: 12, name: "此类内容过多"))
+            ]
+        )
+        #expect(page.videos.last?.dislikeReasons == [])
         #expect(page.videos.last?.viewCount == nil)
         #expect(page.videos.last?.publishedAt == nil)
         #expect(page.continuation == nil)

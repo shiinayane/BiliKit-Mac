@@ -36,19 +36,21 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 并在 Composition 的 allowlist 内；`historyWrite` 只用于观看进度 heartbeat，
     /// 经独立的写授权器；`accountWrite` 是用户发起的账户写入，path 来自 `BiliAccountWritePath`，经账户写授权器并绑定
     /// 预期账户 mid（凭据属于其他账户时按凭据失效拒绝）。`appRead` 是 App 端（`app.bilibili.com`）读取，path 来自
-    /// `BiliAppReadPath`，总是经 App 授权器签名：有凭据时带 access_token，本地明确无凭据时匿名签名。需要认证的访问与
-    /// `appRead` 都绑定认证 epoch，见 `authenticatedSessionEpoch`。
+    /// `BiliAppReadPath`，总是经 App 授权器签名：有凭据时带 access_token，本地明确无凭据时匿名签名。`appWrite` 是用户
+    /// 发起的 App 端写入，path 来自 `BiliAppWritePath`，经 App 写授权器签名并绑定预期账户 mid，从不匿名。需要认证的
+    /// 访问与 `appRead` 都绑定认证 epoch，见 `authenticatedSessionEpoch`。
     enum RequestAccess: Sendable {
         case anonymous
         case accountRead(missingCredential: MissingCredentialBehavior)
         case historyWrite
         case accountWrite(expectedAccountID: Int64)
         case appRead
+        case appWrite(expectedAccountID: Int64)
 
         var requiresAuthentication: Bool {
             switch self {
             case .anonymous, .appRead: false
-            case .accountRead, .historyWrite, .accountWrite: true
+            case .accountRead, .historyWrite, .accountWrite, .appWrite: true
             }
         }
 
@@ -56,7 +58,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         var bindsAuthenticatedSession: Bool {
             switch self {
             case .anonymous: false
-            case .accountRead, .historyWrite, .accountWrite, .appRead: true
+            case .accountRead, .historyWrite, .accountWrite, .appRead, .appWrite: true
             }
         }
 
@@ -104,7 +106,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return url
     }()
-    /// App 端接口的唯一来源；与 `baseURL` 分开，`appRead` 之外的访问不会发往这里。
+    /// App 端接口的唯一来源；与 `baseURL` 分开，`appRead` 与 `appWrite` 之外的访问不会发往这里。
     private static let appBaseURL: URL = {
         guard let url = URL(string: "https://app.bilibili.com") else {
             preconditionFailure("Static App API base URL must be valid")
@@ -132,6 +134,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private let historyWriteAuthorizer: (any HTTPRequestAuthorizing)?
     private let accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
     private let appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)?
+    private let appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
     let userAgent = HTTPUserAgent.browserCompatible
     let decoder: JSONDecoder
     let timestampProvider: @Sendable () -> Int64
@@ -151,6 +154,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     var hasAccountAuthorizer: Bool { requestAuthorizer != nil }
     var hasHistoryWriteAuthorizer: Bool { historyWriteAuthorizer != nil }
     var hasAccountWriteAuthorizer: Bool { accountWriteAuthorizer != nil }
+    var hasAppWriteAuthorizer: Bool { appWriteAuthorizer != nil }
 
     /// `transportFactory` 由组合根提供用途专属 transport：初始化时取一次，每次认证会话失效时再取一个
     /// 干净实例替换旧的；不存在回落到 `URLSession.shared` 的默认值（见 SECURITY-MODEL §1）。
@@ -159,6 +163,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
+        appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         transportFactory: @escaping @Sendable () -> any HTTPTransport,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
@@ -172,6 +177,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         self.historyWriteAuthorizer = historyWriteAuthorizer
         self.accountWriteAuthorizer = accountWriteAuthorizer
         self.appRequestAuthorizer = appRequestAuthorizer
+        self.appWriteAuthorizer = appWriteAuthorizer
         self.timestampProvider = timestampProvider
         decoder = JSONDecoder()
     }
@@ -430,10 +436,12 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         case .accountRead: requestAuthorizer != nil
         case .historyWrite: historyWriteAuthorizer != nil
         case .accountWrite: accountWriteAuthorizer != nil
+        case .appWrite: appWriteAuthorizer != nil
         }
     }
 
-    /// 按 `access` 交给对应的授权器；账户写入另把预期账户 mid 作为绑定主体，调用前已由 `hasAuthorizer` 确认注入。
+    /// 按 `access` 交给对应的授权器；网页与 App 的账户写入另把预期账户 mid 作为绑定主体，调用前已由 `hasAuthorizer`
+    /// 确认注入。
     private func authorize(
         _ request: HTTPRequest,
         access: RequestAccess
@@ -448,6 +456,12 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         case .accountWrite(let expectedAccountID):
             guard let accountWriteAuthorizer else { break }
             return try await accountWriteAuthorizer.authorize(
+                request,
+                boundTo: String(expectedAccountID)
+            )
+        case .appWrite(let expectedAccountID):
+            guard let appWriteAuthorizer else { break }
+            return try await appWriteAuthorizer.authorize(
                 request,
                 boundTo: String(expectedAccountID)
             )

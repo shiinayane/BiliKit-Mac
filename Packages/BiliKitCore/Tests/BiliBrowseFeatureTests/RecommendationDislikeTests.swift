@@ -11,8 +11,8 @@ import Testing
 /// 首页推荐的「不感兴趣」只标显示中的条目，撤销只去掉同一份反馈；标记跟着卡片走（刷新后只留仍显示的，加载更多不动），
 /// 回滚只作用在改动时的同一份推荐工作集上。
 ///
-/// 标过的卡片留在原位、不可进入播放，菜单只剩「撤销不感兴趣」；没标过的卡片有「不感兴趣」子菜单的两个原因（推荐流没给
-/// 追踪 ID 时没有），读屏操作里带上父项的名字。
+/// 标过的卡片留在原位、不可进入播放，菜单只剩「撤销不感兴趣」；没标过的卡片有「不感兴趣」子菜单，子项是卡片给出的
+/// 原因（卡片没给原因时没有），读屏操作里带上父项的名字。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct RecommendationDislikeTests {
@@ -21,13 +21,20 @@ struct RecommendationDislikeTests {
     private static let secondBVID = "BV1RcmdSecond"
     private static let refreshedBVID = "BV1RcmdFresh"
     private static let nextPageBVID = "BV1RcmdNext"
+    /// 卡片给出的原因，与实测的取值同形。
+    private static let reasons = [
+        RecommendationDislikeReason(id: 1, name: "这个内容"),
+        RecommendationDislikeReason(id: 4, name: "UP主:作者")
+    ].compactMap(\.self)
+    private static var contentReason: RecommendationDislikeReason { reasons[0] }
+    private static var uploaderReason: RecommendationDislikeReason { reasons[1] }
 
     @Test
     func marksOnlyShownCardsAndUndoesTheSameFeedback() async throws {
         let model = await loadedModel()
-        let feedback = try Self.feedback(reason: .content)
-        let other = try Self.feedback(reason: .uploader)
-        let notShown = try Self.feedback(bvid: "BV1xx411c7mD", reason: .content)
+        let feedback = try Self.feedback(reason: Self.contentReason)
+        let other = try Self.feedback(reason: Self.uploaderReason)
+        let notShown = try Self.feedback(bvid: "BV1xx411c7mD", reason: Self.contentReason)
 
         #expect(model.markRecommendationDisliked(notShown) == nil)
         #expect(model.markRecommendationDisliked(feedback) != nil)
@@ -42,8 +49,8 @@ struct RecommendationDislikeTests {
     @Test
     func marksFollowTheCardsAcrossLoadMoreAndRefresh() async throws {
         let model = await loadedModel()
-        let kept = try Self.feedback(reason: .content)
-        let dropped = try Self.feedback(bvid: Self.secondBVID, reason: .uploader)
+        let kept = try Self.feedback(reason: Self.contentReason)
+        let dropped = try Self.feedback(bvid: Self.secondBVID, reason: Self.uploaderReason)
         #expect(model.markRecommendationDisliked(kept) != nil)
         #expect(model.markRecommendationDisliked(dropped) != nil)
 
@@ -62,7 +69,7 @@ struct RecommendationDislikeTests {
     @Test
     func revertUndoesOnlyItsOwnStepInTheSameWorkset() async throws {
         let model = await loadedModel()
-        let feedback = try Self.feedback(reason: .content)
+        let feedback = try Self.feedback(reason: Self.contentReason)
 
         let mark = try #require(model.markRecommendationDisliked(feedback))
         model.revertRecommendationDislike(mark)
@@ -86,7 +93,7 @@ struct RecommendationDislikeTests {
 
     @Test
     func dislikedCardStaysInPlaceUnavailableWithOnlyUndo() throws {
-        let feedback = try Self.feedback(reason: .uploader)
+        let feedback = try Self.feedback(reason: Self.uploaderReason)
         let video = Self.trackedVideo()
         let card = RecommendedNativeGridView.makePresentation(video, isDisliked: true)
         #expect(card.availability == .unavailable(badge: VideoCardMenuText.dislikedBadge))
@@ -107,7 +114,7 @@ struct RecommendationDislikeTests {
     }
 
     @Test
-    func shownCardOffersBothReasonsAsASubmenu() throws {
+    func shownCardOffersTheCardsReasonsAsASubmenu() throws {
         let video = Self.trackedVideo()
         let card = RecommendedNativeGridView.makePresentation(video, isDisliked: false)
         let writes = RecordedWrites()
@@ -121,28 +128,22 @@ struct RecommendationDislikeTests {
         )
         let notInterested = try #require(menu.items.first { !$0.submenu.isEmpty })
         #expect(notInterested.title == VideoCardMenuText.notInterested)
-        #expect(
-            notInterested.submenu.map(\.title)
-                == [
-                    VideoCardMenuText.notInterestedInContent,
-                    VideoCardMenuText.notInterestedInUploader
-                ]
-        )
+        #expect(notInterested.submenu.map(\.title) == ["这个内容", "UP主:作者"])
         #expect(
             menu.actionableItems.map(\.title).contains(
                 VideoCardMenuText.submenuActionTitle(
                     parent: VideoCardMenuText.notInterested,
-                    child: VideoCardMenuText.notInterestedInUploader
+                    child: "UP主:作者"
                 )
             )
         )
 
-        try #require(menu.enabledItem(id: "notInterestedInUploader")).action()
-        #expect(writes.disliked == [try Self.feedback(reason: .uploader)])
+        try #require(menu.enabledItem(id: "notInterested.4")).action()
+        #expect(writes.disliked == [try Self.feedback(reason: Self.uploaderReason)])
     }
 
     @Test
-    func noTrackingIDMeansNoFeedback() throws {
+    func cardWithoutReasonsHasNoFeedback() throws {
         let video = Self.trackedFixture.recommendedVideo
         let card = RecommendedNativeGridView.makePresentation(video, isDisliked: false)
         let writes = RecordedWrites()
@@ -195,7 +196,7 @@ struct RecommendationDislikeTests {
             durationSeconds: video.durationSeconds,
             publishedAt: video.publishedAt,
             recommendationReason: nil,
-            trackID: "track"
+            dislikeReasons: reasons
         )
     }
 
@@ -203,14 +204,6 @@ struct RecommendationDislikeTests {
         bvid: String = trackedFixture.bvid,
         reason: RecommendationDislikeReason
     ) throws -> RecommendationFeedback {
-        let target = try #require(VideoWriteTarget(bvid: bvid))
-        return try #require(
-            RecommendationFeedback(
-                target: target,
-                uploaderID: trackedFixture.owner.id,
-                trackID: "track",
-                reason: reason
-            )
-        )
+        RecommendationFeedback(target: try #require(VideoWriteTarget(bvid: bvid)), reason: reason)
     }
 }

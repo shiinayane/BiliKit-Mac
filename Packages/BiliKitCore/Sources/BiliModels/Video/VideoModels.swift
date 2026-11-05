@@ -144,8 +144,8 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
     public let durationSeconds: Int
     public let publishedAt: Date?
     public let recommendationReason: String?
-    /// 网页推荐流的追踪 ID，「不感兴趣」反馈要带上；App 端推荐不提供，为 nil 时这一条不提供反馈。
-    public let trackID: String?
+    /// 卡片给出的「不感兴趣」原因，按卡片顺序；为空时这一条不提供反馈。
+    public let dislikeReasons: [RecommendationDislikeReason]
 
     public init(
         bvid: String,
@@ -157,7 +157,7 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
         durationSeconds: Int,
         publishedAt: Date?,
         recommendationReason: String?,
-        trackID: String? = nil
+        dislikeReasons: [RecommendationDislikeReason] = []
     ) {
         self.bvid = bvid
         self.title = title
@@ -168,7 +168,22 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
         self.recommendationReason = recommendationReason
-        self.trackID = trackID
+        self.dislikeReasons = dislikeReasons
+    }
+}
+
+/// 首页推荐卡片给出的一个「不感兴趣」原因：反馈接口的 `reason_id` 与卡片上的名字（如「UP主:某某」「此类内容过多」）。
+///
+/// 名字是服务端给的中文，原样显示、不本地化；id 与名字都由卡片给出，客户端不认识也不假设具体取值。id 不是正数或名字
+/// 为空时为 nil。
+public struct RecommendationDislikeReason: Sendable, Hashable {
+    public let id: Int64
+    public let name: String
+
+    public init?(id: Int64, name: String) {
+        guard id > 0, !name.isEmpty else { return nil }
+        self.id = id
+        self.name = name
     }
 }
 

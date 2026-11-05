@@ -278,11 +278,11 @@ actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepos
     }
 
     func dislike(_ feedback: RecommendationFeedback, accountID: Int64) async throws {
-        try await record("dislike \(feedback.target.bvid) \(feedback.reason) \(accountID)")
+        try await record("dislike \(feedback.target.bvid) \(feedback.reason.id) \(accountID)")
     }
 
     func cancelDislike(_ feedback: RecommendationFeedback, accountID: Int64) async throws {
-        try await record("undislike \(feedback.target.bvid) \(feedback.reason) \(accountID)")
+        try await record("undislike \(feedback.target.bvid) \(feedback.reason.id) \(accountID)")
     }
 
     func waitForCallCount(_ target: Int) async {

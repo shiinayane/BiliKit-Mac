@@ -8,13 +8,6 @@ import Foundation
 /// 不可用只在窗口已确认未登录时按无凭据处理，都不降级为匿名签名。签名后的 URL 本身就是凭据，只能原样发出，见
 /// SECURITY-MODEL §3。无状态，不缓存凭据或签名。
 public struct BiliAppRequestAuthorizer: HTTPSigningRequestAuthorizing, Sendable {
-    /// 唯一放行的主机；不用后缀匹配，见 SECURITY-MODEL §3。
-    private static let host = "app.bilibili.com"
-    /// 由授权器写入的参数；调用方自带任何一个都按请求不合规拒绝，不能借它们夹带或覆盖凭据与签名。
-    private static let reservedParameterNames: Set<String> = [
-        "access_key", "appkey", "ts", "sign", "mobile_access_key"
-    ]
-
     private let store: any AccountCredentialStoring
     private let allowedPaths: Set<String>
     private let isConfirmedSignedOut: @Sendable () -> Bool
@@ -43,9 +36,11 @@ public struct BiliAppRequestAuthorizer: HTTPSigningRequestAuthorizing, Sendable 
     }
 
     public func authorize(_ request: HTTPRequest) async throws -> SignedHTTPRequest {
-        guard var components = URLComponents(url: request.url, resolvingAgainstBaseURL: false),
-            isAllowed(request, components: components),
-            var parameters = Self.parameters(of: components)
+        guard
+            let target = AppRequestAuthorizationSupport.validatedGET(
+                request,
+                allowedPaths: allowedPaths
+            )
         else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
@@ -59,55 +54,17 @@ public struct BiliAppRequestAuthorizer: HTTPSigningRequestAuthorizing, Sendable 
         } catch BiliRequestAuthorizationError.missingCredential {
             credential = nil
         }
+        var parameters = target.parameters
         if let credential {
             parameters["access_key"] = credential.appAccessToken.value
         }
-
-        guard
-            let signedQuery = BiliAppSigning.signed(
-                parameters,
-                timestamp: Int64(Date.now.timeIntervalSince1970)
-            )
-        else {
-            throw BiliRequestAuthorizationError.requestNotAllowed
-        }
-        components.percentEncodedQuery = signedQuery
-        guard let url = components.url else {
-            throw BiliRequestAuthorizationError.requestNotAllowed
-        }
         return SignedHTTPRequest(
-            request: HTTPRequest(
-                url: url,
-                method: request.method,
-                headers: request.headers,
-                body: request.body
+            request: try AppRequestAuthorizationSupport.signedRequest(
+                request,
+                components: target.components,
+                parameters: parameters
             ),
             carriesCredential: credential != nil
         )
-    }
-
-    /// 精确 host、端口与 GET，path 必须在 allowlist 里且编码规范，没有 userinfo、fragment 与正文，见 SECURITY-MODEL §3。
-    private func isAllowed(_ request: HTTPRequest, components: URLComponents) -> Bool {
-        components.scheme?.lowercased() == "https"
-            && components.host?.lowercased() == Self.host
-            && (components.port == nil || components.port == 443)
-            && components.user == nil
-            && components.password == nil
-            && allowedPaths.contains(components.path)
-            && components.percentEncodedPath == components.path
-            && components.fragment == nil
-            && request.method == .get
-            && request.body == nil
-    }
-
-    /// 调用方给出的 query 参数；同名重复、无法解码或含保留参数时为 nil。
-    private static func parameters(of components: URLComponents) -> [String: String]? {
-        guard let query = components.percentEncodedQuery, !query.isEmpty else { return [:] }
-        guard let fields = WriteRequestAuthorizationSupport.decodedUniqueFields(query),
-            reservedParameterNames.isDisjoint(with: fields.keys)
-        else {
-            return nil
-        }
-        return fields
     }
 }

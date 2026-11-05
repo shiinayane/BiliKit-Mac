@@ -23,7 +23,17 @@ struct AppFeedPayload: Decodable, Sendable {
 ///
 /// 丢弃：`goto` 不是 `av`；`card_goto` 含 `ad` 或带 `ad_info`（商业推广）；没有 `player_args`（参考实现观察到充电专属
 /// 稿件没有它，不能直接播放）；av 号、标题、UP 主或时长缺失。BV 号优先用 `bvid`，没有时由 av 号本地换算。
+///
+/// 「不感兴趣」的原因取 `three_point.dislike_reasons`；同一处的 `feedbacks`（举报类反馈）不解码。原因形状不对只丢这一个
+/// 原因，卡片照常保留。
 struct AppFeedItemPayload: Decodable, Sendable {
+    /// 一张卡片最多保留的原因数：实测每张卡片给 4 个，超出说明形状变了，多出的不进菜单。
+    private static let maximumDislikeReasonCount = 8
+    /// 原因名字的长度上限。
+    ///
+    /// 最长的原因是「UP主」加上 UP 主名字，远短于它；超出的原因整个丢弃，不截断成误导的半句。
+    private static let maximumDislikeReasonNameLength = 64
+
     let goto: String?
     let cardGoto: String?
     let hasAdInfo: Bool
@@ -41,6 +51,7 @@ struct AppFeedItemPayload: Decodable, Sendable {
     let reasons: [String]
     /// 续传游标；整批里最后一张卡片的值就是下一批请求的 `idx`。
     let index: Int64?
+    let dislikeReasons: [DislikeReason]
 
     private enum CodingKeys: String, CodingKey {
         case goto
@@ -61,6 +72,20 @@ struct AppFeedItemPayload: Decodable, Sendable {
         case topReason = "top_rcmd_reason"
         case reason = "rcmd_reason"
         case index = "idx"
+        case threePoint = "three_point"
+    }
+
+    private struct ThreePoint: Decodable, Sendable {
+        let dislikeReasons: [LossyDecodable<DislikeReason>]?
+
+        private enum CodingKeys: String, CodingKey {
+            case dislikeReasons = "dislike_reasons"
+        }
+    }
+
+    struct DislikeReason: Decodable, Sendable {
+        let id: Int64?
+        let name: String?
     }
 
     private struct Arguments: Decodable, Sendable {
@@ -112,6 +137,9 @@ struct AppFeedItemPayload: Decodable, Sendable {
             container.decodeLossyIfPresent(String.self, forKey: $0)
         }
         index = container.decodeLossyIfPresent(Int64.self, forKey: .index)
+        dislikeReasons =
+            container.decodeLossyIfPresent(ThreePoint.self, forKey: .threePoint)?
+            .dislikeReasons?.compactMap(\.value) ?? []
     }
 
     /// `now` 是收到这批响应的时刻，相对日期（“3小时前”“昨天”）以它为准。
@@ -149,7 +177,27 @@ struct AppFeedItemPayload: Decodable, Sendable {
             publishedAt: description.flatMap {
                 AppFeedCardText.publishedDate(inDescription: $0, now: now)
             },
-            recommendationReason: reason
+            recommendationReason: reason,
+            dislikeReasons: Self.models(of: dislikeReasons)
         )
+    }
+
+    /// 去掉 HTML 与首尾空白后的原因，按卡片顺序；id 重复的只留第一个，名字为空或过长的丢弃，最多
+    /// `maximumDislikeReasonCount` 个。
+    private static func models(of reasons: [DislikeReason]) -> [RecommendationDislikeReason] {
+        var seen: Set<Int64> = []
+        var models: [RecommendationDislikeReason] = []
+        for reason in reasons where models.count < maximumDislikeReasonCount {
+            guard let id = reason.id,
+                let name = reason.name.map({
+                    RemoteHTMLText.plainText($0).trimmingCharacters(in: .whitespacesAndNewlines)
+                }),
+                name.count <= maximumDislikeReasonNameLength,
+                let model = RecommendationDislikeReason(id: id, name: name),
+                seen.insert(id).inserted
+            else { continue }
+            models.append(model)
+        }
+        return models
     }
 }

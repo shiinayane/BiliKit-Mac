@@ -244,6 +244,7 @@ extension BiliAPIClient {
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
+        appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -253,6 +254,7 @@ extension BiliAPIClient {
             historyWriteAuthorizer: historyWriteAuthorizer,
             accountWriteAuthorizer: accountWriteAuthorizer,
             appRequestAuthorizer: appRequestAuthorizer,
+            appWriteAuthorizer: appWriteAuthorizer,
             transportFactory: { transport },
             timestampProvider: timestampProvider
         )
@@ -357,7 +359,7 @@ actor StubAppAuthorizer: HTTPSigningRequestAuthorizing {
     }
 }
 
-/// 账户写授权器的替身：记录每次授权的请求与绑定的主体，结果与挂起规则同 `StubAuthorizer`（委托给它）。
+/// 网页与 App 账户写授权器的替身：记录每次授权的请求与绑定的主体，结果与挂起规则同 `StubAuthorizer`（委托给它）。
 actor StubSubjectBoundAuthorizer: HTTPSubjectBoundRequestAuthorizing {
     private let base: StubAuthorizer
     private(set) var subjects: [String] = []
