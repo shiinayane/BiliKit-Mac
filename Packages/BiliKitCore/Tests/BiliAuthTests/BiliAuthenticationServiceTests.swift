@@ -74,6 +74,32 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.requestQRCode() == .failed(.network))
     }
 
+    /// 启动恢复只在临近到期时续期；之后的复核确认仍登录时强制续期一次，续期写回后才发布已登录，复核后重载的页面因此
+    /// 用上新凭据（只有 token 失效、Cookie 仍有效的凭据靠它恢复）。
+    @Test
+    func revalidationRenewsTheCredentialBeforePublishingSignedIn() async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: "42")
+        )
+        let renewalTransport = RecordingAuthTransport(
+            responses: [try fixtureResponse("credential-renewal-success")]
+        )
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true), navigationResponse(isLogin: true)]
+            ),
+            renewalTransport: renewalTransport
+        )
+
+        #expect(await service.restore() == .signedIn(nil))
+        #expect(await renewalTransport.requests.isEmpty)
+
+        #expect(await service.restore() == .signedIn(nil))
+        #expect(await renewalTransport.requests.count == 1)
+        #expect(try store.load()?.value(for: .session) == "FIXTURE_RENEWED_SESSDATA_VALUE")
+    }
+
     @Test(arguments: RestoreCase.allCases)
     func restoreInvalidatesAuthenticatedAPIsOnlyForLocallyObservedSessionLoss(
         _ restoreCase: RestoreCase
@@ -201,6 +227,7 @@ struct BiliAuthenticationServiceTests {
         store: MemoryAccountCredentialStore,
         qrTransport: RecordingAuthTransport = RecordingAuthTransport(),
         validationTransport: RecordingAuthTransport = RecordingAuthTransport(),
+        renewalTransport: RecordingAuthTransport = RecordingAuthTransport(),
         invalidators: [any AuthenticatedSessionInvalidating] = []
     ) -> BiliAuthenticationService {
         BiliAuthenticationService(
@@ -218,6 +245,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 makeCredentialAuthorizer(store: store)
             },
+            credentialRenewal: AccountCredentialRenewal(transport: renewalTransport, store: store),
             additionalSessionInvalidators: invalidators
         )
     }

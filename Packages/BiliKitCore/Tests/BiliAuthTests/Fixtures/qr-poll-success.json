@@ -6,12 +6,12 @@
     "is_new": 0,
     "mid": 42,
     "access_token": "ffffffffffffffffffffffffffffffff",
-    "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
+    "refresh_token": "00000000000000000000000000000000",
     "expires_in": 15552000,
     "token_info": {
       "mid": 42,
       "access_token": "ffffffffffffffffffffffffffffffff",
-      "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
+      "refresh_token": "00000000000000000000000000000000",
       "expires_in": 15552000,
       "region": "FX",
       "store_region": "FX"

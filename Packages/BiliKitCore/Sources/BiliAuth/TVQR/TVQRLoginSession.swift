@@ -20,8 +20,6 @@ public actor TVQRLoginSession {
     private static let qrCodePath = "/x/passport-tv-login/h5/qrcode/auth"
     /// 取码与轮询都要带的设备标识；TV 协议接受 `0`，不发送任何真实设备信息。
     private static let localID = "0"
-    /// Cookie 唯一接受的作用域：轮询成功响应的 `cookie_info.domains` 必须包含它，见 `pendingCredential`。
-    private static let cookieDomain = ".bilibili.com"
 
     public private(set) var state: TVQRLoginState = .signedOut
 
@@ -149,8 +147,8 @@ public actor TVQRLoginSession {
             case 0:
                 // 成功正文另行解码：结构不符只是没有候选凭据，后续校验以 `incompleteCredential` 失败关闭。
                 let success = try? decoder.decode(PollSuccessEnvelope.self, from: response.body)
-                pendingCredential = success.flatMap {
-                    Self.pendingCredential(from: $0.data, generation: challenge.generation)
+                pendingCredential = success?.data.credential(receivedAt: .now).map {
+                    PendingCredential(generation: challenge.generation, credential: $0.credential)
                 }
                 activeChallenge = nil
                 state = .awaitingCredentialValidation
@@ -251,25 +249,14 @@ public actor TVQRLoginSession {
         parameters: [String: String]
     ) async throws -> HTTPResponse {
         guard
-            let form = BiliAppSigning.signed(
-                parameters,
-                timestamp: Int64(Date.now.timeIntervalSince1970)
+            let request = AuthenticationHTTP.signedFormRequest(
+                url: try endpoint(path: path),
+                parameters: parameters
             )
         else {
             throw TVQRLoginFailure.invalidResponse
         }
-        return try await send(
-            HTTPRequest(
-                url: try endpoint(path: path),
-                method: .post,
-                headers: [
-                    "Accept": "application/json",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "User-Agent": HTTPUserAgent.short
-                ],
-                body: Data(form.utf8)
-            )
-        )
+        return try await send(request)
     }
 
     private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -372,64 +359,6 @@ public actor TVQRLoginSession {
         }
         return true
     }
-
-    /// 只从轮询成功正文的 `cookie_info` 取白名单 Cookie，并取同一正文的 `access_token`；Cookie 缺任何一个、重名、`mid`
-    /// 与 `DedeUserID` 不一致、token 形状或有效期不合规都不产生候选凭据，见 SECURITY-MODEL §1。
-    ///
-    /// token 的到期时刻按收到响应的时刻加 `expires_in` 计算。
-    ///
-    /// 正文只给每个 Cookie 的名称、值、到期时间与两个标志，作用域是另一个列表。domain、path 与 Secure 因此由这里
-    /// 填写，不是服务端声明：domain 固定为 `.bilibili.com`（且必须出现在 `domains` 里），path 固定为 `/`，Secure 记为
-    /// 真，因为这些 Cookie 只经授权器发往 HTTPS 的精确主机。`AccountCredential` 之后的校验对这几项只是复核这里写入的值。
-    private static func pendingCredential(
-        from data: PollSuccessData,
-        generation: UInt64
-    ) -> PendingCredential? {
-        guard data.cookieInfo.domains.contains(cookieDomain), data.mid > 0 else {
-            return nil
-        }
-        let allowedNames = Set(WebCredentialCookieName.allCases.map(\.rawValue))
-        let cookies = data.cookieInfo.cookies.filter { allowedNames.contains($0.name) }
-        guard cookies.count == allowedNames.count,
-            Set(cookies.map(\.name)) == allowedNames,
-            cookies.first(where: { $0.name == WebCredentialCookieName.userID.rawValue })?.value
-                == String(data.mid)
-        else {
-            return nil
-        }
-        let credentialCookies: [WebCredentialCookie] = cookies.compactMap { cookie in
-            guard let name = WebCredentialCookieName(rawValue: cookie.name), cookie.expires > 0
-            else {
-                return nil
-            }
-            return WebCredentialCookie(
-                name: name,
-                value: cookie.value,
-                domain: cookieDomain,
-                path: "/",
-                isSecure: true,
-                isHTTPOnly: cookie.httpOnly != 0,
-                expiresAt: Date(timeIntervalSince1970: TimeInterval(cookie.expires))
-            )
-        }
-        guard data.expiresIn > 0 else { return nil }
-        let appAccessToken = AppAccessToken(
-            value: data.accessToken,
-            expiresAt: Date.now.addingTimeInterval(TimeInterval(data.expiresIn))
-        )
-        guard
-            let credential = try? AccountCredential(
-                cookies: credentialCookies,
-                appAccessToken: appAccessToken
-            )
-        else {
-            return nil
-        }
-        return PendingCredential(
-            generation: generation,
-            credential: credential
-        )
-    }
 }
 
 private struct ActiveChallenge: Sendable {
@@ -466,41 +395,5 @@ private struct PollStatusEnvelope: Decodable, Sendable {
 }
 
 private struct PollSuccessEnvelope: Decodable, Sendable {
-    let data: PollSuccessData
-}
-
-/// 只解码 `mid`、`access_token`、`expires_in` 与 `cookie_info`；refresh_token、`token_info`（与顶层重复的副本）、`sso`
-/// 与 `hint` 不解码，不进入内存模型。
-private struct PollSuccessData: Decodable, Sendable {
-    let mid: Int64
-    let accessToken: String
-    let expiresIn: Int64
-    let cookieInfo: PollCookieInfo
-
-    private enum CodingKeys: String, CodingKey {
-        case mid
-        case accessToken = "access_token"
-        case expiresIn = "expires_in"
-        case cookieInfo = "cookie_info"
-    }
-}
-
-private struct PollCookieInfo: Decodable, Sendable {
-    let cookies: [PollCookie]
-    let domains: [String]
-}
-
-/// `secure` 字段不读：Secure 由 `pendingCredential` 统一记为真，理由见那里。
-private struct PollCookie: Decodable, Sendable {
-    let name: String
-    let value: String
-    let httpOnly: Int
-    let expires: Int64
-
-    private enum CodingKeys: String, CodingKey {
-        case name
-        case value
-        case httpOnly = "http_only"
-        case expires
-    }
+    let data: IssuedCredentialPayload
 }

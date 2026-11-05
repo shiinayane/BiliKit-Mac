@@ -5,7 +5,8 @@ import Foundation
 /// 认证流程 owner，串行协调 QR session、凭据验证、Keychain authorizer 与登出。
 ///
 /// `generation` 隔离旧操作；`requiresLogout` 阻止凭据状态不确定时伪装成安全 signed-out。
-/// 新 QR 登录须校验并持久化成功才发布 `.signedIn`；恢复路径会重新验证既存凭据。
+/// 新 QR 登录须校验并持久化成功才发布 `.signedIn`；恢复路径会重新验证既存凭据，确认仍登录后先经进程共用的
+/// `AccountCredentialRenewal` 按需续期，续期结束才发布 `.signedIn`（复核后重载的页面因此用上续期后的凭据）。
 public actor BiliAuthenticationService: AuthenticationServicing {
     /// 会话校验（nav）的 path：恢复与换号复核唯一按账户读取的请求，App Composition 用它声明本服务授权器的
     /// allowlist。
@@ -19,6 +20,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     private let loginSessionFactory: @Sendable () -> TVQRLoginSession
     private let authorizerFactory: @Sendable () -> BiliCredentialRequestAuthorizer
     private let additionalSessionInvalidators: [any AuthenticatedSessionInvalidating]
+    private let credentialRenewal: AccountCredentialRenewal
 
     private var state: AuthenticationState = .signedOut
     private var qrCode: TVQRCode?
@@ -29,9 +31,16 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     /// 凭据可能仍在 Keychain（已登录、复核中或复核失败）时为 true：期间拒绝新的 QR 登录与取消登录，
     /// 只在登出成功、复核确认未登录，或扫码登录的远端校验判定未登录时清除。
     private var requiresLogout = false
+    /// 本窗口第一次 `restore()`（启动恢复）开始时置为 true。
+    ///
+    /// 之后的 `restore()` 都是复核或用户重试，确认仍登录时强制续期一次，而不是只在临近到期时续期，见
+    /// `AccountCredentialRenewal.Trigger`。
+    private var hasStartedInitialRestore = false
 
+    /// `credentialRenewal` 是进程唯一的续期 owner，所有窗口传同一个实例。
     public init(
         accountReadAllowedPaths: Set<String>,
+        credentialRenewal: AccountCredentialRenewal,
         additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
         loginSession = TVQRLoginSession()
@@ -44,6 +53,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
                 allowedPaths: accountReadAllowedPaths
             )
         }
+        self.credentialRenewal = credentialRenewal
         self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 
@@ -52,27 +62,37 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         authorizer: BiliCredentialRequestAuthorizer,
         loginSessionFactory: @escaping @Sendable () -> TVQRLoginSession,
         authorizerFactory: @escaping @Sendable () -> BiliCredentialRequestAuthorizer,
+        credentialRenewal: AccountCredentialRenewal,
         additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
         self.loginSession = loginSession
         self.authorizer = authorizer
         self.loginSessionFactory = loginSessionFactory
         self.authorizerFactory = authorizerFactory
+        self.credentialRenewal = credentialRenewal
         self.additionalSessionInvalidators = additionalSessionInvalidators
     }
 
     /// 从 Keychain 恢复后再次向登录态 endpoint 验证；临时网络失败不会删除凭据。
+    ///
+    /// 第一次调用（启动）在临近到期时续期，之后的调用（复核、重试）强制续期一次。
     public func restore() async -> AuthenticationState {
-        await restore(propagatesSessionInvalidation: true)
+        let renewal: AccountCredentialRenewal.Trigger =
+            hasStartedInitialRestore ? .forced : .nearExpiry
+        hasStartedInitialRestore = true
+        return await restore(propagatesSessionInvalidation: true, renewal: renewal)
     }
 
     /// 其他窗口已经推进全局 transport epoch；这里只复核凭据，避免重复传播同一变化。
+    ///
+    /// 只在临近到期时续期：账户变化不是凭据失败。
     public func restoreAfterExternalSessionChange() async -> AuthenticationState {
-        await restore(propagatesSessionInvalidation: false)
+        await restore(propagatesSessionInvalidation: false, renewal: .nearExpiry)
     }
 
     private func restore(
-        propagatesSessionInvalidation: Bool
+        propagatesSessionInvalidation: Bool,
+        renewal: AccountCredentialRenewal.Trigger
     ) async -> AuthenticationState {
         guard state != .signingOut else { return state }
         generation &+= 1
@@ -100,6 +120,8 @@ public actor BiliAuthenticationService: AuthenticationServicing {
                 requiresLogout = false
                 state = .signedOut
             case .signedIn(let identity):
+                await credentialRenewal.renewIfNeeded(renewal)
+                guard generation == operationGeneration else { return state }
                 requiresLogout = true
                 state = .signedIn(identity)
             }

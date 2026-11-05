@@ -1,12 +1,13 @@
 import BiliAPI
 import BiliApplication
+import BiliAuth
 import BiliPlayback
 import Foundation
 
 /// 进程级组装：整个 App 生命周期只有一份，由 `BiliKitMacApp` 持有，所有窗口共享。
 ///
 /// 拥有账户会话协调器（窗口间广播账户变化、推进认证 epoch）、唯一的观看进度 writer（构造时就登记进账户会话，
-/// 不存在“先准备再读取”的顺序）、窗口间的账户写入效果集线器、设置与线路测速、系统 Now Playing、本机搜索历史与更新器。不拥有任何窗口的
+/// 不存在“先准备再读取”的顺序）、窗口间的账户写入效果集线器、凭据续期、设置与线路测速、系统 Now Playing、本机搜索历史与更新器。不拥有任何窗口的
 /// 对象图：窗口组装（`makeWindow()` 构造的 `WindowComposition`）拿到这些共享对象的引用，各自注册、注销与清理。进程退出前不关闭；
 /// Now Playing 的封面管线与各 client 随进程释放。
 @MainActor
@@ -20,6 +21,8 @@ final class ProcessComposition {
     let updater: AppUpdater
     /// 把一个窗口确认成功的账户写入效果转给其他窗口；窗口打开时登记、关闭时注销。
     let accountWriteEffects = AccountWriteEffectHub()
+    /// 进程唯一的凭据续期 owner：各窗口的认证服务共用它，续期因此串行，不会拿已轮换的 refresh_token 再发。
+    let credentialRenewal = AccountCredentialRenewal()
 
     init(
         accountSession: AccountSessionCoordinator,

@@ -285,6 +285,7 @@ private func makeCompositionFixtureCredential() throws -> AccountCredential {
         },
         appAccessToken: AppAccessToken(
             value: String(repeating: "f", count: 32),
+            refreshToken: String(repeating: "0", count: 32),
             expiresAt: Date(timeIntervalSince1970: 4_102_444_800)
         )
     )

@@ -17,7 +17,7 @@ struct AccountCredentialTests {
         let decoded = try AccountCredentialCodec.decode(encoded)
 
         #expect(decoded == credential)
-        #expect(String(decoding: encoded, as: UTF8.self).contains(#""version":2"#))
+        #expect(String(decoding: encoded, as: UTF8.self).contains(#""version":3"#))
         let diagnostics =
             String(describing: credential)
             + String(reflecting: credential)
@@ -25,18 +25,20 @@ struct AccountCredentialTests {
             + String(reflecting: credential.appAccessToken)
         #expect(!diagnostics.contains("FIXTURE_"))
         #expect(!diagnostics.contains(fixtureAppAccessTokenValue))
+        #expect(!diagnostics.contains(fixtureAppRefreshTokenValue))
         var dumped = ""
         dump(credential, to: &dumped)
         #expect(!dumped.contains("FIXTURE_"))
         #expect(!dumped.contains(fixtureAppAccessTokenValue))
+        #expect(!dumped.contains(fixtureAppRefreshTokenValue))
     }
 
-    /// 只有 Cookie 的版本 1 凭据不再被接受：store 把它当损坏凭据删除，用户重新登录一次。
-    @Test
-    func rejectsCookieOnlyVersionOneEnvelope() {
-        let data = Data(#"{"cookies":[],"version":1}"#.utf8)
+    /// 只有 Cookie 的版本 1 与不含 refresh_token 的版本 2 不再被接受：store 把它们当损坏凭据删除，用户重新登录一次。
+    @Test(arguments: [1, 2])
+    func rejectsEnvelopesWithoutARefreshToken(version: Int) {
+        let data = Data(#"{"cookies":[],"version":\#(version)}"#.utf8)
 
-        #expect(throws: AccountCredentialCodingError.unsupportedVersion(1)) {
+        #expect(throws: AccountCredentialCodingError.unsupportedVersion(version)) {
             try AccountCredentialCodec.decode(data)
         }
     }
@@ -49,6 +51,7 @@ struct AccountCredentialTests {
             cookies: cookies,
             appAccessToken: AppAccessToken(
                 value: fixtureAppAccessTokenValue,
+                refreshToken: fixtureAppRefreshTokenValue,
                 expiresAt: Date(timeIntervalSince1970: 1_700_000_000)
             )
         )
@@ -65,11 +68,22 @@ struct AccountCredentialTests {
         #expect(throws: AccountCredentialCodingError.invalidCredential) {
             try AccountCredential(cookies: Array(valid.dropLast()), appAccessToken: token)
         }
-        #expect(throws: AccountCredentialCodingError.invalidCredential) {
-            try AccountCredential(
-                cookies: valid,
-                appAccessToken: AppAccessToken(value: "FIXTURE", expiresAt: token.expiresAt)
-            )
+        for malformed in [
+            AppAccessToken(
+                value: "FIXTURE",
+                refreshToken: token.refreshToken,
+                expiresAt: token.expiresAt
+            ),
+            AppAccessToken(
+                value: "FIXTURE+ACCESS/TOKEN=" + String(repeating: "0", count: 32),
+                refreshToken: token.refreshToken,
+                expiresAt: token.expiresAt
+            ),
+            AppAccessToken(value: token.value, refreshToken: "FIXTURE", expiresAt: token.expiresAt)
+        ] {
+            #expect(throws: AccountCredentialCodingError.invalidCredential) {
+                try AccountCredential(cookies: valid, appAccessToken: malformed)
+            }
         }
 
         var insecure = valid

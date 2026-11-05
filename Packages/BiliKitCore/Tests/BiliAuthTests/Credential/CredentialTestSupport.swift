@@ -24,12 +24,18 @@ func makeFixtureCredential(
                 expiresAt: expiresAt
             )
         },
-        appAccessToken: AppAccessToken(value: fixtureAppAccessTokenValue, expiresAt: expiresAt)
+        appAccessToken: AppAccessToken(
+            value: fixtureAppAccessTokenValue,
+            refreshToken: fixtureAppRefreshTokenValue,
+            expiresAt: expiresAt
+        )
     )
 }
 
 /// 测试凭据的 access_token：32 个 `f`，满足十六进制形状，也是秘密扫描放行的假值。
 let fixtureAppAccessTokenValue = String(repeating: "f", count: 32)
+/// 测试凭据的 refresh_token：32 个 `0`，理由同上。
+let fixtureAppRefreshTokenValue = String(repeating: "0", count: 32)
 
 /// 账户会话校验（nav）授权器放行的 path；本 target 的读授权器测试与认证服务测试共用。
 let navigationAllowedPaths: Set<String> = [

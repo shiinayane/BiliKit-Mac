@@ -86,6 +86,7 @@ extension WindowAdapters {
         )
         let authenticationService = BiliAuthenticationService(
             accountReadAllowedPaths: LiveAPIClients.accountSessionValidationAllowedPaths,
+            credentialRenewal: process.credentialRenewal,
             additionalSessionInvalidators: [process.accountSession]
         )
         // 记录在途 seek 的子类：播放器浮层据此在 seek 未落地时转圈，见 `SeekTrackingPlayer`。

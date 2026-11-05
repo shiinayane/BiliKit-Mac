@@ -31,17 +31,17 @@
 
 | 资产 | 规则 |
 | --- | --- |
-| Web Cookie | 只接受 TV 端扫码轮询成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文的 `mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
+| Web Cookie | 只接受 TV 端扫码轮询成功或续期成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文 `token_info.mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
 | `auth_code`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `TVQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `access_token` | 只接受同一份轮询成功正文顶层的 `access_token`（32 个十六进制字符）与 `expires_in`（正数，到期时刻按收到响应时计算）；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query（§3） |
-| `refresh_token` | 不读取、不保存、不使用，不实现自动刷新；`token_info`、`sso` 里的副本同样不解码 |
+| `access_token` | 只接受同一份成功正文 `token_info` 里的 `access_token`（扫码签发为 32 个十六进制字符，续期签发约 220 个；只接受 32–512 个字母、数字、`-` 与 `_`，不需要转义也不会改变 query 结构）与 `expires_in`（正数，到期时刻按收到响应时计算）；轮询正文顶层的副本不解码；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query（§3） |
+| `refresh_token` | 只接受同一份 `token_info` 里的 `refresh_token`（32 个十六进制字符），与 access_token 同存同删；只由续期放进发往 `passport.bilibili.com` 的续期请求（§2），不进入任何业务请求；`sso` 等其他字段不解码 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
 - 持久秘密只存 Keychain：Security.framework generic-password、固定 service/account、
   `kSecUseDataProtectionKeychain`、`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`、非 synchronizable，
-  保存一个版本化 envelope（版本 2：Cookie 加 `access_token`）；解码后重新校验名称、domain、path、Secure、值字符与大小
-  以及 token 形状（domain、path、Secure 来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。读到只有 Cookie 的
-  版本 1 按损坏凭据删除，用户重新登录一次；旧版 App 读到版本 2 同样会删除它。
+  保存一个版本化 envelope（版本 3：Cookie 加 `access_token` 与 `refresh_token`）；解码后重新校验名称、domain、path、Secure、
+  值字符与大小以及 token 形状（domain、path、Secure 来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。读到只有
+  Cookie 的版本 1 或不含 refresh_token 的版本 2 按损坏凭据删除，用户重新登录一次；旧版 App 读到版本 3 同样会删除它。
 - 凭据类型的 `description`／Mirror 不展示值。UserDefaults、文件、fixture、日志、截图、崩溃信息、
   App 恢复状态和验证记录都不得出现 Cookie、QR key、token 或完整认证 URL。
 - Cookie、QR key、Keychain 类型、endpoint DTO 不越过 `BiliAuth`／`BiliAPI` 进入 Application 或 Feature。
@@ -60,6 +60,12 @@
 - 成功后先在内存组 Cookie 请求 `/x/web-interface/nav`，`isLogin=true` 才在同一 actor generation 内
   写入 Keychain；旧 generation、取消、过期、校验或存储失败都清除临时秘密，不能返回登录成功。
 - 轮询有最小间隔、总时限和次数上限；ViewModel 拥有 Task，actor 用 generation 与 poll ID 隔离旧结果。
+- 续期（`AccountCredentialRenewal`，进程唯一、串行）：确认仍登录后，启动恢复只在凭据离到期（token 与各 Cookie 里最早的
+  到期时刻）不足 30 天时续期，之后的复核强制续期一次（10 分钟内只一次），其他窗口换号后的复核不续期。请求是发往
+  `https://passport.bilibili.com/x/passport-login/oauth2/refresh_token` 的 APP 签名 POST，只带 Keychain 里同一份凭据的
+  `access_key` 与 `refresh_token`。成功正文按上表同一规则校验成新凭据，账户必须与原凭据相同，写回前再读一次 Keychain，
+  仍是原来那一份才覆盖（防止把旧会话的结果写到登出或换号之后）。续期失败（网络、业务码、正文不合规、Keychain）不删除凭据、
+  不改变登录状态、不重试；续期一旦发出就做完，取消不打断，因为服务端可能已经轮换 token。
 - 恢复时重新校验：远端明确失效则清理（nav 的 `data.isLogin=false`，`code` 为 0 或 -101；其他非 0 码按
   校验不可用处理）；本地缺失／损坏／过期回退未登录；临时网络失败不删凭据。
 - 登出顺序：取消认证任务 → 清二维码与内存 → 删除 Keychain item → 失效并重建 session → 发布未登录。
