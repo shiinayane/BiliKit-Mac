@@ -96,19 +96,10 @@ extension BilivideoRoute {
     }
 }
 
-/// 一次读写的播放偏好整体：线路选择与响度均一化开关；`defaults` 是没有存过或读到损坏值时的回退。
+/// 一次读写的播放偏好整体：线路选择；`defaults` 是没有存过或读到损坏值时的回退。
 struct PlaybackSourcePreferenceRecord: Sendable, Equatable {
-    static let defaults = Self(selection: .serverDefault, loudnessNormalizationEnabled: false)
+    static let defaults = Self(selection: .serverDefault)
     let selection: PlaybackSourceSelection
-    let loudnessNormalizationEnabled: Bool
-
-    init(
-        selection: PlaybackSourceSelection,
-        loudnessNormalizationEnabled: Bool = false
-    ) {
-        self.selection = selection
-        self.loudnessNormalizationEnabled = loudnessNormalizationEnabled
-    }
 }
 
 /// 播放偏好的持久化 port：`load` 不抛错，读不到或值损坏时返回
@@ -120,25 +111,24 @@ protocol PlaybackSourcePreferenceStoring: AnyObject, Sendable {
     func save(_ record: PlaybackSourcePreferenceRecord)
 }
 
-/// 播放偏好的 UserDefaults 实现：schema 版本、线路选择与响度均一化开关三个键
-/// （见 SECURITY-MODEL §6）。
+/// 播放偏好的 UserDefaults 实现：schema 版本与线路选择两个键（见 SECURITY-MODEL §6）。
 ///
-/// 三个键都只接受类型严格匹配的值：schema 不符或类型错写、线路选择不是字符串或是未知值时，
-/// 整体回退默认（响度开关也回到关闭）；只有响度开关类型不对时按关闭处理。
-/// 每次读取都删除另一个含义不同的响度偏好键（`legacyLoudnessNormalizationEnabled`），不读取它的值。
+/// 两个键都只接受类型严格匹配的值：schema 不符或类型错写、线路选择不是字符串或是未知值时，
+/// 整体回退默认。每次读取都删除已移除功能留下的响度开关键（`retiredKeys`），不读取它们的值。
 ///
 /// `@unchecked Sendable`：只持有不可变的 `let defaults`，`UserDefaults` 本身可以跨线程读写；
-/// 三个键不是原子写入，生产调用方只有 MainActor 上的 `AppSettingsModel`。
+/// 两个键不是原子写入，生产调用方只有 MainActor 上的 `AppSettingsModel`。
 final class UserDefaultsPlaybackSourcePreferenceStore:
     PlaybackSourcePreferenceStoring, @unchecked Sendable
 {
     private enum Key {
         static let schema = "playbackSourcePreference.schema"
         static let selection = "playbackSourcePreference.selection"
-        /// “只压低到统一响度”的开关。
-        static let loudnessNormalizationEnabled = "playback.loudnessAttenuation.enabled"
-        /// 旧版实验开关（可放大、仅 macOS 26）；含义不同，不沿用，读取时清掉残留。
-        static let legacyLoudnessNormalizationEnabled = "playback.loudnessNormalization.enabled"
+        /// 已移除的响度均一化留下的开关：先后两版（可放大的实验开关、只压低的开关），读取时清掉残留。
+        static let retiredKeys = [
+            "playback.loudnessNormalization.enabled",
+            "playback.loudnessAttenuation.enabled"
+        ]
     }
     private static let schemaVersion = 1
     private let defaults: UserDefaults
@@ -146,27 +136,20 @@ final class UserDefaultsPlaybackSourcePreferenceStore:
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     func load() -> PlaybackSourcePreferenceRecord {
-        defaults.removeObject(forKey: Key.legacyLoudnessNormalizationEnabled)
+        for key in Key.retiredKeys {
+            defaults.removeObject(forKey: key)
+        }
         // 不用 `integer(forKey:)`／`string(forKey:)`：它们会把字符串 "1"、`true`、`1.9` 读成 schema 1，
         // 把数字转成字符串，类型错写的值就不再回退默认（见 SECURITY-MODEL §6）。
         guard defaults.strictInteger(forKey: Key.schema) == Self.schemaVersion,
             let raw = defaults.object(forKey: Key.selection) as? String,
             let selection = PlaybackSourceSelection(rawValue: raw)
         else { return .defaults }
-        return PlaybackSourcePreferenceRecord(
-            selection: selection,
-            loudnessNormalizationEnabled: defaults.strictBool(
-                forKey: Key.loudnessNormalizationEnabled
-            ) ?? false
-        )
+        return PlaybackSourcePreferenceRecord(selection: selection)
     }
 
     func save(_ record: PlaybackSourcePreferenceRecord) {
         defaults.set(Self.schemaVersion, forKey: Key.schema)
         defaults.set(record.selection.rawValue, forKey: Key.selection)
-        defaults.set(
-            record.loudnessNormalizationEnabled,
-            forKey: Key.loudnessNormalizationEnabled
-        )
     }
 }

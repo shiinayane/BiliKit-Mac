@@ -82,11 +82,6 @@ struct BiliAPIClientPlayURLTests {
         #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
-        #expect(
-            queryItems?.contains(
-                URLQueryItem(name: "voice_balance", value: "1")
-            ) == true
-        )
     }
 
     @Test

@@ -6,7 +6,7 @@ import Foundation
 /// playurl（`/x/player/wbi/playurl`）的 `data`，由 `BiliAPIClient` 的播放扩展映射为
 /// `VideoPlayback`。
 ///
-/// 有 DASH 时只读 DASH，不解码 `durl`、`format` 与 `support_formats`；响度、
+/// 有 DASH 时只读 DASH，不解码 `durl`、`format` 与 `support_formats`；
 /// 配音语言与断点字段异常时按缺失处理，不阻断播放。线路测速另用只解码视频轨的
 /// `CDNBenchmarkPlayURLPayload`。
 struct PlayURLPayload: Decodable, Sendable {
@@ -20,7 +20,6 @@ struct PlayURLPayload: Decodable, Sendable {
     let format: String?
     /// 没有 DASH 时 `support_formats` 列出的 MP4 整段清晰度；当前格式是 FLV 时据此换清晰度重取。
     let progressiveMP4Qualities: [Int]
-    let volume: PlaybackVolumePayload?
     let currentLanguage: String?
     let currentProductionType: Int?
     let languageCatalog: AudioLanguageCatalogPayload?
@@ -32,7 +31,6 @@ struct PlayURLPayload: Decodable, Sendable {
         case durl
         case format
         case supportFormats = "support_formats"
-        case volume
         case currentLanguage = "cur_language"
         case currentProductionType = "cur_production_type"
         case languageCatalog = "language"
@@ -62,7 +60,6 @@ struct PlayURLPayload: Decodable, Sendable {
             .filter { Self.progressiveMP4Formats.contains($0.format.lowercased()) }
             .map(\.quality)
             : []
-        volume = try? container.decode(PlaybackVolumePayload.self, forKey: .volume)
         currentLanguage = try? container.decode(
             String.self,
             forKey: .currentLanguage
@@ -184,51 +181,6 @@ struct DURLPayload: Decodable, Sendable {
             contentType: "video/mp4",
             container: .mp4
         )
-    }
-}
-
-/// `voice_balance=1` 时返回的响度测量值，映射为 `PlaybackLoudnessMetadata`。
-///
-/// 任一值不在合理范围或门限高于积分响度时整体无效（`model` 为 nil），原音量播放；未测量视频的
-/// `0.001` 占位因此被拒绝；不自行测量响度。
-struct PlaybackVolumePayload: Decodable, Sendable {
-    let measuredIntegrated: Double
-    let measuredLoudnessRange: Double
-    let measuredTruePeak: Double
-    let measuredThreshold: Double
-    let targetIntegrated: Double
-    let targetTruePeak: Double
-
-    private enum CodingKeys: String, CodingKey {
-        case measuredIntegrated = "measured_i"
-        case measuredLoudnessRange = "measured_lra"
-        case measuredTruePeak = "measured_tp"
-        case measuredThreshold = "measured_threshold"
-        case targetIntegrated = "target_i"
-        case targetTruePeak = "target_tp"
-    }
-
-    var model: PlaybackLoudnessMetadata? {
-        guard Self.valid(measuredIntegrated, in: -100...0),
-            Self.valid(measuredLoudnessRange, in: 0...100),
-            Self.valid(measuredTruePeak, in: -100...20),
-            Self.valid(measuredThreshold, in: -100...0),
-            Self.valid(targetIntegrated, in: -70 ... -5),
-            Self.valid(targetTruePeak, in: -20...0),
-            measuredThreshold <= measuredIntegrated
-        else { return nil }
-        return PlaybackLoudnessMetadata(
-            measuredIntegratedLUFS: measuredIntegrated,
-            measuredLoudnessRangeLU: measuredLoudnessRange,
-            measuredTruePeakDBTP: measuredTruePeak,
-            measuredThresholdLUFS: measuredThreshold,
-            targetIntegratedLUFS: targetIntegrated,
-            targetTruePeakDBTP: targetTruePeak
-        )
-    }
-
-    private static func valid(_ value: Double, in range: ClosedRange<Double>) -> Bool {
-        value.isFinite && range.contains(value)
     }
 }
 

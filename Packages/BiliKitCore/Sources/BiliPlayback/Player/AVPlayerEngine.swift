@@ -35,7 +35,6 @@ public final class AVPlayerEngine:
     private let bridge: DASHToHLSBridge
     private let subtitleUseCase: SubtitleUseCase
     private let sourcePreferenceProvider: @MainActor @Sendable () -> PlaybackSourcePreference
-    private let loudnessNormalizationEnabledProvider: @MainActor @Sendable () -> Bool
     private let failureEvents = AsyncBroadcast<PlaybackFailureEvent>()
     private let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
@@ -66,21 +65,18 @@ public final class AVPlayerEngine:
     private var subtitleToggleOperationID: UUID?
     private var lastSubtitleSelection: NativeSubtitleSelectionPreference?
     private var transportSeek = TransportSeekOperationState()
-    private let loudness = LoudnessNormalizationController()
 
     public init(
         player: AVPlayer,
         bridge: DASHToHLSBridge = DASHToHLSBridge(),
         subtitleUseCase: SubtitleUseCase,
-        sourcePreferenceProvider: @escaping @MainActor @Sendable () -> PlaybackSourcePreference,
-        loudnessNormalizationEnabledProvider: @escaping @MainActor @Sendable () -> Bool
+        sourcePreferenceProvider: @escaping @MainActor @Sendable () -> PlaybackSourcePreference
     ) {
         self.player = player
         player.preventsDisplaySleepDuringVideoPlayback = true
         self.bridge = bridge
         self.subtitleUseCase = subtitleUseCase
         self.sourcePreferenceProvider = sourcePreferenceProvider
-        self.loudnessNormalizationEnabledProvider = loudnessNormalizationEnabledProvider
         // 起播的媒体选择只按播放列表的 DEFAULT：音频总是原声，字幕默认关闭。打开后系统会按界面语言
         // 挑 AUTOSELECT=YES 的 rendition，语言等于界面语言的 AI 配音会压过不写语言的原声。AI 配音另写
         // AUTOSELECT=NO，与这里共同保证起播是原声。
@@ -227,8 +223,6 @@ public final class AVPlayerEngine:
     ) async throws {
         // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
         let sourcePreference = sourcePreferenceProvider()
-        let loudnessNormalizationEnabled =
-            loudnessNormalizationEnabledProvider()
         let progressiveSource: ProgressivePlaybackSource?
         let videos: [MediaRepresentation]
         let audioTracks: [SelectedPlaybackAudioTrack]
@@ -298,11 +292,6 @@ public final class AVPlayerEngine:
             loadTask = nil
             preparedAsset = prepared
             let item = AVPlayerItem(url: prepared.url)
-            loudness.install(
-                on: item,
-                audioTracks: audioTracks,
-                enabled: loudnessNormalizationEnabled
-            )
             player.replaceCurrentItem(with: item)
             timeline.installObservers(for: item)
             let readinessTask = Task {
@@ -327,7 +316,6 @@ public final class AVPlayerEngine:
             }
             self.readinessTask = nil
             timeline.markReady(duration: item.duration)
-            await loudness.activate()
         } catch is CancellationError {
             if loadGeneration == generation {
                 resetToIdle()
@@ -651,7 +639,7 @@ public final class AVPlayerEngine:
         resetToIdle()
     }
 
-    /// 使当前 load 世代失效，并释放播放项目及其派生状态：在途加载／就绪任务、响度处理、
+    /// 使当前 load 世代失效，并释放播放项目及其派生状态：在途加载／就绪任务、
     /// 字幕切换、seek、恢复与重新开始操作，以及 loopback 资源。
     ///
     /// 先移除 AVPlayerItem 再停止 loopback 资源，避免旧项目因资源消失而触发失败回调。
@@ -671,7 +659,6 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
-        loudness.clear()
         player.pause()
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()

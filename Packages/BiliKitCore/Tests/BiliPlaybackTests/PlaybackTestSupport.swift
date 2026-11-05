@@ -588,7 +588,7 @@ func makeFixtureBridge(
     )
 }
 
-/// 用 fixture bridge 组装与生产同形的 engine：字幕目录默认为空，线路与响度取各自的关闭值。
+/// 用 fixture bridge 组装与生产同形的 engine：字幕目录默认为空，线路取服务端默认。
 @MainActor
 func makeFixtureEngine(
     bridge: DASHToHLSBridge,
@@ -601,8 +601,7 @@ func makeFixtureEngine(
             repository: subtitleRepository,
             reportAuthenticationInvalidation: {}
         ),
-        sourcePreferenceProvider: { .serverDefault },
-        loudnessNormalizationEnabledProvider: { false }
+        sourcePreferenceProvider: { .serverDefault }
     )
 }
 

@@ -44,35 +44,6 @@ public enum MediaKind: String, Sendable, Equatable {
     case audio
 }
 
-/// 服务端对一条语义音轨给出的静态 BS.1770 响度测量与目标。
-///
-/// 这里不保存 endpoint 专属的 offset 或场景参数；所有值在 API 解码边界完整校验，播放策略只再防住
-/// 自己用到的值。
-public struct PlaybackLoudnessMetadata: Sendable, Equatable {
-    public let measuredIntegratedLUFS: Double
-    public let measuredLoudnessRangeLU: Double
-    public let measuredTruePeakDBTP: Double
-    public let measuredThresholdLUFS: Double
-    public let targetIntegratedLUFS: Double
-    public let targetTruePeakDBTP: Double
-
-    public init(
-        measuredIntegratedLUFS: Double,
-        measuredLoudnessRangeLU: Double,
-        measuredTruePeakDBTP: Double,
-        measuredThresholdLUFS: Double,
-        targetIntegratedLUFS: Double,
-        targetTruePeakDBTP: Double
-    ) {
-        self.measuredIntegratedLUFS = measuredIntegratedLUFS
-        self.measuredLoudnessRangeLU = measuredLoudnessRangeLU
-        self.measuredTruePeakDBTP = measuredTruePeakDBTP
-        self.measuredThresholdLUFS = measuredThresholdLUFS
-        self.targetIntegratedLUFS = targetIntegratedLUFS
-        self.targetTruePeakDBTP = targetTruePeakDBTP
-    }
-}
-
 /// 视频表示的尺寸与帧率；构造时拒绝非正宽高和非有限或非正的帧率，帧率缺失时为 nil。
 ///
 /// BiliAPI 映射时视频表示必须带合法属性，否则整份媒体数据无效。
@@ -171,7 +142,6 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     public let role: Role
     public let isDefault: Bool
     public let isAutoselect: Bool
-    public let loudnessMetadata: PlaybackLoudnessMetadata?
     public let representations: [MediaRepresentation]
 
     public init(
@@ -181,7 +151,6 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         role: Role,
         isDefault: Bool,
         isAutoselect: Bool,
-        loudnessMetadata: PlaybackLoudnessMetadata? = nil,
         representations: [MediaRepresentation]
     ) {
         self.id = id
@@ -190,7 +159,6 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         self.role = role
         self.isDefault = isDefault
         self.isAutoselect = isAutoselect
-        self.loudnessMetadata = loudnessMetadata
         self.representations = representations
     }
 
@@ -202,8 +170,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     /// 原声同时是默认与自动选择、不带语言标记，满足播放桥对原声音轨的要求。B 站不提供可验证的原声
     /// 语言，写成 HLS 时省略 LANGUAGE，系统菜单的名字来自播放桥提供的本地化显示名。
     public static func original(
-        representations: [MediaRepresentation],
-        loudnessMetadata: PlaybackLoudnessMetadata?
+        representations: [MediaRepresentation]
     ) -> PlaybackAudioTrack {
         PlaybackAudioTrack(
             id: "original",
@@ -211,7 +178,6 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
             role: .original,
             isDefault: true,
             isAutoselect: true,
-            loudnessMetadata: loudnessMetadata,
             representations: representations
         )
     }

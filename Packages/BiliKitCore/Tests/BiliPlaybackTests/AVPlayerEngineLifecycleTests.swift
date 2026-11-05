@@ -35,7 +35,7 @@ extension AVPlayerEngineSuites {
                     PlaybackManifest(
                         videoRepresentations: [fixture.video],
                         audioTracks: [
-                            .original(representations: [fixture.audio], loudnessMetadata: nil)
+                            .original(representations: [fixture.audio])
                         ]
                     )
                 )
@@ -185,7 +185,7 @@ extension AVPlayerEngineSuites {
                         PlaybackManifest(
                             videoRepresentations: [fixture.video],
                             audioTracks: [
-                                .original(representations: [fixture.audio], loudnessMetadata: nil)
+                                .original(representations: [fixture.audio])
                             ]
                         )
                     )
@@ -237,7 +237,7 @@ extension AVPlayerEngineSuites {
                         PlaybackManifest(
                             videoRepresentations: [fixture.video],
                             audioTracks: [
-                                .original(representations: [fixture.audio], loudnessMetadata: nil)
+                                .original(representations: [fixture.audio])
                             ]
                         )
                     )
@@ -347,7 +347,7 @@ extension AVPlayerEngineSuites {
                 media: .dash(
                     PlaybackManifest(
                         videoRepresentations: [oldVideo],
-                        audioTracks: [.original(representations: [oldAudio], loudnessMetadata: nil)]
+                        audioTracks: [.original(representations: [oldAudio])]
                     )
                 )
             )
@@ -355,7 +355,7 @@ extension AVPlayerEngineSuites {
                 media: .dash(
                     PlaybackManifest(
                         videoRepresentations: [newVideo],
-                        audioTracks: [.original(representations: [newAudio], loudnessMetadata: nil)]
+                        audioTracks: [.original(representations: [newAudio])]
                     )
                 )
             )
@@ -403,7 +403,7 @@ extension AVPlayerEngineSuites {
                     PlaybackManifest(
                         videoRepresentations: [fixture.video],
                         audioTracks: [
-                            .original(representations: [fixture.audio], loudnessMetadata: nil)
+                            .original(representations: [fixture.audio])
                         ]
                     )
                 )

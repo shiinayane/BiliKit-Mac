@@ -546,10 +546,17 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         }
     }
 
+    /// 写进 HLS `CHARACTERISTICS` 的音轨角色。
+    ///
+    /// macOS 27 的音轨菜单给原声加“（原始）”并排在最前，给机器配音显示语言名加“生成”。音频不写
+    /// `public.translation`：拿不到原声语言，就无法确认配音与原声语言不同。
     private func characteristics(
         for role: PlaybackAudioTrack.Role
     ) throws -> String {
-        try safeCharacteristics([role.hlsCharacteristic])
+        switch role {
+        case .original: try safeCharacteristics(["public.original-content"])
+        case .machineGenerated: try safeCharacteristics(["public.machine-generated"])
+        }
     }
 
     /// 空索引没有可声明独立的分段，不算独立。

@@ -56,8 +56,7 @@ User-Agent 等网络元数据。BiliKit 不启用 Sparkle system profile，不�
 
 ## 本机偏好与临时内容
 
-UserDefaults 保存非内容偏好，例如音量、静音、倍速、弹幕显示参数、播放线路选择和实验性响度
-均一化开关。BiliKit 不在 UserDefaults 中保存 Cookie、视频 BVID/CID、标题、完整 URL、字幕／弹幕
+UserDefaults 保存非内容偏好，例如音量、静音、倍速、弹幕显示参数、播放线路选择。BiliKit 不在 UserDefaults 中保存 Cookie、视频 BVID/CID、标题、完整 URL、字幕／弹幕
 正文或播放位置。
 
 唯一保存在本机的内容是搜索历史：你在搜索页提交过的最近 20 个搜索词，按你输入的原文保存（如果
