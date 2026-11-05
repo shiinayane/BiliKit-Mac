@@ -243,7 +243,9 @@ public final class AVPlayerEngine:
             hdrVideos = (allowsHDR ? manifest.hdrVideoCandidates : []).map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
-            audioTracks = try manifest.selectedAudioTracks()
+            audioTracks = try manifest.selectedAudioTracks(
+                allowsLosslessAudio: preferences.allowsLosslessAudio
+            )
         case .progressive(let source):
             progressiveSource = source
             videos = []
@@ -350,6 +352,7 @@ public final class AVPlayerEngine:
         loadTask = nil
         preparedAsset = prepared
         let item = AVPlayerItem(url: prepared.url)
+        item.variantPreferences = preparation.variantPreferences
         player.replaceCurrentItem(with: item)
         timeline.installObservers(for: item)
         let readinessTask = Task {

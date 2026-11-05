@@ -229,13 +229,21 @@ extension BiliAPIClient {
     ) async throws -> VideoPlayback {
         let video = try DASHVideoLadder(dash.video)
         let remoteAudio = dash.audio ?? []
-        let audio = try remoteAudio.filter(\.isAACAudio).map { try $0.model(kind: .audio) }
+        let audio = try remoteAudio.filter { $0.audioCodec == .aac }.map {
+            try $0.model(kind: .audio)
+        }
         // `dash.audio` 为 null 或空是稿件本身没有声音，只播视频；列出了音频却没有 AAC 才算不支持。
         guard remoteAudio.isEmpty || !audio.isEmpty else { throw BiliAPIError.noAACAudio }
         var audioTracks: [PlaybackAudioTrack] = []
         // 没有原声就没有可以并列的配音，不请求配音目录里的语言。
         if !audio.isEmpty {
-            audioTracks.append(.original(representations: audio))
+            audioTracks.append(
+                .original(
+                    representations: audio,
+                    dolby: dash.originalDolbyAudio,
+                    lossless: dash.originalLosslessAudio
+                )
+            )
             if authorizationProvenance == .authenticated {
                 try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
                 audioTracks += try await machineGeneratedAudioTracks(
@@ -322,7 +330,7 @@ extension BiliAPIClient {
             let representations: [MediaRepresentation]
             do {
                 representations = try (dash.audio ?? [])
-                    .filter(\.isAACAudio)
+                    .filter { $0.audioCodec == .aac }
                     .map { try $0.model(kind: .audio) }
             } catch {
                 continue

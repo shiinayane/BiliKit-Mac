@@ -164,27 +164,25 @@ final class AppSettingsModel {
 
     var selection: PlaybackSourceSelection {
         get { record.selection }
-        set {
-            save(
-                PlaybackSourcePreferenceRecord(
-                    selection: newValue,
-                    hdrVideoEnabled: record.hdrVideoEnabled
-                )
-            )
-        }
+        set { update { $0.selection = newValue } }
     }
 
     /// “HDR 视频”开关；与线路选择一样只影响之后新开始的播放。
     var hdrVideoEnabled: Bool {
         get { record.hdrVideoEnabled }
-        set {
-            save(
-                PlaybackSourcePreferenceRecord(
-                    selection: record.selection,
-                    hdrVideoEnabled: newValue
-                )
-            )
-        }
+        set { update { $0.hdrVideoEnabled = newValue } }
+    }
+
+    /// “无损音频”开关；只影响之后新开始的播放。
+    var losslessAudioEnabled: Bool {
+        get { record.losslessAudioEnabled }
+        set { update { $0.losslessAudioEnabled = newValue } }
+    }
+
+    private func update(_ change: (inout PlaybackSourcePreferenceRecord) -> Void) {
+        var updated = record
+        change(&updated)
+        save(updated)
     }
 
     private func save(_ updated: PlaybackSourcePreferenceRecord) {

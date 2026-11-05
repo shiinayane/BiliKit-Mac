@@ -157,6 +157,19 @@ public struct DASHToHLSBridge: Sendable {
                     representationID: selectedAudio.representation.id
                 )
             }
+            // 附加版本只属于原声，每个都必须是这条音轨提供的版本，且 ID 互不相同（route 以 ID 命名）。
+            var versionIDs: Set<Int> = [selectedAudio.representation.id]
+            for version in selectedAudio.additionalRepresentations {
+                guard selectedAudio.track.role == .original,
+                    selectedAudio.track.offers(version),
+                    versionIDs.insert(version.id).inserted
+                else {
+                    throw DASHToHLSBridgeError.invalidAudioTrackSelection(
+                        trackID: selectedAudio.track.id,
+                        representationID: version.id
+                    )
+                }
+            }
             switch selectedAudio.track.role {
             case .original:
                 guard selectedAudio.track.isDefault,
@@ -179,7 +192,10 @@ public struct DASHToHLSBridge: Sendable {
 
         // SIDX 读取就是首个上游连接；此前复核每个候选来源，失败关闭，见 SECURITY-MODEL §4。
         let mediaURLPolicy = BiliMediaCDNURLPolicy()
-        for representation in videos + hdrVideos + audioTracks.map(\.representation)
+        let audioRepresentations = audioTracks.flatMap {
+            [$0.representation] + $0.additionalRepresentations
+        }
+        for representation in videos + hdrVideos + audioRepresentations
         where !representation.urlCandidates.allSatisfy(mediaURLPolicy.allows) {
             throw DASHToHLSBridgeError.disallowedMediaSource(
                 representationID: representation.id
@@ -219,8 +235,9 @@ public struct DASHToHLSBridge: Sendable {
         guard canonicalAudio != nil || audioTracks.isEmpty else {
             throw DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
         }
-        // 同一 AUDIO group 的音轨按同一条时间线互相切换，以原声 SIDX 起点为准；起点不一致的 AI 音轨在生成
-        // master 前丢弃，与配音请求失败一样只少一条配音，不让播放失败。
+        // 同一 AUDIO group 的音轨按同一条时间线互相切换，各组之间也一样，都以原声码率最高的 AAC 的 SIDX
+        // 起点为准；起点不一致的 AI 音轨与原声附加版本在生成 master 前丢弃，只少一条配音或一个音频组，
+        // 不让播放失败。
         let audioRenditions = loadedAudioRenditions.filter { rendition in
             guard let canonicalAudio else { return false }
             return rendition.selectedTrack.track.isDefault
@@ -229,6 +246,12 @@ public struct DASHToHLSBridge: Sendable {
                     canonical: canonicalAudio.index.index
                 )
         }
+        let additionalAudioVersions =
+            canonicalAudio.map { canonical in
+                canonical.additionalVersions.filter {
+                    hasMatchingAudioTimeline($0.index.index, canonical: canonical.index.index)
+                }
+            } ?? []
 
         let server = serverFactory()
         do {
@@ -247,44 +270,44 @@ public struct DASHToHLSBridge: Sendable {
                         representationID: audio.id
                     )
                 }
-                let audioPlaylistPath = "audio/\(offset)/\(audio.id).m3u8"
-                let audioPlaylistURL = try server.url(for: audioPlaylistPath)
-                let audioMediaPath = "media/audio/\(offset)/\(audio.id).mp4"
-                let audioMediaURL = try server.url(for: audioMediaPath)
-                registrations.append(
-                    LoopbackRouteRegistration(
-                        relativePath: audioMediaPath,
-                        resource: .remote(
-                            try LoopbackRemoteResource(
-                                sourceURL: loadedAudio.index.sourceURL,
-                                contentLength: audioLength,
-                                contentType: audio.mimeType,
-                                headers: headers
-                            )
+                hlsAudioRenditions.append(
+                    try registerAudioRoute(
+                        track: loadedAudio.selectedTrack.track,
+                        representation: audio,
+                        index: loadedAudio.index,
+                        completeMediaLength: audioLength,
+                        format: loadedAudio.format,
+                        directory: "\(offset)",
+                        headers: headers,
+                        server: server,
+                        registrations: &registrations
+                    )
+                )
+            }
+            // 默认组之后每个原声附加版本一组：成员与默认组相同，只把原声换成这个版本；配音引用同一个 route。
+            var audioGroups =
+                hlsAudioRenditions.isEmpty ? [] : [HLSAudioGroup(renditions: hlsAudioRenditions)]
+            if let canonicalAudio {
+                for version in additionalAudioVersions {
+                    let original = try registerAudioRoute(
+                        track: canonicalAudio.selectedTrack.track,
+                        representation: version.representation,
+                        index: version.index,
+                        completeMediaLength: version.completeMediaLength,
+                        format: version.format,
+                        directory: "original",
+                        headers: headers,
+                        server: server,
+                        registrations: &registrations
+                    )
+                    audioGroups.append(
+                        HLSAudioGroup(
+                            renditions: hlsAudioRenditions.map {
+                                $0.track.isDefault ? original : $0
+                            }
                         )
                     )
-                )
-                let audioPlaylist = try mediaPlaylistBuilder.build(
-                    representation: audio,
-                    index: loadedAudio.index.index,
-                    mediaURI: audioMediaURL
-                )
-                registrations.append(
-                    LoopbackRouteRegistration(
-                        relativePath: audioPlaylistPath,
-                        resource: playlistResource(audioPlaylist)
-                    )
-                )
-                hlsAudioRenditions.append(
-                    HLSAudioRendition(
-                        selectedTrack: loadedAudio.selectedTrack,
-                        channelCount: loadedAudio.format?.channelCount,
-                        bitDepth: loadedAudio.format?.bitDepth,
-                        sampleRate: loadedAudio.format?.sampleRate,
-                        index: loadedAudio.index.index,
-                        playlistURI: audioPlaylistURL
-                    )
-                )
+                }
             }
             var variants: [HLSVideoVariant] = []
             variants.reserveCapacity(videoVariants.count + 1)
@@ -377,7 +400,7 @@ public struct DASHToHLSBridge: Sendable {
                 )
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: hlsAudioRenditions,
+                    audioGroups: audioGroups,
                     subtitleRenditions: subtitleRenditions,
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL,
@@ -390,7 +413,7 @@ public struct DASHToHLSBridge: Sendable {
                 registrations.removeSubrange(mediaRegistrationCount...)
                 masterPlaylist = try masterPlaylistBuilder.build(
                     videoVariants: variants,
-                    audioRenditions: hlsAudioRenditions,
+                    audioGroups: audioGroups,
                     iFrameVariants: iFrameVariants,
                     localizedRenditionNamesURI: localizedRenditionNamesURL,
                     startOffsetSeconds: startPositionSeconds
@@ -423,6 +446,60 @@ public struct DASHToHLSBridge: Sendable {
             server.stop()
             throw error
         }
+    }
+
+    /// 为一条音频 rendition 登记媒体与 media playlist 两个 route（`audio/<directory>/<id>.m3u8`），返回它在
+    /// master 里的描述。
+    ///
+    /// `directory` 区分音轨（音轨序号）与原声附加版本（`original`），同一目录内以
+    /// representation ID 区分。
+    private func registerAudioRoute(
+        track: PlaybackAudioTrack,
+        representation: MediaRepresentation,
+        index: LoadedSegmentIndex,
+        completeMediaLength: Int64,
+        format: AudioFormatMetadata?,
+        directory: String,
+        headers: [String: String],
+        server: LoopbackPlaybackServer,
+        registrations: inout [LoopbackRouteRegistration]
+    ) throws -> HLSAudioRendition {
+        let playlistPath = "audio/\(directory)/\(representation.id).m3u8"
+        let mediaPath = "media/audio/\(directory)/\(representation.id).mp4"
+        let mediaURL = try server.url(for: mediaPath)
+        registrations.append(
+            LoopbackRouteRegistration(
+                relativePath: mediaPath,
+                resource: .remote(
+                    try LoopbackRemoteResource(
+                        sourceURL: index.sourceURL,
+                        contentLength: completeMediaLength,
+                        contentType: representation.mimeType,
+                        headers: headers
+                    )
+                )
+            )
+        )
+        let playlist = try mediaPlaylistBuilder.build(
+            representation: representation,
+            index: index.index,
+            mediaURI: mediaURL
+        )
+        registrations.append(
+            LoopbackRouteRegistration(
+                relativePath: playlistPath,
+                resource: playlistResource(playlist)
+            )
+        )
+        return HLSAudioRendition(
+            track: track,
+            representation: representation,
+            channelCount: format?.channelCount,
+            bitDepth: format?.bitDepth,
+            sampleRate: format?.sampleRate,
+            index: index.index,
+            playlistURI: try server.url(for: playlistPath)
+        )
     }
 
     /// 非空且每段都以独立帧开始时才发布 I-frame rendition；不合格只是不提供快进预览，不让播放失败。

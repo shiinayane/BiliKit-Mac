@@ -103,7 +103,8 @@ extension WindowAdapters {
             loadPreferencesProvider: {
                 PlaybackLoadPreferences(
                     sourcePreference: settings.playbackSourcePreference,
-                    allowsHDRVideo: settings.hdrVideoEnabled && hdrEnvironment.allowsHDR
+                    allowsHDRVideo: settings.hdrVideoEnabled && hdrEnvironment.allowsHDR,
+                    allowsLosslessAudio: settings.losslessAudioEnabled
                 )
             }
         )

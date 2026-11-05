@@ -4620,6 +4620,90 @@
           }
         }
       }
+    },
+    "音频" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音訊"
+          }
+        }
+      }
+    },
+    "无损音频" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lossless Audio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロスレスオーディオ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无损音频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無損音訊"
+          }
+        }
+      }
+    },
+    "有 Hi-Res 无损音频的视频在网速足够时播放无损版本，流量明显增加。杜比音频由系统按输出设备自动选择。改动只影响之后新开始的播放。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Videos available in Hi-Res Lossless play the lossless version when the connection is fast enough, which uses noticeably more data. Dolby audio is chosen automatically by the system based on the output device. Changes apply to playback started afterward."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ハイレゾロスレスに対応したビデオは、通信速度が十分なときにロスレス版を再生します。データ通信量が大きく増えます。ドルビーオーディオは出力デバイスに応じてシステムが自動的に選択します。変更はこのあと開始する再生から適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 Hi-Res 无损音频的视频在网速足够时播放无损版本，流量明显增加。杜比音频由系统按输出设备自动选择。改动只影响之后新开始的播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 Hi-Res 無損音訊的影片在網速足夠時播放無損版本，流量會明顯增加。杜比音訊由系統依輸出裝置自動選擇。變更只影響之後開始的播放。"
+          }
+        }
+      }
     }
   },
   "version" : "1.2"

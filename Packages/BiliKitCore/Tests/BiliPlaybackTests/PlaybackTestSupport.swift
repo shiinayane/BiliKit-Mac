@@ -602,7 +602,11 @@ func makeFixtureEngine(
             reportAuthenticationInvalidation: {}
         ),
         loadPreferencesProvider: {
-            PlaybackLoadPreferences(sourcePreference: .serverDefault, allowsHDRVideo: false)
+            PlaybackLoadPreferences(
+                sourcePreference: .serverDefault,
+                allowsHDRVideo: false,
+                allowsLosslessAudio: false
+            )
         }
     )
 }
@@ -722,56 +726,4 @@ actor PlaybackFailureRecorder {
     func identities() -> [PlaybackItemIdentity] {
         recordedEvents.map(\.identity)
     }
-}
-
-/// 杜比视界配置记录（`dvvC`）里的 profile、level 与基础层兼容 ID。
-struct DolbyVisionFixture: Sendable {
-    let profile: Int
-    let level: Int
-    let compatibilityID: Int
-}
-
-/// 合成只有一条 HEVC 视频 track 的 fMP4 init：`ftyp` 与 `moov/trak/mdia/minf/stbl/stsd/<sampleEntry>`，
-/// sample entry 下按参数带 nclx `colr`（`transfer` 为传递函数编号）与 `dvvC`。
-func makeHEVCInitialization(
-    sampleEntry: String = "hvc1",
-    transfer: UInt16? = 16,
-    dolbyVision: DolbyVisionFixture? = nil
-) -> Data {
-    var entryChildren = Data()
-    if let transfer {
-        var color = Data("nclx".utf8)
-        color += bigEndianBytes(UInt16(9)) + bigEndianBytes(transfer) + bigEndianBytes(UInt16(9))
-        color.append(0)
-        entryChildren += isoBox("colr", color)
-    }
-    if let dolbyVision {
-        var configuration = Data([1, 0])
-        let bits = UInt16(dolbyVision.profile << 9 | dolbyVision.level << 3 | 0b101)
-        configuration += bigEndianBytes(bits)
-        configuration.append(UInt8(dolbyVision.compatibilityID << 4))
-        configuration += Data(count: 19)
-        entryChildren += isoBox("dvvC", configuration)
-    }
-    let entry = isoBox(sampleEntry, Data(count: 78) + entryChildren)
-    let description = isoBox("stsd", Data(count: 4) + bigEndianBytes(UInt32(1)) + entry)
-    let track = isoBox(
-        "trak",
-        isoBox("mdia", isoBox("minf", isoBox("stbl", description)))
-    )
-    return isoBox("ftyp", Data("iso6".utf8) + Data(count: 4)) + isoBox("moov", track)
-}
-
-/// 把 fixture 媒体的 init（首个 `sidx` 之前的字节）换成 `initialization`，SIDX 与分段原样保留。
-func replacingInitialization(in media: Data, with initialization: Data) throws -> Data {
-    let sidx = try #require(firstTopLevelBox(named: "sidx", in: media))
-    return initialization + media.suffix(from: sidx.offset)
-}
-
-func isoBox(_ type: String, _ payload: Data) -> Data {
-    bigEndianBytes(UInt32(8 + payload.count)) + Data(type.utf8) + payload
-}
-
-private func bigEndianBytes<Value: FixedWidthInteger>(_ value: Value) -> Data {
-    withUnsafeBytes(of: value.bigEndian) { Data($0) }
 }

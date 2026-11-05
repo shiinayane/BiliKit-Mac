@@ -67,7 +67,7 @@ struct DASHBridgeHDRTests {
                 )
             var dolbyVisionData = try replacingInitialization(in: baseVideo, with: dolbyVisionInit)
             if failure == .shiftedTimeline {
-                dolbyVisionData = try Self.shiftingTimelineOrigin(of: dolbyVisionData)
+                dolbyVisionData = try shiftingTimelineOrigin(of: dolbyVisionData)
             }
             let pqData = try replacingInitialization(in: baseVideo, with: makeHEVCInitialization())
             let dolbyVisionURL = try #require(URL(string: "https://\(host)/dolby-vision"))
@@ -132,31 +132,6 @@ struct DASHBridgeHDRTests {
             )
             defer { prepared.stop() }
             return try await fetchText(prepared.url)
-        }
-
-        /// 把 SIDX 的起始呈现时间加一秒，让这一档的时间轴起点与 SDR 档不同。
-        private static func shiftingTimelineOrigin(of data: Data) throws -> Data {
-            var result = data
-            let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
-            let timescale = Int(readUInt32(in: result, at: sidx.offset + 16))
-            let valueOffset = sidx.offset + 20
-            switch result[sidx.offset + 8] {
-            case 0:
-                let shifted = readUInt32(in: result, at: valueOffset) + UInt32(timescale)
-                result.replaceSubrange(
-                    valueOffset..<(valueOffset + 4),
-                    with: withUnsafeBytes(of: shifted.bigEndian) { Data($0) }
-                )
-            default:
-                let high = UInt64(readUInt32(in: result, at: valueOffset)) << 32
-                let shifted =
-                    high + UInt64(readUInt32(in: result, at: valueOffset + 4)) + UInt64(timescale)
-                result.replaceSubrange(
-                    valueOffset..<(valueOffset + 8),
-                    with: withUnsafeBytes(of: shifted.bigEndian) { Data($0) }
-                )
-            }
-            return result
         }
     }
 }

@@ -284,7 +284,7 @@ struct DASHBridgeRouteTests {
         let masterData = try await URLSession.shared.data(from: prepared.url).0
         let master = try #require(String(data: masterData, encoding: .utf8))
 
-        #expect(master.contains(#"GROUP-ID="audio",NAME="原声""#))
+        #expect(master.contains(#"GROUP-ID="audio-30280",NAME="原声""#))
         #expect(
             master.contains(
                 #"NAME="English（AI）",LANGUAGE="en",CHARACTERISTICS="public.machine-generated""#

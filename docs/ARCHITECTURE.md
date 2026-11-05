@@ -110,7 +110,8 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
 - SIDX 成功的候选成为该 representation 的唯一远端来源，后续 init、media 与 Range 不跨来源拼字节；
   正文逐 chunk 流式转发，不整段缓存。上游响应必须通过状态码、`Content-Range` 与长度校验；取消不触发
   备用线路，AVPlayer 断开或下游写入失败都按取消处理。
-- 附加档位失败不拖垮播放：某一档视频 SIDX 读取失败只丢弃该档，某个 AI 配音语言失败就停止后续配音请求；
+- 附加档位失败不拖垮播放：某一档视频 SIDX 读取失败只丢弃该档，原声的某个附加音频版本失败只丢那一组，
+  某个 AI 配音语言失败就停止后续配音请求；
   全部视频档失败、原声音轨失败、凭据失效或会话变化才让播放失败。读取成功之后生成 playlist 出错仍让整次播放失败。
 - 视频编码：每次播放的 SDR 阶梯只用一种编码。按清晰度 ID 比较，HEVC 覆盖 AVC 的全部档位时用 HEVC（8K 等
   HEVC 独有的档位一并加入），同一份 playurl 的 AVC 阶梯留作回退；否则全用 AVC。HEVC 的 item 在就绪前失败时，
@@ -126,6 +127,13 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
   档与全部 I-frame 行也写 `VIDEO-RANGE`，要么都写要么都不写。HDR 档缺帧率、init 不是 HDR 或解析失败、时间轴
   起点与 SDR 档不同时只丢这一档（连同它的 I-frame），在生成字幕 route 之前完成。HEVC 回退到 AVC 时不带 HDR 档。
   B 站不给 30fps 及以下的 HDR 档，不满足 Authoring Spec 对 HDR 阶梯的要求，这是已知偏离。
+- 音频组：原声的每个版本各成一个 AUDIO group——码率最高的 AAC（默认组）、其余 AAC 档、杜比音频（E-AC-3）、
+  “无损音频”开关开着时的 FLAC。每组成员相同（RFC 8216bis §4.4.6.1.1）：原声取这一组的版本、同名“原声”，
+  配音只有 AAC、在每组引用同一个 URI；每个视频档（含 HDR 档）与每组各写一行 variant，CODECS 与带宽只计这一组。
+  同名的原声在系统菜单里合并成一项，组之间由 AVPlayer 选择（实测）：AAC 档按网速切换；E-AC-3 写声道数后由
+  系统按输出声道选择，2 声道输出不会选中，所以不进菜单、不手动选；FLAC 只有设了
+  `variantPreferences = .scalabilityToLosslessAudio` 才会在带宽足够时选中。附加版本以默认组原声的 SIDX 起点
+  为准，读取失败、读不出声道等音频格式或起点不同时只丢这一组；无损关时不读 FLAC 的 SIDX。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
 - 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
   AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。
@@ -460,6 +468,8 @@ Settings 窗口，从不自动改选。
   过滤与“HDR 视频”开关已能避开主要情形。
 - 杜比视界（HLG 基础层）不写 `VIDEO-RANGE` 混进 SDR 阶梯以获得降档：它会受视图尺寸上限约束，常见窗口里根本
   选不到；HDR 真彩（PQ）不写时 item 直接失败。
+- 杜比音频与无损音频作为菜单里单独的音轨（不同 NAME）：要手动选，选中后系统也不会按输出设备或网速换回；
+  同名分组让 AVPlayer 按输出声道与带宽自动选择，与 Apple Music 的做法一致。
 - 响度均一化：只能压低不能放大（放大需要限幅器），依赖 playurl 的响度元数据（许多较早的视频没有），
   只在 macOS 27 起有官方接入点；它按“原声只有一条”匹配音轨，音轨按编码与码率分成多组后系统会合并同名选项、
   换组时不发通知，无法确定当前播放的是哪一组。

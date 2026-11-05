@@ -5,6 +5,8 @@ import Testing
 @testable import BiliPlayback
 
 /// 每条语义音轨交给播放的是码率最高的 representation，与 playurl 返回顺序无关；缺失码率时回落顺序确定。
+///
+/// 原声另带附加音频组的版本，无损只在“无损音频”打开时加入。
 struct PlaybackTrackSelectionTests {
     @Test
     func selectsHighestBandwidthRepresentationWithinEachSemanticTrack() throws {
@@ -29,10 +31,45 @@ struct PlaybackTrackSelectionTests {
             ]
         )
 
-        let selected = try manifest.selectedAudioTracks()
+        let selected = try manifest.selectedAudioTracks(allowsLosslessAudio: false)
 
         #expect(selected.map(\.track.id) == ["original", "alternate"])
         #expect(selected.map(\.representation) == [originalHigh, alternateHigh])
+    }
+
+    @Test(arguments: [false, true])
+    func originalOffersRemainingTiersThenDolbyAndLosslessOnlyWhenAllowed(
+        allowsLosslessAudio: Bool
+    ) throws {
+        let middle = try makeRepresentation(id: 30_232, kind: .audio, bandwidth: 132_000)
+        let high = try makeRepresentation(id: 30_280, kind: .audio, bandwidth: 192_000)
+        let low = try makeRepresentation(id: 30_216, kind: .audio, bandwidth: 64_000)
+        let dolby = try makeRepresentation(id: 30_250, kind: .audio, bandwidth: 1_000_000)
+        let lossless = try makeRepresentation(id: 30_251, kind: .audio, bandwidth: 3_400_000)
+        let manifest = PlaybackManifest(
+            videoRepresentations: [],
+            audioTracks: [
+                .original(representations: [middle, high, low], dolby: dolby, lossless: lossless),
+                PlaybackAudioTrack(
+                    id: "machine-generated:en",
+                    displayName: "English",
+                    languageTag: "en",
+                    role: .machineGenerated,
+                    isDefault: false,
+                    isAutoselect: false,
+                    representations: [low, high]
+                )
+            ]
+        )
+
+        let selected = try manifest.selectedAudioTracks(allowsLosslessAudio: allowsLosslessAudio)
+
+        #expect(selected.map(\.representation) == [high, high])
+        #expect(
+            selected[0].additionalRepresentations
+                == [middle, low, dolby] + (allowsLosslessAudio ? [lossless] : [])
+        )
+        #expect(selected[1].additionalRepresentations.isEmpty)
     }
 
     @Test(
@@ -64,7 +101,7 @@ struct PlaybackTrackSelectionTests {
             ]
         )
 
-        let selected = try manifest.selectedAudioTracks()
+        let selected = try manifest.selectedAudioTracks(allowsLosslessAudio: false)
 
         #expect(selected.map(\.representation.id) == [expectedID])
     }
@@ -121,7 +158,7 @@ struct PlaybackTrackSelectionTests {
 
         #expect(throws: expectedError) {
             try PlaybackManifest(videoRepresentations: [], audioTracks: tracks)
-                .selectedAudioTracks()
+                .selectedAudioTracks(allowsLosslessAudio: false)
         }
     }
 

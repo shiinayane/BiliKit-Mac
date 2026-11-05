@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import BiliModels
 import Foundation
 
@@ -25,6 +26,16 @@ struct BridgePreparation: Sendable {
             subtitleSource: subtitleSource,
             startPositionSeconds: startPositionSeconds
         )
+    }
+
+    /// 带了原声无损版本时让 AVPlayer 在带宽足够时选无损音频组。
+    ///
+    /// 不设这个偏好时 AVPlayer 从不自动选 FLAC（实测，见 ARCHITECTURE）。无损组读取失败被丢掉时这个偏好没有可作用的对象，不影响播放。
+    var variantPreferences: AVVariantPreferences {
+        audioTracks.contains { selected in
+            selected.track.losslessRepresentation.map(selected.additionalRepresentations.contains)
+                ?? false
+        } ? .scalabilityToLosslessAudio : []
     }
 
     func prepare(using bridge: DASHToHLSBridge) async throws -> PreparedPlaybackAsset {

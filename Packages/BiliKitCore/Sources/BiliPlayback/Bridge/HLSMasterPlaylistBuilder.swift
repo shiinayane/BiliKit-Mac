@@ -84,41 +84,16 @@ public struct HLSSubtitleRendition: Sendable, Equatable {
     }
 }
 
-/// 一条语义音轨在本次 master playlist 中选定的媒体 rendition。
-public struct HLSAudioRendition: Sendable, Equatable {
-    public let selectedTrack: SelectedPlaybackAudioTrack
-    public let channelCount: Int?
-    public let bitDepth: Int?
-    public let sampleRate: Int?
-    public let index: SegmentIndex
-    public let playlistURI: URL
-
-    public init(
-        selectedTrack: SelectedPlaybackAudioTrack,
-        channelCount: Int? = nil,
-        bitDepth: Int? = nil,
-        sampleRate: Int? = nil,
-        index: SegmentIndex,
-        playlistURI: URL
-    ) {
-        self.selectedTrack = selectedTrack
-        self.channelCount = channelCount
-        self.bitDepth = bitDepth
-        self.sampleRate = sampleRate
-        self.index = index
-        self.playlistURI = playlistURI
-    }
-}
-
-/// 把一个或多个视频 variant 与语义音轨 rendition 集合（稿件没有声音时为空）组合成 AVPlayer 的 ABR master playlist。
+/// 把一个或多个视频 variant 与音频组（稿件没有声音时为空）组合成 AVPlayer 的 ABR master playlist。
 ///
-/// Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
+/// 每个视频档与每个音频组组合成一行 variant，按音频组在外、视频档在内排列，所以首行是第一组配第一个
+/// 视频档。Builder 从真实分段计算带宽并验证媒体类型、视频属性与可嵌入字符串，不决定 CDN 或会话生命周期。
 public struct HLSMasterPlaylistBuilder: Sendable {
     public init() {}
 
     public func build(
         videoVariants: [HLSVideoVariant],
-        audioRenditions: [HLSAudioRendition],
+        audioGroups: [HLSAudioGroup],
         subtitleRenditions: [HLSSubtitleRendition] = [],
         iFrameVariants: [HLSIFrameVariant] = [],
         localizedRenditionNamesURI: URL? = nil,
@@ -135,30 +110,12 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         else {
             throw HLSPlaylistBuilderError.inconsistentVideoRange
         }
-        // 没有声音的稿件没有音频 rendition：master 只写视频 variant，不声明 AUDIO group。
-        let defaultCount = audioRenditions.filter {
-            $0.selectedTrack.track.isDefault
-        }.count
-        guard audioRenditions.isEmpty || defaultCount == 1 else {
-            throw HLSPlaylistBuilderError.invalidDefaultAudioRenditionCount(
-                defaultCount
-            )
-        }
-        let audioGroupID =
-            audioRenditions.count == 1
-            ? "audio-\(audioRenditions[0].selectedTrack.representation.id)"
-            : "audio"
-        var audioTrackIDs = Set<String>()
-        var audioNames = Set<String>()
-        var audioCodecs: [String] = []
-        var audioCodecSet = Set<String>()
-        var audioPeakBitRate = 0
-        var audioAverageBitRate = 0
         var lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:7"
         ]
-        let allIndices = videoVariants.map(\.index) + audioRenditions.map(\.index)
+        let allIndices =
+            videoVariants.map(\.index) + audioGroups.flatMap { $0.renditions.map(\.index) }
         if allIndices.allSatisfy(isIndependent) {
             lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
         }
@@ -172,75 +129,9 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                 "#EXT-X-SESSION-DATA:DATA-ID=\"_hls.localized-rendition-names\",URI=\"\(try safePlaylistURI(localizedRenditionNamesURI))\""
             )
         }
-        for rendition in audioRenditions {
-            let selectedAudio = rendition.selectedTrack
-            guard audioTrackIDs.insert(selectedAudio.track.id).inserted else {
-                throw HLSPlaylistBuilderError.duplicateAudioTrackID(
-                    selectedAudio.track.id
-                )
-            }
-            guard audioNames.insert(selectedAudio.track.displayName).inserted else {
-                throw HLSPlaylistBuilderError.duplicateAudioRenditionName(
-                    selectedAudio.track.displayName
-                )
-            }
-            guard
-                !selectedAudio.track.isDefault
-                    || selectedAudio.track.isAutoselect,
-                selectedAudio.track.representations.contains(
-                    selectedAudio.representation
-                )
-            else {
-                throw HLSPlaylistBuilderError.invalidAudioTrackSelection(
-                    trackID: selectedAudio.track.id,
-                    representationID: selectedAudio.representation.id
-                )
-            }
-            let audio = selectedAudio.representation
-            guard audio.kind == .audio else {
-                throw HLSPlaylistBuilderError.invalidMediaKind(
-                    expected: .audio,
-                    actual: audio.kind
-                )
-            }
-            try validateAudioFormat(rendition)
-            let codec = try safeAttribute(audio.codecs)
-            if audioCodecSet.insert(codec).inserted {
-                audioCodecs.append(codec)
-            }
-            let audioBitRates = try bitRates(for: rendition.index)
-            audioPeakBitRate = max(audioPeakBitRate, audioBitRates.peak)
-            audioAverageBitRate = max(
-                audioAverageBitRate,
-                audioBitRates.average
-            )
-            // macOS 27 的音轨菜单不显示音频的 NAME，B 站的配音标题在这里只用于 NAME 唯一性。
-            let audioName = try safeAttribute(selectedAudio.track.displayName)
-            // 没有语言标记的音轨（原声）不写 LANGUAGE：写 `und` 时系统菜单会附上“未知语言”。
-            // 这样原声在菜单里的名字只来自 `_hls.localized-rendition-names`，缺这份会话数据时只剩
-            // 系统加的“（原始）”标注；DASHToHLSBridge 生成的每份 master 都必须带它。
-            var audioLanguage = ""
-            if let languageTag = selectedAudio.track.languageTag {
-                audioLanguage = ",LANGUAGE=\"\(try safeLanguageTag(languageTag))\""
-            }
-            let audioCharacteristics = try characteristics(
-                for: selectedAudio.track.role
-            )
-            var audioLine =
-                "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(audioGroupID)\",NAME=\"\(audioName)\"\(audioLanguage),CHARACTERISTICS=\"\(audioCharacteristics)\""
-            if let channelCount = rendition.channelCount {
-                audioLine += ",CHANNELS=\"\(channelCount)\""
-            }
-            if let bitDepth = rendition.bitDepth {
-                audioLine += ",BIT-DEPTH=\(bitDepth)"
-            }
-            if let sampleRate = rendition.sampleRate {
-                audioLine += ",SAMPLE-RATE=\(sampleRate)"
-            }
-            audioLine +=
-                ",DEFAULT=\(yesNo(selectedAudio.track.isDefault)),AUTOSELECT=\(yesNo(selectedAudio.track.isAutoselect)),URI=\"\(try safePlaylistURI(rendition.playlistURI))\""
-            lines.append(audioLine)
-        }
+        // 没有声音的稿件没有音频组：master 只写视频 variant，不声明 AUDIO group。
+        let audio = try audioGroupLines(audioGroups)
+        lines += audio.lines
 
         let subtitleGroupID = "subtitles"
         var subtitleNames = Set<String>()
@@ -267,65 +158,16 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             lines.append(subtitleLine)
         }
 
-        for variant in videoVariants {
-            let video = variant.representation
-            guard video.kind == .video else {
-                throw HLSPlaylistBuilderError.invalidMediaKind(
-                    expected: .video,
-                    actual: video.kind
+        let groupsForVariants: [AudioGroupSummary?] =
+            audio.summaries.isEmpty ? [nil] : audio.summaries
+        for group in groupsForVariants {
+            for variant in videoVariants {
+                lines += try variantLines(
+                    variant,
+                    audioGroup: group,
+                    subtitleGroupID: subtitleRenditions.isEmpty ? nil : subtitleGroupID
                 )
             }
-            guard let attributes = video.videoAttributes else {
-                throw HLSPlaylistBuilderError.missingVideoAttributes(
-                    representationID: video.id
-                )
-            }
-            let frameRate = attributes.frameRate.map {
-                String(
-                    format: "%.3f",
-                    locale: Locale(identifier: "en_US_POSIX"),
-                    $0
-                )
-            }
-
-            let videoBitRates = try bitRates(for: variant.index)
-            // 带宽取视频加 AUDIO group 内最高的音频码率，CODECS 也列出全部音频 codec：
-            // 组内任一音轨都可能被选中。
-            let bandwidth = try adding(
-                videoBitRates.peak,
-                audioPeakBitRate
-            )
-            let averageBandwidth = try adding(
-                videoBitRates.average,
-                audioAverageBitRate
-            )
-            let videoURI = try safePlaylistURI(variant.playlistURI)
-            let videoCodecs = try safeAttribute(video.codecs)
-            let codecs = try safeAttribute(
-                ([videoCodecs] + audioCodecs).joined(separator: ",")
-            )
-            var streamAttributes =
-                "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height)"
-            if let frameRate {
-                streamAttributes += ",FRAME-RATE=\(frameRate)"
-            }
-            streamAttributes += ",CODECS=\"\(codecs)\""
-            if let supplementalCodecs = variant.supplementalCodecs {
-                streamAttributes +=
-                    ",SUPPLEMENTAL-CODECS=\"\(try safeAttribute(supplementalCodecs))\""
-            }
-            if let videoRange = variant.videoRange {
-                streamAttributes += ",VIDEO-RANGE=\(videoRange.rawValue)"
-            }
-            if !audioRenditions.isEmpty {
-                streamAttributes += ",AUDIO=\"\(audioGroupID)\""
-            }
-            if !subtitleRenditions.isEmpty {
-                streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
-            }
-            streamAttributes += ",CLOSED-CAPTIONS=NONE"
-            lines.append(streamAttributes)
-            lines.append(videoURI)
         }
 
         var iFrameRepresentationIDs = Set<Int>()
@@ -368,7 +210,68 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func bitRates(
+    /// 一个视频档配一个音频组的 `EXT-X-STREAM-INF` 与 URI 两行；带宽取视频加该组最高的音频码率，CODECS
+    /// 也列出该组全部音频 codec：组内任一音轨都可能被选中。
+    private func variantLines(
+        _ variant: HLSVideoVariant,
+        audioGroup: AudioGroupSummary?,
+        subtitleGroupID: String?
+    ) throws -> [String] {
+        let video = variant.representation
+        guard video.kind == .video else {
+            throw HLSPlaylistBuilderError.invalidMediaKind(
+                expected: .video,
+                actual: video.kind
+            )
+        }
+        guard let attributes = video.videoAttributes else {
+            throw HLSPlaylistBuilderError.missingVideoAttributes(
+                representationID: video.id
+            )
+        }
+        let frameRate = attributes.frameRate.map {
+            String(
+                format: "%.3f",
+                locale: Locale(identifier: "en_US_POSIX"),
+                $0
+            )
+        }
+
+        let videoBitRates = try bitRates(for: variant.index)
+        let bandwidth = try adding(videoBitRates.peak, audioGroup?.peakBitRate ?? 0)
+        let averageBandwidth = try adding(
+            videoBitRates.average,
+            audioGroup?.averageBitRate ?? 0
+        )
+        let videoURI = try safePlaylistURI(variant.playlistURI)
+        let videoCodecs = try safeAttribute(video.codecs)
+        let codecs = try safeAttribute(
+            ([videoCodecs] + (audioGroup?.codecs ?? [])).joined(separator: ",")
+        )
+        var streamAttributes =
+            "#EXT-X-STREAM-INF:BANDWIDTH=\(bandwidth),AVERAGE-BANDWIDTH=\(averageBandwidth),RESOLUTION=\(attributes.width)x\(attributes.height)"
+        if let frameRate {
+            streamAttributes += ",FRAME-RATE=\(frameRate)"
+        }
+        streamAttributes += ",CODECS=\"\(codecs)\""
+        if let supplementalCodecs = variant.supplementalCodecs {
+            streamAttributes +=
+                ",SUPPLEMENTAL-CODECS=\"\(try safeAttribute(supplementalCodecs))\""
+        }
+        if let videoRange = variant.videoRange {
+            streamAttributes += ",VIDEO-RANGE=\(videoRange.rawValue)"
+        }
+        if let audioGroup {
+            streamAttributes += ",AUDIO=\"\(audioGroup.id)\""
+        }
+        if let subtitleGroupID {
+            streamAttributes += ",SUBTITLES=\"\(subtitleGroupID)\""
+        }
+        streamAttributes += ",CLOSED-CAPTIONS=NONE"
+        return [streamAttributes, videoURI]
+    }
+
+    func bitRates(
         for index: SegmentIndex
     ) throws -> (peak: Int, average: Int) {
         guard !index.references.isEmpty else {
@@ -399,45 +302,12 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         )
     }
 
-    private func validateAudioFormat(
-        _ rendition: HLSAudioRendition
-    ) throws {
-        if let channelCount = rendition.channelCount,
-            !(1...128).contains(channelCount)
-        {
-            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
-        }
-        if let bitDepth = rendition.bitDepth,
-            !(1...64).contains(bitDepth)
-        {
-            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
-        }
-        if let sampleRate = rendition.sampleRate,
-            !(1...768_000).contains(sampleRate)
-        {
-            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
-        }
-    }
-
-    /// 写进 HLS `CHARACTERISTICS` 的音轨角色。
-    ///
-    /// macOS 27 的音轨菜单给原声加“（原始）”并排在最前，给机器配音显示语言名加“生成”。音频不写
-    /// `public.translation`：拿不到原声语言，就无法确认配音与原声语言不同。
-    private func characteristics(
-        for role: PlaybackAudioTrack.Role
-    ) throws -> String {
-        switch role {
-        case .original: try safeCharacteristics(["public.original-content"])
-        case .machineGenerated: try safeCharacteristics(["public.machine-generated"])
-        }
-    }
-
     /// 空索引没有可声明独立的分段，不算独立。
     private func isIndependent(_ index: SegmentIndex) -> Bool {
         !index.references.isEmpty && index.allReferencesStartWithType1SAP
     }
 
-    private func yesNo(_ value: Bool) -> String {
+    func yesNo(_ value: Bool) -> String {
         value ? "YES" : "NO"
     }
 
@@ -461,14 +331,14 @@ public struct HLSMasterPlaylistBuilder: Sendable {
 
     /// 写进引号属性的文本（显示名、codecs、语言等，部分来自远端）必须通过 `isPlaylistSafeText`
     /// 且不超过 128 字节，不能注入新属性或新行。
-    private func safeAttribute(_ value: String) throws -> String {
+    func safeAttribute(_ value: String) throws -> String {
         guard isPlaylistSafeText(value), value.utf8.count <= 128 else {
             throw HLSPlaylistBuilderError.unsafeAttributeValue
         }
         return value
     }
 
-    private func safeCharacteristics(_ values: [String]) throws -> String {
+    func safeCharacteristics(_ values: [String]) throws -> String {
         guard !values.isEmpty,
             values.allSatisfy({ !$0.contains(",") })
         else {
@@ -477,7 +347,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         return try safeAttribute(values.joined(separator: ","))
     }
 
-    private func safeLanguageTag(_ value: String) throws -> String {
+    func safeLanguageTag(_ value: String) throws -> String {
         let safeValue = try safeAttribute(value)
         let subtags = safeValue.split(
             separator: "-",

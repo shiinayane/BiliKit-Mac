@@ -12,6 +12,8 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
     case duplicateAudioTrackID(String)
     case duplicateAudioRenditionName(String)
     case invalidDefaultAudioRenditionCount(Int)
+    case duplicateAudioGroup(String)
+    case inconsistentAudioGroupMembers
     case invalidAudioTrackSelection(trackID: String, representationID: Int)
     case duplicateSubtitleRenditionName(String)
     case invalidRenditionSelection
