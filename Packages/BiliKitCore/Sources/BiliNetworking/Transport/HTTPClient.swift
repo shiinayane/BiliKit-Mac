@@ -34,7 +34,7 @@ public struct HTTPRequest: Sendable, Equatable {
 extension HTTPResponse {
     /// 按 HTTP 规则不区分大小写地取响应头；响应侧读取单个头都经这里。
     ///
-    /// `headers` 保留 transport 交来的原样键，需要整张表的调用方（QR 登录读 `Set-Cookie`）直接用它。
+    /// `headers` 保留 transport 交来的原样键，需要整张表的调用方直接用它。
     public func headerValue(_ name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
     }

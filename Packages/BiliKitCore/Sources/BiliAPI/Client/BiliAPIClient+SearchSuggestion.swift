@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliNetworking
 import Foundation
 
 /// 搜索框联想。

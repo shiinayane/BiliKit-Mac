@@ -1,11 +1,33 @@
 {
   "code": 0,
-  "message": "OK",
+  "message": "0",
+  "ttl": 1,
   "data": {
-    "url": "https://passport.biligame.com/?DedeUserID=FIXTURE_VALUE&SESSDATA=FIXTURE_VALUE&bili_jct=FIXTURE_VALUE&Expires=1700000000&first_domain=.bilibili.com&gourl=https%3A%2F%2Fwww.bilibili.com%2F",
+    "is_new": 0,
+    "mid": 42,
+    "access_token": "FIXTURE_ACCESS_TOKEN_VALUE",
     "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
-    "timestamp": 1700000002,
-    "code": 0,
-    "message": ""
+    "expires_in": 15552000,
+    "token_info": {
+      "mid": 42,
+      "access_token": "FIXTURE_ACCESS_TOKEN_VALUE",
+      "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
+      "expires_in": 15552000,
+      "region": "FX",
+      "store_region": "FX"
+    },
+    "cookie_info": {
+      "cookies": [
+        { "name": "SESSDATA", "value": "FIXTURE_SESSDATA_VALUE", "http_only": 1, "expires": 4102444800, "secure": 1 },
+        { "name": "bili_jct", "value": "FIXTURE_BILI_JCT_VALUE", "http_only": 0, "expires": 4102444800, "secure": 0 },
+        { "name": "DedeUserID", "value": "42", "http_only": 0, "expires": 4102444800, "secure": 0 },
+        { "name": "DedeUserID__ckMd5", "value": "FIXTURE_USER_HASH_VALUE", "http_only": 0, "expires": 4102444800, "secure": 0 },
+        { "name": "sid", "value": "FIXTURE_SID_VALUE", "http_only": 0, "expires": 4102444800, "secure": 0 },
+        { "name": "unknown_cookie", "value": "FIXTURE_UNKNOWN_VALUE", "http_only": 0, "expires": 4102444800, "secure": 0 }
+      ],
+      "domains": [".bilibili.com", ".biligame.com", ".bigfun.cn", ".bigfunapp.cn", ".dreamcast.hk"]
+    },
+    "sso": ["https://passport.example.invalid/fixture", "https://passport.example.invalid/fixture", "https://passport.example.invalid/fixture"],
+    "hint": ""
   }
 }

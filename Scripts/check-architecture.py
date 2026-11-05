@@ -57,7 +57,7 @@ SCOPES = {
         "BiliAPI 只依赖 Application/Models/Networking；SwiftProtobuf 只允许出现在这里",
     ),
     f"{SOURCES}/BiliAuth": (
-        {"BiliModels", "BiliApplication", "BiliNetworking", "Security", "CoreGraphics", "CoreImage"},
+        {"BiliModels", "BiliApplication", "BiliNetworking", "Security", "CoreGraphics", "CoreImage", "CryptoKit"},
         "BiliAuth 不能依赖 API、Playback 或界面框架",
     ),
     f"{SOURCES}/BiliPlayback": (

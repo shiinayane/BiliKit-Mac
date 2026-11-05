@@ -30,27 +30,30 @@
 
 | 资产 | 规则 |
 | --- | --- |
-| Web Cookie | 只接受 QR 成功响应 `Set-Cookie` 中的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`；未知 Cookie 丢弃 |
-| `qrcode_key`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `WebQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `refresh_token` | 轮询响应只解码状态码，不读取、不保存、不使用该字段，不实现自动刷新 |
+| Web Cookie | 只接受 TV 端扫码轮询成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文的 `mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
+| `auth_code`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `TVQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
+| `access_token`、`refresh_token` | 轮询成功正文只解码 `mid` 与 `cookie_info`；这两个字段与 `token_info`、`sso` 里的副本不读取、不保存、不使用，不实现自动刷新 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
 - 持久秘密只存 Keychain：Security.framework generic-password、固定 service/account、
   `kSecUseDataProtectionKeychain`、`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`、非 synchronizable，
-  保存一个版本化 envelope；解码后重新校验名称、domain、path、Secure、值字符与大小。
+  保存一个版本化 envelope；解码后重新校验名称、domain、path、Secure、值字符与大小（domain、path、Secure
+  来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。
 - 凭据类型的 `description`／Mirror 不展示值。UserDefaults、文件、fixture、日志、截图、崩溃信息、
   App 恢复状态和验证记录都不得出现 Cookie、QR key、token 或完整认证 URL。
 - Cookie、QR key、Keychain 类型、endpoint DTO 不越过 `BiliAuth`／`BiliAPI` 进入 Application 或 Feature。
 - 不使用 `URLSession.shared`、共享 `HTTPCookieStorage`、`URLCredentialStorage` 或 WebView Cookie；
-  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验），不接入 App token 登录。
+  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验）；TV 扫码返回的 App 端 token 不使用（见上表）。
 
 ## 2. 登录状态机
 
 防：未经验证的凭据被当成登录成功；登出或换号后旧账户的请求与结果继续生效。
 
-- QR 生成与轮询只连 `https://passport.bilibili.com`；待显示 URL 只接受精确 `https://account.bilibili.com`。
-  已确认状态为 `86101` 未扫码、`86090` 已扫码待确认、`86038` 过期、`0` 成功；其他值失败关闭，不
-  回显服务端 message/payload。
+- 登录用 TV 端扫码：取码（`/x/passport-tv-login/qrcode/auth_code`）与轮询（`.../qrcode/poll`）只连
+  `https://passport.bilibili.com`，都是带 APP 签名（TV 的 appkey）的 urlencoded POST，不带 Cookie。`auth_code` 只接受 32 个
+  十六进制字符；待显示 URL 只接受精确 `https://passport.bilibili.com/x/passport-tv-login/h5/qrcode/auth`，query 只能是
+  这一次的 `auth_code`，防止二维码把手机带去别处确认。轮询状态在顶层 `code`：`86039` 未扫码、`86038` 过期、`0` 成功
+  已经现场确认，`86090` 已扫码待确认按协议文档接受；其他值失败关闭，不回显服务端 message/payload。
 - 成功后先在内存组 Cookie 请求 `/x/web-interface/nav`，`isLogin=true` 才在同一 actor generation 内
   写入 Keychain；旧 generation、取消、过期、校验或存储失败都清除临时秘密，不能返回登录成功。
 - 轮询有最小间隔、总时限和次数上限；ViewModel 拥有 Task，actor 用 generation 与 poll ID 隔离旧结果。
@@ -270,7 +273,8 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 
 ## 9. 剩余风险
 
-- Web QR 与各 Web 接口未公开，可能无通知漂移；漂移应表现为失败关闭，而不是降级。
+- TV 扫码与各 Web 接口未公开，可能无通知漂移；漂移应表现为失败关闭，而不是降级。
+- TV 扫码的 APP 签名用的是从官方客户端提取、公开流传的 TV appkey／appsec；B 站轮换或停用它时扫码登录整体失效，只能换 key 并发版。
 - Keychain 不能抵御已控制当前用户会话、可调试进程或可读屏幕的攻击者。
 - 签名私钥丢失时，拒绝降级策略可能要求用户手动安装新版。
 - 图片管线不核对图片内容是否完整：服务端正常结束响应但内容被截断的 JPEG／PNG（无论是否声明长度）会被
