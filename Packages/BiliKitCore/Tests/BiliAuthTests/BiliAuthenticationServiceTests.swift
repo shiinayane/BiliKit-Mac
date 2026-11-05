@@ -13,7 +13,7 @@ import Testing
 struct BiliAuthenticationServiceTests {
     @Test
     func mapsQRCodeFlowAndCommitsOnlyAfterFinalValidation() async throws {
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let service = makeService(
             store: store,
             qrTransport: RecordingAuthTransport(
@@ -40,7 +40,7 @@ struct BiliAuthenticationServiceTests {
     @Test
     func unknownPollStatusMapsToInvalidResponse() async throws {
         let service = makeService(
-            store: MemoryWebCredentialStore(),
+            store: MemoryAccountCredentialStore(),
             qrTransport: RecordingAuthTransport(
                 responses: [
                     try fixtureResponse("qr-generate"),
@@ -60,7 +60,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test
     func cancelledRestoreNeverPublishesSignedOutWhileCredentialRemains() async throws {
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential()
         )
         let service = makeService(
@@ -79,7 +79,7 @@ struct BiliAuthenticationServiceTests {
         _ restoreCase: RestoreCase
     ) async throws {
         let events = AuthEventRecorder()
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: restoreCase.hasStoredCredential
                 ? try makeFixtureCredential() : nil
         )
@@ -109,7 +109,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test(.timeLimit(.minutes(1)))
     func logoutCancelsLateCredentialFinalizationBeforeDeletingStore() async throws {
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let qrTransport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
@@ -135,7 +135,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test(.timeLimit(.minutes(1)))
     func restoreCannotEnterWhileLogoutCleanupIsSuspended() async throws {
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential()
         )
         let invalidator = RecordingSessionInvalidator(suspends: true)
@@ -162,7 +162,7 @@ struct BiliAuthenticationServiceTests {
         deleteFails: Bool
     ) async throws {
         let events = AuthEventRecorder()
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(),
             deleteError: deleteFails ? StubAuthError.storeUnavailable : nil,
             events: events
@@ -198,7 +198,7 @@ struct BiliAuthenticationServiceTests {
     }
 
     private func makeService(
-        store: MemoryWebCredentialStore,
+        store: MemoryAccountCredentialStore,
         qrTransport: RecordingAuthTransport = RecordingAuthTransport(),
         validationTransport: RecordingAuthTransport = RecordingAuthTransport(),
         invalidators: [any AuthenticatedSessionInvalidating] = []

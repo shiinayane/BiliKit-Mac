@@ -189,8 +189,7 @@ extension FeedRequest {
     fileprivate func accepts(_ content: FeedContent) -> Bool {
         switch (self, content) {
         case (.recommendation(let requestedContinuation), .recommendation(let page)):
-            page.continuation
-                == (requestedContinuation ?? RecommendationContinuation(freshIndex: 1))
+            page.continuation == requestedContinuation
         case (.popular(let requestedPage, let requestedSize), .popular(let page)):
             page.pageNumber == requestedPage && page.pageSize == requestedSize
         case (.search(let request), .search(let responseQuery, let page)):
@@ -207,7 +206,7 @@ extension FeedRequest {
 }
 
 extension RecommendationPage {
-    /// 推荐沿批次 continuation 翻页：API 客户端在本批有条目时按 `freshIndex` 本地递增算出下一批。
+    /// 推荐沿续传游标翻页：API 客户端在本批有条目时取最后一条的 `idx` 作为下一批的游标。
     fileprivate var videoPage: VideoListPage<RecommendedVideo, FeedRequest> {
         VideoListPage(
             items: videos,

@@ -134,7 +134,7 @@ struct FeedRepositoryStub: FeedRepository {
         guard let recommendations else { throw ContentApplicationError.unavailable }
         return RecommendationPage(
             videos: recommendations,
-            continuation: continuation ?? RecommendationContinuation(freshIndex: 1),
+            continuation: continuation,
             nextContinuation: nil
         )
     }

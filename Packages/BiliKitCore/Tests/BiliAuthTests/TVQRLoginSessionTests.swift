@@ -16,7 +16,7 @@ struct TVQRLoginSessionTests {
         let transport = RecordingAuthTransport(responses: [try fixtureResponse("qr-generate")])
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
 
         let state = try await session.requestQRCode()
@@ -69,7 +69,7 @@ struct TVQRLoginSessionTests {
         )
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
 
         _ = try await session.requestQRCode()
@@ -109,7 +109,7 @@ struct TVQRLoginSessionTests {
                 navigationResponse(isLogin: isLogin)
             ]
         )
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             saveError: saveFails ? StubAuthError.storeUnavailable : nil
         )
         let session = TVQRLoginSession(transport: transport, credentialStore: store)
@@ -140,6 +140,11 @@ struct TVQRLoginSessionTests {
             #expect(
                 cookies.first?.expiresAt == Date(timeIntervalSince1970: 4_102_444_800)
             )
+            // token 来自顶层 `access_token`，到期时刻是收到响应时加 `expires_in`（180 天）。
+            let token = try #require(try store.load()).appAccessToken
+            #expect(token.value == fixtureAppAccessTokenValue)
+            let lifetime = token.expiresAt.timeIntervalSinceNow
+            #expect(lifetime > 15_552_000 - 60 && lifetime < 15_552_000 + 1)
         }
         let request = try #require(await transport.requests.last)
         #expect(request.url.absoluteString == "https://api.bilibili.com/x/web-interface/nav")
@@ -147,14 +152,15 @@ struct TVQRLoginSessionTests {
         #expect(cookieHeader.contains("SESSDATA=FIXTURE_SESSDATA_VALUE"))
         #expect(cookieHeader.contains("bili_jct=FIXTURE_BILI_JCT_VALUE"))
         #expect(!cookieHeader.contains("unknown_cookie"))
-        #expect(!cookieHeader.contains("FIXTURE_ACCESS_TOKEN_VALUE"))
+        #expect(!cookieHeader.contains("ffffffffffffffffffffffffffffffff"))
     }
 
-    /// 成功正文里的 Cookie 集合不完整、重名、与 `mid` 对不上或不在 B 站作用域时，不产生候选凭据，也不发 nav、
-    /// 不写 Keychain。
-    @Test(arguments: IncompleteCookieInfoCase.allCases)
-    func incompleteCookieInfoFailsClosedWithoutStoring(
-        _ failureCase: IncompleteCookieInfoCase
+    /// 成功正文不合规时不产生候选凭据，也不发 nav、不写 Keychain。
+    ///
+    /// 不合规指 Cookie 集合不完整、重名、与 `mid` 对不上、不在 B 站作用域，或 token 形状、有效期不对。
+    @Test(arguments: IncompleteCredentialCase.allCases)
+    func incompleteCredentialFailsClosedWithoutStoring(
+        _ failureCase: IncompleteCredentialCase
     ) async throws {
         let transport = RecordingAuthTransport(
             responses: [
@@ -162,7 +168,7 @@ struct TVQRLoginSessionTests {
                 pollSuccessResponse(body: failureCase.body)
             ]
         )
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let session = TVQRLoginSession(transport: transport, credentialStore: store)
 
         _ = try await session.requestQRCode()
@@ -186,7 +192,7 @@ struct TVQRLoginSessionTests {
             ],
             suspendingRequest: 3
         )
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let session = TVQRLoginSession(transport: transport, credentialStore: store)
 
         _ = try await session.requestQRCode()
@@ -222,7 +228,7 @@ struct TVQRLoginSessionTests {
             transport: RecordingAuthTransport(
                 responses: [try fixtureResponse("qr-generate"), poll]
             ),
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
 
         _ = try await session.requestQRCode()
@@ -240,7 +246,7 @@ struct TVQRLoginSessionTests {
     func generateFailureMapsToSafeState(_ failureCase: GenerateFailureCase) async throws {
         let session = TVQRLoginSession(
             transport: failureCase.transport(),
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
 
         #expect(try await session.requestQRCode() == .failed(failureCase.expected))
@@ -251,7 +257,7 @@ struct TVQRLoginSessionTests {
         let transport = RecordingAuthTransport()
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
 
         let state = try await session.pollOnce()
@@ -265,7 +271,7 @@ struct TVQRLoginSessionTests {
         let transport = RecordingAuthTransport(suspendingRequest: 1)
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
         let task = Task { try await session.requestQRCode() }
 
@@ -290,7 +296,7 @@ struct TVQRLoginSessionTests {
         )
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
         let first = Task { try await session.requestQRCode() }
 
@@ -317,7 +323,7 @@ struct TVQRLoginSessionTests {
         )
         let session = TVQRLoginSession(
             transport: transport,
-            credentialStore: MemoryWebCredentialStore()
+            credentialStore: MemoryAccountCredentialStore()
         )
         _ = try await session.requestQRCode()
         let firstPoll = Task { try await session.pollOnce() }
@@ -418,12 +424,14 @@ struct TVQRLoginSessionTests {
         }
     }
 
-    enum IncompleteCookieInfoCase: CaseIterable, Sendable {
+    enum IncompleteCredentialCase: CaseIterable, Sendable {
         case missingWhitelistedCookie
         case duplicatedCookie
         case userIDDoesNotMatchMid
         case domainsWithoutBilibili
         case missingCookieInfo
+        case malformedAccessToken
+        case nonPositiveTokenLifetime
 
         var body: String {
             let complete = WebCredentialCookieName.allCases.map(\.rawValue)
@@ -437,14 +445,28 @@ struct TVQRLoginSessionTests {
             case .domainsWithoutBilibili:
                 return Self.successBody(cookies: complete, domains: [".biligame.com"])
             case .missingCookieInfo:
-                return #"{"code":0,"data":{"mid":42,"access_token":"FIXTURE_ACCESS_TOKEN_VALUE"}}"#
+                // FIXTURE 假值：access_token 是 32 个 f。
+                let token = fixtureAppAccessTokenValue
+                return #"{"code":0,"data":{"mid":42,"access_token":"\#(token)","#
+                    + #""expires_in":15552000}}"#
+            case .malformedAccessToken:
+                return Self.successBody(cookies: complete, accessToken: "FIXTURE")
+            case .nonPositiveTokenLifetime:
+                return Self.successBody(cookies: complete, expiresIn: 0)
             }
+        }
+
+        /// 字段齐全、应当被接受的正文；反例都只改其中一项。
+        static var completeBody: String {
+            successBody(cookies: WebCredentialCookieName.allCases.map(\.rawValue))
         }
 
         private static func successBody(
             cookies names: [String],
             mid: Int = 42,
-            domains: [String] = [".bilibili.com"]
+            domains: [String] = [".bilibili.com"],
+            accessToken: String = fixtureAppAccessTokenValue,
+            expiresIn: Int = 15_552_000
         ) -> String {
             let cookies = names.map { name in
                 let value = name == "DedeUserID" ? "42" : "FIXTURE_\(name)_VALUE"
@@ -453,7 +475,8 @@ struct TVQRLoginSessionTests {
             }
             let domainList = domains.map { "\"\($0)\"" }.joined(separator: ",")
             let cookieList = cookies.joined(separator: ",")
-            return #"{"code":0,"data":{"mid":\#(mid),"cookie_info":{"#
+            return #"{"code":0,"data":{"mid":\#(mid),"access_token":"\#(accessToken)","#
+                + #""expires_in":\#(expiresIn),"cookie_info":{"#
                 + #""cookies":[\#(cookieList)],"domains":[\#(domainList)]}}}"#
         }
     }
@@ -483,7 +506,7 @@ func signedForm(of request: HTTPRequest) throws -> [String: String] {
     let form = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
     let unsigned = form.filter { $0.key != "sign" && $0.key != "appkey" && $0.key != "ts" }
     let timestamp = try #require(form["ts"].flatMap(Int64.init))
-    #expect(BiliAppSigning.signedForm(unsigned, timestamp: timestamp) == body)
+    #expect(BiliAppSigning.signed(unsigned, timestamp: timestamp) == body)
     return form
 }
 

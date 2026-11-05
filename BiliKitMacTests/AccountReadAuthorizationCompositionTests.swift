@@ -68,7 +68,6 @@ struct AccountReadAuthorizationCompositionTests {
                 "/x/web-interface/card",
                 "/x/web-interface/history/cursor",
                 "/x/web-interface/popular",
-                "/x/web-interface/wbi/index/top/feed/rcmd",
                 "/x/web-interface/wbi/search/type",
                 "/x/web-interface/wbi/view"
             ]
@@ -80,6 +79,7 @@ struct AccountReadAuthorizationCompositionTests {
             ]
         )
         #expect(LiveAPIClients.watchProgressAccountReadAllowedPaths == nil)
+        #expect(LiveAPIClients.mainAppReadAllowedPaths == ["/x/v2/feed/index"])
     }
 
     /// allowlist 由 endpoint 导出的常量组成：常量改了 path，上面的字面量集合与这里一起报警。
@@ -104,9 +104,9 @@ struct AccountReadAuthorizationCompositionTests {
             (BiliAccountReadPath.favoriteFolderContent, "/x/v3/fav/resource/list"),
             (BiliAccountReadPath.videoRelation, "/x/web-interface/archive/relation"),
             (BiliAccountReadPath.popular, "/x/web-interface/popular"),
-            (BiliAccountReadPath.recommendations, "/x/web-interface/wbi/index/top/feed/rcmd"),
             (BiliAccountReadPath.videoSearch, "/x/web-interface/wbi/search/type")
         ]
+        #expect(BiliAppReadPath.recommendations == "/x/v2/feed/index")
         for (constant, literal) in constants {
             #expect(constant == literal)
         }
@@ -238,16 +238,16 @@ struct AccountWriteAuthorizationCompositionTests {
     }
 }
 
-private struct CompositionFixtureCredentialStore: WebCredentialStoring {
-    let credential: WebCredential
+private struct CompositionFixtureCredentialStore: AccountCredentialStoring {
+    let credential: AccountCredential
 
-    func load() -> WebCredential? { credential }
-    func save(_ credential: WebCredential) {}
+    func load() -> AccountCredential? { credential }
+    func save(_ credential: AccountCredential) {}
     func delete() {}
 }
 
-private func makeCompositionFixtureCredential() throws -> WebCredential {
-    try WebCredential(
+private func makeCompositionFixtureCredential() throws -> AccountCredential {
+    try AccountCredential(
         cookies: WebCredentialCookieName.allCases.map { name in
             WebCredentialCookie(
                 name: name,
@@ -258,6 +258,10 @@ private func makeCompositionFixtureCredential() throws -> WebCredential {
                 isHTTPOnly: name == .session,
                 expiresAt: Date(timeIntervalSince1970: 4_102_444_800)
             )
-        }
+        },
+        appAccessToken: AppAccessToken(
+            value: String(repeating: "f", count: 32),
+            expiresAt: Date(timeIntervalSince1970: 4_102_444_800)
+        )
     )
 }

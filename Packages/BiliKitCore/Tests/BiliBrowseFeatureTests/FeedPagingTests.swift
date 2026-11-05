@@ -15,9 +15,9 @@ struct FeedPagingTests {
         let first = ContentFixtures(bvid: "BV1RcmdOneA", title: "推荐一")
         let second = ContentFixtures(bvid: "BV1RcmdTwoB", title: "推荐二")
         let repository = FeedRepositoryStub(recommendations: { continuation, _ in
-            let freshIndex = continuation?.freshIndex ?? 1
+            let index = continuation?.index ?? 1
             let videos: [RecommendedVideo]
-            switch freshIndex {
+            switch index {
             case 1: videos = [first.recommendedVideo, first.recommendedVideo]
             case 2: videos = [first.recommendedVideo, second.recommendedVideo]
             case 3: videos = [second.recommendedVideo]
@@ -25,8 +25,8 @@ struct FeedPagingTests {
             }
             return RecommendationPage(
                 videos: videos,
-                continuation: RecommendationContinuation(freshIndex: freshIndex),
-                nextContinuation: RecommendationContinuation(freshIndex: freshIndex + 1)
+                continuation: continuation,
+                nextContinuation: RecommendationContinuation(index: index + 1)
             )
         })
         let model = BrowseViewModel(
@@ -53,8 +53,8 @@ struct FeedPagingTests {
         #expect(
             await repository.recommendationRequests == [
                 nil,
-                RecommendationContinuation(freshIndex: 2),
-                RecommendationContinuation(freshIndex: 3)
+                RecommendationContinuation(index: 2),
+                RecommendationContinuation(index: 3)
             ]
         )
     }
@@ -69,8 +69,8 @@ struct FeedPagingTests {
             guard continuation != nil else { return first.recommendationPage }
             return RecommendationPage(
                 videos: [stray.recommendedVideo],
-                continuation: RecommendationContinuation(freshIndex: 5),
-                nextContinuation: RecommendationContinuation(freshIndex: 6)
+                continuation: RecommendationContinuation(index: 5),
+                nextContinuation: RecommendationContinuation(index: 6)
             )
         })
         let model = BrowseViewModel(useCase: FeedUseCase(repository: repository))
@@ -90,8 +90,8 @@ struct FeedPagingTests {
         #expect(
             await repository.recommendationRequests == [
                 nil,
-                RecommendationContinuation(freshIndex: 2),
-                RecommendationContinuation(freshIndex: 2)
+                RecommendationContinuation(index: 2),
+                RecommendationContinuation(index: 2)
             ]
         )
     }

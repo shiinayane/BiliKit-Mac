@@ -236,17 +236,17 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
     private static let maximumBodySize = 4_096
     private typealias Support = WriteRequestAuthorizationSupport
 
-    private let store: any WebCredentialStoring
+    private let store: any AccountCredentialStoring
     private let allowedPaths: Set<String>
 
     /// `allowedPaths` 由 Composition 声明（窗口主 API 的写 allowlist），只有同时在 schema 表里的 path 可授权。
     public init(allowedPaths: Set<String>) {
-        store = KeychainWebCredentialStore()
+        store = KeychainAccountCredentialStore()
         self.allowedPaths = allowedPaths
     }
 
     /// Keychain 边界；`init(allowedPaths:)` 由此接入 Keychain store。
-    init(store: any WebCredentialStoring, allowedPaths: Set<String>) {
+    init(store: any AccountCredentialStoring, allowedPaths: Set<String>) {
         self.store = store
         self.allowedPaths = allowedPaths
     }

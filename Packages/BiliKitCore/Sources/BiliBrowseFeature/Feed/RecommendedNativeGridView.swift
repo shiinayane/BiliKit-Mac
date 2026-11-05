@@ -73,15 +73,13 @@ struct RecommendedNativeGridView: View {
             avatarURL: presentation.avatarURL,
             showsAvatar: true,
             coverMetrics: [
-                NativeVideoCardMetric(
-                    text: presentation.viewCountText,
-                    systemImage: "play.fill"
-                ),
-                NativeVideoCardMetric(
-                    text: presentation.danmakuCountText,
-                    systemImage: "text.bubble.fill"
-                )
-            ],
+                presentation.viewCountText.map {
+                    NativeVideoCardMetric(text: $0, systemImage: "play.fill")
+                },
+                presentation.danmakuCountText.map {
+                    NativeVideoCardMetric(text: $0, systemImage: "text.bubble.fill")
+                }
+            ].compactMap { $0 },
             coverTrailingText: presentation.durationText,
             footerLeadingText: presentation.footerText,
             footerTrailingText: presentation.recommendationReason,

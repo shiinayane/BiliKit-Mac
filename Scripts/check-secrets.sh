@@ -6,7 +6,7 @@ pattern='(qrcode_key.{0,32}[=:][^[:space:]]*[A-Za-z0-9_-]{24,}|auth_code.{0,32}[
 
 matches="$(
     git grep --untracked -n -E "$pattern" -- . ':!Scripts/check-secrets.sh' 2>/dev/null \
-        | grep -v -E 'FIXTURE|<redacted>|TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS|0{32}' \
+        | grep -v -E 'FIXTURE|<redacted>|TOP_SECRET_SHOULD_NOT_REACH_DIAGNOSTICS|0{32}|f{32}' \
         || true
 )"
 

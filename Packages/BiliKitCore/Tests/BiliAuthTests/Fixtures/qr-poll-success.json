@@ -5,12 +5,12 @@
   "data": {
     "is_new": 0,
     "mid": 42,
-    "access_token": "FIXTURE_ACCESS_TOKEN_VALUE",
+    "access_token": "ffffffffffffffffffffffffffffffff",
     "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
     "expires_in": 15552000,
     "token_info": {
       "mid": 42,
-      "access_token": "FIXTURE_ACCESS_TOKEN_VALUE",
+      "access_token": "ffffffffffffffffffffffffffffffff",
       "refresh_token": "FIXTURE_REFRESH_TOKEN_VALUE",
       "expires_in": 15552000,
       "region": "FX",

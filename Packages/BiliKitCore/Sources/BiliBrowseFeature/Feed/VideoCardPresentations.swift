@@ -54,14 +54,17 @@ public struct PopularVideoCardPresentation: Sendable, Equatable {
 
 /// 首页推荐卡片的已格式化文字、缩略图地址与读屏标签；另带推荐理由，由 `RecommendedNativeGridView`
 /// 显示为页脚胶囊。
+///
+/// App 端推荐的计数与发布时间可能解析不出：缺失的计数为 nil（封面不显示这一项），没有发布时间时页脚只有 UP 主名；
+/// 读屏标签同样跳过缺项。
 public struct RecommendedVideoCardPresentation: Sendable, Equatable {
     public let bvid: String
     public let title: String
     public let coverURL: URL?
     public let avatarURL: URL?
     public let ownerName: String
-    public let viewCountText: String
-    public let danmakuCountText: String
+    public let viewCountText: String?
+    public let danmakuCountText: String?
     public let durationText: String
     public let footerText: String
     public let recommendationReason: String?
@@ -73,22 +76,19 @@ public struct RecommendedVideoCardPresentation: Sendable, Equatable {
         coverURL = BiliImageThumbnail.url(video.coverURL, size: .videoCover)
         avatarURL = BiliImageThumbnail.url(video.owner.avatarURL, size: .avatar)
         ownerName = video.owner.name
-        viewCountText = VideoMetadataFormatting.compactCount(
-            video.statistics.viewCount,
-            locale: locale
-        )
-        danmakuCountText = VideoMetadataFormatting.compactCount(
-            video.statistics.danmakuCount,
-            locale: locale
-        )
+        viewCountText = video.viewCount.map {
+            VideoMetadataFormatting.compactCount($0, locale: locale)
+        }
+        danmakuCountText = video.danmakuCount.map {
+            VideoMetadataFormatting.compactCount($0, locale: locale)
+        }
         durationText = VideoDurationFormatting.string(
             seconds: video.durationSeconds
         )
-        let publishedDateText = VideoMetadataFormatting.publishedDate(
-            video.publishedAt,
-            locale: locale
-        )
-        footerText = "\(video.owner.name) · \(publishedDateText)"
+        let publishedDateText = video.publishedAt.map {
+            VideoMetadataFormatting.publishedDate($0, locale: locale)
+        }
+        footerText = publishedDateText.map { "\(video.owner.name) · \($0)" } ?? video.owner.name
         recommendationReason = video.recommendationReason
         accessibilityLabel = videoCardAccessibilityLabel(
             title: video.title,
@@ -152,13 +152,15 @@ public struct SearchVideoCardPresentation: Sendable, Equatable {
 }
 
 /// 推荐、热门与搜索卡片共用的 VoiceOver 标签：读出卡片上可见的全部信息。
+///
+/// 缺失的计数与发布时间（App 端推荐可能解析不出）不进标签。
 private func videoCardAccessibilityLabel(
     title: String,
     ownerName: String,
-    viewCountText: String,
-    danmakuCountText: String,
+    viewCountText: String?,
+    danmakuCountText: String?,
     durationSeconds: Int?,
-    publishedDateText: String,
+    publishedDateText: String?,
     recommendationReason: String? = nil,
     locale: Locale
 ) -> String {
@@ -166,12 +168,18 @@ private func videoCardAccessibilityLabel(
         byJoining: [
             title,
             ownerName,
-            BrowseFeatureStrings.localized("播放 \(viewCountText)", locale: locale),
-            BrowseFeatureStrings.localized("弹幕 \(danmakuCountText)", locale: locale),
+            viewCountText.map {
+                BrowseFeatureStrings.localized("播放 \($0)", locale: locale)
+            },
+            danmakuCountText.map {
+                BrowseFeatureStrings.localized("弹幕 \($0)", locale: locale)
+            },
             durationSeconds.map {
                 VideoCardAccessibilityText.duration(seconds: $0, locale: locale)
             },
-            BrowseFeatureStrings.localized("发布 \(publishedDateText)", locale: locale),
+            publishedDateText.map {
+                BrowseFeatureStrings.localized("发布 \($0)", locale: locale)
+            },
             recommendationReason.map {
                 BrowseFeatureStrings.localized("推荐理由 \($0)", locale: locale)
             }

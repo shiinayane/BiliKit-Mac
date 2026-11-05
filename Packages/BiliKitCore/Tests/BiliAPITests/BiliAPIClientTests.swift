@@ -268,22 +268,7 @@ struct BiliAPIClientTests {
 
 /// 每个账户读取 endpoint 只授权自己的请求；WBI endpoint 前置的 nav 请求保持匿名。
 struct AccountReadCase: Sendable, CustomTestStringConvertible {
-    static let recommendationBody = #"""
-        {"code":0,"data":{"item":[
-          {"goto":"av","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","pic":"//i0.hdslb.com/a.jpg","owner":{"mid":10001,"name":"作者","face":"//i1.hdslb.com/a.jpg"},"stat":{"view":12345,"danmaku":67,"like":8},"duration":125,"pubdate":1700000000,"rcmd_reason":{"content":"正在流行"},"track_id":"web_rcmd.abc-1"},
-          {"goto":"live","bvid":"BV1FixtureB2","title":"直播","owner":{"mid":2,"name":"主播"},"stat":{"view":1,"danmaku":0,"like":0},"duration":0,"pubdate":1700000000},
-          {"goto":"av","bvid":"BV1FixtureC3","title":"广告","owner":{"mid":3,"name":"广告主"},"stat":{"view":1,"danmaku":0,"like":0},"duration":10,"pubdate":1700000000,"business_info":{}}
-        ]}}
-        """#
-
     static let all: [AccountReadCase] = [
-        AccountReadCase(
-            path: "/x/web-interface/wbi/index/top/feed/rcmd",
-            responses: {
-                [try fixtureResponse("nav"), jsonResponse(AccountReadCase.recommendationBody)]
-            },
-            call: { _ = try await $0.recommendations() }
-        ),
         AccountReadCase(
             path: "/x/web-interface/wbi/search/type",
             responses: { [try fixtureResponse("nav"), try fixtureResponse("search")] },

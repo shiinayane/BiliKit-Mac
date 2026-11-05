@@ -6,7 +6,7 @@ import Testing
 struct BiliAppSigningTests {
     @Test
     func signsSortedUnreservedEncodedFormWithTVKey() {
-        let form = BiliAppSigning.signedForm(
+        let form = BiliAppSigning.signed(
             ["local_id": "0", "auth_code": "FIXTURE AUTH+CODE"],
             timestamp: 1_700_000_000
         )
@@ -21,6 +21,6 @@ struct BiliAppSigningTests {
 
     @Test(arguments: ["appkey", "ts", "sign"])
     func rejectsCallerSuppliedReservedParameter(_ name: String) {
-        #expect(BiliAppSigning.signedForm([name: "FIXTURE"], timestamp: 1_700_000_000) == nil)
+        #expect(BiliAppSigning.signed([name: "FIXTURE"], timestamp: 1_700_000_000) == nil)
     }
 }

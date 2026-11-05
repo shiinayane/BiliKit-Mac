@@ -20,7 +20,7 @@ struct BiliCredentialRequestAuthorizerTests {
     ) async throws {
         let credential = try makeFixtureCredential()
         let authorizer = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(credential: credential),
+            store: MemoryAccountCredentialStore(credential: credential),
             allowedPaths: allowedPaths
         )
         for path in allowedPaths {
@@ -45,7 +45,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test
     func keepsConfiguredReadCapabilitiesDisjoint() async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         let validationAuthorizer = makeCredentialAuthorizer(store: store)
         let apiAuthorizer = makeCredentialAuthorizer(
             store: store,
@@ -94,7 +94,7 @@ struct BiliCredentialRequestAuthorizerTests {
     )
     func rejectsNonAPIReadCapabilities(urlString: String, method: HTTPMethod) async throws {
         let authorizer = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential()),
             allowedPaths: fixturePlaybackAllowedPaths
         )
         let request = HTTPRequest(
@@ -110,7 +110,7 @@ struct BiliCredentialRequestAuthorizerTests {
     @Test(arguments: ["cOoKiE", "aUtHoRiZaTiOn", "x-CsRf-ToKeN"])
     func rejectsPreexistingCredentialHeadersCaseInsensitively(header: String) async throws {
         let authorizer = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let request = HTTPRequest(
             url: try #require(
@@ -128,7 +128,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test
     func missingCredentialFailsWithoutChangingRequest() async throws {
-        let authorizer = makeCredentialAuthorizer(store: MemoryWebCredentialStore())
+        let authorizer = makeCredentialAuthorizer(store: MemoryAccountCredentialStore())
         let request = HTTPRequest(
             url: try #require(
                 URL(string: "https://api.bilibili.com/x/web-interface/nav")
@@ -145,7 +145,7 @@ struct BiliCredentialRequestAuthorizerTests {
         let endpoint = try #require(
             URL(string: "https://api.bilibili.com/x/web-interface/nav")
         )
-        let expiredStore = MemoryWebCredentialStore(
+        let expiredStore = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast)
         )
         let expiredAuthorizer = makeCredentialAuthorizer(store: expiredStore)
@@ -155,8 +155,8 @@ struct BiliCredentialRequestAuthorizerTests {
         }
         #expect(expiredStore.deleteCount == 1)
 
-        let corruptStore = MemoryWebCredentialStore(
-            loadError: WebCredentialStoreError.corruptCredential
+        let corruptStore = MemoryAccountCredentialStore(
+            loadError: AccountCredentialStoreError.corruptCredential
         )
         let corruptAuthorizer = makeCredentialAuthorizer(store: corruptStore)
         await #expect(throws: BiliRequestAuthorizationError.invalidCredential) {
@@ -164,7 +164,7 @@ struct BiliCredentialRequestAuthorizerTests {
         }
         #expect(corruptStore.deleteCount == 1)
 
-        let deletionFailure = MemoryWebCredentialStore(
+        let deletionFailure = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast),
             deleteError: StubAuthError.offline
         )
@@ -190,7 +190,7 @@ struct BiliCredentialRequestAuthorizerTests {
         let endpoint = try #require(
             URL(string: "https://api.bilibili.com/x/web-interface/nav")
         )
-        let store = MemoryWebCredentialStore(loadError: StubAuthError.offline)
+        let store = MemoryAccountCredentialStore(loadError: StubAuthError.offline)
         let authorizer = makeCredentialAuthorizer(
             store: store,
             isConfirmedSignedOut: { isConfirmedSignedOut }
@@ -208,7 +208,7 @@ struct BiliCredentialRequestAuthorizerTests {
             responses: [navigationResponse(isLogin: true)]
         )
         let authorizer = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential()),
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential()),
             transport: transport
         )
 
@@ -226,7 +226,7 @@ struct BiliCredentialRequestAuthorizerTests {
             responses: [navigationResponse(isLogin: true)]
         )
         let missing = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(),
+            store: MemoryAccountCredentialStore(),
             transport: missingTransport
         )
         #expect(
@@ -235,7 +235,7 @@ struct BiliCredentialRequestAuthorizerTests {
         )
         #expect(await missingTransport.requests.isEmpty)
 
-        let invalidStore = MemoryWebCredentialStore(
+        let invalidStore = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential()
         )
         let invalid = makeCredentialAuthorizer(
@@ -251,7 +251,7 @@ struct BiliCredentialRequestAuthorizerTests {
         #expect(invalidStore.deleteCount == 1)
 
         let failedPurge = makeCredentialAuthorizer(
-            store: MemoryWebCredentialStore(
+            store: MemoryAccountCredentialStore(
                 credential: try makeFixtureCredential(),
                 deleteError: StubAuthError.offline
             ),
@@ -268,7 +268,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test(arguments: [0, -101])
     func explicitSignedOutAnswerPurgesWhicheverCodeCarriesIt(code: Int) async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         let authorizer = makeCredentialAuthorizer(
             store: store,
             transport: RecordingAuthTransport(
@@ -285,7 +285,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test(arguments: [-412, -352])
     func otherRejectionCodesKeepStoredCredential(code: Int) async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         let authorizer = makeCredentialAuthorizer(
             store: store,
             transport: RecordingAuthTransport(
@@ -306,7 +306,7 @@ struct BiliCredentialRequestAuthorizerTests {
         #"{"code":-101,"data":{}}"#
     ])
     func malformedNotLoggedInAnswerKeepsStoredCredential(body: String) async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         let authorizer = makeCredentialAuthorizer(
             store: store,
             transport: RecordingAuthTransport(
@@ -328,7 +328,7 @@ struct BiliCredentialRequestAuthorizerTests {
 
     @Test
     func temporaryValidationFailureKeepsStoredCredential() async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential())
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         let authorizer = makeCredentialAuthorizer(
             store: store,
             transport: RecordingAuthTransport(errors: [StubAuthError.offline])

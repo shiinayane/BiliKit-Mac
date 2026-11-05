@@ -161,8 +161,7 @@ struct RecommendationDislikeTests {
     /// 首次加载给出固定条目与 `secondBVID`，此后每次刷新（第一批的再次请求）给出固定条目与 `refreshedBVID`；下一批
     /// 只有 `nextPageBVID`。
     private func loadedModel() async -> BrowseViewModel {
-        let first = RecommendationContinuation(freshIndex: 1)
-        let next = RecommendationContinuation(freshIndex: 2)
+        let next = RecommendationContinuation(index: 2)
         let fixed = Self.trackedVideo()
         let second = Self.trackedVideo(Self.secondBVID)
         let refreshed = Self.trackedVideo(Self.refreshedBVID)
@@ -174,7 +173,7 @@ struct RecommendationDislikeTests {
                         videos: continuation == nil
                             ? [fixed, attempt == 1 ? second : refreshed]
                             : [nextPage],
-                        continuation: continuation ?? first,
+                        continuation: continuation,
                         nextContinuation: continuation == nil ? next : nil
                     )
                 })
@@ -191,7 +190,8 @@ struct RecommendationDislikeTests {
             title: video.title,
             coverURL: nil,
             owner: video.owner,
-            statistics: video.statistics,
+            viewCount: video.viewCount,
+            danmakuCount: video.danmakuCount,
             durationSeconds: video.durationSeconds,
             publishedAt: video.publishedAt,
             recommendationReason: nil,
