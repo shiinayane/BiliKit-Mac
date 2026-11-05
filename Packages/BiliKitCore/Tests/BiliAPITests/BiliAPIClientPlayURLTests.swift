@@ -78,8 +78,8 @@ struct BiliAPIClientPlayURLTests {
                 value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "+/".contains($0)) }
             )
         }
-        #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "120")) == true)
-        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "976")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "qn", value: "127")) == true)
+        #expect(queryItems?.contains(URLQueryItem(name: "fnval", value: "2000")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "fourk", value: "1")) == true)
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
     }
@@ -164,7 +164,7 @@ struct BiliAPIClientPlayURLTests {
             return
         }
         #expect(source.primaryURL.lastPathComponent == "whole.mp4")
-        #expect(playURLQualities(transport) == ["120", "64"])
+        #expect(playURLQualities(transport) == ["127", "64"])
     }
 
     /// 重取后仍是 FLV 时不再继续重试，按不支持的容器失败。
@@ -182,7 +182,7 @@ struct BiliAPIClientPlayURLTests {
         await #expect(throws: BiliAPIError.unsupportedProgressiveMedia(.unsupportedContainer)) {
             try await client.playback(for: "BV1FixtureA1", cid: 900_001)
         }
-        #expect(playURLQualities(transport) == ["120", "64"])
+        #expect(playURLQualities(transport) == ["127", "64"])
     }
 
     @Test(arguments: [

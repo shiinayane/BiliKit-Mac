@@ -225,6 +225,7 @@ public final class AVPlayerEngine:
         let sourcePreference = sourcePreferenceProvider()
         let progressiveSource: ProgressivePlaybackSource?
         let videos: [MediaRepresentation]
+        let fallbackVideos: [MediaRepresentation]
         let audioTracks: [SelectedPlaybackAudioTrack]
         switch request.media {
         case .dash(let manifest):
@@ -232,10 +233,14 @@ public final class AVPlayerEngine:
             videos = try manifest.selectedVideos().map {
                 PlaybackSourceOrdering.applying(sourcePreference, to: $0)
             }
+            fallbackVideos = manifest.fallbackVideoRepresentations.map {
+                PlaybackSourceOrdering.applying(sourcePreference, to: $0)
+            }
             audioTracks = try manifest.selectedAudioTracks()
         case .progressive(let source):
             progressiveSource = source
             videos = []
+            fallbackVideos = []
             audioTracks = []
         }
         try Task.checkCancellation()
@@ -263,45 +268,28 @@ public final class AVPlayerEngine:
         if subtitleSource != nil {
             subtitleIdentity = identity
         }
-        let task = Task {
-            if let progressiveSource {
-                try await bridge.prepare(
-                    progressive: progressiveSource,
-                    headers: request.mediaHeaders
-                )
-            } else {
-                try await bridge.prepare(
-                    videos: videos,
-                    audioTracks: audioTracks,
-                    headers: request.mediaHeaders,
-                    subtitleSource: subtitleSource,
-                    startPositionSeconds: startPositionSeconds
-                )
-            }
-        }
-        loadTask = task
+        let preparation = BridgePreparation(
+            progressiveSource: progressiveSource,
+            videos: videos,
+            audioTracks: audioTracks,
+            headers: request.mediaHeaders,
+            subtitleSource: subtitleSource,
+            startPositionSeconds: startPositionSeconds
+        )
 
         do {
-            let prepared = try await task.value
-            try Task.checkCancellation()
-            guard loadGeneration == generation else {
-                prepared.stop()
-                throw CancellationError()
-            }
-
-            loadTask = nil
-            preparedAsset = prepared
-            let item = AVPlayerItem(url: prepared.url)
-            player.replaceCurrentItem(with: item)
-            timeline.installObservers(for: item)
-            let readinessTask = Task {
-                try await AVPlayerItemReadiness.wait(untilReady: item)
-            }
-            self.readinessTask = readinessTask
-            try await readinessTask.value
-            try Task.checkCancellation()
-            guard loadGeneration == generation else {
-                throw CancellationError()
+            let item: AVPlayerItem
+            do {
+                item = try await installReadyItem(preparation, generation: generation)
+            } catch AVPlayerEngineError.itemFailed where !fallbackVideos.isEmpty {
+                // 主阶梯（HEVC）的 item 在就绪前失败时，用同一份 playurl 的 AVC 阶梯在同一 generation 内
+                // 重建一次：这台 Mac 不接受这种编码时，否则整条视频都放不了。错误里只有类型名，分不出是
+                // 编码还是网络，所以凡是就绪前的 item 失败都回退；回退也失败就按普通失败处理，不再重试。
+                discardFailedItem()
+                item = try await installReadyItem(
+                    preparation.replacingVideos(fallbackVideos),
+                    generation: generation
+                )
             }
             if progressiveSource != nil,
                 let endTime = try await Self.lastPresentableMediaEndTime(
@@ -329,6 +317,52 @@ public final class AVPlayerEngine:
             }
             throw error
         }
+    }
+
+    /// 准备 loopback 会话、安装 item 并等到就绪，返回就绪的 item。
+    ///
+    /// 每次 await 之后比对 generation，不一致时停掉迟到的会话并抛 `CancellationError`。失败时会话与
+    /// item 仍挂在 engine 上，由调用方释放或交给 `discardFailedItem` 后重试。
+    private func installReadyItem(
+        _ preparation: BridgePreparation,
+        generation: UUID
+    ) async throws -> AVPlayerItem {
+        let task = Task { [bridge] in
+            try await preparation.prepare(using: bridge)
+        }
+        loadTask = task
+        let prepared = try await task.value
+        try Task.checkCancellation()
+        guard loadGeneration == generation else {
+            prepared.stop()
+            throw CancellationError()
+        }
+
+        loadTask = nil
+        preparedAsset = prepared
+        let item = AVPlayerItem(url: prepared.url)
+        player.replaceCurrentItem(with: item)
+        timeline.installObservers(for: item)
+        let readinessTask = Task {
+            try await AVPlayerItemReadiness.wait(untilReady: item)
+        }
+        self.readinessTask = readinessTask
+        try await readinessTask.value
+        try Task.checkCancellation()
+        guard loadGeneration == generation else {
+            throw CancellationError()
+        }
+        return item
+    }
+
+    /// 释放就绪前失败的 item 与它的 loopback 会话，保留 generation、intent 与时间线，供回退阶梯重建。
+    ///
+    /// 与 `releaseCurrentPlayback` 一样先移除 item 再停止会话。
+    private func discardFailedItem() {
+        readinessTask = nil
+        player.replaceCurrentItem(with: nil)
+        preparedAsset?.stop()
+        preparedAsset = nil
     }
 
     private func cancelLoad(generation: UUID) {

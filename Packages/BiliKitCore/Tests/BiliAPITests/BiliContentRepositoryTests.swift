@@ -55,8 +55,10 @@ struct BiliContentRepositoryTests {
     func mapsUnsupportedPlaybackAtAdapterBoundary() async throws {
         let fixture = try fixtureResponse("playurl")
         let body = String(decoding: fixture.body, as: UTF8.self)
-            .replacingOccurrences(of: #""codecid": 7"#, with: #""codecid": 12"#)
-            .replacingOccurrences(of: "avc1.64001f", with: "hev1.1.6.L120.90")
+            .replacingOccurrences(of: #""codecid": 7"#, with: #""codecid": 13"#)
+            .replacingOccurrences(of: #""codecid": 12"#, with: #""codecid": 13"#)
+            .replacingOccurrences(of: "avc1.64001f", with: "av01.0.08M.08")
+            .replacingOccurrences(of: "hev1.1.6.L120.90", with: "av01.0.08M.08")
         let repository = BiliContentRepository(
             client: BiliAPIClient(
                 transport: StubTransport(

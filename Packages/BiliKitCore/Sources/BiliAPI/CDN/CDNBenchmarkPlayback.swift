@@ -13,6 +13,19 @@ struct CDNBenchmarkPlayURLPayload: Decodable, Sendable {
 }
 
 /// 测速只读的 `dash.video` 列表；音频等字段不声明、不解码。
+///
+/// 与播放一样逐条宽松解码，形状不认识的档位只丢这一条。
 struct CDNBenchmarkDASHPayload: Decodable, Sendable {
     let video: [DASHRepresentationPayload]
+
+    private enum CodingKeys: String, CodingKey {
+        case video
+    }
+
+    init(from decoder: any Decoder) throws {
+        video = try decoder.container(keyedBy: CodingKeys.self).decodeLossyElements(
+            DASHRepresentationPayload.self,
+            forKey: .video
+        )
+    }
 }

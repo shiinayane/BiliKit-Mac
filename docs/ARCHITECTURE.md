@@ -112,6 +112,11 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
   备用线路，AVPlayer 断开或下游写入失败都按取消处理。
 - 附加档位失败不拖垮播放：某一档视频 SIDX 读取失败只丢弃该档，某个 AI 配音语言失败就停止后续配音请求；
   全部视频档失败、原声音轨失败、凭据失效或会话变化才让播放失败。读取成功之后生成 playlist 出错仍让整次播放失败。
+- 视频编码：每次播放的 SDR 阶梯只用一种编码。按清晰度 ID 比较，HEVC 覆盖 AVC 的全部档位时用 HEVC（8K 等
+  HEVC 独有的档位一并加入），同一份 playurl 的 AVC 阶梯留作回退；否则全用 AVC。HEVC 的 item 在就绪前失败时，
+  engine 在同一次 load 内换 AVC 阶梯重建一次，回退也失败才算播放失败。阶梯不设分辨率上限，依赖 AVPlayer
+  按 player 视图的像素尺寸限制所选分辨率（实测系统行为，文档没有写）。master 不写 `VIDEO-RANGE`，HDR 真彩与
+  杜比视界档在映射时排除。`dash.video` 逐条宽松解码，认不出的档位只丢这一条。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
 - 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
   AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。
@@ -440,6 +445,8 @@ Settings 窗口，从不自动改选。
 - 弹幕按窗口尺寸布局、resize 后去抖重排并整屏替换：拖动窗口边缘时画面整屏跳变，去抖期间还要为居中、
   贴底与按旧宽度运动写特判；取景框模型让 resize 只移动锚定边。
 - mpv 等第二播放后端；AVPlayer + loopback 能满足当前需求。
+- AV1：AVPlayer 只在带 AV1 硬件解码的 Mac（M3 起）上能播，其他机器整条视频放不了。
+- 同一 master 混入 AVC 与 HEVC：ABR 换档时会在两种编码之间切换；只用一种编码，回退规则也只需一条。
 - 响度均一化：只能压低不能放大（放大需要限幅器），依赖 playurl 的响度元数据（许多较早的视频没有），
   只在 macOS 27 起有官方接入点；它按“原声只有一条”匹配音轨，音轨按编码与码率分成多组后系统会合并同名选项、
   换组时不发通知，无法确定当前播放的是哪一组。

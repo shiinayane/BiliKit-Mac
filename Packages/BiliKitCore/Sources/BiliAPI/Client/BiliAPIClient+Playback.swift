@@ -7,20 +7,21 @@ import Foundation
 ///
 /// 三处调用共用同一个 WBI 签名管线；只有本地明确无凭据的播放请求才带游客参数。
 extension BiliAPIClient {
-    /// 与 Web 播放页一致的固定参数；fnval 976 只请求本项目能消费的 DASH 形状。
+    /// playurl 的固定参数。
     ///
-    /// gaia 两项与 PiliPlus 一致，不分登录状态都带。
+    /// fnval 2000 请求 DASH、HDR、4K、杜比音频、杜比视界与 8K（不含 AV1 位 2048）；服务端只返回账户与
+    /// 稿件实际有的档位，映射时再按 `DASHVideoLadder` 取用。gaia 两项与 PiliPlus 一致，不分登录状态都带。
     private static let playURLBaseParameters = [
-        "fnval": "976",
+        "fnval": "2000",
         "fnver": "0",
         "fourk": "1",
         "web_location": "1315873",
         "gaia_source": "pre-load",
         "isGaiaAvoided": "true"
     ]
-    /// playurl 请求的清晰度 `qn`：120 是 4K 档，服务端按账户权限与稿件实际档位返回不高于它的全部
+    /// playurl 请求的清晰度 `qn`：127 是 8K 档，服务端按账户权限与稿件实际档位返回不高于它的全部
     /// DASH 档位，播放器再自适应选择；较早视频只有 FLV 时按不高于它的最高 MP4 重取一次。
-    static let requestedPlaybackQuality = 120
+    static let requestedPlaybackQuality = 127
     /// 只用于本地无凭据的匿名请求：`try_look=1` 让游客可取得 720P/1080P。
     private static let guestPlayURLParameters = ["try_look": "1"]
     private static let riskControlInteractionParameter = #"{"ds":[],"wh":[0,0,0],"of":[0,0,0]}"#
@@ -51,7 +52,7 @@ extension BiliAPIClient {
         return String(Data(text.utf8).base64EncodedString().dropLast(2))
     }
 
-    /// 取得 AVC/AAC DASH 清单；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
+    /// 取得 DASH 清单（视频 HEVC 或 AVC、音频 AAC）；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
     public func playback(
         for bvid: String,
         cid: Int64
@@ -173,10 +174,11 @@ extension BiliAPIClient {
                 access: .accountRead(missingCredential: .fail)
             )
         try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
+        // 测速只比较线路吞吐，样本固定取 AVC，与播放选了哪种编码无关。
         let video = try resolved.payload.dash.video
-            .filter(\.isAVCVideo)
+            .filter { $0.videoCodec == .avc }
             .map { try $0.model(kind: .video) }
-        guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
+        guard !video.isEmpty else { throw BiliAPIError.noSupportedVideo }
         try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
         return CDNBenchmarkPlayback(
             videoRepresentations: video,
@@ -225,12 +227,9 @@ extension BiliAPIClient {
         quality: Int,
         referer: String
     ) async throws -> VideoPlayback {
-        let video = try dash.video
-            .filter(\.isAVCVideo)
-            .map { try $0.model(kind: .video) }
+        let video = try DASHVideoLadder(dash.video)
         let remoteAudio = dash.audio ?? []
         let audio = try remoteAudio.filter(\.isAACAudio).map { try $0.model(kind: .audio) }
-        guard !video.isEmpty else { throw BiliAPIError.noAVCVideo }
         // `dash.audio` 为 null 或空是稿件本身没有声音，只播视频；列出了音频却没有 AAC 才算不支持。
         guard remoteAudio.isEmpty || !audio.isEmpty else { throw BiliAPIError.noAACAudio }
         var audioTracks: [PlaybackAudioTrack] = []
@@ -254,7 +253,8 @@ extension BiliAPIClient {
         return VideoPlayback(
             media: .dash(
                 PlaybackManifest(
-                    videoRepresentations: video,
+                    videoRepresentations: video.primary,
+                    fallbackVideoRepresentations: video.fallback,
                     audioTracks: audioTracks
                 )
             ),

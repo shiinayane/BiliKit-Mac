@@ -11,8 +11,9 @@ import Testing
 private typealias Comment = Testing.Comment
 
 extension AVPlayerEngineSuites {
-    /// 固定起播契约：DASH→HLS item 就绪即位于 playlist 起播位置；自动起播受 intent、identity、
-    /// 用户暂停与 seek 约束，每个 intent 最多一次，续播 token 只允许一次从头播放；重播只在停在结尾时成立。
+    /// 固定起播契约：DASH→HLS item 就绪即位于 playlist 起播位置；主阶梯在就绪前失败时换回退阶梯重建一次；
+    /// 自动起播受 intent、identity、用户暂停与 seek 约束，每个 intent 最多一次，续播 token 只允许一次从头
+    /// 播放；重播只在停在结尾时成立。
     @Suite(.serialized, .timeLimit(.minutes(2)))
     struct AVPlayerEngineStartTests {
         /// `EXT-X-START` 让 DASH→HLS item 就绪时即精确位于起播位置（含非分段边界），可继续播放与回到开头。
@@ -94,6 +95,56 @@ extension AVPlayerEngineSuites {
             try await waitForTimeline(of: engine) { snapshot in
                 snapshot.positionSeconds > 0.2
             }
+        }
+
+        /// 主阶梯（生产中是 HEVC）的 item 在就绪前失败时，同一次 load 换用回退阶梯（AVC）重建并就绪。
+        ///
+        /// 主阶梯用 init 被破坏的媒体模拟解码器不接受。
+        @Test
+        @MainActor
+        func failedPrimaryLadderFallsBackOnceBeforeReady() async throws {
+            let host = "ladder-fallback.fixture.bilivideo.com"
+            let fixture = try makeFourSecondMedia(host: host)
+            let goodVideoData = try #require(fixture.media[fixture.video.primaryURL])
+            var brokenVideoData = goodVideoData
+            let movie = try #require(firstTopLevelBox(named: "moov", in: brokenVideoData))
+            brokenVideoData.replaceSubrange(
+                (movie.offset + 8)..<(movie.offset + movie.size),
+                with: Data(repeating: 0xFF, count: movie.size - 8)
+            )
+            let brokenURL = try #require(URL(string: "https://\(host)/broken-video"))
+            let broken = try makeFixtureTrack(
+                id: 120,
+                kind: .video,
+                codecs: "hvc1.1.6.L120.90",
+                bandwidth: 100_000,
+                data: brokenVideoData,
+                primaryURL: brokenURL,
+                videoAttributes: fixture.video.videoAttributes
+            ).representation
+            var media = fixture.media
+            media[brokenURL] = brokenVideoData
+            let transport = FixtureRangeTransport(media: media)
+            let engine = makeFixtureEngine(bridge: makeFixtureBridge(transport))
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            let identity = PlaybackItemIdentity(bvid: "BV1LadderFallback", cid: 900_012)
+            let request = PlaybackRequest(
+                media: .dash(
+                    PlaybackManifest(
+                        videoRepresentations: [broken],
+                        fallbackVideoRepresentations: [fixture.video],
+                        audioTracks: [.original(representations: [fixture.audio])]
+                    )
+                )
+            )
+
+            try await engine.load(request, identity: identity, intent: PlaybackLoadIntent())
+
+            #expect(engine.player.currentItem?.status == .readyToPlay)
+            let requestedPaths = await transport.requests.map(\.url.path)
+            #expect(requestedPaths.contains("/broken-video"))
+            #expect(requestedPaths.contains(fixture.video.primaryURL.path))
         }
 
         @Test
