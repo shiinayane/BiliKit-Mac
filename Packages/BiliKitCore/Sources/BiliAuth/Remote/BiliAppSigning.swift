@@ -16,10 +16,11 @@ enum BiliAppSigning {
     /// 签名用的保留参数名：调用方不得自带，否则签名会覆盖或重复它们。
     private static let reservedNames: Set<String> = ["appkey", "ts", "sign"]
 
-    /// 返回 urlencoded 正文，`sign` 在末尾；参数含保留名或无法编码时为 nil（调用方的编程错误）。
+    /// 返回 urlencoded 字符串，`sign` 在末尾，原样用作 POST 正文或 percent-encoded query；参数含保留名或无法编码时
+    /// 为 nil（调用方的编程错误）。
     ///
     /// `timestamp` 是 Unix 秒，由调用方取发送时刻；服务端按它判断请求是否过期。
-    static func signedForm(_ parameters: [String: String], timestamp: Int64) -> String? {
+    static func signed(_ parameters: [String: String], timestamp: Int64) -> String? {
         guard reservedNames.isDisjoint(with: parameters.keys) else { return nil }
         var all = parameters
         all["appkey"] = appKey

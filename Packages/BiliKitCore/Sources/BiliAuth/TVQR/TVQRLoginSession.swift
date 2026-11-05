@@ -26,7 +26,7 @@ public actor TVQRLoginSession {
     public private(set) var state: TVQRLoginState = .signedOut
 
     private let httpClient: HTTPClient
-    private let credentialStore: any WebCredentialStoring
+    private let credentialStore: any AccountCredentialStoring
     private let transportInvalidator: (@Sendable () -> Void)?
     private let decoder = JSONDecoder()
     /// 每次请求二维码与取消时递增；challenge 与候选凭据记录发起时的值，响应返回后不等即丢弃结果。
@@ -40,14 +40,14 @@ public actor TVQRLoginSession {
     public init() {
         let transport = AuthenticationHTTP.makeProductionTransport()
         httpClient = HTTPClient(transport: transport)
-        credentialStore = KeychainWebCredentialStore()
+        credentialStore = KeychainAccountCredentialStore()
         transportInvalidator = { transport.invalidateAndCancel() }
     }
 
     /// 网络与 Keychain 两个系统边界；`init()` 由此接入认证专用 session 与 Keychain store。
     init(
         transport: any HTTPTransport,
-        credentialStore: any WebCredentialStoring
+        credentialStore: any AccountCredentialStoring
     ) {
         httpClient = HTTPClient(transport: transport)
         self.credentialStore = credentialStore
@@ -251,7 +251,7 @@ public actor TVQRLoginSession {
         parameters: [String: String]
     ) async throws -> HTTPResponse {
         guard
-            let form = BiliAppSigning.signedForm(
+            let form = BiliAppSigning.signed(
                 parameters,
                 timestamp: Int64(Date.now.timeIntervalSince1970)
             )
@@ -351,11 +351,7 @@ public actor TVQRLoginSession {
 
     /// `auth_code` 只接受 32 个 ASCII 十六进制字符（现场观察的形状）；其他形状按无效响应失败关闭，见 SECURITY-MODEL §2。
     private static func isValidAuthCode(_ code: String) -> Bool {
-        code.utf8.count == 32
-            && code.utf8.allSatisfy { byte in
-                (0x30...0x39).contains(byte) || (0x41...0x46).contains(byte)
-                    || (0x61...0x66).contains(byte)
-            }
+        ASCIIHexShape.matches(code, length: 32)
     }
 
     /// 精确 `https://passport.bilibili.com/x/passport-tv-login/h5/qrcode/auth?auth_code=<本次 auth_code>`：公开 HTTPS
@@ -377,12 +373,14 @@ public actor TVQRLoginSession {
         return true
     }
 
-    /// 只从轮询成功正文的 `cookie_info` 取白名单 Cookie，缺任何一个、重名、`mid` 与 `DedeUserID` 不一致或校验失败都
-    /// 不产生候选凭据，见 SECURITY-MODEL §1。
+    /// 只从轮询成功正文的 `cookie_info` 取白名单 Cookie，并取同一正文的 `access_token`；Cookie 缺任何一个、重名、`mid`
+    /// 与 `DedeUserID` 不一致、token 形状或有效期不合规都不产生候选凭据，见 SECURITY-MODEL §1。
+    ///
+    /// token 的到期时刻按收到响应的时刻加 `expires_in` 计算。
     ///
     /// 正文只给每个 Cookie 的名称、值、到期时间与两个标志，作用域是另一个列表。domain、path 与 Secure 因此由这里
     /// 填写，不是服务端声明：domain 固定为 `.bilibili.com`（且必须出现在 `domains` 里），path 固定为 `/`，Secure 记为
-    /// 真，因为这些 Cookie 只经授权器发往 HTTPS 的精确主机。`WebCredential` 之后的校验对这几项只是复核这里写入的值。
+    /// 真，因为这些 Cookie 只经授权器发往 HTTPS 的精确主机。`AccountCredential` 之后的校验对这几项只是复核这里写入的值。
     private static func pendingCredential(
         from data: PollSuccessData,
         generation: UInt64
@@ -414,7 +412,17 @@ public actor TVQRLoginSession {
                 expiresAt: Date(timeIntervalSince1970: TimeInterval(cookie.expires))
             )
         }
-        guard let credential = try? WebCredential(cookies: credentialCookies) else {
+        guard data.expiresIn > 0 else { return nil }
+        let appAccessToken = AppAccessToken(
+            value: data.accessToken,
+            expiresAt: Date.now.addingTimeInterval(TimeInterval(data.expiresIn))
+        )
+        guard
+            let credential = try? AccountCredential(
+                cookies: credentialCookies,
+                appAccessToken: appAccessToken
+            )
+        else {
             return nil
         }
         return PendingCredential(
@@ -432,7 +440,7 @@ private struct ActiveChallenge: Sendable {
 
 private struct PendingCredential: Sendable {
     let generation: UInt64
-    let credential: WebCredential
+    let credential: AccountCredential
 }
 
 private struct StaleOperationError: Error {}
@@ -461,13 +469,18 @@ private struct PollSuccessEnvelope: Decodable, Sendable {
     let data: PollSuccessData
 }
 
-/// 只解码 `mid` 与 `cookie_info`；access_token、refresh_token、`token_info`、`sso` 与 `hint` 不解码，不进入内存模型。
+/// 只解码 `mid`、`access_token`、`expires_in` 与 `cookie_info`；refresh_token、`token_info`（与顶层重复的副本）、`sso`
+/// 与 `hint` 不解码，不进入内存模型。
 private struct PollSuccessData: Decodable, Sendable {
     let mid: Int64
+    let accessToken: String
+    let expiresIn: Int64
     let cookieInfo: PollCookieInfo
 
     private enum CodingKeys: String, CodingKey {
         case mid
+        case accessToken = "access_token"
+        case expiresIn = "expires_in"
         case cookieInfo = "cookie_info"
     }
 }

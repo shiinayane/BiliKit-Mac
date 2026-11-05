@@ -13,7 +13,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func authorizesExactContractAndInjectsOnlySessionAndCSRF() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
 
         let authorized = try await authorizer.authorize(try heartbeatRequest())
@@ -30,7 +30,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func rejectsEveryOriginMethodAndPathExpansion() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let cases: [(String, HTTPMethod)] = [
             ("http://api.bilibili.com/x/click-interface/web/heartbeat?\(validQuery)", .post),
@@ -64,7 +64,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test(arguments: ["Origin", "X-Unapproved", "Cookie", "Authorization", "X-CSRF-Token"])
     func rejectsEveryHeaderExpansion(header: String) async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let request = try heartbeatRequest(additionalHeader: header)
 
@@ -76,7 +76,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func rejectsExtraDuplicateOrMismatchedQueryAndBodyFacts() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let invalidRequests = [
             try heartbeatRequest(body: validBody + "&quality=80"),
@@ -119,7 +119,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test(arguments: ["%D9%A3", "%EF%BC%93", "%C2%BD", "b%CC%88", "A"])
     func sessionAndSignatureAcceptOnlyASCIILowercaseHex(firstCharacter: String) async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let requests = [
             try heartbeatRequest(
@@ -145,13 +145,13 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func missingOrExpiredCredentialCannotAuthorizeWrite() async throws {
         let missing = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore()
+            store: MemoryAccountCredentialStore()
         )
         await #expect(throws: BiliRequestAuthorizationError.missingCredential) {
             try await missing.authorize(try heartbeatRequest())
         }
 
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast)
         )
         let expired = BiliPlaybackHeartbeatRequestAuthorizer(store: store)
@@ -164,7 +164,7 @@ struct BiliPlaybackHeartbeatRequestAuthorizerTests {
     @Test
     func endedAllowsEitherNaturalSentinelOrCurrentExitPosition() async throws {
         let authorizer = BiliPlaybackHeartbeatRequestAuthorizer(
-            store: MemoryWebCredentialStore(credential: try makeFixtureCredential())
+            store: MemoryAccountCredentialStore(credential: try makeFixtureCredential())
         )
         let exitBody = validBody.replacingOccurrences(
             of: "play_type=2",

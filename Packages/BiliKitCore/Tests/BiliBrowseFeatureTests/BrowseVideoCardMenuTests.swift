@@ -23,7 +23,8 @@ struct BrowseVideoCardMenuTests {
                     title: "首页推荐",
                     coverURL: nil,
                     owner: Self.owner,
-                    statistics: Self.statistics,
+                    viewCount: Self.statistics.viewCount,
+                    danmakuCount: Self.statistics.danmakuCount,
                     durationSeconds: 60,
                     publishedAt: Self.publishedAt,
                     recommendationReason: nil

@@ -8,7 +8,8 @@
 
 保护的资产：
 
-- **账号凭据**（`SESSDATA`、`bili_jct`）：拿到就能以用户身份读写账号。
+- **账号凭据**（`SESSDATA`、`bili_jct`、App 端 `access_token`）：拿到就能以用户身份读写账号；`access_token` 单独就够，
+  不需要 CSRF。
 - **观看与搜索隐私**：看了什么、搜了什么、属于哪个账号。
 - **本机**：进程内的 loopback server，以及写到磁盘上的东西。
 - **更新链**：最终安装到用户 Mac 上的代码。
@@ -32,18 +33,20 @@
 | --- | --- |
 | Web Cookie | 只接受 TV 端扫码轮询成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文的 `mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
 | `auth_code`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `TVQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `access_token`、`refresh_token` | 轮询成功正文只解码 `mid` 与 `cookie_info`；这两个字段与 `token_info`、`sso` 里的副本不读取、不保存、不使用，不实现自动刷新 |
+| `access_token` | 只接受同一份轮询成功正文顶层的 `access_token`（32 个十六进制字符）与 `expires_in`（正数，到期时刻按收到响应时计算）；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query（§3） |
+| `refresh_token` | 不读取、不保存、不使用，不实现自动刷新；`token_info`、`sso` 里的副本同样不解码 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
 - 持久秘密只存 Keychain：Security.framework generic-password、固定 service/account、
   `kSecUseDataProtectionKeychain`、`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`、非 synchronizable，
-  保存一个版本化 envelope；解码后重新校验名称、domain、path、Secure、值字符与大小（domain、path、Secure
-  来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。
+  保存一个版本化 envelope（版本 2：Cookie 加 `access_token`）；解码后重新校验名称、domain、path、Secure、值字符与大小
+  以及 token 形状（domain、path、Secure 来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。读到只有 Cookie 的
+  版本 1 按损坏凭据删除，用户重新登录一次；旧版 App 读到版本 2 同样会删除它。
 - 凭据类型的 `description`／Mirror 不展示值。UserDefaults、文件、fixture、日志、截图、崩溃信息、
   App 恢复状态和验证记录都不得出现 Cookie、QR key、token 或完整认证 URL。
 - Cookie、QR key、Keychain 类型、endpoint DTO 不越过 `BiliAuth`／`BiliAPI` 进入 Application 或 Feature。
 - 不使用 `URLSession.shared`、共享 `HTTPCookieStorage`、`URLCredentialStorage` 或 WebView Cookie；
-  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验）；TV 扫码返回的 App 端 token 不使用（见上表）。
+  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验）。
 
 ## 2. 登录状态机
 
@@ -80,8 +83,8 @@
 搜索规则规范化（≤ 100 字），结果只在内存中用于当次菜单。唯一的非凭据 Cookie 是 `buvid3`：搜索
 `/x/web-interface/wbi/search/type` 与点赞、投币、三连三个写接口要求 Cookie 含它（缺它会触发风控），`BiliAPI` 为此在进程内存中
 随机生成一个 `buvid3=<小写 UUID>infoc`，不持久化、不激活、不与账户关联；这几种请求在授权之后附加它（与授权器给出的 Cookie
-并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有三个授权器，均由 Composition 注入
-`BiliAPI`：账户读取、自动的观看进度写入，与用户发起的账户写入。
+并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有四个授权器，均由 Composition 注入
+`BiliAPI`：账户读取、App 端读取、自动的观看进度写入，与用户发起的账户写入。
 
 **账户读取**（`BiliCredentialRequestAuthorizer`）
 
@@ -111,6 +114,21 @@
   失败，不发出该 endpoint 请求。WBI key 的 nav 请求保持匿名。只有业务码 -403 或 `v_voucher` 挑战时强制刷新 key 并重试一次；HTTP 403／412 是风控，按受限失败关闭，不换 key。
   所有签名读取共用 `BiliAPIClient.signedRequest`：取 nav、换 key 重试与响应返回期间认证 epoch 变化时丢弃结果，
   不以新会话补发；会话失效后返回的 nav 也不写回 key 缓存。
+
+**App 端读取**（`BiliAppRequestAuthorizer`）
+
+防：access_token 被带到 `app.bilibili.com` 之外或 allowlist 之外的接口；签过名的带凭据 URL 被改写或泄露。
+
+- 只允许 `https://app.bilibili.com`、端口缺省或 443、GET、无正文、无 userinfo／fragment、路径编码规范，且 path 在
+  `LiveAPIClients` 声明的 App allowlist 内（只引用 BiliAPI 的 `BiliAppReadPath`，目前只有首页推荐 `/x/v2/feed/index`）；
+  只有窗口主 API 注入它。调用方自带 `access_key`、`appkey`、`ts`、`sign`、`mobile_access_key`、重复的 query 字段或凭据类
+  header 一律拒绝。
+- 凭据按账户读取的同一规则读取（每次读 Keychain，损坏或过期删除后报告失效，Keychain 不可用只在 §2 已确认未登录时按
+  无凭据处理）。有凭据时把 `access_key` 放进 query，再用 TV 的 appkey 对全部参数做 APP 签名；本地明确无凭据时只签名、
+  不带凭据（未登录用户的匿名 App 推荐）。凭据失效、Keychain 不可用与请求不合规都不降级为匿名签名。
+- App 端请求即使匿名也必须签名：`appRead` 访问总是经这个授权器，没有它的 client 不发出请求，授权失败也不退回未签名的
+  原请求。授权结果带回是否附带了凭据，业务码 -101 只在带了凭据时是凭据失效（触发复核），否则是“需要登录”。
+- 签名后的 URL 本身就是凭据：管线原样发出、拒绝 redirect，不改写 query；日志与诊断按 §8 不记录 URL。
 
 **自动写入：观看进度**（`BiliPlaybackHeartbeatRequestAuthorizer`）
 
@@ -274,7 +292,8 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 ## 9. 剩余风险
 
 - TV 扫码与各 Web 接口未公开，可能无通知漂移；漂移应表现为失败关闭，而不是降级。
-- TV 扫码的 APP 签名用的是从官方客户端提取、公开流传的 TV appkey／appsec；B 站轮换或停用它时扫码登录整体失效，只能换 key 并发版。
+- TV 扫码与 App 端推荐的 APP 签名用的是从官方客户端提取、公开流传的 TV appkey／appsec；B 站轮换或停用它时扫码登录与
+  首页推荐一起失效，只能换 key 并发版。
 - Keychain 不能抵御已控制当前用户会话、可调试进程或可读屏幕的攻击者。
 - 签名私钥丢失时，拒绝降级策略可能要求用户手动安装新版。
 - 图片管线不核对图片内容是否完整：服务端正常结束响应但内容被截断的 JPEG／PNG（无论是否声明长度）会被

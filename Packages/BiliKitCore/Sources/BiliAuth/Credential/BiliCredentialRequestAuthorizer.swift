@@ -40,7 +40,7 @@ public enum BiliRequestAuthorizationError:
 /// 现有凭据 header 仍会再次验证。损坏或过期凭据会清除，媒体/CDN/loopback 请求无法通过此边界
 /// （见 SECURITY-MODEL §3）。不缓存 header：每次授权都重新读取 Keychain 并生成新请求。
 public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable {
-    private let store: any WebCredentialStoring
+    private let store: any AccountCredentialStoring
     private let httpClient: HTTPClient
     private let transportInvalidator: (@Sendable () -> Void)?
     private let allowedPaths: Set<String>
@@ -53,7 +53,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
         isConfirmedSignedOut: @escaping @Sendable () -> Bool = { false }
     ) {
         let transport = AuthenticationHTTP.makeProductionTransport()
-        store = KeychainWebCredentialStore()
+        store = KeychainAccountCredentialStore()
         httpClient = HTTPClient(transport: transport)
         transportInvalidator = { transport.invalidateAndCancel() }
         self.allowedPaths = allowedPaths
@@ -62,7 +62,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
 
     /// Keychain 与会话校验网络两个系统边界；public init 由此接入 Keychain store 与认证专用 session。
     init(
-        store: any WebCredentialStoring,
+        store: any AccountCredentialStoring,
         allowedPaths: Set<String>,
         transport: any HTTPTransport,
         isConfirmedSignedOut: @escaping @Sendable () -> Bool = { false }
@@ -87,28 +87,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
-        let credential: WebCredential
-        do {
-            guard let stored = try store.load() else {
-                throw BiliRequestAuthorizationError.missingCredential
-            }
-            credential = stored
-        } catch let error as BiliRequestAuthorizationError {
-            throw error
-        } catch WebCredentialStoreError.corruptCredential {
-            try purgeStoredCredential()
-            throw BiliRequestAuthorizationError.invalidCredential
-        } catch {
-            guard isConfirmedSignedOut() else {
-                throw BiliRequestAuthorizationError.credentialStoreUnavailable
-            }
-            throw BiliRequestAuthorizationError.missingCredential
-        }
-
-        guard !credential.isExpired() else {
-            try purgeStoredCredential()
-            throw BiliRequestAuthorizationError.expiredCredential
-        }
+        let credential = try store.loadCredentialForRead(isConfirmedSignedOut: isConfirmedSignedOut)
 
         var headers = request.headers
         headers["Cookie"] = credential.cookieHeader
@@ -161,7 +140,7 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             throw BiliRequestAuthorizationError.validationUnavailable
         }
         guard case .signedIn(let identity) = result else {
-            try purgeStoredCredential()
+            try store.deleteInvalidCredential()
             return .signedOut(hadCredential: true)
         }
         return .signedIn(identity)
@@ -188,13 +167,39 @@ public struct BiliCredentialRequestAuthorizer: HTTPRequestAuthorizing, Sendable 
             && components.fragment == nil
             && request.method == .get
     }
+}
 
-    private func purgeStoredCredential() throws {
+extension AccountCredentialStoring {
+    /// 读授权器（账户读取与 App 端读取）读取凭据的唯一规则：每次授权都读 Keychain，本地无凭据为
+    /// `missingCredential`；损坏或过期的凭据先删除再报告为凭据失效，删除失败为 `credentialStoreUnavailable`。
+    ///
+    /// Keychain 不可用时，只有窗口已确认未登录（`isConfirmedSignedOut`）才按无凭据处理，否则失败关闭，见
+    /// SECURITY-MODEL §2。写授权器另有不读这一确认的 `loadCredentialForWrite`。
+    func loadCredentialForRead(
+        isConfirmedSignedOut: () -> Bool
+    ) throws -> AccountCredential {
+        let credential: AccountCredential
         do {
-            try store.delete()
+            guard let stored = try load() else {
+                throw BiliRequestAuthorizationError.missingCredential
+            }
+            credential = stored
+        } catch let error as BiliRequestAuthorizationError {
+            throw error
+        } catch AccountCredentialStoreError.corruptCredential {
+            try deleteInvalidCredential()
+            throw BiliRequestAuthorizationError.invalidCredential
         } catch {
-            throw BiliRequestAuthorizationError.credentialStoreUnavailable
+            guard isConfirmedSignedOut() else {
+                throw BiliRequestAuthorizationError.credentialStoreUnavailable
+            }
+            throw BiliRequestAuthorizationError.missingCredential
         }
+        guard !credential.isExpired() else {
+            try deleteInvalidCredential()
+            throw BiliRequestAuthorizationError.expiredCredential
+        }
+        return credential
     }
 }
 

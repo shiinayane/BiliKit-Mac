@@ -377,7 +377,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
     /// 凭据属于另一个账户时按凭据失效拒绝，但不删除：那可能是另一窗口刚登录的账户。
     @Test
     func rejectsCredentialOfAnotherAccountWithoutDeletingIt() async throws {
-        let store = MemoryWebCredentialStore(credential: try makeFixtureCredential(userID: "7"))
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential(userID: "7"))
         let authorizer = BiliAccountWriteRequestAuthorizer(
             store: store,
             allowedPaths: Set(BiliAccountWriteRequestAuthorizer.schemas.keys)
@@ -399,15 +399,15 @@ struct BiliAccountWriteRequestAuthorizerTests {
     @Test
     func missingCorruptOrExpiredCredentialCannotAuthorize() async throws {
         let missing = BiliAccountWriteRequestAuthorizer(
-            store: MemoryWebCredentialStore(),
+            store: MemoryAccountCredentialStore(),
             allowedPaths: [Self.addPath]
         )
         await #expect(throws: BiliRequestAuthorizationError.missingCredential) {
             try await missing.authorize(try writeRequest(path: Self.addPath), boundTo: "42")
         }
 
-        let corruptStore = MemoryWebCredentialStore(
-            loadError: WebCredentialStoreError.corruptCredential
+        let corruptStore = MemoryAccountCredentialStore(
+            loadError: AccountCredentialStoreError.corruptCredential
         )
         let corrupt = BiliAccountWriteRequestAuthorizer(
             store: corruptStore,
@@ -418,7 +418,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
         }
         #expect(corruptStore.deleteCount == 1)
 
-        let expiredStore = MemoryWebCredentialStore(
+        let expiredStore = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(expiresAt: .distantPast, userID: "42")
         )
         let expired = BiliAccountWriteRequestAuthorizer(
@@ -435,7 +435,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
     @Test
     func unavailableKeychainFailsClosed() async throws {
         let authorizer = BiliAccountWriteRequestAuthorizer(
-            store: MemoryWebCredentialStore(loadError: StubAuthError.storeUnavailable),
+            store: MemoryAccountCredentialStore(loadError: StubAuthError.storeUnavailable),
             allowedPaths: [Self.addPath]
         )
 
@@ -448,7 +448,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
         allowedPaths: Set<String> = Set(BiliAccountWriteRequestAuthorizer.schemas.keys)
     ) throws -> BiliAccountWriteRequestAuthorizer {
         BiliAccountWriteRequestAuthorizer(
-            store: MemoryWebCredentialStore(
+            store: MemoryAccountCredentialStore(
                 credential: try makeFixtureCredential(userID: Self.accountID)
             ),
             allowedPaths: allowedPaths

@@ -30,14 +30,14 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
 
     private typealias Support = WriteRequestAuthorizationSupport
 
-    private let store: any WebCredentialStoring
+    private let store: any AccountCredentialStoring
 
     public init() {
-        store = KeychainWebCredentialStore()
+        store = KeychainAccountCredentialStore()
     }
 
     /// Keychain 边界；`init()` 由此接入 Keychain store。
-    init(store: any WebCredentialStoring) {
+    init(store: any AccountCredentialStoring) {
         self.store = store
     }
 
