@@ -39,8 +39,6 @@ public enum BiliAccountReadPath {
     public static let favoriteFolderContent = "/x/v3/fav/resource/list"
     /// 热门。
     public static let popular = "/x/web-interface/popular"
-    /// 首页推荐。
-    public static let recommendations = "/x/web-interface/wbi/index/top/feed/rcmd"
     /// 视频搜索。
     public static let videoSearch = "/x/web-interface/wbi/search/type"
 }

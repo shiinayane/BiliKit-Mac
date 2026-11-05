@@ -14,9 +14,11 @@ public enum AccountSessionPhase: Sendable, Equatable {
 
 /// App composition 可观察的认证恢复阶段；不向 App shell 暴露 Application 层状态或失败细节。
 public enum AuthenticationResolutionPhase: Sendable, Equatable {
+    /// 登录流程中（取码、等待扫码、确认、写入）或登出中。
     case other
     case restoring
     case signedIn
+    case signedOut
     case failed
 }
 
@@ -62,6 +64,8 @@ public final class AuthenticationViewModel {
             .restoring
         case .signedIn:
             .signedIn
+        case .signedOut:
+            .signedOut
         case .failed:
             .failed
         default:

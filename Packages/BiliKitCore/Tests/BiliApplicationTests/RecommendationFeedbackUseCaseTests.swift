@@ -1,8 +1,8 @@
 import BiliApplication
+import BiliModels
 import Testing
 
-/// 首页推荐的「不感兴趣」与撤销只为正数账户发请求，成功时给出带账户与同一份反馈的效果；推荐流没给追踪 ID 的条目
-/// 构造不出反馈。
+/// 首页推荐的「不感兴趣」与撤销只为正数账户发请求，成功时给出带账户与同一份反馈的效果。
 @Suite(.timeLimit(.minutes(1)))
 struct RecommendationFeedbackUseCaseTests {
     @Test
@@ -42,38 +42,10 @@ struct RecommendationFeedbackUseCaseTests {
         #expect(await repository.calls.isEmpty)
     }
 
-    @Test
-    func feedbackNeedsATrackingIDAndAValidUploader() throws {
-        let target = try #require(VideoWriteTarget(bvid: "BV17x411w7KC"))
-
-        #expect(
-            RecommendationFeedback(target: target, uploaderID: 1, trackID: "", reason: .content)
-                == nil
-        )
-        #expect(
-            RecommendationFeedback(target: target, uploaderID: -1, trackID: "t", reason: .content)
-                == nil
-        )
-        #expect(
-            RecommendationFeedback(target: target, uploaderID: 0, trackID: "t", reason: .uploader)
-                == nil
-        )
-        #expect(
-            RecommendationFeedback(target: target, uploaderID: 1, trackID: "t", reason: .uploader)
-                != nil
-        )
-    }
-
     private static func feedback() throws -> RecommendationFeedback {
         let target = try #require(VideoWriteTarget(bvid: "BV17x411w7KC"))
-        return try #require(
-            RecommendationFeedback(
-                target: target,
-                uploaderID: 1,
-                trackID: "track",
-                reason: .content
-            )
-        )
+        let reason = try #require(RecommendationDislikeReason(id: 12, name: "此类内容过多"))
+        return RecommendationFeedback(target: target, reason: reason)
     }
 }
 

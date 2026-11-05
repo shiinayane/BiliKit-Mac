@@ -243,6 +243,8 @@ extension BiliAPIClient {
         requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
+        appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
+        appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -251,6 +253,8 @@ extension BiliAPIClient {
             requestAuthorizer: requestAuthorizer,
             historyWriteAuthorizer: historyWriteAuthorizer,
             accountWriteAuthorizer: accountWriteAuthorizer,
+            appRequestAuthorizer: appRequestAuthorizer,
+            appWriteAuthorizer: appWriteAuthorizer,
             transportFactory: { transport },
             timestampProvider: timestampProvider
         )
@@ -327,7 +331,35 @@ actor StubAuthorizer: HTTPRequestAuthorizing {
     }
 }
 
-/// 账户写授权器的替身：记录每次授权的请求与绑定的主体，结果与挂起规则同 `StubAuthorizer`（委托给它）。
+/// App 端签名授权器的替身：记录请求，在 query 末尾加上 `signed=FIXTURE` 并按 `carriesCredential` 报告是否带了凭据，
+/// 或按给定分类失败。
+actor StubAppAuthorizer: HTTPSigningRequestAuthorizing {
+    private let carriesCredential: Bool
+    private let failure: HTTPRequestAuthorizationFailureKind?
+    private(set) var requests: [HTTPRequest] = []
+
+    init(carriesCredential: Bool = true, failure: HTTPRequestAuthorizationFailureKind? = nil) {
+        self.carriesCredential = carriesCredential
+        self.failure = failure
+    }
+
+    func authorize(_ request: HTTPRequest) async throws -> SignedHTTPRequest {
+        requests.append(request)
+        if let failure {
+            throw StubAuthorizationFailure(authorizationFailureKind: failure)
+        }
+        var components = URLComponents(url: request.url, resolvingAgainstBaseURL: false)!
+        components.percentEncodedQuery = [components.percentEncodedQuery, "signed=FIXTURE"]
+            .compactMap { $0 }
+            .joined(separator: "&")
+        return SignedHTTPRequest(
+            request: HTTPRequest(url: components.url!, headers: request.headers),
+            carriesCredential: carriesCredential
+        )
+    }
+}
+
+/// 网页与 App 账户写授权器的替身：记录每次授权的请求与绑定的主体，结果与挂起规则同 `StubAuthorizer`（委托给它）。
 actor StubSubjectBoundAuthorizer: HTTPSubjectBoundRequestAuthorizing {
     private let base: StubAuthorizer
     private(set) var subjects: [String] = []

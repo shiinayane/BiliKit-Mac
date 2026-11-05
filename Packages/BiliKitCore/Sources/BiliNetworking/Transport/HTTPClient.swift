@@ -3,8 +3,8 @@ import Synchronization
 
 /// 传输层允许的 HTTP 方法。
 ///
-/// `POST` 只用于两个写授权器放行的写请求（观看进度 heartbeat 与用户发起的账户写入），`HEAD` 只用于 b23.tv 短链
-/// 解析（见 SECURITY-MODEL §3、§4）。
+/// `POST` 只用于网页端写授权器放行的写请求（观看进度 heartbeat 与用户发起的账户写入）与 BiliAuth 发往 passport 的
+/// 扫码取码、轮询和续期，`HEAD` 只用于 b23.tv 短链解析（见 SECURITY-MODEL §2–§4）。
 public enum HTTPMethod: String, Sendable {
     case get = "GET"
     case head = "HEAD"
@@ -34,7 +34,7 @@ public struct HTTPRequest: Sendable, Equatable {
 extension HTTPResponse {
     /// 按 HTTP 规则不区分大小写地取响应头；响应侧读取单个头都经这里。
     ///
-    /// `headers` 保留 transport 交来的原样键，需要整张表的调用方（QR 登录读 `Set-Cookie`）直接用它。
+    /// `headers` 保留 transport 交来的原样键，需要整张表的调用方直接用它。
     public func headerValue(_ name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
     }

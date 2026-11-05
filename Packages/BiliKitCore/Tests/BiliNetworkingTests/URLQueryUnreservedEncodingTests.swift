@@ -1,6 +1,5 @@
+import BiliNetworking
 import Testing
-
-@testable import BiliAPI
 
 /// query 的键与值按 RFC 3986 unreserved 以外全部编码（`+` 不保留），按给定顺序以 `&` 拼接。
 struct URLQueryUnreservedEncodingTests {

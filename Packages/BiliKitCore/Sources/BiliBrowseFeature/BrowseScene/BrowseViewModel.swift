@@ -65,7 +65,15 @@ struct FeedPaginationPresentation: Sendable, Equatable {
 public final class BrowseViewModel: AccountRevalidationParticipant {
     /// 首次加载、刷新或加载更多遇到需要复核账户的失败（`requiresAccountRevalidation`）时递增，
     /// 由窗口汇总后复核账户（`AccountRevalidationParticipant`）。
-    public private(set) var authenticationRevalidationGeneration = 0
+    public var authenticationRevalidationGeneration: Int {
+        revalidation.generation
+    }
+    /// 本模型请求的复核进度；复核有了确定结果（仍登录或确认未登录）时，停在凭据失败页的当前来源自动重载至多一次。
+    private var revalidation = AccountRevalidationProgress()
+    /// 本页因凭据失败请求的复核还没结束；失败页据此决定是否说“正在重新确认”。
+    public var isAwaitingAuthenticationRevalidation: Bool {
+        revalidation.isAwaiting
+    }
     /// 各来源原地刷新成功的次数，经 `successfulRefreshGeneration(for:)` 读出。
     private var successfulRefreshGenerations: [FeedSource: UInt64] = [:]
     /// 当前路由的第一页请求，nil 表示没有激活的路由；Task 写回前与发起时的请求比对，
@@ -139,7 +147,7 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
     /// 写入失败或被取消的回滚：标上的去掉、去掉的标回。
     ///
     /// 只作用在改动时的同一份推荐工作集上：换了账户或 `reset` 后的新工作集可能恰好有同一视频，把上一账户的反馈标上去，
-    /// 之后的撤销就会用新账户发出旧账户的追踪 ID。同一份工作集里也只撤回自己那一步：去掉标记只去掉同一份反馈，标回
+    /// 之后的撤销就会用新账户撤回旧账户的反馈。同一份工作集里也只撤回自己那一步：去掉标记只去掉同一份反馈，标回
     /// 只标此刻仍显示、且没有别的标记的卡片。
     public func revertRecommendationDislike(_ edit: RecommendationDislikeEdit) {
         let feedback = edit.feedback
@@ -245,6 +253,8 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
     public func synchronizeAuthenticationSession(generation newGeneration: UInt64) {
         guard authenticationSessionGeneration != newGeneration else { return }
         authenticationSessionGeneration = newGeneration
+        // 账户范围变化本身会重启当前来源，复核结果不再触发第二次重载。
+        revalidation.reset()
 
         let activeRequest = activeRequestIdentity
         loadTask.cancel()
@@ -275,6 +285,7 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
 
     /// 停止当前路由工作，把工作集规范化（结束刷新与加载更多）后保留，供返回时恢复。
     func deactivateRoute() {
+        revalidation.stopAwaiting()
         loadTask.cancel()
         normalizeInterruptedLoad()
         activeRequestIdentity = nil
@@ -284,6 +295,24 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
     public func reset() {
         deactivateRoute()
         worksets = [:]
+        revalidation.reset()
+    }
+
+    /// 复核确认仍已登录：凭据失败可能只是一时的，重载停住的失败页一次。
+    public func authenticationRevalidationSucceeded() {
+        reloadCredentialFailedPageAfterRevalidation()
+    }
+
+    /// 复核确认未登录：推荐、热门与搜索都能匿名读取，重载停住的失败页一次。
+    ///
+    /// 启动时本页的读取先于启动复核删掉了损坏或过期的凭据，复核随后看不到凭据、账户范围不变，
+    /// `synchronizeAuthenticationSession` 不会重启本页；不在这里重载，失败页会一直停在“正在重新确认”。
+    public func authenticationRevalidationConfirmedSignedOut() {
+        reloadCredentialFailedPageAfterRevalidation()
+    }
+
+    public func authenticationRevalidationFailed() {
+        _ = revalidation.failed()
     }
 
     func presentation(
@@ -390,6 +419,7 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
                     loaded.showsRecommendation(bvid: $0.key)
                 }
             }
+            revalidation.loadSucceeded()
             if previous?.isRefreshing == true {
                 successfulRefreshGenerations[request.source, default: 0] &+= 1
             }
@@ -460,7 +490,20 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
         _ error: ContentApplicationError
     ) {
         guard error.requiresAccountRevalidation else { return }
-        authenticationRevalidationGeneration &+= 1
+        revalidation.request()
+    }
+
+    /// 只重载当前来源停在凭据失败页的第一页；保留着卡片的刷新或加载更多失败由用户自己重试。
+    private func reloadCredentialFailedPageAfterRevalidation() {
+        guard case .failed(let request, let error) = activeWorkset?.state,
+            error.requiresAccountRevalidation
+        else {
+            revalidation.stopAwaiting()
+            return
+        }
+        if revalidation.concluded() {
+            refresh(request)
+        }
     }
 
     private var activeWorkset: FeedWorkset? {

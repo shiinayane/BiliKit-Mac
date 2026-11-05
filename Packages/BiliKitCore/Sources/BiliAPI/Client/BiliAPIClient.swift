@@ -35,17 +35,30 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// `anonymous` 不经授权器；`accountRead` 经账户读取授权器，path 必须来自 `BiliAccountReadPath`
     /// 并在 Composition 的 allowlist 内；`historyWrite` 只用于观看进度 heartbeat，
     /// 经独立的写授权器；`accountWrite` 是用户发起的账户写入，path 来自 `BiliAccountWritePath`，经账户写授权器并绑定
-    /// 预期账户 mid（凭据属于其他账户时按凭据失效拒绝）。需要认证的访问都绑定认证 epoch，见 `authenticatedSessionEpoch`。
+    /// 预期账户 mid（凭据属于其他账户时按凭据失效拒绝）。`appRead` 是 App 端（`app.bilibili.com`）读取，path 来自
+    /// `BiliAppReadPath`，总是经 App 授权器签名：有凭据时带 access_token，本地明确无凭据时匿名签名。`appWrite` 是用户
+    /// 发起的 App 端写入，path 来自 `BiliAppWritePath`，经 App 写授权器签名并绑定预期账户 mid，从不匿名。需要认证的
+    /// 访问与 `appRead` 都绑定认证 epoch，见 `authenticatedSessionEpoch`。
     enum RequestAccess: Sendable {
         case anonymous
         case accountRead(missingCredential: MissingCredentialBehavior)
         case historyWrite
         case accountWrite(expectedAccountID: Int64)
+        case appRead
+        case appWrite(expectedAccountID: Int64)
 
         var requiresAuthentication: Bool {
             switch self {
+            case .anonymous, .appRead: false
+            case .accountRead, .historyWrite, .accountWrite, .appWrite: true
+            }
+        }
+
+        /// 可能带凭据发出的访问：发出前后都比对认证 epoch。
+        var bindsAuthenticatedSession: Bool {
+            switch self {
             case .anonymous: false
-            case .accountRead, .historyWrite, .accountWrite: true
+            case .accountRead, .historyWrite, .accountWrite, .appRead, .appWrite: true
             }
         }
 
@@ -93,6 +106,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         }
         return url
     }()
+    /// App 端接口的唯一来源；与 `baseURL` 分开，`appRead` 与 `appWrite` 之外的访问不会发往这里。
+    private static let appBaseURL: URL = {
+        guard let url = URL(string: "https://app.bilibili.com") else {
+            preconditionFailure("Static App API base URL must be valid")
+        }
+        return url
+    }()
 
     /// JSON 接口默认的响应正文上限，在完整收到正文后检查；超出按 `responseTooLarge` 失败关闭、
     /// 不解码。
@@ -113,6 +133,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private let requestAuthorizer: (any HTTPRequestAuthorizing)?
     private let historyWriteAuthorizer: (any HTTPRequestAuthorizing)?
     private let accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
+    private let appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)?
+    private let appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
     let userAgent = HTTPUserAgent.browserCompatible
     let decoder: JSONDecoder
     let timestampProvider: @Sendable () -> Int64
@@ -132,6 +154,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     var hasAccountAuthorizer: Bool { requestAuthorizer != nil }
     var hasHistoryWriteAuthorizer: Bool { historyWriteAuthorizer != nil }
     var hasAccountWriteAuthorizer: Bool { accountWriteAuthorizer != nil }
+    var hasAppWriteAuthorizer: Bool { appWriteAuthorizer != nil }
 
     /// `transportFactory` 由组合根提供用途专属 transport：初始化时取一次，每次认证会话失效时再取一个
     /// 干净实例替换旧的；不存在回落到 `URLSession.shared` 的默认值（见 SECURITY-MODEL §1）。
@@ -139,6 +162,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         requestAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         historyWriteAuthorizer: (any HTTPRequestAuthorizing)? = nil,
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
+        appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
+        appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         transportFactory: @escaping @Sendable () -> any HTTPTransport,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
@@ -151,6 +176,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         self.requestAuthorizer = requestAuthorizer
         self.historyWriteAuthorizer = historyWriteAuthorizer
         self.accountWriteAuthorizer = accountWriteAuthorizer
+        self.appRequestAuthorizer = appRequestAuthorizer
+        self.appWriteAuthorizer = appWriteAuthorizer
         self.timestampProvider = timestampProvider
         decoder = JSONDecoder()
     }
@@ -174,7 +201,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 不关心授权来源时的薄封装。
     func get<Payload: Decodable & Sendable>(
         url: URL,
-        referer: String,
+        referer: String?,
         access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> Payload {
@@ -191,7 +218,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         Payload: Decodable & Sendable
     >(
         url: URL,
-        referer: String,
+        referer: String?,
         access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
         additionalCookie: String? = nil
@@ -241,25 +268,21 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
-    /// JSON 请求的 HTTP 层：固定 `Accept`、`Referer` 与 `User-Agent`，经请求管线后要求正文像 JSON。
+    /// JSON 请求的 HTTP 层：固定 `Accept`、`User-Agent` 与给出时的 `Referer`（App 端请求不带），经请求管线后要求正文像
+    /// JSON。
     ///
     /// 不像 JSON（如 HTML 风控页）按 `nonJSONResponse` 失败关闭；不解码 envelope，WBI nav
     /// 直接读它的正文。
     func response(
         url: URL,
-        referer: String,
+        referer: String?,
         access: RequestAccess = .anonymous,
         maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
         additionalCookie: String? = nil
     ) async throws -> AuthorizedHTTPResponse {
-        let baseRequest = HTTPRequest(
-            url: url,
-            headers: [
-                "Accept": "application/json",
-                "Referer": referer,
-                "User-Agent": userAgent
-            ]
-        )
+        var headers = ["Accept": "application/json", "User-Agent": userAgent]
+        headers["Referer"] = referer
+        let baseRequest = HTTPRequest(url: url, headers: headers)
         let response = try await response(
             baseRequest: baseRequest,
             access: access,
@@ -286,44 +309,39 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     ) async throws -> AuthorizedHTTPResponse {
         // 在第一个 await 之前取出 client：授权期间会话失效换入的新 transport 不会被这次请求使用。
         let requestClient = httpClient
-        // 只有需要认证的访问绑定会话 epoch；匿名请求不比对。
+        // 只有可能带凭据的访问绑定会话 epoch；匿名请求不比对。
         let requestSessionEpoch =
-            access.requiresAuthentication ? authenticatedSessionEpoch : nil
+            access.bindsAuthenticatedSession ? authenticatedSessionEpoch : nil
         var request: HTTPRequest
         let authorizationProvenance: AuthorizationProvenance
-        if access.requiresAuthentication, hasAuthorizer(for: access) {
+        if case .appRead = access {
+            // App 端请求即使匿名也必须签名，不能走下面“无凭据时发原请求”的回退；没有 App 授权器的 client 不能发。
+            guard let appRequestAuthorizer else { throw BiliAPIError.invalidRequest }
+            do {
+                let signed = try await appRequestAuthorizer.authorize(baseRequest)
+                request = signed.request
+                authorizationProvenance = signed.carriesCredential ? .authenticated : .anonymous
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw authorizationError(error, sessionEpoch: requestSessionEpoch)
+            }
+        } else if access.requiresAuthentication, hasAuthorizer(for: access) {
             do {
                 request = try await authorize(baseRequest, access: access)
                 authorizationProvenance = .authenticated
             } catch is CancellationError {
                 throw CancellationError()
-            } catch let error as any HTTPRequestAuthorizationFailure {
-                // 授权期间会话已失效：失败属于旧会话，按取消结束，不报告为凭据问题。
-                guard requestSessionEpoch == authenticatedSessionEpoch else {
-                    throw CancellationError()
-                }
-                // 只有本地明确无凭据且 endpoint 允许时才匿名回退；凭据失效、Keychain
-                // 不可用与授权器拒绝都失败关闭，见 SECURITY-MODEL §3。
-                switch error.authorizationFailureKind {
-                case .missingCredential where access.permitsMissingCredentialFallback:
-                    request = baseRequest
-                    authorizationProvenance = .anonymous
-                case .invalidCredential:
-                    throw BiliAPIError.authenticationInvalid
-                case .missingCredential:
-                    throw BiliAPIError.authorizationRequired
-                case .unavailable:
-                    throw BiliAPIError.authorizationUnavailable
-                case .denied:
-                    // 请求形状或 path 不在授权器 allowlist：客户端构造了不该发出的账户请求，属于编程错误，
-                    // 不是本地凭据问题，因此不显示为 Keychain 类失败。
-                    throw BiliAPIError.invalidRequest
-                }
+            } catch let error as any HTTPRequestAuthorizationFailure
+                where error.authorizationFailureKind == .missingCredential
+                && access.permitsMissingCredentialFallback
+                && requestSessionEpoch == authenticatedSessionEpoch
+            {
+                // 只有本地明确无凭据且 endpoint 允许时才匿名回退；其余授权失败见 `authorizationError`。
+                request = baseRequest
+                authorizationProvenance = .anonymous
             } catch {
-                guard requestSessionEpoch == authenticatedSessionEpoch else {
-                    throw CancellationError()
-                }
-                throw BiliAPIError.authorizationUnavailable
+                throw authorizationError(error, sessionEpoch: requestSessionEpoch)
             }
         } else if access.permitsMissingCredentialFallback {
             // 未注入对应授权器（如观看进度写入 client 没有账户读取授权器）时按本地无凭据处理。
@@ -389,16 +407,41 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         )
     }
 
-    private func hasAuthorizer(for access: RequestAccess) -> Bool {
-        switch access {
-        case .anonymous: false
-        case .accountRead: requestAuthorizer != nil
-        case .historyWrite: historyWriteAuthorizer != nil
-        case .accountWrite: accountWriteAuthorizer != nil
+    /// 授权失败到 API 错误的唯一映射，匿名回退由调用方先处理。
+    ///
+    /// 凭据失效、Keychain 不可用与授权器拒绝都失败关闭，见 SECURITY-MODEL §3。授权期间会话已失效时失败属于旧会话，
+    /// 按取消结束，不报告为凭据问题。
+    private func authorizationError(_ error: any Error, sessionEpoch: UInt64?) -> any Error {
+        guard sessionEpoch == authenticatedSessionEpoch else { return CancellationError() }
+        guard let failure = error as? any HTTPRequestAuthorizationFailure else {
+            return BiliAPIError.authorizationUnavailable
+        }
+        switch failure.authorizationFailureKind {
+        case .invalidCredential:
+            return BiliAPIError.authenticationInvalid
+        case .missingCredential:
+            return BiliAPIError.authorizationRequired
+        case .unavailable:
+            return BiliAPIError.authorizationUnavailable
+        case .denied:
+            // 请求形状或 path 不在授权器 allowlist：客户端构造了不该发出的账户请求，属于编程错误，
+            // 不是本地凭据问题，因此不显示为 Keychain 类失败。
+            return BiliAPIError.invalidRequest
         }
     }
 
-    /// 按 `access` 交给对应的授权器；账户写入另把预期账户 mid 作为绑定主体，调用前已由 `hasAuthorizer` 确认注入。
+    private func hasAuthorizer(for access: RequestAccess) -> Bool {
+        switch access {
+        case .anonymous, .appRead: false
+        case .accountRead: requestAuthorizer != nil
+        case .historyWrite: historyWriteAuthorizer != nil
+        case .accountWrite: accountWriteAuthorizer != nil
+        case .appWrite: appWriteAuthorizer != nil
+        }
+    }
+
+    /// 按 `access` 交给对应的授权器；网页与 App 的账户写入另把预期账户 mid 作为绑定主体，调用前已由 `hasAuthorizer`
+    /// 确认注入。
     private func authorize(
         _ request: HTTPRequest,
         access: RequestAccess
@@ -416,7 +459,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 request,
                 boundTo: String(expectedAccountID)
             )
-        case .anonymous:
+        case .appWrite(let expectedAccountID):
+            guard let appWriteAuthorizer else { break }
+            return try await appWriteAuthorizer.authorize(
+                request,
+                boundTo: String(expectedAccountID)
+            )
+        case .anonymous, .appRead:
             break
         }
         preconditionFailure("调用方先用 hasAuthorizer(for:) 确认已注入对应授权器")
@@ -555,6 +604,11 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         try endpoint(path: path) { _ in }
     }
 
+    /// App 端接口的地址；签名与 access_token 由 App 授权器在授权时写入 query。
+    func appEndpoint(path: String, queryItems: [URLQueryItem]) throws -> URL {
+        try endpoint(baseURL: Self.appBaseURL, path: path) { $0.queryItems = queryItems }
+    }
+
     /// WBI 签名后的 query 已按签名顺序编码，必须原样使用。
     func endpoint(
         path: String,
@@ -564,12 +618,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     }
 
     private func endpoint(
+        baseURL: URL = BiliAPIClient.baseURL,
         path: String,
         applyingQuery applyQuery: (inout URLComponents) -> Void
     ) throws -> URL {
         guard
             var components = URLComponents(
-                url: Self.baseURL,
+                url: baseURL,
                 resolvingAgainstBaseURL: false
             )
         else {

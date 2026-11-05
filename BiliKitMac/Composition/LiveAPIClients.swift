@@ -8,7 +8,8 @@ import Foundation
 ///
 /// 每个 client 自有一个无凭据 ephemeral transport 工厂，授权器只按这里声明的 allowlist 放行。两种写能力分开：用户发起的
 /// 账户写入（稍后再看等）只在窗口主 API（`main`）打开，观看进度 heartbeat 只在 `watchProgressWriter()` 打开，测速 client
-/// 两者都没有。调用方不能自选 allowlist 或写能力。见 SECURITY-MODEL §3。
+/// 两者都没有；App 端的读取（首页推荐）与写入（不感兴趣）也只在窗口主 API 打开。调用方不能自选 allowlist 或写能力。
+/// 见 SECURITY-MODEL §3。
 enum LiveAPIClients {
     // 三组 allowlist 只引用 endpoint 导出的 path 常量（`BiliAccountReadPath`、会话校验的
     // `BiliAuthenticationService.sessionValidationPath`），不另写字面量；哪组放行哪些 path 是这里的决定。
@@ -34,7 +35,6 @@ enum LiveAPIClients {
         BiliAccountReadPath.videoRelation,
         BiliAccountReadPath.favoriteFolderContent,
         BiliAccountReadPath.popular,
-        BiliAccountReadPath.recommendations,
         BiliAccountReadPath.videoSearch,
         BiliAccountReadPath.videoDetail
     ]
@@ -48,9 +48,18 @@ enum LiveAPIClients {
         BiliAccountWritePath.videoLike,
         BiliAccountWritePath.videoCoin,
         BiliAccountWritePath.videoTriple,
-        BiliAccountWritePath.relationModify,
-        BiliAccountWritePath.recommendationDislike,
-        BiliAccountWritePath.recommendationDislikeCancel
+        BiliAccountWritePath.relationModify
+    ]
+
+    /// 窗口主 API 可发出的 App 端读取；只引用 BiliAPI 的 `BiliAppReadPath`。
+    static let mainAppReadAllowedPaths: Set<String> = [
+        BiliAppReadPath.recommendations
+    ]
+
+    /// 窗口主 API 可发出的 App 端写入；只引用 BiliAPI 的 `BiliAppWritePath`，授权器另按自己的 schema 表逐条校验。
+    static let mainAppWriteAllowedPaths: Set<String> = [
+        BiliAppWritePath.recommendationDislike,
+        BiliAppWritePath.recommendationDislikeCancel
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [
@@ -67,6 +76,8 @@ enum LiveAPIClients {
         make(
             accountReadAllowedPaths: mainAccountReadAllowedPaths,
             accountWriteAllowedPaths: mainAccountWriteAllowedPaths,
+            appReadAllowedPaths: mainAppReadAllowedPaths,
+            appWriteAllowedPaths: mainAppWriteAllowedPaths,
             historyWriteEnabled: false,
             isConfirmedSignedOut: isConfirmedSignedOut
         )
@@ -77,6 +88,8 @@ enum LiveAPIClients {
         make(
             accountReadAllowedPaths: cdnBenchmarkAccountReadAllowedPaths,
             accountWriteAllowedPaths: nil,
+            appReadAllowedPaths: nil,
+            appWriteAllowedPaths: nil,
             historyWriteEnabled: false,
             isConfirmedSignedOut: { false }
         )
@@ -87,6 +100,8 @@ enum LiveAPIClients {
         make(
             accountReadAllowedPaths: watchProgressAccountReadAllowedPaths,
             accountWriteAllowedPaths: nil,
+            appReadAllowedPaths: nil,
+            appWriteAllowedPaths: nil,
             historyWriteEnabled: true,
             isConfirmedSignedOut: { false }
         )
@@ -95,6 +110,8 @@ enum LiveAPIClients {
     private static func make(
         accountReadAllowedPaths: Set<String>?,
         accountWriteAllowedPaths: Set<String>?,
+        appReadAllowedPaths: Set<String>?,
+        appWriteAllowedPaths: Set<String>?,
         historyWriteEnabled: Bool,
         isConfirmedSignedOut: @escaping @Sendable () -> Bool
     ) -> BiliAPIClient {
@@ -109,6 +126,12 @@ enum LiveAPIClients {
         let accountWriteAuthorizer = accountWriteAllowedPaths.map {
             BiliAccountWriteRequestAuthorizer(allowedPaths: $0)
         }
+        let appRequestAuthorizer = appReadAllowedPaths.map {
+            BiliAppRequestAuthorizer(allowedPaths: $0, isConfirmedSignedOut: isConfirmedSignedOut)
+        }
+        let appWriteAuthorizer = appWriteAllowedPaths.map {
+            BiliAppWriteRequestAuthorizer(allowedPaths: $0)
+        }
         let transportFactory: @Sendable () -> any HTTPTransport = {
             URLSessionTransport(configuration: .credentialFreeEphemeral())
         }
@@ -116,6 +139,8 @@ enum LiveAPIClients {
             requestAuthorizer: requestAuthorizer,
             historyWriteAuthorizer: historyWriteAuthorizer,
             accountWriteAuthorizer: accountWriteAuthorizer,
+            appRequestAuthorizer: appRequestAuthorizer,
+            appWriteAuthorizer: appWriteAuthorizer,
             transportFactory: transportFactory
         )
     }

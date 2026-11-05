@@ -30,3 +30,25 @@ public protocol HTTPRequestAuthorizationFailure: Error {
 public protocol HTTPSubjectBoundRequestAuthorizing: Sendable {
     func authorize(_ request: HTTPRequest, boundTo subject: String) async throws -> HTTPRequest
 }
+
+/// 签名请求的授权结果：改写后的新请求，以及它是否附带了凭据。
+///
+/// `carriesCredential` 决定调用方怎样解释业务码 -101：带凭据发出的请求收到它是凭据失效，匿名签名的请求收到它是
+/// 「需要登录」（见 SECURITY-MODEL §3）。
+public struct SignedHTTPRequest: Sendable, Equatable {
+    public let request: HTTPRequest
+    public let carriesCredential: Bool
+
+    public init(request: HTTPRequest, carriesCredential: Bool) {
+        self.request = request
+        self.carriesCredential = carriesCredential
+    }
+}
+
+/// 为必须签名的请求授权：有凭据时附加凭据再签名；本地明确没有凭据时只签名、不带凭据。
+///
+/// 与 `HTTPRequestAuthorizing` 分开：这类请求即使匿名也要经实现方改写，调用方不能在无凭据时把原请求直接发出。
+/// 凭据失效、存储不可用与请求不合规照常以 `HTTPRequestAuthorizationFailure` 分类抛出，不降级为匿名签名。
+public protocol HTTPSigningRequestAuthorizing: Sendable {
+    func authorize(_ request: HTTPRequest) async throws -> SignedHTTPRequest
+}

@@ -80,38 +80,43 @@ extension BiliAPIClient {
         )
     }
 
+    /// App 端请求的客户端身份（iPad 客户端的最低组合）：推荐与它的「不感兴趣」必须用同一身份，服务端才认得是哪条推荐流；
+    /// App 授权器的 schema 也按这组值精确放行，改这里要同时改 BiliAuth 那边，见 SECURITY-MODEL §3。
+    static let appClientIdentity = [
+        URLQueryItem(name: "mobi_app", value: "iphone"),
+        URLQueryItem(name: "device", value: "pad"),
+        URLQueryItem(name: "build", value: "1")
+    ]
+
+    /// App 端首页推荐的一批：经 App 授权器签名，登录时带 access_token、未登录时匿名。
+    ///
+    /// 第一批的 `idx` 取当前秒数，之后取上一批最后一张卡片的 `idx`；服务端不去重，重复条目由 `PagedVideoList` 按 BVID
+    /// 去掉。请求参数照 iPad 客户端的最低组合，不带设备请求头，见 SECURITY-MODEL §3。
     public func recommendations(
         after continuation: RecommendationContinuation? = nil
     ) async throws -> RecommendationPage {
-        let freshIndex = continuation?.freshIndex ?? 1
-        guard freshIndex > 0 else {
+        let requestIndex = continuation?.index ?? timestampProvider()
+        guard requestIndex > 0 else {
             throw BiliAPIError.invalidRequest
         }
-        let payload: RecommendationPayload = try await signedRequest(
-            path: BiliAccountReadPath.recommendations,
-            parameters: {
-                [
-                    "fresh_idx": String(freshIndex),
-                    "fresh_idx_1h": String(freshIndex)
+        let payload: AppFeedPayload = try await get(
+            url: try appEndpoint(
+                path: BiliAppReadPath.recommendations,
+                queryItems: Self.appClientIdentity + [
+                    URLQueryItem(name: "idx", value: String(requestIndex))
                 ]
-            },
-            send: { url in
-                try await get(
-                    url: url,
-                    referer: "https://www.bilibili.com/",
-                    access: .accountRead(missingCredential: .useAnonymousRequest)
-                )
-            }
+            ),
+            referer: nil,
+            access: .appRead
         )
-        let videos = payload.item.compactMap { $0.model() }
-        let current = RecommendationContinuation(freshIndex: freshIndex)
-        let next =
-            freshIndex < Int.max && !videos.isEmpty
-            ? RecommendationContinuation(freshIndex: freshIndex + 1)
-            : nil
+        let receivedAt = Date(timeIntervalSince1970: TimeInterval(timestampProvider()))
+        let videos = payload.items.compactMap { $0.model(receivedAt: receivedAt) }
+        let next = payload.items.last?.index.flatMap { index in
+            !videos.isEmpty && index > requestIndex ? RecommendationContinuation(index: index) : nil
+        }
         return RecommendationPage(
             videos: videos,
-            continuation: current,
+            continuation: continuation,
             nextContinuation: next
         )
     }

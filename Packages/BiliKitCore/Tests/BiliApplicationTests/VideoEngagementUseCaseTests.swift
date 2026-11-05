@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliModels
 import Foundation
 import Testing
 
@@ -95,8 +96,9 @@ struct VideoEngagementUseCaseTests {
             #expect(AccountWriteReport(change: change, failure: nil).webFallbackURL == nil)
         }
         let uploader = try #require(UploaderWriteTarget(mid: 7))
-        let feedback = try #require(
-            RecommendationFeedback(target: target, uploaderID: 7, trackID: "t", reason: .content)
+        let feedback = RecommendationFeedback(
+            target: target,
+            reason: try #require(RecommendationDislikeReason(id: 1, name: "这个内容"))
         )
         let others: [AccountWriteChange] = [
             .watchLaterAdded(target),

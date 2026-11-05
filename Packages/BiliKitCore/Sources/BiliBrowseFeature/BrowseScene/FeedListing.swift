@@ -5,7 +5,8 @@ import BiliModels
 ///
 /// 只把远端页适配为 `VideoListPage` 并校验响应属于所请求的页；去重、上限、无进展停止、回环与尾标由
 /// `PagedVideoList` 负责，请求、Task 与工作集由 `BrowseViewModel` 拥有。三个来源都用 `.stop`：
-/// 推荐、热门与搜索再请求没有新条目的下一页也不会更有进展。
+/// 热门与搜索再请求没有新条目的下一页也不会更有进展；App 推荐的游标每批都前进，但一批全是已显示过的视频时停下，
+/// 免得服务端持续返回重复内容时无休止地自动请求，用户刷新即从新的一批开始。
 enum FeedListing: Sendable, Equatable {
     case recommendation(PagedVideoList<RecommendedVideo, FeedRequest>)
     case popular(PagedVideoList<PopularVideo, FeedRequest>)
@@ -189,8 +190,7 @@ extension FeedRequest {
     fileprivate func accepts(_ content: FeedContent) -> Bool {
         switch (self, content) {
         case (.recommendation(let requestedContinuation), .recommendation(let page)):
-            page.continuation
-                == (requestedContinuation ?? RecommendationContinuation(freshIndex: 1))
+            page.continuation == requestedContinuation
         case (.popular(let requestedPage, let requestedSize), .popular(let page)):
             page.pageNumber == requestedPage && page.pageSize == requestedSize
         case (.search(let request), .search(let responseQuery, let page)):
@@ -207,7 +207,7 @@ extension FeedRequest {
 }
 
 extension RecommendationPage {
-    /// 推荐沿批次 continuation 翻页：API 客户端在本批有条目时按 `freshIndex` 本地递增算出下一批。
+    /// 推荐沿续传游标翻页：API 客户端在本批有条目时取最后一条的 `idx` 作为下一批的游标。
     fileprivate var videoPage: VideoListPage<RecommendedVideo, FeedRequest> {
         VideoListPage(
             items: videos,

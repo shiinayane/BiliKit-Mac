@@ -1,7 +1,10 @@
 import BiliNetworking
 import Foundation
 
-/// 两个写授权器（观看进度 heartbeat、用户发起的账户写入）共用的表单解析、CSRF 编码与凭据读取。
+/// 网页端两个写授权器（观看进度 heartbeat、用户发起的账户写入）共用的表单解析与 CSRF 编码，App 端的读取与写入授权器
+/// 也用这里的 query 解析。
+///
+/// 凭据读取的唯一规则是 `AccountCredentialStoring.loadCredential(isConfirmedSignedOut:)`。
 ///
 /// 只放两边逐字相同的规则；各自的 path、header、字段 schema 与 Cookie 白名单仍在各自的授权器里，不因共用这些
 /// 帮手而合并成一个泛化的写授权器（见 SECURITY-MODEL §3）。无状态。
@@ -44,41 +47,5 @@ enum WriteRequestAuthorizationSupport {
         var components = URLComponents()
         components.queryItems = [URLQueryItem(name: "csrf", value: csrf)]
         return components.percentEncodedQuery
-    }
-}
-
-extension WebCredentialStoring {
-    /// 写授权器读取凭据的唯一规则：每次授权都读 Keychain，本地无凭据为 `missingCredential`；损坏或过期的凭据先删除
-    /// 再报告为凭据失效，删除失败与 Keychain 不可用都是 `credentialStoreUnavailable`。
-    ///
-    /// 写请求不读「已确认未登录」：游客没有写入意图，Keychain 不可用一律失败关闭（见 SECURITY-MODEL §2、§3）。
-    func loadCredentialForWrite() throws -> WebCredential {
-        let credential: WebCredential
-        do {
-            guard let stored = try load() else {
-                throw BiliRequestAuthorizationError.missingCredential
-            }
-            credential = stored
-        } catch let error as BiliRequestAuthorizationError {
-            throw error
-        } catch WebCredentialStoreError.corruptCredential {
-            try deleteForWrite()
-            throw BiliRequestAuthorizationError.invalidCredential
-        } catch {
-            throw BiliRequestAuthorizationError.credentialStoreUnavailable
-        }
-        guard !credential.isExpired() else {
-            try deleteForWrite()
-            throw BiliRequestAuthorizationError.expiredCredential
-        }
-        return credential
-    }
-
-    private func deleteForWrite() throws {
-        do {
-            try delete()
-        } catch {
-            throw BiliRequestAuthorizationError.credentialStoreUnavailable
-        }
     }
 }

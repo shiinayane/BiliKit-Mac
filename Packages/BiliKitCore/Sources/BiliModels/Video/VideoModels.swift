@@ -118,20 +118,20 @@ public struct PopularPage: Sendable, Equatable {
     }
 }
 
-/// 首页推荐的批次游标，对应接口 `fresh_idx`，从 1 开始逐批加 1。
+/// 首页推荐的续传游标：App 端推荐接口的 `idx`，取上一批最后一条的值，下一批从它之后继续。
 public struct RecommendationContinuation: Sendable, Equatable {
-    public let freshIndex: Int
+    public let index: Int64
 
-    public init(freshIndex: Int) {
-        self.freshIndex = freshIndex
+    public init(index: Int64) {
+        self.index = index
     }
 }
 
-/// 首页推荐（`/x/web-interface/wbi/index/top/feed/rcmd`）里的一条视频，由 BiliAPI 的
-/// `RecommendationItemPayload` 映射产生。
+/// 首页推荐（App 端 `/x/v2/feed/index`）里的一条视频，由 BiliAPI 的 `AppFeedItemPayload` 映射产生。
 ///
-/// 只保留普通视频（`goto` 为 av）且不带商业推广；`recommendationReason` 去掉首尾空白后为空时
-/// 是 nil。
+/// 只保留普通视频且不带商业推广。App 卡片只给展示用的文字，所以播放数、弹幕数是从「25.4万观看」这类文字解析回的
+/// 近似值，发布时间是从卡片描述里的日期解析回的时刻；解析不出时为 nil，卡片不显示这一项。`recommendationReason`
+/// 去掉首尾空白后为空时是 nil。
 public struct RecommendedVideo: Identifiable, Sendable, Equatable {
     public var id: String { bvid }
 
@@ -139,45 +139,64 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
     public let title: String
     public let coverURL: URL?
     public let owner: VideoOwner
-    public let statistics: VideoStatistics
+    public let viewCount: Int64?
+    public let danmakuCount: Int64?
     public let durationSeconds: Int
-    public let publishedAt: Date
+    public let publishedAt: Date?
     public let recommendationReason: String?
-    /// 推荐流给这一条的追踪 ID（`track_id`），「不感兴趣」反馈要带上；接口没给时为 nil，这一条不提供反馈。
-    public let trackID: String?
+    /// 卡片给出的「不感兴趣」原因，按卡片顺序；为空时这一条不提供反馈。
+    public let dislikeReasons: [RecommendationDislikeReason]
 
     public init(
         bvid: String,
         title: String,
         coverURL: URL?,
         owner: VideoOwner,
-        statistics: VideoStatistics,
+        viewCount: Int64?,
+        danmakuCount: Int64?,
         durationSeconds: Int,
-        publishedAt: Date,
+        publishedAt: Date?,
         recommendationReason: String?,
-        trackID: String? = nil
+        dislikeReasons: [RecommendationDislikeReason] = []
     ) {
         self.bvid = bvid
         self.title = title
         self.coverURL = coverURL
         self.owner = owner
-        self.statistics = statistics
+        self.viewCount = viewCount
+        self.danmakuCount = danmakuCount
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
         self.recommendationReason = recommendationReason
-        self.trackID = trackID
+        self.dislikeReasons = dislikeReasons
     }
 }
 
-/// 首页推荐的一批：本批游标回填请求值，本批没有视频时 `nextContinuation` 为 nil，不再加载更多。
+/// 首页推荐卡片给出的一个「不感兴趣」原因：反馈接口的 `reason_id` 与卡片上的名字（如「UP主:某某」「此类内容过多」）。
+///
+/// 名字是服务端给的中文，原样显示、不本地化；id 与名字都由卡片给出，客户端不认识也不假设具体取值。id 不是正数或名字
+/// 为空时为 nil。
+public struct RecommendationDislikeReason: Sendable, Hashable {
+    public let id: Int64
+    public let name: String
+
+    public init?(id: Int64, name: String) {
+        guard id > 0, !name.isEmpty else { return nil }
+        self.id = id
+        self.name = name
+    }
+}
+
+/// 首页推荐的一批：`continuation` 回填请求所用的游标（第一批为 nil）；本批没有可显示的视频，或最后一张卡片的游标
+/// 缺失、不比请求的游标大时，`nextContinuation` 为 nil，不再加载更多（避免原地反复请求同一批）。
 public struct RecommendationPage: Sendable, Equatable {
     public let videos: [RecommendedVideo]
-    public let continuation: RecommendationContinuation
+    public let continuation: RecommendationContinuation?
     public let nextContinuation: RecommendationContinuation?
 
     public init(
         videos: [RecommendedVideo],
-        continuation: RecommendationContinuation,
+        continuation: RecommendationContinuation?,
         nextContinuation: RecommendationContinuation?
     ) {
         self.videos = videos

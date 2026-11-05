@@ -11,7 +11,7 @@ import SwiftUI
 /// `recommendation`，写操作一组末尾多出「不感兴趣 ▸」或「撤销不感兴趣」。`openURL` 是网格包装从环境取得的系统
 /// `OpenURLAction`。无状态。
 enum BrowseVideoCardMenu {
-    /// 首页推荐卡片的反馈状态：没标过时可以说「不感兴趣」（需要推荐流给出的追踪 ID），标过时可以撤销。
+    /// 首页推荐卡片的反馈状态：没标过时可以说「不感兴趣」（需要卡片给出原因），标过时可以撤销。
     enum RecommendationFeedbackState {
         case notDisliked(RecommendedVideo)
         case disliked(RecommendationFeedback)
@@ -35,7 +35,7 @@ enum BrowseVideoCardMenu {
         )
     }
 
-    /// 「不感兴趣 ▸」（两个原因，照网页首页给出）或「撤销不感兴趣」；没有写入口、或推荐流没给追踪 ID 时为空。
+    /// 「不感兴趣 ▸」（子项是卡片给出的原因，名字原样显示）或「撤销不感兴趣」；没有写入口、或卡片没给原因时为空。
     @MainActor
     private static func feedbackItems(
         _ state: RecommendationFeedbackState,
@@ -55,16 +55,17 @@ enum BrowseVideoCardMenu {
             ]
         case .notDisliked(let video):
             guard let target = VideoWriteTarget(bvid: video.bvid) else { return [] }
-            let children = RecommendationDislikeReason.allCases.compactMap { reason in
-                RecommendationFeedback(
-                    target: target,
-                    uploaderID: video.owner.id,
-                    trackID: video.trackID ?? "",
-                    reason: reason
-                ).map { feedback in
-                    reasonItem(reason, isEnabled: isEnabled) {
-                        writing.dislikeRecommendation(feedback)
-                    }
+            // 原因 id 在同一张卡片里唯一（解码时已去重），读屏操作按它找回这一项。
+            let children = video.dislikeReasons.map { reason in
+                NativeVideoCardMenu.Item(
+                    id: "notInterested.\(reason.id)",
+                    title: reason.name,
+                    systemImage: "eye.slash",
+                    isEnabled: isEnabled
+                ) {
+                    writing.dislikeRecommendation(
+                        RecommendationFeedback(target: target, reason: reason)
+                    )
                 }
             }
             guard !children.isEmpty else { return [] }
@@ -76,32 +77,6 @@ enum BrowseVideoCardMenu {
                     submenu: children
                 )
             ]
-        }
-    }
-
-    @MainActor
-    private static func reasonItem(
-        _ reason: RecommendationDislikeReason,
-        isEnabled: Bool,
-        action: @escaping @MainActor () -> Void
-    ) -> NativeVideoCardMenu.Item {
-        switch reason {
-        case .content:
-            NativeVideoCardMenu.Item(
-                id: "notInterestedInContent",
-                title: VideoCardMenuText.notInterestedInContent,
-                systemImage: "eye.slash",
-                isEnabled: isEnabled,
-                action: action
-            )
-        case .uploader:
-            NativeVideoCardMenu.Item(
-                id: "notInterestedInUploader",
-                title: VideoCardMenuText.notInterestedInUploader,
-                systemImage: "person.slash",
-                isEnabled: isEnabled,
-                action: action
-            )
         }
     }
 }

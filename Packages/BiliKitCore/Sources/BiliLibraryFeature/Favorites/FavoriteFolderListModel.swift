@@ -34,7 +34,7 @@ public final class FavoriteFolderListModel: AccountRevalidationParticipant {
     /// 重读成功整体替换；凭据失败放弃旧列表（与资料库其他来源一致），其余失败保留旧列表。
     public private(set) var isRefreshing = false
 
-    /// 读取发现凭据缺失、失效或可疑（自己视角下没有默认收藏夹）时递增；规则在共用的 `LibraryAccountRevalidation`。
+    /// 读取发现凭据缺失、失效或可疑（自己视角下没有默认收藏夹）时递增；规则在共用的 `AccountRevalidationProgress`。
     public var authenticationRevalidationGeneration: Int {
         revalidation.generation
     }
@@ -52,7 +52,7 @@ public final class FavoriteFolderListModel: AccountRevalidationParticipant {
     /// 每次加载成功后调用一次，参数是新列表；由 `FavoriteFolderViewModel` 构造时设置一次，用来回落已不存在的选择。
     @ObservationIgnored var onFoldersLoaded: (@MainActor ([FavoriteFolder]) -> Void)?
 
-    private var revalidation = LibraryAccountRevalidation()
+    private var revalidation = AccountRevalidationProgress()
     @ObservationIgnored private let useCase: FavoritesUseCase
     @ObservationIgnored private let accountScope: @MainActor () -> AccountSessionScope
     /// 当前状态（加载中、列表或失败）属于哪个账户；开始读取时记录，`reset` 时清空。
@@ -125,7 +125,7 @@ public final class FavoriteFolderListModel: AccountRevalidationParticipant {
 
     /// 账户复核确认仍已登录：本列表请求的复核在本会话内自动重载一次，其余情况只按账户范围对齐。
     public func authenticationRevalidationSucceeded() {
-        if revalidation.succeeded() {
+        if revalidation.concluded() {
             reload()
         } else {
             synchronize()

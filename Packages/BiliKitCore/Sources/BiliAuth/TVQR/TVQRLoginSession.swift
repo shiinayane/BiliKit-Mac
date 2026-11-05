@@ -1,25 +1,30 @@
 import BiliNetworking
 import Foundation
 
-/// 拥有一次 Web QR challenge、轮询序列与尚未持久化的候选凭据。
+/// 拥有一次 TV 端扫码登录的 challenge、轮询序列与尚未持久化的候选凭据。
 ///
-/// generation 隔离新旧二维码，poll ID 隔离同一二维码的并发轮询；取消或未知协议状态会
-/// 失败关闭并清除临时秘密。成功响应仍须登录态验证后才能写入 Keychain。
-public actor WebQRLoginSession {
+/// 取码与轮询都是带 APP 签名的 POST（`BiliAppSigning`）。generation 隔离新旧二维码，poll ID 隔离同一二维码的并发
+/// 轮询；取消或未知协议状态会失败关闭并清除临时秘密。成功响应仍须登录态验证后才能写入 Keychain。
+public actor TVQRLoginSession {
     /// QR 生成与轮询唯一连接的来源，见 SECURITY-MODEL §2。
     private static let baseURL: URL = {
         guard let url = URL(string: "https://passport.bilibili.com") else {
-            preconditionFailure("Static Web QR base URL must be valid")
+            preconditionFailure("Static TV QR base URL must be valid")
         }
         return url
     }()
-    /// 待显示二维码 URL 唯一允许的主机，见 SECURITY-MODEL §2。
-    private static let qrCodeHost = "account.bilibili.com"
+    private static let generatePath = "/x/passport-tv-login/qrcode/auth_code"
+    private static let pollPath = "/x/passport-tv-login/qrcode/poll"
+    /// 待显示二维码 URL 唯一允许的主机与路径，见 SECURITY-MODEL §2。
+    private static let qrCodeHost = "passport.bilibili.com"
+    private static let qrCodePath = "/x/passport-tv-login/h5/qrcode/auth"
+    /// 取码与轮询都要带的设备标识；TV 协议接受 `0`，不发送任何真实设备信息。
+    private static let localID = "0"
 
-    public private(set) var state: WebQRLoginState = .signedOut
+    public private(set) var state: TVQRLoginState = .signedOut
 
     private let httpClient: HTTPClient
-    private let credentialStore: any WebCredentialStoring
+    private let credentialStore: any AccountCredentialStoring
     private let transportInvalidator: (@Sendable () -> Void)?
     private let decoder = JSONDecoder()
     /// 每次请求二维码与取消时递增；challenge 与候选凭据记录发起时的值，响应返回后不等即丢弃结果。
@@ -33,14 +38,14 @@ public actor WebQRLoginSession {
     public init() {
         let transport = AuthenticationHTTP.makeProductionTransport()
         httpClient = HTTPClient(transport: transport)
-        credentialStore = KeychainWebCredentialStore()
+        credentialStore = KeychainAccountCredentialStore()
         transportInvalidator = { transport.invalidateAndCancel() }
     }
 
     /// 网络与 Keychain 两个系统边界；`init()` 由此接入认证专用 session 与 Keychain store。
     init(
         transport: any HTTPTransport,
-        credentialStore: any WebCredentialStoring
+        credentialStore: any AccountCredentialStoring
     ) {
         httpClient = HTTPClient(transport: transport)
         self.credentialStore = credentialStore
@@ -52,7 +57,7 @@ public actor WebQRLoginSession {
     }
 
     @discardableResult
-    public func requestQRCode() async throws -> WebQRLoginState {
+    public func requestQRCode() async throws -> TVQRLoginState {
         generation &+= 1
         let operationGeneration = generation
         activeChallenge = nil
@@ -61,7 +66,10 @@ public actor WebQRLoginSession {
         state = .requestingQRCode
 
         do {
-            let response = try await send(path: "/x/passport-login/web/qrcode/generate")
+            let response = try await sendSignedForm(
+                path: Self.generatePath,
+                parameters: ["local_id": Self.localID]
+            )
             try Task.checkCancellation()
             try requireCurrentGeneration(operationGeneration)
 
@@ -78,16 +86,16 @@ public actor WebQRLoginSession {
                 )
             }
             guard let data = envelope.data,
-                Self.isValidQRCodeKey(data.qrcodeKey),
-                Self.isValidQRCodeURL(data.url)
+                Self.isValidAuthCode(data.authCode),
+                Self.isValidQRCodeURL(data.url, authCode: data.authCode)
             else {
                 return fail(.invalidResponse, generation: operationGeneration)
             }
 
-            let qrCode = WebQRCode(payload: data.url)
+            let qrCode = TVQRCode(payload: data.url)
             activeChallenge = ActiveChallenge(
                 generation: operationGeneration,
-                key: data.qrcodeKey,
+                authCode: data.authCode,
                 qrCode: qrCode
             )
             state = .awaitingScan(qrCode)
@@ -97,7 +105,7 @@ public actor WebQRLoginSession {
         } catch is CancellationError {
             resetIfCurrent(operationGeneration)
             throw CancellationError()
-        } catch let failure as WebQRLoginFailure {
+        } catch let failure as TVQRLoginFailure {
             return fail(failure, generation: operationGeneration)
         } catch {
             return fail(.network, generation: operationGeneration)
@@ -105,7 +113,7 @@ public actor WebQRLoginSession {
     }
 
     @discardableResult
-    public func pollOnce() async throws -> WebQRLoginState {
+    public func pollOnce() async throws -> TVQRLoginState {
         guard let challenge = activeChallenge,
             challenge.generation == generation
         else {
@@ -117,11 +125,9 @@ public actor WebQRLoginSession {
         let pollID = latestPollID
 
         do {
-            let response = try await send(
-                path: "/x/passport-login/web/qrcode/poll",
-                queryItems: [
-                    URLQueryItem(name: "qrcode_key", value: challenge.key)
-                ]
+            let response = try await sendSignedForm(
+                path: Self.pollPath,
+                parameters: ["auth_code": challenge.authCode, "local_id": Self.localID]
             )
             try Task.checkCancellation()
             try requireCurrentPoll(
@@ -129,35 +135,29 @@ public actor WebQRLoginSession {
                 pollID: pollID
             )
 
-            let envelope: PollEnvelope
+            // 扫码状态在顶层 `code`，未扫码时 `data` 为 null。已确认的状态见 SECURITY-MODEL §2。
+            let status: PollStatusEnvelope
             do {
-                envelope = try decoder.decode(PollEnvelope.self, from: response.body)
+                status = try decoder.decode(PollStatusEnvelope.self, from: response.body)
             } catch {
                 return fail(.invalidResponse, generation: challenge.generation)
             }
-            guard envelope.code == 0 else {
-                return fail(
-                    .serviceRejected(envelope.code),
-                    generation: challenge.generation
-                )
-            }
-            guard let data = envelope.data else {
-                return fail(.invalidResponse, generation: challenge.generation)
-            }
 
-            switch data.code {
+            switch status.code {
             case 0:
-                pendingCredential = Self.pendingCredential(
-                    from: response,
-                    generation: challenge.generation
-                )
+                // 成功正文另行解码：结构不符只是没有候选凭据，后续校验以 `incompleteCredential` 失败关闭。
+                let success = try? decoder.decode(PollSuccessEnvelope.self, from: response.body)
+                pendingCredential = success?.data.credential(receivedAt: .now).map {
+                    PendingCredential(generation: challenge.generation, credential: $0.credential)
+                }
                 activeChallenge = nil
                 state = .awaitingCredentialValidation
                 return state
-            case 86_101:
+            case 86_039:
                 state = .awaitingScan(challenge.qrCode)
                 return state
             case 86_090:
+                // 已扫码待确认：协议文档与参考实现都列出这一状态；现场观察里扫码与确认一步完成，没有出现过。
                 state = .awaitingConfirmation(challenge.qrCode)
                 return state
             case 86_038:
@@ -166,7 +166,7 @@ public actor WebQRLoginSession {
                 return state
             default:
                 return fail(
-                    .unsupportedStatus(data.code),
+                    .unsupportedStatus(status.code),
                     generation: challenge.generation
                 )
             }
@@ -175,7 +175,7 @@ public actor WebQRLoginSession {
         } catch is CancellationError {
             resetIfCurrent(challenge.generation)
             throw CancellationError()
-        } catch let failure as WebQRLoginFailure {
+        } catch let failure as TVQRLoginFailure {
             return fail(failure, generation: challenge.generation)
         } catch {
             return fail(.network, generation: challenge.generation)
@@ -204,19 +204,19 @@ public actor WebQRLoginSession {
         let result = try await validate(pendingCredential)
         guard case .signedIn = result else { return .signedOut }
         guard !pendingCredential.credential.isExpired() else {
-            throw WebQRLoginFailure.incompleteCredential
+            throw TVQRLoginFailure.incompleteCredential
         }
         do {
             try credentialStore.save(pendingCredential.credential)
         } catch {
-            throw WebQRLoginFailure.credentialStoreUnavailable
+            throw TVQRLoginFailure.credentialStoreUnavailable
         }
         return result
     }
 
     private func takePendingCredential() throws -> PendingCredential {
         guard let pendingCredential else {
-            throw WebQRLoginFailure.incompleteCredential
+            throw TVQRLoginFailure.incompleteCredential
         }
         self.pendingCredential = nil
         guard generation == pendingCredential.generation else {
@@ -240,23 +240,23 @@ public actor WebQRLoginSession {
         do {
             return try AuthenticationHTTP.navigationResult(from: response)
         } catch {
-            throw WebQRLoginFailure.invalidResponse
+            throw TVQRLoginFailure.invalidResponse
         }
     }
 
-    private func send(
+    private func sendSignedForm(
         path: String,
-        queryItems: [URLQueryItem] = []
+        parameters: [String: String]
     ) async throws -> HTTPResponse {
-        try await send(
-            HTTPRequest(
-                url: try endpoint(path: path, queryItems: queryItems),
-                headers: [
-                    "Accept": "application/json",
-                    "User-Agent": HTTPUserAgent.short
-                ]
+        guard
+            let request = AuthenticationHTTP.signedFormRequest(
+                url: try endpoint(path: path),
+                parameters: parameters
             )
-        )
+        else {
+            throw TVQRLoginFailure.invalidResponse
+        }
+        return try await send(request)
     }
 
     private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -268,39 +268,35 @@ public actor WebQRLoginSession {
         } catch let error as HTTPClientError {
             switch error {
             case .unacceptableStatusCode(let status):
-                throw WebQRLoginFailure.httpStatus(status)
+                throw TVQRLoginFailure.httpStatus(status)
             case .nonHTTPResponse:
-                throw WebQRLoginFailure.network
+                throw TVQRLoginFailure.network
             }
         } catch {
-            throw WebQRLoginFailure.network
+            throw TVQRLoginFailure.network
         }
 
         guard response.body.count <= AuthenticationHTTP.maximumResponseSize else {
-            throw WebQRLoginFailure.responseTooLarge
+            throw TVQRLoginFailure.responseTooLarge
         }
         guard response.looksLikeJSON() else {
-            throw WebQRLoginFailure.nonJSONResponse
+            throw TVQRLoginFailure.nonJSONResponse
         }
         return response
     }
 
-    private func endpoint(
-        path: String,
-        queryItems: [URLQueryItem]
-    ) throws -> URL {
+    private func endpoint(path: String) throws -> URL {
         guard
             var components = URLComponents(
                 url: Self.baseURL,
                 resolvingAgainstBaseURL: false
             )
         else {
-            throw WebQRLoginFailure.invalidResponse
+            throw TVQRLoginFailure.invalidResponse
         }
         components.path = path
-        components.queryItems = queryItems.isEmpty ? nil : queryItems
         guard let url = components.url else {
-            throw WebQRLoginFailure.invalidResponse
+            throw TVQRLoginFailure.invalidResponse
         }
         return url
     }
@@ -323,9 +319,9 @@ public actor WebQRLoginSession {
     }
 
     private func fail(
-        _ failure: WebQRLoginFailure,
+        _ failure: TVQRLoginFailure,
         generation expected: UInt64
-    ) -> WebQRLoginState {
+    ) -> TVQRLoginState {
         guard generation == expected else {
             return state
         }
@@ -340,70 +336,40 @@ public actor WebQRLoginSession {
         state = .signedOut
     }
 
-    /// `qrcode_key` 只接受 32 个可见 ASCII 字符；其他形状按无效响应失败关闭，见 SECURITY-MODEL §2。
-    private static func isValidQRCodeKey(_ key: String) -> Bool {
-        key.utf8.count == 32 && !key.utf8.contains(where: { $0 < 0x21 || $0 > 0x7E })
+    /// `auth_code` 只接受 32 个 ASCII 十六进制字符（现场观察的形状）；其他形状按无效响应失败关闭，见 SECURITY-MODEL §2。
+    private static func isValidAuthCode(_ code: String) -> Bool {
+        ASCIIHexShape.matches(code, length: 32)
     }
 
-    /// 精确 `https://account.bilibili.com`：公开 HTTPS 基线（无 userinfo／fragment、端口缺省或
-    /// 443）加固定主机，见 SECURITY-MODEL §2。
-    private static func isValidQRCodeURL(_ value: String) -> Bool {
-        guard let url = URL(string: value) else { return false }
-        return PublicHTTPSURLPolicy().allows(url)
-            && url.host?.lowercased() == qrCodeHost
-    }
-
-    /// 只从成功响应的 `Set-Cookie` 取白名单 Cookie，缺任何一个或校验失败都不产生候选凭据，
-    /// 见 SECURITY-MODEL §1。
-    private static func pendingCredential(
-        from response: HTTPResponse,
-        generation: UInt64
-    ) -> PendingCredential? {
-        let allowedNames = Set(WebCredentialCookieName.allCases.map(\.rawValue))
-        let cookies = HTTPCookie.cookies(
-            withResponseHeaderFields: response.headers,
-            for: baseURL
-        ).filter { allowedNames.contains($0.name) }
-        guard cookies.count == allowedNames.count,
-            Set(cookies.map(\.name)) == allowedNames
+    /// 精确 `https://passport.bilibili.com/x/passport-tv-login/h5/qrcode/auth?auth_code=<本次 auth_code>`：公开 HTTPS
+    /// 基线（无 userinfo／fragment、端口缺省或 443）加固定主机与路径，query 只能有这一项且必须是本次的码，免得二维码
+    /// 把用户的手机带去别处确认，见 SECURITY-MODEL §2。
+    private static func isValidQRCodeURL(_ value: String, authCode: String) -> Bool {
+        guard let url = URL(string: value),
+            PublicHTTPSURLPolicy().allows(url),
+            url.host?.lowercased() == qrCodeHost,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            components.path == qrCodePath,
+            let queryItems = components.queryItems,
+            queryItems.count == 1,
+            queryItems[0].name == "auth_code",
+            queryItems[0].value == authCode
         else {
-            return nil
+            return false
         }
-        let credentialCookies: [WebCredentialCookie] = cookies.compactMap { cookie in
-            guard let name = WebCredentialCookieName(rawValue: cookie.name),
-                let expiresAt = cookie.expiresDate
-            else {
-                return nil
-            }
-            return WebCredentialCookie(
-                name: name,
-                value: cookie.value,
-                domain: cookie.domain,
-                path: cookie.path,
-                isSecure: cookie.isSecure,
-                isHTTPOnly: cookie.isHTTPOnly,
-                expiresAt: expiresAt
-            )
-        }
-        guard let credential = try? WebCredential(cookies: credentialCookies) else {
-            return nil
-        }
-        return PendingCredential(
-            generation: generation,
-            credential: credential
-        )
+        return true
     }
 }
 
 private struct ActiveChallenge: Sendable {
     let generation: UInt64
-    let key: String
-    let qrCode: WebQRCode
+    let authCode: String
+    let qrCode: TVQRCode
 }
 
 private struct PendingCredential: Sendable {
     let generation: UInt64
-    let credential: WebCredential
+    let credential: AccountCredential
 }
 
 private struct StaleOperationError: Error {}
@@ -415,20 +381,19 @@ private struct GenerateEnvelope: Decodable, Sendable {
 
 private struct GenerateData: Decodable, Sendable {
     let url: String
-    let qrcodeKey: String
+    let authCode: String
 
     private enum CodingKeys: String, CodingKey {
         case url
-        case qrcodeKey = "qrcode_key"
+        case authCode = "auth_code"
     }
 }
 
-private struct PollEnvelope: Decodable, Sendable {
+/// 轮询响应只先读顶层状态码；`data` 只在成功时另行解码。
+private struct PollStatusEnvelope: Decodable, Sendable {
     let code: Int
-    let data: PollData?
 }
 
-/// 只解码状态码；URL、refresh_token 与 message 不进入内存模型。
-private struct PollData: Decodable, Sendable {
-    let code: Int
+private struct PollSuccessEnvelope: Decodable, Sendable {
+    let data: IssuedCredentialPayload
 }

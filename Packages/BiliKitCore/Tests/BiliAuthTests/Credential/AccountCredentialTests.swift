@@ -8,41 +8,82 @@ import Testing
 ///
 /// Keychain 条目放在数据保护钥匙串、仅本机解锁时可用且不同步，覆盖写入走原子更新；
 /// 读取错误映射为不可用或不允许交互。
-struct WebCredentialTests {
+struct AccountCredentialTests {
     @Test
     func versionedEnvelopeRoundTripsWithoutPublicDiagnostics() throws {
         let credential = try makeFixtureCredential()
 
-        let encoded = try WebCredentialCodec.encode(credential)
-        let decoded = try WebCredentialCodec.decode(encoded)
+        let encoded = try AccountCredentialCodec.encode(credential)
+        let decoded = try AccountCredentialCodec.decode(encoded)
 
         #expect(decoded == credential)
-        #expect(String(decoding: encoded, as: UTF8.self).contains(#""version":1"#))
+        #expect(String(decoding: encoded, as: UTF8.self).contains(#""version":3"#))
         let diagnostics =
             String(describing: credential)
             + String(reflecting: credential)
             + credential.cookies.map(String.init(reflecting:)).joined()
+            + String(reflecting: credential.appAccessToken)
         #expect(!diagnostics.contains("FIXTURE_"))
+        #expect(!diagnostics.contains(fixtureAppAccessTokenValue))
+        #expect(!diagnostics.contains(fixtureAppRefreshTokenValue))
         var dumped = ""
         dump(credential, to: &dumped)
         #expect(!dumped.contains("FIXTURE_"))
+        #expect(!dumped.contains(fixtureAppAccessTokenValue))
+        #expect(!dumped.contains(fixtureAppRefreshTokenValue))
     }
 
-    @Test
-    func rejectsUnsupportedEnvelopeVersion() {
-        let data = Data(#"{"cookies":[],"version":2}"#.utf8)
+    /// 只有 Cookie 的版本 1 与不含 refresh_token 的版本 2 不再被接受：store 把它们当损坏凭据删除，用户重新登录一次。
+    @Test(arguments: [1, 2])
+    func rejectsEnvelopesWithoutARefreshToken(version: Int) {
+        let data = Data(#"{"cookies":[],"version":\#(version)}"#.utf8)
 
-        #expect(throws: WebCredentialCodingError.unsupportedVersion(2)) {
-            try WebCredentialCodec.decode(data)
+        #expect(throws: AccountCredentialCodingError.unsupportedVersion(version)) {
+            try AccountCredentialCodec.decode(data)
         }
+    }
+
+    /// Cookie 与 token 一起过期：任一到期，整份凭据都按过期处理（授权器随后删除它）。
+    @Test
+    func expiredAccessTokenExpiresWholeCredential() throws {
+        let cookies = try makeFixtureCredential().cookies
+        let credential = try AccountCredential(
+            cookies: cookies,
+            appAccessToken: AppAccessToken(
+                value: fixtureAppAccessTokenValue,
+                refreshToken: fixtureAppRefreshTokenValue,
+                expiresAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+        )
+
+        #expect(credential.isExpired(at: Date(timeIntervalSince1970: 1_700_000_001)))
+        #expect(!credential.isExpired(at: Date(timeIntervalSince1970: 1_699_999_999)))
     }
 
     @Test
     func rejectsIncompleteOrUnsafeCookieSets() throws {
         let valid = try makeFixtureCredential().cookies
 
-        #expect(throws: WebCredentialCodingError.invalidCredential) {
-            try WebCredential(cookies: Array(valid.dropLast()))
+        let token = try makeFixtureCredential().appAccessToken
+        #expect(throws: AccountCredentialCodingError.invalidCredential) {
+            try AccountCredential(cookies: Array(valid.dropLast()), appAccessToken: token)
+        }
+        for malformed in [
+            AppAccessToken(
+                value: "FIXTURE",
+                refreshToken: token.refreshToken,
+                expiresAt: token.expiresAt
+            ),
+            AppAccessToken(
+                value: "FIXTURE+ACCESS/TOKEN=" + String(repeating: "0", count: 32),
+                refreshToken: token.refreshToken,
+                expiresAt: token.expiresAt
+            ),
+            AppAccessToken(value: token.value, refreshToken: "FIXTURE", expiresAt: token.expiresAt)
+        ] {
+            #expect(throws: AccountCredentialCodingError.invalidCredential) {
+                try AccountCredential(cookies: valid, appAccessToken: malformed)
+            }
         }
 
         var insecure = valid
@@ -56,15 +97,15 @@ struct WebCredentialTests {
             isHTTPOnly: original.isHTTPOnly,
             expiresAt: original.expiresAt
         )
-        #expect(throws: WebCredentialCodingError.invalidCredential) {
-            try WebCredential(cookies: insecure)
+        #expect(throws: AccountCredentialCodingError.invalidCredential) {
+            try AccountCredential(cookies: insecure, appAccessToken: token)
         }
     }
 
     @Test
     func dataProtectionKeychainUsesFixedProtectionAndAtomicUpdate() throws {
         let operations = RecordingKeychainOperations()
-        let store = KeychainWebCredentialStore(operations: operations)
+        let store = KeychainAccountCredentialStore(operations: operations)
         let first = try makeFixtureCredential()
         let second = try makeFixtureCredential(
             expiresAt: Date(timeIntervalSince1970: 4_133_980_800)
@@ -98,14 +139,14 @@ struct WebCredentialTests {
     @Test
     func keychainErrorsAreMappedWithoutExposingStoredData() throws {
         let unavailable = RecordingKeychainOperations(nextReadStatus: errSecMissingEntitlement)
-        let unavailableStore = KeychainWebCredentialStore(operations: unavailable)
-        #expect(throws: WebCredentialStoreError.unavailable) {
+        let unavailableStore = KeychainAccountCredentialStore(operations: unavailable)
+        #expect(throws: AccountCredentialStoreError.unavailable) {
             try unavailableStore.load()
         }
 
         let locked = RecordingKeychainOperations(nextReadStatus: errSecInteractionNotAllowed)
-        let lockedStore = KeychainWebCredentialStore(operations: locked)
-        #expect(throws: WebCredentialStoreError.interactionNotAllowed) {
+        let lockedStore = KeychainAccountCredentialStore(operations: locked)
+        #expect(throws: AccountCredentialStoreError.interactionNotAllowed) {
             try lockedStore.load()
         }
     }

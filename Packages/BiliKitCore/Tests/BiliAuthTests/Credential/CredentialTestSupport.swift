@@ -9,8 +9,8 @@ import Synchronization
 func makeFixtureCredential(
     expiresAt: Date = Date(timeIntervalSince1970: 4_102_444_800),
     userID: String? = nil
-) throws -> WebCredential {
-    try WebCredential(
+) throws -> AccountCredential {
+    try AccountCredential(
         cookies: WebCredentialCookieName.allCases.map { name in
             WebCredentialCookie(
                 name: name,
@@ -23,9 +23,19 @@ func makeFixtureCredential(
                 isHTTPOnly: name == .session,
                 expiresAt: expiresAt
             )
-        }
+        },
+        appAccessToken: AppAccessToken(
+            value: fixtureAppAccessTokenValue,
+            refreshToken: fixtureAppRefreshTokenValue,
+            expiresAt: expiresAt
+        )
     )
 }
+
+/// 测试凭据的 access_token：32 个 `f`，满足十六进制形状，也是秘密扫描放行的假值。
+let fixtureAppAccessTokenValue = String(repeating: "f", count: 32)
+/// 测试凭据的 refresh_token：32 个 `0`，理由同上。
+let fixtureAppRefreshTokenValue = String(repeating: "0", count: 32)
 
 /// 账户会话校验（nav）授权器放行的 path；本 target 的读授权器测试与认证服务测试共用。
 let navigationAllowedPaths: Set<String> = [
@@ -34,7 +44,7 @@ let navigationAllowedPaths: Set<String> = [
 
 /// 本 target 唯一的读授权器组装：默认只放行 nav，transport 不回放任何响应。
 func makeCredentialAuthorizer(
-    store: MemoryWebCredentialStore,
+    store: MemoryAccountCredentialStore,
     allowedPaths: Set<String> = navigationAllowedPaths,
     transport: RecordingAuthTransport = RecordingAuthTransport(),
     isConfirmedSignedOut: @escaping @Sendable () -> Bool = { false }
@@ -60,10 +70,10 @@ final class AuthEventRecorder: Sendable {
     }
 }
 
-/// 本 target 唯一的 `WebCredentialStoring` 替身；load/save/delete 错误只触发一次。
-final class MemoryWebCredentialStore: WebCredentialStoring, Sendable {
+/// 本 target 唯一的 `AccountCredentialStoring` 替身；load/save/delete 错误只触发一次。
+final class MemoryAccountCredentialStore: AccountCredentialStoring, Sendable {
     private struct State {
-        var credential: WebCredential?
+        var credential: AccountCredential?
         var nextLoadError: (any Error)?
         var nextSaveError: (any Error)?
         var nextDeleteError: (any Error)?
@@ -78,7 +88,7 @@ final class MemoryWebCredentialStore: WebCredentialStoring, Sendable {
     var saveCount: Int { state.withLock { $0.saveCount } }
 
     init(
-        credential: WebCredential? = nil,
+        credential: AccountCredential? = nil,
         loadError: (any Error)? = nil,
         saveError: (any Error)? = nil,
         deleteError: (any Error)? = nil,
@@ -95,7 +105,7 @@ final class MemoryWebCredentialStore: WebCredentialStoring, Sendable {
         self.events = events
     }
 
-    func load() throws -> WebCredential? {
+    func load() throws -> AccountCredential? {
         try state.withLock { state in
             if let nextLoadError = state.nextLoadError {
                 state.nextLoadError = nil
@@ -105,7 +115,7 @@ final class MemoryWebCredentialStore: WebCredentialStoring, Sendable {
         }
     }
 
-    func save(_ credential: WebCredential) throws {
+    func save(_ credential: AccountCredential) throws {
         try state.withLock { state in
             if let nextSaveError = state.nextSaveError {
                 state.nextSaveError = nil

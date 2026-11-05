@@ -62,6 +62,7 @@ public struct RecommendedFeedView: View {
         case .failed(request: .recommendation, let error):
             BrowseFailureView(
                 error: error,
+                isAwaitingRevalidation: model.isAwaitingAuthenticationRevalidation,
                 retry: { model.retry(request) }
             )
         default:

@@ -50,10 +50,10 @@ BiliNetworking 不依赖任何 Bili 模块
 | target | 拥有 | 不得依赖 |
 | --- | --- | --- |
 | `BiliModels` | 跨层稳定实体与值类型 | 任何 Bili 模块、SwiftUI、AppKit、AVFoundation、Network |
-| `BiliApplication` | Use Case 与 port、应用级错误、界面可用的账户投影、窗口账户复核的参与者契约（Feature ViewModel 实现、App 汇总，不是 adapter 实现的 port），以及 Feature 共用的并发原语、列表状态机与有界缓存（`LatestTask`、`AsyncBroadcast`、`PagedVideoList`、`PageReplacementPaging`、`CostBoundedLRUCache`） | 除 `BiliModels` 外的 Bili 模块、UI/播放/网络框架、DTO、Keychain、Cookie |
-| `BiliNetworking` | 无业务语义的 HTTP 与 Range client、`HTTPRequestAuthorizing`、URL 形状策略与 JSON 响应判定 | Bili 模块、`Security`、UI/播放框架 |
+| `BiliApplication` | Use Case 与 port、应用级错误、界面可用的账户投影、窗口账户复核的参与者契约与共用的复核进度（Feature ViewModel 实现、App 汇总，不是 adapter 实现的 port），以及 Feature 共用的并发原语、列表状态机与有界缓存（`LatestTask`、`AsyncBroadcast`、`PagedVideoList`、`PageReplacementPaging`、`CostBoundedLRUCache`） | 除 `BiliModels` 外的 Bili 模块、UI/播放/网络框架、DTO、Keychain、Cookie |
+| `BiliNetworking` | 无业务语义的 HTTP 与 Range client、`HTTPRequestAuthorizing` 与签名请求的 `HTTPSigningRequestAuthorizing`、URL 形状策略、query 的 unreserved 编码与 JSON 响应判定 | Bili 模块、`Security`、UI/播放框架 |
 | `BiliAPI` | endpoint DTO、WBI、解码、protobuf wire、远端错误映射，并实现 Application 仓库 port | `BiliAuth`（只接受注入的授权器） |
-| `BiliAuth` | Web QR 状态机、Cookie envelope、Keychain store、请求授权器，实现 `AuthenticationServicing` | `BiliAPI`、`BiliPlayback`、`BiliDanmaku`、Feature、UI 框架 |
+| `BiliAuth` | TV 扫码状态机与 APP 签名、凭据 envelope（Cookie 加 App token）与续期、Keychain store、请求授权器（含 App 端读取与写入），实现 `AuthenticationServicing` | `BiliAPI`、`BiliPlayback`、`BiliDanmaku`、Feature、UI 框架 |
 | `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速 | `BiliAPI`、`BiliAuth` |
 | `BiliDanmaku` | 弹幕会话与分段缓存、车道布局、按媒体时间的 materializer、Core Animation renderer。`Session/`、`Layout/`、`Presentation/` 是纯逻辑，渲染框架只在 `Rendering/` | `BiliAPI`、`BiliAuth`、`BiliNetworking`、`BiliPlayback`、Feature、SwiftUI |
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
@@ -354,7 +354,10 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 认证
 
-Web QR 协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
+登录用 TV 端扫码：成功正文同时带网页 Cookie 与 App 端 access_token、refresh_token，三者存在同一份凭据里，一起过期、一起删除；
+续期用 refresh_token 换回整份新凭据（Cookie 一并换新），由进程唯一的 `AccountCredentialRenewal` 串行执行，认证服务在恢复确认仍登录
+后调用它、等它结束才发布已登录：启动时只在临近到期时续期，复核时强制续期一次，使只有 token 失效的凭据在复核后的重载里恢复；
+续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
 `BiliAuth`；Application 只暴露非秘密认证状态与 `AuthenticationServicing`，二维码图像走 `BiliAuthFeature`
 定义的窄 Presentation port 注入。请求 builder（`RequestAccess` 与请求管线）只在 `BiliAPI` 内部可见，由各域
 endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 `RequestAccess`；授权器由 Composition 注入。
@@ -362,7 +365,8 @@ endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 
 
 窗口复核：凭据失效只由 ViewModel 记录。参与者实现 `AccountRevalidationParticipant`，发现需要复核的失败时以
 `&+=` 递增 `authenticationRevalidationGeneration`。参与者集合由 `WindowComposition` 构造一次，`AppRootView`
-只比较各参与者的代次，前后不等（不比大小，回绕仍算）就调用一次 `revalidate()`，结束后把结果交给参与者；
+只比较各参与者的代次，前后不等（不比大小，回绕仍算）就调用一次 `revalidate()`，结束后把结果（仍登录、确认未登录或
+没能确认）交给参与者；
 绑定来源的参与者只在该来源是当前来源时收到，不在本页时不在后台读取账户内容。收藏夹列表是侧栏常驻的
 元数据，按窗口级登记，例外地不论当前来源都读取并接收结果。Feature 不直接调用认证服务。用户发起的账户写入由窗口的
 写入协调者作为窗口级参与者，凭据类失败只请求一次复核，同一账户与会话代次里直到下一次写入成功不再请求。
@@ -370,7 +374,8 @@ endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 
 内容域的认证失败分四态，由 `ContentApplicationError` 决定是否复核与是否给重试：无凭据是“需要登录”（不给重试）、
 凭据失效触发复核、本地凭据读不到可重试但不复核、风控按受限。观看历史、稍后再看与收藏夹只在窗口已登录时
 显示，所以读取时本地无凭据也复核；复核确认仍登录后，由凭据失效引发的自动重载在下一次加载成功前最多一次
-（`LibraryAccountRevalidation`），挡住“复核 → 重载 → 失效”的循环。
+（`AccountRevalidationProgress`），挡住“复核 → 重载 → 失效”的循环。首页推荐、热门与搜索能匿名读取，确认未登录
+同样重载一次停住的失败页：读取先于复核删掉损坏或过期的凭据时账户范围不变，不会经账户变化重启。
 
 多窗口共享一个进程级账户会话协调器：登出、换号或凭据失效时先全局推进 authentication epoch，其他窗口再复核
 Keychain，并按新 generation 重启依赖账户的内容。账户变化由来源自己处理，App 只经来源描述通知；其他窗口换号
@@ -404,8 +409,9 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 - 结果胶囊挂在顶层页面与播放页上，而不是整个 `NavigationStack` 外：在 `NavigationSplitView` 的 detail 列里，挂在
   `NavigationStack` 上的修饰符实际归根页面所有，压栈后随根页面移除。播放页打开时顶层那份不显示，读屏不会把同一条结果
   通告两次。
-- 首页推荐的「不感兴趣」：菜单由 Browse 按卡片的推荐流字段（UP 主 mid、`track_id`）构造反馈，标记属于 `BrowseViewModel` 的
-  推荐工作集、跟着卡片走（刷新成功后只留新推荐里仍有的）。协调者先乐观标上或去掉，失败或被取消时凭改动时的工作集身份
+- 首页推荐的「不感兴趣」：反馈走 App 端接口（推荐流来自 App 端，服务端按 access_token 认出是谁的推荐流）。子菜单的原因是
+  卡片自己给出的列表（id 与中文名字原样显示，不本地化，不设固定原因），Browse 按选中的原因构造反馈；卡片没给原因就没有这一项。
+  标记属于 `BrowseViewModel` 的推荐工作集、跟着卡片走（刷新成功后只留新推荐里仍有的）。协调者先乐观标上或去掉，失败或被取消时凭改动时的工作集身份
   放回，工作集换过（换号、`reset`）就不放回，免得把上一账户的反馈标到新推荐上；同一视频的反馈与撤销同时只发一个，撤销
   必须带发出时的同一份反馈。效果不落到其他窗口：各窗口的推荐流本来就各不相同。
 - 乐观移除：稍后再看页与收藏夹页的移除先在本地删掉，失败或被取消时放回原位（稍后再看按 `PagedVideoList` 的并入序号，

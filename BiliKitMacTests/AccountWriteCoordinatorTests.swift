@@ -389,7 +389,7 @@ struct AccountWriteCoordinatorTests {
         let coordinator = standaloneCoordinator(
             writes: writes,
             session: session,
-            browse: await loadedRecommendations()
+            browse: try await loadedRecommendations()
         )
         let feedback = try dislikeFeedback()
 
@@ -411,9 +411,9 @@ struct AccountWriteCoordinatorTests {
         await waitForObservedState { coordinator.reportSequence != successSequence }
         #expect(
             await writes.calls == [
-                "dislike BV17x411w7KC content 7",
-                "dislike BV17x411w7KC content 7",
-                "undislike BV17x411w7KC content 7"
+                "dislike BV17x411w7KC 1 7",
+                "dislike BV17x411w7KC 1 7",
+                "undislike BV17x411w7KC 1 7"
             ]
         )
     }
@@ -426,18 +426,11 @@ struct AccountWriteCoordinatorTests {
         let coordinator = standaloneCoordinator(
             writes: writes,
             session: session,
-            browse: await loadedRecommendations()
+            browse: try await loadedRecommendations()
         )
         let feedback = try dislikeFeedback()
         let notShownTarget = try #require(VideoWriteTarget(bvid: "BV1xx411c7mD"))
-        let notShown = try #require(
-            RecommendationFeedback(
-                target: notShownTarget,
-                uploaderID: 1,
-                trackID: "track",
-                reason: .uploader
-            )
-        )
+        let notShown = RecommendationFeedback(target: notShownTarget, reason: feedback.reason)
 
         coordinator.dislikeRecommendation(notShown)
         coordinator.dislikeRecommendation(feedback)
@@ -446,7 +439,7 @@ struct AccountWriteCoordinatorTests {
         await writes.releaseWrites()
         await waitForObservedState { coordinator.report != nil }
 
-        #expect(await writes.calls == ["dislike BV17x411w7KC content 7"])
+        #expect(await writes.calls == ["dislike BV17x411w7KC 1 7"])
     }
 
     /// 撤销途中换了账户，新推荐恰好有同一视频：撤销失败也不把旧账户的反馈标到新推荐上。
@@ -455,7 +448,7 @@ struct AccountWriteCoordinatorTests {
         let writes = AccountWriteRepositoryStub(outcomes: [.restricted], holdsWrites: true)
         let session = MutableWritableAccount()
         session.account = WritableAccount(accountID: 7, sessionGeneration: 1)
-        let browse = await loadedRecommendations()
+        let browse = try await loadedRecommendations()
         let coordinator = standaloneCoordinator(writes: writes, session: session, browse: browse)
         let feedback = try dislikeFeedback()
         #expect(browse.markRecommendationDisliked(feedback) != nil)
@@ -472,17 +465,18 @@ struct AccountWriteCoordinatorTests {
         #expect(browse.markRecommendationDisliked(feedback) != nil)
     }
 
-    private func loadedRecommendations() async -> BrowseViewModel {
+    private func loadedRecommendations() async throws -> BrowseViewModel {
         let video = RecommendedVideo(
             bvid: "BV17x411w7KC",
             title: "推荐",
             coverURL: nil,
             owner: VideoOwner(id: 1, name: "作者"),
-            statistics: VideoStatistics(viewCount: 1, danmakuCount: 0, likeCount: 0),
+            viewCount: 1,
+            danmakuCount: 0,
             durationSeconds: 60,
             publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
             recommendationReason: nil,
-            trackID: "track"
+            dislikeReasons: [try #require(RecommendationDislikeReason(id: 1, name: "这个内容"))]
         )
         let browse = BrowseViewModel(
             useCase: FeedUseCase(repository: FeedRepositoryStub(recommendations: [video]))
@@ -492,14 +486,9 @@ struct AccountWriteCoordinatorTests {
     }
 
     private func dislikeFeedback() throws -> RecommendationFeedback {
-        let target = try target()
-        return try #require(
-            RecommendationFeedback(
-                target: target,
-                uploaderID: 1,
-                trackID: "track",
-                reason: .content
-            )
+        RecommendationFeedback(
+            target: try target(),
+            reason: try #require(RecommendationDislikeReason(id: 1, name: "这个内容"))
         )
     }
 

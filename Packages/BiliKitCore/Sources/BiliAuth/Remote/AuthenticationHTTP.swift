@@ -1,7 +1,7 @@
 import BiliNetworking
 import Foundation
 
-/// `BiliAuth` 自有网络的唯一 transport 配置与 nav 登录态校验形状。
+/// `BiliAuth` 自有网络的唯一 transport 配置、passport 签名表单与 nav 登录态校验形状。
 ///
 /// 传输错误如何映射留给各调用方（QR 登录与 Keychain 恢复的失败语义不同）。
 enum AuthenticationHTTP {
@@ -31,6 +31,30 @@ enum AuthenticationHTTP {
     /// 无 Cookie storage、无 URL cache、拒绝 redirect 的 ephemeral transport。
     static func makeProductionTransport() -> URLSessionTransport {
         URLSessionTransport(configuration: .credentialFreeEphemeral())
+    }
+
+    /// passport 上带 APP 签名的表单 POST（TV 扫码的取码、轮询与凭据续期）；签名失败为 nil。
+    ///
+    /// 签名后的正文可能含凭据（续期带 access_key 与 refresh_token），只能原样发出。
+    static func signedFormRequest(url: URL, parameters: [String: String]) -> HTTPRequest? {
+        guard
+            let form = BiliAppSigning.signed(
+                parameters,
+                timestamp: Int64(Date.now.timeIntervalSince1970)
+            )
+        else {
+            return nil
+        }
+        return HTTPRequest(
+            url: url,
+            method: .post,
+            headers: [
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": HTTPUserAgent.short
+            ],
+            body: Data(form.utf8)
+        )
     }
 
     /// `cookieHeader` 为 nil 时由授权器从 Keychain 附加凭据。

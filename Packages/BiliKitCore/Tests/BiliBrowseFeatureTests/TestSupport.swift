@@ -165,7 +165,8 @@ struct ContentFixtures: Sendable {
             title: title,
             coverURL: nil,
             owner: owner,
-            statistics: popularVideo.statistics,
+            viewCount: popularVideo.statistics.viewCount,
+            danmakuCount: popularVideo.statistics.danmakuCount,
             durationSeconds: popularVideo.durationSeconds,
             publishedAt: popularVideo.publishedAt,
             recommendationReason: "正在流行"
@@ -209,8 +210,8 @@ struct ContentFixtures: Sendable {
     var recommendationPage: RecommendationPage {
         RecommendationPage(
             videos: [recommendedVideo],
-            continuation: RecommendationContinuation(freshIndex: 1),
-            nextContinuation: RecommendationContinuation(freshIndex: 2)
+            continuation: nil,
+            nextContinuation: RecommendationContinuation(index: 2)
         )
     }
 }

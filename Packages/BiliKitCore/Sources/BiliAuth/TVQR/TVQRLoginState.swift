@@ -1,12 +1,12 @@
 /// QR adapter 的内部安全状态投影；描述不包含 key、URL、Cookie 或服务端正文。
-public enum WebQRLoginState: Sendable, Equatable, CustomStringConvertible {
+public enum TVQRLoginState: Sendable, Equatable, CustomStringConvertible {
     case signedOut
     case requestingQRCode
-    case awaitingScan(WebQRCode)
-    case awaitingConfirmation(WebQRCode)
+    case awaitingScan(TVQRCode)
+    case awaitingConfirmation(TVQRCode)
     case awaitingCredentialValidation
     case expired
-    case failed(WebQRLoginFailure)
+    case failed(TVQRLoginFailure)
 
     public var description: String {
         switch self {
@@ -30,7 +30,7 @@ public enum WebQRLoginState: Sendable, Equatable, CustomStringConvertible {
 
 /// QR 登录各阶段的失败分类；只含状态码与业务码，不含服务端正文，由认证服务映射为
 /// `AuthenticationFailure`。
-public enum WebQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertible {
+public enum TVQRLoginFailure: Error, Sendable, Equatable, CustomStringConvertible {
     case noActiveChallenge
     case network
     case httpStatus(Int)

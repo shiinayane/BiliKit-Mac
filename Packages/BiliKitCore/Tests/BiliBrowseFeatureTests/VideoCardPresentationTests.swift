@@ -39,7 +39,7 @@ struct VideoCardPresentationTests {
     }
 
     @Test
-    func recommendedLabelAddsReasonOnlyWhenPresent() {
+    func recommendedLabelAddsReasonOnlyWhenPresent() throws {
         let withReason = RecommendedVideoCardPresentation(
             video: recommendedVideo(reason: "正在流行"),
             locale: locale
@@ -51,8 +51,8 @@ struct VideoCardPresentationTests {
 
         for value in visibleValues(
             title: withReason.title,
-            viewCountText: withReason.viewCountText,
-            danmakuCountText: withReason.danmakuCountText
+            viewCountText: try #require(withReason.viewCountText),
+            danmakuCountText: try #require(withReason.danmakuCountText)
         ) {
             #expect(withReason.accessibilityLabel.contains(value))
             #expect(withoutReason.accessibilityLabel.contains(value))
@@ -61,13 +61,42 @@ struct VideoCardPresentationTests {
         #expect(!withoutReason.accessibilityLabel.contains("正在流行"))
     }
 
+    /// App 端推荐解析不出计数或发布时间时，读屏标签跳过这一项，页脚只剩 UP 主名，不显示占位。
+    @Test
+    func recommendedCardOmitsCountsAndDateThatCouldNotBeParsed() {
+        let video = RecommendedVideo(
+            bvid: "BV1Recommended",
+            title: "推荐示例",
+            coverURL: nil,
+            owner: owner,
+            viewCount: nil,
+            danmakuCount: nil,
+            durationSeconds: 754,
+            publishedAt: nil,
+            recommendationReason: nil
+        )
+        let presentation = RecommendedVideoCardPresentation(video: video, locale: locale)
+
+        #expect(presentation.footerText == owner.name)
+        #expect(presentation.viewCountText == nil && presentation.danmakuCountText == nil)
+        #expect(
+            presentation.accessibilityLabel
+                == ListFormatter.localizedString(byJoining: [
+                    video.title,
+                    owner.name,
+                    VideoCardAccessibilityText.duration(seconds: 754, locale: locale)
+                ])
+        )
+    }
+
     private func recommendedVideo(reason: String?) -> RecommendedVideo {
         RecommendedVideo(
             bvid: "BV1Recommended",
             title: "推荐示例",
             coverURL: nil,
             owner: owner,
-            statistics: statistics,
+            viewCount: statistics.viewCount,
+            danmakuCount: statistics.danmakuCount,
             durationSeconds: 754,
             publishedAt: publishedAt,
             recommendationReason: reason

@@ -8,7 +8,8 @@
 
 保护的资产：
 
-- **账号凭据**（`SESSDATA`、`bili_jct`）：拿到就能以用户身份读写账号。
+- **账号凭据**（`SESSDATA`、`bili_jct`、App 端 `access_token`）：拿到就能以用户身份读写账号；`access_token` 单独就够，
+  不需要 CSRF。
 - **观看与搜索隐私**：看了什么、搜了什么、属于哪个账号。
 - **本机**：进程内的 loopback server，以及写到磁盘上的东西。
 - **更新链**：最终安装到用户 Mac 上的代码。
@@ -30,30 +31,43 @@
 
 | 资产 | 规则 |
 | --- | --- |
-| Web Cookie | 只接受 QR 成功响应 `Set-Cookie` 中的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`；未知 Cookie 丢弃 |
-| `qrcode_key`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `WebQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `refresh_token` | 轮询响应只解码状态码，不读取、不保存、不使用该字段，不实现自动刷新 |
+| Web Cookie | 只接受 TV 端扫码轮询成功或续期成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文 `token_info.mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
+| `auth_code`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `TVQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
+| `access_token` | 只接受同一份成功正文 `token_info` 里的 `access_token`（扫码签发为 32 个十六进制字符，续期签发约 220 个；只接受 32–512 个字母、数字、`-` 与 `_`，不需要转义也不会改变 query 结构）与 `expires_in`（正数，到期时刻按收到响应时计算）；轮询正文顶层的副本不解码；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query（§3） |
+| `refresh_token` | 只接受同一份 `token_info` 里的 `refresh_token`（32 个十六进制字符），与 access_token 同存同删；只由续期放进发往 `passport.bilibili.com` 的续期请求（§2），不进入任何业务请求；`sso` 等其他字段不解码 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
 - 持久秘密只存 Keychain：Security.framework generic-password、固定 service/account、
   `kSecUseDataProtectionKeychain`、`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`、非 synchronizable，
-  保存一个版本化 envelope；解码后重新校验名称、domain、path、Secure、值字符与大小。
+  保存一个版本化 envelope（版本 3：Cookie 加 `access_token` 与 `refresh_token`）；解码后重新校验名称、domain、path、Secure、
+  值字符与大小以及 token 形状（domain、path、Secure 来自上表由 `BiliAuth` 填写的值，这里只防 envelope 被改写）。读到只有
+  Cookie 的版本 1 或不含 refresh_token 的版本 2 按损坏凭据删除，用户重新登录一次；旧版 App 读到版本 3 同样会删除它。
 - 凭据类型的 `description`／Mirror 不展示值。UserDefaults、文件、fixture、日志、截图、崩溃信息、
   App 恢复状态和验证记录都不得出现 Cookie、QR key、token 或完整认证 URL。
 - Cookie、QR key、Keychain 类型、endpoint DTO 不越过 `BiliAuth`／`BiliAPI` 进入 Application 或 Feature。
 - 不使用 `URLSession.shared`、共享 `HTTPCookieStorage`、`URLCredentialStorage` 或 WebView Cookie；
-  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验），不接入 App token 登录。
+  不导入浏览器或手动粘贴的 Cookie（来源与范围无法校验）。
 
 ## 2. 登录状态机
 
 防：未经验证的凭据被当成登录成功；登出或换号后旧账户的请求与结果继续生效。
 
-- QR 生成与轮询只连 `https://passport.bilibili.com`；待显示 URL 只接受精确 `https://account.bilibili.com`。
-  已确认状态为 `86101` 未扫码、`86090` 已扫码待确认、`86038` 过期、`0` 成功；其他值失败关闭，不
-  回显服务端 message/payload。
+- 登录用 TV 端扫码：取码（`/x/passport-tv-login/qrcode/auth_code`）与轮询（`.../qrcode/poll`）只连
+  `https://passport.bilibili.com`，都是带 APP 签名（TV 的 appkey）的 urlencoded POST，不带 Cookie。`auth_code` 只接受 32 个
+  十六进制字符；待显示 URL 只接受精确 `https://passport.bilibili.com/x/passport-tv-login/h5/qrcode/auth`，query 只能是
+  这一次的 `auth_code`，防止二维码把手机带去别处确认。轮询状态在顶层 `code`：`86039` 未扫码、`86038` 过期、`0` 成功
+  已经现场确认，`86090` 已扫码待确认按协议文档接受；其他值失败关闭，不回显服务端 message/payload。
 - 成功后先在内存组 Cookie 请求 `/x/web-interface/nav`，`isLogin=true` 才在同一 actor generation 内
   写入 Keychain；旧 generation、取消、过期、校验或存储失败都清除临时秘密，不能返回登录成功。
 - 轮询有最小间隔、总时限和次数上限；ViewModel 拥有 Task，actor 用 generation 与 poll ID 隔离旧结果。
+- 续期（`AccountCredentialRenewal`，进程唯一、串行）：确认仍登录后，启动恢复与其他窗口换号后的复核只在凭据离到期（token
+  与各 Cookie 里最早的到期时刻）不足 30 天时续期，本窗口之后的复核不论离到期多久都续期；两次续期请求至少相隔 10 分钟，不论
+  起因与成败。请求是发往 `https://passport.bilibili.com/x/passport-login/oauth2/refresh_token` 的 APP 签名 POST，只带
+  Keychain 里同一份凭据的 `access_key` 与 `refresh_token`。成功正文按上表同一规则校验成新凭据，账户必须与原凭据相同、
+  不能已经过期，写回前再读一次 Keychain，仍是原来那一份才覆盖（防止把等待网络期间登出或换号的旧会话结果写回去；比较与
+  写回之间仅一次 Keychain 调用的窗口不加锁）。续期失败（网络、业务码、正文不合规、Keychain）不删除凭据、不改变登录状态、
+  不重试；续期一旦发出就做完，取消不打断，因为服务端可能已经轮换 token。
+- 复核判定远端未登录时，只删除被校验的那一份凭据：校验期间凭据已被续期换掉就用新凭据再校验一次，不删刚续期的凭据。
 - 恢复时重新校验：远端明确失效则清理（nav 的 `data.isLogin=false`，`code` 为 0 或 -101；其他非 0 码按
   校验不可用处理）；本地缺失／损坏／过期回退未登录；临时网络失败不删凭据。
 - 登出顺序：取消认证任务 → 清二维码与内存 → 删除 Keychain item → 失效并重建 session → 发布未登录。
@@ -77,8 +91,8 @@
 搜索规则规范化（≤ 100 字），结果只在内存中用于当次菜单。唯一的非凭据 Cookie 是 `buvid3`：搜索
 `/x/web-interface/wbi/search/type` 与点赞、投币、三连三个写接口要求 Cookie 含它（缺它会触发风控），`BiliAPI` 为此在进程内存中
 随机生成一个 `buvid3=<小写 UUID>infoc`，不持久化、不激活、不与账户关联；这几种请求在授权之后附加它（与授权器给出的 Cookie
-并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有三个授权器，均由 Composition 注入
-`BiliAPI`：账户读取、自动的观看进度写入，与用户发起的账户写入。
+并列），任何其他请求（含 WBI nav 与其余写请求）都不携带。只有五个授权器，均由 Composition 注入
+`BiliAPI`：账户读取、App 端读取、自动的观看进度写入，与用户发起的网页端和 App 端账户写入。
 
 **账户读取**（`BiliCredentialRequestAuthorizer`）
 
@@ -109,6 +123,21 @@
   所有签名读取共用 `BiliAPIClient.signedRequest`：取 nav、换 key 重试与响应返回期间认证 epoch 变化时丢弃结果，
   不以新会话补发；会话失效后返回的 nav 也不写回 key 缓存。
 
+**App 端读取**（`BiliAppRequestAuthorizer`）
+
+防：access_token 被带到 `app.bilibili.com` 之外或 allowlist 之外的接口；签过名的带凭据 URL 被改写或泄露。
+
+- 只允许 `https://app.bilibili.com`、端口缺省或 443、GET、无正文、无 userinfo／fragment、路径编码规范，且 path 在
+  `LiveAPIClients` 声明的 App allowlist 内（只引用 BiliAPI 的 `BiliAppReadPath`，目前只有首页推荐 `/x/v2/feed/index`）；
+  只有窗口主 API 注入它。调用方自带 `access_key`、`appkey`、`ts`、`sign`、`mobile_access_key`、重复的 query 字段或凭据类
+  header 一律拒绝。
+- 凭据按账户读取的同一规则读取（每次读 Keychain，损坏或过期删除后报告失效，Keychain 不可用只在 §2 已确认未登录时按
+  无凭据处理）。有凭据时把 `access_key` 放进 query，再用 TV 的 appkey 对全部参数做 APP 签名；本地明确无凭据时只签名、
+  不带凭据（未登录用户的匿名 App 推荐）。凭据失效、Keychain 不可用与请求不合规都不降级为匿名签名。
+- App 端请求即使匿名也必须签名：`appRead` 访问总是经这个授权器，没有它的 client 不发出请求，授权失败也不退回未签名的
+  原请求。授权结果带回是否附带了凭据，业务码 -101 只在带了凭据时是凭据失效（触发复核），否则是“需要登录”。
+- 签名后的 URL 本身就是凭据：管线原样发出、拒绝 redirect，不改写 query；日志与诊断按 §8 不记录 URL。
+
 **自动写入：观看进度**（`BiliPlaybackHeartbeatRequestAuthorizer`）
 
 - 仅 `POST https://api.bilibili.com:443/x/click-interface/web/heartbeat`；header 集合固定为 `Accept`、
@@ -127,9 +156,8 @@
   （`POST /x/v3/fav/resource/deal`）与夹内移除（`POST /x/v3/fav/resource/batch-del`），以及播放页的点赞
   （`POST /x/web-interface/archive/like`，`like` 只能是 1 或 2）、投币（`POST /x/web-interface/coin/add`，`multiply` 只能是 1
   或 2、`select_like` 0 或 1）与三连（`POST /x/web-interface/archive/like/triple`，只有 `aid`），播放页侧栏的关注与取消关注（`POST /x/relation/modify`，只收单个 UP 主
-  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝），首页推荐的「不感兴趣」与撤销
-  （`POST /x/web-interface/feedback/dislike` 与 `.../dislike/cancel`，推荐流的固定字段之外只收单个稿件 `id`、它的 UP 主
-  `mid`（正整数）、只含字母数字与 `._-` 且有长度上限的 `track_id`，`reason_id` 只能是 1 或 4；网页对它签 WBI，这里不签）。`toview/del` 的 `aid` 在接口文档里
+  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝）。
+  `toview/del` 的 `aid` 在接口文档里
   可选、带 `viewed=true` 会删除全部已看完的视频；schema 强制要求 `aid` 并拒绝 `viewed`，所以发不出“一次清空”，不得把 `aid`
   改成可选。`batch-del` 接受逗号分隔的多个条目，schema 只收单个 `<aid>:2`；`deal` 只收单个视频、固定 `type=2`，两侧夹 id
   列表各自不重复、互不相交、至少一侧非空、有上限。换用其他接口时同样只收单个视频，不收批量；需要 WBI 签名或 multipart 正文时，要给 schema 加对应维度
@@ -153,6 +181,23 @@
   `multiply`、风控标记）解码 `data`，三连报告风控时按受限处理：-101、-111 与账户不符为凭据失效，触发
   一次窗口复核；风控按受限；点赞、投币、三连的 -403 是 B 站拒绝这个客户端（不复核、不重试，结果胶囊只经系统打开
   视频网页，见 §4）；其余业务码的分类在 `AccountWriteError`。一律不自动重试、不排队、不持久化待写入请求或结果。
+
+**用户发起的 App 端写入**（`BiliAppWriteRequestAuthorizer`）
+
+防：access_token 被带进 allowlist 与 schema 之外的 App 接口；写入以匿名或另一个账户的身份发出；举报类反馈被当作「不感兴趣」
+发出。
+
+- 目前只有首页推荐的「不感兴趣」与撤销（`GET https://app.bilibili.com/x/feed/dislike` 与 `.../dislike/cancel`）：query 恰为
+  `goto=av`、单个稿件 `id`（正整数）、一个 `reason_id`（正整数，取自卡片给出的原因），以及与首页推荐请求相同的
+  `mobi_app=iphone`、`device=pad`、`build=1`。卡片同一处的举报类反馈以 `feedback_id` 发送，不提供，schema 也不接受。
+- 只有窗口主 API 注入这个授权器，allowlist 由 `LiveAPIClients` 声明、只引用 BiliAPI 的 `BiliAppWritePath`，与 App 端读取的
+  allowlist 分开；新增 App 写操作同样需要 ROADMAP 的产品决定，并在授权器的 schema 表里逐条登记。
+- 目标与 query 的校验与 App 端读取相同（精确主机与端口、GET、无正文、路径规范，调用方自带 `access_key`、签名参数、重复字段
+  或凭据类 header 一律拒绝），授权器拒绝映射为 `invalidRequest`。
+- 写入从不匿名：凭据按写入的规则读取（本地无凭据失败，损坏或过期删除后报告失效，Keychain 不可用失败关闭）；账户绑定与网页
+  写入相同（`RequestAccess.appWrite(expectedAccountID:)`，`DedeUserID` 不符时按凭据失效拒绝、不删除）。通过后把 `access_key`
+  放进 query 再做 APP 签名，签名后的 URL 只能原样发出，见上文 App 端读取。
+- 响应按网页写入的同一规则判定（同一段代码）；发出条件、epoch 与不重试、不排队也相同。
 
 **永不携带凭据**：WBI nav、图片、视频／音频 CDN、字幕正文、loopback server、二维码 URL、评论外链与短链解析、
 Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机，不使用 `*.bilibili.com` 后缀匹配：后缀匹配会把凭据交给任何子域。
@@ -270,7 +315,9 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 
 ## 9. 剩余风险
 
-- Web QR 与各 Web 接口未公开，可能无通知漂移；漂移应表现为失败关闭，而不是降级。
+- TV 扫码与各 Web 接口未公开，可能无通知漂移；漂移应表现为失败关闭，而不是降级。
+- TV 扫码与 App 端推荐的 APP 签名用的是从官方客户端提取、公开流传的 TV appkey／appsec；B 站轮换或停用它时扫码登录与
+  首页推荐一起失效，只能换 key 并发版。
 - Keychain 不能抵御已控制当前用户会话、可调试进程或可读屏幕的攻击者。
 - 签名私钥丢失时，拒绝降级策略可能要求用户手动安装新版。
 - 图片管线不核对图片内容是否完整：服务端正常结束响应但内容被截断的 JPEG／PNG（无论是否声明长度）会被

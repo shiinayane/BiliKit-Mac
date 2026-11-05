@@ -13,7 +13,7 @@ import Testing
 struct BiliAuthenticationServiceTests {
     @Test
     func mapsQRCodeFlowAndCommitsOnlyAfterFinalValidation() async throws {
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let service = makeService(
             store: store,
             qrTransport: RecordingAuthTransport(
@@ -40,14 +40,14 @@ struct BiliAuthenticationServiceTests {
     @Test
     func unknownPollStatusMapsToInvalidResponse() async throws {
         let service = makeService(
-            store: MemoryWebCredentialStore(),
+            store: MemoryAccountCredentialStore(),
             qrTransport: RecordingAuthTransport(
                 responses: [
                     try fixtureResponse("qr-generate"),
                     HTTPResponse(
                         statusCode: 200,
                         headers: ["Content-Type": "application/json"],
-                        body: Data(#"{"code":0,"data":{"code":12345}}"#.utf8)
+                        body: Data(#"{"code":12345,"data":null}"#.utf8)
                     )
                 ]
             )
@@ -60,7 +60,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test
     func cancelledRestoreNeverPublishesSignedOutWhileCredentialRemains() async throws {
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential()
         )
         let service = makeService(
@@ -74,12 +74,66 @@ struct BiliAuthenticationServiceTests {
         #expect(await service.requestQRCode() == .failed(.network))
     }
 
+    /// 启动恢复只在临近到期时续期；之后的复核确认仍登录时强制续期一次，续期写回后才发布已登录，复核后重载的页面因此
+    /// 用上新凭据（只有 token 失效、Cookie 仍有效的凭据靠它恢复）。
+    @Test
+    func revalidationRenewsTheCredentialBeforePublishingSignedIn() async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: "42")
+        )
+        let renewalTransport = RecordingAuthTransport(
+            responses: [try fixtureResponse("credential-renewal-success")]
+        )
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true), navigationResponse(isLogin: true)]
+            ),
+            renewalTransport: renewalTransport
+        )
+
+        #expect(await service.restore() == .signedIn(nil))
+        #expect(await renewalTransport.requests.isEmpty)
+
+        #expect(await service.restore() == .signedIn(nil))
+        #expect(await renewalTransport.requests.count == 1)
+        #expect(try store.load()?.value(for: .session) == "FIXTURE_RENEWED_SESSDATA_VALUE")
+    }
+
+    /// 续期等待网络时用户登出：复核不再发布已登录，续期结果也不写回，登出后 Keychain 保持为空。
+    @Test
+    func logoutDuringRenewalWinsOverTheRestore() async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: "42")
+        )
+        let renewalTransport = RecordingAuthTransport(
+            responses: [try fixtureResponse("credential-renewal-success")],
+            suspendingRequest: 1
+        )
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true), navigationResponse(isLogin: true)]
+            ),
+            renewalTransport: renewalTransport
+        )
+        #expect(await service.restore() == .signedIn(nil))
+
+        async let revalidated = service.restore()
+        await renewalTransport.waitForSuspendedRequest()
+        #expect(await service.logout() == .signedOut)
+        await renewalTransport.resumeSuspendedRequest()
+
+        #expect(await revalidated == .signedOut)
+        #expect(try store.load() == nil)
+    }
+
     @Test(arguments: RestoreCase.allCases)
     func restoreInvalidatesAuthenticatedAPIsOnlyForLocallyObservedSessionLoss(
         _ restoreCase: RestoreCase
     ) async throws {
         let events = AuthEventRecorder()
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: restoreCase.hasStoredCredential
                 ? try makeFixtureCredential() : nil
         )
@@ -109,7 +163,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test(.timeLimit(.minutes(1)))
     func logoutCancelsLateCredentialFinalizationBeforeDeletingStore() async throws {
-        let store = MemoryWebCredentialStore()
+        let store = MemoryAccountCredentialStore()
         let qrTransport = RecordingAuthTransport(
             responses: [
                 try fixtureResponse("qr-generate"),
@@ -135,7 +189,7 @@ struct BiliAuthenticationServiceTests {
 
     @Test(.timeLimit(.minutes(1)))
     func restoreCannotEnterWhileLogoutCleanupIsSuspended() async throws {
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential()
         )
         let invalidator = RecordingSessionInvalidator(suspends: true)
@@ -162,7 +216,7 @@ struct BiliAuthenticationServiceTests {
         deleteFails: Bool
     ) async throws {
         let events = AuthEventRecorder()
-        let store = MemoryWebCredentialStore(
+        let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(),
             deleteError: deleteFails ? StubAuthError.storeUnavailable : nil,
             events: events
@@ -198,19 +252,20 @@ struct BiliAuthenticationServiceTests {
     }
 
     private func makeService(
-        store: MemoryWebCredentialStore,
+        store: MemoryAccountCredentialStore,
         qrTransport: RecordingAuthTransport = RecordingAuthTransport(),
         validationTransport: RecordingAuthTransport = RecordingAuthTransport(),
+        renewalTransport: RecordingAuthTransport = RecordingAuthTransport(),
         invalidators: [any AuthenticatedSessionInvalidating] = []
     ) -> BiliAuthenticationService {
         BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
+            loginSession: TVQRLoginSession(
                 transport: qrTransport,
                 credentialStore: store
             ),
             authorizer: makeCredentialAuthorizer(store: store, transport: validationTransport),
             loginSessionFactory: {
-                WebQRLoginSession(
+                TVQRLoginSession(
                     transport: RecordingAuthTransport(),
                     credentialStore: store
                 )
@@ -218,6 +273,7 @@ struct BiliAuthenticationServiceTests {
             authorizerFactory: {
                 makeCredentialAuthorizer(store: store)
             },
+            credentialRenewal: AccountCredentialRenewal(transport: renewalTransport, store: store),
             additionalSessionInvalidators: invalidators
         )
     }

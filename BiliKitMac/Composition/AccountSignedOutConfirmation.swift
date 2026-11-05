@@ -22,12 +22,16 @@ final class AccountSignedOutConfirmation: Sendable {
     }
 
     /// 窗口状态为未登录、没有进行中或失败的复核，且进程内没有窗口已发布登录。
+    ///
+    /// 未登录窗口里进行中的扫码登录（`.other`）仍算已确认：凭据要到登录完成才写入。
     static func isConfirmed(
         windowScope: AccountSessionScope,
         resolutionPhase: AuthenticationResolutionPhase,
         processScope: AccountSessionScope
     ) -> Bool {
-        guard windowScope == .signedOut, resolutionPhase == .other else { return false }
+        guard windowScope == .signedOut,
+            resolutionPhase == .signedOut || resolutionPhase == .other
+        else { return false }
         if case .signedIn = processScope { return false }
         return true
     }

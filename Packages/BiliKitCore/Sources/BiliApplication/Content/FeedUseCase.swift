@@ -39,7 +39,7 @@ public struct FeedUseCase: Sendable {
     public func execute(_ request: FeedRequest) async throws -> FeedContent {
         switch request {
         case .recommendation(let continuation):
-            guard continuation.map({ $0.freshIndex > 0 }) ?? true else {
+            guard continuation.map({ $0.index > 0 }) ?? true else {
                 throw ContentApplicationError.invalidRequest
             }
             return .recommendation(
