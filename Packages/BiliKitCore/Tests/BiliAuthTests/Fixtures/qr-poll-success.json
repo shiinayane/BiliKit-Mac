@@ -5,8 +5,8 @@
   "data": {
     "is_new": 0,
     "mid": 42,
-    "access_token": "ffffffffffffffffffffffffffffffff",
-    "refresh_token": "00000000000000000000000000000000",
+    "access_token": "00000000000000000000000000000000",
+    "refresh_token": "ffffffffffffffffffffffffffffffff",
     "expires_in": 15552000,
     "token_info": {
       "mid": 42,

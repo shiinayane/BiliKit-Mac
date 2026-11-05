@@ -3,8 +3,8 @@ import Security
 
 /// 登录凭据持久化 port：读取、原子保存与删除同一个 Keychain item。
 ///
-/// 由 QR 会话（验证成功后保存）与两个授权器（按需读取，损坏、过期或登出时删除）使用；没有凭据时
-/// `load` 返回 nil，读到无法解码的内容抛 `AccountCredentialStoreError.corruptCredential`。
+/// 由扫码会话（验证成功后保存）、续期（比对后覆盖）、认证服务（登出与复核确认失效时删除）与各授权器（按需读取，损坏或
+/// 过期时删除）使用；没有凭据时 `load` 返回 nil，读到无法解码的内容抛 `AccountCredentialStoreError.corruptCredential`。
 protocol AccountCredentialStoring: Sendable {
     func load() throws -> AccountCredential?
     func save(_ credential: AccountCredential) throws

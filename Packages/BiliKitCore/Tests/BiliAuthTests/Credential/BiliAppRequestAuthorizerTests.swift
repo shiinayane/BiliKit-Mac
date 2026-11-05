@@ -52,6 +52,8 @@ struct BiliAppRequestAuthorizerTests {
             "https://app.bilibili.com/x/v2/feed/index?access_key=FIXTURE",
             "https://app.bilibili.com/x/v2/feed/index?sign=FIXTURE",
             "https://app.bilibili.com/x/v2/feed/index?appkey=FIXTURE",
+            "https://app.bilibili.com/x/v2/feed/index?ts=1",
+            "https://app.bilibili.com/x/v2/feed/index?access%5Fkey=FIXTURE",
             "https://app.bilibili.com/x/v2/feed/index?idx=1&idx=2"
         ]
     )

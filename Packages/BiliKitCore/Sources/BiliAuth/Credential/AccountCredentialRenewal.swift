@@ -16,8 +16,7 @@ public actor AccountCredentialRenewal {
     enum Trigger: Sendable {
         /// 启动时的例行检查：离到期不足 `renewalWindow` 才续期。
         case nearExpiry
-        /// 窗口复核：某个页面遇到凭据失败，不论离到期多久都续期一次（受 `minimumForcedInterval` 限制），让只有
-        /// token 失效、Cookie 仍有效的凭据恢复。
+        /// 窗口复核：某个页面遇到凭据失败，不论离到期多久都续期一次，让只有 token 失效、Cookie 仍有效的凭据恢复。
         case forced
     }
 
@@ -27,8 +26,12 @@ public actor AccountCredentialRenewal {
     /// 每月至少打开一次的用户不会因到期被登出，又不会每次启动都轮换 token。调大会更早、更频繁地续期，调小则长时间不打开
     /// App 的用户更容易错过续期窗口。
     static let renewalWindow: TimeInterval = 30 * 86_400
-    /// 两次强制续期之间的最短间隔：同一次凭据失败会让多个页面各自触发复核，间隔内只续一次，免得连续轮换 token。
-    static let minimumForcedInterval: TimeInterval = 10 * 60
+    /// 两次续期尝试之间的最短间隔，不论起因与成败。
+    ///
+    /// 同一次凭据失败会让多个页面各自触发复核，进入到期窗口后每个窗口的启动恢复也各要一次；认证服务等续期结束才发布
+    /// 已登录，续期又串行，失败（网络差、refresh_token 被拒）时不设间隔会让每个窗口依次多等一次请求超时。间隔内只试
+    /// 一次，免得连续轮换 token；调大则失败后更久才再试。
+    static let minimumAttemptInterval: TimeInterval = 10 * 60
 
     /// 续期唯一连接的地址，与扫码登录同一主机，见 SECURITY-MODEL §2。
     private static let renewalURL: URL = {
@@ -45,8 +48,8 @@ public actor AccountCredentialRenewal {
     private let httpClient: HTTPClient
     private let store: any AccountCredentialStoring
     private let decoder = JSONDecoder()
-    /// 上一次强制续期发起的时刻（不论成败），只在 `.forced` 通过间隔检查时更新。
-    private var lastForcedAttempt: Date?
+    /// 上一次续期请求发起的时刻（不论起因与成败），在通过到期窗口与间隔检查、即将发请求时更新。
+    private var lastAttempt: Date?
     /// 最后一次排进来的续期；新的续期先等它结束，续期因此串行。
     private var tail: Task<Void, Never>?
 
@@ -80,17 +83,13 @@ public actor AccountCredentialRenewal {
             return
         }
         let now = Date.now
-        switch trigger {
-        case .nearExpiry:
+        if trigger == .nearExpiry {
             guard original.expiresAt.timeIntervalSince(now) < Self.renewalWindow else { return }
-        case .forced:
-            if let lastForcedAttempt,
-                now.timeIntervalSince(lastForcedAttempt) < Self.minimumForcedInterval
-            {
-                return
-            }
-            lastForcedAttempt = now
         }
+        if let lastAttempt, now.timeIntervalSince(lastAttempt) < Self.minimumAttemptInterval {
+            return
+        }
+        lastAttempt = now
         guard
             let request = AuthenticationHTTP.signedFormRequest(
                 url: Self.renewalURL,
@@ -105,11 +104,14 @@ public actor AccountCredentialRenewal {
             let envelope = try? decoder.decode(RenewalEnvelope.self, from: response.body),
             envelope.code == 0,
             let issued = envelope.data?.credential(receivedAt: .now),
-            issued.mid == accountID
+            issued.mid == accountID,
+            // 已过期的新凭据写回后会被下一次授权读取删除，等于把仍有效的原凭据换成登出。
+            !issued.credential.isExpired()
         else {
             return
         }
-        // 比较并写回：续期期间凭据被登出删掉、换成另一账户或另一次续期写过，就丢弃这份结果。
+        // 比较并写回：续期等待网络期间凭据被登出删掉、换成另一账户或另一次续期写过，就丢弃这份结果。比较与写回是
+        // 两次 Keychain 调用，其间的登出或扫码保存仍可能被覆盖；这个窗口只有一次 Keychain 读取那么长，不另加跨 actor 的锁。
         guard (try? store.load()) == original else { return }
         try? store.save(issued.credential)
     }

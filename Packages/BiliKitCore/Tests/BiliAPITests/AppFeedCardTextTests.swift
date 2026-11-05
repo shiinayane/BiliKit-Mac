@@ -12,7 +12,9 @@ struct AppFeedCardTextTests {
             (["13弹幕", "1.2亿播放"], 120_000_000, 13),
             (["0:42", "987观看", "-弹幕"], 987, nil),
             (["暂无"], nil, nil),
-            (["1.2.3万观看", "-5弹幕"], nil, nil)
+            (["1.2.3万观看", "-5弹幕"], nil, nil),
+            // 超出 Int64 的数目按认不出处理，不能让进程崩溃。
+            (["99999999999999999999观看", "999999999999亿弹幕"], nil, nil)
         ] as [([String], Int64?, Int64?)]
     )
     func parsesCountsBySuffix(texts: [String], views: Int64?, danmaku: Int64?) {

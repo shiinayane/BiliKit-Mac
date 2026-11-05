@@ -70,6 +70,10 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
     }
     /// 本模型请求的复核进度；复核有了确定结果（仍登录或确认未登录）时，停在凭据失败页的当前来源自动重载至多一次。
     private var revalidation = AccountRevalidationProgress()
+    /// 本页因凭据失败请求的复核还没结束；失败页据此决定是否说“正在重新确认”。
+    public var isAwaitingAuthenticationRevalidation: Bool {
+        revalidation.isAwaiting
+    }
     /// 各来源原地刷新成功的次数，经 `successfulRefreshGeneration(for:)` 读出。
     private var successfulRefreshGenerations: [FeedSource: UInt64] = [:]
     /// 当前路由的第一页请求，nil 表示没有激活的路由；Task 写回前与发起时的请求比对，
@@ -143,7 +147,7 @@ public final class BrowseViewModel: AccountRevalidationParticipant {
     /// 写入失败或被取消的回滚：标上的去掉、去掉的标回。
     ///
     /// 只作用在改动时的同一份推荐工作集上：换了账户或 `reset` 后的新工作集可能恰好有同一视频，把上一账户的反馈标上去，
-    /// 之后的撤销就会用新账户发出旧账户的追踪 ID。同一份工作集里也只撤回自己那一步：去掉标记只去掉同一份反馈，标回
+    /// 之后的撤销就会用新账户撤回旧账户的反馈。同一份工作集里也只撤回自己那一步：去掉标记只去掉同一份反馈，标回
     /// 只标此刻仍显示、且没有别的标记的卡片。
     public func revertRecommendationDislike(_ edit: RecommendationDislikeEdit) {
         let feedback = edit.feedback

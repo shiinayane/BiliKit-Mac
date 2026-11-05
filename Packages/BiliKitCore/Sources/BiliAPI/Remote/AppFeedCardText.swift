@@ -43,14 +43,16 @@ enum AppFeedCardText {
             multiplier = 100_000_000
             number.removeLast()
         }
+        // `Int64(exactly:)` 而不是 `Int64(_:)`：后者遇到超出范围的值（如「99999999999999999999观看」）会让进程崩溃。
         guard !number.isEmpty,
             number.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
             let value = Double(number),
-            value >= 0
+            value >= 0,
+            let count = Int64(exactly: (value * multiplier).rounded())
         else {
             return nil
         }
-        return Int64((value * multiplier).rounded())
+        return count
     }
 
     /// 描述最后一个「 · 」之后的日期；没有分隔符或日期格式认不出时为 nil。

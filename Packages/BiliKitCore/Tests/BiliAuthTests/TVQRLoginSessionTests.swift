@@ -140,9 +140,11 @@ struct TVQRLoginSessionTests {
             #expect(
                 cookies.first?.expiresAt == Date(timeIntervalSince1970: 4_102_444_800)
             )
-            // token 来自顶层 `access_token`，到期时刻是收到响应时加 `expires_in`（180 天）。
+            // token 来自 `token_info`（fixture 顶层副本的值故意不同，读错位置会失败），到期时刻是收到响应时加
+            // `expires_in`（180 天）。
             let token = try #require(try store.load()).appAccessToken
             #expect(token.value == fixtureAppAccessTokenValue)
+            #expect(token.refreshToken == fixtureAppRefreshTokenValue)
             let lifetime = token.expiresAt.timeIntervalSinceNow
             #expect(lifetime > 15_552_000 - 60 && lifetime < 15_552_000 + 1)
         }
@@ -179,6 +181,25 @@ struct TVQRLoginSessionTests {
 
         #expect(store.saveCount == 0)
         #expect(await transport.requests.count == 2)
+    }
+
+    /// 反例的对照：`IncompleteCredentialCase` 只改一项，未改的正文必须被接受，反例才是在测各自那一项检查。
+    @Test
+    func completeSuccessBodyIsAccepted() async throws {
+        let transport = RecordingAuthTransport(
+            responses: [
+                try fixtureResponse("qr-generate"),
+                pollSuccessResponse(body: IncompleteCredentialCase.completeBody),
+                navigationResponse(isLogin: true)
+            ]
+        )
+        let store = MemoryAccountCredentialStore()
+        let session = TVQRLoginSession(transport: transport, credentialStore: store)
+
+        _ = try await session.requestQRCode()
+        #expect(try await session.pollOnce() == .awaitingCredentialValidation)
+        #expect(try await session.validateAndStorePendingCredential() == .signedIn(nil))
+        #expect(store.saveCount == 1)
     }
 
     @Test
@@ -431,6 +452,7 @@ struct TVQRLoginSessionTests {
         case domainsWithoutBilibili
         case missingCookieInfo
         case malformedAccessToken
+        case malformedRefreshToken
         case nonPositiveTokenLifetime
 
         var body: String {
@@ -445,12 +467,11 @@ struct TVQRLoginSessionTests {
             case .domainsWithoutBilibili:
                 return Self.successBody(cookies: complete, domains: [".biligame.com"])
             case .missingCookieInfo:
-                // FIXTURE 假值：access_token 是 32 个 f。
-                let token = fixtureAppAccessTokenValue
-                return #"{"code":0,"data":{"mid":42,"access_token":"\#(token)","#
-                    + #""expires_in":15552000}}"#
+                return #"{"code":0,"data":{"token_info":\#(Self.tokenInfo())}}"#
             case .malformedAccessToken:
                 return Self.successBody(cookies: complete, accessToken: "FIXTURE")
+            case .malformedRefreshToken:
+                return Self.successBody(cookies: complete, refreshToken: "FIXTURE")
             case .nonPositiveTokenLifetime:
                 return Self.successBody(cookies: complete, expiresIn: 0)
             }
@@ -461,11 +482,13 @@ struct TVQRLoginSessionTests {
             successBody(cookies: WebCredentialCookieName.allCases.map(\.rawValue))
         }
 
+        /// 与现场同形的成功正文：token 只在 `token_info` 里，顶层副本不放，读错位置的实现会让对照用例失败。
         private static func successBody(
             cookies names: [String],
             mid: Int = 42,
             domains: [String] = [".bilibili.com"],
             accessToken: String = fixtureAppAccessTokenValue,
+            refreshToken: String = fixtureAppRefreshTokenValue,
             expiresIn: Int = 15_552_000
         ) -> String {
             let cookies = names.map { name in
@@ -475,9 +498,25 @@ struct TVQRLoginSessionTests {
             }
             let domainList = domains.map { "\"\($0)\"" }.joined(separator: ",")
             let cookieList = cookies.joined(separator: ",")
-            return #"{"code":0,"data":{"mid":\#(mid),"access_token":"\#(accessToken)","#
-                + #""expires_in":\#(expiresIn),"cookie_info":{"#
+            let token = tokenInfo(
+                mid: mid,
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                expiresIn: expiresIn
+            )
+            return #"{"code":0,"data":{"token_info":\#(token),"cookie_info":{"#
                 + #""cookies":[\#(cookieList)],"domains":[\#(domainList)]}}}"#
+        }
+
+        // FIXTURE 假值：access_token 是 32 个 f，refresh_token 是 32 个 0。
+        private static func tokenInfo(
+            mid: Int = 42,
+            accessToken: String = fixtureAppAccessTokenValue,
+            refreshToken: String = fixtureAppRefreshTokenValue,
+            expiresIn: Int = 15_552_000
+        ) -> String {
+            #"{"mid":\#(mid),"access_token":"\#(accessToken)","#
+                + #""refresh_token":"\#(refreshToken)","expires_in":\#(expiresIn)}"#
         }
     }
 }

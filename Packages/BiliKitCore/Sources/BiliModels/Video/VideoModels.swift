@@ -187,8 +187,8 @@ public struct RecommendationDislikeReason: Sendable, Hashable {
     }
 }
 
-/// 首页推荐的一批：`continuation` 回填请求所用的游标（第一批为 nil），本批没有条目时 `nextContinuation` 为 nil，
-/// 不再加载更多。
+/// 首页推荐的一批：`continuation` 回填请求所用的游标（第一批为 nil）；本批没有可显示的视频，或最后一张卡片的游标
+/// 缺失、不比请求的游标大时，`nextContinuation` 为 nil，不再加载更多（避免原地反复请求同一批）。
 public struct RecommendationPage: Sendable, Equatable {
     public let videos: [RecommendedVideo]
     public let continuation: RecommendationContinuation?

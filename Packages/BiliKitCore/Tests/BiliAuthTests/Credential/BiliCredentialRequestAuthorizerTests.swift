@@ -283,6 +283,36 @@ struct BiliCredentialRequestAuthorizerTests {
         #expect(store.deleteCount == 1)
     }
 
+    /// 校验旧凭据期间另一窗口的续期换上了新凭据：不删新凭据，改用它再校验一次。
+    @Test
+    func signedOutAnswerForAReplacedCredentialRevalidatesTheReplacement() async throws {
+        let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())
+        let renewed = try makeFixtureCredential(
+            expiresAt: Date(timeIntervalSince1970: 4_133_980_800)
+        )
+        let transport = RecordingAuthTransport(
+            responses: [
+                navigationResponse(isLogin: false),
+                navigationResponse(isLogin: true, includesIdentity: true)
+            ],
+            suspendingRequest: 1
+        )
+        let authorizer = makeCredentialAuthorizer(store: store, transport: transport)
+
+        async let restored = authorizer.restoreAccountSession()
+        await transport.waitForSuspendedRequest()
+        try store.save(renewed)
+        await transport.resumeSuspendedRequest()
+
+        guard case .signedIn = try await restored else {
+            Issue.record("新凭据仍有效时应恢复为已登录")
+            return
+        }
+        #expect(store.deleteCount == 0)
+        #expect(try store.load() == renewed)
+        #expect(await transport.requests.count == 2)
+    }
+
     @Test(arguments: [-412, -352])
     func otherRejectionCodesKeepStoredCredential(code: Int) async throws {
         let store = MemoryAccountCredentialStore(credential: try makeFixtureCredential())

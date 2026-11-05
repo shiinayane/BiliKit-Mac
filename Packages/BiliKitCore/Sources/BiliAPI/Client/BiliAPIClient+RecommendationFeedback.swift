@@ -27,11 +27,8 @@ extension BiliAPIClient {
                 queryItems: [
                     URLQueryItem(name: "goto", value: "av"),
                     URLQueryItem(name: "id", value: String(aid)),
-                    URLQueryItem(name: "reason_id", value: String(feedback.reason.id)),
-                    URLQueryItem(name: "mobi_app", value: "iphone"),
-                    URLQueryItem(name: "device", value: "pad"),
-                    URLQueryItem(name: "build", value: "1")
-                ]
+                    URLQueryItem(name: "reason_id", value: String(feedback.reason.id))
+                ] + Self.appClientIdentity
             ),
             access: .appWrite(expectedAccountID: accountID)
         )

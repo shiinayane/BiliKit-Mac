@@ -60,12 +60,14 @@
 - 成功后先在内存组 Cookie 请求 `/x/web-interface/nav`，`isLogin=true` 才在同一 actor generation 内
   写入 Keychain；旧 generation、取消、过期、校验或存储失败都清除临时秘密，不能返回登录成功。
 - 轮询有最小间隔、总时限和次数上限；ViewModel 拥有 Task，actor 用 generation 与 poll ID 隔离旧结果。
-- 续期（`AccountCredentialRenewal`，进程唯一、串行）：确认仍登录后，启动恢复只在凭据离到期（token 与各 Cookie 里最早的
-  到期时刻）不足 30 天时续期，之后的复核强制续期一次（10 分钟内只一次），其他窗口换号后的复核不续期。请求是发往
-  `https://passport.bilibili.com/x/passport-login/oauth2/refresh_token` 的 APP 签名 POST，只带 Keychain 里同一份凭据的
-  `access_key` 与 `refresh_token`。成功正文按上表同一规则校验成新凭据，账户必须与原凭据相同，写回前再读一次 Keychain，
-  仍是原来那一份才覆盖（防止把旧会话的结果写到登出或换号之后）。续期失败（网络、业务码、正文不合规、Keychain）不删除凭据、
-  不改变登录状态、不重试；续期一旦发出就做完，取消不打断，因为服务端可能已经轮换 token。
+- 续期（`AccountCredentialRenewal`，进程唯一、串行）：确认仍登录后，启动恢复与其他窗口换号后的复核只在凭据离到期（token
+  与各 Cookie 里最早的到期时刻）不足 30 天时续期，本窗口之后的复核不论离到期多久都续期；两次续期请求至少相隔 10 分钟，不论
+  起因与成败。请求是发往 `https://passport.bilibili.com/x/passport-login/oauth2/refresh_token` 的 APP 签名 POST，只带
+  Keychain 里同一份凭据的 `access_key` 与 `refresh_token`。成功正文按上表同一规则校验成新凭据，账户必须与原凭据相同、
+  不能已经过期，写回前再读一次 Keychain，仍是原来那一份才覆盖（防止把等待网络期间登出或换号的旧会话结果写回去；比较与
+  写回之间仅一次 Keychain 调用的窗口不加锁）。续期失败（网络、业务码、正文不合规、Keychain）不删除凭据、不改变登录状态、
+  不重试；续期一旦发出就做完，取消不打断，因为服务端可能已经轮换 token。
+- 复核判定远端未登录时，只删除被校验的那一份凭据：校验期间凭据已被续期换掉就用新凭据再校验一次，不删刚续期的凭据。
 - 恢复时重新校验：远端明确失效则清理（nav 的 `data.isLogin=false`，`code` 为 0 或 -101；其他非 0 码按
   校验不可用处理）；本地缺失／损坏／过期回退未登录；临时网络失败不删凭据。
 - 登出顺序：取消认证任务 → 清二维码与内存 → 删除 Keychain item → 失效并重建 session → 发布未登录。

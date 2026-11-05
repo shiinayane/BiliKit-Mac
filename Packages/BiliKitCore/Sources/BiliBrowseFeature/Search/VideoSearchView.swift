@@ -118,6 +118,7 @@ public struct VideoSearchView: View {
         case .failed(request: .search, let error):
             BrowseFailureView(
                 error: error,
+                isAwaitingRevalidation: model.isAwaitingAuthenticationRevalidation,
                 retry: { model.retry(request) }
             )
         default:

@@ -80,6 +80,14 @@ extension BiliAPIClient {
         )
     }
 
+    /// App 端请求的客户端身份（iPad 客户端的最低组合）：推荐与它的「不感兴趣」必须用同一身份，服务端才认得是哪条推荐流；
+    /// App 授权器的 schema 也按这组值精确放行，改这里要同时改 BiliAuth 那边，见 SECURITY-MODEL §3。
+    static let appClientIdentity = [
+        URLQueryItem(name: "mobi_app", value: "iphone"),
+        URLQueryItem(name: "device", value: "pad"),
+        URLQueryItem(name: "build", value: "1")
+    ]
+
     /// App 端首页推荐的一批：经 App 授权器签名，登录时带 access_token、未登录时匿名。
     ///
     /// 第一批的 `idx` 取当前秒数，之后取上一批最后一张卡片的 `idx`；服务端不去重，重复条目由 `PagedVideoList` 按 BVID
@@ -94,10 +102,7 @@ extension BiliAPIClient {
         let payload: AppFeedPayload = try await get(
             url: try appEndpoint(
                 path: BiliAppReadPath.recommendations,
-                queryItems: [
-                    URLQueryItem(name: "mobi_app", value: "iphone"),
-                    URLQueryItem(name: "device", value: "pad"),
-                    URLQueryItem(name: "build", value: "1"),
+                queryItems: Self.appClientIdentity + [
                     URLQueryItem(name: "idx", value: String(requestIndex))
                 ]
             ),

@@ -100,6 +100,34 @@ struct BiliAuthenticationServiceTests {
         #expect(try store.load()?.value(for: .session) == "FIXTURE_RENEWED_SESSDATA_VALUE")
     }
 
+    /// 续期等待网络时用户登出：复核不再发布已登录，续期结果也不写回，登出后 Keychain 保持为空。
+    @Test
+    func logoutDuringRenewalWinsOverTheRestore() async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: "42")
+        )
+        let renewalTransport = RecordingAuthTransport(
+            responses: [try fixtureResponse("credential-renewal-success")],
+            suspendingRequest: 1
+        )
+        let service = makeService(
+            store: store,
+            validationTransport: RecordingAuthTransport(
+                responses: [navigationResponse(isLogin: true), navigationResponse(isLogin: true)]
+            ),
+            renewalTransport: renewalTransport
+        )
+        #expect(await service.restore() == .signedIn(nil))
+
+        async let revalidated = service.restore()
+        await renewalTransport.waitForSuspendedRequest()
+        #expect(await service.logout() == .signedOut)
+        await renewalTransport.resumeSuspendedRequest()
+
+        #expect(await revalidated == .signedOut)
+        #expect(try store.load() == nil)
+    }
+
     @Test(arguments: RestoreCase.allCases)
     func restoreInvalidatesAuthenticatedAPIsOnlyForLocallyObservedSessionLoss(
         _ restoreCase: RestoreCase

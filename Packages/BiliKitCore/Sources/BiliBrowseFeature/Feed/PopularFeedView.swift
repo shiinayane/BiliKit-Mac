@@ -72,6 +72,7 @@ public struct PopularFeedView: View {
         case .failed(request: .popular(_, _), let error):
             BrowseFailureView(
                 error: error,
+                isAwaitingRevalidation: model.isAwaitingAuthenticationRevalidation,
                 retry: { model.retry(request) }
             )
         default:

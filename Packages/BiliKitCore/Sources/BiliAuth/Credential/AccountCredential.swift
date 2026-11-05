@@ -154,7 +154,7 @@ enum AccountCredentialCodingError: Error, Sendable, Equatable {
 ///
 /// 版本 3 含 Cookie、App 端 access_token 与配对的 refresh_token。只有 Cookie 的版本 1 与不含 refresh_token 的版本 2
 /// 按不支持的版本拒绝，由 store 当作损坏凭据删除，用户重新登录一次；旧版 App 读到版本 3 同样会删除它（见
-/// SECURITY-MODEL §6）。
+/// SECURITY-MODEL §1）。
 enum AccountCredentialCodec {
     static let currentVersion = 3
 

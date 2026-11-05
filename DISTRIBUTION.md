@@ -37,7 +37,7 @@ Sparkle 已接入。应用菜单提供“检查更新…”、自动检查和自
 
 ## 登出与卸载
 
-登录 Cookie 只保存在本机 Data Protection Keychain。应用内“退出登录”会取消认证会话并删除该
+登录凭据（Cookie 与 App 端令牌）只保存在本机 Data Protection Keychain。应用内“退出登录”会取消认证会话并删除该
 Keychain 凭据；如果删除失败，BiliKit 会报告失败而不会假装已经安全退出。
 
 仅在 Finder 中删除 App 不保证同时删除 Keychain item 或 macOS 保存的偏好。准备永久卸载时，应先在

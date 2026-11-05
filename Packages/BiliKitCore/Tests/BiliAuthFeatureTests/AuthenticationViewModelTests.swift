@@ -331,10 +331,12 @@ struct AuthenticationViewModelTests {
 
         model.revalidate()
         #expect(model.state == .restoring)
+        #expect(model.resolutionPhase == .restoring)
         #expect(model.sessionState == .signedIn(nil))
         await model.waitForCurrentTask()
 
         #expect(model.sessionState == .signedIn(nil))
+        #expect(model.resolutionPhase == .signedIn)
         #expect(await service.observedCalls() == ["restore", "restore"])
     }
 
@@ -350,6 +352,8 @@ struct AuthenticationViewModelTests {
         await model.waitForCurrentTask()
 
         #expect(model.sessionState == .signedOut)
+        // 复核确认未登录必须作为确定结果交出去：能匿名读取的页面（首页推荐）据此重载。
+        #expect(model.resolutionPhase == .signedOut)
         #expect(await service.observedCalls() == ["externalRestore"])
     }
 

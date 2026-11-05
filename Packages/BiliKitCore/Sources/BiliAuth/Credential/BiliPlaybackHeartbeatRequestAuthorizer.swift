@@ -58,7 +58,7 @@ public struct BiliPlaybackHeartbeatRequestAuthorizer: HTTPRequestAuthorizing,
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
-        let credential = try store.loadCredentialForWrite()
+        let credential = try store.loadCredential(isConfirmedSignedOut: { false })
         guard let session = credential.value(for: .session),
             let csrf = credential.value(for: .csrf),
             let encodedCSRF = Support.encodedCSRFField(csrf)

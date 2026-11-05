@@ -5,7 +5,8 @@ import Testing
 @testable import BiliAuth
 
 /// 续期用 Keychain 里凭据的 access_token 与 refresh_token 发一次签名 POST，把同一账户的新凭据写回 Keychain：启动时只在
-/// 离到期不足 30 天时续期，复核时强制续期但有最短间隔；任何失败都保留原凭据、从不删除，续期期间凭据被换掉就不写回。
+/// 离到期不足 30 天时续期，复核时强制续期，两次尝试之间有最短间隔；任何失败都保留原凭据、从不删除，续期期间凭据被换掉就
+/// 不写回。
 @Suite(.timeLimit(.minutes(1)))
 struct AccountCredentialRenewalTests {
     private static let day: TimeInterval = 86_400
@@ -43,7 +44,7 @@ struct AccountCredentialRenewalTests {
         #expect(stored.value(for: .session) == "FIXTURE_RENEWED_SESSDATA_VALUE")
     }
 
-    /// 业务拒绝、网络失败、正文不是凭据或签给了另一个账户：都只是没有续期，原凭据原样保留。
+    /// 业务拒绝、网络失败、正文不是凭据、签给了另一个账户或新凭据已过期：都只是没有续期，原凭据原样保留。
     @Test(arguments: FailureCase.allCases)
     func failedRenewalKeepsTheOriginalCredential(_ failure: FailureCase) async throws {
         let original = try Self.credential(expiringIn: Self.day)
@@ -60,30 +61,47 @@ struct AccountCredentialRenewalTests {
         #expect(store.saveCount == 0)
     }
 
-    /// 强制续期不看离到期多久，但间隔内只发一次：同一次凭据失败让几个页面各自触发复核。
+    /// 强制续期不看离到期多久。
     @Test
-    func forcedRenewalIgnoresTheWindowButIsThrottled() async throws {
+    func forcedRenewalIgnoresTheWindow() async throws {
         let store = MemoryAccountCredentialStore(
             credential: try makeFixtureCredential(userID: "42")
         )
         let transport = RecordingAuthTransport(
             responses: [try fixtureResponse("credential-renewal-success")]
         )
-        let renewal = AccountCredentialRenewal(transport: transport, store: store)
 
-        await renewal.renewIfNeeded(.forced)
-        await renewal.renewIfNeeded(.forced)
+        await AccountCredentialRenewal(transport: transport, store: store).renewIfNeeded(.forced)
 
         #expect(await transport.requests.count == 1)
         #expect(try store.load()?.value(for: .session) == "FIXTURE_RENEWED_SESSDATA_VALUE")
     }
 
-    /// 续期发出后凭据被登出删掉（或换成另一份）：结果丢弃，不把旧会话的新凭据写回去。
+    /// 间隔内不论起因与成败只发一次：同一次凭据失败让几个页面各自触发复核，到期窗口里续期失败时每个窗口的启动恢复也
+    /// 不再各等一次请求。
     @Test
-    func credentialReplacedDuringRenewalIsNotOverwritten() async throws {
+    func attemptsAreThrottledRegardlessOfTriggerOrOutcome() async throws {
         let store = MemoryAccountCredentialStore(
             credential: try Self.credential(expiringIn: Self.day)
         )
+        let transport = RecordingAuthTransport(errors: [URLError(.timedOut)])
+        let renewal = AccountCredentialRenewal(transport: transport, store: store)
+
+        await renewal.renewIfNeeded(.nearExpiry)
+        await renewal.renewIfNeeded(.nearExpiry)
+        await renewal.renewIfNeeded(.forced)
+
+        #expect(await transport.requests.count == 1)
+    }
+
+    /// 续期发出后凭据被登出删掉或换成另一份：结果丢弃，不把旧会话的新凭据写回去。
+    @Test(arguments: [false, true])
+    func credentialReplacedDuringRenewalIsNotOverwritten(replacedByAnotherSignIn: Bool) async throws
+    {
+        let store = MemoryAccountCredentialStore(
+            credential: try Self.credential(expiringIn: Self.day)
+        )
+        let replacement = try makeFixtureCredential(userID: "7")
         let transport = RecordingAuthTransport(
             responses: [try fixtureResponse("credential-renewal-success")],
             suspendingRequest: 1
@@ -92,12 +110,16 @@ struct AccountCredentialRenewalTests {
 
         async let renewed: Void = renewal.renewIfNeeded(.nearExpiry)
         await transport.waitForSuspendedRequest()
-        try store.delete()
+        if replacedByAnotherSignIn {
+            try store.save(replacement)
+        } else {
+            try store.delete()
+        }
         await transport.resumeSuspendedRequest()
         await renewed
 
-        #expect(try store.load() == nil)
-        #expect(store.saveCount == 0)
+        #expect(try store.load() == (replacedByAnotherSignIn ? replacement : nil))
+        #expect(store.saveCount == (replacedByAnotherSignIn ? 1 : 0))
     }
 
     enum FailureCase: CaseIterable, Sendable {
@@ -105,6 +127,7 @@ struct AccountCredentialRenewalTests {
         case network
         case notACredential
         case anotherAccount
+        case alreadyExpired
 
         func transport() throws -> RecordingAuthTransport {
             switch self {
@@ -126,6 +149,21 @@ struct AccountCredentialRenewalTests {
                             )
                             .replacingOccurrences(of: #""mid": 42"#, with: #""mid": 7"#)
                             .replacingOccurrences(of: #""value": "42""#, with: #""value": "7""#)
+                        )
+                    ]
+                )
+            case .alreadyExpired:
+                RecordingAuthTransport(
+                    responses: [
+                        json(
+                            String(
+                                decoding: try fixtureResponse("credential-renewal-success").body,
+                                as: UTF8.self
+                            )
+                            .replacingOccurrences(
+                                of: #""expires": 4133980800"#,
+                                with: #""expires": 1000000000"#
+                            )
                         )
                     ]
                 )

@@ -14,8 +14,7 @@ struct AppFeedPayload: Decodable, Sendable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        items = try container.decode([LossyDecodable<AppFeedItemPayload>].self, forKey: .items)
-            .compactMap(\.value)
+        items = try container.decodeLossyElements(AppFeedItemPayload.self, forKey: .items)
     }
 }
 

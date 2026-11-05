@@ -7,7 +7,8 @@
   或全 f 的 32 位十六进制。
 - 取码响应、`86039` 未扫码与 `code=0` 成功响应的字段形状依据现场扫码核对：成功正文的键集合（含 `token_info`、`sso`、
   `hint`）、`cookie_info` 只有白名单的 5 个 Cookie、每个 Cookie 带 `http_only`／`expires`／`secure` 三个数字字段、
-  `domains` 的 5 项均与现场一致；成功 fixture 另加一个 `unknown_cookie` 用来测白名单过滤，`secure` 的取值是假设。
+  `domains` 的 5 项均与现场一致；成功 fixture 另加一个 `unknown_cookie` 用来测白名单过滤，`secure` 的取值是假设。现场顶层的 `mid`、
+  `access_token` 等与 `token_info` 里的值相同；fixture 顶层副本的两个 token 故意互换，用来证明 token 取自 `token_info`。
 - `credential-renewal-success.json`（续期成功）的字段形状依据现场续期核对：`data` 的键集合（含 `token_info`、`cookie_info`、
   `sso`、`is_new`、`is_tourist`、`url`）、`token_info` 另带 `region`／`store_region`、`cookie_info` 比扫码多一个
   `default_sites` Cookie、每个 Cookie 另带 `same_site`、`domains` 的 4 项均与现场一致。现场新 access_token 约 220 个字母、

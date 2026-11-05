@@ -72,7 +72,7 @@ public struct BiliAppWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthorizing,
             throw BiliRequestAuthorizationError.credentialHeaderAlreadyPresent
         }
 
-        let credential = try store.loadCredentialForWrite()
+        let credential = try store.loadCredential(isConfirmedSignedOut: { false })
         // 账户绑定：窗口以为的账户与 Keychain 里的凭据不是同一个时不发出写请求，见 SECURITY-MODEL §3。
         guard credential.value(for: .userID) == subject else {
             throw BiliRequestAuthorizationError.accountMismatch
