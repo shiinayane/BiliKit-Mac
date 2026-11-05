@@ -1961,34 +1961,6 @@
         }
       }
     },
-    "响度均一化" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loudness normalization"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ラウドネスノーマライズ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "响度均一化"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "響度均一化"
-          }
-        }
-      }
-    },
     "字幕 %@" : {
       "localizations" : {
         "en" : {
@@ -2097,34 +2069,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字幕已開啟，%@"
-          }
-        }
-      }
-    },
-    "将较响的视频压低到统一响度，较安静的视频保持原样；开启后整体会变小，可调高音量补偿。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turns louder videos down to a common loudness and leaves quieter ones unchanged. Playback gets quieter overall, so you may want to raise the volume."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "大きい動画を共通の音量まで下げ、静かな動画はそのままにします。全体の音量が小さくなるため、必要に応じて音量を上げてください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将较响的视频压低到统一响度，较安静的视频保持原样；开启后整体会变小，可调高音量补偿。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將較大聲的影片壓低到統一響度，較安靜的影片保持原樣；開啟後整體會變小，可調高音量補償。"
           }
         }
       }
@@ -3277,34 +3221,6 @@
         }
       }
     },
-    "只影响下一次新播放，当前播放不会改变或重建。缺少响度信息时保持原始响度。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Applies only to the next playback; current playback is not changed or rebuilt. Original loudness is kept when loudness data is unavailable."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次に開始する再生にのみ適用され、現在の再生は変更または再構築されません。ラウドネス情報がない場合は元の音量を維持します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只影响下一次新播放，当前播放不会改变或重建。缺少响度信息时保持原始响度。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只會影響下一次新播放，目前的播放不會改變或重建。缺少響度資訊時將維持原始響度。"
-          }
-        }
-      }
-    },
     "测速完成；请根据结果自行选择线路。" : {
       "localizations" : {
         "en" : {
@@ -4169,34 +4085,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "阿里海外"
-          }
-        }
-      }
-    },
-    "音频" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Audio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オーディオ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音訊"
           }
         }
       }

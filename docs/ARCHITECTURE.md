@@ -54,7 +54,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | `BiliNetworking` | 无业务语义的 HTTP 与 Range client、`HTTPRequestAuthorizing`、URL 形状策略与 JSON 响应判定 | Bili 模块、`Security`、UI/播放框架 |
 | `BiliAPI` | endpoint DTO、WBI、解码、protobuf wire、远端错误映射，并实现 Application 仓库 port | `BiliAuth`（只接受注入的授权器） |
 | `BiliAuth` | Web QR 状态机、Cookie envelope、Keychain store、请求授权器，实现 `AuthenticationServicing` | `BiliAPI`、`BiliPlayback`、`BiliDanmaku`、Feature、UI 框架 |
-| `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速、响度均一化 | `BiliAPI`、`BiliAuth` |
+| `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速 | `BiliAPI`、`BiliAuth` |
 | `BiliDanmaku` | 弹幕会话与分段缓存、车道布局、按媒体时间的 materializer、Core Animation renderer。`Session/`、`Layout/`、`Presentation/` 是纯逻辑，渲染框架只在 `Rendering/` | `BiliAPI`、`BiliAuth`、`BiliNetworking`、`BiliPlayback`、Feature、SwiftUI |
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
 | `BiliVideoDetailFeature` | 播放页与侧栏上下文层的 UP 主空间：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
@@ -400,20 +400,6 @@ load 只读一次，只调整视频候选。实验镜像只替换原始 bilivide
 服务端顺序。测速仅在已登录用户显式点击后运行，样本与路线严格串行、流量有硬上限、结果只存在于当前
 Settings 窗口，从不自动改选。
 
-### 响度均一化（macOS 27 起）
-
-UGC playurl 带 `voice_balance=1` 时返回 loudness 元数据。macOS 27 起 HLS item 的全部音轨混音可以经
-`AVAudioMixInputParametersTrackID.mixID` 设 audio mix 参数；更早系统没有官方接入点，不提供此功能，不依赖
-未文档化行为。默认关闭，新 load 读一次设置。gain 只压低不放大，所以没有峰值余量项与限幅器；元数据缺失、
-音轨无法唯一映射或查询失败时保持 unity，播放不得失败。不自行测量响度。
-
-- gain 是混音 audio mix 上的 volume：只压低时 volume ≤ 1 就能表达。macOS 27 的 HLS item 上实测按 mixID
-  设的 volume 精确生效、切换音轨后保持，播放中换上新 mix 几十毫秒内生效且不断流。
-- 选中音轨变化使 gain 改变时换一个新 mix，从当前 item 时间起用短 volume ramp 过渡；音量曲线定义在 item
-  时间上，锚点之前也设为新 gain，往回 seek 不会回到旧 gain。
-- 不用 `MTAudioProcessingTap`：恒定增益不需要逐帧处理，tap 却要求固定处理格式（多一次重采样）、实时回调
-  与手动内存管理。
-
 ### 分发
 
 - Developer ID 站外 DMG + 公证，不走 Mac App Store；更新用 Sparkle 完整包 + Cloudflare 静态签名 appcast，
@@ -454,6 +440,9 @@ UGC playurl 带 `voice_balance=1` 时返回 loudness 元数据。macOS 27 起 HL
 - 弹幕按窗口尺寸布局、resize 后去抖重排并整屏替换：拖动窗口边缘时画面整屏跳变，去抖期间还要为居中、
   贴底与按旧宽度运动写特判；取景框模型让 resize 只移动锚定边。
 - mpv 等第二播放后端；AVPlayer + loopback 能满足当前需求。
+- 响度均一化：只能压低不能放大（放大需要限幅器），依赖 playurl 的响度元数据（许多较早的视频没有），
+  只在 macOS 27 起有官方接入点；它按“原声只有一条”匹配音轨，音轨按编码与码率分成多组后系统会合并同名选项、
+  换组时不发通知，无法确定当前播放的是哪一组。
 - `*.bilibili.com` 后缀匹配授权；WKWebView 登录；共享 `HTTPCookieStorage` 或 `URLSession.shared`
   作为登录态。
 - 播放中自动换源、后台测速、按测速结果自动改选。

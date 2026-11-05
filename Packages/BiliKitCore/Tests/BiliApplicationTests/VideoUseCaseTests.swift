@@ -511,8 +511,7 @@ private func makeFixturePlayback(
                                 primaryURL: audioURL,
                                 segmentBase: segmentBase
                             )
-                        ],
-                        loudnessMetadata: nil
+                        ]
                     )
                 ]
             )

@@ -99,11 +99,7 @@ extension WindowAdapters {
                 repository: BiliSubtitleRepository(client: api),
                 reportAuthenticationInvalidation: subtitleAuthenticationInvalidations.report
             ),
-            sourcePreferenceProvider: { settings.playbackSourcePreference },
-            loudnessNormalizationEnabledProvider: {
-                // 与设置界面、播放侧同一门槛（macOS 27 起）；更早系统上旧偏好不生效。
-                LoudnessNormalizationPolicy.isSupported && settings.loudnessNormalizationEnabled
-            }
+            sourcePreferenceProvider: { settings.playbackSourcePreference }
         )
         // 「播放结束后」偏好：设备级，动作菜单与播完的处理读写同一处。
         let endBehavior = PlaybackEndBehaviorStore()

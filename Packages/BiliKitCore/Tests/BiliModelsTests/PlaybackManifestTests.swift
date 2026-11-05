@@ -39,7 +39,7 @@ struct PlaybackManifestTests {
 
         let manifest = PlaybackManifest(
             videoRepresentations: [],
-            audioTracks: [.original(representations: [low, high], loudnessMetadata: nil)]
+            audioTracks: [.original(representations: [low, high])]
         )
 
         let track = try #require(manifest.audioTracks.first)

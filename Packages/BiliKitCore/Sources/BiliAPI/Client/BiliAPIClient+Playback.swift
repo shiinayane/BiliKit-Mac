@@ -133,13 +133,12 @@ extension BiliAPIClient {
         quality: Int,
         playbackSessionEpoch: UInt64
     ) async throws -> AuthorizedResponse<PlayURLPayload> {
-        let parameters = ["voice_balance": "1"]
         do {
             return try await signedPlayURL(
                 bvid: bvid,
                 cid: cid,
                 quality: quality,
-                parameters: parameters,
+                parameters: [:],
                 access: .accountRead(missingCredential: .fail)
             )
         } catch BiliAPIError.authorizationRequired {
@@ -148,7 +147,7 @@ extension BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 quality: quality,
-                parameters: parameters.merging(Self.guestPlayURLParameters) { $1 },
+                parameters: Self.guestPlayURLParameters,
                 access: .anonymous
             )
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
@@ -237,12 +236,7 @@ extension BiliAPIClient {
         var audioTracks: [PlaybackAudioTrack] = []
         // 没有原声就没有可以并列的配音，不请求配音目录里的语言。
         if !audio.isEmpty {
-            audioTracks.append(
-                .original(
-                    representations: audio,
-                    loudnessMetadata: payload.volume?.model
-                )
-            )
+            audioTracks.append(.original(representations: audio))
             if authorizationProvenance == .authenticated {
                 try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
                 audioTracks += try await machineGeneratedAudioTracks(
@@ -307,10 +301,7 @@ extension BiliAPIClient {
                     bvid: bvid,
                     cid: cid,
                     quality: quality,
-                    parameters: [
-                        "cur_language": languageTag,
-                        "voice_balance": "1"
-                    ],
+                    parameters: ["cur_language": languageTag],
                     access: .accountRead(missingCredential: .fail)
                 ).payload
             } catch is CancellationError {
@@ -352,7 +343,6 @@ extension BiliAPIClient {
                     isDefault: false,
                     // 不参与系统自动选择：否则开着自动媒体选择时，语言等于界面语言的配音会在起播时压过原声。
                     isAutoselect: false,
-                    loudnessMetadata: payload.volume?.model,
                     representations: representations
                 )
             )

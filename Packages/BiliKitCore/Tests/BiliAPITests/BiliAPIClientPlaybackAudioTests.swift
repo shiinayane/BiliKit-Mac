@@ -7,112 +7,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 playurl 音轨契约：AI 配音只在带凭据且响应确认制作类型时作为语义音轨加入，
-/// 配音失败保留原声并停止后续配音请求，响度元数据按音轨各自绑定且必须是完整有界的一组；
-/// 没有音轨的稿件映射为只有视频的清单。
+/// 配音失败保留原声并停止后续配音请求；没有音轨的稿件映射为只有视频的清单。
 struct BiliAPIClientPlaybackAudioTests {
-    @Test
-    func playURLBindsLoudnessMetadataToEachSemanticTrackResponse() async throws {
-        let originalVolume = loudnessVolume(measuredI: -20, measuredTP: -4)
-        let aiVolume = loudnessVolume(measuredI: -11, measuredTP: -0.5)
-        let transport = StubTransport(
-            responses: [
-                try semanticAudioResponse(
-                    audioPath: "original-audio.m4s",
-                    languageCatalog: machineGeneratedEnglishAndJapaneseCatalog,
-                    volume: originalVolume
-                ),
-                try semanticAudioResponse(
-                    audioPath: "ai-en-audio.m4s",
-                    currentLanguage: "en",
-                    currentProductionType: 2,
-                    volume: aiVolume
-                ),
-                try semanticAudioResponse(
-                    audioPath: "ai-ja-audio.m4s",
-                    currentLanguage: "ja",
-                    currentProductionType: 2
-                )
-            ],
-            answersWBINavOnce: true
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: StubAuthorizer()
-        )
-
-        let playback = try await client.playback(
-            for: "BV1FixtureA1",
-            cid: 900_001
-        )
-
-        let manifest = try #require(playback.dashManifest)
-        #expect(manifest.audioTracks.count == 3)
-        let original = manifest.audioTracks[0]
-        let englishAI = manifest.audioTracks[1]
-        let japaneseAI = manifest.audioTracks[2]
-        #expect(original.loudnessMetadata?.measuredIntegratedLUFS == -20)
-        #expect(englishAI.loudnessMetadata?.measuredIntegratedLUFS == -11)
-        #expect(japaneseAI.loudnessMetadata == nil)
-        #expect(original.loudnessMetadata != englishAI.loudnessMetadata)
-        let requests = playURLRequests(transport)
-        #expect(requests.count == 3)
-        #expect(
-            requests.allSatisfy { request in
-                URLComponents(
-                    url: request.url,
-                    resolvingAgainstBaseURL: false
-                )?.queryItems?.contains(
-                    URLQueryItem(name: "voice_balance", value: "1")
-                ) == true
-            }
-        )
-    }
-
-    @Test(
-        arguments: [
-            (
-                #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-                -20.0
-            ),
-            (
-                #"{"measured_i":-20,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14}"#,
-                nil
-            ),
-            (
-                #"{"measured_i":null,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-                nil
-            ),
-            (
-                #"{"measured_i":"bad","measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-                nil
-            ),
-            (
-                #"{"measured_i":-200,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-                nil
-            ),
-            (
-                #"{"measured_i":1e400,"measured_lra":3,"measured_tp":-4,"measured_threshold":-30,"target_i":-14,"target_tp":-1}"#,
-                nil
-            ),
-            // B 站未测量响度的视频：四个测量值都是 0.001 占位。
-            (
-                #"{"measured_i":0.001,"measured_lra":0.001,"measured_tp":0.001,"measured_threshold":0.001,"target_offset":0.001,"target_i":-14,"target_tp":-1}"#,
-                nil
-            )
-        ] as [(String, Double?)]
-    )
-    func loudnessPayloadRequiresACompleteFiniteBoundedGroup(
-        _ source: String,
-        expectedIntegratedLUFS: Double?
-    ) {
-        let payload = try? JSONDecoder().decode(
-            PlaybackVolumePayload.self,
-            from: Data(source.utf8)
-        )
-
-        #expect(payload?.model?.measuredIntegratedLUFS == expectedIntegratedLUFS)
-    }
-
     /// 录屏之类没有声音的稿件 `dash.audio` 是 `null`：照常映射视频、没有音轨，即使目录里列着配音也不去请求。
     @Test
     func playURLWithoutAudioMapsVideoOnlyManifest() async throws {
@@ -398,22 +294,6 @@ struct BiliAPIClientPlaybackAudioTests {
                 ["lang": "en", "title": "English（AI）", "production_type": 2],
                 ["lang": "ja", "title": "日本語（AI）", "production_type": 2]
             ]
-        ]
-    }
-
-    private func loudnessVolume(
-        measuredI: Double,
-        measuredTP: Double
-    ) -> [String: Any] {
-        [
-            "measured_i": measuredI,
-            "measured_lra": 3,
-            "measured_tp": measuredTP,
-            "measured_threshold": measuredI - 10,
-            "target_i": -14,
-            "target_tp": -1,
-            "target_offset": 99,
-            "multi_scene_args": "ignored"
         ]
     }
 }

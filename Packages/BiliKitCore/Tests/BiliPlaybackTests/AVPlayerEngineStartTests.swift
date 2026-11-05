@@ -34,7 +34,7 @@ extension AVPlayerEngineSuites {
                         PlaybackManifest(
                             videoRepresentations: [fixture.video],
                             audioTracks: [
-                                .original(representations: [fixture.audio], loudnessMetadata: nil)
+                                .original(representations: [fixture.audio])
                             ]
                         )
                     ),
@@ -114,7 +114,7 @@ extension AVPlayerEngineSuites {
                     PlaybackManifest(
                         videoRepresentations: [fixture.video],
                         audioTracks: [
-                            .original(representations: [fixture.audio], loudnessMetadata: nil)
+                            .original(representations: [fixture.audio])
                         ]
                     )
                 )

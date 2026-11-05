@@ -21,15 +21,14 @@ var machineGeneratedEnglishCatalog: [String: Any] {
     ]
 }
 
-/// 一个视频轨、一个音轨的 DASH playurl 响应；可附带语言目录、当前语言与制作类型、响度元数据。
+/// 一个视频轨、一个音轨的 DASH playurl 响应；可附带语言目录、当前语言与制作类型。
 ///
 /// `audioPath` 为 nil 时 `dash.audio` 是 `null`，即没有音轨的稿件。
 func semanticAudioResponse(
     audioPath: String?,
     languageCatalog: [String: Any]? = nil,
     currentLanguage: String? = nil,
-    currentProductionType: Int? = nil,
-    volume: [String: Any]? = nil
+    currentProductionType: Int? = nil
 ) throws -> HTTPResponse {
     var data: [String: Any] = [
         "dash": [
@@ -79,9 +78,6 @@ func semanticAudioResponse(
     }
     if let currentProductionType {
         data["cur_production_type"] = currentProductionType
-    }
-    if let volume {
-        data["volume"] = volume
     }
     return HTTPResponse(
         statusCode: 200,
