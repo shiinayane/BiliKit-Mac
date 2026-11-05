@@ -694,33 +694,4 @@ struct DASHBridgeRouteTests {
         }
         return result
     }
-
-    private func settingSIDXEarliestPresentationTime(
-        _ value: UInt64,
-        in data: Data
-    ) throws -> Data {
-        var result = data
-        let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
-        let valueOffset = sidx.offset + 20
-        switch result[sidx.offset + 8] {
-        case 0:
-            guard value <= UInt32.max else {
-                throw PlaybackFixtureError.invalidFixture
-            }
-            var encoded = UInt32(value).bigEndian
-            result.replaceSubrange(
-                valueOffset..<(valueOffset + 4),
-                with: withUnsafeBytes(of: &encoded) { Data($0) }
-            )
-        case 1:
-            var encoded = value.bigEndian
-            result.replaceSubrange(
-                valueOffset..<(valueOffset + 8),
-                with: withUnsafeBytes(of: &encoded) { Data($0) }
-            )
-        default:
-            throw PlaybackFixtureError.invalidFixture
-        }
-        return result
-    }
 }

@@ -7,7 +7,7 @@ import Testing
 
 /// 固定 HDR 档的发布契约：至多加入一个 HDR 档，有 HDR 档时每个视频档都写 `VIDEO-RANGE`、杜比视界带
 /// `SUPPLEMENTAL-CODECS`；HDR 档的 init 不是 HDR、缺帧率或时间轴起点与 SDR 档不同时只丢这一档，SDR 档
-/// 与字幕照常发布。
+/// 与字幕照常发布；SIDX 能解析但有零时长分段时同样只丢这一档。
 struct DASHBridgeHDRTests {
     @Test
     func bridgeAddsOneTaggedHDRRungBesideTheSDRLadder() async throws {
@@ -30,6 +30,7 @@ struct DASHBridgeHDRTests {
         case sdrInitialization
         case missingFrameRate
         case shiftedTimeline
+        case zeroDurationSegment
     }
 
     @Test(arguments: Failure.allCases)
@@ -68,6 +69,9 @@ struct DASHBridgeHDRTests {
             var dolbyVisionData = try replacingInitialization(in: baseVideo, with: dolbyVisionInit)
             if failure == .shiftedTimeline {
                 dolbyVisionData = try shiftingTimelineOrigin(of: dolbyVisionData)
+            }
+            if failure == .zeroDurationSegment {
+                dolbyVisionData = try zeroingFirstSegmentDuration(of: dolbyVisionData)
             }
             let pqData = try replacingInitialization(in: baseVideo, with: makeHEVCInitialization())
             let dolbyVisionURL = try #require(URL(string: "https://\(host)/dolby-vision"))

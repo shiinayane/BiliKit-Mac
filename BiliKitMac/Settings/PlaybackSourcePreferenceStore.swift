@@ -114,7 +114,7 @@ struct PlaybackSourcePreferenceRecord: Sendable, Equatable {
 /// 播放偏好的持久化 port：`load` 不抛错，读不到或值损坏时返回
 /// `PlaybackSourcePreferenceRecord.defaults`，`save` 整体覆盖。
 ///
-/// `AppSettingsModel` 构造时读取一次，每次改选写入一次。
+/// `AppSettingsModel` 构造时读取一次，改选线路或切换开关时各写入一次。
 protocol PlaybackSourcePreferenceStoring: AnyObject, Sendable {
     func load() -> PlaybackSourcePreferenceRecord
     func save(_ record: PlaybackSourcePreferenceRecord)

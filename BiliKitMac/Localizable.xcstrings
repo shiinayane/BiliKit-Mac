@@ -4598,13 +4598,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When the display showing the window supports HDR, videos available in HDR or Dolby Vision play in HDR. HDR isn't used in Low Power Mode or on cellular, Personal Hotspot, and other limited networks. Changes apply to playback started afterward."
+            "value" : "When the display showing the window supports HDR, videos available in HDR or Dolby Vision play in HDR. HDR isn’t used in Low Power Mode or on cellular, Personal Hotspot, and other limited networks. Changes apply only to new playback."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウのあるディスプレイが HDR に対応している場合、HDR またはドルビービジョンに対応したビデオを HDR で再生します。低電力モードのとき、またはモバイルデータ通信やインターネット共有などの制限のあるネットワークでは HDR を使いません。変更はこのあと開始する再生から適用されます。"
+            "value" : "ウインドウのあるディスプレイが HDR に対応している場合、HDR またはドルビービジョンに対応した動画を HDR で再生します。低電力モードのとき、またはモバイルデータ通信やインターネット共有などの制限のあるネットワークでは HDR を使いません。変更は次に開始する再生にのみ適用されます。"
           }
         },
         "zh-Hans" : {
@@ -4616,7 +4616,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗所在的螢幕能顯示 HDR 時，有 HDR 真彩或杜比視界的影片會以 HDR 播放。低耗電模式或使用行動數據、個人熱點等受限網路時不使用 HDR。變更只影響之後開始的播放。"
+            "value" : "視窗所在的螢幕能顯示 HDR 時，有 HDR 真彩或杜比視界的影片會以 HDR 播放。低耗電模式或使用行動數據、個人熱點等受限網路時不使用 HDR。變更只會影響之後新開始的播放。"
           }
         }
       }
@@ -4682,13 +4682,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Videos available in Hi-Res Lossless play the lossless version when the connection is fast enough, which uses noticeably more data. Dolby audio is chosen automatically by the system based on the output device. Changes apply to playback started afterward."
+            "value" : "Videos available in Hi-Res Lossless play the lossless version when the connection is fast enough, which uses noticeably more data. Dolby audio is chosen automatically by the system based on the output device. Changes apply only to new playback."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ハイレゾロスレスに対応したビデオは、通信速度が十分なときにロスレス版を再生します。データ通信量が大きく増えます。ドルビーオーディオは出力デバイスに応じてシステムが自動的に選択します。変更はこのあと開始する再生から適用されます。"
+            "value" : "ハイレゾロスレスに対応した動画は、通信速度が十分なときにロスレス版を再生します。データ通信量が大きく増えます。ドルビーオーディオは出力デバイスに応じてシステムが自動的に選択します。変更は次に開始する再生にのみ適用されます。"
           }
         },
         "zh-Hans" : {
@@ -4700,7 +4700,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有 Hi-Res 無損音訊的影片在網速足夠時播放無損版本，流量會明顯增加。杜比音訊由系統依輸出裝置自動選擇。變更只影響之後開始的播放。"
+            "value" : "有 Hi-Res 無損音訊的影片在網速足夠時播放無損版本，流量會明顯增加。杜比音訊由系統依輸出裝置自動選擇。變更只會影響之後新開始的播放。"
           }
         }
       }

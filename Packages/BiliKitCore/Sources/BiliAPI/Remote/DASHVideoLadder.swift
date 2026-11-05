@@ -27,11 +27,12 @@ extension DASHRepresentationPayload {
 /// 加入），回退阶梯是 AVC；否则主阶梯用 AVC，没有回退。不混编码：同一 master 里 AVC 与 HEVC 并存时，
 /// AVPlayer 的 ABR 会在两种编码之间切换。AV1 不用。见 ARCHITECTURE 的 DASH→HLS bridge 一节与“不采用”。
 struct DASHVideoLadder: Sendable, Equatable {
-    /// 杜比视界（126）与 HDR 真彩（125）的清晰度 ID，按优先顺序排列。
+    /// 杜比视界（126）、HDR 真彩（125）与 HDR Vivid（129）的清晰度 ID，按优先顺序排列。
     ///
-    /// 它们不进 SDR 阶梯：这两档必须带 `VIDEO-RANGE` 写进 master，否则会被当成 SDR 选中、颜色错误
-    /// （PQ 不标时 item 直接失败）。
-    static let hdrQualityIDs = [126, 125]
+    /// 它们不进 SDR 阶梯：HDR 档必须带 `VIDEO-RANGE` 写进 master，否则会被当成 SDR 选中、颜色错误
+    /// （PQ 不标时 item 直接失败，整条 HEVC 阶梯随之回退到 AVC）。129 还没有实测样本，作为最后的候选；
+    /// 它的 init 读不出 HDR 时只丢这一档。
+    static let hdrQualityIDs = [126, 125, 129]
 
     let primary: [MediaRepresentation]
     let fallback: [MediaRepresentation]
@@ -57,9 +58,9 @@ struct DASHVideoLadder: Sendable, Equatable {
                 continue
             }
             switch (codec, isHDR) {
-            case (.avc, false): avc.append(representation)
-            case (.hevc, false): hevc.append(representation)
-            case (.hevc, true): hevcHDR.append(representation)
+            case (.avc, false): Self.appendFirst(representation, to: &avc)
+            case (.hevc, false): Self.appendFirst(representation, to: &hevc)
+            case (.hevc, true): Self.appendFirst(representation, to: &hevcHDR)
             case (.avc, true): continue
             }
         }
@@ -76,5 +77,14 @@ struct DASHVideoLadder: Sendable, Equatable {
         } else {
             throw mappingFailed ? BiliAPIError.invalidMediaData : BiliAPIError.noSupportedVideo
         }
+    }
+
+    /// 同一编码、同一清晰度只留第一条：bridge 要求视频档 ID 唯一，重复会让整次准备失败。
+    private static func appendFirst(
+        _ representation: MediaRepresentation,
+        to list: inout [MediaRepresentation]
+    ) {
+        guard !list.contains(where: { $0.id == representation.id }) else { return }
+        list.append(representation)
     }
 }

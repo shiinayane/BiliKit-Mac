@@ -7,6 +7,8 @@ import Testing
 /// 固定原声附加音频组的发布契约：原声的每个附加版本（其余 AAC 档、杜比音频）各成一个 AUDIO group，
 /// 成员与默认组相同，配音在每组引用同一个 URI；附加版本读不出音频格式或时间轴起点与原声不同时只丢
 /// 这一组，默认组、配音与其他组照常发布。
+///
+/// SIDX 能解析但有零时长分段时同样只丢这一组：它会让生成 playlist 报错。
 struct DASHBridgeAudioGroupTests {
     @Test
     func bridgePublishesOneGroupPerOriginalVersionWithSharedDubs() async throws {
@@ -22,7 +24,6 @@ struct DASHBridgeAudioGroupTests {
                 #"GROUP-ID="audio-30250",NAME="原声",CHARACTERISTICS="public.original-content",CHANNELS="6""#
             )
         )
-        #expect(master.contains(#",ec-3,mp4a.40.2",AUDIO="audio-30250""#))
         let dubLines = master.split(separator: "\n").filter { $0.contains(#"NAME="English（AI）""#) }
         #expect(dubLines.count == 3)
         #expect(Set(dubLines.map { $0.split(separator: ",").last ?? "" }).count == 1)
@@ -31,6 +32,7 @@ struct DASHBridgeAudioGroupTests {
     enum Failure: String, CaseIterable, Sendable {
         case unreadableFormat
         case shiftedTimeline
+        case zeroDurationSegment
     }
 
     @Test(arguments: Failure.allCases)
@@ -71,6 +73,9 @@ struct DASHBridgeAudioGroupTests {
             )
             if failure == .shiftedTimeline {
                 dolbyData = try shiftingTimelineOrigin(of: dolbyData)
+            }
+            if failure == .zeroDurationSegment {
+                dolbyData = try zeroingFirstSegmentDuration(of: dolbyData)
             }
             let lowURL = try #require(URL(string: "https://\(host)/aac-low"))
             let dolbyURL = try #require(URL(string: "https://\(host)/dolby"))

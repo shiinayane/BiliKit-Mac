@@ -45,7 +45,7 @@ struct PlaybackSourceSettingsTests {
         }
     }
 
-    /// schema 或线路损坏、类型错写时整条记录回退默认。
+    /// schema 或线路损坏、类型错写时只有线路回退默认，两个开关照常读出已存的值。
     @Test(
         arguments: [
             ("playbackSourcePreference.selection", "unknown"),
@@ -57,28 +57,41 @@ struct PlaybackSourceSettingsTests {
         ] as [(String, any Sendable)]
     )
     @MainActor
-    func storeFallsBackOnDamagedValues(key: String, damaged: any Sendable) {
+    func damagedRouteFallsBackWithoutResettingToggles(key: String, damaged: any Sendable) {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
             store.save(
                 PlaybackSourcePreferenceRecord(
                     selection: .huaweiMainland,
-                    hdrVideoEnabled: true,
-                    losslessAudioEnabled: false
+                    hdrVideoEnabled: false,
+                    losslessAudioEnabled: true
                 )
             )
             // 先移除再写：已存的 schema 是整数 1，UserDefaults 视 `true` 与它相等而不覆盖。
             defaults.removeObject(forKey: key)
             defaults.set(damaged, forKey: key)
 
-            #expect(store.load() == .defaults)
+            #expect(
+                store.load()
+                    == PlaybackSourcePreferenceRecord(
+                        selection: PlaybackSourcePreferenceRecord.defaults.selection,
+                        hdrVideoEnabled: false,
+                        losslessAudioEnabled: true
+                    )
+            )
         }
     }
 
-    /// 两个开关各自独立于线路：缺失或类型错写时取默认（HDR 开、无损关），不影响已存的线路。
-    @Test(arguments: [nil, "false", 0] as [(any Sendable)?])
+    /// 两个开关各自独立读取：缺失或类型错写时取默认（HDR 开、无损关）。损坏值选的是宽松读取会读成与默认
+    /// 相反的值（HDR 的 "false"／0、无损的 "1"／1），只有严格按布尔读取才回到默认。
+    @Test(
+        arguments: [(nil, nil), ("false", "1"), (0, 1)] as [((any Sendable)?, (any Sendable)?)]
+    )
     @MainActor
-    func togglesFallBackToTheirDefaultsWhenMissingOrDamaged(damaged: (any Sendable)?) {
+    func togglesFallBackToTheirDefaultsWhenMissingOrDamaged(
+        hdrDamaged: (any Sendable)?,
+        losslessDamaged: (any Sendable)?
+    ) {
         withIsolatedDefaults { defaults in
             let store = UserDefaultsPlaybackSourcePreferenceStore(defaults: defaults)
             store.save(
@@ -88,7 +101,10 @@ struct PlaybackSourceSettingsTests {
                     losslessAudioEnabled: true
                 )
             )
-            for key in ["playback.hdrVideo.enabled", "playback.losslessAudio.enabled"] {
+            for (key, damaged) in [
+                ("playback.hdrVideo.enabled", hdrDamaged),
+                ("playback.losslessAudio.enabled", losslessDamaged)
+            ] {
                 defaults.removeObject(forKey: key)
                 if let damaged {
                     defaults.set(damaged, forKey: key)

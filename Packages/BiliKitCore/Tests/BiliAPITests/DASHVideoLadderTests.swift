@@ -59,11 +59,14 @@ struct DASHVideoLadderTests {
             fallback: []
         ),
         LadderCase(
-            name: "HDR 档不进 SDR 阶梯，杜比视界排在候选最前",
-            rungs: [.hevc(125), .hevc(126), .hevc(120), .hevc(80), .avc(80)],
+            name: "HDR 档（含 129）不进 SDR 阶梯，杜比视界排在候选最前；同编码同档只留第一条",
+            rungs: [
+                .hevc(129), .hevc(125), .hevc(126), .hevc(126), .hevc(120), .hevc(80), .hevc(80),
+                .avc(80)
+            ],
             primary: [120, 80],
             fallback: [80],
-            hdr: [126, 125]
+            hdr: [126, 125, 129]
         ),
         LadderCase(
             name: "主阶梯是 AVC 时没有 HDR 候选",

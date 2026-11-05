@@ -53,6 +53,8 @@ A native Mac app, not a web page in a wrapper: under 10 MB to download and a few
 
 The description, comments and related videos sit right next to the player, and a timestamp in a comment jumps there with one click. Danmaku share the video's timeline, so seeking, pausing and changing speed never put them out of sync. When playback ends, BiliKit can continue through episodes and collections without wandering off into related videos; click an uploader to keep watching through their uploads in the sidebar without interrupting the current video.
 
+Picture and sound adapt to your connection: videos up to 4K play in HEVC at about half the bitrate of AVC for the same quality. Bilibili Premium members also get 8K; HDR and Dolby Vision on displays that support HDR; Dolby audio, chosen by the system, on multichannel output devices; and Hi-Res Lossless once Lossless Audio is turned on in Settings.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="Design/Marketing/v2/BiliKit-Video-Detail-Dark.png">

@@ -52,7 +52,7 @@ extension BiliAPIClient {
         return String(Data(text.utf8).base64EncodedString().dropLast(2))
     }
 
-    /// 取得 DASH 清单（视频 HEVC 或 AVC、音频 AAC）；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
+    /// 取得 DASH 清单（视频 HEVC 或 AVC，音频 AAC，原声另带杜比与无损版本）；仅 playurl 可按本地凭据状态选择精确授权或匿名请求。
     public func playback(
         for bvid: String,
         cid: Int64

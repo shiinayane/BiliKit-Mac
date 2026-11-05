@@ -77,7 +77,7 @@ struct ContentFailureTextTests {
         Expectation(
             .unsupportedMedia,
             title: localized("没有可播放的游客轨道"),
-            message: localized("该视频在当前服务授权范围内没有 AVPlayer 可用的 AVC/AAC 轨道。")
+            message: localized("该视频在当前服务授权范围内没有 AVPlayer 可用的 AVC/HEVC/AAC 轨道。")
         ),
         Expectation(
             .playbackUnavailable,

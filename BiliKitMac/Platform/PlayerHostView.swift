@@ -31,7 +31,7 @@ struct PlayerHostView: View {
     let playbackEnd: PlayerPlaybackEndActions
     let timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)?
     /// 登记宿主视图，供加载时按播放器所在屏幕判断 HDR。
-    let hdrEnvironment: PlaybackHDREnvironment?
+    let hdrEnvironment: PlaybackHDREnvironment
 
     init(
         player: SeekTrackingPlayer,
@@ -50,7 +50,7 @@ struct PlayerHostView: View {
         actionMenu: PlayerActionMenuActions,
         playbackEnd: PlayerPlaybackEndActions,
         timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)? = nil,
-        hdrEnvironment: PlaybackHDREnvironment? = nil
+        hdrEnvironment: PlaybackHDREnvironment
     ) {
         self.player = player
         self.danmakuRenderer = danmakuRenderer
@@ -160,7 +160,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
     let focusIdentity: String?
-    let hdrEnvironment: PlaybackHDREnvironment?
+    let hdrEnvironment: PlaybackHDREnvironment
 
     func makeNSView(context: Context) -> NativePlayerHostView {
         let view = NativePlayerHostView(
@@ -188,7 +188,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         )
         view.setPreviewEndedNotice(previewEndedNotice)
         view.requestInitialKeyboardFocus(for: focusIdentity)
-        hdrEnvironment?.playerView = view
+        hdrEnvironment.playerView = view
         return view
     }
 

@@ -90,25 +90,53 @@ func flacConfiguration(sampleRate: UInt64, channels: UInt64, bitDepth: UInt64) -
 
 /// 把 SIDX 的起始呈现时间加一秒，让这份媒体的时间轴起点与同一稿件的其他档不同。
 func shiftingTimelineOrigin(of data: Data) throws -> Data {
+    let sidx = try #require(firstTopLevelBox(named: "sidx", in: data))
+    let timescale = UInt64(readUInt32(in: data, at: sidx.offset + 16))
+    let valueOffset = sidx.offset + 20
+    let earliest =
+        data[sidx.offset + 8] == 0
+        ? UInt64(readUInt32(in: data, at: valueOffset))
+        : UInt64(readUInt32(in: data, at: valueOffset)) << 32
+            | UInt64(readUInt32(in: data, at: valueOffset + 4))
+    return try settingSIDXEarliestPresentationTime(earliest + timescale, in: data)
+}
+
+/// 改写 SIDX 的起始呈现时间（version 0 为 32 位、1 为 64 位）；其他 version 或 32 位放不下时报错。
+func settingSIDXEarliestPresentationTime(
+    _ value: UInt64,
+    in data: Data
+) throws -> Data {
     var result = data
     let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
-    let timescale = Int(readUInt32(in: result, at: sidx.offset + 16))
     let valueOffset = sidx.offset + 20
     switch result[sidx.offset + 8] {
     case 0:
-        let shifted = readUInt32(in: result, at: valueOffset) + UInt32(timescale)
+        guard value <= UInt32.max else {
+            throw PlaybackFixtureError.invalidFixture
+        }
+        var encoded = UInt32(value).bigEndian
         result.replaceSubrange(
             valueOffset..<(valueOffset + 4),
-            with: withUnsafeBytes(of: shifted.bigEndian) { Data($0) }
+            with: withUnsafeBytes(of: &encoded) { Data($0) }
         )
-    default:
-        let high = UInt64(readUInt32(in: result, at: valueOffset)) << 32
-        let shifted =
-            high + UInt64(readUInt32(in: result, at: valueOffset + 4)) + UInt64(timescale)
+    case 1:
+        var encoded = value.bigEndian
         result.replaceSubrange(
             valueOffset..<(valueOffset + 8),
-            with: withUnsafeBytes(of: shifted.bigEndian) { Data($0) }
+            with: withUnsafeBytes(of: &encoded) { Data($0) }
         )
+    default:
+        throw PlaybackFixtureError.invalidFixture
     }
+    return result
+}
+
+/// 把 SIDX 第一段的时长改成 0；SIDX 解析接受它，生成 playlist 时才会报错。
+func zeroingFirstSegmentDuration(of data: Data) throws -> Data {
+    var result = data
+    let sidx = try #require(firstTopLevelBox(named: "sidx", in: result))
+    let timeFieldsLength = result[sidx.offset + 8] == 0 ? 8 : 16
+    let firstReference = sidx.offset + 8 + 4 + 8 + timeFieldsLength + 4
+    result.replaceSubrange((firstReference + 4)..<(firstReference + 8), with: Data(count: 4))
     return result
 }

@@ -118,14 +118,15 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
   engine 在同一次 load 内换 AVC 阶梯重建一次，回退也失败才算播放失败。阶梯不设分辨率上限，依赖 AVPlayer
   按 player 视图的像素尺寸限制所选分辨率（实测系统行为，文档没有写）。`dash.video` 逐条宽松解码，认不出的
   档位只丢这一条。
-- HDR：SDR 阶梯是 HEVC 时，master 至多再加一个 HDR 档，有杜比视界（126）就用它，否则 HDR 真彩（125）。
+- HDR：SDR 阶梯是 HEVC 时，master 至多再加一个 HDR 档，按杜比视界（126）、HDR 真彩（125）、HDR Vivid（129）
+  的顺序取第一个能用的；这几个 ID 都不进 SDR 阶梯。
   AVPlayer 每个 item 只在一个 `VIDEO-RANGE` 内做 ABR，有资格播 HDR 时就选 HDR 且不受视图尺寸限制（实测，与
   Apple 论坛及 HLS Authoring Spec“每种动态范围给完整阶梯”的要求一致）；B 站 HDR 只有一档，选中后弱网也降不到
   SDR，所以只在加载时满足全部条件才加入：“HDR 视频”开关开着、`AVPlayer.eligibleForHDRPlayback`、播放器所在
   屏幕的 EDR 能力大于 1、不在低电量模式、网络不昂贵也不受限。HDR 档的 `VIDEO-RANGE` 取自它的 init：`colr`
   的 PQ／HLG，或杜比视界 profile 8 基础层（8.4 写 HLG、8.1 写 PQ）加 `SUPPLEMENTAL-CODECS`；有 HDR 档时 SDR
-  档与全部 I-frame 行也写 `VIDEO-RANGE`，要么都写要么都不写。HDR 档缺帧率、init 不是 HDR 或解析失败、时间轴
-  起点与 SDR 档不同时只丢这一档（连同它的 I-frame），在生成字幕 route 之前完成。HEVC 回退到 AVC 时不带 HDR 档。
+  档与全部 I-frame 行也写 `VIDEO-RANGE`，要么都写要么都不写。HDR 档缺帧率、SIDX 没有可播分段、init 不是 HDR 或解析失败、
+  时间轴起点与 SDR 档不同时只丢这一档（连同它的 I-frame），在生成字幕 route 之前完成。HEVC 回退到 AVC 时不带 HDR 档。
   B 站不给 30fps 及以下的 HDR 档，不满足 Authoring Spec 对 HDR 阶梯的要求，这是已知偏离。
 - 音频组：原声的每个版本各成一个 AUDIO group——码率最高的 AAC（默认组）、其余 AAC 档、杜比音频（E-AC-3）、
   “无损音频”开关开着时的 FLAC。每组成员相同（RFC 8216bis §4.4.6.1.1）：原声取这一组的版本、同名“原声”，
@@ -133,7 +134,7 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
   同名的原声在系统菜单里合并成一项，组之间由 AVPlayer 选择（实测）：AAC 档按网速切换；E-AC-3 写声道数后由
   系统按输出声道选择，2 声道输出不会选中，所以不进菜单、不手动选；FLAC 只有设了
   `variantPreferences = .scalabilityToLosslessAudio` 才会在带宽足够时选中。附加版本以默认组原声的 SIDX 起点
-  为准，读取失败、读不出声道等音频格式或起点不同时只丢这一组；无损关时不读 FLAC 的 SIDX。
+  为准，读取失败、SIDX 没有可播分段、读不出声道等音频格式或起点不同时只丢这一组；无损关时不读 FLAC 的 SIDX。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
 - 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
   AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。

@@ -89,7 +89,8 @@ extension DASHToHLSBridge {
 
     /// 并行读取原声附加版本的 SIDX 与音频格式，按输入顺序返回读取成功的版本；取消原样传播。
     ///
-    /// 附加版本只是更多选择：任一版本读取失败、缺完整长度或读不出音频格式就只丢这一个版本（它的音频组），
+    /// 附加版本只是更多选择：任一版本读取失败、缺完整长度、没有可播分段或读不出音频格式就只丢这一个
+    /// 版本（它的音频组），
     /// 原声与其余版本照常。音频格式在这里是必需的：杜比音频要靠 `CHANNELS` 让 AVPlayer 按输出声道数
     /// 选择，写不出来时宁可不提供这一组。
     private func loadAdditionalAudioVersions(
@@ -105,6 +106,7 @@ extension DASHToHLSBridge {
                             headers: headers
                         )
                         guard let length = index.completeMediaLength,
+                            index.index.hasPlayableSegments,
                             let format = try await optionalAudioFormat(
                                 for: representation,
                                 sourceURL: index.sourceURL,

@@ -2,7 +2,8 @@ import BiliModels
 import Foundation
 
 extension DASHToHLSBridge {
-    /// 按顺序读取 HDR 候选档，返回第一个 SIDX、完整长度与 init 动态范围都成功的档；都不成功时返回 nil。
+    /// 按顺序读取 HDR 候选档，返回第一个 SIDX（有可播分段）、完整长度与 init 动态范围都成功的档；
+    /// 都不成功时返回 nil。
     ///
     /// HDR 档是附加内容：任一步失败只丢这一档、再试下一个候选，不让播放失败；取消原样传播。缺帧率的
     /// 候选直接跳过：AVPlayer 按 `FRAME-RATE` 判断设备能否解码这一档，HDR 档不写它时选档没有依据。
@@ -13,7 +14,9 @@ extension DASHToHLSBridge {
         for candidate in candidates where candidate.videoAttributes?.frameRate != nil {
             do {
                 let index = try await indexLoader.load(for: candidate, headers: headers)
-                guard let completeMediaLength = index.completeMediaLength else { continue }
+                guard let completeMediaLength = index.completeMediaLength,
+                    index.index.hasPlayableSegments
+                else { continue }
                 let metadata = try await initializationLoader.load(
                     for: candidate,
                     sourceURL: index.sourceURL,

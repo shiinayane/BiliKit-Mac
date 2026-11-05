@@ -296,6 +296,11 @@ public final class AVPlayerEngine:
                 // 主阶梯（HEVC）的 item 在就绪前失败时，用同一份 playurl 的 AVC 阶梯在同一 generation 内
                 // 重建一次：这台 Mac 不接受这种编码时，否则整条视频都放不了。错误里只有类型名，分不出是
                 // 编码还是网络，所以凡是就绪前的 item 失败都回退；回退也失败就按普通失败处理，不再重试。
+                // 失败从 readiness 传到这里要经过一次挂起：期间换了视频或这次 load 被取消时不得再回退，
+                // 否则会动到新 load 的状态，或留下一个没人取消的准备与 loopback server。
+                guard loadGeneration == generation, !Task.isCancelled else {
+                    throw CancellationError()
+                }
                 discardFailedItem()
                 item = try await installReadyItem(
                     preparation.replacingVideos(fallbackVideos),

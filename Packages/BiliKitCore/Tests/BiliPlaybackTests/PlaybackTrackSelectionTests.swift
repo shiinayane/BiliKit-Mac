@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 
@@ -6,7 +7,8 @@ import Testing
 
 /// 每条语义音轨交给播放的是码率最高的 representation，与 playurl 返回顺序无关；缺失码率时回落顺序确定。
 ///
-/// 原声另带附加音频组的版本，无损只在“无损音频”打开时加入。
+/// 原声另带附加音频组的版本，无损只在“无损音频”打开时加入；带了无损版本时播放项设无损偏好（否则
+/// AVPlayer 从不选 FLAC），回退到 AVC 阶梯时不带 HDR 档。
 struct PlaybackTrackSelectionTests {
     @Test
     func selectsHighestBandwidthRepresentationWithinEachSemanticTrack() throws {
@@ -70,6 +72,25 @@ struct PlaybackTrackSelectionTests {
                 == [middle, low, dolby] + (allowsLosslessAudio ? [lossless] : [])
         )
         #expect(selected[1].additionalRepresentations.isEmpty)
+
+        let video = try makeRepresentation(id: 120, kind: .video)
+        let hdr = try makeRepresentation(id: 126, kind: .video)
+        let preparation = BridgePreparation(
+            progressiveSource: nil,
+            videos: [video],
+            hdrVideos: [hdr],
+            audioTracks: selected,
+            headers: [:],
+            subtitleSource: nil,
+            startPositionSeconds: nil
+        )
+        #expect(
+            preparation.variantPreferences.contains(.scalabilityToLosslessAudio)
+                == allowsLosslessAudio
+        )
+        let fallback = preparation.replacingVideos([try makeRepresentation(id: 80, kind: .video)])
+        #expect(fallback.hdrVideos.isEmpty)
+        #expect(fallback.audioTracks == selected)
     }
 
     @Test(

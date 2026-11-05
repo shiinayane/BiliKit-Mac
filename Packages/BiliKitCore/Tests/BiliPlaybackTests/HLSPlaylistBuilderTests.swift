@@ -282,8 +282,6 @@ struct HLSPlaylistBuilderTests {
     }
 
     /// 每个视频档配每个音频组各写一行，CODECS 与带宽只计这一组的成员；成员不同的组拒绝。
-    ///
-    /// 原声的每个版本一组，配音在每组引用同一个 URI。
     @Test
     func buildsOneVariantPerAudioGroupWithThatGroupsCodecsAndBandwidth() throws {
         let variant = try makeVideoVariant(
@@ -332,7 +330,6 @@ struct HLSPlaylistBuilderTests {
         #expect(streams[0].contains(#"CODECS="avc1.640032,mp4a.40.2",AUDIO="audio-30280""#))
         #expect(streams[1].contains(#"BANDWIDTH=24000,"#))
         #expect(streams[1].contains(#"CODECS="avc1.640032,ec-3,mp4a.40.2",AUDIO="audio-30250""#))
-        #expect(playlist.components(separatedBy: "audio/1/30280.m3u8").count == 3)
 
         #expect(throws: HLSPlaylistBuilderError.inconsistentAudioGroupMembers) {
             try HLSMasterPlaylistBuilder().build(
