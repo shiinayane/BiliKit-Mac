@@ -16,12 +16,13 @@ struct AccountReadAuthorizationCompositionTests {
     /// 窗口状态、复核阶段、进程状态与期望结果。
     static let signedOutConfirmationCases:
         [(AccountSessionScope, AuthenticationResolutionPhase, AccountSessionScope, Bool)] = [
-            (.signedOut, .other, .unresolved, true),
+            (.signedOut, .signedOut, .unresolved, true),
+            (.signedOut, .signedOut, .signedOut, true),
             (.signedOut, .other, .signedOut, true),
             (.signedOut, .restoring, .signedOut, false),
             (.signedOut, .failed, .signedOut, false),
-            (.signedOut, .other, .signedIn(accountID: 42), false),
-            (.unresolved, .other, .unresolved, false),
+            (.signedOut, .signedOut, .signedIn(accountID: 42), false),
+            (.unresolved, .signedOut, .unresolved, false),
             (.signedIn(accountID: 42), .signedIn, .signedIn(accountID: 42), false)
         ]
 

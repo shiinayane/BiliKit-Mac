@@ -33,7 +33,7 @@ struct AccountRevalidationParticipants {
         previous != current
     }
 
-    /// 认证复核离开 restoring 后调用：确认已登录时交给参与者恢复，没能确认时交给参与者报告；其他结果不动作。
+    /// 认证复核离开 restoring 后调用：确认已登录或确认未登录时交给参与者恢复，没能确认时交给参与者报告；其他结果不动作。
     func finishRevalidation(
         _ phase: AuthenticationResolutionPhase,
         currentRoute: AppTab
@@ -42,6 +42,8 @@ struct AccountRevalidationParticipants {
             switch phase {
             case .signedIn:
                 entry.participant.authenticationRevalidationSucceeded()
+            case .signedOut:
+                entry.participant.authenticationRevalidationConfirmedSignedOut()
             case .failed:
                 entry.participant.authenticationRevalidationFailed()
             case .other, .restoring:
