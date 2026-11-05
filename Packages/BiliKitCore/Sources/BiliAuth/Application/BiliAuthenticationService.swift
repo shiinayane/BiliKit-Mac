@@ -14,14 +14,14 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     /// 共同的更低层能放 endpoint 知识，所以各留一份（另一份在 `BiliAPIClient.wbiKey`）。见 SECURITY-MODEL §3。
     public static let sessionValidationPath = "/x/web-interface/nav"
 
-    private var loginSession: WebQRLoginSession
+    private var loginSession: TVQRLoginSession
     private var authorizer: BiliCredentialRequestAuthorizer
-    private let loginSessionFactory: @Sendable () -> WebQRLoginSession
+    private let loginSessionFactory: @Sendable () -> TVQRLoginSession
     private let authorizerFactory: @Sendable () -> BiliCredentialRequestAuthorizer
     private let additionalSessionInvalidators: [any AuthenticatedSessionInvalidating]
 
     private var state: AuthenticationState = .signedOut
-    private var qrCode: WebQRCode?
+    private var qrCode: TVQRCode?
     /// 每次恢复、请求二维码、取消登录与登出时递增，轮询与提交凭据只读取不递增。
     ///
     /// 各操作 await 之后比对，不等就不再写 `state`，直接返回新操作已发布的状态。
@@ -34,11 +34,11 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         accountReadAllowedPaths: Set<String>,
         additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
-        loginSession = WebQRLoginSession()
+        loginSession = TVQRLoginSession()
         authorizer = BiliCredentialRequestAuthorizer(
             allowedPaths: accountReadAllowedPaths
         )
-        loginSessionFactory = { WebQRLoginSession() }
+        loginSessionFactory = { TVQRLoginSession() }
         authorizerFactory = {
             BiliCredentialRequestAuthorizer(
                 allowedPaths: accountReadAllowedPaths
@@ -48,9 +48,9 @@ public actor BiliAuthenticationService: AuthenticationServicing {
     }
 
     init(
-        loginSession: WebQRLoginSession,
+        loginSession: TVQRLoginSession,
         authorizer: BiliCredentialRequestAuthorizer,
-        loginSessionFactory: @escaping @Sendable () -> WebQRLoginSession,
+        loginSessionFactory: @escaping @Sendable () -> TVQRLoginSession,
         authorizerFactory: @escaping @Sendable () -> BiliCredentialRequestAuthorizer,
         additionalSessionInvalidators: [any AuthenticatedSessionInvalidating] = []
     ) {
@@ -129,13 +129,13 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         state = .requestingQRCode
 
         do {
-            let webState = try await activeSession.requestQRCode()
+            let qrState = try await activeSession.requestQRCode()
             guard generation == operationGeneration else { return state }
-            state = map(webState)
+            state = map(qrState)
         } catch is CancellationError {
             guard generation == operationGeneration else { return state }
             state = .signedOut
-        } catch let error as WebQRLoginFailure {
+        } catch let error as TVQRLoginFailure {
             guard generation == operationGeneration else { return state }
             state = .failed(Self.map(error))
         } catch {
@@ -153,13 +153,13 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         let activeSession = loginSession
 
         do {
-            let webState = try await activeSession.pollOnce()
+            let qrState = try await activeSession.pollOnce()
             guard generation == operationGeneration else { return state }
-            state = map(webState)
+            state = map(qrState)
         } catch is CancellationError {
             guard generation == operationGeneration else { return state }
             state = .signedOut
-        } catch let error as WebQRLoginFailure {
+        } catch let error as TVQRLoginFailure {
             guard generation == operationGeneration else { return state }
             state = .failed(Self.map(error))
         } catch {
@@ -191,7 +191,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
             guard generation == operationGeneration else { return state }
             qrCode = nil
             state = .signedOut
-        } catch let error as WebQRLoginFailure {
+        } catch let error as TVQRLoginFailure {
             guard generation == operationGeneration else { return state }
             qrCode = nil
             state = .failed(Self.map(error))
@@ -254,8 +254,8 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         return state
     }
 
-    private func map(_ webState: WebQRLoginState) -> AuthenticationState {
-        switch webState {
+    private func map(_ qrState: TVQRLoginState) -> AuthenticationState {
+        switch qrState {
         case .signedOut:
             qrCode = nil
             return .signedOut
@@ -280,7 +280,7 @@ public actor BiliAuthenticationService: AuthenticationServicing {
         }
     }
 
-    private static func map(_ failure: WebQRLoginFailure) -> AuthenticationFailure {
+    private static func map(_ failure: TVQRLoginFailure) -> AuthenticationFailure {
         switch failure {
         case .network, .httpStatus:
             .network

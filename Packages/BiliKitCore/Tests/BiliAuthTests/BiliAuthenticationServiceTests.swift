@@ -47,7 +47,7 @@ struct BiliAuthenticationServiceTests {
                     HTTPResponse(
                         statusCode: 200,
                         headers: ["Content-Type": "application/json"],
-                        body: Data(#"{"code":0,"data":{"code":12345}}"#.utf8)
+                        body: Data(#"{"code":12345,"data":null}"#.utf8)
                     )
                 ]
             )
@@ -204,13 +204,13 @@ struct BiliAuthenticationServiceTests {
         invalidators: [any AuthenticatedSessionInvalidating] = []
     ) -> BiliAuthenticationService {
         BiliAuthenticationService(
-            loginSession: WebQRLoginSession(
+            loginSession: TVQRLoginSession(
                 transport: qrTransport,
                 credentialStore: store
             ),
             authorizer: makeCredentialAuthorizer(store: store, transport: validationTransport),
             loginSessionFactory: {
-                WebQRLoginSession(
+                TVQRLoginSession(
                     transport: RecordingAuthTransport(),
                     credentialStore: store
                 )
