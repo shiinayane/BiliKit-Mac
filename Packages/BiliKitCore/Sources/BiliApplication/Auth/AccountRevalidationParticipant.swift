@@ -13,12 +13,20 @@ public protocol AccountRevalidationParticipant: AnyObject {
     /// 认证复核确认仍已登录。默认不动作；需要在复核后恢复内容的参与者自己实现。
     func authenticationRevalidationSucceeded()
 
+    /// 认证复核确认窗口未登录（凭据已不在本机）。默认不动作：只在已登录时显示的页面随账户范围变化离开。
+    ///
+    /// 未登录也能匿名读取的页面（首页推荐、热门、搜索）在这里重载自己因凭据失败停住的内容。复核前凭据已被某次读取删除时，
+    /// 账户范围不会变化，不会经账户会话同步重载，只有这里能让它恢复。
+    func authenticationRevalidationConfirmedSignedOut()
+
     /// 认证复核没能确认登录状态（网络或 Keychain 不可用）。默认不动作。
     func authenticationRevalidationFailed()
 }
 
 extension AccountRevalidationParticipant {
     public func authenticationRevalidationSucceeded() {}
+
+    public func authenticationRevalidationConfirmedSignedOut() {}
 
     public func authenticationRevalidationFailed() {}
 }

@@ -49,7 +49,7 @@ public final class FavoriteFolderViewModel: AccountRevalidationParticipant {
     /// 最近一次原地刷新失败的原因，内容仍是刷新前的；下一次请求开始时清除。
     public private(set) var refreshError: ContentApplicationError?
 
-    /// 读取发现凭据缺失或失效时递增；规则在共用的 `LibraryAccountRevalidation`。
+    /// 读取发现凭据缺失或失效时递增；规则在共用的 `AccountRevalidationProgress`。
     public var authenticationRevalidationGeneration: Int {
         revalidation.generation
     }
@@ -124,7 +124,7 @@ public final class FavoriteFolderViewModel: AccountRevalidationParticipant {
     let folderList: FavoriteFolderListModel
     private var paging = PageReplacementPaging<FavoriteFolderPage>()
     private var keyword = LibrarySearchKeyword()
-    private var revalidation = LibraryAccountRevalidation()
+    private var revalidation = AccountRevalidationProgress()
     @ObservationIgnored private let useCase: FavoritesUseCase
     /// 刷新、翻页与换条件共用的最新意图 Task；`reset` 与 `deactivateRoute` 取消。
     @ObservationIgnored private let loadTask = LatestTask()
@@ -321,7 +321,7 @@ public final class FavoriteFolderViewModel: AccountRevalidationParticipant {
     /// 还没有内容时加载。
     public func authenticationRevalidationSucceeded() {
         guard selectedFolderID != nil else { return }
-        if revalidation.succeeded() || paging.phase == .idle {
+        if revalidation.concluded() || paging.phase == .idle {
             load(page: paging.currentPage)
         }
     }

@@ -53,11 +53,13 @@ struct AccountRevalidationParticipantsTests {
         )
 
         participants.finishRevalidation(.signedIn, currentRoute: currentRoute)
+        participants.finishRevalidation(.signedOut, currentRoute: currentRoute)
         participants.finishRevalidation(.failed, currentRoute: currentRoute)
         participants.finishRevalidation(.other, currentRoute: currentRoute)
 
-        #expect(windowWide.events == ["succeeded", "failed"])
-        #expect(history.events == (currentRoute == .history ? ["succeeded", "failed"] : []))
+        let delivered = ["succeeded", "signedOut", "failed"]
+        #expect(windowWide.events == delivered)
+        #expect(history.events == (currentRoute == .history ? delivered : []))
     }
 
     /// 窗口组装登记了全部九个参与者，只有稍后再看、观看历史与收藏夹的夹内页面绑定来源，收藏夹列表是窗口级；漏登记会让
@@ -114,6 +116,10 @@ private final class RecordingRevalidationParticipant: AccountRevalidationPartici
 
     func authenticationRevalidationSucceeded() {
         events.append("succeeded")
+    }
+
+    func authenticationRevalidationConfirmedSignedOut() {
+        events.append("signedOut")
     }
 
     func authenticationRevalidationFailed() {

@@ -5,7 +5,8 @@ import Testing
 
 @testable import BiliBrowseFeature
 
-/// Feed 的凭据失效请求窗口复核（追加失败保留卡片）；账户代次变化重启当前来源并丢弃旧账户的迟到结果。
+/// Feed 的凭据失效请求窗口复核（追加失败保留卡片）；复核确认仍登录或确认未登录后，停在凭据失败页的来源自动重载至多
+/// 一次；账户代次变化重启当前来源并丢弃旧账户的迟到结果。
 @Suite(.timeLimit(.minutes(1)))
 struct FeedAuthenticationTests {
     @Test
@@ -22,6 +23,50 @@ struct FeedAuthenticationTests {
         await model.waitForCurrentTask()
 
         #expect(model.authenticationRevalidationGeneration == 1)
+        #expect(
+            model.state
+                == .failed(
+                    request: .recommendation(continuation: nil),
+                    error: .authenticationInvalid
+                )
+        )
+    }
+
+    /// 复核的三种结果：确认仍登录、确认未登录（启动时首页先删掉了坏凭据，账户范围不变）、没能确认。
+    enum RevalidationOutcome: CaseIterable {
+        case signedIn, signedOut, failed
+    }
+
+    @Test(arguments: RevalidationOutcome.allCases)
+    @MainActor
+    func failedPageReloadsAtMostOnceAfterRevalidationConcludes(
+        outcome: RevalidationOutcome
+    ) async {
+        let fixture = ContentFixtures(bvid: "BV1Revalid01", title: "复核后重载")
+        let repository = FeedRepositoryStub(recommendations: { _, attempt in
+            guard attempt == 3 else { throw ContentApplicationError.authenticationInvalid }
+            return fixture.recommendationPage
+        })
+        let model = BrowseViewModel(useCase: FeedUseCase(repository: repository))
+        let deliver = {
+            switch outcome {
+            case .signedIn: model.authenticationRevalidationSucceeded()
+            case .signedOut: model.authenticationRevalidationConfirmedSignedOut()
+            case .failed: model.authenticationRevalidationFailed()
+            }
+        }
+
+        model.activateRecommendation()
+        await model.waitForCurrentTask()
+        deliver()
+        await model.waitForCurrentTask()
+        // 重载后仍失败：再请求一次复核，但同一次失败页不再自动重载，挡住“复核 → 重载 → 失效”的循环。
+        deliver()
+        await model.waitForCurrentTask()
+
+        let expectedRequests = outcome == .failed ? 1 : 2
+        #expect(await repository.recommendationRequests.count == expectedRequests)
+        #expect(model.authenticationRevalidationGeneration == expectedRequests)
         #expect(
             model.state
                 == .failed(

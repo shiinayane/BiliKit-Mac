@@ -75,7 +75,7 @@ public final class LibraryVideoListModel<
     /// 最近一次原地刷新失败的原因，条目仍是刷新前的内容；下一次刷新开始时清除。
     public private(set) var refreshError: ContentApplicationError?
     /// 读取发现凭据缺失或失效时递增，由窗口汇总后复核账户（`AccountRevalidationParticipant`，与其他内容页同一契约）；
-    /// 规则在共用的 `LibraryAccountRevalidation`。
+    /// 规则在共用的 `AccountRevalidationProgress`。
     public var authenticationRevalidationGeneration: Int {
         revalidation.generation
     }
@@ -164,7 +164,7 @@ public final class LibraryVideoListModel<
     /// 显示的列表每被整体替换一次（换成空列表或第一页加载成功）以 `&+=` 递增；`restoreItem` 只在与移除时相同才放回。
     @ObservationIgnored private var contentGeneration: UInt64 = 0
     /// 复核代次、是否在等复核与复核后是否已自动重载过。
-    private var revalidation = LibraryAccountRevalidation()
+    private var revalidation = AccountRevalidationProgress()
 
     init(
         stallPolicy: PagedVideoList<Item, Cursor>.StallPolicy,
@@ -386,7 +386,7 @@ public final class LibraryVideoListModel<
     /// 本页因凭据失效请求的复核，确认后自动重载一次；同一会话内只做一次，之后再失效只显示失败、
     /// 由用户重试。其余情况只在 idle 时加载。
     public func authenticationRevalidationSucceeded() {
-        if revalidation.succeeded() {
+        if revalidation.concluded() {
             reload()
         } else {
             loadIfNeeded()
