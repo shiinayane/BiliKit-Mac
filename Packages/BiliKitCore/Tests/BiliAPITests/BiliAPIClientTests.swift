@@ -314,11 +314,6 @@ struct AccountReadCase: Sendable, CustomTestStringConvertible {
             call: { _ = try await $0.uploaderProfile(for: 10_001) }
         ),
         AccountReadCase(
-            path: "/x/space/wbi/arc/search",
-            responses: { [try fixtureResponse("nav"), try fixtureResponse("uploader-videos")] },
-            call: { _ = try await $0.uploaderVideos(ownerID: 10_001, order: .newest, page: 1) }
-        ),
-        AccountReadCase(
             path: "/x/player/wbi/playurl",
             responses: { [try fixtureResponse("nav"), try fixtureResponse("playurl")] },
             call: { _ = try await $0.playback(for: "BV1FixtureA1", cid: 900_001) }

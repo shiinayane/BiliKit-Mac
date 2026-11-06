@@ -120,6 +120,7 @@ struct UploaderSpaceCardMenuTests {
             actions: UploaderSpaceListActions(
                 selectOrder: { _ in },
                 selectVideo: selectVideo,
+                loadMore: {},
                 cardMenu: cardMenu
             )
         )

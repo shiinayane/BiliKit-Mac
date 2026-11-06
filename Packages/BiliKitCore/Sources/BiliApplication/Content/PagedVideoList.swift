@@ -9,7 +9,7 @@ package struct VideoListPage<Item, Cursor> {
     }
 }
 
-/// 首页推荐、热门、搜索、观看历史与稍后再看共用的分页列表。
+/// 首页推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿共用的分页列表。
 ///
 /// 按 BVID 去重累积条目，决定何时继续、停止、暂停自动加载或要求用户显式继续，并给出近尾自动加载用的
 /// 尾标；各条规则写在下方对应的成员上。
@@ -21,7 +21,7 @@ package struct VideoListPage<Item, Cursor> {
 package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
     /// 一页没有并入任何新条目（空页、全重复页或已没有余量）时的处理。
     package enum StallPolicy: Sendable, Equatable {
-        /// 停止翻页：推荐、热门、搜索与稍后再看再请求下一页也不会更有进展。
+        /// 停止翻页：推荐、热门、搜索、稍后再看与空间投稿再请求下一页也不会更有进展。
         case stop
         /// 保留游标但收起尾标，由用户显式继续：历史的空页之后可能还有更早的记录，但不在后台连续扫描。
         case requireManualContinue

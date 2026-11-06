@@ -7,27 +7,24 @@ import SwiftUI
 
 /// 压在侧栏上的 UP 主空间层。
 ///
-/// 原生列表只画头部与已加载的行；加载中、空、失败与登录提示由本视图按 ViewModel 状态叠在头部下方。
-/// 返回按钮悬浮在左上角，不随列表滚走；页码条悬浮在底部，列表为它留出底部空间。
+/// 原生列表画头部、已加载的行与底部加载行；第一批的加载中、空与失败由本视图按 ViewModel 状态叠在头部下方。
+/// 返回按钮与空间内搜索框在顶部浮动的一行里，不随列表滚走，列表从它下方开始。
 public struct UploaderSpaceSidebarView: View {
     let model: UploaderSpaceViewModel
     let currentBVID: String?
     let imagePipeline: any VideoDetailImageLoading
     let onSelect: (String) -> Void
-    let onLogin: () -> Void
 
     public init(
         model: UploaderSpaceViewModel,
         currentBVID: String?,
         imagePipeline: any VideoDetailImageLoading,
-        onSelect: @escaping (String) -> Void,
-        onLogin: @escaping () -> Void
+        onSelect: @escaping (String) -> Void
     ) {
         self.model = model
         self.currentBVID = currentBVID
         self.imagePipeline = imagePipeline
         self.onSelect = onSelect
-        self.onLogin = onLogin
     }
 
     @Environment(\.locale) private var locale
@@ -35,44 +32,34 @@ public struct UploaderSpaceSidebarView: View {
     @Environment(\.videoCardAccountWriting) private var accountWriting
     /// 关闭前的最后一帧。
     ///
-    /// 关闭时 ViewModel 立即清空，而移除动画还要播一段：保留最后一帧，让滑出去的是原来的列表与
-    /// 页码条，而不是一层空白。放在引用类型里，记录它不会再触发一次渲染。
+    /// 关闭时 ViewModel 立即清空，而移除动画还要播一段：保留最后一帧，让滑出去的是原来的列表，
+    /// 而不是一层空白。放在引用类型里，记录它不会再触发一次渲染。
     @State private var lastFrame = RetainedFrame()
-
-    private struct Frame: Equatable {
-        /// 页码条需要的当前页与总页数。
-        struct Pager: Equatable {
-            let currentPage: Int
-            let pageCount: Int
-        }
-
-        let content: UploaderSpaceListContent
-        let pager: Pager?
-    }
 
     /// 保存关闭前最后一帧的引用盒子；改它不触发 SwiftUI 重新渲染。
     private final class RetainedFrame {
-        var frame: Frame?
+        var content: UploaderSpaceListContent?
     }
 
     public var body: some View {
         let presentation = UploaderSpaceSidebarPresentation(
             state: model.state,
-            pageCount: model.pageCount,
-            totalCount: model.totalCount
+            totalCount: model.totalCount,
+            isSearching: model.searchKeyword != nil
         )
-        let live = liveFrame(presentation)
-        let frame = live ?? lastFrame.frame
-        if let live { lastFrame.frame = live }
+        let live = liveContent(presentation)
+        let content = live ?? lastFrame.content
+        if let live { lastFrame.content = live }
 
         return ZStack(alignment: .top) {
-            if let content = frame?.content {
+            if let content {
                 UploaderSpaceListRepresentable(
                     content: content,
                     imagePipeline: imagePipeline,
                     actions: UploaderSpaceListActions(
                         selectOrder: model.setOrder,
                         selectVideo: onSelect,
+                        loadMore: model.loadMore,
                         cardMenu: { [openURL, accountWriting] row in
                             Self.cardMenu(for: row, openURL: openURL, writing: accountWriting)
                         }
@@ -82,34 +69,30 @@ public struct UploaderSpaceSidebarView: View {
             }
             stateOverlay(presentation.overlay)
                 .padding(.top, UploaderSpaceGeometry.stateContentTop)
-            backButton
-        }
-        .overlay(alignment: .bottom) {
-            if let pager = frame?.pager {
-                PageNumberPager(
-                    currentPage: pager.currentPage,
-                    pageCount: pager.pageCount,
-                    onShowPage: model.showPage
-                )
-            }
+            topBar
         }
     }
 
-    /// 悬浮返回按钮，⌘[ 同样返回；叠在列表与状态覆盖层之上，在顶部时落在头部左侧留出的那一格里。
-    private var backButton: some View {
-        FloatingIconButton(
-            "chevron.left",
-            label: VideoDetailFeatureStrings.localized("返回详情"),
-            action: model.close
-        )
-        .keyboardShortcut("[", modifiers: .command)
-        // 它叠在最上层，默认会被读屏排到列表之后；视觉上它在头部最左，读屏也先读它。
+    /// 顶部浮动的一行：返回按钮（⌘[ 同样返回）与空间内搜索框；叠在列表与状态覆盖层之上。
+    ///
+    /// 搜索框以 UP 主为身份重建：换 UP 主时草稿清空，与 ViewModel 清掉的搜索词一致。
+    private var topBar: some View {
+        HStack(spacing: UploaderSpaceGeometry.topBarSpacing) {
+            FloatingIconButton(
+                "chevron.left",
+                label: VideoDetailFeatureStrings.localized("返回详情"),
+                action: model.close
+            )
+            .keyboardShortcut("[", modifiers: .command)
+            UploaderSpaceSearchField(onSubmit: model.submitSearch)
+                .id(model.owner?.id)
+                // 超大档的搜索框固有高度 36pt，与左侧返回按钮（large 档、24pt 图标的圆形按钮）等高。
+                .controlSize(.extraLarge)
+        }
+        // 它叠在最上层，默认会被读屏排到列表之后；视觉上它在最上面，读屏也先读它。
         .accessibilitySortPriority(1)
-        .frame(
-            width: UploaderSpaceGeometry.backButtonSlotWidth,
-            height: UploaderSpaceGeometry.headerHeight
-        )
-        .padding(.leading, UploaderSpaceGeometry.backButtonSlotLeading)
+        .frame(height: UploaderSpaceGeometry.topBarHeight)
+        .padding(.horizontal, UploaderSpaceGeometry.topBarHorizontalPadding)
         .padding(.top, UploaderSpaceGeometry.listTopInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -137,37 +120,35 @@ public struct UploaderSpaceSidebarView: View {
     /// 空间打开期间按 ViewModel 实时生成；关闭后为 nil。
     ///
     /// 每次刷新只算一次。
-    private func liveFrame(_ presentation: UploaderSpaceSidebarPresentation) -> Frame? {
+    private func liveContent(
+        _ presentation: UploaderSpaceSidebarPresentation
+    ) -> UploaderSpaceListContent? {
         guard let owner = model.owner else { return nil }
         let rows: [UploaderVideoRowPresentation]
-        if case .loaded(let page) = model.state {
-            rows = page.videos.map { UploaderVideoRowPresentation(video: $0) }
+        if case .loaded(let videos) = model.state {
+            rows = videos.map { UploaderVideoRowPresentation(video: $0) }
         } else {
             rows = []
         }
-        let content = UploaderSpaceListContent(
+        return UploaderSpaceListContent(
             header: UploaderSpaceHeaderContent(
                 // 只凭 MID 打开（评论正文里的空间链接）时，名片到达前或失败时名字为空，显示 UID；
                 // “UID”是 B 站各语言界面通用的写法，不做本地化。
                 name: owner.name.isEmpty ? "UID \(owner.id)" : owner.name,
                 avatarURL: owner.avatarURL,
                 totalCount: presentation.headerTotalCount,
-                order: model.order
+                order: model.order,
+                isSearching: model.searchKeyword != nil
             ),
             rows: rows,
             currentBVID: currentBVID,
-            pageIdentity: UploaderSpaceListContent.PageIdentity(
+            listIdentity: UploaderSpaceListContent.ListIdentity(
                 ownerID: owner.id,
                 order: model.order,
-                page: model.currentPage
+                searchKeyword: model.searchKeyword
             ),
-            reservesPagerSpace: presentation.showsPager
-        )
-        return Frame(
-            content: content,
-            pager: presentation.showsPager
-                ? Frame.Pager(currentPage: model.currentPage, pageCount: model.pageCount)
-                : nil
+            footer: model.footer,
+            tailIdentity: model.loadMoreTailIdentity
         )
     }
 
@@ -185,12 +166,8 @@ public struct UploaderSpaceSidebarView: View {
                 .revealsAfterLoadingDelay()
         case .empty:
             message(VideoDetailFeatureStrings.localized("还没有投稿"))
-        case .signIn:
-            message(
-                VideoDetailFeatureStrings.localized("登录后可浏览 UP 主投稿"),
-                actionTitle: VideoDetailFeatureStrings.localized("登录"),
-                action: onLogin
-            )
+        case .noResults:
+            message(VideoDetailFeatureStrings.localized("没有找到相关投稿"))
         case .failure(let error):
             // 紧凑布局只放一行说明：共享说明已分开风控、凭据失效、凭据读不到与网络，标题只会重复它。
             message(

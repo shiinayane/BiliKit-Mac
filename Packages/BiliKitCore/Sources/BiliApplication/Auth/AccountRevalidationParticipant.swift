@@ -15,7 +15,7 @@ public protocol AccountRevalidationParticipant: AnyObject {
 
     /// 认证复核确认窗口未登录（凭据已不在本机）。默认不动作：只在已登录时显示的页面随账户范围变化离开。
     ///
-    /// 未登录也能匿名读取的页面（首页推荐、热门、搜索）在这里重载自己因凭据失败停住的内容。复核前凭据已被某次读取删除时，
+    /// 未登录也能匿名读取的页面（首页推荐、热门、搜索、UP 主空间）在这里重载自己因凭据失败停住的内容。复核前凭据已被某次读取删除时，
     /// 账户范围不会变化，不会经账户会话同步重载，只有这里能让它恢复。
     func authenticationRevalidationConfirmedSignedOut()
 

@@ -6,4 +6,9 @@
 public enum BiliAppReadPath {
     /// 首页推荐。
     public static let recommendations = "/x/v2/feed/index"
+    /// UP 主空间投稿（`vmid`、`ps`、`order`，翻页另带上一批最后一条的 `param` 作 `aid`）；未登录也能稳定读取，网页的
+    /// WBI 投稿接口匿名时会被间歇风控。
+    public static let uploaderVideos = "/x/v2/space/archive/cursor"
+    /// UP 主空间内搜索投稿（`vmid`、`keyword`、`pn`、`ps`）；按页码翻页，结果按发布时间倒序，未登录也能读取。
+    public static let uploaderVideoSearch = "/x/v2/space/search"
 }

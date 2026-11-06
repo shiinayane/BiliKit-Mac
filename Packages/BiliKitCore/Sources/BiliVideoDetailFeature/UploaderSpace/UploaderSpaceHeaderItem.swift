@@ -6,18 +6,21 @@ import BiliVideoCollectionUI
 struct UploaderSpaceHeaderContent: Equatable {
     let name: String
     let avatarURL: URL?
-    /// 投稿总数未知（首页加载中）时为 nil，不显示。
+    /// 投稿总数（搜索时是结果数）未知时为 nil，不显示。
     let totalCount: Int?
     let order: UploaderVideoOrder
+    /// 在空间内搜索：排序对搜索结果不生效，不显示排序；数目写作结果数。
+    let isSearching: Bool
 }
 
-/// 空间层头部：头像、名字与投稿数，右侧三段排序；左侧留空给 `UploaderSpaceSidebarView` 的悬浮返回按钮。
+/// 空间层头部：头像、名字与投稿数，右侧排序（搜索时不显示）。
 ///
-/// 随列表一起滚动，滚到工具栏下由系统做边缘模糊；返回按钮不在头部里，所以滚走后仍可点。
+/// 是列表的第一行，随列表一起滚动，滚到工具栏下由系统做边缘模糊；返回按钮与搜索框在 `UploaderSpaceSidebarView` 顶部
+/// 浮动的一行里，不随列表滚走。
 @MainActor
 final class UploaderSpaceHeaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceHeaderItem")
-    static let orders: [UploaderVideoOrder] = [.newest, .mostPlayed, .mostFavorited]
+    static let orders: [UploaderVideoOrder] = [.newest, .mostPlayed]
 
     private let headerView = UploaderSpaceHeaderView()
 
@@ -39,7 +42,7 @@ final class UploaderSpaceHeaderItem: NativeLayoutSizedCollectionItem {
     }
 }
 
-/// 空间头部的内容视图：头像、名字、投稿数与三段排序。
+/// 空间头部的内容视图：头像、名字、投稿数与排序（搜索时不显示排序）。
 ///
 /// 拥有头像加载 Task：换头像地址时取消上一次，到达的头像只在地址仍相同时显示；`cancelAvatarRequest` 经条目的
 /// `invalidateImageRequests` 在头部离屏（`didEndDisplaying`）与列表拆除时调用。
@@ -58,8 +61,7 @@ private final class UploaderSpaceHeaderView: NSView {
     private let orderControl = NSSegmentedControl(
         labels: [
             VideoDetailFeatureStrings.localized("最新发布"),
-            VideoDetailFeatureStrings.localized("最多播放"),
-            VideoDetailFeatureStrings.localized("最多收藏")
+            VideoDetailFeatureStrings.localized("最多播放")
         ],
         trackingMode: .selectOne,
         target: nil,
@@ -98,11 +100,15 @@ private final class UploaderSpaceHeaderView: NSView {
         nameLabel.stringValue = content.name
         nameLabel.setAccessibilityLabel(VideoDetailFeatureStrings.localized("UP 主，\(content.name)"))
         if let totalCount = content.totalCount {
-            countLabel.stringValue = VideoDetailFeatureStrings.localized("\(totalCount) 个投稿")
+            countLabel.stringValue =
+                content.isSearching
+                ? VideoDetailFeatureStrings.localized("\(totalCount) 条结果")
+                : VideoDetailFeatureStrings.localized("\(totalCount) 个投稿")
             countLabel.isHidden = false
         } else {
             countLabel.isHidden = true
         }
+        orderControl.isHidden = content.isSearching
         orderControl.selectedSegment =
             UploaderSpaceHeaderItem.orders.firstIndex(of: content.order) ?? 0
         if avatarURL != content.avatarURL {
@@ -125,13 +131,13 @@ private final class UploaderSpaceHeaderView: NSView {
         let midY = bounds.midY
         let avatarSize = UploaderSpaceGeometry.avatarSize
         avatar.frame = NSRect(
-            x: padding + UploaderSpaceGeometry.backButtonSlotWidth + spacing,
+            x: padding,
             y: midY - avatarSize / 2,
             width: avatarSize,
             height: avatarSize
         )
 
-        let controlSize = orderControl.fittingSize
+        let controlSize = orderControl.isHidden ? .zero : orderControl.fittingSize
         orderControl.frame = NSRect(
             x: bounds.width - padding - controlSize.width,
             y: midY - controlSize.height / 2,
@@ -140,7 +146,9 @@ private final class UploaderSpaceHeaderView: NSView {
         )
 
         let textX = avatar.frame.maxX + spacing
-        let textWidth = max(0, orderControl.frame.minX - spacing - textX)
+        let textTrailing =
+            orderControl.isHidden ? bounds.width - padding : orderControl.frame.minX - spacing
+        let textWidth = max(0, textTrailing - textX)
         let nameHeight = nameLabel.fittingSize.height
         let countHeight = countLabel.isHidden ? 0 : countLabel.fittingSize.height
         let textTop = midY - (nameHeight + countHeight) / 2

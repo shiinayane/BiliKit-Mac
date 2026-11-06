@@ -89,13 +89,22 @@ public protocol SearchSuggestionRepository: Sendable {
     func searchSuggestions(for term: String) async throws -> [String]
 }
 
-/// UP 主空间投稿列表的只读 port；只按账户读取，本地无凭据时失败，不退回匿名请求。
+/// UP 主空间投稿列表的只读 port：未登录也可读取，登录时由实现带上账户凭据。
+///
+/// 按游标翻页：`cursor` 为 nil 时读第一批，之后传上一批给出的 `nextCursor`。
 public protocol UploaderVideoRepository: Sendable {
     func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
-        page: Int
-    ) async throws -> UploaderVideoPage
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch
+
+    /// 在空间内按已规范化的关键词搜索投稿；游标语义同上，结果顺序由服务端决定。
+    func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch
 }
 
 /// 播放页只读 UP 主名片（签名与大会员状态）所需的独立 port；具体账户读取策略由 adapter 隐藏。

@@ -3,52 +3,60 @@ import BiliModels
 import BiliUI
 import BiliVideoCollectionUI
 
-/// 原生列表需要的全部展示值；加载、失败等状态由 SwiftUI 覆盖层负责，这里只画头部与已加载的行。
+/// 原生列表需要的全部展示值；第一批的加载、失败等状态由 SwiftUI 覆盖层负责，这里画头部、已加载的行与底部加载行。
 struct UploaderSpaceListContent: Equatable {
-    /// 换 UP 主、排序或页码时滚回顶部；空间内换视频不改变它。
-    struct PageIdentity: Equatable {
+    /// 换 UP 主、排序或搜索词时滚回顶部；加载下一批与空间内换视频不改变它。
+    struct ListIdentity: Equatable {
         let ownerID: Int64
         let order: UploaderVideoOrder
-        let page: Int
+        let searchKeyword: String?
     }
 
     let header: UploaderSpaceHeaderContent
     let rows: [UploaderVideoRowPresentation]
     let currentBVID: String?
-    let pageIdentity: PageIdentity
-    let reservesPagerSpace: Bool
+    let listIdentity: ListIdentity
+    /// `.none` 时列表底部不放加载行。
+    let footer: UploaderSpaceFooter
+    /// ViewModel 的 `loadMoreTailIdentity`：近尾自动加载按它每个尾部只请求一次。
+    let tailIdentity: UInt64?
 }
 
-/// 空间列表的用户动作：切换排序、选择投稿，以及投稿行的卡片菜单；由 `UploaderSpaceSidebarView` 接到
-/// ViewModel 与 App 回调。
+/// 空间列表的用户动作：切换排序、选择投稿、加载下一批（近尾自动加载与失败后重试共用），以及投稿行的卡片菜单；由
+/// `UploaderSpaceSidebarView` 接到 ViewModel 与 App 回调。
 struct UploaderSpaceListActions {
     let selectOrder: (UploaderVideoOrder) -> Void
     let selectVideo: (String) -> Void
+    let loadMore: () -> Void
     /// 按投稿行取卡片菜单；每次右键、读屏询问或执行时调用，返回 nil 时不弹菜单。
     let cardMenu: (UploaderVideoRowPresentation) -> NativeVideoCardMenu?
 
     @MainActor static let none = UploaderSpaceListActions(
         selectOrder: { _ in },
         selectVideo: { _ in },
+        loadMore: {},
         cardMenu: { _ in nil }
     )
 }
 
-/// 列表条目身份：头部固定一个，投稿行按 BVID 区分。
+/// 列表条目身份：头部与底部加载行各固定一个，投稿行按 BVID 区分。
 enum UploaderSpaceListItemID: Hashable, Sendable {
     case header
     case video(String)
+    case footer
 }
 
-/// UP 主空间列表的 `NSCollectionView` 协调器：头部与投稿行在同一个集合视图里，拥有 diffable 数据源、悬停与
+/// UP 主空间列表的 `NSCollectionView` 协调器：头部、投稿行与底部加载行在同一个集合视图里，拥有 diffable 数据源、悬停与
 /// 滚动观察；行高固定，不需要测量缓存。
 ///
 /// 投稿行的卡片菜单经集合视图的 `cardMenu` 按 BVID 转给 `actions.cardMenu`，右键、Control-点按与读屏操作都由共用的
 /// `NativeVideoCardCollectionView` 处理。
 ///
-/// 投稿数据、排序与分页归 `UploaderSpaceViewModel`；加载、空、失败与登录提示由 SwiftUI 覆盖层负责。取图经注入的
-/// port。`tearDown` 由 `UploaderSpaceSidebarView` 在视图拆除时调用一次：移除观察、清掉悬停并取消可见项的图片
-/// 请求，之后的 `update` 直接返回。用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
+/// 投稿数据、排序与翻页归 `UploaderSpaceViewModel`；第一批的加载、空与失败由 SwiftUI 覆盖层负责。底部加载行进入
+/// 视野时请求下一批：判断在一轮 main actor 之后进行（`pagination`，等本轮布局与可见项更新完），由
+/// `NearEndPagination` 保证每个尾部只请求一次、实时滚动中一次手势只请求一次。取图经注入的 port。`tearDown` 由
+/// `UploaderSpaceSidebarView` 在视图拆除时调用一次：取消待做的翻页判断、移除观察、清掉悬停并取消可见项的图片请求，
+/// 之后的 `update` 直接返回。用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 @MainActor
 final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowLayout {
     private enum Section: Int, Hashable, Sendable {
@@ -69,6 +77,16 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
     private var actions = UploaderSpaceListActions.none
     private var observers = NativeVideoNotificationObservers()
     private var isTornDown = false
+    /// 等一轮 main actor 再判断是否加载下一批，`tearDown` 时取消。
+    ///
+    /// 内容更新不取消：待做的判断读到的是执行那一刻的内容。
+    private let pagination = NativePlaybackSidebarPaginationScheduler()
+    /// 近尾加载的布防状态：新尾部到来时立即重新布防。
+    ///
+    /// 阈值是底部加载行进入视野，可能矮于一批投稿，也可能新一批并入后它仍在视野里（去重后只多了几条）；不立即重新布防的话
+    /// 只能等用户把它滚出再滚回才继续。
+    private var nearEnd = NearEndPagination<UInt64>(tailChangeInsideThreshold: .rearms)
+    private var isLiveScrolling = false
 
     init(imagePipeline: any VideoDetailImageLoading) {
         self.imagePipeline = imagePipeline
@@ -86,21 +104,23 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
             uniquingKeysWith: { first, _ in first }
         )
 
-        if previous == nil || previous?.rows.map(\.bvid) != next.rows.map(\.bvid) {
-            applySnapshot(rows: next.rows)
-        }
-        if previous?.reservesPagerSpace != next.reservesPagerSpace {
-            layout.invalidateLayout()
+        if previous == nil || previous?.rows.map(\.bvid) != next.rows.map(\.bvid)
+            || (previous?.footer == UploaderSpaceFooter.none) != (next.footer == .none)
+        {
+            applySnapshot(rows: next.rows, hasFooter: next.footer != .none)
         }
         reconfigureVisibleItems()
-        if previous?.pageIdentity != next.pageIdentity {
+        if previous?.listIdentity != next.listIdentity {
+            nearEnd.reset()
             scrollToTop(animated: false)
         }
+        scheduleLoadMoreIfNeeded()
     }
 
     func tearDown() {
         guard !isTornDown else { return }
         isTornDown = true
+        pagination.cancel()
         collectionView.cardMenu = nil
         observers.removeAll()
         hover.forgetHoveredItem()
@@ -125,6 +145,10 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         collectionView.register(
             UploaderSpaceVideoRowItem.self,
             forItemWithIdentifier: UploaderSpaceVideoRowItem.reuseIdentifier
+        )
+        collectionView.register(
+            UploaderSpaceFooterItem.self,
+            forItemWithIdentifier: UploaderSpaceFooterItem.reuseIdentifier
         )
         collectionView.setAccessibilityLabel(VideoDetailFeatureStrings.localized("UP 主投稿"))
         // 每次取用时读当下的行与动作：菜单可能在行被替换、登录状态变化之后才弹出。
@@ -151,16 +175,29 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         observers.observeScrolling(of: scrollView) { [weak self] in
             self?.viewportDidScroll()
         }
+        observers.observe(NSScrollView.willStartLiveScrollNotification, object: scrollView) {
+            [weak self] in
+            self?.isLiveScrolling = true
+            self?.nearEnd.releaseBackpressure()
+            self?.scheduleLoadMoreIfNeeded()
+        }
+        observers.observe(NSScrollView.didEndLiveScrollNotification, object: scrollView) {
+            [weak self] in
+            self?.isLiveScrolling = false
+        }
         observers.observeAccessibilityDisplayOptions { [weak self] in
             self?.reconfigureVisibleItems()
         }
     }
 
-    private func applySnapshot(rows: [UploaderVideoRowPresentation]) {
+    private func applySnapshot(rows: [UploaderVideoRowPresentation], hasFooter: Bool) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, UploaderSpaceListItemID>()
         snapshot.appendSections([.header, .videos])
         snapshot.appendItems([.header], toSection: .header)
         snapshot.appendItems(rows.map { .video($0.bvid) }, toSection: .videos)
+        if hasFooter {
+            snapshot.appendItems([.footer], toSection: .videos)
+        }
         dataSource?.apply(snapshot, animatingDifferences: false)
     }
 
@@ -184,7 +221,22 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
             )
             if let row = item as? UploaderSpaceVideoRowItem { configure(row, bvid: bvid) }
             return item
+        case .footer:
+            let item = collectionView.makeItem(
+                withIdentifier: UploaderSpaceFooterItem.reuseIdentifier,
+                for: indexPath
+            )
+            if let footer = item as? UploaderSpaceFooterItem { configure(footer) }
+            return item
         }
+    }
+
+    private func configure(_ item: UploaderSpaceFooterItem) {
+        guard let content else { return }
+        item.configure(
+            footer: content.footer,
+            onRetry: { [weak self] in self?.actions.loadMore() }
+        )
     }
 
     private func configure(_ item: UploaderSpaceHeaderItem) {
@@ -221,6 +273,8 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
                 (item as? UploaderSpaceHeaderItem).map(configure)
             case .video(let bvid):
                 if let row = item as? UploaderSpaceVideoRowItem { configure(row, bvid: bvid) }
+            case .footer:
+                (item as? UploaderSpaceFooterItem).map(configure)
             }
         }
     }
@@ -234,11 +288,13 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
             0,
             collectionView.bounds.width - UploaderSpaceGeometry.listHorizontalInset * 2
         )
-        let isHeader = indexPath.section == Section.header.rawValue
-        return NSSize(
-            width: width,
-            height: isHeader ? UploaderSpaceGeometry.headerHeight : UploaderSpaceGeometry.rowHeight
-        )
+        let height =
+            switch dataSource?.itemIdentifier(for: indexPath) {
+            case .header: UploaderSpaceGeometry.headerHeight
+            case .footer: UploaderSpaceGeometry.footerHeight
+            case .video, nil: UploaderSpaceGeometry.rowHeight
+            }
+        return NSSize(width: width, height: height)
     }
 
     func collectionView(
@@ -249,18 +305,16 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         let horizontal = UploaderSpaceGeometry.listHorizontalInset
         if section == Section.header.rawValue {
             return NSEdgeInsets(
-                top: UploaderSpaceGeometry.listTopInset,
+                top: UploaderSpaceGeometry.headerTop,
                 left: horizontal,
                 bottom: UploaderSpaceGeometry.headerBottomSpacing,
                 right: horizontal
             )
         }
-        let pagerSpace =
-            content?.reservesPagerSpace == true ? PageNumberPagerGeometry.reservedHeight : 0
         return NSEdgeInsets(
             top: 0,
             left: horizontal,
-            bottom: UploaderSpaceGeometry.listBottomInset + pagerSpace,
+            bottom: UploaderSpaceGeometry.listBottomInset,
             right: horizontal
         )
     }
@@ -282,6 +336,36 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         scrollView.updateTopButtonVisibility()
         // 滚动不会产生 mouseEntered/Exited，按指针当前位置重选悬停行。
         hover.updateForCurrentPointerLocation(in: collectionView)
+        scheduleLoadMoreIfNeeded()
+    }
+
+    /// 等一轮 main actor 后判断底部加载行是否进入视野、是否该请求下一批；已有待做的判断时不重复安排。
+    private func scheduleLoadMoreIfNeeded() {
+        guard !isTornDown, !pagination.isScheduled else { return }
+        pagination.schedule { [weak self] in
+            guard let self, !self.isTornDown, let content = self.content else { return }
+            let state = NearEndTailState(
+                canLoadMore: content.footer == .loadMore || content.footer == .loading,
+                tailIdentity: content.tailIdentity,
+                isLoading: content.footer == .loading
+            )
+            guard
+                self.nearEnd.shouldLoadMore(
+                    isInsideThreshold: self.footerIsVisible,
+                    state: state,
+                    isLiveScrolling: self.isLiveScrolling
+                ), content.footer == .loadMore
+            else { return }
+            self.actions.loadMore()
+        }
+    }
+
+    private var footerIsVisible: Bool {
+        guard let footerPath = dataSource?.indexPath(for: .footer),
+            collectionView.indexPathsForVisibleItems().contains(footerPath),
+            let attributes = layout.layoutAttributesForItem(at: footerPath)
+        else { return false }
+        return attributes.frame.intersects(scrollView.documentVisibleRect)
     }
 
     @objc private func scrollToTopFromButton() {

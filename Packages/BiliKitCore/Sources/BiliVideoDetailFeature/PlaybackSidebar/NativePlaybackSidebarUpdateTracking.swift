@@ -58,9 +58,10 @@ final class NativePlaybackSidebarRefinementScheduler {
     }
 }
 
-/// 侧栏评论分页判断的调度：私有持有那个等一轮 main actor 再判断的 Task，同时只有一个。
+/// 侧栏列表近尾分页判断的调度（评论侧栏与 UP 主空间列表）：私有持有那个等一轮 main actor 再判断的 Task，同时只有一个。
 ///
-/// 侧栏控制器在快照更新、条目原地变化与拆除时取消；判断本身（代次、在途数、近尾状态）由调用方的闭包完成。
+/// 持有者决定何时取消（评论侧栏在快照更新、条目原地变化与拆除时，空间列表在拆除时）；判断本身（代次、在途数、
+/// 近尾状态）由调用方的闭包完成。
 @MainActor
 final class NativePlaybackSidebarPaginationScheduler {
     private var task: Task<Void, Never>?

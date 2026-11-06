@@ -6,28 +6,27 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定 UP 主投稿契约：WBI 签名的账户读取带空间 Referer 与排序映射，隐藏的统计不当作 0，单条损坏只丢
-/// 这一条，本地无凭据时不匿名请求，非法 MID 或页码不发请求，HTTP 403 不换 key 重试。
+/// 固定 UP 主投稿契约：App 端游标接口经 App 授权器签名（未登录也能读），排序只映射最新与最多播放；下一批游标是本批最后
+/// 一条的 `param`，只在 `has_next` 时给出，游标形状不对时不发请求；只收 BVID、标题与发布时间齐全的普通稿件，隐藏的统计
+/// 不当作 0，单条损坏只丢这一条。
+///
+/// 空间内搜索按页码翻页，条目的 av 号在本地换算成 BV 号、时长是“分:秒”字符串，最后一页没有下一批。
 struct UploaderVideoAPIClientTests {
     @Test
-    func pageMapsFieldsAndDropsInvalidEntries() async throws {
+    func batchMapsFieldsAndDropsUnsupportedEntries() async throws {
         let client = BiliAPIClient(
-            transport: StubTransport(
-                responses: [try fixtureResponse("uploader-videos")],
-                answersWBINavOnce: true
-            ),
-            requestAuthorizer: StubAuthorizer(),
-            timestampProvider: { 1_700_000_000 }
+            transport: StubTransport(responses: [try fixtureResponse("uploader-videos")]),
+            appRequestAuthorizer: StubAppAuthorizer()
         )
 
-        let page = try await client.uploaderVideos(ownerID: 10_001, order: .newest, page: 1)
+        let batch = try await client.uploaderVideos(ownerID: 10_001, order: .newest, after: nil)
 
-        #expect(page.videos.map(\.bvid) == ["BV1FixtureA1", "BV1FixtureB2"])
-        #expect(page.pageNumber == 1)
-        #expect(page.pageSize == 30)
-        #expect(page.totalCount == 61)
+        #expect(batch.videos.map(\.bvid) == ["BV1FixtureA1", "BV1FixtureB2"])
+        #expect(batch.totalCount == 61)
+        // 游标取本批最后一条的 `param`，即使那一条本身被丢弃，下一批也不会重复它之前的条目。
+        #expect(batch.nextCursor == UploaderVideoCursor(value: "900005"))
 
-        let first = page.videos[0]
+        let first = batch.videos[0]
         #expect(first.title == "投稿 & 一")
         #expect(first.coverURL?.absoluteString == "https://images.example.invalid/a.jpg")
         #expect(first.durationSeconds == 754)
@@ -36,10 +35,8 @@ struct UploaderVideoAPIClientTests {
         #expect(first.publishedAt == Date(timeIntervalSince1970: 1_720_000_000))
         #expect(!first.isCollaboration)
 
-        // 隐藏的统计（"--"）不当作 0；协议相对封面地址补成 https。
-        let second = page.videos[1]
+        let second = batch.videos[1]
         #expect(second.coverURL?.absoluteString == "https://images.example.invalid/b.jpg")
-        #expect(second.durationSeconds == 3_723)
         #expect(second.viewCount == nil)
         #expect(second.danmakuCount == nil)
         #expect(second.isCollaboration)
@@ -47,131 +44,129 @@ struct UploaderVideoAPIClientTests {
 
     @Test(arguments: [
         (UploaderVideoOrder.newest, "pubdate"),
-        (.mostPlayed, "click"),
-        (.mostFavorited, "stow")
+        (.mostPlayed, "click")
     ])
-    func requestIsSignedAccountReadWithSpaceReferer(
+    func requestIsASignedAppReadWithTheCursor(
         order: UploaderVideoOrder,
         apiValue: String
     ) async throws {
-        let transport = StubTransport(
-            responses: [try fixtureResponse("uploader-videos")],
-            answersWBINavOnce: true
-        )
-        let client = BiliAPIClient(
-            transport: transport,
-            requestAuthorizer: StubAuthorizer(),
-            timestampProvider: { 1_700_000_000 }
-        )
+        let transport = StubTransport(responses: [try fixtureResponse("uploader-videos")])
+        let authorizer = StubAppAuthorizer(carriesCredential: false)
+        let client = BiliAPIClient(transport: transport, appRequestAuthorizer: authorizer)
 
-        _ = try await client.uploaderVideos(ownerID: 10_001, order: order, page: 2)
-
-        let requests = transport.businessRequests()
-        #expect(requests.map(\.url.path) == ["/x/space/wbi/arc/search"])
-        let request = try #require(requests.first)
-        #expect(request.headers["Referer"] == "https://space.bilibili.com/10001/")
-        #expect(request.headers["Cookie"] == StubAuthorizer.cookie)
-        let query = queryFields(request)
-        #expect(query["mid"] == "10001")
-        #expect(query["pn"] == "2")
-        #expect(query["ps"] == "30")
-        #expect(query["order"] == apiValue)
-        #expect(query["wts"] == "1700000000")
-        #expect(query["w_rid"]?.count == 32)
-    }
-
-    @Test
-    func laterPageKeepsTheRequestedPageAndTotal() async throws {
-        let body = #"""
-            {"code":0,"data":{"list":{"vlist":[{"bvid":"BV1FixtureC3","title":"最后一条","pic":"","length":"00:30","play":1,"video_review":0,"created":1700000000}]},"page":{"count":61}}}
-            """#
-        let client = BiliAPIClient(
-            transport: StubTransport(responses: [jsonResponse(body)], answersWBINavOnce: true),
-            requestAuthorizer: StubAuthorizer(),
-            timestampProvider: { 1_700_000_000 }
+        _ = try await client.uploaderVideos(
+            ownerID: 10_001,
+            order: order,
+            after: UploaderVideoCursor(value: "900005")
         )
 
-        let page = try await client.uploaderVideos(ownerID: 10_001, order: .newest, page: 3)
-
-        #expect(page.videos.map(\.bvid) == ["BV1FixtureC3"])
-        #expect(page.pageNumber == 3)
-        #expect(page.totalCount == 61)
-    }
-
-    @Test
-    func missingCredentialFailsWithoutAnonymousRequest() async throws {
-        let transport = StubTransport(
-            responses: [try fixtureResponse("uploader-videos")],
-            answersWBINavOnce: true
-        )
-        let repository = BiliContentRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: StubAuthorizer(.fail(.missingCredential)),
-                timestampProvider: { 1_700_000_000 }
-            )
-        )
-
-        // 未登录是“需要登录”，不是“凭据失效”：后者会触发账户复核。
-        await #expect(throws: ContentApplicationError.authenticationRequired) {
-            try await repository.uploaderVideos(ownerID: 10_001, order: .newest, page: 1)
-        }
+        let request = try #require(await authorizer.requests.first)
+        #expect(request.url.host == "app.bilibili.com")
+        #expect(request.url.path == "/x/v2/space/archive/cursor")
         #expect(
-            !transport.capturedRequests().contains { $0.url.path == "/x/space/wbi/arc/search" }
+            queryFields(request) == [
+                "vmid": "10001", "ps": "20", "order": apiValue, "aid": "900005"
+            ]
         )
+        #expect(request.headers["Referer"] == nil)
+        #expect(transport.capturedRequests().count == 1)
     }
 
-    @Test(arguments: [(0, 1), (10_001, 0), (10_001, 10_001), (10_001, Int.max)] as [(Int64, Int)])
-    func invalidRequestSendsNothing(ownerID: Int64, page: Int) async throws {
+    /// 到底时没有下一批；`item` 缺失按空批处理。
+    @Test(arguments: [
+        #"{"code":0,"data":{"count":2,"has_next":false,"item":[{"goto":"av","param":"1","bvid":"BV1FixtureA1","title":"a","ctime":1700000000}]}}"#,
+        #"{"code":0,"data":{"count":2,"has_next":false}}"#
+    ])
+    func lastBatchHasNoCursor(body: String) async throws {
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [jsonResponse(body)]),
+            appRequestAuthorizer: StubAppAuthorizer()
+        )
+
+        let batch = try await client.uploaderVideos(ownerID: 10_001, order: .newest, after: nil)
+
+        #expect(batch.nextCursor == nil)
+        #expect(batch.totalCount == 2)
+    }
+
+    /// 非法 MID 或游标不是十进制数字（会被原样拼进 query）时不发请求。
+    @Test(
+        arguments: [
+            (0, nil),
+            (10_001, "1&ps=100"),
+            (10_001, ""),
+            (10_001, String(repeating: "9", count: 21))
+        ] as [(Int64, String?)]
+    )
+    func invalidRequestSendsNothing(ownerID: Int64, cursor: String?) async throws {
         let transport = StubTransport(responses: [])
-        let client = BiliAPIClient(transport: transport, requestAuthorizer: StubAuthorizer())
+        let client = BiliAPIClient(transport: transport, appRequestAuthorizer: StubAppAuthorizer())
 
         await #expect(throws: BiliAPIError.invalidRequest) {
-            try await client.uploaderVideos(ownerID: ownerID, order: .newest, page: page)
+            try await client.uploaderVideos(
+                ownerID: ownerID,
+                order: .newest,
+                after: cursor.map(UploaderVideoCursor.init(value:))
+            )
         }
         #expect(transport.capturedRequests().isEmpty)
     }
 
     @Test
-    func malformedItemIsDroppedWithoutFailingThePage() async throws {
-        // 第二条缺少 length、play 类型错误；只丢弃它，同页其他条目照常返回。
+    func searchMapsAIDsAndClockDurationsAndPagesByNumber() async throws {
         let body = #"""
-            {"code":0,"data":{"list":{"vlist":[
-              {"bvid":"BV1FixtureA1","title":"正常","pic":"","length":"01:00","play":1,"video_review":0,"created":1700000000},
-              {"bvid":"BV1FixtureB2","title":"异常","pic":"","play":true,"created":1700000000}
-            ]},"page":{"count":2}}}
+            {"code":0,"data":{"page":1,"total":41,"item":[
+              {"goto":"av","param":"170001","title":"搜 &amp; 索","cover":"http://images.example.invalid/s.jpg","duration":"11:29","play":3850065,"danmaku":3730,"ptime":1791289731},
+              {"goto":"av","param":"not-a-number","title":"坏条目","ptime":1791289731},
+              {"goto":"live","param":"170003","title":"直播","ptime":1791289731}
+            ]}}
             """#
-        let client = BiliAPIClient(
-            transport: StubTransport(responses: [jsonResponse(body)], answersWBINavOnce: true),
-            requestAuthorizer: StubAuthorizer(),
-            timestampProvider: { 1_700_000_000 }
+        let transport = StubTransport(responses: [jsonResponse(body)])
+        let authorizer = StubAppAuthorizer(carriesCredential: false)
+        let client = BiliAPIClient(transport: transport, appRequestAuthorizer: authorizer)
+
+        let batch = try await client.searchUploaderVideos(
+            ownerID: 10_001,
+            keyword: "游戏 攻略",
+            after: UploaderVideoCursor(value: "2")
         )
 
-        let page = try await client.uploaderVideos(ownerID: 10_001, order: .newest, page: 1)
-
-        #expect(page.videos.map(\.bvid) == ["BV1FixtureA1"])
-        #expect(page.totalCount == 2)
+        let request = try #require(await authorizer.requests.first)
+        #expect(request.url.path == "/x/v2/space/search")
+        #expect(
+            queryFields(request) == ["vmid": "10001", "keyword": "游戏 攻略", "pn": "2", "ps": "20"]
+        )
+        let video = try #require(batch.videos.first)
+        #expect(batch.videos.count == 1)
+        #expect(video.bvid == BiliVideoAID.bvid(fromAID: 170_001))
+        #expect(video.title == "搜 & 索")
+        #expect(video.durationSeconds == 689)
+        #expect(video.publishedAt == Date(timeIntervalSince1970: 1_791_289_731))
+        // 第 2 页之后已有 40 条，总数 41：还有第 3 页。
+        #expect(batch.nextCursor == UploaderVideoCursor(value: "3"))
+        #expect(batch.totalCount == 41)
     }
 
-    @Test
-    func riskControlForbiddenIsNotRetriedWithRefreshedKey() async throws {
-        let transport = StubTransport(
-            responses: [try fixtureResponse("nav"), HTTPResponse(statusCode: 403, body: Data())]
-        )
-        let repository = BiliContentRepository(
-            client: BiliAPIClient(
-                transport: transport,
-                requestAuthorizer: StubAuthorizer(),
-                timestampProvider: { 1_700_000_000 }
-            )
+    /// 已经是最后一页，或这一页没有条目（没有结果）时没有下一批。
+    @Test(arguments: [
+        (
+            #"{"code":0,"data":{"page":3,"total":41,"item":[{"goto":"av","param":"170001","title":"a","ptime":1}]}}"#,
+            "3"
+        ),
+        (#"{"code":0,"data":{"page":1,"total":0}}"#, "1")
+    ])
+    func searchStopsAtTheLastPage(body: String, page: String) async throws {
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [jsonResponse(body)]),
+            appRequestAuthorizer: StubAppAuthorizer()
         )
 
-        await #expect(throws: ContentApplicationError.requestRestricted) {
-            try await repository.uploaderVideos(ownerID: 10_001, order: .newest, page: 1)
-        }
-        #expect(
-            transport.capturedRequests().map(\.url.path)
-                == [StubTransport.wbiNavPath, "/x/space/wbi/arc/search"]
+        let batch = try await client.searchUploaderVideos(
+            ownerID: 10_001,
+            keyword: "a",
+            after: page == "1" ? nil : UploaderVideoCursor(value: page)
         )
+
+        #expect(batch.nextCursor == nil)
     }
 }
