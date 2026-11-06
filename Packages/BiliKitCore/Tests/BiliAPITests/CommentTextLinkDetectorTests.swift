@@ -149,23 +149,34 @@ struct CommentTextLinkDetectorTests {
         )
     }
 
-    /// 时间戳：`m:ss`（分钟最多 3 位）与 `h:mm:ss`；是否超出视频时长到显示时再判断。
+    /// 时间戳：`m:ss`（分钟最多 3 位）与 `h:mm:ss`，分隔符半角、全角冒号都认，后面紧跟字母或中文照常识别；
+    /// 是否超出视频时长到显示时再判断。
     @Test
     func timestampsInPlainText() {
-        let links = detected("1:23 处，还有 01:02:03 和 120:00，以及（12:34）")
+        let links = detected(
+            "1:23 处，还有 01:02:03 和 120:00，以及（12:34）、2：05、1：02：03、3:45s、4:56this"
+        )
 
-        #expect(links.map(\.text) == ["1:23", "01:02:03", "120:00", "12:34"])
+        #expect(
+            links.map(\.text) == [
+                "1:23", "01:02:03", "120:00", "12:34", "2：05", "1：02：03", "3:45", "4:56"
+            ]
+        )
         #expect(
             links.map(\.target) == [
                 .timestamp(seconds: 83),
                 .timestamp(seconds: 3_723),
                 .timestamp(seconds: 7_200),
-                .timestamp(seconds: 754)
+                .timestamp(seconds: 754),
+                .timestamp(seconds: 125),
+                .timestamp(seconds: 3_723),
+                .timestamp(seconds: 225),
+                .timestamp(seconds: 296)
             ]
         )
     }
 
-    /// 不是时间的写法不识别：秒不是两位或不小于 60、比例、更长的数字串、全角冒号、网址里的时间。
+    /// 不是时间的写法不识别：秒不是两位或不小于 60、比例、更长的数字串、前面紧挨字母、全角数字、网址里的时间。
     @Test(
         arguments: [
             "1:2",
@@ -178,8 +189,8 @@ struct CommentTextLinkDetectorTests {
             "１：２３",
             "p1:23",
             "x264:10",
-            "1:23s",
-            "1：23",
+            "12：34：56：78",
+            "p1：23",
             "https://example.com/a?at=10:30"
         ]
     )

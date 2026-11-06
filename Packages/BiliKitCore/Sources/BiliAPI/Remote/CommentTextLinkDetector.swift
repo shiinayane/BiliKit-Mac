@@ -59,11 +59,12 @@ enum CommentTextLinkDetector {
             target: videoTarget
         ),
         // 时间戳：`h:mm:ss` 或 `m:ss`（分钟最多 3 位），秒与带小时时的分钟必须是两位且小于 60；
-        // 前后紧挨字母、数字或冒号时是型号、编号或更长数字串的一部分（`p1:23`、`x264:10`）。全角冒号
-        // 不认。是否超出可跳转时长到显示时再判断。
+        // 分隔符半角、全角冒号都认，中文输入法下常打出全角。前面紧挨字母、数字或冒号时是型号、编号
+        // 或更长数字串的一部分（`p1:23`、`x264:10`）；后面只排除数字与冒号，紧跟的字母多是单位或
+        // 英文正文（`1:23s`、`1:23this`），与紧跟中文一样照常识别。是否超出可跳转时长到显示时再判断。
         Rule(
             pattern: compiled(
-                #"(?<![A-Za-z0-9:])(?:[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]|[0-9]{1,3}:[0-5][0-9])(?![A-Za-z0-9:])"#
+                #"(?<![A-Za-z0-9:：])(?:[0-9]{1,2}[:：][0-5][0-9][:：][0-5][0-9]|[0-9]{1,3}[:：][0-5][0-9])(?![0-9:：])"#
             ),
             claimsMatch: false,
             trimsURLPunctuation: false,
@@ -141,7 +142,8 @@ enum CommentTextLinkDetector {
     }
 
     private static func timestampTarget(_ text: String) -> CommentLinkTarget? {
-        let seconds = text.split(separator: ":").reduce(0) { total, part in
+        let parts = text.split { $0 == ":" || $0 == "：" }
+        let seconds = parts.reduce(0) { total, part in
             total * 60 + (Int(part) ?? 0)
         }
         return .timestamp(seconds: seconds)
