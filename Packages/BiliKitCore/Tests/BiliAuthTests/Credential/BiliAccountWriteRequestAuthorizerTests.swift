@@ -15,9 +15,6 @@ struct BiliAccountWriteRequestAuthorizerTests {
     private static let favoriteDealBody =
         "rid=170001&type=2&add_media_ids=11,12&del_media_ids=&platform=web"
     private static let favoriteRemoveBody = "resources=170001:2&media_id=11&platform=web"
-    private static let likePath = "/x/web-interface/archive/like"
-    private static let coinPath = "/x/web-interface/coin/add"
-    private static let triplePath = "/x/web-interface/archive/like/triple"
     private static let followPath = "/x/relation/modify"
     private static let accountID = "42"
 
@@ -44,11 +41,6 @@ struct BiliAccountWriteRequestAuthorizerTests {
     }
 
     @Test(arguments: [
-        (likePath, "aid=170001&like=1"),
-        (likePath, "aid=170001&like=2"),
-        (coinPath, "aid=170001&multiply=1&select_like=0"),
-        (coinPath, "aid=170001&multiply=2&select_like=1"),
-        (triplePath, "aid=170001"),
         (followPath, "fid=7&act=1&re_src=11"),
         (followPath, "fid=7&act=2&re_src=11"),
         (favoriteDealPath, favoriteDealBody),
@@ -100,21 +92,8 @@ struct BiliAccountWriteRequestAuthorizerTests {
         }
     }
 
-    /// 点赞、投币、三连与关注只收单个稿件或 UP 主与固定取值：投币不超过 2 枚，关注只能关注或取消，网页的统计字段与
-    /// `cross_domain` 都不收。
+    /// 关注只收单个 UP 主与固定取值：只能关注或取消，网页的统计字段都不收。
     @Test(arguments: [
-        (likePath, "aid=170001&like=0"),
-        (likePath, "aid=170001&like=3"),
-        (likePath, "aid=170001"),
-        (likePath, "aid=170001,170002&like=1"),
-        (likePath, "aid=170001&like=1&spmid=333.788.0.0"),
-        (coinPath, "aid=170001&multiply=3&select_like=0"),
-        (coinPath, "aid=170001&multiply=0&select_like=0"),
-        (coinPath, "aid=170001&multiply=1"),
-        (coinPath, "aid=170001&multiply=1&select_like=2"),
-        (coinPath, "aid=170001&multiply=1&select_like=0&cross_domain=true"),
-        (triplePath, "aid=170001&ga=1"),
-        (triplePath, "bvid=BV17x411w7KC"),
         // 同一接口的拉黑（5）、移出黑名单（6）、移除粉丝（7）与悄悄关注（3、4）改动的是另一种关系。
         (followPath, "fid=7&act=5&re_src=11"),
         (followPath, "fid=7&act=3&re_src=11"),
@@ -125,7 +104,7 @@ struct BiliAccountWriteRequestAuthorizerTests {
         (followPath, "fid=7&act=1&re_src=14"),
         (followPath, "fid=7&act=1&re_src=11&gaia_source=web_main")
     ])
-    func rejectsEngagementBodiesOutsideTheSchema(path: String, body: String) async throws {
+    func rejectsFollowBodiesOutsideTheSchema(path: String, body: String) async throws {
         let authorizer = try makeAuthorizer()
 
         await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {

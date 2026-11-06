@@ -357,7 +357,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 登录用 TV 端扫码：成功正文同时带网页 Cookie 与 App 端 access_token、refresh_token，三者存在同一份凭据里，一起过期、一起删除；
 续期用 refresh_token 换回整份新凭据（Cookie 一并换新），由进程唯一的 `AccountCredentialRenewal` 串行执行，认证服务在恢复确认仍登录
 后调用它、等它结束才发布已登录：启动时只在临近到期时续期，复核时强制续期一次，使只有 token 失效的凭据在复核后的重载里恢复；
-续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
+续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」，播放页的点赞、投币、三连）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
 `BiliAuth`；Application 只暴露非秘密认证状态与 `AuthenticationServicing`，二维码图像走 `BiliAuthFeature`
 定义的窄 Presentation port 注入。请求 builder（`RequestAccess` 与请求管线）只在 `BiliAPI` 内部可见，由各域
 endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 `RequestAccess`；授权器由 Composition 注入。
@@ -398,9 +398,10 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   不可操作（换视频正在加载或失败）时快捷键与按钮一样不响应。点赞乐观改动、失败放回，是否“已在本地改过”在写入成功时判断；
   投币与三连不可撤回，成功后才改状态，并让更早的回滚与在途读取作废，失败时重读一次（服务端可能已部分生效）；三连的收藏
   进默认收藏夹，按收藏写入刷新收藏夹。键盘状态机在 keyUp 判断短按点赞，按住 `longPressDelay` 显示三连进度、`tripleHoldDuration` 时三连，中途松开不
-  动作。投币面板与「收藏到…」在主窗口里，AVKit 独立全屏时 W／E 只提示先退出全屏。网页接口对部分稿件以 -403（账号异常）
-  拒绝第三方客户端，补网页统计字段、视频页 Referer 与 B 站下发的 buvid 都没有改善；这时结果胶囊给出「在浏览器中
-  打开」（停留更久），改走 App 端接口见 ROADMAP 候选。
+  动作。投币面板与「收藏到…」在主窗口里，AVKit 独立全屏时 W／E 只提示先退出全屏。点赞、投币、三连走 App 端接口：
+  网页的这三个接口对部分账号或稿件以 -401／-403 拒绝第三方客户端（补网页统计字段、视频页 Referer 与 B 站下发的 buvid 都
+  没有改善），同一时刻 App 端成功；不采用网页失败后再试 App 端的回退，同一意图只发一次。App 端仍返回 -403 时结果胶囊给出
+  「在浏览器中打开」（停留更久）。互动状态的读取与关注仍走网页。
 - 关注 UP 主：播放侧栏 UP 主行的关注按钮读同一个 `VideoEngagementModel`，关注状态取自同一次 `archive/relation`（`attention`），
   随它按账户重读与复核；不另建关注模型，也不用名片里的 `following`：名片按 UP 主沿用（`VideoViewModel`），不随账户重读。
   粉丝数与投稿数取自名片，只读展示，关注后不在本地增减。意图只带 BVID，协调者从互动状态取 UP 主 mid（自己的视频不发），

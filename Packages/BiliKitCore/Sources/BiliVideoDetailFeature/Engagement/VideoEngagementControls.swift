@@ -132,13 +132,25 @@ struct VideoEngagementControls: View {
     }
 }
 
-/// 投币面板：选 1 或 2 枚（转载视频与只剩 1 枚可投时只有 1 枚），默认 1 枚（投币不可撤回，按 W 再按回车不该一次投出
-/// 2 枚）；可同时点赞（已点赞时不出现）；已投满时只给说明。
+/// 投币面板：选 1 或 2 枚（转载视频与只剩 1 枚可投时只有 1 枚），默认取能投的最多枚数；可同时点赞（已点赞时不出现）；
+/// 已投满时只给说明。
+///
+/// 默认 2 枚是用户的选择：投币不可撤回，按 W 再按回车会直接投出 2 枚，改回 1 枚要先在分段控件里切换。
 private struct VideoCoinPanel: View {
     let model: VideoEngagementModel
     let onSubmit: (_ count: Int, _ alsoLike: Bool) -> Void
-    @State private var count = 1
+    @State private var count: Int
     @State private var alsoLike = true
+
+    init(model: VideoEngagementModel, onSubmit: @escaping (_ count: Int, _ alsoLike: Bool) -> Void)
+    {
+        self.model = model
+        self.onSubmit = onSubmit
+        // 分段控件只有能投的那几档，默认值必须是其中之一，否则控件没有选中项。
+        _count = State(
+            initialValue: max(1, min(VideoCoinPanelGeometry.defaultCount, model.remainingCoins))
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: VideoCoinPanelGeometry.spacing) {
@@ -178,8 +190,10 @@ private struct VideoCoinPanel: View {
     }
 }
 
-/// 投币面板的几何。
+/// 投币面板的几何与默认枚数。
 private enum VideoCoinPanelGeometry {
+    /// 打开面板时选中的枚数（能投的不足时取能投的最多枚数）。
+    static let defaultCount = 2
     static let width: CGFloat = 220
     static let padding: CGFloat = 16
     static let spacing: CGFloat = 12

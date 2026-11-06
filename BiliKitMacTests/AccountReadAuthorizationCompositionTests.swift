@@ -160,14 +160,17 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/v2/history/toview/del",
                 "/x/v3/fav/resource/deal",
                 "/x/v3/fav/resource/batch-del",
-                "/x/web-interface/archive/like",
-                "/x/web-interface/coin/add",
-                "/x/web-interface/archive/like/triple",
                 "/x/relation/modify"
             ]
         )
         #expect(
-            LiveAPIClients.mainAppWriteAllowedPaths == ["/x/feed/dislike", "/x/feed/dislike/cancel"]
+            LiveAPIClients.mainAppWriteAllowedPaths == [
+                "/x/feed/dislike",
+                "/x/feed/dislike/cancel",
+                "/x/v2/view/like",
+                "/x/v2/view/coin/add",
+                "/x/v2/view/like/triple"
+            ]
         )
         // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
         for client in [LiveAPIClients.cdnBenchmark(), LiveAPIClients.watchProgressWriter()] {
@@ -198,11 +201,6 @@ struct AccountWriteAuthorizationCompositionTests {
             BiliAccountWritePath.favoriteFolderEntryRemove: (
                 "https://www.bilibili.com/", "resources=170001:2&media_id=11&platform=web"
             ),
-            BiliAccountWritePath.videoLike: ("https://www.bilibili.com/", "aid=170001&like=1"),
-            BiliAccountWritePath.videoCoin: (
-                "https://www.bilibili.com/", "aid=170001&multiply=1&select_like=1"
-            ),
-            BiliAccountWritePath.videoTriple: ("https://www.bilibili.com/", "aid=170001"),
             BiliAccountWritePath.relationModify: (
                 "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
             )
@@ -239,26 +237,65 @@ struct AccountWriteAuthorizationCompositionTests {
             ),
             allowedPaths: LiveAPIClients.mainAppWriteAllowedPaths
         )
-        for path in LiveAPIClients.mainAppWriteAllowedPaths {
-            let request = HTTPRequest(
-                url: try #require(
-                    URL(
-                        string: "https://app.bilibili.com\(path)?goto=av&id=170001&reason_id=12"
-                            + "&mobi_app=iphone&device=pad&build=1"
-                    )
-                ),
-                headers: [
-                    "Accept": "application/json",
-                    "User-Agent": HTTPUserAgent.browserCompatible
-                ]
+        let dislikeQuery = "goto=av&id=170001&reason_id=12&mobi_app=iphone&device=pad&build=1"
+        let requests: [String: HTTPRequest] = [
+            BiliAppWritePath.recommendationDislike: try Self.appGET(
+                BiliAppWritePath.recommendationDislike,
+                query: dislikeQuery
+            ),
+            BiliAppWritePath.recommendationDislikeCancel: try Self.appGET(
+                BiliAppWritePath.recommendationDislikeCancel,
+                query: dislikeQuery
+            ),
+            BiliAppWritePath.videoLike: try Self.appForm(
+                BiliAppWritePath.videoLike,
+                body: "aid=170001&like=0"
+            ),
+            BiliAppWritePath.videoCoin: try Self.appForm(
+                BiliAppWritePath.videoCoin,
+                body: "aid=170001&multiply=2&select_like=1"
+            ),
+            BiliAppWritePath.videoTriple: try Self.appForm(
+                BiliAppWritePath.videoTriple,
+                body: "aid=170001"
             )
+        ]
+        #expect(Set(requests.keys) == LiveAPIClients.mainAppWriteAllowedPaths)
 
+        for (path, request) in requests {
             let authorized = try await authorizer.authorize(request, boundTo: "42")
 
             #expect(authorized.url.path == path)
-            #expect(authorized.url.query?.contains("access_key=") == true)
-            #expect(authorized.url.query?.contains("&sign=") == true)
+            let signed =
+                request.method == .get
+                ? authorized.url.query
+                : authorized.body.flatMap { String(data: $0, encoding: .utf8) }
+            #expect(signed?.contains("access_key=") == true)
+            #expect(signed?.contains("&sign=") == true)
         }
+    }
+
+    private static func appGET(_ path: String, query: String) throws -> HTTPRequest {
+        HTTPRequest(
+            url: try #require(URL(string: "https://app.bilibili.com\(path)?\(query)")),
+            headers: [
+                "Accept": "application/json",
+                "User-Agent": HTTPUserAgent.browserCompatible
+            ]
+        )
+    }
+
+    private static func appForm(_ path: String, body: String) throws -> HTTPRequest {
+        HTTPRequest(
+            url: try #require(URL(string: "https://app.bilibili.com\(path)")),
+            method: .post,
+            headers: [
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": HTTPUserAgent.browserCompatible
+            ],
+            body: Data(body.utf8)
+        )
     }
 }
 

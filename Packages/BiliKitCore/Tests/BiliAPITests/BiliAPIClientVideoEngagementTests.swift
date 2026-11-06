@@ -5,10 +5,10 @@ import BiliNetworking
 import Foundation
 import Testing
 
-/// 固定播放页互动契约：互动状态按账户读取、带 aid 与 bvid，缺点赞、投币、收藏任一项整份失败，缺是否关注只让关注状态
-/// 未知；点赞、投币、三连只发最少字段，经账户写授权器绑定账户，并在授权之后附加随机 `buvid3`；关注只发 `fid`、`act`、
-/// `re_src`，不附加 `buvid3`，不给自己发；重复点赞、取消未赞与重复关注按成功处理，投币、三连与关注的业务码与风控映射为对应
-/// 的写入错误，-403（账号异常）是这个客户端被拒、网页上可以完成。
+/// 固定播放页互动契约：互动状态按账户读取（网页）、带 aid 与 bvid，缺点赞、投币、收藏任一项整份失败，缺是否关注只让关注
+/// 状态未知；点赞、投币、三连是发往 App 端的 POST 表单，只发最少字段（点赞 `like` 0 是点赞、1 是取消），经 App 写授权器
+/// 绑定账户，不带 Cookie 与 Referer；关注仍是网页表单，只发 `fid`、`act`、`re_src`，不给自己发；重复点赞、取消未赞与重复
+/// 关注按成功处理，投币、三连与关注的业务码与风控映射为对应的写入错误，-403（账号异常）是这个客户端被拒、网页上可以完成。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAPIClientVideoEngagementTests {
     private static let bvid = "BV17x411w7KC"
@@ -75,7 +75,7 @@ struct BiliAPIClientVideoEngagementTests {
         (true, "1"),
         (false, "2")
     ])
-    func followSendsTheMinimalFormWithoutBuvid3(isFollowing: Bool, act: String) async throws {
+    func followSendsTheMinimalWebForm(isFollowing: Bool, act: String) async throws {
         let transport = StubTransport(responses: [statusResponse(code: 0)])
         let authorizer = StubSubjectBoundAuthorizer()
         let repository = BiliVideoEngagementRepository(
@@ -140,43 +140,44 @@ struct BiliAPIClientVideoEngagementTests {
         #expect(transport.capturedRequests().isEmpty)
     }
 
+    /// App 端的点赞值与网页相反：0 是点赞、1 是取消，写反就会把赞取消掉。
     @Test(arguments: [
-        (true, "1"),
-        (false, "2")
+        (true, "0"),
+        (false, "1")
     ])
-    func likeSendsTheMinimalFormWithBuvid3(isLiked: Bool, like: String) async throws {
+    func likeSendsTheMinimalAppForm(isLiked: Bool, like: String) async throws {
         let transport = StubTransport(responses: [statusResponse(code: 0)])
         let authorizer = StubSubjectBoundAuthorizer()
         let repository = BiliVideoEngagementRepository(
-            client: BiliAPIClient(transport: transport, accountWriteAuthorizer: authorizer)
+            client: BiliAPIClient(transport: transport, appWriteAuthorizer: authorizer)
         )
 
         try await repository.setLiked(isLiked, target: try target(), accountID: 42)
 
         let authorized = try #require(await authorizer.capturedRequests().last)
         #expect(await authorizer.subjects == ["42"])
-        #expect(
-            authorized.url.absoluteString == "https://api.bilibili.com/x/web-interface/archive/like"
-        )
-        #expect(authorized.headers["Referer"] == "https://www.bilibili.com/")
+        #expect(authorized.url.absoluteString == "https://app.bilibili.com/x/v2/view/like")
+        #expect(authorized.method == .post)
         #expect(formFields(authorized) == ["aid": "170001", "like": like])
-        // 授权器不注入 buvid3；它在授权之后附加，发出的请求里与授权器给的 Cookie 并列。
-        #expect(authorized.headers["Cookie"] == nil)
+        #expect(authorized.headers["Referer"] == nil)
+        #expect(authorized.headers["Origin"] == nil)
+        // 发出的就是授权器给出的请求，client 不再附加 `buvid3` 等 Cookie。
         let sent = try #require(transport.capturedRequests().last)
-        #expect(sent.headers["Cookie"]?.contains("buvid3=") == true)
+        #expect(sent.headers["Cookie"] == StubAuthorizer.cookie)
     }
 
     @Test
     func coinAndTripleSendTheMinimalForms() async throws {
         let transport = StubTransport(responses: [
             jsonResponse(#"{"code":0,"message":"OK","data":{"like":true}}"#),
+            // App 端三连的实测形状：逐项结果是 0／1，没有风控字段；币已投满时 `multiply` 为 0。
             jsonResponse(
-                #"{"code":0,"data":{"like":true,"coin":true,"fav":true,"multiply":1,"is_risk":false,"gaia_res_type":0}}"#
+                #"{"code":0,"message":"OK","data":{"coin":1,"fav":1,"like":1,"multiply":0,"prompt":0,"prompt_text":"","toast":"FIXTURE"}}"#
             )
         ])
         let authorizer = StubSubjectBoundAuthorizer()
         let repository = BiliVideoEngagementRepository(
-            client: BiliAPIClient(transport: transport, accountWriteAuthorizer: authorizer)
+            client: BiliAPIClient(transport: transport, appWriteAuthorizer: authorizer)
         )
 
         let liked = try await repository.addCoins(
@@ -194,20 +195,21 @@ struct BiliAPIClientVideoEngagementTests {
                     isLiked: true,
                     isCoined: true,
                     isFavorited: true,
-                    addedCoinCount: 1
+                    addedCoinCount: 0
                 )
         )
         let requests = await authorizer.capturedRequests()
         #expect(
-            requests.map(\.url.path) == [
-                "/x/web-interface/coin/add", "/x/web-interface/archive/like/triple"
+            requests.map(\.url.absoluteString) == [
+                "https://app.bilibili.com/x/v2/view/coin/add",
+                "https://app.bilibili.com/x/v2/view/like/triple"
             ]
         )
         #expect(formFields(requests[0]) == ["aid": "170001", "multiply": "2", "select_like": "1"])
         #expect(formFields(requests[1]) == ["aid": "170001"])
         #expect(
             transport.capturedRequests().allSatisfy {
-                $0.headers["Cookie"]?.contains("buvid3=") == true
+                $0.headers["Cookie"] == StubAuthorizer.cookie
             }
         )
     }
@@ -230,7 +232,7 @@ struct BiliAPIClientVideoEngagementTests {
         let repository = BiliVideoEngagementRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [statusResponse(code: code)]),
-                accountWriteAuthorizer: StubSubjectBoundAuthorizer()
+                appWriteAuthorizer: StubSubjectBoundAuthorizer()
             )
         )
         let target = try target()
@@ -257,7 +259,7 @@ struct BiliAPIClientVideoEngagementTests {
         let repository = BiliVideoEngagementRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [statusResponse(code: code)]),
-                accountWriteAuthorizer: StubSubjectBoundAuthorizer()
+                appWriteAuthorizer: StubSubjectBoundAuthorizer()
             )
         )
         let target = try target()
@@ -284,7 +286,7 @@ struct BiliAPIClientVideoEngagementTests {
         let repository = BiliVideoEngagementRepository(
             client: BiliAPIClient(
                 transport: StubTransport(responses: [jsonResponse(body)]),
-                accountWriteAuthorizer: StubSubjectBoundAuthorizer()
+                appWriteAuthorizer: StubSubjectBoundAuthorizer()
             )
         )
         let target = try target()
@@ -300,7 +302,7 @@ struct BiliAPIClientVideoEngagementTests {
         let transport = StubTransport(responses: [])
         let client = BiliAPIClient(
             transport: transport,
-            accountWriteAuthorizer: StubSubjectBoundAuthorizer()
+            appWriteAuthorizer: StubSubjectBoundAuthorizer()
         )
 
         await #expect(throws: BiliAPIError.invalidRequest) {

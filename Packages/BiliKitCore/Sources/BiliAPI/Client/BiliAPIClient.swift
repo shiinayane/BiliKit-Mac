@@ -121,7 +121,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 调小可能误拒较大的正常列表，调大放宽单次解码的输入规模。
     private static let maximumResponseSize = 5 * 1_024 * 1_024
 
-    /// 搜索、点赞、投币与三连接口要求的 `buvid3`，进程内随机生成一次，只附加到这几种请求。
+    /// 搜索接口要求的 `buvid3`，进程内随机生成一次，只附加到搜索请求。
     ///
     /// 只在内存中，不持久化、不关联账户；格式与 yt-dlp 相同（小写 UUID + `infoc`）。见
     /// SECURITY-MODEL §3。
@@ -604,9 +604,15 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         try endpoint(path: path) { _ in }
     }
 
-    /// App 端接口的地址；签名与 access_token 由 App 授权器在授权时写入 query。
-    func appEndpoint(path: String, queryItems: [URLQueryItem]) throws -> URL {
-        try endpoint(baseURL: Self.appBaseURL, path: path) { $0.queryItems = queryItems }
+    /// App 端接口的地址；签名与 access_token 由 App 授权器在授权时写入 query 或表单。
+    ///
+    /// `queryItems` 为空时不写 query：App 端表单写入的 URL 不能带 `?`，授权器按“没有 query”校验。
+    func appEndpoint(path: String, queryItems: [URLQueryItem] = []) throws -> URL {
+        try endpoint(baseURL: Self.appBaseURL, path: path) { components in
+            if !queryItems.isEmpty {
+                components.queryItems = queryItems
+            }
+        }
     }
 
     /// WBI 签名后的 query 已按签名顺序编码，必须原样使用。
