@@ -1,7 +1,7 @@
 # BiliKit App Icon v1
 
-本目录保存 BiliKit v1 App Icon 的几何源文件。实际构建输入以及可继续编辑的
-Icon Composer 文档位于 `BiliKitMac/AppIcon.icon`。
+本目录保存 BiliKit v1 App Icon 的几何源文件，已由 [v2](../v2/) 取代。
+`BiliKitMac/AppIcon.icon` 现在对应 v2；本目录只作历史参照，不再是构建输入。
 
 > [!IMPORTANT]
 > 本目录及 `BiliKitMac/AppIcon.icon` 中的品牌资产不属于仓库 MIT 授权范围。
@@ -30,20 +30,11 @@ Icon Composer 中的分组从后向前依次为：
 2. `Blue Foreground`
    - `03-blue-foreground.svg`
 
-K 的两条斜臂有意共用同一个分组和材质设置。纳入版本控制的 `.icon` 文档是 v1
-背景、Liquid Glass、透明度、阴影、外观模式和平台配置的唯一权威来源。
-
-## 编辑流程
-
-1. 后续版本如需修改已经锁定的几何，先复制整个 v1 目录。
-2. 使用矢量编辑器修改 SVG 几何，不得裁剪 1024 × 1024 画布。
-3. 使用 Icon Composer 替换 `BiliKitMac/AppIcon.icon` 中对应的图像。
-4. 分别以大、小预览尺寸检查 Default、Dark 和 Mono 外观。
-5. 构建 App，并在 Finder、Dock、Launchpad 和“关于”面板中检查实际渲染结果。
+K 的两条斜臂有意共用同一个分组和材质设置。
 
 ## 宣传图导出
 
-以下 PNG 均直接从 Icon Composer 导出：
+以下 PNG 均是 v1 当时直接从 Icon Composer 导出的：
 
 - `Marketing/BiliKit-AppIcon-Default-1024.png`：1024 × 1024 宣传母版。
 - `Marketing/BiliKit-AppIcon-Default-256.png`：Default 外观的 256 × 256 轻量版本。
@@ -57,6 +48,3 @@ K 的两条斜臂有意共用同一个分组和材质设置。纳入版本控制
 - 比例：1×
 - 光照角度：-45°
 - 色彩配置：Display P3
-
-修改任何 Icon Composer 材质或外观设置后，都应从 `BiliKitMac/AppIcon.icon` 重新导出
-这些 PNG。不要直接合并原始 SVG 图层来重建宣传图，否则会丢失系统渲染的材质效果。

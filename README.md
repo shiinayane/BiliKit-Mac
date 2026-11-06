@@ -1,13 +1,13 @@
 <p align="center">
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Default-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Default-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Default"
   >
   &nbsp;&nbsp;
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Dark-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Dark-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Dark"
@@ -145,7 +145,7 @@ sh Scripts/run-quality-gates.sh app
 ```
 
 [架构](docs/ARCHITECTURE.md) · [安全模型](docs/SECURITY-MODEL.md) · [发布流程](docs/release/README.md) ·
-[安全问题报告](SECURITY.md) · [App Icon 源文件](Design/AppIcon/v1/) · [宣传截图](Design/Marketing/v2/)
+[安全问题报告](SECURITY.md) · [App Icon 源文件](Design/AppIcon/v2/) · [宣传截图](Design/Marketing/v2/)
 </details>
 
 ## 许可证与声明
