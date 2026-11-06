@@ -1,13 +1,13 @@
 <p align="center">
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Default-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Default-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Default"
   >
   &nbsp;&nbsp;
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Dark-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Dark-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Dark"
@@ -146,7 +146,7 @@ sh Scripts/run-quality-gates.sh app
 
 The following documents are in Chinese:
 [Architecture](docs/ARCHITECTURE.md) · [Security model](docs/SECURITY-MODEL.md) · [Release process](docs/release/README.md) ·
-[Reporting security issues](SECURITY.md) · [App Icon sources](Design/AppIcon/v1/) · [Screenshots](Design/Marketing/v2/)
+[Reporting security issues](SECURITY.md) · [App Icon sources](Design/AppIcon/v2/) · [Screenshots](Design/Marketing/v2/)
 </details>
 
 ## License and notices

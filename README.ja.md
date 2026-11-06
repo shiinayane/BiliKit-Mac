@@ -1,13 +1,13 @@
 <p align="center">
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Default-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Default-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Default"
   >
   &nbsp;&nbsp;
   <img
-    src="Design/AppIcon/v1/Marketing/BiliKit-AppIcon-Dark-256.png"
+    src="Design/AppIcon/v2/Marketing/BiliKit-AppIcon-Dark-256.png"
     width="136"
     height="136"
     alt="BiliKit App Icon Dark"
@@ -146,7 +146,7 @@ sh Scripts/run-quality-gates.sh app
 
 以下のドキュメントは中国語です：
 [アーキテクチャ](docs/ARCHITECTURE.md) · [セキュリティモデル](docs/SECURITY-MODEL.md) · [リリース手順](docs/release/README.md) ·
-[セキュリティ問題の報告](SECURITY.md) · [App Icon のソース](Design/AppIcon/v1/) · [スクリーンショット](Design/Marketing/v2/)
+[セキュリティ問題の報告](SECURITY.md) · [App Icon のソース](Design/AppIcon/v2/) · [スクリーンショット](Design/Marketing/v2/)
 </details>
 
 ## ライセンスと表記
