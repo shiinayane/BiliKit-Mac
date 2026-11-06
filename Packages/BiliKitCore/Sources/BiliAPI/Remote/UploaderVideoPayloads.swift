@@ -102,3 +102,89 @@ struct UploaderVideoArchiveItemPayload: Decodable, Sendable {
         )
     }
 }
+
+/// UP 主空间内搜索（App 端 `/x/v2/space/search`）的 `data`，由 `BiliAPIClient` 的空间扩展映射为 `UploaderVideoBatch`。
+///
+/// 按页码翻页：本页有条目且前面各页加本页仍不足 `total` 时，下一批游标是下一页的页码。条目没有 BVID，`param` 是 av 号，
+/// 在本地换算；只收普通稿件（`goto` 为 av）且标题与发布时间齐全的条目，逐条宽松解码。
+struct UploaderVideoSearchPayload: Decodable, Sendable {
+    let total: Int
+    let items: [UploaderVideoSearchItemPayload]
+    /// 本页原始条目数（含被丢弃的），用于判断是否还有下一页。
+    let rawItemCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case total
+        case item
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        total = container.decodeLossyIfPresent(Int.self, forKey: .total) ?? 0
+        // 没有结果时 `item` 缺失：按空页处理。
+        let lossy =
+            (try? container.decode(
+                [LossyDecodable<UploaderVideoSearchItemPayload>].self,
+                forKey: .item
+            ))
+            ?? []
+        rawItemCount = lossy.count
+        items = lossy.compactMap(\.value)
+    }
+
+    func model(page: Int, pageSize: Int) -> UploaderVideoBatch {
+        let hasNext =
+            rawItemCount > 0 && page < BiliAPIClient.uploaderVideoSearchMaximumPage
+            && page * pageSize < total
+        return UploaderVideoBatch(
+            videos: items.compactMap { $0.model() },
+            nextCursor: hasNext ? UploaderVideoCursor(value: String(page + 1)) : nil,
+            totalCount: total
+        )
+    }
+}
+
+/// 空间内搜索结果的一项；`duration` 是 `"MM:SS"` 或 `"H:MM:SS"` 字符串（与投稿列表的秒数不同）。
+struct UploaderVideoSearchItemPayload: Decodable, Sendable {
+    let param: String
+    let goto: String?
+    let title: String?
+    let cover: String?
+    let duration: String?
+    let play: Int64?
+    let danmaku: Int64?
+    let ptime: Int64?
+
+    private enum CodingKeys: String, CodingKey {
+        case param, goto, title, cover, duration, play, danmaku, ptime
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        param = try container.decode(String.self, forKey: .param)
+        goto = container.decodeLossyIfPresent(String.self, forKey: .goto)
+        title = container.decodeLossyIfPresent(String.self, forKey: .title)
+        cover = container.decodeLossyIfPresent(String.self, forKey: .cover)
+        duration = container.decodeLossyIfPresent(String.self, forKey: .duration)
+        play = container.decodeLossyIfPresent(FlexibleInt64.self, forKey: .play)?.value
+        danmaku = container.decodeLossyIfPresent(FlexibleInt64.self, forKey: .danmaku)?.value
+        ptime = container.decodeLossyIfPresent(Int64.self, forKey: .ptime)
+    }
+
+    func model() -> UploaderVideo? {
+        guard goto == "av", let aid = Int64(param), let bvid = BiliVideoAID.bvid(fromAID: aid),
+            let title, let ptime
+        else { return nil }
+        return UploaderVideo(
+            bvid: bvid,
+            title: RemoteHTMLText.plainText(title),
+            coverURL: cover.flatMap(WebImageURL.parse),
+            durationSeconds: duration.flatMap(RemoteClockDuration.seconds),
+            viewCount: play,
+            danmakuCount: danmaku,
+            publishedAt: Date(timeIntervalSince1970: TimeInterval(ptime)),
+            // 搜索结果不标联合投稿。
+            isCollaboration: false
+        )
+    }
+}

@@ -77,6 +77,16 @@ public struct BiliContentRepository: FeedRepository, VideoRepository,
         }
     }
 
+    public func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
+        try await mapError {
+            try await client.searchUploaderVideos(ownerID: ownerID, keyword: keyword, after: cursor)
+        }
+    }
+
     public func playback(
         for bvid: String,
         cid: Int64

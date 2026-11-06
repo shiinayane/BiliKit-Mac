@@ -261,6 +261,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 - **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
   模糊。底部加载行进入视野时请求下一批（`NearEndPagination`，每个尾部一次，实时滚动中一次手势一次）；App 端投稿接口
   只有游标，不能跳页，所以不用页码条。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
+- 空间顶部浮动的一行（返回按钮与空间内搜索框）不随列表滚动；搜索框是 AppKit `NSSearchField`：SwiftUI `.searchable`
+  只能放进窗口工具栏，放不进侧栏的上下文层。只在回车或清空时提交，提交后放下焦点，空格与方向键回到播放器快捷键。
 - 图片由窗口级匿名、有界的 `NativeVideoImagePipeline` 加载（Now Playing 封面另有进程级实例）；cell 离屏、复用
   和 teardown 取消等待者，缓存上界只在 `NativeVideoImageCacheLimits`。
 - 评论图片预览的图片区是 AppKit `NSScrollView`：SwiftUI 没有现成的“触控板双指缩放 + 两指平移 + 回弹”容器。

@@ -50,7 +50,8 @@ enum LiveAPIClients {
     /// 窗口主 API 可发出的 App 端读取；只引用 BiliAPI 的 `BiliAppReadPath`。
     static let mainAppReadAllowedPaths: Set<String> = [
         BiliAppReadPath.recommendations,
-        BiliAppReadPath.uploaderVideos
+        BiliAppReadPath.uploaderVideos,
+        BiliAppReadPath.uploaderVideoSearch
     ]
 
     /// 窗口主 API 可发出的 App 端写入；只引用 BiliAPI 的 `BiliAppWritePath`，授权器另按自己的 schema 表逐条校验。

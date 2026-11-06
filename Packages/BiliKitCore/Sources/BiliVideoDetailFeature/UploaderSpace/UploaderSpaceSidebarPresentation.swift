@@ -10,6 +10,8 @@ struct UploaderSpaceSidebarPresentation: Equatable {
         case none
         case loading
         case empty
+        /// 空间内搜索没有结果。
+        case noResults
         /// 失败原因决定说明文字与是否给重试（风控、凭据、网络分开说明）。
         case failure(ContentApplicationError)
     }
@@ -18,14 +20,14 @@ struct UploaderSpaceSidebarPresentation: Equatable {
     /// 投稿数未知（第一批加载中）或为 0 时不显示。
     let headerTotalCount: Int?
 
-    init(state: UploaderSpaceState, totalCount: Int?) {
+    init(state: UploaderSpaceState, totalCount: Int?, isSearching: Bool) {
         switch state {
         case .closed:
             overlay = .none
         case .loading:
             overlay = .loading
         case .loaded(let videos):
-            overlay = videos.isEmpty ? .empty : .none
+            overlay = videos.isEmpty ? (isSearching ? .noResults : .empty) : .none
         case .failed(let error):
             overlay = .failure(error)
         }

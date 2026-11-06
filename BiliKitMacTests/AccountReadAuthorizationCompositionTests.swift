@@ -81,7 +81,7 @@ struct AccountReadAuthorizationCompositionTests {
         #expect(LiveAPIClients.watchProgressAccountReadAllowedPaths == nil)
         #expect(
             LiveAPIClients.mainAppReadAllowedPaths == [
-                "/x/v2/feed/index", "/x/v2/space/archive/cursor"
+                "/x/v2/feed/index", "/x/v2/space/archive/cursor", "/x/v2/space/search"
             ]
         )
     }
@@ -111,6 +111,7 @@ struct AccountReadAuthorizationCompositionTests {
         ]
         #expect(BiliAppReadPath.recommendations == "/x/v2/feed/index")
         #expect(BiliAppReadPath.uploaderVideos == "/x/v2/space/archive/cursor")
+        #expect(BiliAppReadPath.uploaderVideoSearch == "/x/v2/space/search")
         for (constant, literal) in constants {
             #expect(constant == literal)
         }

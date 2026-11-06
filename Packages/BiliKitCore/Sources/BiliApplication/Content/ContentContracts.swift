@@ -98,6 +98,13 @@ public protocol UploaderVideoRepository: Sendable {
         order: UploaderVideoOrder,
         after cursor: UploaderVideoCursor?
     ) async throws -> UploaderVideoBatch
+
+    /// 在空间内按已规范化的关键词搜索投稿；游标语义同上，结果顺序由服务端决定。
+    func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch
 }
 
 /// 播放页只读 UP 主名片（签名与大会员状态）所需的独立 port；具体账户读取策略由 adapter 隐藏。

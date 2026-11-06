@@ -22,10 +22,12 @@ public enum UploaderSpaceFooter: Sendable, Equatable {
     case failed(ContentApplicationError)
 }
 
-/// 拥有侧栏 UP 主空间层的 UP 主、排序、已加载的投稿与最新请求 Task。
+/// 拥有侧栏 UP 主空间层的 UP 主、排序、已提交的搜索词、已加载的投稿与最新请求 Task。
 ///
 /// 投稿按游标累积（`PagedVideoList`，按 BVID 去重，无进展即停止），滚动到底时由列表调用 `loadMore` 取下一批；同一
-/// UP 主再次打开保持已加载的内容，换 UP 主或排序从第一批重来。未登录也能读取（App 端匿名签名），所以没有登录提示。
+/// UP 主再次打开保持已加载的内容，换 UP 主或排序从第一批重来。有搜索词时列表换成空间内搜索结果（顺序由服务端决定，
+/// 排序不生效），清空搜索从投稿第一批重新读取；换 UP 主或关闭时清掉搜索词。未登录也能读取（App 端匿名签名），所以
+/// 没有登录提示。
 ///
 /// 第一批与下一批共用一个 `LatestTask`：新意图替换旧请求，迟到结果经 `isCurrent` 丢弃；`close` 取消。请求途中收到
 /// 并非自己被取消的取消，说明认证会话已切换，空间属于上一个身份，直接关闭。凭据失效时请求一次账户复核，复核有了确定
@@ -35,6 +37,8 @@ public enum UploaderSpaceFooter: Sendable, Equatable {
 public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
     public private(set) var owner: VideoOwner?
     public private(set) var order: UploaderVideoOrder = .newest
+    /// 已提交的空间内搜索词（已规范化）；nil 表示在看投稿列表。
+    public private(set) var searchKeyword: String?
     /// 服务端给出的投稿总数；第一批成功前、换 UP 主或关闭后为 nil。
     public private(set) var totalCount: Int?
 
@@ -98,6 +102,7 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         profileTask.cancel()
         self.owner = owner
         order = .newest
+        searchKeyword = nil
         totalCount = nil
         reload()
     }
@@ -150,29 +155,51 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         profileTask.cancel()
         owner = nil
         order = .newest
+        searchKeyword = nil
         totalCount = nil
         phase = .closed
         list = PagedVideoList(stallPolicy: .stop)
         revalidation.reset()
     }
 
-    /// 换排序从第一批重来。
+    /// 换排序从第一批重来；搜索时排序不生效、控件也不显示，不动作。
     public func setOrder(_ order: UploaderVideoOrder) {
-        guard owner != nil, self.order != order else { return }
+        guard owner != nil, searchKeyword == nil, self.order != order else { return }
         self.order = order
         reload()
     }
 
-    /// 从第一批重新读取：失败重试，或换 UP 主、排序之后。
+    /// 提交搜索框里的词：规范化后为空等于清空搜索；超过长度上限不动作；与当前搜索词相同时重新搜索。
+    public func submitSearch(_ text: String) {
+        guard owner != nil else { return }
+        let keyword = SearchText.normalized(text)
+        guard !keyword.isEmpty else {
+            clearSearch()
+            return
+        }
+        guard SearchText.isWithinLimit(keyword) else { return }
+        searchKeyword = keyword
+        totalCount = nil
+        reload()
+    }
+
+    /// 退出搜索，从投稿第一批重新读取；没有在搜索时不动作。
+    public func clearSearch() {
+        guard owner != nil, searchKeyword != nil else { return }
+        searchKeyword = nil
+        totalCount = nil
+        reload()
+    }
+
+    /// 从第一批重新读取：失败重试，或换 UP 主、排序、搜索词之后。
     public func reload() {
-        guard let ownerID = owner?.id else { return }
-        let order = order
-        let useCase = useCase
+        guard owner != nil else { return }
+        let fetch = fetcher()
         phase = .loading
         list = PagedVideoList(stallPolicy: .stop)
         loadTask.replace { [weak self] isCurrent in
             do {
-                let batch = try await useCase.batch(ownerID: ownerID, order: order, after: nil)
+                let batch = try await fetch(nil)
                 guard let self, isCurrent() else { return }
                 list.replaceFirstPage(Self.page(batch), bvid: \.bvid)
                 totalCount = batch.totalCount
@@ -195,14 +222,13 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
 
     /// 近尾自动加载与加载失败后的重试共用：请求列表给出的同一游标；没有下一批或正在加载时不动作。
     public func loadMore() {
-        guard phase == .loaded, let ownerID = owner?.id, let cursor = list.beginLoadMore() else {
+        guard phase == .loaded, owner != nil, let cursor = list.beginLoadMore() else {
             return
         }
-        let order = order
-        let useCase = useCase
+        let fetch = fetcher()
         loadTask.replace { [weak self] isCurrent in
             do {
-                let batch = try await useCase.batch(ownerID: ownerID, order: order, after: cursor)
+                let batch = try await fetch(cursor)
                 guard let self, isCurrent() else { return }
                 list.apply(Self.page(batch), requested: cursor, bvid: \.bvid)
                 totalCount = batch.totalCount
@@ -241,6 +267,19 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         if revalidation.concluded() {
             reload()
         }
+    }
+
+    /// 按此刻的 UP 主、排序与搜索词取一批的请求；在发起时捕获，之后改动这些状态不影响已发出的请求。
+    private func fetcher() -> @Sendable (UploaderVideoCursor?) async throws -> UploaderVideoBatch {
+        let useCase = useCase
+        let ownerID = owner?.id ?? 0
+        let order = order
+        if let keyword = searchKeyword {
+            return { cursor in
+                try await useCase.search(ownerID: ownerID, keyword: keyword, after: cursor)
+            }
+        }
+        return { cursor in try await useCase.batch(ownerID: ownerID, order: order, after: cursor) }
     }
 
     private static func page(

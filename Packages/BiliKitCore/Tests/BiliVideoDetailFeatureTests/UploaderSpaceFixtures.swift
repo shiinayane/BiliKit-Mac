@@ -58,11 +58,12 @@ struct UploaderSpaceListFixture {
                     name: "UP 主",
                     avatarURL: nil,
                     totalCount: nil,
-                    order: .newest
+                    order: .newest,
+                    isSearching: false
                 ),
                 rows: rows,
                 currentBVID: nil,
-                listIdentity: .init(ownerID: 1, order: .newest),
+                listIdentity: .init(ownerID: 1, order: .newest, searchKeyword: nil),
                 footer: .none,
                 tailIdentity: nil
             ),

@@ -5,10 +5,11 @@ import BiliVideoCollectionUI
 
 /// 原生列表需要的全部展示值；第一批的加载、失败等状态由 SwiftUI 覆盖层负责，这里画头部、已加载的行与底部加载行。
 struct UploaderSpaceListContent: Equatable {
-    /// 换 UP 主或排序时滚回顶部；加载下一批与空间内换视频不改变它。
+    /// 换 UP 主、排序或搜索词时滚回顶部；加载下一批与空间内换视频不改变它。
     struct ListIdentity: Equatable {
         let ownerID: Int64
         let order: UploaderVideoOrder
+        let searchKeyword: String?
     }
 
     let header: UploaderSpaceHeaderContent
@@ -304,7 +305,7 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
         let horizontal = UploaderSpaceGeometry.listHorizontalInset
         if section == Section.header.rawValue {
             return NSEdgeInsets(
-                top: UploaderSpaceGeometry.listTopInset,
+                top: UploaderSpaceGeometry.headerTop,
                 left: horizontal,
                 bottom: UploaderSpaceGeometry.headerBottomSpacing,
                 right: horizontal

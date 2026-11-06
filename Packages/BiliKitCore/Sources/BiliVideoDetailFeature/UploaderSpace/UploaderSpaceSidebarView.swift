@@ -8,7 +8,7 @@ import SwiftUI
 /// 压在侧栏上的 UP 主空间层。
 ///
 /// 原生列表画头部、已加载的行与底部加载行；第一批的加载中、空与失败由本视图按 ViewModel 状态叠在头部下方。
-/// 返回按钮悬浮在左上角，不随列表滚走。
+/// 返回按钮与空间内搜索框在顶部浮动的一行里，不随列表滚走，列表从它下方开始。
 public struct UploaderSpaceSidebarView: View {
     let model: UploaderSpaceViewModel
     let currentBVID: String?
@@ -44,7 +44,8 @@ public struct UploaderSpaceSidebarView: View {
     public var body: some View {
         let presentation = UploaderSpaceSidebarPresentation(
             state: model.state,
-            totalCount: model.totalCount
+            totalCount: model.totalCount,
+            isSearching: model.searchKeyword != nil
         )
         let live = liveContent(presentation)
         let content = live ?? lastFrame.content
@@ -68,25 +69,30 @@ public struct UploaderSpaceSidebarView: View {
             }
             stateOverlay(presentation.overlay)
                 .padding(.top, UploaderSpaceGeometry.stateContentTop)
-            backButton
+            topBar
         }
     }
 
-    /// 悬浮返回按钮，⌘[ 同样返回；叠在列表与状态覆盖层之上，在顶部时落在头部左侧留出的那一格里。
-    private var backButton: some View {
-        FloatingIconButton(
-            "chevron.left",
-            label: VideoDetailFeatureStrings.localized("返回详情"),
-            action: model.close
-        )
-        .keyboardShortcut("[", modifiers: .command)
-        // 它叠在最上层，默认会被读屏排到列表之后；视觉上它在头部最左，读屏也先读它。
+    /// 顶部浮动的一行：返回按钮（⌘[ 同样返回）与空间内搜索框；叠在列表与状态覆盖层之上。
+    ///
+    /// 搜索框以 UP 主为身份重建：换 UP 主时草稿清空，与 ViewModel 清掉的搜索词一致。
+    private var topBar: some View {
+        HStack(spacing: UploaderSpaceGeometry.topBarSpacing) {
+            FloatingIconButton(
+                "chevron.left",
+                label: VideoDetailFeatureStrings.localized("返回详情"),
+                action: model.close
+            )
+            .keyboardShortcut("[", modifiers: .command)
+            UploaderSpaceSearchField(onSubmit: model.submitSearch)
+                .id(model.owner?.id)
+                // 超大档的搜索框固有高度 36pt，与左侧返回按钮（large 档、24pt 图标的圆形按钮）等高。
+                .controlSize(.extraLarge)
+        }
+        // 它叠在最上层，默认会被读屏排到列表之后；视觉上它在最上面，读屏也先读它。
         .accessibilitySortPriority(1)
-        .frame(
-            width: UploaderSpaceGeometry.backButtonSlotWidth,
-            height: UploaderSpaceGeometry.headerHeight
-        )
-        .padding(.leading, UploaderSpaceGeometry.backButtonSlotLeading)
+        .frame(height: UploaderSpaceGeometry.topBarHeight)
+        .padding(.horizontal, UploaderSpaceGeometry.topBarHorizontalPadding)
         .padding(.top, UploaderSpaceGeometry.listTopInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -131,13 +137,15 @@ public struct UploaderSpaceSidebarView: View {
                 name: owner.name.isEmpty ? "UID \(owner.id)" : owner.name,
                 avatarURL: owner.avatarURL,
                 totalCount: presentation.headerTotalCount,
-                order: model.order
+                order: model.order,
+                isSearching: model.searchKeyword != nil
             ),
             rows: rows,
             currentBVID: currentBVID,
             listIdentity: UploaderSpaceListContent.ListIdentity(
                 ownerID: owner.id,
-                order: model.order
+                order: model.order,
+                searchKeyword: model.searchKeyword
             ),
             footer: model.footer,
             tailIdentity: model.loadMoreTailIdentity
@@ -158,6 +166,8 @@ public struct UploaderSpaceSidebarView: View {
                 .revealsAfterLoadingDelay()
         case .empty:
             message(VideoDetailFeatureStrings.localized("还没有投稿"))
+        case .noResults:
+            message(VideoDetailFeatureStrings.localized("没有找到相关投稿"))
         case .failure(let error):
             // 紧凑布局只放一行说明：共享说明已分开风控、凭据失效、凭据读不到与网络，标题只会重复它。
             message(

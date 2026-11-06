@@ -589,6 +589,14 @@ struct UnavailableUploaderVideoRepository: UploaderVideoRepository {
     ) async throws -> UploaderVideoBatch {
         throw ContentApplicationError.unavailable
     }
+
+    func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
+        throw ContentApplicationError.unavailable
+    }
 }
 
 /// 侧栏上下文层（UP 主空间）的真实模型；投稿读取恒失败，名片请求挂起到测试放行。

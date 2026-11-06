@@ -8,7 +8,7 @@ import Testing
 /// UP 主空间视图模型的游标翻页、排序与重开规则。
 ///
 /// 打开时读最新排序的第一批；滚到底加载下一批并累积，到底后不再请求；加载下一批失败保留已显示的投稿、由用户重试同一
-/// 游标。同一 UP 主再次打开保持已加载的内容并更新资料、失败时顺带重试，换 UP 主回到默认排序与第一批，换排序从第一批
+/// 游标。提交搜索词换成空间内搜索结果、排序不生效，清空搜索或换 UP 主回到投稿列表的第一批。同一 UP 主再次打开保持已加载的内容并更新资料、失败时顺带重试，换 UP 主回到默认排序与第一批，换排序从第一批
 /// 重来；关闭后的迟到结果不写回。只有 MID 的入口先打开、名片到达后补名字；凭据失效请求窗口复核，复核有了结果后停在
 /// 失败页的第一批重载一次；会话在请求途中切换时关闭空间。
 @Suite(.timeLimit(.minutes(1)))
@@ -150,6 +150,51 @@ struct UploaderSpaceViewModelTests {
 
         #expect(model.state == .failed(.authenticationInvalid))
         #expect(await repository.calls.map(\.batch) == [0, 0])
+    }
+
+    /// 提交搜索词换成空间内搜索结果（下一批沿用同一关键词），排序在搜索时不生效；清空搜索从投稿第一批重新读取。
+    @Test
+    func searchReplacesTheListAndClearingReloadsTheFirstBatch() async {
+        let repository = UploaderVideoRepositoryStub()
+        let model = makeModel(repository)
+        model.open(owner: owner)
+        await waitForLoaded(model, count: 1)
+
+        model.submitSearch("  游戏  ")
+        #expect(model.searchKeyword == "游戏")
+        await waitForLoaded(model, count: 1)
+        model.loadMore()
+        await waitForLoaded(model, count: 2)
+        model.setOrder(.mostPlayed)
+        model.submitSearch("")
+        await waitForLoaded(model, count: 1)
+
+        #expect(model.searchKeyword == nil)
+        #expect(model.order == .newest)
+        #expect(
+            await repository.calls == [
+                .init(ownerID: 10_001, order: .newest, batch: 0),
+                .init(ownerID: 10_001, order: .newest, batch: 0, keyword: "游戏"),
+                .init(ownerID: 10_001, order: .newest, batch: 1, keyword: "游戏"),
+                .init(ownerID: 10_001, order: .newest, batch: 0)
+            ]
+        )
+    }
+
+    @Test
+    func openingAnotherOwnerClearsTheSearch() async {
+        let repository = UploaderVideoRepositoryStub()
+        let model = makeModel(repository)
+        model.open(owner: owner)
+        await waitForLoaded(model, count: 1)
+        model.submitSearch("游戏")
+        await waitForLoaded(model, count: 1)
+
+        model.open(owner: anotherOwner)
+        await waitForLoaded(model, count: 1)
+
+        #expect(model.searchKeyword == nil)
+        #expect(await repository.calls.last == .init(ownerID: 10_002, order: .newest, batch: 0))
     }
 
     @Test
@@ -300,6 +345,8 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         let order: UploaderVideoOrder
         /// 第几批（0 是第一批，即没有游标）。
         let batch: Int
+        /// 空间内搜索的关键词；投稿列表为 nil。
+        var keyword: String? = nil
     }
 
     private(set) var calls: [Call] = []
@@ -346,6 +393,20 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
         if let error = failingBatches[batch] {
             throw error
         }
+        return makeBatch(batch)
+    }
+
+    func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
+        let batch = cursor.flatMap { Int($0.value) } ?? 0
+        calls.append(Call(ownerID: ownerID, order: .newest, batch: batch, keyword: keyword))
+        return makeBatch(batch)
+    }
+
+    private func makeBatch(_ batch: Int) -> UploaderVideoBatch {
         guard batch < batchCount else {
             return UploaderVideoBatch(videos: [], nextCursor: nil, totalCount: 61)
         }

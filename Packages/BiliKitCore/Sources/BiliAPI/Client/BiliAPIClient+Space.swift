@@ -35,6 +35,41 @@ extension BiliAPIClient {
     }
 }
 
+extension BiliAPIClient {
+    /// 空间内搜索的页码上限：远超任何 UP 主的实际结果页数，只用来拒绝异常游标。
+    static let uploaderVideoSearchMaximumPage = 1_000
+
+    /// 在 UP 主空间内按关键词搜索投稿；`cursor` 是页码（nil 为第 1 页），由上一批的 `nextCursor` 给出。
+    ///
+    /// 关键词由调用方规范化（`SearchText`），这里只拒绝空串；结果顺序由服务端决定（发布时间倒序）。
+    public func searchUploaderVideos(
+        ownerID: Int64,
+        keyword: String,
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
+        let page = cursor.map { Int($0.value) } ?? 1
+        guard ownerID > 0, !keyword.isEmpty, let page,
+            (1...Self.uploaderVideoSearchMaximumPage).contains(page)
+        else {
+            throw BiliAPIError.invalidRequest
+        }
+        let payload: UploaderVideoSearchPayload = try await get(
+            url: try appEndpoint(
+                path: BiliAppReadPath.uploaderVideoSearch,
+                queryItems: [
+                    URLQueryItem(name: "vmid", value: String(ownerID)),
+                    URLQueryItem(name: "keyword", value: keyword),
+                    URLQueryItem(name: "pn", value: String(page)),
+                    URLQueryItem(name: "ps", value: String(Self.uploaderVideoBatchSize))
+                ]
+            ),
+            referer: nil,
+            access: .appRead
+        )
+        return payload.model(page: page, pageSize: Self.uploaderVideoBatchSize)
+    }
+}
+
 extension UploaderVideoOrder {
     fileprivate var apiValue: String {
         switch self {

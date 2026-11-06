@@ -9,6 +9,8 @@ import Testing
 /// 固定 UP 主投稿契约：App 端游标接口经 App 授权器签名（未登录也能读），排序只映射最新与最多播放；下一批游标是本批最后
 /// 一条的 `param`，只在 `has_next` 时给出，游标形状不对时不发请求；只收 BVID、标题与发布时间齐全的普通稿件，隐藏的统计
 /// 不当作 0，单条损坏只丢这一条。
+///
+/// 空间内搜索按页码翻页，条目的 av 号在本地换算成 BV 号、时长是“分:秒”字符串，最后一页没有下一批。
 struct UploaderVideoAPIClientTests {
     @Test
     func batchMapsFieldsAndDropsUnsupportedEntries() async throws {
@@ -108,5 +110,63 @@ struct UploaderVideoAPIClientTests {
             )
         }
         #expect(transport.capturedRequests().isEmpty)
+    }
+
+    @Test
+    func searchMapsAIDsAndClockDurationsAndPagesByNumber() async throws {
+        let body = #"""
+            {"code":0,"data":{"page":1,"total":41,"item":[
+              {"goto":"av","param":"170001","title":"搜 &amp; 索","cover":"http://images.example.invalid/s.jpg","duration":"11:29","play":3850065,"danmaku":3730,"ptime":1791289731},
+              {"goto":"av","param":"not-a-number","title":"坏条目","ptime":1791289731},
+              {"goto":"live","param":"170003","title":"直播","ptime":1791289731}
+            ]}}
+            """#
+        let transport = StubTransport(responses: [jsonResponse(body)])
+        let authorizer = StubAppAuthorizer(carriesCredential: false)
+        let client = BiliAPIClient(transport: transport, appRequestAuthorizer: authorizer)
+
+        let batch = try await client.searchUploaderVideos(
+            ownerID: 10_001,
+            keyword: "游戏 攻略",
+            after: UploaderVideoCursor(value: "2")
+        )
+
+        let request = try #require(await authorizer.requests.first)
+        #expect(request.url.path == "/x/v2/space/search")
+        #expect(
+            queryFields(request) == ["vmid": "10001", "keyword": "游戏 攻略", "pn": "2", "ps": "20"]
+        )
+        let video = try #require(batch.videos.first)
+        #expect(batch.videos.count == 1)
+        #expect(video.bvid == BiliVideoAID.bvid(fromAID: 170_001))
+        #expect(video.title == "搜 & 索")
+        #expect(video.durationSeconds == 689)
+        #expect(video.publishedAt == Date(timeIntervalSince1970: 1_791_289_731))
+        // 第 2 页之后已有 40 条，总数 41：还有第 3 页。
+        #expect(batch.nextCursor == UploaderVideoCursor(value: "3"))
+        #expect(batch.totalCount == 41)
+    }
+
+    /// 已经是最后一页，或这一页没有条目（没有结果）时没有下一批。
+    @Test(arguments: [
+        (
+            #"{"code":0,"data":{"page":3,"total":41,"item":[{"goto":"av","param":"170001","title":"a","ptime":1}]}}"#,
+            "3"
+        ),
+        (#"{"code":0,"data":{"page":1,"total":0}}"#, "1")
+    ])
+    func searchStopsAtTheLastPage(body: String, page: String) async throws {
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [jsonResponse(body)]),
+            appRequestAuthorizer: StubAppAuthorizer()
+        )
+
+        let batch = try await client.searchUploaderVideos(
+            ownerID: 10_001,
+            keyword: "a",
+            after: page == "1" ? nil : UploaderVideoCursor(value: page)
+        )
+
+        #expect(batch.nextCursor == nil)
     }
 }
