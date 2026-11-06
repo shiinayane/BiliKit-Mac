@@ -4,9 +4,10 @@ import Testing
 
 @testable import BiliAuth
 
-/// App 端写入只放行 schema 表里精确形状的 GET：绑定预期账户后带上 access_key 再签名，本地无凭据时失败、从不匿名签名。
+/// App 端写入只放行 schema 表里精确形状的请求：绑定预期账户后带上 access_key 再签名，本地无凭据时失败、从不匿名签名。
 ///
-/// 「不感兴趣」只收单个稿件与一个正整数原因 id，举报类 `feedback_id`、其他客户端身份与调用方自带的凭据参数都拒绝。
+/// 「不感兴趣」是 GET，只收单个稿件与一个正整数原因 id，举报类 `feedback_id`、其他客户端身份与调用方自带的凭据参数都
+/// 拒绝。点赞、投币、三连是 POST 表单，签名写进正文；方法、query、Content-Type 与字段任一不符都拒绝。
 /// 目标 host、端口与保留参数的校验与 App 读取共用，见 `BiliAppRequestAuthorizerTests`。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAppWriteRequestAuthorizerTests {
@@ -14,6 +15,10 @@ struct BiliAppWriteRequestAuthorizerTests {
     private static let cancelPath = "/x/feed/dislike/cancel"
     private static let query = "goto=av&id=170001&reason_id=12&mobi_app=iphone&device=pad&build=1"
     private static let accountID = "42"
+    private static let likePath = "/x/v2/view/like"
+    private static let coinPath = "/x/v2/view/coin/add"
+    private static let triplePath = "/x/v2/view/like/triple"
+    private static let engagementPaths: Set<String> = [likePath, coinPath, triplePath]
 
     @Test(arguments: [dislikePath, cancelPath])
     func signsExactFeedbackWithTheBoundAccountsToken(path: String) async throws {
@@ -118,6 +123,108 @@ struct BiliAppWriteRequestAuthorizerTests {
         await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
             _ = try await authorizer.authorize(dislike, boundTo: "0")
         }
+    }
+
+    @Test(arguments: [
+        (likePath, "aid=170001&like=0"),
+        (likePath, "aid=170001&like=1"),
+        (coinPath, "aid=170001&multiply=1&select_like=0"),
+        (coinPath, "aid=170001&multiply=2&select_like=1"),
+        (triplePath, "aid=170001")
+    ])
+    func signsEngagementFormsIntoTheBody(path: String, body: String) async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: Self.accountID)
+        )
+
+        let authorized = try await BiliAppWriteRequestAuthorizer(
+            store: store,
+            allowedPaths: Self.engagementPaths
+        ).authorize(try Self.formRequest(path: path, body: body), boundTo: Self.accountID)
+
+        #expect(authorized.url.absoluteString == "https://app.bilibili.com\(path)")
+        #expect(authorized.method == .post)
+        let signedBody = try #require(authorized.body.flatMap { String(data: $0, encoding: .utf8) })
+        let fields = try #require(WriteRequestAuthorizationSupport.decodedUniqueFields(signedBody))
+        #expect(fields["access_key"] == fixtureAppAccessTokenValue)
+        let unsigned = fields.filter { !["sign", "appkey", "ts"].contains($0.key) }
+        let timestamp = try #require(fields["ts"].flatMap(Int64.init))
+        #expect(BiliAppSigning.signed(unsigned, timestamp: timestamp) == signedBody)
+        #expect(authorized.headers["Cookie"] == nil)
+    }
+
+    /// 点赞只收 0 或 1（App 端的取值，网页的 1／2 不收）；投币至多 2 枚；三连只收 aid；凭据与签名参数、网页统计字段、
+    /// 多个稿件都拒绝。
+    @Test(arguments: [
+        (likePath, "aid=170001&like=2"),
+        (likePath, "aid=170001"),
+        (likePath, "aid=170001,170002&like=0"),
+        (likePath, "aid=170001&like=0&access_key=FIXTURE"),
+        (likePath, "aid=170001&like=0&like=1"),
+        (coinPath, "aid=170001&multiply=3&select_like=0"),
+        (coinPath, "aid=170001&multiply=1"),
+        (coinPath, "aid=170001&multiply=1&select_like=0&csrf=FIXTURE"),
+        (triplePath, "aid=170001&ts=1"),
+        (triplePath, "bvid=BV17x411w7KC")
+    ])
+    func rejectsEngagementFormsOutsideTheSchema(path: String, body: String) async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: Self.accountID)
+        )
+        let authorizer = BiliAppWriteRequestAuthorizer(
+            store: store,
+            allowedPaths: Self.engagementPaths
+        )
+
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            _ = try await authorizer.authorize(
+                try Self.formRequest(path: path, body: body),
+                boundTo: Self.accountID
+            )
+        }
+    }
+
+    /// 方法与正文格式按 path 固定：表单 path 不收 GET、query 或别的 Content-Type，GET path 不收 POST。
+    @Test
+    func rejectsTheWrongMethodOrBodyFormatForAPath() async throws {
+        let store = MemoryAccountCredentialStore(
+            credential: try makeFixtureCredential(userID: Self.accountID)
+        )
+        let authorizer = BiliAppWriteRequestAuthorizer(
+            store: store,
+            allowedPaths: Self.engagementPaths.union([Self.dislikePath])
+        )
+        let like = try Self.formRequest(path: Self.likePath, body: "aid=170001&like=0")
+        let rejected = [
+            try Self.request(path: Self.likePath, query: "aid=170001&like=0"),
+            HTTPRequest(
+                url: try #require(URL(string: "https://app.bilibili.com\(Self.likePath)?aid=1")),
+                method: .post,
+                headers: like.headers,
+                body: like.body
+            ),
+            HTTPRequest(
+                url: like.url,
+                method: .post,
+                headers: ["Content-Type": "application/json"],
+                body: like.body
+            ),
+            try Self.formRequest(path: Self.dislikePath, body: Self.query)
+        ]
+        for request in rejected {
+            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+                _ = try await authorizer.authorize(request, boundTo: Self.accountID)
+            }
+        }
+    }
+
+    private static func formRequest(path: String, body: String) throws -> HTTPRequest {
+        HTTPRequest(
+            url: try #require(URL(string: "https://app.bilibili.com\(path)")),
+            method: .post,
+            headers: ["Content-Type": "application/x-www-form-urlencoded"],
+            body: Data(body.utf8)
+        )
     }
 
     private static func request(path: String, query: String) throws -> HTTPRequest {

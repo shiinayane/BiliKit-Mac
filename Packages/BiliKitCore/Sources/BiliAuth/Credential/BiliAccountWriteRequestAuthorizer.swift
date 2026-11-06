@@ -1,7 +1,8 @@
 import BiliNetworking
 import Foundation
 
-/// 只授权用户发起的网页端账户写入（稍后再看的加入与移除、收藏到收藏夹与从收藏夹移除、点赞、投币、三连与关注），
+/// 只授权用户发起的网页端账户写入（稍后再看的加入与移除、收藏到收藏夹与从收藏夹移除、关注；点赞、投币与三连走 App 端，
+/// 见 `BiliAppWriteRequestAuthorizer`），
 /// 并在 `BiliAuth` 内绑定账户、注入最小 Cookie 与 CSRF。
 ///
 /// 每个请求必须精确命中：`https://api.bilibili.com`（端口缺省或 443）、POST、无 query／userinfo／fragment、path 同时在
@@ -21,7 +22,7 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         let optionalFields: [String: FieldShape]
         var crossFieldRules: [CrossFieldRule] = []
         let referer: String
-        /// 按 path 列出的凭据 Cookie 白名单；点赞、投币与三连要求的 `buvid3` 不是凭据，不在这里，由 BiliAPI 在授权之后附加。
+        /// 按 path 列出的凭据 Cookie 白名单。
         let cookieNames: [WebCredentialCookieName]
     }
 
@@ -117,10 +118,6 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
     /// `fav/resource/batch-del` 从一个收藏夹移除一个视频条目（`resources` 只收单个 `<aid>:2`，挡住一次移除多条）。
     /// 网页附带的 `spmid`、`statistics` 等统计字段不发送，schema 也不接受。
     ///
-    /// 点赞、投币与三连各一条，只收单个稿件：点赞 `like` 只能是 1（赞）或 2（取消）；投币 `multiply` 只能是 1 或 2（单个
-    /// 稿件的上限），`select_like` 0 或 1；三连只有 `aid`。网页同样附带的统计字段与 `cross_domain` 不发送。这三个接口
-    /// 要求 Cookie 带 `buvid3`，它不是凭据、不在这里注入，由 BiliAPI 在授权之后附加（见 SECURITY-MODEL §3）。
-    ///
     /// 关注只登记 `relation/modify` 的关注与取消：`fid` 单个 UP 主，`act` 只能是 1（关注）或 2（取消），`re_src` 固定为
     /// 11。同一接口的其他 `act`（悄悄关注、拉黑、移除粉丝等）改动的是另一种关系，一律拒绝；网页附带的 `gaia_source`、
     /// `spmid`、`extend_content` 不发送，schema 也不接受。
@@ -147,28 +144,6 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
             ],
             optionalFields: [:],
             crossFieldRules: [.disjointNonEmptyLists("add_media_ids", "del_media_ids")],
-            referer: "https://www.bilibili.com/",
-            cookieNames: [.session]
-        ),
-        "/x/web-interface/archive/like": Schema(
-            requiredFields: ["aid": .positiveInteger, "like": .oneOf(["1", "2"])],
-            optionalFields: [:],
-            referer: "https://www.bilibili.com/",
-            cookieNames: [.session]
-        ),
-        "/x/web-interface/coin/add": Schema(
-            requiredFields: [
-                "aid": .positiveInteger,
-                "multiply": .oneOf(["1", "2"]),
-                "select_like": .oneOf(["0", "1"])
-            ],
-            optionalFields: [:],
-            referer: "https://www.bilibili.com/",
-            cookieNames: [.session]
-        ),
-        "/x/web-interface/archive/like/triple": Schema(
-            requiredFields: ["aid": .positiveInteger],
-            optionalFields: [:],
             referer: "https://www.bilibili.com/",
             cookieNames: [.session]
         ),

@@ -45,9 +45,6 @@ enum LiveAPIClients {
         BiliAccountWritePath.watchLaterRemove,
         BiliAccountWritePath.favoriteMembershipUpdate,
         BiliAccountWritePath.favoriteFolderEntryRemove,
-        BiliAccountWritePath.videoLike,
-        BiliAccountWritePath.videoCoin,
-        BiliAccountWritePath.videoTriple,
         BiliAccountWritePath.relationModify
     ]
 
@@ -59,7 +56,10 @@ enum LiveAPIClients {
     /// 窗口主 API 可发出的 App 端写入；只引用 BiliAPI 的 `BiliAppWritePath`，授权器另按自己的 schema 表逐条校验。
     static let mainAppWriteAllowedPaths: Set<String> = [
         BiliAppWritePath.recommendationDislike,
-        BiliAppWritePath.recommendationDislikeCancel
+        BiliAppWritePath.recommendationDislikeCancel,
+        BiliAppWritePath.videoLike,
+        BiliAppWritePath.videoCoin,
+        BiliAppWritePath.videoTriple
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [

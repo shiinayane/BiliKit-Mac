@@ -2,11 +2,10 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-/// 写请求共用的管线（网页端的表单写入 `postForm`、App 端的 GET 写入 `getForWrite`），以及稍后再看与收藏的写入；点赞、
-/// 投币与三连在 `BiliAPIClient+VideoEngagement`。
+/// 写请求共用的管线（网页端的表单写入 `postForm`，App 端的 GET 写入 `getForWrite` 与表单写入 `postAppForm`），以及稍后再看
+/// 与收藏的写入；点赞、投币与三连在 `BiliAPIClient+VideoEngagement`。
 ///
-/// 表单编码与固定 header 只在 `postForm`，响应上限、状态 envelope 与 -101／-111 映射只在 `writeResponseBody` 一处，两条
-/// 管线共用；各写 endpoint 只给出 path、字段、Referer 与授权方式。用户发起的写入只在注入了账户写授权器的 client（窗口主 API）上可用，并绑定窗口账户的 mid。
+/// 表单编码只在 `formBody`，响应上限、状态 envelope 与 -101／-111 映射只在 `writeResponseBody` 一处，三条管线共用；各写 endpoint 只给出 path、字段、Referer 与授权方式。用户发起的写入只在注入了账户写授权器的 client（窗口主 API）上可用，并绑定窗口账户的 mid。
 /// 写入不经 `signedRequest`、不重试；会话 epoch 的比对由请求管线 `response(baseRequest:...)` 统一执行，见
 /// SECURITY-MODEL §3。
 extension BiliAPIClient {
@@ -106,16 +105,14 @@ extension BiliAPIClient {
     /// 写请求总是带凭据发出：业务码 -101（未登录）与 -111（csrf 校验失败）都说明凭据失效，映射为
     /// `authenticationInvalid`；其他非零码为 `apiRejected`。`code` 为 0 但 `data` 只有 `v_voucher` 是风控挑战、写入
     /// 没有生效，按 `riskControlVoucher`（受限）失败，不当作成功（见 SECURITY-MODEL §3）。不像 JSON 的正文（HTML 风控页等）按 `nonJSONResponse` 失败
-    /// 关闭。调用方不得自行附加 csrf：授权器在拼好的表单末尾注入，表单里已有就拒绝。`additionalCookie` 在授权之后附加，
-    /// 只给要求 `buvid3` 的点赞、投币与三连（见 SECURITY-MODEL §3）。
+    /// 关闭。调用方不得自行附加 csrf：授权器在拼好的表单末尾注入，表单里已有就拒绝。
     @discardableResult
     func postForm(
         url: URL,
         fields: [(String, String)],
         referer: String,
         origin: String?,
-        access: RequestAccess,
-        additionalCookie: String? = nil
+        access: RequestAccess
     ) async throws -> Data {
         var headers = [
             "Accept": "application/json",
@@ -134,14 +131,13 @@ extension BiliAPIClient {
                 body: try Self.formBody(fields)
             ),
             access: access,
-            maximumResponseSize: Self.maximumWriteResponseSize,
-            additionalCookie: additionalCookie
+            maximumResponseSize: Self.maximumWriteResponseSize
         )
         return try writeResponseBody(authorizedResponse)
     }
 
-    /// App 端写入的唯一管线：GET（App 端的写接口也是 GET），固定 `Accept` 与 `User-Agent`，经 `access`（`appWrite`）对应的
-    /// 授权器签名发出，再按与表单写入相同的规则判定状态 envelope。
+    /// App 端 GET 写入（「不感兴趣」与撤销）的管线：固定 `Accept` 与 `User-Agent`，经 `access`（`appWrite`）对应的授权器签名
+    /// 发出，再按与表单写入相同的规则判定状态 envelope。
     ///
     /// 调用方只给出不含凭据与签名的 query；access_token 与签名由授权器写入。
     @discardableResult
@@ -150,6 +146,34 @@ extension BiliAPIClient {
             baseRequest: HTTPRequest(
                 url: url,
                 headers: ["Accept": "application/json", "User-Agent": userAgent]
+            ),
+            access: access,
+            maximumResponseSize: Self.maximumWriteResponseSize
+        )
+        return try writeResponseBody(authorizedResponse)
+    }
+
+    /// App 端表单写入（点赞、投币、三连）的管线：POST urlencoded，固定 `Accept`、`Content-Type` 与 `User-Agent`，不带
+    /// Referer、Origin 与 Cookie，经 `access`（`appWrite`）对应的授权器把 access_token 与签名写进正文，再按与网页表单写入相同
+    /// 的规则判定状态 envelope。
+    ///
+    /// 调用方只给出不含凭据与签名的字段，见 SECURITY-MODEL §3。
+    @discardableResult
+    func postAppForm(
+        url: URL,
+        fields: [(String, String)],
+        access: RequestAccess
+    ) async throws -> Data {
+        let authorizedResponse = try await response(
+            baseRequest: HTTPRequest(
+                url: url,
+                method: .post,
+                headers: [
+                    "Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": userAgent
+                ],
+                body: try Self.formBody(fields)
             ),
             access: access,
             maximumResponseSize: Self.maximumWriteResponseSize
