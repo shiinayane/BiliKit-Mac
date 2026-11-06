@@ -224,6 +224,7 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
             // 这里显式扩大预备区，模拟上方有已建出视图、却在视野外的行。
             let visibleRect = controller.rootView.scrollView.documentVisibleRect
             controller.collectionView.prepareContent(in: visibleRect.insetBy(dx: 0, dy: -400))
+            let resizedAt = ContinuousClock.now
             window.setContentSize(NSSize(width: width, height: 600))
             window.contentView?.layoutSubtreeIfNeeded()
             // 待精测集合按条目顺序编号，与全部属性的顺序一致。
@@ -238,8 +239,11 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
             let pendingCount = layout.pendingRefinementIndexes.count
             #expect(pendingCount > 0, "width \(width)")
             // 宽度还在变：几轮 main actor 之后视野外的行仍未精测，没有每次变化都白测一批。
+            // 契约只在稳定延迟之内成立：机器卡顿超过延迟时分批精测本就该开始，这一轮不判。
             for _ in 0..<5 { await Task.yield() }
-            #expect(layout.pendingRefinementIndexes.count == pendingCount, "width \(width)")
+            if resizedAt.duration(to: .now) < NativePlaybackSidebarLayout.refinementSettleDelay {
+                #expect(layout.pendingRefinementIndexes.count == pendingCount, "width \(width)")
+            }
         }
         #expect(
             await waitUntil(timeout: .seconds(5)) { layout.pendingRefinementIndexes.isEmpty }
