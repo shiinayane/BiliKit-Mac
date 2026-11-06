@@ -76,7 +76,9 @@ final class UploaderSpaceListController: NSObject, NSCollectionViewDelegateFlowL
     private var actions = UploaderSpaceListActions.none
     private var observers = NativeVideoNotificationObservers()
     private var isTornDown = false
-    /// 等一轮 main actor 再判断是否加载下一批；`tearDown` 时取消。内容更新不取消：待做的判断读到的是执行那一刻的内容。
+    /// 等一轮 main actor 再判断是否加载下一批，`tearDown` 时取消。
+    ///
+    /// 内容更新不取消：待做的判断读到的是执行那一刻的内容。
     private let pagination = NativePlaybackSidebarPaginationScheduler()
     /// 近尾加载的布防状态：新尾部到来时立即重新布防。
     ///
