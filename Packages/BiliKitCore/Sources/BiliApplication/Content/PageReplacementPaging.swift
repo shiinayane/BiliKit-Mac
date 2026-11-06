@@ -1,10 +1,10 @@
 import BiliModels
 
-/// 按页码整体替换的列表（UP 主空间投稿、收藏夹内容）共用的翻页状态：当前请求或显示的页、最近一次给出总数的
+/// 按页码整体替换的列表（收藏夹内容）的翻页状态：当前请求或显示的页、最近一次给出总数的
 /// 成功页的总条数与总页数，以及哪些页值得请求。
 ///
 /// 值类型，由拥有请求 Task 的 ViewModel 持有，在请求开始与结束时推进；不拥有请求、取消与旧结果的隔离（ViewModel 的
-/// `LatestTask`）。总数与总页数在翻页加载与失败期间保留，页码条不会消失；换来源（换 UP 主、换夹、换排序或关键词）时由
+/// `LatestTask`）。总数与总页数在翻页加载与失败期间保留，页码条不会消失；换来源（换夹、换排序或关键词）时由
 /// ViewModel `reset`。成功页落在新总页数之外（总数在翻页期间变少）时不显示它，而是让 ViewModel 改请求最后一页。
 package struct PageReplacementPaging<Content: Sendable & Equatable>: Sendable, Equatable {
     /// 当前请求或显示的页；`content` 是来源给出的整页内容。

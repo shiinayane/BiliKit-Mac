@@ -585,8 +585,8 @@ struct UnavailableUploaderVideoRepository: UploaderVideoRepository {
     func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
-        page: Int
-    ) async throws -> UploaderVideoPage {
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
         throw ContentApplicationError.unavailable
     }
 }

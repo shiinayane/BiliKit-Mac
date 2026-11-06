@@ -27,7 +27,7 @@ extension UploaderVideo {
     }
 }
 
-/// 空间列表控制器的测试组装：放进无边框窗口的容器视图，按一位 UP 主、第 1 页与给定投稿行更新一次并完成布局。
+/// 空间列表控制器的测试组装：放进无边框窗口的容器视图，按一位 UP 主与给定投稿行（已到底、没有加载行）更新一次并完成布局。
 ///
 /// 测试结束时调用 `controller.tearDown()`。`listWidth` 是列表的初始宽度，容器始终 420×600。
 @MainActor
@@ -62,8 +62,9 @@ struct UploaderSpaceListFixture {
                 ),
                 rows: rows,
                 currentBVID: nil,
-                pageIdentity: .init(ownerID: 1, order: .newest, page: 1),
-                reservesPagerSpace: false
+                listIdentity: .init(ownerID: 1, order: .newest),
+                footer: .none,
+                tailIdentity: nil
             ),
             actions: actions
         )

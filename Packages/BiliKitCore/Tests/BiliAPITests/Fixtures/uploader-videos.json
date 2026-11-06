@@ -1,5 +1,7 @@
-{"code":0,"message":"0","data":{"list":{"vlist":[
-  {"bvid":"BV1FixtureA1","title":"投稿 &amp; 一","pic":"https://images.example.invalid/a.jpg","length":"12:34","play":12345,"video_review":678,"created":1720000000,"is_union_video":0,"mid":10001,"author":"作者"},
-  {"bvid":"BV1FixtureB2","title":"联合投稿","pic":"//images.example.invalid/b.jpg","length":"1:02:03","play":"--","video_review":"--","created":1710000000,"is_union_video":1,"mid":10002,"author":"另一位作者"},
-  {"bvid":"invalid","title":"无效条目","pic":"","length":"00:10","play":1,"video_review":0,"created":1700000000}
-]},"page":{"pn":1,"ps":30,"count":61}}}
+{"code":0,"message":"OK","ttl":1,"data":{"count":61,"has_next":true,"has_prev":false,"next_cursor":"900005","order":[{"title":"最新发布","value":"pubdate"},{"title":"最多播放","value":"click"}],"item":[
+  {"goto":"av","param":"900001","bvid":"BV1FixtureA1","title":"投稿 &amp; 一","cover":"http://images.example.invalid/a.jpg","duration":754,"play":12345,"danmaku":678,"ctime":1720000000,"is_cooperation":false,"is_live_playback":false,"view_content":"1.2万"},
+  {"goto":"av","param":"900002","bvid":"BV1FixtureB2","title":"联合投稿","cover":"//images.example.invalid/b.jpg","duration":3723,"play":"--","danmaku":"--","ctime":1710000000,"is_cooperation":true},
+  {"goto":"av","param":"900003","bvid":"invalid","title":"无效条目","cover":"","duration":10,"play":1,"danmaku":0,"ctime":1700000000},
+  {"goto":"live","param":"900004","title":"直播回放","cover":"","ctime":1700000000},
+  {"goto":"av","param":"900005","bvid":"BV1FixtureC3","title":"缺发布时间"}
+]}}

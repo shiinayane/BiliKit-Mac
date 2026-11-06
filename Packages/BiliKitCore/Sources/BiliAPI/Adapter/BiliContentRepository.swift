@@ -70,10 +70,10 @@ public struct BiliContentRepository: FeedRepository, VideoRepository,
     public func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
-        page: Int
-    ) async throws -> UploaderVideoPage {
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
         try await mapError {
-            try await client.uploaderVideos(ownerID: ownerID, order: order, page: page)
+            try await client.uploaderVideos(ownerID: ownerID, order: order, after: cursor)
         }
     }
 

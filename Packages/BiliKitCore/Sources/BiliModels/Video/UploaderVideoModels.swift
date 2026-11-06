@@ -1,10 +1,9 @@
 import Foundation
 
-/// UP 主空间投稿列表的排序。
+/// UP 主空间投稿列表的排序：App 端投稿接口只提供这两种。
 public enum UploaderVideoOrder: Sendable, Equatable {
     case newest
     case mostPlayed
-    case mostFavorited
 }
 
 /// UP 主空间投稿列表中的一条视频。
@@ -42,25 +41,24 @@ public struct UploaderVideo: Identifiable, Sendable, Equatable {
     }
 }
 
-/// 投稿列表的一页。
-///
-/// 只保存服务端给出的事实（页码、每页条数与总数）；总页数与是否越界由共用的翻页状态 `PageReplacementPaging` 按
-/// `PageNumbering` 推导，不在这里另算一份。
-public struct UploaderVideoPage: Sendable, Equatable {
+/// 空间投稿的翻页游标：服务端给出的不透明值，只用来请求紧接着的下一批。
+public struct UploaderVideoCursor: Hashable, Sendable {
+    public let value: String
+
+    public init(value: String) {
+        self.value = value
+    }
+}
+
+/// 投稿列表的一批：本批视频、下一批的游标（nil 表示已到底）与服务端给出的投稿总数。
+public struct UploaderVideoBatch: Sendable, Equatable {
     public let videos: [UploaderVideo]
-    public let pageNumber: Int
-    public let pageSize: Int
+    public let nextCursor: UploaderVideoCursor?
     public let totalCount: Int
 
-    public init(
-        videos: [UploaderVideo],
-        pageNumber: Int,
-        pageSize: Int,
-        totalCount: Int
-    ) {
+    public init(videos: [UploaderVideo], nextCursor: UploaderVideoCursor?, totalCount: Int) {
         self.videos = videos
-        self.pageNumber = pageNumber
-        self.pageSize = pageSize
+        self.nextCursor = nextCursor
         self.totalCount = max(0, totalCount)
     }
 }

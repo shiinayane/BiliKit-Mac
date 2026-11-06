@@ -244,8 +244,9 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   AppKit 会在网格按锚点恢复之前先按新宽度重排、夹取偏移，这段过渡里的偏移不可信，不捕获锚点、不判断翻页；
   宽度变化只吸收浮点误差，半点也算（`NativeViewportSize`），否则跨列数分界的那一步不恢复，视野跳一行。
   纯删除（例如稍后再看的乐观移除）删掉锚点卡片时，由旧顺序里它之后第一张仍在的卡片按同一距离接替，视野不跳。
-- 分页：推荐、热门、搜索、观看历史与稍后再看由 `PagedVideoList` 承担，来源只把远端页适配为“条目 + 下一页
-  游标”，去重与条目上限只在那里（集合层的 `NativeVideoCardContents` 另按卡片 ID 兜底）；收藏夹与 UP 主空间按页整体替换，翻页状态是 `PageReplacementPaging`。
+- 分页：推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿由 `PagedVideoList` 承担，来源只把远端页适配为“条目 +
+  下一页游标”，去重与条目上限只在那里（集合层的 `NativeVideoCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
+  状态是 `PageReplacementPaging`。
 - 已有内容、且条件与解析出的请求不变时，刷新原地进行：网格不卸载，成功后整体替换并回顶，失败保留已显示内容。
 - 网格的差异动画：内容身份变化、不是严格的尾部追加、已在窗口里排过版、没开「减少动态效果」时，快照带差异动画应用。
   动画进行中 `NSCollectionView` 不为新露出的区域创建卡片（纯原生实测约 250ms、0 张），所以网格的 clip view
@@ -257,8 +258,9 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供视频 ID 与上下文描边（`NativeVideoMenuTargetItem`），
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
   只给卡片 ID 是合法 BVID 的可播放卡片，打开只经系统 `OpenURLAction`（见 `SECURITY-MODEL.md` §4）。
-- **UP 主空间列表**：头部与投稿行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
-  模糊。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
+- **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
+  模糊。底部加载行进入视野时请求下一批（`NearEndPagination`，每个尾部一次，实时滚动中一次手势一次）；App 端投稿接口
+  只有游标，不能跳页，所以不用页码条。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
 - 图片由窗口级匿名、有界的 `NativeVideoImagePipeline` 加载（Now Playing 封面另有进程级实例）；cell 离屏、复用
   和 teardown 取消等待者，缓存上界只在 `NativeVideoImageCacheLimits`。
 - 评论图片预览的图片区是 AppKit `NSScrollView`：SwiftUI 没有现成的“触控板双指缩放 + 两指平移 + 回弹”容器。
@@ -357,7 +359,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 登录用 TV 端扫码：成功正文同时带网页 Cookie 与 App 端 access_token、refresh_token，三者存在同一份凭据里，一起过期、一起删除；
 续期用 refresh_token 换回整份新凭据（Cookie 一并换新），由进程唯一的 `AccountCredentialRenewal` 串行执行，认证服务在恢复确认仍登录
 后调用它、等它结束才发布已登录：启动时只在临近到期时续期，复核时强制续期一次，使只有 token 失效的凭据在复核后的重载里恢复；
-续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」，播放页的点赞、投币、三连）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
+续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」，播放页的点赞、投币、三连，UP 主空间投稿）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
 `BiliAuth`；Application 只暴露非秘密认证状态与 `AuthenticationServicing`，二维码图像走 `BiliAuthFeature`
 定义的窄 Presentation port 注入。请求 builder（`RequestAccess` 与请求管线）只在 `BiliAPI` 内部可见，由各域
 endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 `RequestAccess`；授权器由 Composition 注入。
@@ -374,7 +376,7 @@ endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 
 内容域的认证失败分四态，由 `ContentApplicationError` 决定是否复核与是否给重试：无凭据是“需要登录”（不给重试）、
 凭据失效触发复核、本地凭据读不到可重试但不复核、风控按受限。观看历史、稍后再看与收藏夹只在窗口已登录时
 显示，所以读取时本地无凭据也复核；复核确认仍登录后，由凭据失效引发的自动重载在下一次加载成功前最多一次
-（`AccountRevalidationProgress`），挡住“复核 → 重载 → 失效”的循环。首页推荐、热门与搜索能匿名读取，确认未登录
+（`AccountRevalidationProgress`），挡住“复核 → 重载 → 失效”的循环。首页推荐、热门、搜索与 UP 主空间能匿名读取，确认未登录
 同样重载一次停住的失败页：读取先于复核删掉损坏或过期的凭据时账户范围不变，不会经账户变化重启。
 
 多窗口共享一个进程级账户会话协调器：登出、换号或凭据失效时先全局推进 authentication epoch，其他窗口再复核

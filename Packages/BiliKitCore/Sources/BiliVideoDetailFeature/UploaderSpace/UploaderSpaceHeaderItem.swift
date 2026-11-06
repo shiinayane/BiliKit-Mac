@@ -17,7 +17,7 @@ struct UploaderSpaceHeaderContent: Equatable {
 @MainActor
 final class UploaderSpaceHeaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("UploaderSpaceHeaderItem")
-    static let orders: [UploaderVideoOrder] = [.newest, .mostPlayed, .mostFavorited]
+    static let orders: [UploaderVideoOrder] = [.newest, .mostPlayed]
 
     private let headerView = UploaderSpaceHeaderView()
 
@@ -39,7 +39,7 @@ final class UploaderSpaceHeaderItem: NativeLayoutSizedCollectionItem {
     }
 }
 
-/// 空间头部的内容视图：头像、名字、投稿数与三段排序。
+/// 空间头部的内容视图：头像、名字、投稿数与排序（搜索时不显示排序）。
 ///
 /// 拥有头像加载 Task：换头像地址时取消上一次，到达的头像只在地址仍相同时显示；`cancelAvatarRequest` 经条目的
 /// `invalidateImageRequests` 在头部离屏（`didEndDisplaying`）与列表拆除时调用。
@@ -58,8 +58,7 @@ private final class UploaderSpaceHeaderView: NSView {
     private let orderControl = NSSegmentedControl(
         labels: [
             VideoDetailFeatureStrings.localized("最新发布"),
-            VideoDetailFeatureStrings.localized("最多播放"),
-            VideoDetailFeatureStrings.localized("最多收藏")
+            VideoDetailFeatureStrings.localized("最多播放")
         ],
         trackingMode: .selectOne,
         target: nil,

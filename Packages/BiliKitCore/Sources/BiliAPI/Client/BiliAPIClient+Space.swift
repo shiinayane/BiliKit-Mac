@@ -1,39 +1,37 @@
 import BiliModels
 import Foundation
 
-/// UP 主空间读取。游客请求会被间歇风控，所以只按账户读取，本地无凭据时直接失败。
+/// UP 主空间投稿：App 端游标接口，经 App 授权器签名（登录时带 access_token，未登录时匿名），见 SECURITY-MODEL §3。
 extension BiliAPIClient {
-    /// 空间投稿每页条数；请求的 `ps` 与分页模型共用这个值。
-    static let uploaderVideoPageSize = 30
-    /// 页码上限：远超任何 UP 主的实际投稿页数，用来拒绝异常输入。
-    static let uploaderVideoMaximumPage = 10_000
+    /// 每批请求的条数：服务端上限就是 20（第一批 20 条，之后每批 19 条），请求更多也只给这么多。
+    static let uploaderVideoBatchSize = 20
 
     public func uploaderVideos(
         ownerID: Int64,
         order: UploaderVideoOrder,
-        page: Int
-    ) async throws -> UploaderVideoPage {
-        guard ownerID > 0, (1...Self.uploaderVideoMaximumPage).contains(page) else {
+        after cursor: UploaderVideoCursor?
+    ) async throws -> UploaderVideoBatch {
+        guard ownerID > 0 else {
             throw BiliAPIError.invalidRequest
         }
-        let parameters = [
-            "mid": String(ownerID),
-            "pn": String(page),
-            "ps": String(Self.uploaderVideoPageSize),
-            "order": order.apiValue
+        var queryItems = [
+            URLQueryItem(name: "vmid", value: String(ownerID)),
+            URLQueryItem(name: "ps", value: String(Self.uploaderVideoBatchSize)),
+            URLQueryItem(name: "order", value: order.apiValue)
         ]
-        let payload: UploaderVideoSearchPayload = try await signedRequest(
-            path: BiliAccountReadPath.uploaderVideos,
-            parameters: { parameters },
-            send: { url in
-                try await get(
-                    url: url,
-                    referer: "https://space.bilibili.com/\(ownerID)/",
-                    access: .accountRead(missingCredential: .fail)
-                )
+        if let cursor {
+            // 游标是上一批最后一条的 `param`；`data.next_cursor` 也能用，这里取条目自带的值，不另解一个字段。
+            guard UploaderVideoCursorPayload.isValid(cursor.value) else {
+                throw BiliAPIError.invalidRequest
             }
+            queryItems.append(URLQueryItem(name: "aid", value: cursor.value))
+        }
+        let payload: UploaderVideoArchivePayload = try await get(
+            url: try appEndpoint(path: BiliAppReadPath.uploaderVideos, queryItems: queryItems),
+            referer: nil,
+            access: .appRead
         )
-        return payload.model(pageNumber: page, pageSize: Self.uploaderVideoPageSize)
+        return payload.model()
     }
 }
 
@@ -42,7 +40,6 @@ extension UploaderVideoOrder {
         switch self {
         case .newest: "pubdate"
         case .mostPlayed: "click"
-        case .mostFavorited: "stow"
         }
     }
 }

@@ -108,7 +108,7 @@
   只在 `BiliAPI` 内部可见，adapter 不构造 `RequestAccess`；授权器不复制业务规则。
 - 业务码 -101 只在请求实际带凭据发出时映射为凭据失效；匿名发出的请求收到 -101 是“需要登录”，不触发
   复核。两种写请求自行把 -101／-111 视为凭据失效，见下文。
-- 只按账户读取的 endpoint（观看历史、稍后再看、收藏夹、UP 主空间投稿（匿名会被间歇风控）、字幕目录、测速样本、播放页的点赞投币收藏状态等）在本地无凭据时
+- 只按账户读取的 endpoint（观看历史、稍后再看、收藏夹、字幕目录、测速样本、播放页的点赞投币收藏状态等）在本地无凭据时
   直接失败，不匿名回退；其余登录增强读取匿名请求同一 endpoint，主播放 playurl 改用带游客参数的匿名请求。
   以窗口账户 mid 为参数的读取（收藏夹列表），mid 只取自窗口账户范围，认证仍在确认、或其他窗口换号而本窗口
   还没复核到时不读取，否则会用新账户的 Cookie 读旧账户的 mid。
@@ -128,12 +128,13 @@
 防：access_token 被带到 `app.bilibili.com` 之外或 allowlist 之外的接口；签过名的带凭据 URL 被改写或泄露。
 
 - 只允许 `https://app.bilibili.com`、端口缺省或 443、GET、无正文、无 userinfo／fragment、路径编码规范，且 path 在
-  `LiveAPIClients` 声明的 App allowlist 内（只引用 BiliAPI 的 `BiliAppReadPath`，目前只有首页推荐 `/x/v2/feed/index`）；
+  `LiveAPIClients` 声明的 App allowlist 内（只引用 BiliAPI 的 `BiliAppReadPath`，目前是首页推荐 `/x/v2/feed/index` 与 UP 主空间投稿
+  `/x/v2/space/archive/cursor`；空间投稿的翻页游标取自上一批响应，只接受十进制数字后才拼回 query）；
   只有窗口主 API 注入它。调用方自带 `access_key`、`appkey`、`ts`、`sign`、`mobile_access_key`、重复的 query 字段或凭据类
   header 一律拒绝。
 - 凭据按账户读取的同一规则读取（每次读 Keychain，损坏或过期删除后报告失效，Keychain 不可用只在 §2 已确认未登录时按
   无凭据处理）。有凭据时把 `access_key` 放进 query，再用 TV 的 appkey 对全部参数做 APP 签名；本地明确无凭据时只签名、
-  不带凭据（未登录用户的匿名 App 推荐）。凭据失效、Keychain 不可用与请求不合规都不降级为匿名签名。
+  不带凭据（未登录用户的匿名 App 推荐与空间投稿）。凭据失效、Keychain 不可用与请求不合规都不降级为匿名签名。
 - App 端请求即使匿名也必须签名：`appRead` 访问总是经这个授权器，没有它的 client 不发出请求，授权失败也不退回未签名的
   原请求。授权结果带回是否附带了凭据，业务码 -101 只在带了凭据时是凭据失效（触发复核），否则是“需要登录”。
 - 签名后的 URL 本身就是凭据：管线原样发出、拒绝 redirect，不改写 query；日志与诊断按 §8 不记录 URL。

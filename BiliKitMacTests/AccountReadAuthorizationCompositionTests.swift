@@ -55,7 +55,6 @@ struct AccountReadAuthorizationCompositionTests {
             LiveAPIClients.mainAccountReadAllowedPaths == [
                 "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
-                "/x/space/wbi/arc/search",
                 "/x/v2/dm/web/view",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/v2/history/toview/web",
@@ -80,7 +79,11 @@ struct AccountReadAuthorizationCompositionTests {
             ]
         )
         #expect(LiveAPIClients.watchProgressAccountReadAllowedPaths == nil)
-        #expect(LiveAPIClients.mainAppReadAllowedPaths == ["/x/v2/feed/index"])
+        #expect(
+            LiveAPIClients.mainAppReadAllowedPaths == [
+                "/x/v2/feed/index", "/x/v2/space/archive/cursor"
+            ]
+        )
     }
 
     /// allowlist 由 endpoint 导出的常量组成：常量改了 path，上面的字面量集合与这里一起报警。
@@ -92,7 +95,6 @@ struct AccountReadAuthorizationCompositionTests {
             (BiliAccountReadPath.subtitleCatalog, "/x/player/wbi/v2"),
             (BiliAccountReadPath.danmakuSegment, "/x/v2/dm/wbi/web/seg.so"),
             (BiliAccountReadPath.danmakuView, "/x/v2/dm/web/view"),
-            (BiliAccountReadPath.uploaderVideos, "/x/space/wbi/arc/search"),
             (BiliAccountReadPath.rootComments, "/x/v2/reply/wbi/main"),
             (BiliAccountReadPath.commentReplies, "/x/v2/reply/reply"),
             (BiliAccountReadPath.commentDialog, "/x/v2/reply/dialog/cursor"),
@@ -108,6 +110,7 @@ struct AccountReadAuthorizationCompositionTests {
             (BiliAccountReadPath.videoSearch, "/x/web-interface/wbi/search/type")
         ]
         #expect(BiliAppReadPath.recommendations == "/x/v2/feed/index")
+        #expect(BiliAppReadPath.uploaderVideos == "/x/v2/space/archive/cursor")
         for (constant, literal) in constants {
             #expect(constant == literal)
         }

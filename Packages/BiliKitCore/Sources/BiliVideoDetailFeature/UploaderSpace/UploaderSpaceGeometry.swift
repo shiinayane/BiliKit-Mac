@@ -1,8 +1,6 @@
 import CoreGraphics
 
 /// UP 主空间层的唯一几何来源：原生列表与状态覆盖层共用；App 壳的上下文层动画读取其中的过渡时长。
-///
-/// 页码条的几何与列表为它留出的高度在 BiliUI 的 `PageNumberPagerGeometry`。
 public enum UploaderSpaceGeometry {
     static let listHorizontalInset: CGFloat = 8
     static let listTopInset: CGFloat = 8
@@ -44,7 +42,11 @@ public enum UploaderSpaceGeometry {
     /// 空间层滑入／滑出侧栏的动画时长。
     public static let layerTransitionDuration: Double = 0.28
 
-    /// 头部下方状态提示（空、失败、登录）的间距与左右留白。
+    /// 列表底部加载下一批的转圈或失败说明那一行的高度，与说明和重试按钮之间的间距。
+    static let footerHeight: CGFloat = 44
+    static let footerSpacing: CGFloat = 8
+
+    /// 头部下方状态提示（空、失败）的间距与左右留白。
     static let messageSpacing: CGFloat = 12
     static let messageHorizontalPadding: CGFloat = 24
 

@@ -285,8 +285,7 @@ struct AppShellView: View {
                 model: navigationCoordinator.uploaderSpace,
                 currentBVID: navigationCoordinator.currentPlaybackBVID,
                 imagePipeline: imagePipeline,
-                onSelect: navigationCoordinator.openPlaybackFromSidebarContext,
-                onLogin: { isAuthenticationPresented = true }
+                onSelect: navigationCoordinator.openPlaybackFromSidebarContext
             )
             .transition(
                 reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)

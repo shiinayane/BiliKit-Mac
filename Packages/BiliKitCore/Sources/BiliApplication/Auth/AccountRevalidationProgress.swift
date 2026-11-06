@@ -1,6 +1,6 @@
 /// 账户复核参与者共用的复核进度：复核代次、是否在等本页请求的复核，以及复核后是否已自动重载过。
 ///
-/// 值类型，由参与者模型持有（资料库的列表与收藏夹模型、`BrowseViewModel`），模型的 `authenticationRevalidationGeneration`
+/// 值类型，由参与者模型持有（资料库的列表与收藏夹模型、`BrowseViewModel`、`UploaderSpaceViewModel`），模型的 `authenticationRevalidationGeneration`
 /// 直接读它；请求、加载与复核结果的转交仍归模型。规则见 ARCHITECTURE「认证」：凭据失败时请求一次复核；复核有了确定
 /// 结果后自动重载至多一次，直到下一次加载成功，挡住“复核 → 重载 → 失效 → 复核”的循环。哪种结果算确定由模型决定：
 /// 只在已登录时显示的页面只认“仍已登录”，能匿名读取的页面另认“确认未登录”。

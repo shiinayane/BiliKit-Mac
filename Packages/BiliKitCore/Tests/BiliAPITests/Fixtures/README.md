@@ -6,8 +6,9 @@
 - 图片地址只使用 `example.invalid`；媒体地址必须通过生产 CDN allowlist，使用虚构的 `*.fixture.bilivideo.com`。
 - 不包含 Cookie、token、WBI 签名、实时响应 body 或带签名媒体 URL。
 - `uploader-card.json` 只包含虚构身份、自写签名与有效大会员状态，用于固定公开 card DTO 边界。
-- `uploader-videos.json` 是 UP 主空间投稿列表的最小形状：字符串时长、`"--"` 隐藏统计、联合投稿与
-  一条无效 BV，内容均为虚构值。
+- `uploader-videos.json` 是 App 端空间投稿（`/x/v2/space/archive/cursor`）的形状，字段名、`has_next`、`next_cursor`、
+  `order` 与条目的 `param`／`goto`／秒数时长依据匿名实测；条目值为虚构：`"--"` 隐藏统计、联合投稿、一条无效 BV、一条非
+  稿件（`goto=live`）与一条缺发布时间的稿件，最后一条的 `param` 是下一批游标。
 - `watchlater.json` 是稍后再看的最小形状：普通、已看完、分组占位行（`aid` 为 0）、番剧、只有 `pgc_label`
   的影视、整数形式的课程标记、已失效、字段不全的失效行（标题为空、`owner` 为 null、`add_at` 为 0）与课程行（作者名为空、缺时长与加入时间），以及只带 `redirect_url` 的普通条目，内容均为虚构值。
 - `favorite-folders.json` 是自己创建的收藏夹列表的最小形状：默认公开夹、私密非默认夹、带其他 `attr` 位的公开夹，
