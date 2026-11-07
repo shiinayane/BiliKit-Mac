@@ -1,0 +1,6 @@
+# 在本目录运行 `buf generate`，用 PATH 上与 SwiftProtobuf runtime 同版本（1.38.1）的 protoc-gen-swift
+# 生成并覆盖已提交的 danmaku.pb.swift；见 docs/ARCHITECTURE.md「弹幕」。
+version: v2
+plugins:
+  - local: protoc-gen-swift
+    out: Sources/BiliAPI/Remote/Protobuf

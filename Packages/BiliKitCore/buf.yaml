@@ -1,0 +1,4 @@
+# 弹幕 wire schema 的 buf 模块；生成命令与版本要求见 docs/ARCHITECTURE.md「弹幕」。
+version: v2
+modules:
+  - path: Sources/BiliAPI/Remote/Protobuf

@@ -178,7 +178,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 弹幕
 
-- 分段是 protobuf。`BiliAPI` 以 exact 1.38.1 依赖 SwiftProtobuf，`.proto` 自行编写，用同版本 `protoc-gen-swift`
+- 分段是 protobuf。`BiliAPI` 以 exact 1.38.1 依赖 SwiftProtobuf，`.proto` 自行编写，在 `Packages/BiliKitCore` 下
+  运行 `buf generate`（`buf.yaml`／`buf.gen.yaml`，调用 PATH 上同版本的本地 `protoc-gen-swift`，buf 不校验插件版本）
   显式生成并提交 `.pb.swift`，不挂 build plugin：手写 wire reader 要长期自维护 varint、未知字段和恶意长度边界，成本高于约 1.8 MiB 的体积。
   wire 类型解码后立即映射为 `BiliModels.DanmakuEvent`。
 - 系统内存压力的监听由窗口 adapter（`WindowAdapters.live`）持有，与图片管线共用 `SystemMemoryPressureObserver`，
