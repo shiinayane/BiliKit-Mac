@@ -39,7 +39,7 @@ elapsed=0
 while [ "$elapsed" -lt "$settle_seconds" ]; do
     if ! kill -0 "$app_pid" 2>/dev/null; then
         wait "$app_pid" && status=0 || status=$?
-        echo "[Smoke] App 在 ${elapsed} 秒内退出（status $status）" >&2
+        echo "[Smoke] App 在 ${elapsed} 秒内退出（status ${status}）" >&2
         cat "$work_root/app.log" >&2
         find "$HOME/Library/Logs/DiagnosticReports" -name 'BiliKit*' -newer "$marker" \
             -exec head -n 60 {} \; 2>/dev/null >&2 || true

@@ -57,7 +57,7 @@ expect_count 2 'baseConfigurationReference = A1000000000000000000002D /* BiliKit
 expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = ' "$project" "只有测试 target 可以在工程里写 Bundle ID"
 expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacTests;' "$project" "测试 target 标识不一致"
 for key in INFOPLIST_KEY_CFBundleDisplayName ASSETCATALOG_COMPILER_APPICON_NAME; do
-    expect_count 0 "$key = " "$project" "App 身份不得在工程里绕过渠道 xcconfig（$key）"
+    expect_count 0 "$key = " "$project" "App 身份不得在工程里绕过渠道 xcconfig（${key}）"
 done
 expect_count 0 'BILIKIT_' "$project" "渠道设置不得写进工程"
 expect_count 1 'BILIKIT_CHANNEL = Dev' "$channel" "默认渠道必须是开发渠道"
@@ -108,6 +108,11 @@ fi
 for script in Scripts/*.sh; do
     sh -n "$script" || fail "脚本语法无效：$script"
 done
+# 非 UTF-8 locale（如 macOS 的 en_US，即 Latin-1）下 bash 把紧跟在变量名后的中文字节读进变量名，
+# set -u 时报未定义变量（CI 即如此）；这类变量必须写成花括号形式。
+if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' Scripts/*.sh; then
+    fail "脚本里紧跟非 ASCII 字符的变量必须加花括号"
+fi
 
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:0' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spks' ] || fail "Sparkle status mach lookup 不一致"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:1' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spki' ] || fail "Sparkle installer mach lookup 不一致"
