@@ -5,7 +5,7 @@
 	<key>BiliKitUpdaterEnabled</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://updates.shiinayane.com/appcast.xml</string>
+	<string>$(BILIKIT_UPDATE_FEED_URL)</string>
 	<key>SUPublicEDKey</key>
 	<string>HdIQTHoipGYzoK7LB+WioPkiQhqY/I6C1PZuZL1imEs=</string>
 	<key>SUEnableInstallerLauncherService</key>

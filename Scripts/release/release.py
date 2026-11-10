@@ -227,11 +227,19 @@ def verify_weak_imports(names, allowed):
     require(not unexpected, '主程序有未裁决的弱链接符号，先查引入它的代码（见 weak-imports.txt）：' + ', '.join(unexpected))
 
 
+def verify_production_identity(info):
+    # 工程默认产出开发渠道身份，只有 archive 传 BILIKIT_CHANNEL=Production 才是正式身份（见 Configuration/BiliKit-Channel.xcconfig）。
+    require((info.get('CFBundleIdentifier'), info.get('CFBundleDisplayName'), info.get('CFBundleIconName')) ==
+            (BUNDLE, 'BiliKit', 'AppIcon'), 'App 不是正式渠道身份（Bundle ID/显示名/图标）')
+    require(info.get('SUFeedURL') == FEED, '更新 URL 错误')
+
+
 def verify_app(app, state, notarized=True):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-    require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], int(info['CFBundleVersion']), info['LSMinimumSystemVersion']) ==
-            (BUNDLE, state['version'], state['build'], '15.0'), 'App 版本/身份/最低系统错误')
-    require(info.get('SUPublicEDKey') == CONFIG['publicEDKey'] and info.get('SUFeedURL') == FEED, '更新公钥或 URL 错误')
+    verify_production_identity(info)
+    require((info['CFBundleShortVersionString'], int(info['CFBundleVersion']), info['LSMinimumSystemVersion']) ==
+            (state['version'], state['build'], '15.0'), 'App 版本/最低系统错误')
+    require(info.get('SUPublicEDKey') == CONFIG['publicEDKey'], '更新公钥错误')
     # 与 AppUpdater.hasValidConfiguration 核对同一组 Sparkle 键（SECURITY-MODEL §7），缺键或放宽的发布件不放行。
     require(all(info.get(k) is True for k in ('BiliKitUpdaterEnabled', 'SURequireSignedFeed', 'SUVerifyUpdateBeforeExtraction',
                                                'SUEnableInstallerLauncherService'))
@@ -348,7 +356,9 @@ def prepare(out):
         logged(out / 'archive.log', 'xcodebuild', '-quiet', '-project', 'BiliKitMac.xcodeproj', '-scheme', 'BiliKitMac',
                '-configuration', 'Release', '-destination', 'generic/platform=macOS', '-derivedDataPath', scratch / 'DerivedData',
                '-clonedSourcePackagesDirPath', scratch / 'SourcePackages', '-archivePath', archive,
-               '-disableAutomaticPackageResolution', '-onlyUsePackageVersionsFromResolvedFile', 'archive')
+               '-disableAutomaticPackageResolution', '-onlyUsePackageVersionsFromResolvedFile', 'BILIKIT_CHANNEL=Production', 'archive')
+        # export 会按 Bundle ID 联网补建 Developer ID profile，身份不对要在 export 之前停下。
+        verify_production_identity(plistlib.loads((archive / 'Products/Applications/BiliKit.app/Contents/Info.plist').read_bytes()))
     step('archive', build_archive)
     step('export', lambda: logged(out / 'export.log', 'xcodebuild', '-exportArchive', '-archivePath', archive,
                                 '-exportOptionsPlist', ROOT / 'Scripts/release/ExportOptions.plist', '-exportPath', out / 'export',

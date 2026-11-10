@@ -6,7 +6,7 @@
 下列品牌资产：
 
 - `BiliKit` 名称、App Icon、Logo、wordmark 以及用于识别 BiliKit 的其他品牌标志；
-- `BiliKitMac/AppIcon.icon` 及其包含的全部素材；
+- `BiliKitMac/AppIcon.icon`、`BiliKitMac/AppIcon-Dev.icon` 及其包含的全部素材；
 - `Design/AppIcon/` 目录中的 SVG、PNG、Icon Composer 导出物、说明和其他设计源文件；
 - `Design/Marketing/` 目录中的 BiliKit 界面截图及宣传编排；
 - 其他明确引用本声明或标记为 BiliKit 品牌资产的文件。
@@ -48,7 +48,8 @@ Icon Composer 生成的系统材质效果可以按 Apple 提供的工作流用�
 
 The [MIT License](LICENSE) applies to BiliKit source code and associated project
 documentation. It does not apply to the BiliKit name, app icon, logo, wordmark,
-other BiliKit-identifying marks, `BiliKitMac/AppIcon.icon`, files under
+other BiliKit-identifying marks, `BiliKitMac/AppIcon.icon`,
+`BiliKitMac/AppIcon-Dev.icon`, files under
 `Design/AppIcon/`, BiliKit interface screenshots and promotional compositions
 under `Design/Marketing/`, or other files expressly identified as BiliKit brand
 assets.

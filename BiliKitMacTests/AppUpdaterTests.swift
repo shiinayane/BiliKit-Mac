@@ -20,10 +20,14 @@ struct AppUpdaterTests {
         ]
     }
 
-    /// Debug 构建（含 Gate）即使随包配置完整也不启用更新检查：不启动 Sparkle，菜单按未配置显示。
+    /// 开发渠道构建（含 Gate）随包没有 feed，只缺这一项：不启动 Sparkle，菜单按未配置显示。
     @Test
-    func debugBuildNeverStartsUpdateChecksEvenWithCompleteBundledConfiguration() {
-        #expect(AppUpdater.hasValidConfiguration(Bundle.main.infoDictionary ?? [:]))
+    func developmentChannelBuildLacksOnlyTheFeedAndNeverStartsUpdateChecks() {
+        var info = Bundle.main.infoDictionary ?? [:]
+        #expect(info["SUFeedURL"] as? String == "")
+        #expect(!AppUpdater.hasValidConfiguration(info))
+        info["SUFeedURL"] = configuredInfo["SUFeedURL"]
+        #expect(AppUpdater.hasValidConfiguration(info))
         let updater = AppUpdater()
         #expect(!updater.isConfigured)
         #expect(!updater.canCheckForUpdates)

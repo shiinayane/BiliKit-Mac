@@ -291,8 +291,8 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
 
 - Sparkle 只链接 App target，由唯一 `AppUpdater` 持有；它不引用 `BiliAuth`、账户 coordinator、授权器
   或播放器，更新失败不进入认证或播放清理链路。
-- Debug 构建不启用更新检查（本地开发与 Gate 构建都不启动 Sparkle）；Release 构建的
-  `AppUpdater` 仅在配置完整时启动：`BiliKitUpdaterEnabled`、HTTPS `/appcast.xml`（无 query、userinfo、
+- 只有正式渠道构建带 `SUFeedURL`；开发渠道（本机 Debug／Release、Gate、CI，见 ARCHITECTURE「平台与命名」）
+  的 feed 为空，按未配置不启动 Sparkle。`AppUpdater` 仅在配置完整时启动：`BiliKitUpdaterEnabled`、HTTPS `/appcast.xml`（无 query、userinfo、
   非标准端口）、32 字节 `SUPublicEDKey`、`SURequireSignedFeed`、`SUVerifyUpdateBeforeExtraction`、
   `SUSignedFeedFailureExpirationInterval = 0`、启用 Installer XPC、禁用 Downloader XPC、显式关闭
   `SUEnableSystemProfiling`（缺失同样视为不完整）。

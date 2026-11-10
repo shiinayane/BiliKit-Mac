@@ -1,0 +1,26 @@
+// BiliKit App target 的渠道身份：Bundle ID、显示名、图标与更新 feed 只在这里派生。
+//
+// 默认是开发渠道，Debug 与 Release 构建都得到开发身份；只有 Scripts/release/release.py 的 archive
+// 在命令行传 BILIKIT_CHANNEL=Production，命令行设置优先于本文件。开发版因此与正式版分开偏好域、
+// 沙盒容器和 Keychain 范围（access group 取自 PRODUCT_BUNDLE_IDENTIFIER），见 ARCHITECTURE「平台与命名」。
+//
+// 每个值按 `<名>_$(BILIKIT_CHANNEL)` 查表，只登记 Production 一行。渠道是 Dev、拼错或为空时都查不到：
+// 身份经 `:default=` 回落到开发值，更新 feed 回落为空串，AppUpdater 按未配置不启动 Sparkle。
+// 拼错的渠道因此不会得到正式身份或正式更新源；release.py 在 archive 后立即核对正式身份。
+//
+// CFBundleName 由生成的 Info.plist 固定取 PRODUCT_NAME，两个渠道都是 BiliKit，菜单栏 App 菜单不区分渠道；
+// PRODUCT_NAME 同时决定模块名与 .app 路径，所以不按渠道改。
+
+BILIKIT_CHANNEL = Dev
+
+BILIKIT_BUNDLE_ID_Production = com.shiinayane.BiliKit
+BILIKIT_DISPLAY_NAME_Production = BiliKit
+BILIKIT_APPICON_Production = AppIcon
+// `/$()/` 让 xcconfig 不把 `//` 当注释起点。
+BILIKIT_UPDATE_FEED_URL_Production = https:/$()/updates.shiinayane.com/appcast.xml
+
+PRODUCT_BUNDLE_IDENTIFIER = $(BILIKIT_BUNDLE_ID_$(BILIKIT_CHANNEL):default=com.shiinayane.BiliKit.dev)
+INFOPLIST_KEY_CFBundleDisplayName = $(BILIKIT_DISPLAY_NAME_$(BILIKIT_CHANNEL):default=BiliKit Dev)
+// actool 只编入这里选中的图标，另一套 .icon 不进包。
+ASSETCATALOG_COMPILER_APPICON_NAME = $(BILIKIT_APPICON_$(BILIKIT_CHANNEL):default=AppIcon-Dev)
+BILIKIT_UPDATE_FEED_URL = $(BILIKIT_UPDATE_FEED_URL_$(BILIKIT_CHANNEL))

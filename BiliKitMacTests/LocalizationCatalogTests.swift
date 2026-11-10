@@ -8,7 +8,7 @@ struct LocalizationCatalogTests {
     @Test
     func builtAppContainsFourLocalizedResourceSets() throws {
         let appBundle = Bundle.main
-        #expect(appBundle.bundleIdentifier == "com.shiinayane.BiliKit")
+        #expect(appBundle.bundleIdentifier == "com.shiinayane.BiliKit.dev")
         try expectFourLocalizations(in: appBundle, label: "BiliKit.app")
 
         let featureBundleNames = [
