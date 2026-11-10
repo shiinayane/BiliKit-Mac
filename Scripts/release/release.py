@@ -185,7 +185,7 @@ def preflight():
     require(not run('git', 'ls-remote', 'origin', 'refs/tags/' + tag), 'tag 已存在；禁止移动')
     require(IDENTITY in run('security', 'find-identity', '-v', '-p', 'codesigning'), '缺少 Developer ID identity')
     run('xcrun', 'notarytool', 'history', '--keychain-profile', 'BiliKit-Notary', '--output-format', 'json')
-    require(run('node', '--version') == 'v22.22.3', '使用 Node 22.22.3，确保 native DMG dependency ABI 一致')
+    require(run('node', '--version') == 'v22.23.4', '使用 Node 22.23.4，确保 native DMG dependency ABI 一致')
     with tempfile.TemporaryDirectory(prefix='bilikit-feed-') as directory:
         old = Path(directory) / 'appcast.xml'
         download(FEED, old)
