@@ -45,6 +45,8 @@ python3 Scripts/release/release.py prepare --output /private/tmp/bilikit-release
 
 候选必须满足，任一不满足即停止：
 
+- Archive 以 `BILIKIT_CHANNEL=Production` 构建，App 是正式渠道身份（Bundle ID、显示名 BiliKit、`AppIcon`、正式 feed），
+  archive 后、export 前即核对；工程默认的开发渠道见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)「平台与命名」。
 - Archive 为 macOS App Archive，Products 只有预期 App；App 主程序仅 `arm64`，嵌套 Mach-O 均含 `arm64`。
 - App 主程序的弱链接符号都在 [`Scripts/release/weak-imports.txt`](../../Scripts/release/weak-imports.txt) 白名单内；
   多出的符号在版本号已到、实际还没有它的测试版系统上为空地址，会让 App 一调用就崩溃。

@@ -51,7 +51,18 @@ top_level_key_count=$(
 
 expect_count 2 'CODE_SIGN_ENTITLEMENTS = BiliKitMac/BiliKitMac.entitlements;' "$project" "App 配置必须使用同一 entitlement"
 expect_count 6 'DEVELOPMENT_TEAM = 2B3LZ256AG;' "$project" "Project 与 target 必须使用正式开发团队"
-expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKit;' "$project" "App Bundle Identifier 不一致"
+# App 身份只由渠道 xcconfig 派生，默认开发渠道；正式渠道只由 release.py 在命令行选择（见 ARCHITECTURE「平台与命名」）。
+channel="Configuration/BiliKit-Channel.xcconfig"
+expect_count 2 'baseConfigurationReference = A1000000000000000000002D /* BiliKit-Channel.xcconfig */;' "$project" "App 两个配置都必须基于渠道 xcconfig"
+expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = ' "$project" "只有测试 target 可以在工程里写 Bundle ID"
+expect_count 2 'PRODUCT_BUNDLE_IDENTIFIER = com.shiinayane.BiliKitMacTests;' "$project" "测试 target 标识不一致"
+for key in INFOPLIST_KEY_CFBundleDisplayName ASSETCATALOG_COMPILER_APPICON_NAME; do
+    expect_count 0 "$key = " "$project" "App 身份不得在工程里绕过渠道 xcconfig（${key}）"
+done
+expect_count 0 'BILIKIT_' "$project" "渠道设置不得写进工程"
+expect_count 1 'BILIKIT_CHANNEL = Dev' "$channel" "默认渠道必须是开发渠道"
+[ "$(grep -c '^BILIKIT_CHANNEL' "$channel")" -eq 1 ] || fail "渠道 xcconfig 只能有一处默认渠道"
+grep -q "'BILIKIT_CHANNEL=Production'" Scripts/release/release.py || fail "release.py 的 archive 必须选择正式渠道"
 expect_count 2 'PRODUCT_NAME = BiliKit;' "$project" "App 产品名不一致"
 expect_count 2 'INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";' "$project" "App 类别元数据不一致"
 expect_count 2 'INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 shiinayane.";' "$project" "App 版权元数据不一致"
@@ -97,6 +108,11 @@ fi
 for script in Scripts/*.sh; do
     sh -n "$script" || fail "脚本语法无效：$script"
 done
+# 非 UTF-8 locale（如 macOS 的 en_US，即 Latin-1）下 bash 把紧跟在变量名后的中文字节读进变量名，
+# set -u 时报未定义变量（CI 即如此）；这类变量必须写成花括号形式。
+if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' Scripts/*.sh; then
+    fail "脚本里紧跟非 ASCII 字符的变量必须加花括号"
+fi
 
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:0' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spks' ] || fail "Sparkle status mach lookup 不一致"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.temporary-exception.mach-lookup.global-name:1' "$entitlements")" = '$(PRODUCT_BUNDLE_IDENTIFIER)-spki' ] || fail "Sparkle installer mach lookup 不一致"

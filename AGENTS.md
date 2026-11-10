@@ -105,9 +105,10 @@ sh Scripts/run-quality-gates.sh app
 
 - 手写 `xcodebuild`、XCUI 与 App 启动也使用本任务的临时产物根，结束时清理；其他 worktree 或共享
   DerivedData 不算 fresh closure。
-- 真实 App 实测：开发构建与安装版共用 bundle id、偏好域和登录状态，用的是用户的真实账号。没有用户逐次
-  同意不做真实写操作，不进与任务无关的播放页（会留观看记录），结束时删掉写入的偏好键；用户自己的
-  BiliKit 开着时会改写同一偏好域。探针、自动驾驶等临时代码不进提交。
+- 真实 App 实测：本机构建是开发渠道 BiliKit Dev（`com.shiinayane.BiliKit.dev`），与用户安装的 BiliKit 分开
+  偏好域、沙盒容器和登录状态；按 Bundle ID 启动和结束进程，不按名字（两者可执行文件都叫 BiliKit），
+  不碰 `com.shiinayane.BiliKit` 的进程与数据。开发版登录的仍是用户真实账号：没有用户逐次同意不做真实写操作，
+  不进与任务无关的播放页（会留观看记录），结束时删掉写入的偏好键。探针、自动驾驶等临时代码不进提交。
 - 只在明确的性能裁决中运行 Instruments/`xctrace`，事前限定问题、时长与产物目录，结束后删除 raw trace。
 
 ## 提交文本

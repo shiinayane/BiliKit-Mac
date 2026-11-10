@@ -37,6 +37,16 @@ class ReleaseSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.verify_weak_imports(names, allowed)
 
+    def test_only_production_channel_identity_can_be_released(self):
+        production = {'CFBundleIdentifier': release.BUNDLE, 'CFBundleDisplayName': 'BiliKit',
+                      'CFBundleIconName': 'AppIcon', 'SUFeedURL': release.FEED}
+        release.verify_production_identity(production)
+        development = {'CFBundleIdentifier': release.BUNDLE + '.dev', 'CFBundleDisplayName': 'BiliKit Dev',
+                       'CFBundleIconName': 'AppIcon-Dev', 'SUFeedURL': ''}
+        for key in production:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                release.verify_production_identity({**production, key: development[key]})
+
     def test_ci_requires_all_apple_silicon_jobs(self):
         runs = {'workflow_runs': [{'head_branch': 'main', 'conclusion': 'success',
                                   'jobs_url': 'jobs', 'html_url': 'run'}]}

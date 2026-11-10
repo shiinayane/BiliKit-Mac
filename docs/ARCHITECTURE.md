@@ -19,9 +19,15 @@
   弱链接符号，不在白名单里的就停止，见 `docs/release/README.md`。
 - 用户可见 App、构建产品与 Swift app module 为 `BiliKit`；仓库、Xcode 工程、内部 App target
   和 `BiliKitMacTests` 保留 `BiliKitMac`，与原 BiliKit userscript 仓库区分。
-- Bundle ID `com.shiinayane.BiliKit`；Debug／Release 相同。Keychain access group 固定为
-  `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`，更换 Team 或 Bundle ID 等于换一个
-  Keychain 范围，旧登录态不迁移，也不得扩大 access group 去读取。
+- App 身份按渠道而不按 Debug／Release 区分，只在 `Configuration/BiliKit-Channel.xcconfig` 派生。正式渠道是
+  Bundle ID `com.shiinayane.BiliKit`、显示名 BiliKit、`AppIcon`、正式 feed，只由 `release.py` 的 archive 传
+  `BILIKIT_CHANNEL=Production` 得到，archive 后立即核对；其余构建（本机 Debug 与 Release、Gate、CI）都是
+  开发渠道：`com.shiinayane.BiliKit.dev`、BiliKit Dev、`AppIcon-Dev`、无 feed，渠道值缺失或拼错也回落到开发渠道。
+  开发版因此与安装版分开偏好域、沙盒容器和 Keychain 范围，不检查更新。不采用按 Build Configuration 区分：
+  本机实测常把 Run 切到 Release，那样的包会和正式版无法区分。`PRODUCT_NAME`、模块名与 `CFBundleName`（菜单栏 App 菜单）
+  两个渠道都是 `BiliKit`，进程按 Bundle ID 定位（`open -b`），不按名字。
+- Keychain access group 固定为 `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`，更换 Team 或 Bundle ID
+  等于换一个 Keychain 范围，旧登录态不迁移，也不得扩大 access group 去读取。
 - 强调色是资源目录的 `AccentColor`（B 站粉调深，让上面的白字仍可读），界面只经系统强调色（`controlAccentColor`／`Color.accentColor`）取用；
   用户在系统设置里选了具体主题颜色时以系统为准。
 

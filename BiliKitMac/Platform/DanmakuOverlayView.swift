@@ -315,7 +315,11 @@ private enum DanmakuClockPrecondition: String {
     case ancestorTiming = "danmaku clock ancestor layer has non-identity timing"
     case missingTimebase = "player item has no timebase for the danmaku clock"
 
-    private static let log = Logger(subsystem: "com.shiinayane.BiliKit", category: "DanmakuClock")
+    // subsystem 跟随渠道 Bundle ID，Console 里开发版与安装版的日志可以分开筛选。
+    private static let log = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "BiliKit",
+        category: "DanmakuClock"
+    )
 
     func report() {
         assertionFailure(rawValue)
