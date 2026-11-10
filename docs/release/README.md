@@ -15,7 +15,7 @@ Developer ID、`BiliKit-Notary` 与 Sparkle EdDSA key。GitHub Actions 只跑 ma
   两个渠道的更新日志因此逐字一致，Release 页只额外提供安装与系统要求。
 - 提交、PR、合并和正式发布需当前任务授权；历史授权不延续。
 - 先合并源码，等待同一提交的 main push CI 三个环境成功，再冻结干净的最新 main。
-- 工具：完整版 Xcode、Python 3、gh、Node **22.22.3**；DMG 工具固定 create-dmg **8.1.0** 及依赖锁，原生
+- 工具：完整版 Xcode、Python 3、gh、Node **22.23.4**；DMG 工具固定 create-dmg **8.1.0** 及依赖锁，原生
   macos-alias 与 Node ABI 必须一致。Finder 布局保持 660×400、160pt 图标和 Applications 链接。
 - `gh` 与 Wrangler 在发布机登录；凭据不写入参数、仓库或聊天。
 - 每次检查最终签名身份、profile 允许范围、有效期与精确 Keychain entitlement；wildcard profile 的
