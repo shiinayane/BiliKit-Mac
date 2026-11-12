@@ -160,6 +160,9 @@ EXTRA_ALLOWED = {
     "BiliKitMac/Platform/DanmakuTimebaseClock.swift": {"CoreMedia", "QuartzCore"},
     "BiliKitMac/Platform/NativeVideoImageLoadingPorts.swift": {"BiliDanmaku", "BiliVideoCollectionUI"},
     "BiliKitMac/Platform/NativeVideoImagePipeline.swift": {"BiliNetworking"},
+    # 窗口网格保活的 owner 持有 BiliVideoCollectionUI 的保活容器，并在内存压力与关窗时调用它；WindowComposition 持有
+    # 这个 owner，AppShellView 只拿到其中的保活容器。
+    "BiliKitMac/Platform/NativeVideoGridRetainerOwner.swift": {"BiliVideoCollectionUI"},
     "BiliKitMac/Platform/PlaybackPreferencesController.swift": {"AVFoundation"},
     # 加载时按网络是否昂贵或受限决定能否加入 HDR 档（NWPathMonitor）。
     "BiliKitMac/Platform/PlaybackHDREnvironment.swift": {"Network"},

@@ -37,6 +37,8 @@ struct AppShellView: View {
     let commentImagePreview: NativeCommentImagePreviewPresenter
     let seekPlayback: @MainActor (_ bvid: String, _ seconds: Int) -> Void
     let imagePipeline: NativeVideoImagePipeline
+    /// 各来源网格的保活，按 `AppTab` 留住；账户变化时由本视图丢弃，关窗由窗口组装丢弃。
+    let gridRetainer: NativeVideoGridRetainer
     /// 窗口的账户写入：经环境交给各来源的卡片菜单，结果胶囊盖在主区底部。
     let accountWrites: AccountWriteCoordinator
     /// 播放页点赞、投币、收藏按钮的状态；窗口写入账户变化时交给它重读。
@@ -163,7 +165,8 @@ struct AppShellView: View {
                 return
             }
             // 账户变化会替换每个来源的内容（Browse 丢弃全部工作集，稍后再看、观看历史与收藏夹随账户重载），所有网格都
-            // 回到顶部。
+            // 回到顶部；留住的网格还持有旧账户的卡片，一并丢弃。
+            gridRetainer.discardAll()
             for tab in AppTab.allCases {
                 scrollToTop(tab)
             }
@@ -245,7 +248,13 @@ struct AppShellView: View {
         return NativeVideoGridHostContext(
             scrollOffsetY: scroll.offsetY,
             scrollReset: scroll.reset,
-            imageLoader: imagePipeline
+            imageLoader: imagePipeline,
+            retention: NativeVideoGridRetention(
+                retainer: gridRetainer,
+                key: tab,
+                // 收藏夹按夹重建内容视图（换夹等同换来源），新夹不沿用旧夹的网格。
+                contentIdentity: tab == .favorites ? favoriteFolders.selectedFolderID : nil
+            )
         )
     }
 

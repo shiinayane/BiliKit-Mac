@@ -20,6 +20,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
     @Binding var scrollReset: NativeVideoGridScrollResetState
     let imagePipeline: any NativeVideoImageLoading
     let actions: NativeVideoGridActions
+    let retention: NativeVideoGridRetention
 
     package init(
         items: [NativeVideoCardPresentation],
@@ -38,6 +39,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         self.bottomInset = bottomInset
         _scrollReset = host.scrollReset
         imagePipeline = host.imageLoader
+        retention = host.retention
         actions = NativeVideoGridActions(
             onNearEnd: onNearEnd,
             onSelect: onSelect,
@@ -45,57 +47,14 @@ package struct NativeVideoGridView: NSViewRepresentable {
         )
     }
 
-    package func makeCoordinator() -> Coordinator {
-        Coordinator(
-            items: items,
-            initialScrollOffsetY: scrollOffsetY,
-            accessibilityLabel: accessibilityLabel,
-            tailState: tailState,
-            bottomInset: bottomInset,
-            scrollResetRequestID: scrollReset.requestID,
-            acknowledgedScrollResetRequestID: scrollReset.acknowledgedRequestID,
-            imagePipeline: imagePipeline,
-            onScroll: { scrollOffsetY = $0 },
-            onAcknowledgeScrollReset: {
-                scrollReset.acknowledgedRequestID = $0
-            },
-            actions: actions
-        )
-    }
-
-    package func makeNSView(context: Context) -> NSScrollView {
-        context.coordinator.makeScrollView()
-    }
-
-    package func updateNSView(_ view: NSScrollView, context: Context) {
-        context.coordinator.update(
-            items: items,
-            accessibilityLabel: accessibilityLabel,
-            tailState: tailState,
-            bottomInset: bottomInset,
-            scrollResetRequestID: scrollReset.requestID,
-            requestedScrollOffsetY: scrollOffsetY,
-            onScroll: { scrollOffsetY = $0 },
-            onAcknowledgeScrollReset: {
-                scrollReset.acknowledgedRequestID = $0
-            },
-            actions: actions
-        )
-    }
-
-    package static func dismantleNSView(
-        _ view: NSScrollView,
-        coordinator: Coordinator
-    ) {
-        coordinator.reset()
-    }
-
     /// 网格的唯一 owner：滚动视图与它的 clip view、集合视图、diffable 数据源、通知观察、悬停与滚动／分页状态。
     ///
-    /// 不拥有图片管线（由窗口关闭）。`dismantleNSView` 调 `reset()`：先记录并同步最后的滚动位置（置位
-    /// `isReset` 后 `persistScrollOffset` 直接返回），再移除观察并清空回调。之后 `update`、滚动与翻页判断按
-    /// `isReset` 返回；已排队的预备区域刷新靠 `window != nil` 兜底。在途差异动画的完成回调只撤销 clip view 的
-    /// 动画计数，不回到 Coordinator，拆除后无须作废。
+    /// 不拥有图片管线（由窗口关闭）。由窗口保活（`NativeVideoGridRetainer`）留住时，`dismantleNSView` 调 `detach()`：
+    /// 视图与状态都留着，再次 `makeNSView` 时 `attachScrollView()` 交回同一个滚动视图。不保活时 `dismantleNSView` 调
+    /// `reset()`，保活容器丢弃已摘下的网格时也调它，不可逆：先记录并同步最后的滚动位置（置位 `isReset` 后
+    /// `persistScrollOffset` 直接返回），再移除观察并清空回调。
+    /// 之后 `update`、滚动与翻页判断按 `isReset` 返回；已排队的预备区域刷新靠 `window != nil` 兜底。在途差异动画的
+    /// 完成回调只撤销 clip view 的动画计数，不回到 Coordinator，拆除后无须作废。
     @MainActor
     package final class Coordinator: NSObject, NSCollectionViewDelegate {
         private let scrollView = NativeVideoGridScrollView()
@@ -113,7 +72,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
                 bottomInset: self?.bottomInset ?? 0
             )
         }
-        private let imagePipeline: any NativeVideoImageLoading
+        private var images: NativeVideoGridHeldImages
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
         private var contents: NativeVideoCardContents
         private var accessibilityLabel: String
@@ -160,6 +119,13 @@ package struct NativeVideoGridView: NSViewRepresentable {
         /// 重排 document 期间为 true：其间到来的视口回调不再重排，也不判断翻页。
         private var isResizingDocument = false
         private var isReset = false
+        /// 由 `NativeVideoGridRetainer` 留住时拆除走 `detach()` 而不是 `reset()`。
+        ///
+        /// 只由保活容器设置，丢弃时清除。
+        var isRetained = false
+        /// 已建好滚动视图、当前不在 SwiftUI 层级里；`attachScrollView()` 挂回时清除。
+        private(set) var isDetached = false
+        private var hasMadeScrollView = false
 
         init(
             items: [NativeVideoCardPresentation],
@@ -181,7 +147,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             scrollResetGate = NativeVideoGridScrollResetGate(
                 initialRequestID: acknowledgedScrollResetRequestID
             )
-            self.imagePipeline = imagePipeline
+            images = NativeVideoGridHeldImages(pipeline: imagePipeline)
             self.onScroll = onScroll
             self.onAcknowledgeScrollReset = onAcknowledgeScrollReset
             self.actions = actions
@@ -198,7 +164,47 @@ package struct NativeVideoGridView: NSViewRepresentable {
             }
         }
 
-        func makeScrollView() -> NSScrollView {
+        /// 首次建好滚动视图；保活的网格再次出现时原样返回，按新视口重排与恢复留给下一轮。
+        ///
+        /// 只由 `makeNSView` 调用，每次返回的滚动视图同一时刻只能挂在一处（保活容器保证同一 Coordinator 不会同时
+        /// 给两个实例）；挂回后由随之而来的 `update` 交回当前内容与回调。
+        func attachScrollView() -> NSScrollView {
+            guard hasMadeScrollView else { return makeScrollView() }
+            isDetached = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isDetached else { return }
+                self.resizeDocument()
+                self.restorePendingOffsetIfPossible()
+                self.viewportDidChange()
+            }
+            return scrollView
+        }
+
+        /// 保活的网格被摘下（只由 `dismantleNSView` 调用）：先同步最后的滚动位置，再停用卡片动作，直到挂回后的
+        /// `update` 交回。
+        ///
+        /// 不移除观察、不清内容与锚点。离开窗口时自动 contentInsets 会变、bounds 可能被夹取，摘下期间的滚动不记录、
+        /// 不判断翻页，否则会把过渡偏移写回 binding、把尾标记成已触发而丢掉那次翻页。滚动位置与回顶确认的回调照旧
+        /// 指向窗口状态：它们比网格活得久，离开期间落地的回顶仍要确认。卡片正显示的图在离开窗口之前
+        /// （`onWillLeaveWindow`）就已收走。
+        func detach() {
+            guard !isReset, !isDetached else { return }
+            recordCurrentScrollOffset(requireAttachedWindow: false)
+            persistScrollOffset()
+            isDetached = true
+            // 被切断的手势收不到结束通知；不清掉的话挂回后会一直当作实时滚动，跳过锚点恢复。
+            isLiveScrolling = false
+            hover.forgetHoveredItem()
+            actions = .inert
+        }
+
+        /// 系统内存压力时由保活容器调用；卡片正显示的图不受影响。
+        func releaseHeldImages() {
+            images.release()
+        }
+
+        private func makeScrollView() -> NSScrollView {
+            hasMadeScrollView = true
             collectionView.collectionViewLayout = layout
             collectionView.delegate = self
             collectionView.isSelectable = true
@@ -234,6 +240,10 @@ package struct NativeVideoGridView: NSViewRepresentable {
             scrollView.autohidesScrollers = true
             scrollView.drawsBackground = false
             scrollView.contentView.postsBoundsChangedNotifications = true
+            scrollView.onWillLeaveWindow = { [weak self] in
+                guard let self, self.isRetained, !self.isReset else { return }
+                self.images.hold(self.collectionView.visibleVideoCards)
+            }
             scrollView.onViewportLayout = { [weak self] in
                 // 重排 document 中途的 tile 不嵌套处理，视口在重排中又变了由 `resizeDocument` 自己再排一遍。
                 guard let self, !self.isResizingDocument, self.pendingViewportChange.any
@@ -269,9 +279,10 @@ package struct NativeVideoGridView: NSViewRepresentable {
             applySnapshot()
             // 返回时滚动视图还没装进 SwiftUI 的层级；下一轮再排版、恢复位置并判断翻页。
             DispatchQueue.main.async { [weak self] in
-                self?.resizeDocument()
-                self?.restorePendingOffsetIfPossible()
-                self?.viewportDidChange()
+                guard let self, !self.isDetached else { return }
+                self.resizeDocument()
+                self.restorePendingOffsetIfPossible()
+                self.viewportDidChange()
             }
             return scrollView
         }
@@ -381,6 +392,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             recordCurrentScrollOffset(requireAttachedWindow: false)
             persistScrollOffset()
             isReset = true
+            images.release()
             hover.forgetHoveredItem()
             for item in collectionView.visibleVideoCards { item.invalidate() }
             collectionView.onActivateSelection = nil
@@ -426,7 +438,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         ) {
             item.configure(
                 presentation: presentation,
-                imagePipeline: imagePipeline,
+                imagePipeline: images,
                 hoverChanged: { [weak self] item, isHovered in
                     self?.item(item, didChangeHover: isHovered)
                 },
@@ -528,6 +540,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         private func didScroll() {
             guard
                 !isReset,
+                !isDetached,
                 NativeVideoGridGeometry.isRenderableViewport(
                     width: scrollView.contentSize.width
                 )
@@ -671,6 +684,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         private func evaluateNearEnd() {
             guard
                 !isReset,
+                !isDetached,
                 !isResizingDocument,
                 pendingRestoreOffsetY == nil,
                 lastViewportSize != nil,

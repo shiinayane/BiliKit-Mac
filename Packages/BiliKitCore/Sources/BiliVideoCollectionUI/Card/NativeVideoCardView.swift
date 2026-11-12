@@ -129,7 +129,8 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
     private enum ImagePhase: Equatable {
         case idle
         case loading(URL)
-        case loaded(URL)
+        /// 带着正显示的图：保活的网格摘下前经 `displayedImages` 取走（`NativeVideoGridHeldImages`）。
+        case loaded(URL, CGImage)
         case failed(URL)
     }
 
@@ -153,6 +154,14 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
     }
 
     package var representedVideoID: String? { currentPresentation?.id }
+
+    /// 卡片此刻显示着的封面与头像，按图片地址。
+    var displayedImages: [URL: CGImage] {
+        var images: [URL: CGImage] = [:]
+        if case .loaded(let url, let image) = coverPhase { images[url] = image }
+        if case .loaded(let url, let image) = avatarPhase { images[url] = image }
+        return images
+    }
 
     package override func loadView() {
         view = card
@@ -266,7 +275,7 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
     ) {
         if let coverURL = presentation.coverURL, coverPhase == .idle {
             if let cached = pipeline.cachedImage(for: coverURL, kind: .cover) {
-                coverPhase = .loaded(coverURL)
+                coverPhase = .loaded(coverURL, cached)
                 card.setCover(cached, animated: false)
             } else {
                 coverPhase = .loading(coverURL)
@@ -279,7 +288,7 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
                     guard let self else { return }
                     coverTask = nil
                     if let result {
-                        coverPhase = .loaded(coverURL)
+                        coverPhase = .loaded(coverURL, result.image)
                         card.setCover(result.image, animated: result.fadesIn)
                     } else {
                         coverPhase = .failed(coverURL)
@@ -292,7 +301,7 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
             avatarPhase == .idle
         {
             if let cached = pipeline.cachedImage(for: avatarURL, kind: .avatar) {
-                avatarPhase = .loaded(avatarURL)
+                avatarPhase = .loaded(avatarURL, cached)
                 card.setAvatar(cached, animated: false)
                 return
             }
@@ -306,7 +315,7 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
                 guard let self else { return }
                 avatarTask = nil
                 if let result {
-                    avatarPhase = .loaded(avatarURL)
+                    avatarPhase = .loaded(avatarURL, result.image)
                     card.setAvatar(result.image, animated: result.fadesIn)
                 } else {
                     avatarPhase = .failed(avatarURL)

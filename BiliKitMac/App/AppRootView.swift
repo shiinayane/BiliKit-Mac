@@ -52,6 +52,7 @@ struct AppRootView: View {
             commentImagePreview: window.commentImagePreview,
             seekPlayback: window.seekPlayback,
             imagePipeline: window.imagePipeline,
+            gridRetainer: window.gridRetainerOwner.retainer,
             accountWrites: window.accountWrites,
             engagementModel: window.engagementModel,
             isAuthenticationPresented: $isAuthenticationPresented

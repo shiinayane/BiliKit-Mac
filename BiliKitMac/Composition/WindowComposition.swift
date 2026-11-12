@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// 拥有本窗口的全部模型（浏览、视频、评论、弹幕、认证、稍后再看与稍后再看会话、观看历史、收藏夹列表与夹内页面、UP 主空间、热搜与
 /// 联想、搜索会话）、账户写入的协调者与效果路由、导航协调、
-/// 来源描述与复核参与者、播放器视图、窗口图片管线、评论短链解析、评论图片预览面板与图片保存、Now Playing 与观看进度的连接，以及
+/// 来源描述与复核参与者、播放器视图、窗口图片管线、来源网格的保活、评论短链解析、评论图片预览面板与图片保存、Now Playing 与观看进度的连接，以及
 /// 经 `WindowAdapters` 拿到的具体实现。只引用进程级对象（账户会话、设置、Now Playing 控制器、搜索历史），不创建
 /// 也不关闭它们。视频、弹幕模型与播放器视图必须共享 adapter 里同一个播放器；分别重建会让画面、时间线与弹幕指向
 /// 不同的播放项目。
@@ -62,6 +62,8 @@ final class WindowComposition {
     /// 窗口内所有封面、头像与评论图片共用的匿名有界图片管线。
     let imagePipeline: NativeVideoImagePipeline
     private let imagePipelineOwner = NativeVideoImagePipelineOwner(cacheLimits: .window)
+    /// 各来源网格的保活，保活容器交给 `AppShellView` 构造各来源的网格依赖；关窗时在关闭图片管线之前丢弃。
+    let gridRetainerOwner = NativeVideoGridRetainerOwner()
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator
     private let watchProgressConnection: WatchProgressWindowConnection
     private let adapters: WindowAdapters
@@ -271,7 +273,7 @@ final class WindowComposition {
     ///
     /// 按顺序：先从进程级测速注销本窗口；再关闭播放（停止播放器、字幕与弹幕）并恢复新窗口的来源；各来源
     /// 丢弃内容；取消认证临时任务与评论；取消在途账户写入并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
-    /// 的保存面板按取消结束）再取消图片保存；停止观看进度与 Now Playing；关闭图片管线；最后
+    /// 的保存面板按取消结束）再取消图片保存；停止观看进度与 Now Playing；丢弃保活的网格；关闭图片管线；最后
     /// 由 adapter 取消弹幕的内存压力监听、停止播放偏好的持久化、注销窗口 API 的会话并失效短链 session（只在打开过
     /// 之后）。模型与连接先停下自己的任务，再拆掉它们依赖的 adapter。
     func close() {
@@ -292,6 +294,7 @@ final class WindowComposition {
         commentImageSaver.cancel()
         watchProgressConnection.stop()
         systemNowPlayingCoordinator.close()
+        gridRetainerOwner.close()
         imagePipelineOwner.shutdown()
         if isOpen {
             adapters.close()
