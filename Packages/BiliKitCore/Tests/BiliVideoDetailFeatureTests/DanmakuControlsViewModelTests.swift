@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliModels
 import BiliVideoDetailFeature
 import Testing
 
@@ -108,14 +109,15 @@ struct DanmakuControlsViewModelTests {
     }
 }
 
-private struct ModeValues: Equatable {
+struct ModeValues: Equatable {
     let scrolling: Bool
     let top: Bool
     let bottom: Bool
 }
 
+/// 本 target 唯一的 `DanmakuSessionControlling` 替身：记录交给弹幕会话的每项设置、生命周期与本地上屏的弹幕。
 @MainActor
-private final class RecordingDanmakuPresentation:
+final class RecordingDanmakuPresentation:
     DanmakuSessionControlling
 {
     private(set) var startedIdentities: [PlaybackItemIdentity] = []
@@ -126,6 +128,7 @@ private final class RecordingDanmakuPresentation:
     private(set) var densities: [DanmakuDensity] = []
     private(set) var mergesDuplicatesValues: [Bool] = []
     private(set) var stopCount = 0
+    private(set) var ownDanmaku: [(event: DanmakuEvent, identity: PlaybackItemIdentity)] = []
     private var authenticationInvalidationHandler: (@MainActor () -> Void)?
 
     func setAuthenticationInvalidationHandler(
@@ -143,6 +146,10 @@ private final class RecordingDanmakuPresentation:
     }
 
     func setEnabled(_ enabled: Bool) {}
+
+    func presentOwnDanmaku(_ event: DanmakuEvent, for identity: PlaybackItemIdentity) {
+        ownDanmaku.append((event, identity))
+    }
 
     func setSpeedLevel(_ speedLevel: DanmakuSpeedLevel) {
         speedLevels.append(speedLevel)

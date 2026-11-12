@@ -96,6 +96,7 @@ final class RecordingDanmakuPresentation: DanmakuSessionControlling {
     func setMergesDuplicates(_ merges: Bool) {}
     func setModeVisibility(scrolling: Bool, top: Bool, bottom: Bool) {}
     func setAuthenticationInvalidationHandler(_ handler: @escaping @MainActor () -> Void) {}
+    func presentOwnDanmaku(_ event: DanmakuEvent, for identity: PlaybackItemIdentity) {}
 
     func stop() {
         stopCount += 1
@@ -255,6 +256,8 @@ func makeTestAdapters(
     favoritesWrite: any FavoritesWriteRepository = AccountWriteRepositoryStub(),
     videoEngagement: any VideoEngagementRepository = AccountWriteRepositoryStub(),
     recommendationFeedback: any RecommendationFeedbackRepository = AccountWriteRepositoryStub(),
+    danmakuPost: any DanmakuPostRepository = AccountWriteRepositoryStub(),
+    timeline: PlaybackTimelineSnapshot = .idle,
     authentication: any AuthenticationServicing = AuthenticationServiceStub(
         restoreState: .signedOut
     ),
@@ -283,11 +286,13 @@ func makeTestAdapters(
         favoritesWriteRepository: favoritesWrite,
         videoEngagementRepository: videoEngagement,
         recommendationFeedbackRepository: recommendationFeedback,
+        danmakuPostRepository: danmakuPost,
         commentAssetURLResolver: { _, _ in nil },
         commentLinkRouter: { _ in nil },
         authenticationService: authentication,
         authenticationQRCodeProvider: EmptyQRCodeProvider(),
         playback: playback,
+        currentTimeline: { timeline },
         makePlaybackAuthenticationInvalidations: { AsyncStream { $0.finish() } },
         danmakuPresentation: RecordingDanmakuPresentation(),
         danmakuPreferences: DefaultDanmakuPreferencesStore(),
@@ -301,7 +306,8 @@ func makeTestAdapters(
     )
 }
 
-/// 账户写入测试的窗口：账户 7 已登录并确认，稍后再看、收藏与播放页互动的写入都经 `writes`；窗口已打开，调用方负责关闭。
+/// 账户写入测试的窗口：账户 7 已登录并确认，稍后再看、收藏、播放页互动与弹幕的写入都经 `writes`；窗口已打开，调用方负责
+/// 关闭。
 @MainActor
 func signedInWindow(
     process: ProcessComposition,
@@ -319,6 +325,7 @@ func signedInWindow(
             watchLaterWrite: writes,
             favoritesWrite: writes,
             videoEngagement: writes,
+            danmakuPost: writes,
             authentication: AuthenticationServiceStub(
                 restoreState: .signedIn(
                     AccountIdentity(id: 7, displayName: "账号", avatarURL: nil)

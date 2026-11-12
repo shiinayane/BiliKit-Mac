@@ -229,12 +229,29 @@ extension BiliAPIClient {
         )
     }
 
+    /// 表单字段的 urlencoded 编码：字段名与值里 RFC 3986 unreserved 之外的字符一律百分号编码。
+    ///
+    /// 不用 `URLComponents` 的 query 编码：它不编码 `+`（服务端会把正文里的 `+` 解成空格，弹幕“+1”变成“ 1”）与 `;`
+    /// 等分隔符（有的服务端把 `;` 也当字段分隔，正文就能夹带授权器没见过的字段）。授权器 `decodedUniqueFields` 只按 `&`
+    /// 拆分、不把 `+` 当空格，编码后两边看到的是同一份字段与正文。
     private static func formBody(_ fields: [(String, String)]) throws -> Data {
-        var components = URLComponents()
-        components.queryItems = fields.map(URLQueryItem.init(name:value:))
-        guard let encoded = components.percentEncodedQuery else {
-            throw BiliAPIError.invalidRequest
+        var parts: [String] = []
+        for (name, value) in fields {
+            guard
+                let encodedName = name.addingPercentEncoding(withAllowedCharacters: formUnreserved),
+                let encodedValue = value.addingPercentEncoding(
+                    withAllowedCharacters: formUnreserved
+                )
+            else {
+                throw BiliAPIError.invalidRequest
+            }
+            parts.append("\(encodedName)=\(encodedValue)")
         }
-        return Data(encoded.utf8)
+        return Data(parts.joined(separator: "&").utf8)
     }
+
+    /// RFC 3986 unreserved：ASCII 字母、数字与 `-._~`。
+    private static let formUnreserved = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
 }

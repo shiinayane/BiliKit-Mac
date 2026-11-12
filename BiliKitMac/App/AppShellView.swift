@@ -19,6 +19,7 @@ struct AppShellView: View {
     let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel
     let danmakuModel: DanmakuControlsViewModel
+    let danmakuComposer: DanmakuComposerModel
     let authenticationModel: AuthenticationViewModel
     let watchLaterModel: WatchLaterViewModel
     let watchLaterSession: WatchLaterSession
@@ -116,6 +117,7 @@ struct AppShellView: View {
                         PlaybackDestinationView(
                             model: videoModel,
                             danmakuModel: danmakuModel,
+                            danmakuComposer: danmakuComposer,
                             engagementModel: engagementModel,
                             playerContent: playerContent,
                             imagePipeline: imagePipeline,
@@ -419,6 +421,7 @@ private struct SourceGridScrollStates {
 private struct PlaybackDestinationView: View {
     let model: VideoViewModel
     let danmakuModel: DanmakuControlsViewModel
+    let danmakuComposer: DanmakuComposerModel
     let engagementModel: VideoEngagementModel
     let playerContent: AnyView
     let imagePipeline: NativeVideoImagePipeline
@@ -429,6 +432,7 @@ private struct PlaybackDestinationView: View {
         VideoPlaybackView(
             model: model,
             danmakuModel: danmakuModel,
+            danmakuComposer: danmakuComposer,
             engagementModel: engagementModel,
             onRetry: onRetry,
             onSelectRelatedVideo: onSelectRelatedVideo,

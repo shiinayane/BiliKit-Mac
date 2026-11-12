@@ -47,6 +47,8 @@ public final class DanmakuSession: DanmakuSessionControlling {
     private var failedSegmentIndices: Set<Int> = []
     /// 当前 identity 的互动弹幕；读到之前与 `stop` 后为空。
     private var commands = DanmakuCommands.empty
+    /// 当前 identity 里本窗口发出成功的弹幕（`presentOwnDanmaku`），与 UP 主弹幕一样按时间并入分段；`stop` 时清空。
+    private var ownEvents: [DanmakuEvent] = []
     /// 读取互动弹幕的 Task；完成时自己置空，`stop` 与 `deinit` 时取消。
     private var commandTask: Task<Void, Never>?
     /// 同一会话只报告一次需要复核账户，`stop` 时重置。
@@ -149,6 +151,7 @@ public final class DanmakuSession: DanmakuSessionControlling {
         commandTask?.cancel()
         commandTask = nil
         commands = .empty
+        ownEvents.removeAll(keepingCapacity: false)
         for task in loadTasks.values {
             task.cancel()
         }
@@ -157,6 +160,17 @@ public final class DanmakuSession: DanmakuSessionControlling {
         authenticationInvalidationReported = false
         identity = nil
         segmentCache.reset()
+    }
+
+    public func presentOwnDanmaku(_ event: DanmakuEvent, for identity: PlaybackItemIdentity) {
+        guard self.identity == identity, !ownEvents.contains(where: { $0.id == event.id }) else {
+            return
+        }
+        ownEvents.append(event)
+        // 所在分段还没读到时这里不交：那一段到达时 `presentationSegments` 会把它并进去。
+        guard segmentCache.segments[DanmakuSegmentCache.segmentIndex(at: event.timeSeconds)] != nil
+        else { return }
+        presentationSink?.setSegments(presentationSegments(), for: identity)
     }
 
     private func handle(_ snapshot: PlaybackTimelineSnapshot) {
@@ -269,12 +283,22 @@ public final class DanmakuSession: DanmakuSessionControlling {
     /// 只并入已缓存的分段，所以分段淘汰与车道布局的种子规则不变；UP 主弹幕的 ID 带前缀，不与分段弹幕冲突。
     /// 互动弹幕晚于分段到达时，含 UP 主弹幕的分段会重新交一次，呈现端为它（以及末尾占用因此变化的后续分段）
     /// 重排一次车道；不让分段等互动弹幕，是为了互动弹幕接口慢或失败时普通弹幕不被拖住。
+    ///
+    /// 自己发出的弹幕同样并入；分段里已有同 ID 的（被淘汰后重新读到，服务端那份已包含它）换成本地这一条：只显示一次，
+    /// 且仍带“自己发的”标记（边框、不参与重复合并），不会因为重读变成普通弹幕。
     private func presentationSegments() -> [Int: [DanmakuEvent]] {
         let segments = segmentCache.segments
-        guard !commands.uploaderEvents.isEmpty else { return segments }
+        guard !commands.uploaderEvents.isEmpty || !ownEvents.isEmpty else { return segments }
         var result = segments
         for event in commands.uploaderEvents {
             result[DanmakuSegmentCache.segmentIndex(at: event.timeSeconds)]?.append(event)
+        }
+        for event in ownEvents {
+            let index = DanmakuSegmentCache.segmentIndex(at: event.timeSeconds)
+            guard var segment = result[index] else { continue }
+            segment.removeAll { $0.id == event.id }
+            segment.append(event)
+            result[index] = segment
         }
         return result
     }

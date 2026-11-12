@@ -5,7 +5,7 @@ import BiliVideoCollectionUI
 import BiliVideoDetailFeature
 import SwiftUI
 
-/// 播放器动作菜单的意图：加入稍后再看、取当前视频的网页地址与 BV 号、暂停播放，读写「播放结束后」偏好。
+/// 播放器动作菜单的意图：加入稍后再看、能否发送弹幕、取当前视频的网页地址与 BV 号、暂停播放，读写「播放结束后」偏好。
 ///
 /// 由 `WindowAdapters` 的播放器内容用视频模型、播放引擎的时间线与暂停、窗口的写入入口构造（`make`），交给
 /// `PlayerActionMenuController`。门槛与写入在窗口的写入协调者里，这里只决定当下能不能做、给什么提示；协调者没有发出
@@ -14,6 +14,8 @@ struct PlayerActionMenuActions {
     /// 刷新可用状态时据此决定「添加到稍后再看」是否可用。
     let canAddToWatchLater: @MainActor () -> Bool
     let addToWatchLater: @MainActor () -> PlayerActionFeedback?
+    /// 刷新可用状态时据此决定「发送弹幕…」是否可用（`DanmakuComposerModel.canPresent`）；执行时由输入胶囊再核对一次。
+    let canPostDanmaku: @MainActor () -> Bool
     /// 当前视频带分 P 与时间的网页地址；没有可操作的视频时为 nil（见 `VideoViewModel.shareURL`）。
     let shareURL: @MainActor () -> URL?
     /// 当前可操作视频的 BV 号（`VideoViewModel.operableBVID`）。
@@ -37,6 +39,7 @@ struct PlayerActionMenuActions {
                 guard let bvid = videoModel.operableBVID else { return .unavailable }
                 return window.addToWatchLater(bvid) ? .watchLaterRequested : nil
             },
+            canPostDanmaku: { window.danmakuComposer.canPresent },
             shareURL: { videoModel.shareURL(timeline: timeline()) },
             bvid: { videoModel.operableBVID },
             pausePlayback: pausePlayback,
@@ -53,6 +56,10 @@ struct PlayerActionMenuActions {
 enum PlayerActionFeedback: Equatable {
     case watchLaterRequested
     case signInRequired
+    /// 未登录时呼出弹幕输入胶囊。
+    case danmakuSignInRequired
+    /// 弹幕发出成功；参数是写入结果的说明。
+    case danmakuPosted(String)
     case unavailable
     case linkCopied
     case bvidCopied
@@ -69,6 +76,8 @@ enum PlayerActionFeedback: Equatable {
         switch self {
         case .watchLaterRequested: AppStrings.localized("正在添加到稍后再看")
         case .signInRequired: AppStrings.localized("登录后可添加到稍后再看")
+        case .danmakuSignInRequired: AppStrings.localized("登录后可发送弹幕")
+        case .danmakuPosted(let message): message
         case .unavailable: AppStrings.localized("暂时无法操作当前视频")
         case .linkCopied: AppStrings.localized("已拷贝链接")
         case .bvidCopied: AppStrings.localized("已拷贝 BV 号")
@@ -82,7 +91,8 @@ enum PlayerActionFeedback: Equatable {
     var symbolName: String {
         switch self {
         case .watchLaterRequested: "clock"
-        case .signInRequired: "person.crop.circle"
+        case .signInRequired, .danmakuSignInRequired: "person.crop.circle"
+        case .danmakuPosted: "checkmark.circle"
         case .unavailable: "exclamationmark.circle"
         case .linkCopied: "link"
         case .bvidCopied: "doc.on.doc"
@@ -114,8 +124,8 @@ extension PlaybackEndBehavior {
     }
 }
 
-/// AVKit 控制条动作菜单（`AVPlayerView.actionPopUpButtonMenu`）的内容与执行：稍后再看、链接与 BV 号，以及「播放结束后」
-/// 单选。
+/// AVKit 控制条动作菜单（`AVPlayerView.actionPopUpButtonMenu`）的内容与执行：稍后再看、发送弹幕、链接与 BV 号，以及
+/// 「播放结束后」单选。
 ///
 /// 用 AppKit：菜单由 AVKit 的原生控制条弹出，只接受 `NSMenu`。窗口下在控制条的动作菜单按钮里；全屏下 AVKit 把它收进
 /// 浮动控制条的「»」→「其他」子菜单。由 `NativePlayerHostView` 持有；菜单项只在创建时建一次，之后只原地改可用状态与勾选，
@@ -132,11 +142,18 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
     private var openURL: OpenURLAction?
     /// 操作后的播放器提示；宿主接到播放器浮层。
     var presentFeedback: (PlayerActionFeedback) -> Void = { _ in }
+    /// 「发送弹幕…」；宿主接到播放器浮层的输入胶囊（`DanmakuComposerModel.present`）。
+    var openDanmakuComposer: () -> Void = {}
 
     private lazy var watchLaterItem = item(
         VideoCardMenuText.addToWatchLater,
         symbol: "clock",
         action: #selector(addToWatchLater)
+    )
+    private lazy var danmakuItem = item(
+        AppStrings.localized("发送弹幕…"),
+        symbol: "text.bubble",
+        action: #selector(postDanmaku)
     )
     private lazy var videoItems = [
         item(VideoCardMenuText.copyLink, symbol: "link", action: #selector(copyLink)),
@@ -159,6 +176,7 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         menu.delegate = self
         menu.addItem(watchLaterItem)
+        menu.addItem(danmakuItem)
         menu.addItem(.separator())
         videoItems.forEach(menu.addItem)
         menu.addItem(.separator())
@@ -180,6 +198,7 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
 
     private func refreshItemStates() {
         watchLaterItem.isEnabled = actions?.canAddToWatchLater() == true
+        danmakuItem.isEnabled = actions?.canPostDanmaku() == true
         let hasVideo = actions?.bvid() != nil
         for item in videoItems {
             item.isEnabled = hasVideo
@@ -202,6 +221,10 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
     @objc private func addToWatchLater() {
         guard let feedback = actions?.addToWatchLater() else { return }
         presentFeedback(feedback)
+    }
+
+    @objc private func postDanmaku() {
+        openDanmakuComposer()
     }
 
     @objc private func copyLink() {

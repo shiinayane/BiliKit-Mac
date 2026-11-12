@@ -156,7 +156,10 @@
 
 - 目前只有稍后再看的加入（`POST /x/v2/history/toview/add`）与移除（`POST /x/v2/history/toview/del`），收藏的归属改动
   （`POST /x/v3/fav/resource/deal`）与夹内移除（`POST /x/v3/fav/resource/batch-del`），以及播放页侧栏的关注与取消关注（`POST /x/relation/modify`，只收单个 UP 主
-  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝）。
+  `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝），
+  以及发送普通视频弹幕（`POST /x/v2/dm/post`：`type` 固定为视频、`pool` 固定为普通池，`mode` 只收滚动、底部与顶部，颜色与字号
+  只收输入胶囊的候选，正文按发送前同一规则校验为单行、非空、不超过 100 字；高级、代码与 BAS 弹幕一律拒绝。正文由用户提交，
+  只在发送时出现在请求里，不记录、不持久化；本地上屏的那一条随弹幕会话清空）。
   `toview/del` 的 `aid` 在接口文档里
   可选、带 `viewed=true` 会删除全部已看完的视频；schema 强制要求 `aid` 并拒绝 `viewed`，所以发不出“一次清空”，不得把 `aid`
   改成可选。`batch-del` 接受逗号分隔的多个条目，schema 只收单个 `<aid>:2`；`deal` 只收单个视频、固定 `type=2`，两侧夹 id

@@ -6,7 +6,8 @@ import Testing
 @testable import BiliDanmaku
 
 /// 固定弹幕会话与呈现端的契约：当前 identity 的每个快照原样交给呈现端；分段到达时交出整份缓存；
-/// 开关、模式与停止同步转给呈现端；暂停时一个分段加载完就继续请求还缺的分段，不等下一个快照。
+/// 开关、模式与停止同步转给呈现端；暂停时一个分段加载完就继续请求还缺的分段，不等下一个快照；自己发出的弹幕
+/// 并入所在分段，分段里已有服务端那份同 ID 的也只显示本地这一条（保留“自己发的”）。
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct DanmakuSessionPresentationTests {
@@ -131,6 +132,38 @@ struct DanmakuSessionPresentationTests {
         let delivered = try #require(sink.segmentDeliveries.last?.segments)
         #expect(delivered[2]?.map(\.id).sorted() == ["command:up", "current"])
         #expect(delivered[1]?.contains { $0.isUploader } == false)
+        session.stop()
+    }
+
+    /// 刚发出的弹幕立即并入已缓存的分段；分段里已有同 ID 的服务端那份（重新读到时）换成本地这一条，只显示一次且仍是
+    /// 自己发的；别的视频的不并入。
+    @Test
+    func ownDanmakuJoinsItsSegmentAndReplacesTheServerCopy() async throws {
+        let identity = PlaybackItemIdentity(bvid: "BV1OwnDanmaku", cid: 8)
+        let repository = StubDanmakuRepository(
+            eventsBySegment: [
+                2: [danmakuEvent(id: "other", time: 380), danmakuEvent(id: "dm-1", time: 370)]
+            ]
+        )
+        let (session, timeline, sink) = makeDanmakuSession(repository: repository)
+        session.start(for: identity)
+        timeline.publish(
+            snapshot(identity: identity, position: 365, generation: 1, rate: 0, state: .paused)
+        )
+        try await sink.waitForUpdates { [unowned sink] in
+            sink.segmentDeliveries.last?.segments[2] != nil
+        }
+
+        let own = danmakuEvent(id: "dm-1", time: 370, isOwn: true)
+        session.presentOwnDanmaku(
+            danmakuEvent(id: "dm-2", time: 371, isOwn: true),
+            for: PlaybackItemIdentity(bvid: "BV1OtherVideo", cid: 9)
+        )
+        session.presentOwnDanmaku(own, for: identity)
+
+        let segment = try #require(sink.segmentDeliveries.last?.segments[2])
+        #expect(segment.map(\.id).sorted() == ["dm-1", "other"])
+        #expect(segment.first { $0.id == "dm-1" }?.isOwn == true)
         session.stop()
     }
 

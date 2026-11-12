@@ -1,3 +1,5 @@
+import BiliModels
+
 /// 弹幕滚动速度的五档；rawValue 持久化在播放偏好里，BiliDanmaku 渲染时换算为倍率（第三档为 1）。
 public enum DanmakuSpeedLevel: Int, CaseIterable, Sendable, Equatable {
     case one = 1
@@ -84,5 +86,10 @@ public protocol DanmakuSessionControlling: AnyObject {
     func setDensity(_ density: DanmakuDensity)
     /// 是否合并重复弹幕；变化时整张重排。
     func setMergesDuplicates(_ merges: Bool)
+    /// 本窗口刚发出成功的弹幕在本地立即上屏；`identity` 不是当前会话的视频时丢弃。
+    ///
+    /// `event.isOwn` 为 true，ID 是服务端给的弹幕 ID：之后重新读到的分段里有同 ID 的弹幕时换成这一条，保留“自己发的”
+    /// 外观；会话停止（换视频）时清空。
+    func presentOwnDanmaku(_ event: DanmakuEvent, for identity: PlaybackItemIdentity)
     func stop()
 }

@@ -5,11 +5,12 @@ import BiliVideoCollectionUI
 import Foundation
 import SwiftUI
 
-/// 已有详情时的播放页主区：播放器、相关推荐横排，以及工具栏标题、副标题、点赞投币收藏一组与弹幕按钮。
+/// 已有详情时的播放页主区：播放器、相关推荐横排，以及工具栏标题、副标题、点赞投币收藏一组、发送弹幕与弹幕设置按钮。
 struct VideoDetailView<PlayerContent: View>: View {
     @Environment(\.locale) private var locale
     let context: VideoContext
     let danmakuModel: DanmakuControlsViewModel
+    let danmakuComposer: DanmakuComposerModel?
     let engagementModel: VideoEngagementModel
     let relatedVideoState: RelatedVideoState
     let onSelectRelatedVideo: (String) -> Void
@@ -34,6 +35,11 @@ struct VideoDetailView<PlayerContent: View>: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 VideoEngagementControls(model: engagementModel)
+            }
+            if let danmakuComposer {
+                ToolbarItem(placement: .primaryAction) {
+                    DanmakuPostButton(composer: danmakuComposer)
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 DanmakuControlsView(model: danmakuModel)

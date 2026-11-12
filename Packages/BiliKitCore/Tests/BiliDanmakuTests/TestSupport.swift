@@ -16,7 +16,8 @@ func danmakuEvent(
     colorStyle: DanmakuColorStyle = .solid,
     weight: Int = 1,
     isHighLike: Bool = false,
-    isUploader: Bool = false
+    isUploader: Bool = false,
+    isOwn: Bool = false
 ) -> DanmakuEvent {
     DanmakuEvent(
         id: id,
@@ -28,7 +29,8 @@ func danmakuEvent(
         colorStyle: colorStyle,
         weight: weight,
         isHighLike: isHighLike,
-        isUploader: isUploader
+        isUploader: isUploader,
+        isOwn: isOwn
     )
 }
 

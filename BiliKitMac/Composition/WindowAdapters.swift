@@ -40,12 +40,16 @@ struct WindowAdapters {
     let videoEngagementRepository: any VideoEngagementRepository
     /// 首页推荐的「不感兴趣」与撤销；生产实现走窗口 API 的账户写授权器，绑定窗口账户。
     let recommendationFeedbackRepository: any RecommendationFeedbackRepository
+    /// 发送弹幕；生产实现走窗口 API 的账户写授权器，绑定窗口账户。
+    let danmakuPostRepository: any DanmakuPostRepository
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentLinkRouter: CommentLinkRouter
     let authenticationService: any AuthenticationServicing
     let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     /// 窗口唯一的播放控制；视频模型、播放器视图、弹幕、Now Playing 与观看进度必须指向同一个播放器。
     let playback: any PlaybackControlling
+    /// 同一个播放器此刻的时间线快照。
+    let currentTimeline: @MainActor () -> PlaybackTimelineSnapshot
     /// 播放附带的账户读取（字幕目录）发现的凭据失效；每构造一个视频模型调用一次，只有最新的流收到事件。
     let makePlaybackAuthenticationInvalidations: @MainActor () -> AsyncStream<Void>
     let danmakuPresentation: any DanmakuSessionControlling
@@ -138,6 +142,7 @@ extension WindowAdapters {
             favoritesWriteRepository: BiliFavoritesWriteRepository(client: api),
             videoEngagementRepository: BiliVideoEngagementRepository(client: api),
             recommendationFeedbackRepository: BiliRecommendationFeedbackRepository(client: api),
+            danmakuPostRepository: BiliDanmakuPostRepository(client: api),
             commentAssetURLResolver: { reference, box in
                 commentAssetResolver.imageURL(for: reference, fitting: box)
             },
@@ -147,6 +152,7 @@ extension WindowAdapters {
                 service: authenticationService
             ),
             playback: playerEngine,
+            currentTimeline: { playerEngine.currentTimelineSnapshot },
             makePlaybackAuthenticationInvalidations: subtitleAuthenticationInvalidations.makeStream,
             danmakuPresentation: danmaku.session,
             danmakuPreferences: UserDefaultsDanmakuPreferencesStore(),
@@ -180,6 +186,7 @@ extension WindowAdapters {
                             await playerEngine.toggleNativeSubtitles()
                         },
                         engagementShortcuts: engagementShortcuts,
+                        danmakuComposer: playerWindow.danmakuComposer,
                         openDanmakuLinkedVideo: playerWindow.openVideo,
                         actionMenu: .make(
                             videoModel: videoModel,
@@ -232,12 +239,13 @@ extension WindowAdapters {
 /// 播放器在窗口层的依赖，构造窗口 adapter 时还不存在，由窗口组装播放器时交给 `makePlayerContent`。
 ///
 /// 弹幕关联视频卡片的封面经窗口的图片管线加载，点击经窗口导航在应用内打开视频；动作菜单的「添加到稍后再看」经窗口的
-/// 写入协调者，门槛（`canWriteAccount`）也由它判断；播完后的自动连播经 `continuePlayback` 走与侧栏选分 P、选集相同的
-/// 导航意图，但保留侧栏上下文层。
+/// 写入协调者，门槛（`canWriteAccount`）也由它判断；弹幕输入胶囊归窗口（关窗时由窗口 reset），播放器只呈现它；播完后
+/// 的自动连播经 `continuePlayback` 走与侧栏选分 P、选集相同的导航意图，但保留侧栏上下文层。
 struct PlayerWindowContext {
     let imagePipeline: NativeVideoImagePipeline
     let openVideo: @MainActor (_ bvid: String) -> Void
     let canWriteAccount: @MainActor () -> Bool
+    let danmakuComposer: DanmakuComposerModel
     /// 返回是否发出（`AccountWriteCoordinator.addToWatchLater`）。
     let addToWatchLater: @MainActor (_ bvid: String) -> Bool
     let continuePlayback: @MainActor (_ bvid: String, _ preferredCID: Int64?) -> Void

@@ -42,6 +42,8 @@ enum PlayerKeyboardShortcut: Equatable, Hashable, Sendable {
     case fullScreen
     case coin
     case favorite
+    /// 回车：呼出发送弹幕的输入胶囊。
+    case danmakuComposer
 }
 
 /// 播放器键盘输入的纯状态机：把按下、抬起与长按到时转成动作，由 `PlayerKeyboardShortcutController`
@@ -82,6 +84,7 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
         case toggleFullScreen
         case openCoinPanel
         case chooseFavoriteFolders
+        case openDanmakuComposer
         /// 点赞键按下：controller 先在 `longPressDelay` 后调用 `likeProgressDeadlineReached`，再在
         /// `tripleHoldDuration` 时调用 `likeTripleDeadlineReached`。
         case scheduleLikeHold(pressID: UUID)
@@ -215,6 +218,7 @@ struct PlayerKeyboardInputState: Equatable, Sendable {
         case .fullScreen: [.toggleFullScreen]
         case .coin: [.openCoinPanel]
         case .favorite: [.chooseFavoriteFolders]
+        case .danmakuComposer: [.openDanmakuComposer]
         }
     }
 

@@ -68,9 +68,9 @@ public struct AccountWriteStatusCapsule: View {
     }
 }
 
-/// 写入结果的文案，胶囊与读屏通告共用。
-package enum AccountWriteStatusText {
-    package static func message(for report: AccountWriteReport) -> String {
+/// 写入结果的文案，胶囊、读屏通告与播放器的弹幕输入胶囊共用。
+public enum AccountWriteStatusText {
+    public static func message(for report: AccountWriteReport) -> String {
         guard let failure = report.failure else {
             return switch report.change {
             case .watchLaterAdded: BiliUIStrings.localized("已添加到稍后再看")
@@ -95,6 +95,7 @@ package enum AccountWriteStatusText {
                 isFollowing ? BiliUIStrings.localized("已关注") : BiliUIStrings.localized("已取消关注")
             case .recommendationDisliked: VideoCardMenuText.dislikedBadge
             case .recommendationDislikeCancelled: BiliUIStrings.localized("已撤销不感兴趣")
+            case .danmakuPosted: BiliUIStrings.localized("已发送弹幕")
             }
         }
         let reason = reason(for: failure, change: report.change)
@@ -115,6 +116,7 @@ package enum AccountWriteStatusText {
                 : BiliUIStrings.localized("无法取消关注：\(reason)")
         case .recommendationDisliked: BiliUIStrings.localized("无法提交不感兴趣：\(reason)")
         case .recommendationDislikeCancelled: BiliUIStrings.localized("无法撤销不感兴趣：\(reason)")
+        case .danmakuPosted: BiliUIStrings.localized("无法发送弹幕：\(reason)")
         }
     }
 
@@ -123,19 +125,25 @@ package enum AccountWriteStatusText {
         let isFavorites =
             switch change {
             case .watchLaterAdded, .watchLaterRemoved, .likeChanged, .coinsAdded, .tripled,
-                .recommendationDisliked, .recommendationDislikeCancelled, .followChanged:
+                .recommendationDisliked, .recommendationDislikeCancelled, .followChanged,
+                .danmakuPosted:
                 false
             case .favoriteMembershipChanged, .removedFromFavoriteFolder: true
             }
         let isFollow =
             if case .followChanged = change { true } else { false }
+        let isDanmaku =
+            if case .danmakuPosted = change { true } else { false }
         return switch failure {
         case .authenticationRequired, .authenticationInvalid:
             BiliUIStrings.localized("登录状态可能已失效。")
         case .authenticationUnavailable:
             BiliUIStrings.localized("无法读取登录状态，请稍后再试。")
         case .restricted:
-            BiliUIStrings.localized("请求受到限制，请稍后再试。")
+            // 弹幕的受限多半是发送冷却（业务码 36703），也可能是风控，说法把两者都带上。
+            isDanmaku
+                ? BiliUIStrings.localized("发送太频繁或受到限制，请稍后再试。")
+                : BiliUIStrings.localized("请求受到限制，请稍后再试。")
         case .listFull:
             if isFavorites {
                 BiliUIStrings.localized("收藏夹已满。")
@@ -151,6 +159,8 @@ package enum AccountWriteStatusText {
                 BiliUIStrings.localized("收藏夹或视频已不存在。")
             } else if isFollow {
                 BiliUIStrings.localized("UP 主不存在或已注销。")
+            } else if isDanmaku {
+                BiliUIStrings.localized("这个视频现在不能发弹幕。")
             } else {
                 BiliUIStrings.localized("视频不存在或已删除。")
             }

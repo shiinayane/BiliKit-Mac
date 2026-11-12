@@ -25,6 +25,8 @@ struct PlayerHostView: View {
     let toggleDanmaku: (() -> Bool)?
     let toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
     let engagementShortcuts: PlayerEngagementShortcuts?
+    /// 回车呼出的发送弹幕输入胶囊；为 nil 时回车不响应。
+    let danmakuComposer: DanmakuComposerModel?
     /// 点击弹幕关联视频卡片时在应用内打开该视频（参数是 BV 号）；为 nil 时卡片不接点击。
     let openDanmakuLinkedVideo: ((String) -> Void)?
     let actionMenu: PlayerActionMenuActions
@@ -46,6 +48,7 @@ struct PlayerHostView: View {
         toggleDanmaku: (() -> Bool)? = nil,
         toggleSubtitles: (() async -> NativeSubtitleToggleResult)? = nil,
         engagementShortcuts: PlayerEngagementShortcuts? = nil,
+        danmakuComposer: DanmakuComposerModel? = nil,
         openDanmakuLinkedVideo: ((String) -> Void)? = nil,
         actionMenu: PlayerActionMenuActions,
         playbackEnd: PlayerPlaybackEndActions,
@@ -64,6 +67,7 @@ struct PlayerHostView: View {
         self.toggleDanmaku = toggleDanmaku
         self.toggleSubtitles = toggleSubtitles
         self.engagementShortcuts = engagementShortcuts
+        self.danmakuComposer = danmakuComposer
         self.openDanmakuLinkedVideo = openDanmakuLinkedVideo
         self.actionMenu = actionMenu
         self.playbackEnd = playbackEnd
@@ -88,6 +92,7 @@ struct PlayerHostView: View {
             toggleDanmaku: toggleDanmaku,
             toggleSubtitles: toggleSubtitles,
             engagementShortcuts: engagementShortcuts,
+            danmakuComposer: danmakuComposer,
             openDanmakuLinkedVideo: openDanmakuLinkedVideo,
             actionMenu: actionMenu,
             playbackEnd: playbackEnd,
@@ -156,6 +161,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
     let toggleDanmaku: (() -> Bool)?
     let toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
     let engagementShortcuts: PlayerEngagementShortcuts?
+    let danmakuComposer: DanmakuComposerModel?
     let openDanmakuLinkedVideo: ((String) -> Void)?
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
@@ -175,6 +181,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
             toggleSubtitles: toggleSubtitles
         )
         view.engagementShortcuts = engagementShortcuts
+        view.danmakuComposer = danmakuComposer
         view.danmakuOverlay.openLinkedVideo = openDanmakuLinkedVideo
         view.setActionMenu(actionMenu, openURL: context.environment.openURL)
         view.startPlaybackEndObservation(playbackEnd)
@@ -216,6 +223,7 @@ private struct AVPlayerContainerView: NSViewRepresentable {
         view.toggleDanmaku = toggleDanmaku
         view.toggleSubtitles = toggleSubtitles
         view.engagementShortcuts = engagementShortcuts
+        view.danmakuComposer = danmakuComposer
         view.danmakuOverlay.openLinkedVideo = openDanmakuLinkedVideo
         view.setActionMenu(actionMenu, openURL: context.environment.openURL)
         view.setResumeNotice(
@@ -293,6 +301,14 @@ final class NativePlayerHostView: AVPlayerView {
     var toggleSubtitles: (() async -> NativeSubtitleToggleResult)?
     /// Q／W／E 与长按 Q 的意图；没有时这几个键只被吞掉、不提示。
     var engagementShortcuts: PlayerEngagementShortcuts?
+    /// 发送弹幕的输入胶囊，画在浮层里（`PlayerOverlayModel.danmakuComposer`）。
+    var danmakuComposer: DanmakuComposerModel? {
+        get { overlayModel.danmakuComposer }
+        set {
+            guard overlayModel.danmakuComposer !== newValue else { return }
+            overlayModel.danmakuComposer = newValue
+        }
+    }
 
     init(
         renderer: CoreAnimationDanmakuRenderer,
@@ -336,12 +352,15 @@ final class NativePlayerHostView: AVPlayerView {
         // 浮层与 content overlay 等大；不按窗口安全区缩进，否则播放器滚到工具栏下或全屏时提示位置
         // 与“从头播放”的点击区域会偏移。
         overlayHostingView.safeAreaRegions = []
-        overlayHostingView.interactiveFrame = { [overlayModel] in
-            overlayModel.interactiveFrame
+        overlayHostingView.interactiveFrames = { [overlayModel] in
+            overlayModel.interactiveFrames
         }
         keyboardShortcuts.feedbackPresenter = overlayModel
         actionMenu.presentFeedback = { [overlayModel] feedback in
             overlayModel.showFeedback(.action(feedback))
+        }
+        actionMenu.openDanmakuComposer = { [overlayModel] in
+            overlayModel.danmakuComposer?.present()
         }
         actionPopUpButtonMenu = actionMenu.menu
         keyboardShortcuts.onKeyboardMomentaryRateBegan = {
@@ -388,6 +407,9 @@ final class NativePlayerHostView: AVPlayerView {
         keyboardShortcuts.onChooseFavoriteFolders = { [weak self] in
             guard let self else { return nil }
             return self.engagementShortcuts?.chooseFavoriteFolders(self.isPresentingFullScreen)
+        }
+        keyboardShortcuts.onOpenDanmakuComposer = { [overlayModel] in
+            overlayModel.danmakuComposer?.present()
         }
         installDanmakuOverlayIfNeeded()
     }
@@ -657,32 +679,15 @@ final class NativePlayerHostView: AVPlayerView {
             positioned: .above,
             relativeTo: danmakuOverlay
         )
-        NSLayoutConstraint.activate([
-            overlayHostingView.leadingAnchor.constraint(
-                equalTo: contentOverlayView.leadingAnchor
-            ),
-            overlayHostingView.trailingAnchor.constraint(
-                equalTo: contentOverlayView.trailingAnchor
-            ),
-            overlayHostingView.topAnchor.constraint(
-                equalTo: contentOverlayView.topAnchor
-            ),
-            overlayHostingView.bottomAnchor.constraint(
-                equalTo: contentOverlayView.bottomAnchor
-            ),
-            danmakuOverlay.leadingAnchor.constraint(
-                equalTo: contentOverlayView.leadingAnchor
-            ),
-            danmakuOverlay.trailingAnchor.constraint(
-                equalTo: contentOverlayView.trailingAnchor
-            ),
-            danmakuOverlay.topAnchor.constraint(
-                equalTo: contentOverlayView.topAnchor
-            ),
-            danmakuOverlay.bottomAnchor.constraint(
-                equalTo: contentOverlayView.bottomAnchor
-            )
-        ])
+        // 弹幕层与浮层都与 content overlay 等大。
+        for view in [danmakuOverlay, overlayHostingView] as [NSView] {
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: contentOverlayView.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: contentOverlayView.trailingAnchor),
+                view.topAnchor.constraint(equalTo: contentOverlayView.topAnchor),
+                view.bottomAnchor.constraint(equalTo: contentOverlayView.bottomAnchor)
+            ])
+        }
     }
 
     private func beginMomentaryPlaybackRate(
