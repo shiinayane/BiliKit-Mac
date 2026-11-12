@@ -185,6 +185,14 @@ enum NativePlaybackCommentsItemMeasurement {
 
     static let authorBadgeSpacing: CGFloat = 4
 
+    /// 作者名字体：比正文小一号、中等字重，配合次要色，让每条评论的视觉起点落在正文上；行视图与宽度测量共用。
+    static var authorFont: NSFont {
+        .systemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
+            weight: .medium
+        )
+    }
+
     /// 作者名单行文字宽度，不超过 `maximumWidth`。
     ///
     /// 与行宽无关，按名字与字号缓存；拖动改宽度时每条可见评论每帧都要量，不缓存就每次都排一遍字形。
@@ -192,12 +200,11 @@ enum NativePlaybackCommentsItemMeasurement {
         _ author: CommentAuthor,
         maximumWidth: CGFloat
     ) -> CGFloat {
-        let pointSize = NSFont.preferredFont(forTextStyle: .body).pointSize
-        let key = AuthorNameWidthKey(name: author.name, pointSize: pointSize)
+        let font = authorFont
+        let key = AuthorNameWidthKey(name: author.name, pointSize: font.pointSize)
         if let width = authorNameWidths.value(for: key) {
             return min(maximumWidth, width)
         }
-        let font = NSFont.systemFont(ofSize: pointSize, weight: .semibold)
         let width = ceil((author.name as NSString).size(withAttributes: [.font: font]).width)
         authorNameWidths.insert(width, for: key)
         return min(maximumWidth, width)
@@ -225,11 +232,33 @@ enum NativePlaybackCommentsItemMeasurement {
 struct NativePlaybackCommentRowGeometry {
     static let lineHeight: CGFloat = 18
     static let wrappedBadgesY: CGFloat = 20
-    static let authorToBodySpacing: CGFloat = 6
+    /// 正文字号：比系统 body（13pt）大一号，侧栏评论以阅读为主；作者名与元信息仍用系统文字样式，靠颜色与字号低于正文。
+    static let bodyFontSize: CGFloat = 14
+    /// 正文每行的最小行高：14pt 时约 1.57 倍，中文段落不再密排。
+    ///
+    /// 同时高过小表情（18pt）撑出的行高，纯文字行与带小表情的行等高；大表情（36pt）的行仍按附件自然撑高，
+    /// 不设最大行高以免大表情压到相邻行。TextKit 把多出的行高放在文字上方，所以正文首行文字比正文框顶低约 5pt。
+    static let bodyLineHeight: CGFloat = 22
+    /// 作者行与正文框之间的间距；正文首行上方已有最小行高多出的空白，这里只补足其余部分。
+    static let authorToBodySpacing: CGFloat = 4
     static let bodyToPicturesSpacing: CGFloat = 8
-    static let contentToFooterSpacing: CGFloat = 6
+    static let contentToFooterSpacing: CGFloat = 8
     static let footerToProvenanceSpacing: CGFloat = 6
     static let provenanceHeight: CGFloat = 20
+
+    static var bodyFont: NSFont { .systemFont(ofSize: bodyFontSize) }
+
+    /// 评论正文的基础文字属性：正文渲染器与没有渲染器时的回退测量共用，测出的高度与显示一致。
+    static var bodyAttributes: [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.setParagraphStyle(NativePlaybackSidebarTextLayout.paragraphStyle)
+        style.minimumLineHeight = bodyLineHeight
+        return [
+            .font: bodyFont,
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: style
+        ]
+    }
 
     let avatarFrame: NSRect
     let contentX: CGFloat
@@ -297,7 +326,7 @@ struct NativePlaybackCommentRowGeometry {
 
         var y = (wrapsBadges ? badgesFrame.maxY : Self.lineHeight) + Self.authorToBodySpacing
         let bodyHeight = max(
-            Self.lineHeight,
+            Self.bodyLineHeight,
             textRenderer.flatMap { renderer in
                 textScope.map {
                     renderer.height(
@@ -309,9 +338,11 @@ struct NativePlaybackCommentRowGeometry {
                 }
             }
                 ?? NativePlaybackSidebarTextLayout.height(
-                    details.content.message,
-                    width: contentWidth,
-                    font: .preferredFont(forTextStyle: .body)
+                    NSAttributedString(
+                        string: details.content.message,
+                        attributes: Self.bodyAttributes
+                    ),
+                    width: contentWidth
                 )
         )
         bodyFrame = NSRect(x: contentX, y: y, width: contentWidth, height: bodyHeight)

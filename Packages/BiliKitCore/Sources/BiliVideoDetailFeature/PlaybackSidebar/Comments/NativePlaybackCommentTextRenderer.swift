@@ -90,14 +90,11 @@ final class NativePlaybackCommentTextRenderer {
         _ content: CommentContent,
         scope: NativePlaybackCommentTextScope
     ) -> RenderedText {
-        let font = NSFont.preferredFont(forTextStyle: .body)
+        let font = NativePlaybackCommentRowGeometry.bodyFont
+        let baseAttributes = NativePlaybackCommentRowGeometry.bodyAttributes
         let attributed = NSMutableAttributedString(
             string: content.message,
-            attributes: [
-                .font: font,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: NativePlaybackSidebarTextLayout.paragraphStyle
-            ]
+            attributes: baseAttributes
         )
         let (linkTargets, appliedLinks) = NativePlaybackTextLinks.apply(
             content.links,
@@ -151,6 +148,14 @@ final class NativePlaybackCommentTextRenderer {
             guard let replaced else { continue }
             attributed.replaceCharacters(in: range, with: replaced)
             replacedFrom = range.location
+        }
+        // TextKit 取段首字符的段落样式；替换进来的表情附件不带属性，段首是表情时这一段会丢掉最小行高与换行方式。
+        if let paragraphStyle = baseAttributes[.paragraphStyle] {
+            attributed.addAttribute(
+                .paragraphStyle,
+                value: paragraphStyle,
+                range: NSRange(location: 0, length: attributed.length)
+            )
         }
 
         return RenderedText(
