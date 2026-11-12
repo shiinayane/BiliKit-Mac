@@ -6,6 +6,7 @@ import SwiftUI
 /// 标题与数据在工具栏，弹幕设置在工具栏弹出面板，简介、选集与评论在侧栏。真实页面与加载骨架
 /// 共用这一份布局，加载完成时视频与推荐位置不跳动。
 struct PlaybackDetailLayout<Player: View, Related: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     private let player: Player
     private let related: Related
 
@@ -21,6 +22,19 @@ struct PlaybackDetailLayout<Player: View, Related: View>: View {
         VStack(spacing: PlaybackPageLayout.sectionSpacing) {
             player
                 .aspectRatio(PlaybackPageLayout.playerAspectRatio, contentMode: .fit)
+                // 投影画在播放器下方的同尺寸形状上：播放器是经 NSViewRepresentable 宿主的
+                // AVPlayerView，直接对它用 `.shadow` 不可靠。画面没有圆角裁切，形状因此也是直角。
+                .background {
+                    Rectangle()
+                        .fill(.black)
+                        .shadow(
+                            color: .black.opacity(
+                                PlaybackPageLayout.playerShadowOpacity(colorScheme)
+                            ),
+                            radius: PlaybackPageLayout.playerShadowRadius,
+                            y: PlaybackPageLayout.playerShadowOffsetY
+                        )
+                }
                 .padding(.horizontal, PlaybackPageLayout.horizontalContentPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -46,4 +60,21 @@ enum PlaybackPageLayout {
         0,
         verticalContentPadding - VideoCardShelfGeometry.bottomInset
     )
+    /// 视频投影的模糊半径。
+    ///
+    /// 加上下移量约 16pt，留在 `sectionSpacing` 之内，不压到下方推荐横排；调大前先确认间距。
+    static let playerShadowRadius: CGFloat = 12
+    /// 投影下移量：光源略偏上，画面像浮在背景之上；顶部只剩约 8pt 阴影，远小于顶部留白。
+    static let playerShadowOffsetY: CGFloat = 4
+
+    /// 浅色外观的投影不透明度：保持轻，只把画面边缘与背景分开。
+    static let playerShadowLightOpacity: Double = 0.22
+    /// 深色外观的投影不透明度。
+    ///
+    /// 深色背景本身接近黑色，投影要比浅色深得多才分辨得出边缘。
+    static let playerShadowDarkOpacity: Double = 0.8
+
+    static func playerShadowOpacity(_ colorScheme: ColorScheme) -> Double {
+        colorScheme == .dark ? playerShadowDarkOpacity : playerShadowLightOpacity
+    }
 }
