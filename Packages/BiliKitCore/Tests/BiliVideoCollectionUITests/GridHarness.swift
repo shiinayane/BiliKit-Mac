@@ -66,14 +66,14 @@ final class GridHarness {
             )
         )
         self.coordinator = coordinator
-        scrollView = coordinator.makeScrollView()
+        scrollView = coordinator.attachScrollView()
         let contentView = try #require(window.contentView)
         contentView.addSubview(scrollView)
         collectionView = try #require(scrollView.documentView as? NSCollectionView)
         // 先换上计数的翻页回调，再排版，首次排版的翻页判断也算在内。
         apply(cards)
         setViewport(width: width, height: Self.defaultHeight)
-        // makeScrollView 把首次排版与恢复排到下一轮主队列；等它跑完再开始操作。
+        // attachScrollView 把首次排版与恢复排到下一轮主队列；等它跑完再开始操作。
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { continuation.resume() }
         }
@@ -106,6 +106,25 @@ final class GridHarness {
             )
         )
         window.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    /// 像保活的来源被切走一样：滚动视图离开窗口，Coordinator 摘下而不拆除。
+    func detach() {
+        scrollView.removeFromSuperview()
+        coordinator.detach()
+    }
+
+    /// 像切回保活的来源一样：取回同一个滚动视图挂回窗口。
+    ///
+    /// 可顺带换视口宽度（离开期间窗口被拉宽或收窄）；返回的滚动视图交给调用方比对身份。
+    func reattach(width: CGFloat? = nil) async throws -> NSScrollView {
+        let attached = coordinator.attachScrollView()
+        try #require(window.contentView).addSubview(attached)
+        setViewport(width: width)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        return attached
     }
 
     /// 滚动视图贴着窗口顶边（工具栏之下），只改它自己的尺寸。
@@ -269,7 +288,7 @@ final class GridHarness {
         )
     }
 
-    private static func presentations(for ids: [String]) -> [NativeVideoCardPresentation] {
+    static func presentations(for ids: [String]) -> [NativeVideoCardPresentation] {
         ids.map { id in
             NativeVideoCardPresentation(
                 id: id,
@@ -283,7 +302,7 @@ final class GridHarness {
         }
     }
 
-    private static func tailState(_ identity: UInt64) -> NativeVideoGridTailState {
+    static func tailState(_ identity: UInt64) -> NativeVideoGridTailState {
         NativeVideoGridTailState(canLoadMore: true, tailIdentity: identity, isLoading: false)
     }
 }
