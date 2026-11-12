@@ -379,7 +379,7 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
 
         #expect(rendered.attributedString.string == "前\u{fffc}后")
         #expect(attachment.bounds.size == NSSize(width: 18, height: 18))
-        #expect(attachment.bounds.origin.y == NSFont.preferredFont(forTextStyle: .body).descender)
+        #expect(attachment.bounds.origin.y == NativePlaybackCommentRowGeometry.bodyFont.descender)
         #expect(!attachment.allowsTextAttachmentView)
         #expect(rendered.pendingAssets.map(\.reference) == [asset])
 
@@ -523,7 +523,7 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
 
         #expect(rendered.attributedString.string == "\u{fffc}[未知]")
         #expect(attachment.bounds.size == NSSize(width: 36, height: 36))
-        #expect(attachment.bounds.origin.y == NSFont.preferredFont(forTextStyle: .body).descender)
+        #expect(attachment.bounds.origin.y == NativePlaybackCommentRowGeometry.bodyFont.descender)
         #expect(
             renderer.height(content, commentID: CommentID(rawValue: 11), width: 200, scope: scope)
                 >= 36
@@ -562,5 +562,47 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
 
         #expect(withEmote >= 36)
         #expect(fallback < withEmote)
+    }
+
+    /// 正文每行同高：段首是小表情的段落与段首是文字的段落量出的高度相同，不因表情附件不带段落样式而丢掉行高。
+    @Test
+    @MainActor
+    func paragraphsStartingWithAnEmoteKeepTheBodyLineHeight() throws {
+        let asset = fixtureAssetReference()
+        let url = try #require(URL(string: "https://i0.hdslb.com/bfs/emote/doge.png"))
+        let renderer = makeCommentTextRenderer { _, _ in url }
+        let scope = NativePlaybackCommentTextScope(
+            subject: .video(aid: 1),
+            rootID: CommentID(rawValue: 12),
+            revision: 1
+        )
+        let emoteFirst = CommentContent(
+            message: "[doge]第一段\n第二段",
+            emotes: [
+                CommentEmote(
+                    text: "[doge]",
+                    range: CommentTextRange(location: 0, length: 6),
+                    asset: asset,
+                    size: .standard
+                )
+            ]
+        )
+        let textFirst = CommentContent(message: "文字第一段\n第二段")
+
+        let emoteHeight = renderer.height(
+            emoteFirst,
+            commentID: CommentID(rawValue: 12),
+            width: 200,
+            scope: scope
+        )
+        let textHeight = renderer.height(
+            textFirst,
+            commentID: CommentID(rawValue: 13),
+            width: 200,
+            scope: scope
+        )
+
+        #expect(emoteHeight == textHeight)
+        #expect(textHeight == NativePlaybackCommentRowGeometry.bodyLineHeight * 2)
     }
 }

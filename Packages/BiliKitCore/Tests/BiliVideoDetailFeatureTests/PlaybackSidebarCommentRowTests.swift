@@ -316,7 +316,7 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         sex: CommentAuthorSex,
         isVIP: Bool
     ) throws {
-        let expectedColor = isVIP ? NSColor.systemPink : NSColor.labelColor
+        let expectedColor = isVIP ? NSColor.systemPink : NSColor.secondaryLabelColor
         let author = CommentAuthor(
             id: CommentAuthorID(rawValue: "author-\(id)"),
             name: "昵称\(id)",

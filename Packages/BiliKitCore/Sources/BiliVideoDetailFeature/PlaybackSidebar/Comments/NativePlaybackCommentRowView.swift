@@ -37,13 +37,12 @@ final class NativePlaybackCommentRowView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        authorLabel.font = .systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
-            weight: .semibold
-        )
+        authorLabel.font = NativePlaybackCommentsItemMeasurement.authorFont
         authorLabel.maximumNumberOfLines = 1
         authorLabel.lineBreakMode = .byTruncatingTail
-        metadataLabel.font = .preferredFont(forTextStyle: .callout)
+        // 元信息比正文小两号，与正文拉开层级；名字、元信息的行框仍是 `lineHeight`。
+        let footerFont = NSFont.preferredFont(forTextStyle: .callout)
+        metadataLabel.font = footerFont
         metadataLabel.textColor = .secondaryLabelColor
         metadataLabel.lineBreakMode = .byTruncatingTail
         likeImage.image = NSImage(
@@ -51,19 +50,19 @@ final class NativePlaybackCommentRowView: NSView {
             accessibilityDescription: VideoDetailFeatureStrings.localized("点赞")
         )
         likeImage.symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: 12,
+            pointSize: footerFont.pointSize,
             weight: .regular
         )
         likeImage.contentTintColor = .secondaryLabelColor
         likeImage.imageScaling = .scaleProportionallyDown
         likeImage.setAccessibilityElement(false)
-        likeLabel.font = .preferredFont(forTextStyle: .callout)
+        likeLabel.font = footerFont
         likeLabel.textColor = .secondaryLabelColor
         likeLabel.alignment = .right
         likeLabel.setAccessibilityElement(false)
         dialogButton.isBordered = false
         dialogButton.controlSize = .small
-        dialogButton.font = .preferredFont(forTextStyle: .callout)
+        dialogButton.font = footerFont
         dialogButton.contentTintColor = .controlAccentColor
         dialogButton.target = self
         dialogButton.action = #selector(viewDialog)
@@ -145,7 +144,10 @@ final class NativePlaybackCommentRowView: NSView {
                 loader: avatarLoader
             )
             authorLabel.stringValue = details.author.name
-            authorLabel.textColor = NativeMemberNameColor.color(isVIP: details.author.isVIP)
+            authorLabel.textColor = NativeMemberNameColor.color(
+                isVIP: details.author.isVIP,
+                regular: .secondaryLabelColor
+            )
             authorLabel.setAccessibilityLabel(
                 Self.authorAccessibility(details.author)
             )
