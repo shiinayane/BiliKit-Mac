@@ -193,10 +193,10 @@ struct WatchLaterRepositoryStub: WatchLaterRepository {
     }
 }
 
-/// 稍后再看、收藏、播放页互动与首页推荐反馈四个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
+/// 稍后再看、收藏、播放页互动、首页推荐反馈与发送弹幕五个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
 /// 一律成功）；`holdsWrites` 时每次写入挂起到 `releaseWrites()` 或任务取消。互动读取返回 `engagement`，不计入写入。
 actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepository,
-    VideoEngagementRepository, RecommendationFeedbackRepository
+    VideoEngagementRepository, RecommendationFeedbackRepository, DanmakuPostRepository
 {
     private var outcomes: [AccountWriteError?]
     private let holdsWrites: Bool
@@ -283,6 +283,12 @@ actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepos
 
     func cancelDislike(_ feedback: RecommendationFeedback, accountID: Int64) async throws {
         try await record("undislike \(feedback.target.bvid) \(feedback.reason.id) \(accountID)")
+    }
+
+    /// 发出成功时弹幕 ID 是 `dm-<第几次写入>`。
+    func post(_ request: DanmakuPostRequest, accountID: Int64) async throws -> DanmakuPostReceipt {
+        try await record("danmaku \(request.identity.bvid) \(request.text) \(accountID)")
+        return DanmakuPostReceipt(danmakuID: "dm-\(calls.count)")
     }
 
     func waitForCallCount(_ target: Int) async {

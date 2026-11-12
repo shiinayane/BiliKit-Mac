@@ -47,7 +47,8 @@ enum DanmakuDuplicateMerger {
         var openGroupIndex: [GroupKey: Int] = [:]
         for event in events {
             // UP 主弹幕自成一组，也不吸收别人：并进观众的组会丢掉“UP主”标签，吸收观众的弹幕则把它们画成 UP 主的。
-            guard !event.isUploader else {
+            // 自己刚发的弹幕同样自成一组：并进别人的组就看不出它发出去了。
+            guard !event.isUploader, !event.isOwn else {
                 groups.append(Group(first: event, isHighLike: event.isHighLike))
                 continue
             }
@@ -81,7 +82,8 @@ enum DanmakuDuplicateMerger {
                     colorStyle: first.colorStyle,
                     weight: first.weight,
                     isHighLike: group.isHighLike,
-                    isUploader: first.isUploader
+                    isUploader: first.isUploader,
+                    isOwn: first.isOwn
                 ),
                 laterArrivalTimes: group.laterArrivalTimes
             )

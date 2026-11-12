@@ -94,6 +94,7 @@ One window, one sidebar: Home, Search, Watch Later and each of your favorites fo
 | Hold Q | Like, Coin, and Save (signed in) |
 | W | Coin (signed in) |
 | E | Save to Favorites… (signed in) |
+| Return | Send danmaku (signed in) |
 
 ## Installation
 

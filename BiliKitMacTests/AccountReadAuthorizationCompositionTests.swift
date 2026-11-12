@@ -164,7 +164,8 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/v2/history/toview/del",
                 "/x/v3/fav/resource/deal",
                 "/x/v3/fav/resource/batch-del",
-                "/x/relation/modify"
+                "/x/relation/modify",
+                "/x/v2/dm/post"
             ]
         )
         #expect(
@@ -207,6 +208,11 @@ struct AccountWriteAuthorizationCompositionTests {
             ),
             BiliAccountWritePath.relationModify: (
                 "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
+            ),
+            BiliAccountWritePath.danmakuPost: (
+                "https://www.bilibili.com/",
+                "type=1&oid=1176840&msg=%E5%A5%BD%2B1&bvid=BV1xx411c7mD&progress=0&color=16777215"
+                    + "&fontsize=25&pool=0&mode=1&rnd=1731400000000000"
             )
         ]
         #expect(Set(requests.keys) == LiveAPIClients.mainAccountWriteAllowedPaths)

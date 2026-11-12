@@ -25,6 +25,22 @@ struct DanmakuControlsView: View {
     }
 }
 
+/// 播放页工具栏的发送弹幕按钮：呼出播放器上的输入胶囊，与回车、播放器动作菜单同一入口（`DanmakuComposerModel.present`）。
+///
+/// 不随登录状态禁用：门槛不是可观察状态，按下时由胶囊核对，未登录时在播放器顶部提示。
+struct DanmakuPostButton: View {
+    let composer: DanmakuComposerModel
+
+    var body: some View {
+        Button {
+            composer.present()
+        } label: {
+            Label(VideoDetailFeatureStrings.localized("发弹幕"), systemImage: "plus.bubble")
+        }
+        .help(VideoDetailFeatureStrings.localized("在当前播放位置发一条弹幕（回车）"))
+    }
+}
+
 private struct DanmakuSettingsPopover: View {
     private enum Mode {
         case scrolling

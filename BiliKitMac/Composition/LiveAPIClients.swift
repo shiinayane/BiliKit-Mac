@@ -44,7 +44,8 @@ enum LiveAPIClients {
         BiliAccountWritePath.watchLaterRemove,
         BiliAccountWritePath.favoriteMembershipUpdate,
         BiliAccountWritePath.favoriteFolderEntryRemove,
-        BiliAccountWritePath.relationModify
+        BiliAccountWritePath.relationModify,
+        BiliAccountWritePath.danmakuPost
     ]
 
     /// 窗口主 API 可发出的 App 端读取；只引用 BiliAPI 的 `BiliAppReadPath`。

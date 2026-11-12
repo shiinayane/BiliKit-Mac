@@ -139,7 +139,8 @@ private struct PlayerShortcutFeedbackBadge: View {
     }
 }
 
-private struct PlayerGlassCapsuleBackground: ViewModifier {
+/// 播放器浮层上的胶囊底：macOS 26 起是液态玻璃，之前是磨砂材质加细描边；快捷键反馈、按钮与弹幕输入胶囊共用。
+struct PlayerGlassCapsuleBackground: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
@@ -263,16 +264,15 @@ private struct PlayerPreviewEndedBadge: View {
 
 /// 默认不接收鼠标事件的浮层 hosting view。
 ///
-/// `interactiveFrame` 返回本视图坐标（左上原点）中的可交互区域时，只有该区域照常命中 SwiftUI 内容；
+/// `interactiveFrames` 给出本视图坐标（左上原点）中的可交互区域，只有落在其中的点照常命中 SwiftUI 内容；
 /// 其余点击、拖动与悬停穿透给下方的 AVKit 视图。
 @MainActor
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
-    var interactiveFrame: () -> CGRect? = { nil }
+    var interactiveFrames: () -> [CGRect] = { [] }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let frame = interactiveFrame(),
-            frame.contains(convert(point, from: superview))
-        else { return nil }
+        let location = convert(point, from: superview)
+        guard interactiveFrames().contains(where: { $0.contains(location) }) else { return nil }
         return super.hitTest(point)
     }
 }
@@ -311,10 +311,32 @@ final class PlayerOverlayModel {
     @ObservationIgnored private(set) var restartFromBeginning: () -> Void = {}
     @ObservationIgnored private var dismissedResumeToken: PlaybackResumeToken?
     @ObservationIgnored fileprivate var resumeButtonFrame: CGRect?
+    /// 发送弹幕的输入胶囊；由窗口的播放器内容注入，nil 时回车不呼出。
+    ///
+    /// 呼出被拒（未登录、没有在播的视频）与发出成功时在顶部提示。
+    var danmakuComposer: DanmakuComposerModel? {
+        didSet {
+            danmakuComposer?.onPresentationRefused = { [weak self] failure in
+                self?.showFeedback(
+                    .action(failure == .signInRequired ? .danmakuSignInRequired : .unavailable)
+                )
+            }
+            danmakuComposer?.onPosted = { [weak self] report in
+                let message = AccountWriteStatusText.message(for: report)
+                self?.showFeedback(.action(.danmakuPosted(message)))
+            }
+        }
+    }
+    @ObservationIgnored var danmakuComposerFrame: CGRect?
 
-    /// 只有“从头播放”按钮接收鼠标；坐标为 overlay 根视图空间。
-    var interactiveFrame: CGRect? {
-        resumeNotice == nil ? nil : resumeButtonFrame
+    /// 只有“从头播放”按钮与呼出的弹幕输入胶囊接收鼠标；坐标为 overlay 根视图空间。
+    var interactiveFrames: [CGRect] {
+        var frames: [CGRect] = []
+        if resumeNotice != nil, let resumeButtonFrame { frames.append(resumeButtonFrame) }
+        if danmakuComposer?.isPresented == true, let danmakuComposerFrame {
+            frames.append(danmakuComposerFrame)
+        }
+        return frames
     }
 
     func showFeedback(_ content: PlayerShortcutFeedback) {
@@ -451,6 +473,14 @@ struct PlayerOverlayView: View {
             .overlay(alignment: .top) { feedbackBadge }
             .overlay(alignment: .bottomLeading) { resumeButton }
             .overlay(alignment: .bottom) { previewEndedBadge }
+            .overlay(alignment: .bottom) {
+                danmakuComposer.animation(
+                    reduceMotion
+                        ? nil
+                        : .easeInOut(duration: PlayerDanmakuComposerLayout.fadeDurationSeconds),
+                    value: model.danmakuComposer?.isPresented
+                )
+            }
             .coordinateSpace(.named(PlayerOverlayLayout.coordinateSpace))
             // 快捷键的结果只在徽标上停留片刻，读屏焦点也不在播放器浮层上，所以每条新反馈都通告一次；按反馈的
             // id 触发，连按同一个键也逐次报。高优先级让连按或长按时只读最新结果。临时倍速只在按下时报，松开时
@@ -517,6 +547,25 @@ struct PlayerOverlayView: View {
                     guard !Task.isCancelled else { return }
                     model.expireResumeNotice(token: notice.token)
                 }
+        }
+    }
+
+    /// 有胶囊就一直挂着，呼出与收起只改透明度与可用状态（理由见 `PlayerDanmakuComposerView`）；收起后不再进入
+    /// 可点区域（`interactiveFrames`），点击穿透给 AVKit。
+    @ViewBuilder
+    private var danmakuComposer: some View {
+        if let composer = model.danmakuComposer {
+            PlayerDanmakuComposerView(model: composer)
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(PlayerOverlayLayout.coordinateSpace))
+                } action: { frame in
+                    model.danmakuComposerFrame = frame
+                }
+                .padding(.horizontal, PlayerOverlayLayout.edgeInset)
+                .padding(.bottom, PlayerOverlayLayout.bottomInset)
+                .opacity(composer.isPresented ? 1 : 0)
+                .disabled(!composer.isPresented)
+                .accessibilityHidden(!composer.isPresented)
         }
     }
 

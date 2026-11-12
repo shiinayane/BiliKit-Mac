@@ -34,7 +34,7 @@ enum DanmakuPayloadDecoder {
 
         var totalTextLength = 0
         return try payload.elements.compactMap { element in
-            guard let mode = presentationMode(element.mode) else {
+            guard let mode = DanmakuWireValues.presentationMode(element.mode) else {
                 return nil
             }
             guard let text = DanmakuWireValues.trimmedText(element.content) else {
@@ -71,21 +71,6 @@ enum DanmakuPayloadDecoder {
                 isHighLike: element.attributes & highLikeAttributeMask != 0,
                 isUploader: false
             )
-        }
-    }
-
-    private static func presentationMode(
-        _ value: Int32
-    ) -> DanmakuPresentationMode? {
-        switch value {
-        case 1, 2, 3:
-            .scrolling
-        case 4:
-            .bottom
-        case 5:
-            .top
-        default:
-            nil
         }
     }
 

@@ -1,12 +1,12 @@
 import BiliModels
 import Foundation
 
-/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连、关注与首页推荐的「不感兴趣」）共用的应用级错误。
+/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连、关注、首页推荐的「不感兴趣」与发送弹幕）共用的应用级错误。
 ///
 /// 由 BiliAPI 的写 adapter 映射：-101、-111 与凭据账户不符为 `authenticationInvalid`；窗口以为已登录、本地却没有凭据为
 /// `authenticationRequired`；Keychain 不可用为 `authenticationUnavailable`；HTTP 403／412、-352 等风控为 `restricted`；
 /// 稍后再看的业务码 90000 为 `unsupportedContent`，90001 为 `listFull`，90003 与内容不存在类业务码为 `contentUnavailable`；
-/// 收藏的业务码 11203 为 `listFull`，11010（收藏夹不存在）为 `contentUnavailable`；投币的 -104 为 `coinsInsufficient`，
+/// 弹幕的业务码 36703（发送太频繁）为 `restricted`、36704 为 `contentUnavailable`；收藏的业务码 11203 为 `listFull`，11010（收藏夹不存在）为 `contentUnavailable`；投币的 -104 为 `coinsInsufficient`，
 /// 34005 为 `coinLimitReached`，34002 为 `ownVideo`，34004 为 `restricted`；点赞、投币、三连的 -403（账号异常）为
 /// `declinedForClient`，三连报告的风控为 `restricted`；关注的业务码 22009（关注数已达上限）为 `listFull`；其他非零
 /// 业务码为 `rejected`，不回显服务端 message；网络与无法判定结果的响应为 `unavailable`。是否复核账户只读
@@ -104,6 +104,10 @@ public enum AccountWriteChange: Sendable, Hashable {
     case recommendationDisliked(RecommendationFeedback)
     /// 撤销「不感兴趣」。
     case recommendationDislikeCancelled(RecommendationFeedback)
+    /// 在这个视频里发了一条弹幕。
+    ///
+    /// 只作在途写入的 key 与失败说明；成功不产生跨视图效果（发出的那条由播放器本地上屏），不进写入结果胶囊。
+    case danmakuPosted(VideoWriteTarget)
 }
 
 /// 写入成功后需要让其他视图知道的事实：哪个账户的哪项内容变了。
@@ -140,7 +144,7 @@ public struct AccountWriteReport: Sendable, Equatable {
             BVID.webPageURL(target.bvid)
         case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
             .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled,
-            .followChanged:
+            .followChanged, .danmakuPosted:
             nil
         }
     }

@@ -1,3 +1,5 @@
+import BiliApplication
+import BiliModels
 import BiliNetworking
 import Foundation
 
@@ -60,6 +62,12 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         case positiveIntegerList
         /// 单个视频条目 `<aid>:2`：不收逗号分隔的多个条目，也不收视频以外的类型。
         case singleVideoResource
+        /// 非负整数（弹幕的播放进度毫秒数，可以是 0），同样没有前导零。
+        case nonNegativeInteger
+        /// 合法 BVID。
+        case bvid
+        /// 弹幕正文：必须已经是 `DanmakuPostText.normalized` 规整过的样子（非空、单行、不超过上限）。
+        case danmakuText
 
         /// 一次收藏改动最多涉及的收藏夹数：远多于一个账户实际拥有的夹数，超出说明请求构造有误。
         static let maximumListCount = 100
@@ -76,6 +84,12 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
                 Self.isPositiveIntegerList(value)
             case .singleVideoResource:
                 Self.isSingleVideoResource(value)
+            case .nonNegativeInteger:
+                value == "0" || Self.isPositiveInteger(value)
+            case .bvid:
+                BVID.isValid(value)
+            case .danmakuText:
+                DanmakuPostText.normalized(value) == value
             }
         }
 
@@ -121,6 +135,11 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
     /// 关注只登记 `relation/modify` 的关注与取消：`fid` 单个 UP 主，`act` 只能是 1（关注）或 2（取消），`re_src` 固定为
     /// 11。同一接口的其他 `act`（悄悄关注、拉黑、移除粉丝等）改动的是另一种关系，一律拒绝；网页附带的 `gaia_source`、
     /// `spmid`、`extend_content` 不发送，schema 也不接受。
+    ///
+    /// 弹幕只登记 `dm/post` 的普通视频弹幕：`type` 固定为视频、`pool` 固定为普通池，`mode` 只收滚动、底部与顶部，
+    /// 颜色与字号只收 `DanmakuPostStyle` 的候选（与输入胶囊的选项同一来源）；正文按 `DanmakuPostText` 的同一规则
+    /// 校验，挡住多行与超长。高级、代码与 BAS 弹幕（其他 `mode` 与 `pool`）一律拒绝；网页附带的 `checkbox_type`、
+    /// `colorful` 不发送，schema 也不接受。
     static let schemas: [String: Schema] = [
         "/x/v2/history/toview/add": Schema(
             requiredFields: ["aid": .positiveInteger],
@@ -152,6 +171,23 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
                 "fid": .positiveInteger,
                 "act": .oneOf(["1", "2"]),
                 "re_src": .literal("11")
+            ],
+            optionalFields: [:],
+            referer: "https://www.bilibili.com/",
+            cookieNames: [.session]
+        ),
+        "/x/v2/dm/post": Schema(
+            requiredFields: [
+                "type": .literal("1"),
+                "oid": .positiveInteger,
+                "msg": .danmakuText,
+                "bvid": .bvid,
+                "progress": .nonNegativeInteger,
+                "color": .oneOf(Set(DanmakuPostStyle.colors.map { String($0) })),
+                "fontsize": .oneOf(Set(DanmakuPostStyle.fontSizes.map { String(Int($0)) })),
+                "pool": .literal("0"),
+                "mode": .oneOf(["1", "4", "5"]),
+                "rnd": .positiveInteger
             ],
             optionalFields: [:],
             referer: "https://www.bilibili.com/",

@@ -55,6 +55,8 @@ final class PlayerKeyboardShortcutController {
     var onTriple: () -> PlayerEngagementFeedback? = { nil }
     var onOpenCoinPanel: () -> PlayerEngagementFeedback? = { nil }
     var onChooseFavoriteFolders: () -> PlayerEngagementFeedback? = { nil }
+    /// 回车呼出发送弹幕的输入胶囊；输入框随即取得焦点，之后的按键不再经过这里（`focusedResponderOwnsKeys`）。
+    var onOpenDanmakuComposer: () -> Void = {}
 
     func setKeyboardInputEnabled(_ enabled: Bool) {
         guard keyboardInputEnabled != enabled else { return }
@@ -234,6 +236,10 @@ final class PlayerKeyboardShortcutController {
                 showEngagementFeedback(onOpenCoinPanel())
             case .chooseFavoriteFolders:
                 showEngagementFeedback(onChooseFavoriteFolders())
+            case .openDanmakuComposer:
+                // 先结束仍按住的长按（临时倍速、三连进度），输入期间不再收到它们的抬起。
+                cancelInputSession()
+                onOpenDanmakuComposer()
             case .scheduleLikeHold(let pressID):
                 scheduleLikeHold(pressID: pressID)
             case .cancelLikeHold(let pressID):
@@ -324,6 +330,7 @@ final class PlayerKeyboardShortcutController {
         case .rightArrow: key = .direction(.right)
         case .upArrow: key = .direction(.up)
         case .downArrow: key = .direction(.down)
+        case .carriageReturn, .enter: key = .shortcut(.danmakuComposer)
         default:
             switch event.charactersIgnoringModifiers?.lowercased() {
             case " ": key = .shortcut(.playback)

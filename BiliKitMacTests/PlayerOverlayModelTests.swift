@@ -241,7 +241,7 @@ struct PlayerOverlayModelTests {
         #expect(host.hitTest(nearTopLeading) == nil)
 
         // 可交互区域使用 SwiftUI 的左上原点坐标。
-        host.interactiveFrame = { CGRect(x: 0, y: 0, width: 200, height: 150) }
+        host.interactiveFrames = { [CGRect(x: 0, y: 0, width: 200, height: 150)] }
         #expect(host.hitTest(nearTopLeading) != nil)
         #expect(host.hitTest(nearBottomLeading) == nil)
     }

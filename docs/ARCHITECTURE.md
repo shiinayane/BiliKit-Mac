@@ -223,6 +223,10 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   穿透给 AVKit。点击在应用内打开该视频，走窗口导航的 `openPlayback`，与评论里不带时间的视频链接同一条路。封面经
   BiliDanmaku 的取图 port 由窗口的图片管线加载，到达后只换卡片的封面子层，不重画卡片图；窗口组装播放器时把
   管线交给 renderer，因为构造窗口 adapter 时管线还不存在。
+- 自己发的弹幕：发出成功后由输入胶囊交给弹幕会话（`DanmakuSessionControlling.presentOwnDanmaku`），按时间并入已缓存的分段，
+  与 UP 主弹幕一样不参与重复合并；分段重新读到时服务端那份同 ID 的换成本地这一条，所以只显示一次、始终带边框（画在纹理
+  已有的留白里，不改尺寸，测量与车道布局不变）。只在会话内存里，换视频时随会话清空。不强行挤进已满的车道：取景框依赖的
+  前缀稳定不为它破例，车道满时它与普通弹幕一样可能不上屏。
 - 大会员彩色弹幕的外观按官方贴图的结论内置，不下载分段给的贴图，官方更换贴图时不会跟随。高赞弹幕的赞图标
   同样内置（SF Symbol），与文字一起栅格化进同一张纹理，是测量与纹理缓存 key 的一部分。
 
@@ -406,7 +410,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 ### 账户写入
 
 - 链路：卡片菜单、读屏操作与 ⌘⌫ 只转发意图（BVID，收藏夹页的移除是收藏夹与条目 av 号）→ App
-  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
+  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕）、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
   （表单编码、固定 header、状态 envelope 与 -101／-111 映射只在共用的写管线，heartbeat 也走它）→ 账户写授权器（见
   `SECURITY-MODEL.md` §3）。只有窗口主 API 有写授权器。
 - 门槛由 App 算出后经 SwiftUI 环境注入卡片菜单（BiliUI `VideoCardAccountWriting`），与收藏夹列表读取同一规则，不满足时菜单项
@@ -429,6 +433,13 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   粉丝数与投稿数取自名片，只读展示，关注后不在本地增减。意图只带 BVID，协调者从互动状态取 UP 主 mid（自己的视频不发），
   乐观改动与回滚同点赞；互动状态的快照与回滚是整份的，所以关注与点赞、投币、三连在一个窗口里不同时在途。其他窗口按 mid
   重读正在显示同一 UP 主视频的互动状态。
+- 发送弹幕：播放器 content overlay 里的输入胶囊（BiliVideoDetailFeature 的 `DanmakuComposerModel`，每窗口一个、关窗时 reset；
+  视图在 App `Platform/`）由回车、播放器动作菜单与播放页工具栏呼出，窗口与 AVKit 独立全屏同一套，不做读取 AVKit 私有视图
+  层级的悬浮按钮。请求交给同一个协调者（`postDanmaku`），窗口里同时只有一条在途、关窗取消、凭据类失败按同一节流复核；
+  结局交回胶囊，不进结果胶囊（全屏看不到窗口底部的胶囊，窗口下两处说明又重复）：失败在胶囊下方说明，成功在播放器顶部
+  提示并通告（弹幕关着或车道已满时画面上看不到那一条），措辞取自结果胶囊的同一套文案。成功不产生跨视图效果。换视频与离开
+  播放页时收起胶囊，草稿不会发到另一个视频上。样式选项是胶囊上方同一浮层里的一行，不用 popover：popover 是另一个窗口，会让输入框失去第一响应者，
+  播放器快捷键随之接管按键。
 - 结果胶囊挂在顶层页面与播放页上，而不是整个 `NavigationStack` 外：在 `NavigationSplitView` 的 detail 列里，挂在
   `NavigationStack` 上的修饰符实际归根页面所有，压栈后随根页面移除。播放页打开时顶层那份不显示，读屏不会把同一条结果
   通告两次。

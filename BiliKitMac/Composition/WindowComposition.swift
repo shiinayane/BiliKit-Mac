@@ -40,6 +40,8 @@ final class WindowComposition {
     let accountWrites: AccountWriteCoordinator
     /// 播放页点赞、投币、收藏按钮的状态；窗口级复核参与者，账户只取写入门槛的账户。
     let engagementModel: VideoEngagementModel
+    /// 播放器上发送弹幕的输入胶囊；发送经 `accountWrites`，关窗时 reset。
+    let danmakuComposer: DanmakuComposerModel
     let trendingSearchModel: TrendingSearchViewModel
     let searchSuggestionSource: SearchSuggestionSource
     /// 搜索来源的草稿、筛选与已提交的条件；关窗时由搜索来源的描述 reset。
@@ -181,6 +183,7 @@ final class WindowComposition {
             recommendationFeedback: RecommendationFeedbackUseCase(
                 repository: adapters.recommendationFeedbackRepository
             ),
+            danmakuPost: DanmakuPostUseCase(repository: adapters.danmakuPostRepository),
             browseModel: browseModel,
             writableAccount: writableAccount,
             publish: { delivery, appliedLocally in
@@ -189,6 +192,16 @@ final class WindowComposition {
             }
         )
         self.accountWrites = accountWrites
+        // 发出成功的弹幕交给同一个弹幕会话上屏；发送时刻取同一个播放器的时间线。
+        let danmakuComposer = DanmakuComposerModel(
+            presentation: adapters.danmakuPresentation,
+            timeline: adapters.currentTimeline,
+            canPost: { accountWrites.isWritable },
+            post: { request, completion in
+                accountWrites.postDanmaku(request, completion: completion)
+            }
+        )
+        self.danmakuComposer = danmakuComposer
         self.trendingSearchModel = trendingSearchModel
         searchSuggestionSource = SearchSuggestionSource(
             useCase: SearchSuggestionUseCase(repository: adapters.searchSuggestionRepository)
@@ -235,6 +248,7 @@ final class WindowComposition {
                     navigationCoordinator.openPlayback(bvid)
                 },
                 canWriteAccount: { accountWrites.isWritable },
+                danmakuComposer: danmakuComposer,
                 addToWatchLater: { bvid in accountWrites.addToWatchLater(bvid: bvid) },
                 continuePlayback: { [navigationCoordinator] bvid, preferredCID in
                     navigationCoordinator.continuePlayback(bvid, preferredCID: preferredCID)
@@ -272,7 +286,7 @@ final class WindowComposition {
     /// 关窗；不可逆，重复调用不再动作。
     ///
     /// 按顺序：先从进程级测速注销本窗口；再关闭播放（停止播放器、字幕与弹幕）并恢复新窗口的来源；各来源
-    /// 丢弃内容；取消认证临时任务与评论；取消在途账户写入并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
+    /// 丢弃内容；取消认证临时任务与评论；取消在途账户写入（含弹幕）、清空弹幕输入胶囊并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
     /// 的保存面板按取消结束）再取消图片保存；停止观看进度与 Now Playing；丢弃保活的网格；关闭图片管线；最后
     /// 由 adapter 取消弹幕的内存压力监听、停止播放偏好的持久化、注销窗口 API 的会话并失效短链 session（只在打开过
     /// 之后）。模型与连接先停下自己的任务，再拆掉它们依赖的 adapter。
@@ -286,6 +300,7 @@ final class WindowComposition {
         commentsModel.reset()
         accountWrites.close()
         engagementModel.reset()
+        danmakuComposer.reset()
         if let accountWriteEffectRegistration {
             process.accountWriteEffects.unregister(accountWriteEffectRegistration)
         }

@@ -14,6 +14,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: VideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
+    private let danmakuComposer: DanmakuComposerModel?
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
     private let onSelectRelatedVideo: (String) -> Void
@@ -23,6 +24,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     public init(
         model: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
+        danmakuComposer: DanmakuComposerModel? = nil,
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
         onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
@@ -31,6 +33,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     ) {
         self.model = model
         self.danmakuModel = danmakuModel
+        self.danmakuComposer = danmakuComposer
         self.engagementModel = engagementModel
         self.onRetry = onRetry
         self.onSelectRelatedVideo = onSelectRelatedVideo
@@ -53,6 +56,8 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             value: visualPhase
         )
         .task(id: playbackIdentity) {
+            // 换视频或分 P 时收起弹幕输入胶囊：草稿是对着上一个视频写的，不能回车发到这一个上。
+            danmakuComposer?.dismiss()
             guard let playbackIdentity else {
                 danmakuModel.reset()
                 return
@@ -61,6 +66,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         }
         .onChange(of: currentContext?.detail, initial: true) { _, detail in
             engagementModel.present(detail)
+        }
+        .onDisappear {
+            danmakuComposer?.dismiss()
         }
     }
 
@@ -90,6 +98,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             VideoDetailView(
                 context: currentContext,
                 danmakuModel: danmakuModel,
+                danmakuComposer: danmakuComposer,
                 engagementModel: engagementModel,
                 relatedVideoState: model.relatedVideoState,
                 onSelectRelatedVideo: onSelectRelatedVideo,

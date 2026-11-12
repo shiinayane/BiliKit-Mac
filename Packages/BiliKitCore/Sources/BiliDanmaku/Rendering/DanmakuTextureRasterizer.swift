@@ -13,6 +13,8 @@ struct DanmakuTextureCacheKey: Hashable, Sendable {
     let colorRGB: UInt32
     let colorStyle: DanmakuColorStyle
     let backingScale: Double
+    /// 本窗口自己发出的弹幕：加边框（`DanmakuOwnBorder`），不改尺寸。
+    var isOwn = false
 }
 
 /// 栅格化好的不可变纹理：sRGB、预乘 alpha、按字节 RGBA 排列的像素，在后台栅格化时就包成 `CGImage`。
@@ -148,7 +150,8 @@ enum DanmakuTextureRasterizer {
             colorRGB: event.colorStyle == .vipGradient
                 ? vipGradientFillRGB : event.colorRGB & 0x00FF_FFFF,
             colorStyle: event.colorStyle,
-            backingScale: measureKey.backingScale
+            backingScale: measureKey.backingScale,
+            isOwn: event.isOwn
         )
     }
 
@@ -203,6 +206,17 @@ enum DanmakuTextureRasterizer {
                     textLeft: CGFloat(layout.paddingPixels) / scale + style.leadingWidth
                 )
             }) ?? pixels
+        else {
+            return nil
+        }
+        guard
+            let pixels = key.isOwn
+                ? DanmakuOwnBorder.compose(
+                    pixels: pixels,
+                    layout: layout,
+                    scale: scale,
+                    color: foreground
+                ) : pixels
         else {
             return nil
         }

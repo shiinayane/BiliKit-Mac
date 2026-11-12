@@ -6,6 +6,7 @@ import BiliLibraryFeature
 import BiliModels
 import BiliVideoDetailFeature
 import Foundation
+import Observation
 import Testing
 
 @testable import BiliKit
@@ -16,7 +17,7 @@ import Testing
 /// 确认也不在另一个账户下进行；播放页点赞乐观改动、失败放回，反方向的点赞在途时不再发，投币与三连成功后才改状态、三连
 /// 刷新收藏夹；首页推荐的「不感兴趣」与撤销先改卡片标记、失败放回，同一视频的两者同时只发一个，不在推荐里的不发；
 /// 快捷键在未登录、状态未知与全屏时给出提示；加入稍后再看报告是否发出；写入或面板读取的凭据类失败只请求一次复核，直到下一次写入成功；
-/// 关窗后不再接受意图。
+/// 弹幕同一窗口同时只有一条在途、结局交回输入胶囊而不进结果胶囊、关窗时按取消结束；关窗后不再接受意图。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct AccountWriteCoordinatorTests {
@@ -522,10 +523,47 @@ struct AccountWriteCoordinatorTests {
                 accountID: { session.account?.accountID }
             ),
             recommendationFeedback: RecommendationFeedbackUseCase(repository: writes),
+            danmakuPost: DanmakuPostUseCase(repository: writes),
             browseModel: browse,
             writableAccount: { session.account },
             publish: { _, _ in }
         )
+    }
+
+    @Test
+    func danmakuPostsOneAtATimeAndReportsOnlyToTheComposer() async throws {
+        let writes = AccountWriteRepositoryStub(holdsWrites: true)
+        let window = try await signedInWindow(process: makeTestProcess(), writes: writes)
+        defer { window.close() }
+        let outcomes = DanmakuOutcomeRecorder()
+        let request = try danmakuRequest()
+
+        #expect(window.accountWrites.postDanmaku(request, completion: outcomes.record))
+        #expect(!window.accountWrites.postDanmaku(request, completion: outcomes.record))
+        await writes.waitForCallCount(1)
+        await writes.releaseWrites()
+        await waitForObservedState { !outcomes.values.isEmpty }
+
+        #expect(outcomes.values == [.posted(DanmakuPostReceipt(danmakuID: "dm-1"))])
+        #expect(await writes.calls == ["danmaku BV17x411w7KC 好 7"])
+        #expect(window.accountWrites.report == nil)
+    }
+
+    @Test
+    func closingTheWindowCancelsTheDanmakuInFlight() async throws {
+        let writes = AccountWriteRepositoryStub(holdsWrites: true)
+        let window = try await signedInWindow(process: makeTestProcess(), writes: writes)
+        let outcomes = DanmakuOutcomeRecorder()
+
+        window.accountWrites.postDanmaku(try danmakuRequest(), completion: outcomes.record)
+        await writes.waitForCallCount(1)
+        window.close()
+        await writes.releaseWrites()
+        await waitForObservedState { !outcomes.values.isEmpty }
+
+        #expect(outcomes.values == [.cancelled])
+        let request = try danmakuRequest()
+        #expect(!window.accountWrites.postDanmaku(request, completion: outcomes.record))
     }
 
     @Test
@@ -693,6 +731,27 @@ struct AccountWriteCoordinatorTests {
 
     private func target() throws -> VideoWriteTarget {
         try #require(VideoWriteTarget(bvid: "BV17x411w7KC"))
+    }
+
+    private func danmakuRequest() throws -> DanmakuPostRequest {
+        try #require(
+            DanmakuPostUseCase.request(
+                text: "好",
+                identity: PlaybackItemIdentity(bvid: "BV17x411w7KC", cid: 1),
+                positionSeconds: 1
+            )
+        )
+    }
+}
+
+/// 记录写入协调者交回输入胶囊的弹幕结局。
+@MainActor
+@Observable
+private final class DanmakuOutcomeRecorder {
+    private(set) var values: [DanmakuPostOutcome] = []
+
+    func record(_ outcome: DanmakuPostOutcome) {
+        values.append(outcome)
     }
 }
 

@@ -41,6 +41,8 @@ public struct DanmakuEvent: Sendable, Hashable, Identifiable {
     public let isHighLike: Bool
     /// UP 主在自己视频里从播放器发的弹幕（互动弹幕 `#UP#`）；带“UP主”标签与底色，不参与重复合并。
     public let isUploader: Bool
+    /// 本窗口刚发出、在本地立即上屏的弹幕；不参与重复合并，免得并进别人的组里看不出发出去了。
+    public let isOwn: Bool
 
     public init(
         id: String,
@@ -52,7 +54,8 @@ public struct DanmakuEvent: Sendable, Hashable, Identifiable {
         colorStyle: DanmakuColorStyle,
         weight: Int,
         isHighLike: Bool,
-        isUploader: Bool
+        isUploader: Bool,
+        isOwn: Bool = false
     ) {
         self.id = id
         self.timeSeconds = timeSeconds
@@ -64,6 +67,7 @@ public struct DanmakuEvent: Sendable, Hashable, Identifiable {
         self.weight = weight
         self.isHighLike = isHighLike
         self.isUploader = isUploader
+        self.isOwn = isOwn
     }
 }
 

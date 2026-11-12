@@ -5,7 +5,7 @@ import Testing
 @testable import BiliAuth
 
 /// 账户写入授权器只放行 schema 表里精确形状的 POST，绑定预期账户，只注入 `SESSDATA` 与表单 csrf；收藏移除一次只收
-/// 一个视频条目；关注只收单个 UP 主的关注与取消。
+/// 一个视频条目；关注只收单个 UP 主的关注与取消；弹幕只收普通池的单行视频弹幕。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAccountWriteRequestAuthorizerTests {
     private static let addPath = "/x/v2/history/toview/add"
@@ -16,6 +16,20 @@ struct BiliAccountWriteRequestAuthorizerTests {
         "rid=170001&type=2&add_media_ids=11,12&del_media_ids=&platform=web"
     private static let favoriteRemoveBody = "resources=170001:2&media_id=11&platform=web"
     private static let followPath = "/x/relation/modify"
+    private static let danmakuPath = "/x/v2/dm/post"
+    /// 正文是“好+1”：中文与 `+` 都已百分号编码。
+    private static func danmakuBody(
+        msg: String = "%E5%A5%BD%2B1",
+        progress: String = "0",
+        color: String = "16777215",
+        fontsize: String = "25",
+        pool: String = "0",
+        mode: String = "1",
+        extra: String = ""
+    ) -> String {
+        "type=1&oid=1176840&msg=\(msg)&bvid=BV1xx411c7mD&progress=\(progress)&color=\(color)"
+            + "&fontsize=\(fontsize)&pool=\(pool)&mode=\(mode)&rnd=1731400000000000\(extra)"
+    }
     private static let accountID = "42"
 
     @Test(arguments: [
@@ -45,7 +59,9 @@ struct BiliAccountWriteRequestAuthorizerTests {
         (followPath, "fid=7&act=2&re_src=11"),
         (favoriteDealPath, favoriteDealBody),
         (favoriteDealPath, "rid=170001&type=2&add_media_ids=&del_media_ids=13&platform=web"),
-        (favoriteRemovePath, favoriteRemoveBody)
+        (favoriteRemovePath, favoriteRemoveBody),
+        (danmakuPath, danmakuBody()),
+        (danmakuPath, danmakuBody(progress: "93450", color: "16646914", fontsize: "18", mode: "5"))
     ])
     func authorizesFavoriteWritesWithCSRFAppended(path: String, body: String) async throws {
         let authorizer = try makeAuthorizer()
@@ -110,6 +126,35 @@ struct BiliAccountWriteRequestAuthorizerTests {
         await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
             try await authorizer.authorize(
                 try writeRequest(path: path, body: body),
+                boundTo: Self.accountID
+            )
+        }
+    }
+
+    /// 弹幕只收普通池的单行视频弹幕：正文非空、不换行、不超过 100 字；只收滚动、底部与顶部，颜色与字号只收输入胶囊的
+    /// 候选；高级弹幕、特殊池与网页的附加字段都拒绝。
+    @Test(arguments: [
+        danmakuBody(msg: ""),
+        danmakuBody(msg: "%20%E5%A5%BD"),
+        danmakuBody(msg: "%E5%A5%BD%0A1"),
+        danmakuBody(msg: "%E5%A5%BD%E2%80%A81"),
+        danmakuBody(msg: String(repeating: "a", count: 101)),
+        danmakuBody(progress: "-1"),
+        danmakuBody(progress: "01"),
+        danmakuBody(color: "16777216"),
+        danmakuBody(color: "1193046"),
+        danmakuBody(fontsize: "36"),
+        danmakuBody(pool: "2"),
+        danmakuBody(mode: "7"),
+        danmakuBody(extra: "&checkbox_type=4"),
+        danmakuBody().replacingOccurrences(of: "bvid=BV1xx411c7mD", with: "bvid=av170001")
+    ])
+    func rejectsDanmakuBodiesOutsideTheSchema(body: String) async throws {
+        let authorizer = try makeAuthorizer()
+
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await authorizer.authorize(
+                try writeRequest(path: Self.danmakuPath, body: body),
                 boundTo: Self.accountID
             )
         }

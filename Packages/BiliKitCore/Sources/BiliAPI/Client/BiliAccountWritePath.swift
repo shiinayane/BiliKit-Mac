@@ -30,4 +30,10 @@ public enum BiliAccountWritePath {
     /// 网页从空间页发出时还带 `gaia_source`、`spmid`、`extend_content` 等统计字段，这里不发；`re_src=11`（空间）是网页与
     /// 多个第三方客户端共同的取值。Origin 与 Referer 与其他写入一样用 www。
     public static let relationModify = "/x/relation/modify"
+    /// 发送一条视频弹幕（`type=1`、`oid`（cid）、`msg`、`bvid`、`progress`（毫秒）、`color`、`fontsize`、`pool=0`、`mode`、
+    /// `rnd`、`csrf`，urlencoded，不签 WBI）。
+    ///
+    /// 字段取自两个仍在维护的第三方客户端（PiliPlus、Darock-Bili），两者一致。`rnd` 是发送时刻的微秒时间戳：带上时服务端的
+    /// 冷却是 5 秒，不带是 90 秒。网页附带的 `checkbox_type`、`colorful` 不发送。
+    public static let danmakuPost = "/x/v2/dm/post"
 }
