@@ -170,7 +170,7 @@ struct PlayerGlassCapsuleBackground: ViewModifier {
 /// 等待持续 `LoadingIndicatorPolicy.presentationDelay` 才呈现，期间恢复则不出现：开播、变速与已缓冲区内 seek 的瞬时等待都在
 /// 几十毫秒内结束，不会闪一下。
 enum PlayerLoadingPolicy {
-    static let fadeDurationSeconds: TimeInterval = 0.2
+    static let fadeDurationSeconds = OverlayFadePolicy.durationSeconds
 
     static func isWaitingForPicture(
         isPreparing: Bool,
@@ -204,7 +204,7 @@ enum PlayerResumeNoticePresentation {
 /// 调短用户来不及点。
 enum PlayerResumeNoticeDismissalPolicy {
     static let delay: Duration = .seconds(5)
-    static let fadeDurationSeconds: TimeInterval = 0.2
+    static let fadeDurationSeconds = OverlayFadePolicy.durationSeconds
     /// 时间跳转后离续播位置超过该秒数即视为用户已自行定位，收起“从头播放”。
     static let positionToleranceSeconds: Double = 0.5
 }

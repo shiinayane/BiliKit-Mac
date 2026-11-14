@@ -231,6 +231,6 @@ enum PlayerDanmakuComposerLayout {
     /// 选中圈与色块之间的间隙。
     static let swatchSelectionInset: CGFloat = 2
     static let swatchSpacing: CGFloat = 4
-    /// 呼出与收起的淡入淡出时长，与播放器上“从头播放”按钮的淡出相同。
-    static let fadeDurationSeconds = PlayerResumeNoticeDismissalPolicy.fadeDurationSeconds
+    /// 呼出与收起的淡入淡出时长，与播放器上其他浮层相同。
+    static let fadeDurationSeconds = OverlayFadePolicy.durationSeconds
 }

@@ -1,7 +1,8 @@
 import AppKit
 import BiliVideoCollectionUI
 
-/// 相关推荐横排的滚动视图：不带滚动条的横向滚动、指针悬停或键盘焦点在横排内时出现的左右翻页按钮。
+/// 相关推荐横排的滚动视图：不带滚动条的横向滚动、指针悬停或键盘焦点在横排内时淡入的左右翻页按钮
+/// （`NativeFadingVisibility`）。
 ///
 /// 视口布局与焦点变化各自合并到下一轮主队列再通知（`DispatchQueue.main.async`），不在当前布局过程中改动
 /// 集合视图；两个“已安排”标志保证每轮最多一次，`reset()` 清掉视口那一个并断开回调。按钮隐藏前若持有焦点，先把焦点交给集合视图。
@@ -15,6 +16,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
 
     private let backwardButton = NativeVideoShelfPageButton()
     private let forwardButton = NativeVideoShelfPageButton()
+    private let backwardVisibility: NativeFadingVisibility
+    private let forwardVisibility: NativeFadingVisibility
     private var trackingArea: NSTrackingArea?
     private var isPointerInside = false
     private var canGoBackward = false
@@ -25,6 +28,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
     private var isInteractionEnabled = true
 
     override init(frame frameRect: NSRect) {
+        backwardVisibility = NativeFadingVisibility(backwardButton)
+        forwardVisibility = NativeFadingVisibility(forwardButton)
         super.init(frame: frameRect)
         for (button, symbol, label) in [
             (backwardButton, "chevron.left", VideoDetailFeatureStrings.localized("上一排相关推荐")),
@@ -41,7 +46,6 @@ final class NativeVideoShelfScrollView: NSScrollView {
             }
             button.setAccessibilityLabel(label)
             button.toolTip = label
-            button.isHidden = true
             button.onFocusChange = { [weak self] in
                 self?.updateFocusWithinSoon()
             }
@@ -259,12 +263,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
         )
         backwardButton.isEnabled = isInteractionEnabled && canGoBackward
         forwardButton.isEnabled = isInteractionEnabled && canGoForward
-        if backwardButton.isHidden != hidesControls {
-            backwardButton.isHidden = hidesControls
-        }
-        if forwardButton.isHidden != hidesControls {
-            forwardButton.isHidden = hidesControls
-        }
+        backwardVisibility.setShown(!hidesControls)
+        forwardVisibility.setShown(!hidesControls)
     }
 
     private func moveFocusToCollectionIfNeeded(beforeHiding button: NSButton, hides: Bool) {
