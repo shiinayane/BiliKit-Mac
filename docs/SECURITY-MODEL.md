@@ -269,6 +269,11 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
   处理，不换备用线路。
 - playlist 只在内存；媒体正文逐 chunk 转发并等待下游 send completion 形成背压，下游写入期间上游已到达
   的字节暂存有上限，超出即失败；不整段缓存、不落盘。
+- 唯一由 loopback 改写后提供的远端字节是杜比全景声组的 init（`EAC3JointObjectCodingMarker`），防的是改写
+  变成任意拼接或注入远端内容的通道：它来自 SIDX 成功的同一来源、经 init 区间上限（§4）与解析校验，只在
+  `dec3` 末尾补 2 个固定字节（JOC 扩展标记），并把 `dec3` 与各级祖先 box 的 32 位长度各加 2；形状与实测不同、
+  长度会溢出或结果不是恰好多 2 字节且能重新解析时不改。改写结果只在内存，随 server 释放；媒体分段仍逐
+  chunk 转发，不改写。
 - 播放项目替换、停止、关窗或登出时关闭 server，取消连接与上游 Task。
 - 诊断不输出 Cookie、token、上游响应 body、host、query 或签名 URL。
 

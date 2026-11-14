@@ -8,7 +8,7 @@ import Testing
 
 /// 固定 playurl 音轨契约：AI 配音只在带凭据且响应确认制作类型时作为语义音轨加入，
 /// 配音失败保留原声并停止后续配音请求；没有音轨的稿件映射为只有视频的清单；`dash.dolby`、`dash.flac`
-/// 映射为原声的杜比与无损版本，形状不对时只是没有这个版本。
+/// 映射为原声的杜比与无损版本（`dash.dolby.type` 为 2 时标为全景声），形状不对时只是没有这个版本。
 struct BiliAPIClientPlaybackAudioTests {
     /// 录屏之类没有声音的稿件 `dash.audio` 是 `null`：照常映射视频、没有音轨，即使目录里列着配音也不去请求。
     @Test
@@ -105,6 +105,8 @@ struct BiliAPIClientPlaybackAudioTests {
         let original = try #require(playback.dashManifest?.audioTracks.first)
         #expect(original.representations.map(\.id) == [30_280])
         #expect(original.dolbyRepresentation?.id == (shape == .present ? 30_250 : nil))
+        // `dash.dolby.type == 2` 是杜比全景声，bridge 据此给这一组补 JOC 标记。
+        #expect(original.dolbyIsAtmos == (shape == .present))
         #expect(original.losslessRepresentation?.id == (shape == .present ? 30_251 : nil))
     }
 

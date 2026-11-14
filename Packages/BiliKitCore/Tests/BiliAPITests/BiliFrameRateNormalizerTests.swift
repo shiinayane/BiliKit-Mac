@@ -2,8 +2,8 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定帧率归一：标准帧率与无歧义的整数帧率原样保留，B 站时间刻度桶与小幅漂移归到最近的标准帧率，
-/// 空值、非正、除零、非标准小数与超出上限的值给 nil。
+/// 固定帧率归一：标准帧率原样保留，B 站时间刻度桶与小幅漂移归到最近的标准帧率，其余 1–120 的报告值
+/// 原样保留；空值、非正、除零与超出 1–120 的值给 nil。
 struct BiliFrameRateNormalizerTests {
     @Test(arguments: [
         FrameRateCase(rawValue: "24000/1001", expected: 24_000.0 / 1_001.0),
@@ -67,8 +67,10 @@ struct BiliFrameRateNormalizerTests {
         )
     }
 
-    @Test(arguments: ["15", "20", "48", "90", "100"])
-    func preservesUnambiguousIntegralRates(rawValue: String) {
+    /// 归不到名义帧率的值按 B 站报告的帧率原样保留：master 的 `FRAME-RATE` 本来就是“四舍五入到三位小数的
+    /// 最高帧率”，丢掉它会让 HDR 档因缺帧率被丢弃，而同一值的 SDR 档照常发布。
+    @Test(arguments: ["15", "20", "48", "90", "100", "12.500", "37.2"])
+    func preservesReportedRatesThatAreNotNominal(rawValue: String) {
         #expect(
             BiliFrameRateNormalizer.normalizedValue(from: rawValue)
                 == Double(rawValue)
@@ -85,7 +87,7 @@ struct BiliFrameRateNormalizerTests {
             "nan",
             "60/0",
             "60/",
-            "37.2",
+            "0.5",
             "240"
         ] as [String?]
     )

@@ -146,6 +146,11 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     public let representations: [MediaRepresentation]
     /// 同一声音内容的杜比音频（E-AC-3）版本；只有原声可能有。
     public let dolbyRepresentation: MediaRepresentation?
+    /// playurl 标明杜比音频是全景声（`dash.dolby.type == 2`）。
+    ///
+    /// B 站全景声 init 的 `dec3` 不带 JOC 标记，系统只按 init 判断是否按全景声渲染；BiliPlayback 据此给
+    /// 这一组补标记（见 ARCHITECTURE 的音频组一节）。没有杜比版本时为 false。
+    public let dolbyIsAtmos: Bool
     /// 同一声音内容的无损（FLAC）版本；只有原声可能有。
     public let losslessRepresentation: MediaRepresentation?
 
@@ -158,6 +163,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         isAutoselect: Bool,
         representations: [MediaRepresentation],
         dolbyRepresentation: MediaRepresentation? = nil,
+        dolbyIsAtmos: Bool = false,
         losslessRepresentation: MediaRepresentation? = nil
     ) {
         self.id = id
@@ -168,6 +174,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
         self.isAutoselect = isAutoselect
         self.representations = representations
         self.dolbyRepresentation = dolbyRepresentation
+        self.dolbyIsAtmos = dolbyRepresentation != nil && dolbyIsAtmos
         self.losslessRepresentation = losslessRepresentation
     }
 
@@ -188,6 +195,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
     public static func original(
         representations: [MediaRepresentation],
         dolby: MediaRepresentation? = nil,
+        dolbyIsAtmos: Bool = false,
         lossless: MediaRepresentation? = nil
     ) -> PlaybackAudioTrack {
         PlaybackAudioTrack(
@@ -198,6 +206,7 @@ public struct PlaybackAudioTrack: Sendable, Equatable, Identifiable {
             isAutoselect: true,
             representations: representations,
             dolbyRepresentation: dolby,
+            dolbyIsAtmos: dolbyIsAtmos,
             losslessRepresentation: lossless
         )
     }

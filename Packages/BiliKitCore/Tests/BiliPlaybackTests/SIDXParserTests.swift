@@ -5,7 +5,8 @@ import Testing
 @testable import BiliNetworking
 @testable import BiliPlayback
 
-/// SIDX 只接受合规的直接引用 box 并换算成绝对字节范围；独立分段与 I-frame 判定只认 SAP 字段。
+/// SIDX 只接受合规的直接引用 box 并换算成绝对字节范围；独立分段只有一个判定（非空且每段从 type 1、
+/// delta 为 0 的 SAP 开始），media、master playlist 与 I-frame 都按它。
 @Suite(.timeLimit(.minutes(1)))
 struct SIDXParserTests {
     @Test
@@ -215,15 +216,44 @@ struct SIDXParserTests {
             sapDeltaTime: sapDeltaTime
         )
 
-        #expect(
-            segmentIndex(references: [independent, candidate])
-                .allReferencesStartWithType1SAP == expected
+        let index = segmentIndex(references: [independent, candidate])
+        let video = MediaRepresentation(
+            id: 80,
+            kind: .video,
+            codecs: "avc1.4d400c",
+            mimeType: "video/mp4",
+            bandwidth: nil,
+            videoAttributes: try VideoRepresentationAttributes(
+                width: 256,
+                height: 144,
+                frameRate: 24
+            ),
+            primaryURL: try #require(URL(string: "https://media.fixture.bilivideo.com/80")),
+            segmentBase: SegmentBase(
+                initialization: try MediaByteRange(start: 0, endInclusive: 0),
+                index: try MediaByteRange(start: 1, endInclusive: 1)
+            )
         )
+        let uri = try #require(URL(string: "http://127.0.0.1:1/session/video/80.m3u8"))
+        let mediaPlaylist = try HLSMediaPlaylistBuilder().build(
+            representation: video,
+            index: index,
+            mediaURI: uri
+        )
+        let masterPlaylist = try HLSMasterPlaylistBuilder().build(
+            videoVariants: [HLSVideoVariant(representation: video, index: index, playlistURI: uri)],
+            audioGroups: []
+        )
+
+        #expect(index.hasIndependentSegments == expected)
+        // media 与 master playlist 声明 `EXT-X-INDEPENDENT-SEGMENTS` 的条件必须相同：开放 GOP 不能被声明为独立。
+        #expect(mediaPlaylist.contains("#EXT-X-INDEPENDENT-SEGMENTS") == expected)
+        #expect(masterPlaylist.contains("#EXT-X-INDEPENDENT-SEGMENTS") == expected)
     }
 
     @Test
-    func leavesEmptyReferenceHandlingToCallers() {
-        #expect(segmentIndex(references: []).allReferencesStartWithType1SAP)
+    func emptyIndexHasNoIndependentSegments() {
+        #expect(!segmentIndex(references: []).hasIndependentSegments)
     }
 
     private func segmentIndex(references: [SegmentReference]) -> SegmentIndex {

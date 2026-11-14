@@ -23,17 +23,19 @@ public struct SegmentIndex: Sendable, Equatable {
         self.references = references
     }
 
-    /// 每个 reference 都从 type-1 SAP 开始且 `SAP_delta_time` 为 0，即每段第一个样本就是闭合 GOP 的
-    /// 可独立解码帧；I-frame rendition 与 master playlist 的 `EXT-X-INDEPENDENT-SEGMENTS` 都只认这一条件。
+    /// 至少一段，且每个 reference 都从 type-1 SAP 开始、`SAP_delta_time` 为 0，即每段第一个样本就是闭合
+    /// GOP 的可独立解码帧。
     ///
-    /// `references` 为空时按 `allSatisfy` 返回 true：空索引如何处理（判不合格或报无分段）由调用方
-    /// 自己先判断，不在这里决定。
-    var allReferencesStartWithType1SAP: Bool {
-        references.allSatisfy { reference in
-            reference.startsWithSAP
-                && reference.sapType == 1
-                && reference.sapDeltaTime == 0
-        }
+    /// 独立分段的唯一判定：media 与 master playlist 的 `EXT-X-INDEPENDENT-SEGMENTS`、I-frame rendition 都只认
+    /// 它。type 2、3 是开放 GOP 等情形，段首之后的帧可能引用上一段，不能声明为独立。空索引没有可声明独立的
+    /// 分段，判为否。
+    var hasIndependentSegments: Bool {
+        !references.isEmpty
+            && references.allSatisfy { reference in
+                reference.startsWithSAP
+                    && reference.sapType == 1
+                    && reference.sapDeltaTime == 0
+            }
     }
 
     /// 至少一段且每段时长大于 0：media playlist 与 master 的码率计算只接受这样的索引。

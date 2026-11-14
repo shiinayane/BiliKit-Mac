@@ -27,12 +27,16 @@ extension DASHRepresentationPayload {
 /// 加入），回退阶梯是 AVC；否则主阶梯用 AVC，没有回退。不混编码：同一 master 里 AVC 与 HEVC 并存时，
 /// AVPlayer 的 ABR 会在两种编码之间切换。AV1 不用。见 ARCHITECTURE 的 DASH→HLS bridge 一节与“不采用”。
 struct DASHVideoLadder: Sendable, Equatable {
-    /// 杜比视界（126）、HDR 真彩（125）与 HDR Vivid（129）的清晰度 ID，按优先顺序排列。
+    /// 杜比视界（126）与 HDR 真彩（125）的清晰度 ID，按优先顺序排列。
     ///
     /// 它们不进 SDR 阶梯：HDR 档必须带 `VIDEO-RANGE` 写进 master，否则会被当成 SDR 选中、颜色错误
-    /// （PQ 不标时 item 直接失败，整条 HEVC 阶梯随之回退到 AVC）。129 还没有实测样本，作为最后的候选；
-    /// 它的 init 读不出 HDR 时只丢这一档。
-    static let hdrQualityIDs = [126, 125, 129]
+    /// （PQ 不标时 item 直接失败，整条 HEVC 阶梯随之回退到 AVC）。
+    static let hdrQualityIDs = [126, 125]
+    /// 不用的 HDR 清晰度 ID：HDR Vivid（129）。
+    ///
+    /// 请求它要在 fnval 里带 16384 位，Web playurl 对带这一位的 fnval 一律返回 -400，游客与登录态相同（实测），
+    /// 所以 BiliKit 拿不到这一档。万一出现也不进 SDR 阶梯，理由与 `hdrQualityIDs` 相同。
+    private static let unusedHDRQualityIDs: Set<Int> = [129]
 
     let primary: [MediaRepresentation]
     let fallback: [MediaRepresentation]
@@ -50,7 +54,9 @@ struct DASHVideoLadder: Sendable, Equatable {
         var hevcHDR: [MediaRepresentation] = []
         var mappingFailed = false
         for payload in payloads {
-            guard let codec = payload.videoCodec else { continue }
+            guard let codec = payload.videoCodec,
+                !Self.unusedHDRQualityIDs.contains(payload.id)
+            else { continue }
             let isHDR = Self.hdrQualityIDs.contains(payload.id)
             guard let representation = try? payload.model(kind: .video) else {
                 // HDR 档映射失败只是少一个可选档，不影响 SDR 阶梯的错误判断。

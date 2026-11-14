@@ -31,14 +31,17 @@ public enum HLSPlaylistBuilderError: Error, Sendable, Equatable {
 
 /// 将一个 representation 的已验证 SIDX 引用编码为内存 VOD media playlist。
 ///
-/// 输入必须具有非空分段与正 timescale；输出只引用调用方提供的安全 URI，不持有网络资源。
+/// 输入必须具有非空分段与正 timescale；输出只引用调用方提供的安全 URI，不持有网络资源。init 默认是
+/// `mediaURI` 里 `segmentBase.initialization` 的区间；给了 `initializationURI` 时 `EXT-X-MAP` 改指向这个
+/// 完整的 init 资源（loopback 改写过的 init，见 `EAC3JointObjectCodingMarker`），分段仍按区间引用 `mediaURI`。
 public struct HLSMediaPlaylistBuilder: Sendable {
     public init() {}
 
     public func build(
         representation: MediaRepresentation,
         index: SegmentIndex,
-        mediaURI: URL
+        mediaURI: URL,
+        initializationURI: URL? = nil
     ) throws -> String {
         guard !index.references.isEmpty else {
             throw HLSPlaylistBuilderError.noMediaSegments
@@ -61,12 +64,16 @@ public struct HLSMediaPlaylistBuilder: Sendable {
             "#EXT-X-MEDIA-SEQUENCE:0",
             "#EXT-X-PLAYLIST-TYPE:VOD"
         ]
-        if index.references.allSatisfy(\.startsWithSAP) {
+        if index.hasIndependentSegments {
             lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
         }
-        lines.append(
-            "#EXT-X-MAP:URI=\"\(uri)\",BYTERANGE=\"\(byteRangeValue(initialization))\""
-        )
+        if let initializationURI {
+            lines.append("#EXT-X-MAP:URI=\"\(try safePlaylistURI(initializationURI))\"")
+        } else {
+            lines.append(
+                "#EXT-X-MAP:URI=\"\(uri)\",BYTERANGE=\"\(byteRangeValue(initialization))\""
+            )
+        }
 
         for reference in index.references {
             let duration = Double(reference.duration) / Double(index.timescale)
@@ -103,7 +110,7 @@ public struct HLSIFramePlaylistBuilder: Sendable {
         guard index.timescale > 0 else {
             throw HLSPlaylistBuilderError.invalidTimescale
         }
-        guard index.allReferencesStartWithType1SAP else {
+        guard index.hasIndependentSegments else {
             throw HLSPlaylistBuilderError.nonIndependentIFrameSegments
         }
 

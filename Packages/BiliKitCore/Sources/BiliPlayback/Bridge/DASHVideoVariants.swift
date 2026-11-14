@@ -6,7 +6,11 @@ extension DASHToHLSBridge {
     /// 都不成功时返回 nil。
     ///
     /// HDR 档是附加内容：任一步失败只丢这一档、再试下一个候选，不让播放失败；取消原样传播。缺帧率的
-    /// 候选直接跳过：AVPlayer 按 `FRAME-RATE` 判断设备能否解码这一档，HDR 档不写它时选档没有依据。
+    /// 候选直接跳过：AVPlayer 按 `FRAME-RATE` 判断设备能否解码这一档，HDR 档不写它时选档没有依据，而 HDR
+    /// 档本来可有可无，丢掉代价很小。SDR 档缺帧率时照常发布、只省略这个可选属性（RFC 8216bis），SDR 阶梯
+    /// 不能因它变空。帧率只在 playurl 没给或无法解析时才缺（见 `BiliFrameRateNormalizer`）。
+    /// init 要求的 `CODECS`（杜比视界 profile 5）与 playurl 的编码不一致时也跳过：master 照抄 playurl
+    /// 的编码，AVPlayer 按 `CODECS` 判断设备能否播放这一档，写错时判断没有依据。
     func loadHDRVariant(
         _ candidates: [MediaRepresentation],
         headers: [String: String]
@@ -23,6 +27,11 @@ extension DASHToHLSBridge {
                     headers: headers,
                     parse: { try VideoDynamicRangeParser().parse($0) }
                 )
+                if let requiredCodecs = metadata.requiredCodecs,
+                    candidate.codecs != requiredCodecs
+                {
+                    continue
+                }
                 return LoadedHDRVariant(
                     video: LoadedVideoVariant(
                         representation: candidate,

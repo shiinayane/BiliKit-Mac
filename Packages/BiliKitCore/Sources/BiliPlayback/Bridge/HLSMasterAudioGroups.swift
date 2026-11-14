@@ -2,10 +2,15 @@ import BiliModels
 import Foundation
 
 /// 音频组里的一条 rendition：语义音轨、它在这一组里的版本、音频格式属性、SIDX 与本机 playlist URI。
+///
+/// `isJointObjectCoded` 为真时是杜比全景声（E-AC-3 JOC），`channelCount` 是 JOC 复杂度，写成
+/// `CHANNELS="<n>/JOC"`；调用方只在这一组的 init 确实带 JOC 标记时设它，master 不能对没有标记的 init
+/// 声明全景声。
 public struct HLSAudioRendition: Sendable, Equatable {
     public let track: PlaybackAudioTrack
     public let representation: MediaRepresentation
     public let channelCount: Int?
+    public let isJointObjectCoded: Bool
     public let bitDepth: Int?
     public let sampleRate: Int?
     public let index: SegmentIndex
@@ -15,6 +20,7 @@ public struct HLSAudioRendition: Sendable, Equatable {
         track: PlaybackAudioTrack,
         representation: MediaRepresentation,
         channelCount: Int? = nil,
+        isJointObjectCoded: Bool = false,
         bitDepth: Int? = nil,
         sampleRate: Int? = nil,
         index: SegmentIndex,
@@ -23,6 +29,7 @@ public struct HLSAudioRendition: Sendable, Equatable {
         self.track = track
         self.representation = representation
         self.channelCount = channelCount
+        self.isJointObjectCoded = isJointObjectCoded
         self.bitDepth = bitDepth
         self.sampleRate = sampleRate
         self.index = index
@@ -131,6 +138,12 @@ extension HLSMasterPlaylistBuilder {
         if let channelCount = rendition.channelCount, !(1...128).contains(channelCount) {
             throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
         }
+        // JOC 只属于 E-AC-3，且必须带复杂度。
+        if rendition.isJointObjectCoded,
+            rendition.representation.codecs.lowercased() != "ec-3" || rendition.channelCount == nil
+        {
+            throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
+        }
         if let bitDepth = rendition.bitDepth, !(1...64).contains(bitDepth) {
             throw HLSPlaylistBuilderError.invalidAudioFormatMetadata
         }
@@ -155,7 +168,9 @@ extension HLSMasterPlaylistBuilder {
         var line =
             "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"\(groupID)\",NAME=\"\(name)\"\(language),CHARACTERISTICS=\"\(try characteristics(for: track.role))\""
         if let channelCount = rendition.channelCount {
-            line += ",CHANNELS=\"\(channelCount)\""
+            // Apple HLS Authoring Spec：全景声的 CODECS 仍是 `ec-3`，CHANNELS 写 JOC 复杂度加 `/JOC`。
+            let objectCoding = rendition.isJointObjectCoded ? "/JOC" : ""
+            line += ",CHANNELS=\"\(channelCount)\(objectCoding)\""
         }
         if let bitDepth = rendition.bitDepth {
             line += ",BIT-DEPTH=\(bitDepth)"
