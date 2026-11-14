@@ -3,15 +3,18 @@ import Testing
 
 @testable import BiliPlayback
 
-/// 固定 HDR 档的动态范围判定：HDR 真彩按 `colr` 的 PQ／HLG 写 `VIDEO-RANGE`，杜比视界只接受基础层兼容
-/// HLG 或 PQ 的 profile 8 并给出 `SUPPLEMENTAL-CODECS`；SDR、profile 5、畸形或超限的 init 让这一档被丢弃。
+/// 固定 HDR 档的动态范围判定：HDR 真彩按 `colr` 的 PQ／HLG 写 `VIDEO-RANGE`；杜比视界接受基础层兼容
+/// HLG 或 PQ 的 profile 8 并给出 `SUPPLEMENTAL-CODECS`，以及 `dvh1` 的 profile 5 并要求 `CODECS` 为
+/// `dvh1.05.LL`、写 PQ；SDR、`dvhe` 的 profile 5、畸形或超限的 init 让这一档被丢弃。
 struct VideoDynamicRangeParserTests {
     struct Case: Sendable, CustomTestStringConvertible {
         let name: String
         let transfer: UInt16?
+        var sampleEntry = "hvc1"
         let dolbyVision: DolbyVisionFixture?
         let range: HLSVideoRange
         let supplementalCodecs: String?
+        var requiredCodecs: String?
 
         var testDescription: String { name }
     }
@@ -38,15 +41,29 @@ struct VideoDynamicRangeParserTests {
             dolbyVision: DolbyVisionFixture(profile: 8, level: 6, compatibilityID: 1),
             range: .pq,
             supplementalCodecs: "dvh1.08.06/db1p"
+        ),
+        Case(
+            name: "杜比视界 5 level 6，dvh1，没有 colr",
+            transfer: nil,
+            sampleEntry: "dvh1",
+            dolbyVision: DolbyVisionFixture(profile: 5, level: 6, compatibilityID: 0),
+            range: .pq,
+            supplementalCodecs: nil,
+            requiredCodecs: "dvh1.05.06"
         )
     ])
     func readsDynamicRangeFromSampleEntry(_ fixture: Case) throws {
         let metadata = try VideoDynamicRangeParser().parse(
-            makeHEVCInitialization(transfer: fixture.transfer, dolbyVision: fixture.dolbyVision)
+            makeHEVCInitialization(
+                sampleEntry: fixture.sampleEntry,
+                transfer: fixture.transfer,
+                dolbyVision: fixture.dolbyVision
+            )
         )
 
         #expect(metadata.range == fixture.range)
         #expect(metadata.supplementalCodecs == fixture.supplementalCodecs)
+        #expect(metadata.requiredCodecs == fixture.requiredCodecs)
     }
 
     @Test
@@ -66,6 +83,7 @@ struct VideoDynamicRangeParserTests {
         ) {
             try parser.parse(
                 makeHEVCInitialization(
+                    sampleEntry: "dvhe",
                     transfer: nil,
                     dolbyVision: DolbyVisionFixture(profile: 5, level: 6, compatibilityID: 0)
                 )

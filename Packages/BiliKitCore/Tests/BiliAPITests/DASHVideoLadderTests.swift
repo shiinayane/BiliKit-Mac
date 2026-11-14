@@ -5,7 +5,7 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 playurl 视频阶梯的编码规则：HEVC 覆盖 AVC 的全部 SDR 清晰度时播 HEVC 并以 AVC 为回退，否则只播
-/// AVC；HDR 档不进 SDR 阶梯，只在主阶梯是 HEVC 时作为候选（杜比视界在前）；AV1 不用，形状不认识的单条
+/// AVC；HDR 档不进 SDR 阶梯，只在主阶梯是 HEVC 时作为候选（杜比视界在前，HDR Vivid 不用）；AV1 不用，形状不认识的单条
 /// 档位只丢这一条。
 struct DASHVideoLadderTests {
     /// `id`、`codecid`、`codecs` 描述一条 `dash.video`，其余字段照 fixture 的首条视频。
@@ -59,14 +59,14 @@ struct DASHVideoLadderTests {
             fallback: []
         ),
         LadderCase(
-            name: "HDR 档（含 129）不进 SDR 阶梯，杜比视界排在候选最前；同编码同档只留第一条",
+            name: "HDR 档不进 SDR 阶梯，杜比视界排在候选最前，HDR Vivid（129）两边都不进；同编码同档只留第一条",
             rungs: [
                 .hevc(129), .hevc(125), .hevc(126), .hevc(126), .hevc(120), .hevc(80), .hevc(80),
                 .avc(80)
             ],
             primary: [120, 80],
             fallback: [80],
-            hdr: [126, 125, 129]
+            hdr: [126, 125]
         ),
         LadderCase(
             name: "主阶梯是 AVC 时没有 HDR 候选",

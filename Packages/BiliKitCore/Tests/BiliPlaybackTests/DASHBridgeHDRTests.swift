@@ -5,9 +5,10 @@ import Testing
 
 @testable import BiliPlayback
 
-/// 固定 HDR 档的发布契约：至多加入一个 HDR 档，有 HDR 档时每个视频档都写 `VIDEO-RANGE`、杜比视界带
-/// `SUPPLEMENTAL-CODECS`；HDR 档的 init 不是 HDR、缺帧率或时间轴起点与 SDR 档不同时只丢这一档，SDR 档
-/// 与字幕照常发布；SIDX 能解析但有零时长分段时同样只丢这一档。
+/// 固定 HDR 档的发布契约：至多加入一个 HDR 档，有 HDR 档时每个视频档都写 `VIDEO-RANGE`、杜比视界
+/// profile 8 带 `SUPPLEMENTAL-CODECS`、profile 5 以 `dvh1` 写 `CODECS` 与 PQ；HDR 档的 init 不是 HDR、
+/// 缺帧率、编码与 init 不符或时间轴起点与 SDR 档不同时只丢这一档，SDR 档与字幕照常发布；SIDX 能解析
+/// 但有零时长分段时同样只丢这一档。
 struct DASHBridgeHDRTests {
     @Test
     func bridgeAddsOneTaggedHDRRungBesideTheSDRLadder() async throws {
@@ -24,6 +25,35 @@ struct DASHBridgeHDRTests {
         #expect(streams.count == 2)
         #expect(streams.filter { $0.contains("VIDEO-RANGE=SDR") }.count == 1)
         #expect(master.contains("TYPE=SUBTITLES"))
+    }
+
+    @Test
+    func dolbyVisionProfile5IsPublishedAsPQUnderItsOwnCodec() async throws {
+        let fixture = try HDRFixture(host: "hdr-profile5.fixture.bilivideo.com")
+
+        let master = try await fixture.prepareMaster(hdrVideos: [fixture.profile5, fixture.pq])
+
+        let lines = master.split(separator: "\n").map(String.init)
+        let stream = try #require(
+            lines.firstIndex { $0.hasSuffix("video/\(fixture.profile5.id).m3u8") }
+        )
+        #expect(lines[stream - 1].contains(#"CODECS="dvh1.05.06,"#))
+        #expect(lines[stream - 1].contains("VIDEO-RANGE=PQ"))
+        #expect(!master.contains("SUPPLEMENTAL-CODECS"))
+        #expect(!master.contains("video/\(fixture.pq.id).m3u8"))
+    }
+
+    /// playurl 把 profile 5 标成普通 HEVC 时，照抄进 master 的 `CODECS` 与码流不符，这一档不发布。
+    @Test
+    func dolbyVisionProfile5LabeledAsHEVCIsSkippedForTheNextCandidate() async throws {
+        let fixture = try HDRFixture(host: "hdr-profile5-mislabeled.fixture.bilivideo.com")
+
+        let master = try await fixture.prepareMaster(
+            hdrVideos: [fixture.profile5LabeledHEVC, fixture.pq]
+        )
+
+        #expect(!master.contains("video/\(fixture.profile5LabeledHEVC.id)"))
+        #expect(master.contains("video/\(fixture.pq.id).m3u8"))
     }
 
     enum Failure: String, CaseIterable, Sendable {
@@ -48,12 +78,15 @@ struct DASHBridgeHDRTests {
         #expect(master.contains("TYPE=SUBTITLES"))
     }
 
-    /// 一档 SDR（fixture AVC）加两档 HDR 候选（杜比视界 8.4、HDR 真彩），HDR 档的 init 是合成的。
+    /// 一档 SDR（fixture AVC）加 HDR 候选（杜比视界 8.4、HDR 真彩、杜比视界 5 及其编码标错的副本），
+    /// HDR 档的 init 是合成的。
     private struct HDRFixture {
         let sdr: MediaRepresentation
         let audio: MediaRepresentation
         let dolbyVision: MediaRepresentation
         let pq: MediaRepresentation
+        let profile5: MediaRepresentation
+        let profile5LabeledHEVC: MediaRepresentation
         let media: [URL: Data]
 
         init(host: String, failure: Failure? = nil) throws {
@@ -105,9 +138,36 @@ struct DASHBridgeHDRTests {
                     frameRate: 24
                 )
             ).representation
+            let profile5Data = try replacingInitialization(
+                in: baseVideo,
+                with: makeHEVCInitialization(
+                    sampleEntry: "dvh1",
+                    transfer: nil,
+                    dolbyVision: DolbyVisionFixture(profile: 5, level: 6, compatibilityID: 0)
+                )
+            )
+            let profile5URL = try #require(URL(string: "https://\(host)/profile5"))
+            let profile5Track = { (id: Int, codecs: String) in
+                try makeFixtureTrack(
+                    id: id,
+                    kind: .video,
+                    codecs: codecs,
+                    bandwidth: 200_000,
+                    data: profile5Data,
+                    primaryURL: profile5URL,
+                    videoAttributes: VideoRepresentationAttributes(
+                        width: 256,
+                        height: 144,
+                        frameRate: 24
+                    )
+                ).representation
+            }
+            profile5 = try profile5Track(127, "dvh1.05.06")
+            profile5LabeledHEVC = try profile5Track(128, "hev1.1.6.L153.90")
             var media = base.media
             media[dolbyVisionURL] = dolbyVisionData
             media[pqURL] = pqData
+            media[profile5URL] = profile5Data
             self.media = media
         }
 

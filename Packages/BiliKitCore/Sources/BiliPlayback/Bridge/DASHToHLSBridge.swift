@@ -235,9 +235,10 @@ public struct DASHToHLSBridge: Sendable {
         guard canonicalAudio != nil || audioTracks.isEmpty else {
             throw DASHToHLSBridgeError.unsupportedAudioTrackCount(0)
         }
-        // 同一 AUDIO group 的音轨按同一条时间线互相切换，各组之间也一样，都以原声码率最高的 AAC 的 SIDX
-        // 起点为准；起点不一致的 AI 音轨与原声附加版本在生成 master 前丢弃，只少一条配音或一个音频组，
-        // 不让播放失败。
+        // 同一 AUDIO group 的音轨按同一条时间线互相切换，AI 配音以原声码率最高的 AAC 的 SIDX 起点为准。
+        // 原声附加版本（另一组）的起点等于视频或这条 AAC 之一即可：较早稿件的 AAC 各档都比视频晚约 83 ms
+        // 起播，杜比却与视频同从 0 开始（实测），只认 AAC 会丢掉杜比组，只认视频又会丢掉其余 AAC 组。
+        // 两者都不等的才在生成 master 前丢弃，只少一条配音或一个音频组，不让播放失败。
         let audioRenditions = loadedAudioRenditions.filter { rendition in
             guard let canonicalAudio else { return false }
             return rendition.selectedTrack.track.isDefault
@@ -246,10 +247,13 @@ public struct DASHToHLSBridge: Sendable {
                     canonical: canonicalAudio.index.index
                 )
         }
+        let timelineOrigins =
+            (canonicalAudio.map { [$0.index.index] } ?? [])
+            + (videoVariants.first.map { [$0.index.index] } ?? [])
         let additionalAudioVersions =
-            canonicalAudio.map { canonical in
-                canonical.additionalVersions.filter {
-                    hasMatchingAudioTimeline($0.index.index, canonical: canonical.index.index)
+            canonicalAudio?.additionalVersions.filter { version in
+                timelineOrigins.contains {
+                    hasMatchingAudioTimeline(version.index.index, canonical: $0)
                 }
             } ?? []
 
@@ -277,6 +281,7 @@ public struct DASHToHLSBridge: Sendable {
                         index: loadedAudio.index,
                         completeMediaLength: audioLength,
                         format: loadedAudio.format,
+                        jointObjectCodedInitialization: nil,
                         directory: "\(offset)",
                         headers: headers,
                         server: server,
@@ -295,6 +300,7 @@ public struct DASHToHLSBridge: Sendable {
                         index: version.index,
                         completeMediaLength: version.completeMediaLength,
                         format: version.format,
+                        jointObjectCodedInitialization: version.jointObjectCodedInitialization,
                         directory: "original",
                         headers: headers,
                         server: server,
@@ -360,7 +366,8 @@ public struct DASHToHLSBridge: Sendable {
                         supplementalCodecs: dynamicRange?.supplementalCodecs
                     )
                 )
-                if isEligibleForIFramePlaylist(videoIndex.index) {
+                // 不独立的分段只是不提供快进预览，不让播放失败。
+                if videoIndex.index.hasIndependentSegments {
                     let iFramePlaylistPath = "video/\(video.id)-iframe.m3u8"
                     let iFramePlaylistURL = try server.url(
                         for: iFramePlaylistPath
@@ -452,13 +459,16 @@ public struct DASHToHLSBridge: Sendable {
     /// master 里的描述。
     ///
     /// `directory` 区分音轨（音轨序号）与原声附加版本（`original`），同一目录内以
-    /// representation ID 区分。
+    /// representation ID 区分。给了 `jointObjectCodedInitialization` 时另登记一个内存 init route，
+    /// `EXT-X-MAP` 指向它，master 同时写 `CHANNELS="<复杂度>/JOC"`：两者只由这一份 init 决定，不会一个
+    /// 声明全景声、另一个仍是没有标记的 init。
     private func registerAudioRoute(
         track: PlaybackAudioTrack,
         representation: MediaRepresentation,
         index: LoadedSegmentIndex,
         completeMediaLength: Int64,
         format: AudioFormatMetadata?,
+        jointObjectCodedInitialization: Data?,
         directory: String,
         headers: [String: String],
         server: LoopbackPlaybackServer,
@@ -480,10 +490,25 @@ public struct DASHToHLSBridge: Sendable {
                 )
             )
         )
+        var initializationURL: URL?
+        if let jointObjectCodedInitialization {
+            let initializationPath = "media/audio/\(directory)/\(representation.id)-init.mp4"
+            registrations.append(
+                LoopbackRouteRegistration(
+                    relativePath: initializationPath,
+                    resource: .inMemory(
+                        data: jointObjectCodedInitialization,
+                        contentType: representation.mimeType
+                    )
+                )
+            )
+            initializationURL = try server.url(for: initializationPath)
+        }
         let playlist = try mediaPlaylistBuilder.build(
             representation: representation,
             index: index.index,
-            mediaURI: mediaURL
+            mediaURI: mediaURL,
+            initializationURI: initializationURL
         )
         registrations.append(
             LoopbackRouteRegistration(
@@ -494,17 +519,14 @@ public struct DASHToHLSBridge: Sendable {
         return HLSAudioRendition(
             track: track,
             representation: representation,
-            channelCount: format?.channelCount,
+            channelCount: jointObjectCodedInitialization == nil
+                ? format?.channelCount : Int(EAC3JointObjectCodingMarker.complexityIndex),
+            isJointObjectCoded: jointObjectCodedInitialization != nil,
             bitDepth: format?.bitDepth,
             sampleRate: format?.sampleRate,
             index: index.index,
             playlistURI: try server.url(for: playlistPath)
         )
-    }
-
-    /// 非空且每段都以独立帧开始时才发布 I-frame rendition；不合格只是不提供快进预览，不让播放失败。
-    private func isEligibleForIFramePlaylist(_ index: SegmentIndex) -> Bool {
-        !index.references.isEmpty && index.allReferencesStartWithType1SAP
     }
 
     func hasMatchingSubtitleTimeline(

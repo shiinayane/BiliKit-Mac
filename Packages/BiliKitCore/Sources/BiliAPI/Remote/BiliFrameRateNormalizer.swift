@@ -4,9 +4,15 @@ import Foundation
 /// 使用。
 ///
 /// B 站常给出按 16 kHz 时基量化后的帧时长（如 `16000/672`，或换算成小数的 `30.303`）：
-/// 先按时基分桶归回 24／25／30／50／60／120，再认 NTSC 分数帧率与相对误差 0.5% 以内的名义帧率，
-/// 最后只接受 1–120 的整数；都不符时为 nil，清单不写帧率。
+/// 先按时基分桶归回 24／25／30／50／60／120，再认 NTSC 分数帧率与相对误差 0.5% 以内的名义帧率；
+/// 都不符时保留报告值本身。只有缺失、无法解析或超出 1–120 时为 nil，清单不写帧率。
+///
+/// 归不到名义帧率不等于帧率未知：RFC 8216bis 的 `FRAME-RATE` 是“四舍五入到三位小数的最高帧率”，报告值
+/// 本身就合规。nil 会让 SDR 档省略这个可选属性，却让 HDR 档整档被丢弃（见 `DASHVideoVariants`），所以只
+/// 在真的不知道帧率时给 nil。
 enum BiliFrameRateNormalizer {
+    /// 接受的帧率范围；超出时多半是错误数据，宁可不写 `FRAME-RATE`。
+    private static let acceptedRates = 1.0...120.0
     /// B 站帧时长使用的时基（Hz）。
     private static let timescale = 16_000.0
     /// 帧时长按 16 个时基单位量化，名义帧时长向下与向上取整的两个桶都认。
@@ -55,13 +61,7 @@ enum BiliFrameRateNormalizer {
             return nominalRate
         }
 
-        let integralRate = reportedRate.rounded()
-        guard abs(integralRate - reportedRate) < .ulpOfOne,
-            (1...120).contains(integralRate)
-        else {
-            return nil
-        }
-        return integralRate
+        return acceptedRates.contains(reportedRate) ? reportedRate : nil
     }
 
     private static func parsedValue(from rawValue: String?) -> Double? {

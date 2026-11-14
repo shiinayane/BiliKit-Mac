@@ -116,7 +116,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
         ]
         let allIndices =
             videoVariants.map(\.index) + audioGroups.flatMap { $0.renditions.map(\.index) }
-        if allIndices.allSatisfy(isIndependent) {
+        if allIndices.allSatisfy(\.hasIndependentSegments) {
             lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
         }
         if let startOffsetSeconds, startOffsetSeconds.isFinite, startOffsetSeconds > 0 {
@@ -194,8 +194,7 @@ public struct HLSMasterPlaylistBuilder: Sendable {
                     representationID: video.id
                 )
             }
-            // 空索引不在这里拒绝，交给下面 `bitRates(for:)` 报 `noMediaSegments`。
-            guard variant.index.allReferencesStartWithType1SAP else {
+            guard variant.index.hasIndependentSegments else {
                 throw HLSPlaylistBuilderError.nonIndependentIFrameSegments
             }
             let bitRates = try bitRates(for: variant.index)
@@ -300,11 +299,6 @@ public struct HLSMasterPlaylistBuilder: Sendable {
             peak: try HLSPeakBitRate.peak(of: index),
             average: average
         )
-    }
-
-    /// 空索引没有可声明独立的分段，不算独立。
-    private func isIndependent(_ index: SegmentIndex) -> Bool {
-        !index.references.isEmpty && index.allReferencesStartWithType1SAP
     }
 
     func yesNo(_ value: Bool) -> String {

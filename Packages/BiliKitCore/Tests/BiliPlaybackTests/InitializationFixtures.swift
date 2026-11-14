@@ -140,3 +140,9 @@ func zeroingFirstSegmentDuration(of data: Data) throws -> Data {
     result.replaceSubrange((firstReference + 4)..<(firstReference + 8), with: Data(count: 4))
     return result
 }
+
+/// B 站杜比全景声 init 的 `dec3`（BV1eV411W7tt 的 30250，实测）：一个独立子流、5.1、没有依赖子流，
+/// 也没有 JOC 扩展字节。
+func biliAtmosDEC3() -> Data {
+    isoBox("dec3", Data([0x14, 0x00, 0x20, 0x0f, 0x00]))
+}

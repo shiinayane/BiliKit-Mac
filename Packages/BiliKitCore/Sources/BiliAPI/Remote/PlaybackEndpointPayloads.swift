@@ -269,9 +269,14 @@ struct AudioLanguageItemPayload: Decodable, Sendable {
 /// `flac`（`audio` 是单个对象）是原声的附加版本，每一层都可能缺失或为 `null`，任何一层解码失败都按
 /// 没有处理。
 struct DASHPayload: Decodable, Sendable {
+    /// `dash.dolby.type` 表示杜比全景声的取值。
+    private static let atmosDolbyType = 2
+
     let video: [DASHRepresentationPayload]
     let audio: [DASHRepresentationPayload]?
     let dolbyAudio: [DASHRepresentationPayload]
+    /// `dash.dolby.type == 2`：杜比音频是全景声。
+    let dolbyAudioIsAtmos: Bool
     let losslessAudio: DASHRepresentationPayload?
 
     private enum CodingKeys: String, CodingKey {
@@ -291,23 +296,29 @@ struct DASHPayload: Decodable, Sendable {
             [DASHRepresentationPayload].self,
             forKey: .audio
         )
-        dolbyAudio =
-            container.decodeLossyIfPresent(DASHDolbyPayload.self, forKey: .dolby)?.audio ?? []
+        let dolby = container.decodeLossyIfPresent(DASHDolbyPayload.self, forKey: .dolby)
+        dolbyAudio = dolby?.audio ?? []
+        dolbyAudioIsAtmos = dolby?.type == Self.atmosDolbyType
         losslessAudio =
             container.decodeLossyIfPresent(DASHFLACPayload.self, forKey: .flac)?.audio
     }
 }
 
 /// `dash.dolby`：杜比音频（ec-3）representation 数组，逐条宽松解码；`audio` 缺失或为 `null` 时为空。
+///
+/// `type` 是杜比音频的种类（1 普通杜比音效、2 全景声）；缺失或形状不对时为 nil，按不是全景声处理。
 private struct DASHDolbyPayload: Decodable, Sendable {
+    let type: Int?
     let audio: [DASHRepresentationPayload]
 
     private enum CodingKeys: String, CodingKey {
+        case type
         case audio
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try? container.decodeIfPresent(Int.self, forKey: .type)
         audio =
             (try? container.decodeLossyElements(DASHRepresentationPayload.self, forKey: .audio))
             ?? []
@@ -444,19 +455,25 @@ struct DASHRepresentationPayload: Decodable, Sendable {
 
 /// DASH 的 `SegmentBase`：init 与 SIDX 的字节区间文本（`起-止`，闭区间），映射为 `SegmentBase`；
 /// 形状或区间不合法时失败。
+///
+/// playurl 同时给两种写法（实测）：`segment_base` 里是 `initialization`／`index_range`，`SegmentBase`
+/// 里是 `Initialization`／`indexRange`。
 struct DASHSegmentBasePayload: Decodable, Sendable {
     let initialization: String
     let indexRange: String
 
     private enum CodingKeys: String, CodingKey {
         case initialization
+        case initializationCapitalized = "Initialization"
         case indexRange = "index_range"
         case indexRangeCamel = "indexRange"
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        initialization = try container.decode(String.self, forKey: .initialization)
+        initialization =
+            try container.decodeIfPresent(String.self, forKey: .initialization)
+            ?? container.decode(String.self, forKey: .initializationCapitalized)
         indexRange =
             try container.decodeIfPresent(String.self, forKey: .indexRange)
             ?? container.decode(String.self, forKey: .indexRangeCamel)

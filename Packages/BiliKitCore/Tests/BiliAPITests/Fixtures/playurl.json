@@ -39,7 +39,7 @@
           "baseUrl": "https://media.fixture.bilivideo.com/video-hevc.m4s",
           "backupUrl": [],
           "SegmentBase": {
-            "initialization": "0-899",
+            "Initialization": "0-899",
             "indexRange": "900-1899"
           }
         }
@@ -56,7 +56,7 @@
             "https://backup.fixture.bilivideo.com/audio-aac.m4s"
           ],
           "SegmentBase": {
-            "initialization": "0-799",
+            "Initialization": "0-799",
             "indexRange": "800-1599"
           }
         },
@@ -69,7 +69,7 @@
           "baseUrl": "https://media.fixture.bilivideo.com/audio-aac-high.m4s",
           "backupUrl": [],
           "SegmentBase": {
-            "initialization": "0-799",
+            "Initialization": "0-799",
             "indexRange": "800-1599"
           }
         },

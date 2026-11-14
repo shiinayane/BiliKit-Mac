@@ -241,6 +241,7 @@ extension BiliAPIClient {
                 .original(
                     representations: audio,
                     dolby: dash.originalDolbyAudio,
+                    dolbyIsAtmos: dash.dolbyAudioIsAtmos,
                     lossless: dash.originalLosslessAudio
                 )
             )

@@ -114,33 +114,51 @@ BiliNetworking 不依赖任何 Bili 模块
 session path，提供内存中生成的 master／media playlist，并把 AVPlayer 的 Range 转发到 CDN。
 
 - SIDX 成功的候选成为该 representation 的唯一远端来源，后续 init、media 与 Range 不跨来源拼字节；
-  正文逐 chunk 流式转发，不整段缓存。上游响应必须通过状态码、`Content-Range` 与长度校验；取消不触发
+  正文逐 chunk 流式转发，不整段缓存。唯一改写字节的地方是全景声组的 init（见下面的音频组），它也只读自
+  同一来源。上游响应必须通过状态码、`Content-Range` 与长度校验；取消不触发
   备用线路，AVPlayer 断开或下游写入失败都按取消处理。
 - 附加档位失败不拖垮播放：某一档视频 SIDX 读取失败只丢弃该档，原声的某个附加音频版本失败只丢那一组，
   某个 AI 配音语言失败就停止后续配音请求；
   全部视频档失败、原声音轨失败、凭据失效或会话变化才让播放失败。读取成功之后生成 playlist 出错仍让整次播放失败。
+  代价是附加档被丢掉时没有任何提示，也不写诊断（日志规则见 SECURITY-MODEL §8）：过滤条件写错时附加格式
+  会一直悄悄缺席，测试与日常播放都看不出来（例如只认杜比视界 profile 8 时，B 站的 profile 5 档永远不会出现）。
+  改附加档的过滤条件时，要用真实 B 站样本的形状写测试，并在 App 里确认这一档确实被选中。
 - 视频编码：每次播放的 SDR 阶梯只用一种编码。按清晰度 ID 比较，HEVC 覆盖 AVC 的全部档位时用 HEVC（8K 等
   HEVC 独有的档位一并加入），同一份 playurl 的 AVC 阶梯留作回退；否则全用 AVC。HEVC 的 item 在就绪前失败时，
   engine 在同一次 load 内换 AVC 阶梯重建一次，回退也失败才算播放失败。阶梯不设分辨率上限，依赖 AVPlayer
   按 player 视图的像素尺寸限制所选分辨率（实测系统行为，文档没有写）。`dash.video` 逐条宽松解码，认不出的
   档位只丢这一条。
-- HDR：SDR 阶梯是 HEVC 时，master 至多再加一个 HDR 档，按杜比视界（126）、HDR 真彩（125）、HDR Vivid（129）
-  的顺序取第一个能用的；这几个 ID 都不进 SDR 阶梯。
+- HDR：SDR 阶梯是 HEVC 时，master 至多再加一个 HDR 档，按杜比视界（126）、HDR 真彩（125）的顺序取第一个
+  能用的；这几个 ID 都不进 SDR 阶梯。HDR Vivid（129）不用，也不进 SDR 阶梯：请求它要在 fnval 里带 16384 位，
+  Web playurl 对此一律返回 -400（游客与登录态相同，实测）。
   AVPlayer 每个 item 只在一个 `VIDEO-RANGE` 内做 ABR，有资格播 HDR 时就选 HDR 且不受视图尺寸限制（实测，与
   Apple 论坛及 HLS Authoring Spec“每种动态范围给完整阶梯”的要求一致）；B 站 HDR 只有一档，选中后弱网也降不到
   SDR，所以只在加载时满足全部条件才加入：“HDR 视频”开关开着、`AVPlayer.eligibleForHDRPlayback`、播放器所在
   屏幕的 EDR 能力大于 1、不在低电量模式、网络不昂贵也不受限。HDR 档的 `VIDEO-RANGE` 取自它的 init：`colr`
-  的 PQ／HLG，或杜比视界 profile 8 基础层（8.4 写 HLG、8.1 写 PQ）加 `SUPPLEMENTAL-CODECS`；有 HDR 档时 SDR
+  的 PQ／HLG，或杜比视界 profile 8 基础层（8.4 写 HLG、8.1 写 PQ）加 `SUPPLEMENTAL-CODECS`，或 `dvh1` 的
+  杜比视界 profile 5（没有基础层，按 Authoring Spec 写 `CODECS="dvh1.05.LL"` 与 PQ、不写 `SUPPLEMENTAL-CODECS`，
+  playurl 的编码与 init 不符时丢弃，master 的 `CODECS` 照抄 playurl）；有 HDR 档时 SDR
   档与全部 I-frame 行也写 `VIDEO-RANGE`，要么都写要么都不写。HDR 档缺帧率、SIDX 没有可播分段、init 不是 HDR 或解析失败、
   时间轴起点与 SDR 档不同时只丢这一档（连同它的 I-frame），在生成字幕 route 之前完成。HEVC 回退到 AVC 时不带 HDR 档。
+  B 站杜比视界 profile 5 稿件的 HEVC SDR 档在 AVPlayer 里画面偏绿（实测），这类稿件只有杜比视界档颜色正确。
   B 站不给 30fps 及以下的 HDR 档，不满足 Authoring Spec 对 HDR 阶梯的要求，这是已知偏离。
 - 音频组：原声的每个版本各成一个 AUDIO group——码率最高的 AAC（默认组）、其余 AAC 档、杜比音频（E-AC-3）、
   “无损音频”开关开着时的 FLAC。每组成员相同（RFC 8216bis §4.4.6.1.1）：原声取这一组的版本、同名“原声”，
   配音只有 AAC、在每组引用同一个 URI；每个视频档（含 HDR 档）与每组各写一行 variant，CODECS 与带宽只计这一组。
-  同名的原声在系统菜单里合并成一项，组之间由 AVPlayer 选择（实测）：AAC 档按网速切换；E-AC-3 写声道数后由
-  系统按输出声道选择，2 声道输出不会选中，所以不进菜单、不手动选；FLAC 只有设了
-  `variantPreferences = .scalabilityToLosslessAudio` 才会在带宽足够时选中。附加版本以默认组原声的 SIDX 起点
-  为准，读取失败、SIDX 没有可播分段、读不出声道等音频格式或起点不同时只丢这一组；无损关时不读 FLAC 的 SIDX。
+  同名的原声在系统菜单里合并成一项，组之间由 AVPlayer 选择（实测）：AAC 档按网速切换；E-AC-3 写声道数后，
+  内置扬声器与 AirPods 都在起播约 2 秒后从 AAC 切到杜比组，所以不进菜单、不手动选；FLAC
+  只有设了 `variantPreferences = .scalabilityToLosslessAudio` 才会在带宽足够时选中。
+  附加版本的 SIDX 起点等于视频或默认组原声之一即可：较早稿件的 AAC 各档都比视频晚约 83 ms 起播，杜比却
+  与视频同从 0 开始（实测）。只认 AAC 会丢掉杜比组，只认视频又会丢掉其余 AAC 组。读取失败、SIDX 没有可播分段、
+  读不出声道等音频格式或起点两者都不等时只丢这一组；AI 配音与原声同组，仍以默认组原声的起点为准。无损关时
+  不读 FLAC 的 SIDX。
+  全景声（`dash.dolby.type == 2`）：B 站 init 的 `dec3` 缺 JOC 扩展字节，码流本身却带 JOC；系统只按 init 的
+  这两个字节决定是否按全景声渲染（实测：缺它们时控制中心显示“多声道”，补上后显示“杜比全景声”）。bridge 读
+  音频格式时顺带在内存里补上 `flag_ec3_extension_type_a = 1` 与 `complexity_index_type_a = 16`，`dec3` 与各级
+  祖先 box 长度加 2，由 loopback 作为这一组的 `EXT-X-MAP` 提供，分段仍按区间转发 CDN；master 按 Apple HLS
+  Authoring Spec 写 `CODECS="ec-3"`、`CHANNELS="16/JOC"`。只改与实测形状相同的 init（唯一 `ec-3`、5 字节
+  `dec3`、一个独立子流且没有依赖子流、32 位 box 长度），结果须恰好多 2 字节并能重新解析；其他形状不改，
+  按普通杜比音频发布。`EXT-X-MAP` 与 `/JOC` 只由同一份改写结果决定。
 - 没有 DASH 但有安全单段 `durl` 时走 progressive MP4 route；不支持多段拼接与 FLV。
 - 没有声音的稿件 `dash.audio` 为 null：清单没有音轨，master 只有视频 variant，不声明 AUDIO group，也不请求
   AI 配音。这时播放时钟由视频渲染推进，item 必须接在 player host 的 `AVPlayerView` 上才会走。
