@@ -49,11 +49,13 @@
 
 A native Mac app, not a web page in a wrapper: under 10 MB to download and a few hundred MB of memory. Performance-sensitive parts such as video grids, comments and danmaku are drawn with AppKit and Core Animation, and playback runs on the system's AVPlayer.
 
-### A video page built for watching
+### A redesigned video page
 
-The description, comments and related videos sit right next to the player, and a timestamp in a comment jumps there with one click. Danmaku share the video's timeline, so seeking, pausing and changing speed never put them out of sync. When playback ends, BiliKit can continue through episodes and collections without wandering off into related videos; click an uploader to keep watching through their uploads in the sidebar without interrupting the current video.
+The player, comments and related videos are on screen together: keep watching while you read the comments, with the next video you want right beside it, no switching back and forth.
 
-Picture and sound adapt to your connection: videos up to 4K play in HEVC at about half the bitrate of AVC for the same quality. Bilibili Premium members also get 8K; HDR and Dolby Vision on displays that support HDR; Dolby audio, chosen by the system, on multichannel output devices; and Hi-Res Lossless once Lossless Audio is turned on in Settings.
+Picture and sound adapt to your connection: videos up to 4K play in HEVC at about half the bitrate of AVC for the same quality. Bilibili Premium members also get 8K; HDR and Dolby Vision on displays that support HDR; and Hi-Res Lossless once Lossless Audio is turned on in Settings.
+
+Videos with a Dolby track play real Dolby audio (E-AC-3), not plain AAC stereo. Dolby Atmos videos are rendered as Atmos on AirPods, with Dolby Atmos shown in Control Center, something Bilibili's website can't do.
 
 <p align="center">
   <picture>
