@@ -184,6 +184,59 @@ struct BiliAppWriteRequestAuthorizerTests {
         }
     }
 
+    /// 发评论只在 api 主机上授权（App 主机上的同一 path 拒绝）；回复要同时带 `root` 与 `parent`；@ 提及表必须是昵称到
+    /// 正整数 mid 的 JSON 对象，且每个昵称都以「@昵称」出现在正文里。
+    @Test(arguments: [
+        ("api.bilibili.com", "type=1&oid=170001&message=a&plat=2", true),
+        (
+            "api.bilibili.com",
+            "type=1&oid=170001&root=11&parent=12&message=%E5%9B%9E%E5%A4%8D%20%40%E6%9F%90%E4%BA%BA%20%3A%20a"
+                + "&plat=2&at_name_to_mid=%7B%22%E6%9F%90%E4%BA%BA%22%3A7%7D",
+            true
+        ),
+        ("app.bilibili.com", "type=1&oid=170001&message=a&plat=2", false),
+        ("api.bilibili.com", "type=1&oid=170001&root=11&message=a&plat=2", false),
+        (
+            "api.bilibili.com",
+            "type=1&oid=170001&message=a&plat=2&at_name_to_mid=%7B%22%E6%9F%90%E4%BA%BA%22%3A7%7D",
+            false
+        ),
+        (
+            "api.bilibili.com",
+            "type=1&oid=170001&message=%40x&plat=2&at_name_to_mid=%7B%22x%22%3A%220%22%7D",
+            false
+        ),
+        ("api.bilibili.com", "type=1&oid=170001&message=a&plat=2&csrf=FIXTURE", false)
+    ])
+    func authorizesCommentPostsOnlyWithinTheSchema(
+        host: String,
+        body: String,
+        isAllowed: Bool
+    ) async throws {
+        let authorizer = BiliAppWriteRequestAuthorizer(
+            store: MemoryAccountCredentialStore(
+                credential: try makeFixtureCredential(userID: Self.accountID)
+            ),
+            allowedPaths: ["/x/v2/reply/add"]
+        )
+        let request = HTTPRequest(
+            url: try #require(URL(string: "https://\(host)/x/v2/reply/add")),
+            method: .post,
+            headers: ["Content-Type": "application/x-www-form-urlencoded"],
+            body: Data(body.utf8)
+        )
+
+        if isAllowed {
+            let authorized = try await authorizer.authorize(request, boundTo: Self.accountID)
+            #expect(authorized.url.host == "api.bilibili.com")
+            #expect(authorized.headers["Cookie"] == nil)
+        } else {
+            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+                _ = try await authorizer.authorize(request, boundTo: Self.accountID)
+            }
+        }
+    }
+
     /// 方法与正文格式按 path 固定：表单 path 不收 GET、query 或别的 Content-Type，GET path 不收 POST。
     @Test
     func rejectsTheWrongMethodOrBodyFormatForAPath() async throws {

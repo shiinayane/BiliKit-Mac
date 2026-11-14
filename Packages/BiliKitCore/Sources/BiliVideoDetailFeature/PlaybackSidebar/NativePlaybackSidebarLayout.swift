@@ -31,6 +31,19 @@ final class NativePlaybackSidebarLayout: NSCollectionViewLayout {
     }
 
     var heightProvider: ((Entry, CGFloat) -> CGFloat)?
+    /// 内容末尾额外留出的高度，让浮在侧栏底部的评论入口不盖住最后几条评论与「加载更多」；入口不显示时为 0。
+    ///
+    /// 由 `NativePlaybackComposerClearance` 按入口的布局高度给出，展开、收起各变一次（不随动画逐帧变），变化时整体重排。
+    var bottomClearance: CGFloat = 0 {
+        didSet {
+            guard bottomClearance != oldValue else { return }
+            finishContentSize(
+                y: (attributes.last?.frame.maxY).map { $0 + Self.itemSpacing } ?? Self.contentInset,
+                viewportWidth: collectionView?.bounds.width ?? contentSize.width
+            )
+            invalidateLayout()
+        }
+    }
     private var entries: [Entry] = []
     private var preparedEntries: [Entry] = []
     private var preparedItemWidth: CGFloat?
@@ -355,7 +368,7 @@ final class NativePlaybackSidebarLayout: NSCollectionViewLayout {
     private func finishContentSize(y: CGFloat, viewportWidth: CGFloat) {
         var finalY = y
         if !attributes.isEmpty { finalY -= Self.itemSpacing }
-        finalY += Self.contentInset
+        finalY += Self.contentInset + bottomClearance
         contentSize = NSSize(
             width: viewportWidth,
             height: max(1, finalY)

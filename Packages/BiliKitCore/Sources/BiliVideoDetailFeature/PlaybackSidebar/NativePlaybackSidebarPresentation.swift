@@ -270,12 +270,13 @@ extension NativePlaybackSidebarPresentation {
         }
         let previousThreads = Dictionary(
             uniqueKeysWithValues: previousContent.comments.threads.map {
-                ($0.thread.id, $0.revision)
+                ($0.thread.id, ($0.revision, $0.reactionRevision))
             }
         )
         for thread in content.comments.threads
         where (timestampLimitChanged && thread.containsTimestampLinks)
-            || previousThreads[thread.thread.id] != thread.revision
+            || previousThreads[thread.thread.id]?.0 != thread.revision
+            || previousThreads[thread.thread.id]?.1 != thread.reactionRevision
         {
             changed.insert(
                 .commentThread(subject: thread.subject, rootID: thread.thread.id)

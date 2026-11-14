@@ -45,7 +45,9 @@ enum LiveAPIClients {
         BiliAccountWritePath.favoriteMembershipUpdate,
         BiliAccountWritePath.favoriteFolderEntryRemove,
         BiliAccountWritePath.relationModify,
-        BiliAccountWritePath.danmakuPost
+        BiliAccountWritePath.danmakuPost,
+        BiliAccountWritePath.commentLike,
+        BiliAccountWritePath.commentDislike
     ]
 
     /// 窗口主 API 可发出的 App 端读取；只引用 BiliAPI 的 `BiliAppReadPath`。
@@ -61,7 +63,8 @@ enum LiveAPIClients {
         BiliAppWritePath.recommendationDislikeCancel,
         BiliAppWritePath.videoLike,
         BiliAppWritePath.videoCoin,
-        BiliAppWritePath.videoTriple
+        BiliAppWritePath.videoTriple,
+        BiliAppWritePath.commentAdd
     ]
 
     static let cdnBenchmarkAccountReadAllowedPaths: Set<String> = [

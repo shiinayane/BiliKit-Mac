@@ -181,6 +181,7 @@ enum NativePlaybackCommentsItemMeasurement {
         values.contains(.adminPinned)
             || values.contains(.uploaderPinned)
             || values.contains(.uploaderLiked)
+            || values.contains(.postedByViewer)
     }
 
     static let authorBadgeSpacing: CGFloat = 4
@@ -231,6 +232,20 @@ enum NativePlaybackCommentsItemMeasurement {
 @MainActor
 struct NativePlaybackCommentRowGeometry {
     static let lineHeight: CGFloat = 18
+    /// 元信息一行的行框高度：比名字行高 2pt，给图标与文字上下留出余量，也是操作点击区的高度。
+    static let footerHeight: CGFloat = 20
+    /// 元信息一行的节奏（见 `NativePlaybackCommentRowView.layoutFooter`）：组内间距小于组间距，层次靠留白分出。
+    ///
+    /// 时间与属地之间。
+    static let footerInfoSpacing: CGFloat = 6
+    /// 信息组与操作组之间；行窄时先缩到 `minimumFooterGroupSpacing`，再截断时间。
+    static let footerGroupSpacing: CGFloat = 16
+    static let minimumFooterGroupSpacing: CGFloat = 10
+    /// 操作与操作之间，也决定点击区外延（各一半）；行窄时先缩到 `minimumFooterActionSpacing`。
+    static let footerActionSpacing: CGFloat = 14
+    static let minimumFooterActionSpacing: CGFloat = 10
+    /// 截断后的时间至少要有这么宽才显示（约「11月…」）；更窄只剩省略号，不如让给属地。
+    static let minimumFooterTimeWidth: CGFloat = 36
     static let wrappedBadgesY: CGFloat = 20
     /// 正文字号：比系统 body（13pt）大一号，侧栏评论以阅读为主；作者名与元信息仍用系统文字样式，靠颜色与字号低于正文。
     static let bodyFontSize: CGFloat = 14
@@ -242,7 +257,7 @@ struct NativePlaybackCommentRowGeometry {
     /// 作者行与正文框之间的间距；正文首行上方已有最小行高多出的空白，这里只补足其余部分。
     static let authorToBodySpacing: CGFloat = 4
     static let bodyToPicturesSpacing: CGFloat = 8
-    static let contentToFooterSpacing: CGFloat = 8
+    static let contentToFooterSpacing: CGFloat = 10
     static let footerToProvenanceSpacing: CGFloat = 6
     static let provenanceHeight: CGFloat = 20
 
@@ -366,7 +381,7 @@ struct NativePlaybackCommentRowGeometry {
         }
         y += Self.contentToFooterSpacing
         footerY = y
-        y += Self.lineHeight
+        y += Self.footerHeight
         if Measurement.hasVisibleProvenance(details.provenance) {
             y += Self.footerToProvenanceSpacing
             provenanceFrame = NSRect(

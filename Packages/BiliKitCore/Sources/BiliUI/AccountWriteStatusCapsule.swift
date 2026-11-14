@@ -96,6 +96,13 @@ public enum AccountWriteStatusText {
             case .recommendationDisliked: VideoCardMenuText.dislikedBadge
             case .recommendationDislikeCancelled: BiliUIStrings.localized("已撤销不感兴趣")
             case .danmakuPosted: BiliUIStrings.localized("已发送弹幕")
+            case .commentReactionChanged(let operation):
+                switch (operation.kind, operation.isOn) {
+                case (.like, true): BiliUIStrings.localized("已点赞评论")
+                case (.dislike, true): BiliUIStrings.localized("已点踩评论")
+                case (_, false): BiliUIStrings.localized("已取消")
+                }
+            case .commentPosted: BiliUIStrings.localized("已发布评论")
             }
         }
         let reason = reason(for: failure, change: report.change)
@@ -117,6 +124,13 @@ public enum AccountWriteStatusText {
         case .recommendationDisliked: BiliUIStrings.localized("无法提交不感兴趣：\(reason)")
         case .recommendationDislikeCancelled: BiliUIStrings.localized("无法撤销不感兴趣：\(reason)")
         case .danmakuPosted: BiliUIStrings.localized("无法发送弹幕：\(reason)")
+        case .commentReactionChanged(let operation):
+            switch (operation.kind, operation.isOn) {
+            case (.like, true): BiliUIStrings.localized("无法点赞评论：\(reason)")
+            case (.dislike, true): BiliUIStrings.localized("无法点踩评论：\(reason)")
+            case (_, false): BiliUIStrings.localized("无法取消：\(reason)")
+            }
+        case .commentPosted: BiliUIStrings.localized("无法发布评论：\(reason)")
         }
     }
 
@@ -126,7 +140,7 @@ public enum AccountWriteStatusText {
             switch change {
             case .watchLaterAdded, .watchLaterRemoved, .likeChanged, .coinsAdded, .tripled,
                 .recommendationDisliked, .recommendationDislikeCancelled, .followChanged,
-                .danmakuPosted:
+                .danmakuPosted, .commentReactionChanged, .commentPosted:
                 false
             case .favoriteMembershipChanged, .removedFromFavoriteFolder: true
             }
@@ -134,6 +148,11 @@ public enum AccountWriteStatusText {
             if case .followChanged = change { true } else { false }
         let isDanmaku =
             if case .danmakuPosted = change { true } else { false }
+        let isComment =
+            switch change {
+            case .commentReactionChanged, .commentPosted: true
+            default: false
+            }
         return switch failure {
         case .authenticationRequired, .authenticationInvalid:
             BiliUIStrings.localized("登录状态可能已失效。")
@@ -161,6 +180,8 @@ public enum AccountWriteStatusText {
                 BiliUIStrings.localized("UP 主不存在或已注销。")
             } else if isDanmaku {
                 BiliUIStrings.localized("这个视频现在不能发弹幕。")
+            } else if isComment {
+                BiliUIStrings.localized("评论不存在或已删除。")
             } else {
                 BiliUIStrings.localized("视频不存在或已删除。")
             }
@@ -172,6 +193,14 @@ public enum AccountWriteStatusText {
             BiliUIStrings.localized("不能给自己的视频投币。")
         case .declinedForClient:
             BiliUIStrings.localized("B 站拒绝了这个客户端的这次操作，可以在网页上完成。")
+        case .commentsClosed:
+            BiliUIStrings.localized("评论区已关闭或不允许回复。")
+        case .blockedByUploader:
+            BiliUIStrings.localized("你已被 UP 主列入评论黑名单。")
+        case .commentRejected:
+            BiliUIStrings.localized("评论内容未通过：可能含敏感信息或与之前的评论重复。")
+        case .verificationRequired:
+            BiliUIStrings.localized("B 站要求先完成验证，可以在网页上发表。")
         case .rejected(let code):
             BiliUIStrings.localized("服务拒绝了这次操作（错误码 \(code)）。")
         case .unavailable:

@@ -33,9 +33,21 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         /// 两个夹 id 列表（`positiveIntegerList`）至少一个非空，且没有共同的 id：一次改动必须真有改动，同一个夹不能
         /// 既加入又移出（服务端先做哪一侧不可知）。
         case disjointNonEmptyLists(String, String)
+        /// 两个字段同时出现或同时缺省（回复评论的 `root` 与 `parent`）：只带一个时服务端如何解释不可知。
+        case bothOrNeither(String, String)
+        /// @ 提及表（`at_name_to_mid`）里的每个昵称都以「@昵称」出现在正文字段里：请求不能关联正文里没有的用户。
+        case mentionsAppearIn(String, message: String)
 
         func accepts(_ fields: [String: String]) -> Bool {
             switch self {
+            case .mentionsAppearIn(let mentionsField, let messageField):
+                guard let raw = fields[mentionsField] else { return true }
+                guard let message = fields[messageField],
+                    let mentions = FieldShape.decodedMentions(raw)
+                else { return false }
+                return CommentPostMentions.isValid(mentions, in: message)
+            case .bothOrNeither(let first, let second):
+                return (fields[first] == nil) == (fields[second] == nil)
             case .disjointNonEmptyLists(let first, let second):
                 let firstIDs = Set(
                     (fields[first] ?? "").split(separator: ",", omittingEmptySubsequences: true)
@@ -68,6 +80,11 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         case bvid
         /// 弹幕正文：必须已经是 `DanmakuPostText.normalized` 规整过的样子（非空、单行、不超过上限）。
         case danmakuText
+        /// 评论正文：必须已经是 `CommentPostText.normalized` 规整过的样子（非空、不超过上限，可以多行）。
+        case commentText
+        /// @ 提及表：JSON 对象，昵称到正整数 mid，条数不超过 `CommentPostMentions.maximumCount`；与正文的对应由
+        /// `CrossFieldRule.mentionsAppearIn` 检查。
+        case mentionMap
 
         /// 一次收藏改动最多涉及的收藏夹数：远多于一个账户实际拥有的夹数，超出说明请求构造有误。
         static let maximumListCount = 100
@@ -90,7 +107,28 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
                 BVID.isValid(value)
             case .danmakuText:
                 DanmakuPostText.normalized(value) == value
+            case .commentText:
+                CommentPostText.normalized(value) == value
+            case .mentionMap:
+                Self.decodedMentions(value).map {
+                    !$0.isEmpty && $0.count <= CommentPostMentions.maximumCount
+                } ?? false
             }
+        }
+
+        /// 把 `at_name_to_mid` 解成昵称到 mid 的表；不是 JSON 对象、值不是正整数时为 nil。
+        static func decodedMentions(_ value: String) -> [String: Int64]? {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)),
+                let dictionary = object as? [String: Any]
+            else { return nil }
+            var mentions: [String: Int64] = [:]
+            for (name, mid) in dictionary {
+                guard let number = mid as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                    let value = Int64(exactly: number.doubleValue), value > 0
+                else { return nil }
+                mentions[name] = value
+            }
+            return mentions
         }
 
         private static func isPositiveInteger<S: StringProtocol>(_ value: S) -> Bool {
@@ -193,6 +231,8 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
             referer: "https://www.bilibili.com/",
             cookieNames: [.session]
         ),
+        "/x/v2/reply/action": commentReactionSchema,
+        "/x/v2/reply/hate": commentReactionSchema,
         "/x/v3/fav/resource/batch-del": Schema(
             requiredFields: [
                 "resources": .singleVideoResource,
@@ -204,6 +244,19 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
             cookieNames: [.session]
         )
     ]
+
+    /// 评论点赞与点踩共用的 schema：单条评论，`action` 只能是 1（打开）或 0（取消）。
+    private static let commentReactionSchema = Schema(
+        requiredFields: [
+            "type": .literal("1"),
+            "oid": .positiveInteger,
+            "rpid": .positiveInteger,
+            "action": .oneOf(["0", "1"])
+        ],
+        optionalFields: [:],
+        referer: "https://www.bilibili.com/",
+        cookieNames: [.session]
+    )
 
     /// 写请求固定的 `Origin`：浏览器跨域 POST 会带它，B 站据此与 Referer 一起判断来源。
     static let origin = "https://www.bilibili.com"

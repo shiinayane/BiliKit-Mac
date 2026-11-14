@@ -40,6 +40,14 @@ public enum AccountWriteError: Error, Sendable, Equatable {
     /// 实测按稿件出现：同一账号有的稿件能点赞、有的被拒；照网页补统计字段、视频页 Referer 与 B 站下发的 buvid 都没有
     /// 改善。网页上可以完成，所以结果里给出在浏览器中打开这个视频（`AccountWriteReport.webFallbackURL`）。
     case declinedForClient
+    /// 评论区已关闭或禁止回复（业务码 12002、12052、12003）。
+    case commentsClosed
+    /// 被 UP 主列入评论黑名单（业务码 12035）。
+    case blockedByUploader
+    /// 评论正文被拒：含敏感信息（12016）或重复评论（12051）。
+    case commentRejected
+    /// B 站要求先完成验证（业务码 12015）：这里无法完成，可以在网页上发表。
+    case verificationRequired
     /// 其他业务拒绝。
     case rejected(code: Int)
     /// 网络失败或无法判定结果。
@@ -56,7 +64,8 @@ extension AccountWriteError {
             true
         case .invalidRequest, .authenticationUnavailable, .restricted, .listFull,
             .unsupportedContent, .contentUnavailable, .coinsInsufficient, .coinLimitReached,
-            .ownVideo, .declinedForClient, .rejected, .unavailable:
+            .ownVideo, .declinedForClient, .commentsClosed, .blockedByUploader, .commentRejected,
+            .verificationRequired, .rejected, .unavailable:
             false
         }
     }
@@ -108,6 +117,10 @@ public enum AccountWriteChange: Sendable, Hashable {
     ///
     /// 只作在途写入的 key 与失败说明；成功不产生跨视图效果（发出的那条由播放器本地上屏），不进写入结果胶囊。
     case danmakuPosted(VideoWriteTarget)
+    /// 对一条评论点赞、点踩或取消；只在失败时进写入结果胶囊，成功不提示、不产生跨视图效果。
+    case commentReactionChanged(CommentReactionOperation)
+    /// 在这个评论区发了一条评论或回复；结局交回评论输入框，不进写入结果胶囊，也不产生跨视图效果。
+    case commentPosted(CommentSubjectIdentity)
 }
 
 /// 写入成功后需要让其他视图知道的事实：哪个账户的哪项内容变了。
@@ -144,7 +157,7 @@ public struct AccountWriteReport: Sendable, Equatable {
             BVID.webPageURL(target.bvid)
         case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
             .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled,
-            .followChanged, .danmakuPosted:
+            .followChanged, .danmakuPosted, .commentReactionChanged, .commentPosted:
             nil
         }
     }

@@ -20,6 +20,7 @@ struct AppShellView: View {
     let commentsModel: PlaybackCommentsViewModel
     let danmakuModel: DanmakuControlsViewModel
     let danmakuComposer: DanmakuComposerModel
+    let commentWrite: PlaybackCommentWriteModel
     let authenticationModel: AuthenticationViewModel
     let watchLaterModel: WatchLaterViewModel
     let watchLaterSession: WatchLaterSession
@@ -273,6 +274,7 @@ struct AppShellView: View {
             model: videoModel,
             engagementModel: engagementModel,
             commentsModel: commentsModel,
+            commentWrite: commentWrite,
             commentAssetURLResolver: commentAssetURLResolver,
             commentImagePipeline: imagePipeline,
             onRetry: retryPlayback,

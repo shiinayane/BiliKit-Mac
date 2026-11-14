@@ -165,7 +165,9 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/v3/fav/resource/deal",
                 "/x/v3/fav/resource/batch-del",
                 "/x/relation/modify",
-                "/x/v2/dm/post"
+                "/x/v2/dm/post",
+                "/x/v2/reply/action",
+                "/x/v2/reply/hate"
             ]
         )
         #expect(
@@ -174,7 +176,8 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/feed/dislike/cancel",
                 "/x/v2/view/like",
                 "/x/v2/view/coin/add",
-                "/x/v2/view/like/triple"
+                "/x/v2/view/like/triple",
+                "/x/v2/reply/add"
             ]
         )
         // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
@@ -213,6 +216,12 @@ struct AccountWriteAuthorizationCompositionTests {
                 "https://www.bilibili.com/",
                 "type=1&oid=1176840&msg=%E5%A5%BD%2B1&bvid=BV1xx411c7mD&progress=0&color=16777215"
                     + "&fontsize=25&pool=0&mode=1&rnd=1731400000000000"
+            ),
+            BiliAccountWritePath.commentLike: (
+                "https://www.bilibili.com/", "type=1&oid=170001&rpid=11&action=1"
+            ),
+            BiliAccountWritePath.commentDislike: (
+                "https://www.bilibili.com/", "type=1&oid=170001&rpid=11&action=0"
             )
         ]
         #expect(Set(requests.keys) == LiveAPIClients.mainAccountWriteAllowedPaths)
@@ -268,6 +277,11 @@ struct AccountWriteAuthorizationCompositionTests {
             BiliAppWritePath.videoTriple: try Self.appForm(
                 BiliAppWritePath.videoTriple,
                 body: "aid=170001"
+            ),
+            BiliAppWritePath.commentAdd: try Self.appForm(
+                BiliAppWritePath.commentAdd,
+                body: "type=1&oid=170001&root=11&parent=12&message=%E5%A5%BD&plat=2",
+                host: "api.bilibili.com"
             )
         ]
         #expect(Set(requests.keys) == LiveAPIClients.mainAppWriteAllowedPaths)
@@ -295,9 +309,13 @@ struct AccountWriteAuthorizationCompositionTests {
         )
     }
 
-    private static func appForm(_ path: String, body: String) throws -> HTTPRequest {
+    private static func appForm(
+        _ path: String,
+        body: String,
+        host: String = "app.bilibili.com"
+    ) throws -> HTTPRequest {
         HTTPRequest(
-            url: try #require(URL(string: "https://app.bilibili.com\(path)")),
+            url: try #require(URL(string: "https://\(host)\(path)")),
             method: .post,
             headers: [
                 "Accept": "application/json",

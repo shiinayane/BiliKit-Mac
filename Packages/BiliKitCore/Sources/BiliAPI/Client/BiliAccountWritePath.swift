@@ -36,4 +36,8 @@ public enum BiliAccountWritePath {
     /// 字段取自两个仍在维护的第三方客户端（PiliPlus、Darock-Bili），两者一致。`rnd` 是发送时刻的微秒时间戳：带上时服务端的
     /// 冷却是 5 秒，不带是 90 秒。网页附带的 `checkbox_type`、`colorful` 不发送。
     public static let danmakuPost = "/x/v2/dm/post"
+    /// 点赞或取消点赞一条评论（`type=1`、`oid`、`rpid`、`action=1|0`、`csrf`）；点赞会同时取消点踩。
+    public static let commentLike = "/x/v2/reply/action"
+    /// 点踩或取消点踩一条评论（字段同点赞）；点踩会同时取消点赞。
+    public static let commentDislike = "/x/v2/reply/hate"
 }

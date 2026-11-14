@@ -87,7 +87,8 @@ final class AccountWriteEffectRouter {
         case .followChanged(let uploader, _):
             guard !appliedLocally else { return }
             engagementModel.markNeedsReload(uploaderID: uploader.mid)
-        case .recommendationDisliked, .recommendationDislikeCancelled, .danmakuPosted:
+        case .recommendationDisliked, .recommendationDislikeCancelled, .danmakuPosted,
+            .commentReactionChanged, .commentPosted:
             break
         }
     }

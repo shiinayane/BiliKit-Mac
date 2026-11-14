@@ -153,6 +153,52 @@ struct CommentAPIClientTests {
         #expect(page.continuation == nil)
     }
 
+    /// 评论区禁止新增（`control.input_disable`）或只读（`config.read_only`）时不能发评论；接口给的占位文字原样带出，空串当作没有。
+    @Test(
+        arguments: [
+            (
+                #""control":{"input_disable":false,"root_input_text":"说点什么","child_input_text":""}"#,
+                true, "说点什么"
+            ),
+            (
+                #""control":{"input_disable":true,"root_input_text":"当前评论区不可新增评论"}"#, false,
+                "当前评论区不可新增评论"
+            ),
+            (#""config":{"read_only":true}"#, false, nil),
+            (#""upper":{"mid":113524}"#, true, nil)
+        ] as [(String, Bool, String?)]
+    )
+    func rootPageCarriesTheCommentInputPolicy(
+        fields: String,
+        accepts: Bool,
+        rootPlaceholder: String?
+    ) async throws {
+        let repository = BiliCommentRepository(
+            client: BiliAPIClient(
+                transport: StubTransport(
+                    responses: [
+                        jsonResponse(
+                            #"{"code":0,"message":"OK","data":{"cursor":{"is_end":true},"replies":[],"#
+                                + fields + "}}"
+                        )
+                    ],
+                    answersWBINavOnce: true
+                ),
+                timestampProvider: { 1_700_000_000 }
+            )
+        )
+
+        let page = try await repository.rootComments(
+            for: .video(aid: 423_029),
+            sort: .hot,
+            after: nil
+        )
+
+        #expect(page.inputPolicy.acceptsNewComments == accepts)
+        #expect(page.inputPolicy.rootPlaceholder == rootPlaceholder)
+        #expect(page.inputPolicy.replyPlaceholder == nil)
+    }
+
     @Test
     func replyPageUsesRootAndTenItemPageContract() async throws {
         let transport = StubTransport(

@@ -317,6 +317,35 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
         )
     }
 
+    /// 点赞数与赞踩不进 `revision`（正文渲染作用域与行高缓存键），只进 `reactionRevision`；这一楼仍算变化、会被重新配置。
+    @Test
+    @MainActor
+    func reactionChangeRefreshesTheRowWithoutChangingItsContentRevision() async throws {
+        let subject = CommentSubjectIdentity.video(aid: 700_001)
+        let thread = commentThread(id: 1, message: "正文")
+        var reacted = thread
+        guard case .available(var details) = reacted.root.payload else {
+            Issue.record("评论应可见")
+            return
+        }
+        details.likeCount += 1
+        details.viewerReaction = .liked
+        reacted.root.payload = .available(details)
+
+        let original = await commentsPresentation(subject: subject, threads: [thread])
+        let changed = await commentsPresentation(subject: subject, threads: [reacted])
+        let before = try #require(original.threads.first)
+        let after = try #require(changed.threads.first)
+
+        #expect(after.revision == before.revision)
+        #expect(after.reactionRevision != before.reactionRevision)
+        #expect(
+            sidebarPresentation(comments: changed)
+                .changedItemIDs(comparedTo: sidebarPresentation(comments: original))
+                == [.commentThread(subject: subject, rootID: thread.id)]
+        )
+    }
+
     @Test
     @MainActor
     func commentRevisionTracksRenderedVerificationLinksAndPictures() {
@@ -340,17 +369,20 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
         let plain = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: commentThread(id: 1, message: message, author: plainAuthor),
-            replyState: nil
+            replyState: nil,
+            writeAvailability: .unavailable
         )
         let verified = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: commentThread(id: 1, message: message, author: verifiedAuthor),
-            replyState: nil
+            replyState: nil,
+            writeAvailability: .unavailable
         )
         let avatar = NativePlaybackCommentThreadPresentation(
             subject: subject,
             thread: commentThread(id: 1, message: message, author: avatarAuthor),
-            replyState: nil
+            replyState: nil,
+            writeAvailability: .unavailable
         )
         let linked = NativePlaybackCommentThreadPresentation(
             subject: subject,
@@ -365,7 +397,8 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                 ],
                 author: verifiedAuthor
             ),
-            replyState: nil
+            replyState: nil,
+            writeAvailability: .unavailable
         )
         let pictured = NativePlaybackCommentThreadPresentation(
             subject: subject,
@@ -381,7 +414,8 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                 pictures: [CommentImage(asset: fixtureAssetReference())],
                 author: verifiedAuthor
             ),
-            replyState: nil
+            replyState: nil,
+            writeAvailability: .unavailable
         )
 
         #expect(plain.revision != avatar.revision)

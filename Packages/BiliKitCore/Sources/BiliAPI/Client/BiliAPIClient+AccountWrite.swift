@@ -9,8 +9,10 @@ import Foundation
 /// 写入不经 `signedRequest`、不重试；会话 epoch 的比对由请求管线 `response(baseRequest:...)` 统一执行，见
 /// SECURITY-MODEL §3。
 extension BiliAPIClient {
-    /// 写请求的响应只有状态 envelope，16 KiB 远超正常大小；更大的正文按异常响应失败关闭。
-    private static let maximumWriteResponseSize = 16 * 1_024
+    /// 写请求的响应多半只有状态 envelope，16 KiB 远超正常大小；更大的正文按异常响应失败关闭。
+    ///
+    /// 正文带回整条内容的写入（发评论）由调用方给出更大的上限。
+    static let maximumWriteResponseSize = 16 * 1_024
     /// 用户发起的写入固定带的 `Origin`，与授权器 `BiliAccountWriteRequestAuthorizer.origin` 相同。
     static let accountWriteOrigin = "https://www.bilibili.com"
     /// 加入稍后再看的 Referer：卡片可能来自任何页面，用固定的站点首页，不随来源变化。
@@ -162,7 +164,8 @@ extension BiliAPIClient {
     func postAppForm(
         url: URL,
         fields: [(String, String)],
-        access: RequestAccess
+        access: RequestAccess,
+        maximumResponseSize: Int = maximumWriteResponseSize
     ) async throws -> Data {
         let authorizedResponse = try await response(
             baseRequest: HTTPRequest(
@@ -176,7 +179,7 @@ extension BiliAPIClient {
                 body: try Self.formBody(fields)
             ),
             access: access,
-            maximumResponseSize: Self.maximumWriteResponseSize
+            maximumResponseSize: maximumResponseSize
         )
         return try writeResponseBody(authorizedResponse)
     }

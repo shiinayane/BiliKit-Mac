@@ -524,6 +524,7 @@ struct AccountWriteCoordinatorTests {
             ),
             recommendationFeedback: RecommendationFeedbackUseCase(repository: writes),
             danmakuPost: DanmakuPostUseCase(repository: writes),
+            commentWrite: CommentWriteUseCase(repository: writes),
             browseModel: browse,
             writableAccount: { session.account },
             publish: { _, _ in }

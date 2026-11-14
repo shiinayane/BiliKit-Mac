@@ -2,6 +2,7 @@ import BiliApplication
 import BiliAuthFeature
 import BiliBrowseFeature
 import BiliLibraryFeature
+import BiliModels
 import BiliVideoDetailFeature
 import SwiftUI
 
@@ -42,6 +43,8 @@ final class WindowComposition {
     let engagementModel: VideoEngagementModel
     /// 播放器上发送弹幕的输入胶囊；发送经 `accountWrites`，关窗时 reset。
     let danmakuComposer: DanmakuComposerModel
+    /// 评论区底部输入框与评论行上的赞、踩；写入经 `accountWrites`，关窗时 reset。
+    let commentWrite: PlaybackCommentWriteModel
     let trendingSearchModel: TrendingSearchViewModel
     let searchSuggestionSource: SearchSuggestionSource
     /// 搜索来源的草稿、筛选与已提交的条件；关窗时由搜索来源的描述 reset。
@@ -184,6 +187,7 @@ final class WindowComposition {
                 repository: adapters.recommendationFeedbackRepository
             ),
             danmakuPost: DanmakuPostUseCase(repository: adapters.danmakuPostRepository),
+            commentWrite: CommentWriteUseCase(repository: adapters.commentWriteRepository),
             browseModel: browseModel,
             writableAccount: writableAccount,
             publish: { delivery, appliedLocally in
@@ -202,6 +206,21 @@ final class WindowComposition {
             }
         )
         self.danmakuComposer = danmakuComposer
+        commentWrite = PlaybackCommentWriteModel(
+            comments: commentsModel,
+            canWrite: { accountWrites.isWritable },
+            uploaderID: { subject in
+                videoModel.presentedContext.flatMap { context in
+                    context.detail.aid == subject.oid ? context.detail.owner.id : nil
+                }
+            },
+            post: { request, completion in
+                accountWrites.postComment(request, completion: completion)
+            },
+            react: { operation, rollback in
+                accountWrites.setCommentReaction(operation, rollback: rollback)
+            }
+        )
         self.trendingSearchModel = trendingSearchModel
         searchSuggestionSource = SearchSuggestionSource(
             useCase: SearchSuggestionUseCase(repository: adapters.searchSuggestionRepository)
@@ -301,6 +320,7 @@ final class WindowComposition {
         accountWrites.close()
         engagementModel.reset()
         danmakuComposer.reset()
+        commentWrite.reset()
         if let accountWriteEffectRegistration {
             process.accountWriteEffects.unregister(accountWriteEffectRegistration)
         }

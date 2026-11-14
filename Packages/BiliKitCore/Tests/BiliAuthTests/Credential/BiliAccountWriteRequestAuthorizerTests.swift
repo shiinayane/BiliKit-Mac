@@ -160,6 +160,35 @@ struct BiliAccountWriteRequestAuthorizerTests {
         }
     }
 
+    /// 评论的赞与踩只收视频评论区的单条评论，`action` 只能是 1（打开）或 0（取消）；发评论不在网页写入里（走 App 端）。
+    @Test(arguments: [
+        ("/x/v2/reply/action", "type=1&oid=170001&rpid=11&action=1"),
+        ("/x/v2/reply/hate", "type=1&oid=170001&rpid=11&action=0")
+    ])
+    func authorizesCommentReactions(path: String, body: String) async throws {
+        let authorized = try await makeAuthorizer().authorize(
+            try writeRequest(path: path, body: body),
+            boundTo: Self.accountID
+        )
+
+        #expect(authorized.body == Data("\(body)&csrf=FIXTURE_bili_jct_VALUE".utf8))
+    }
+
+    @Test(arguments: [
+        ("/x/v2/reply/add", "type=1&oid=170001&message=a&plat=1"),
+        ("/x/v2/reply/action", "type=1&oid=170001&rpid=11&action=2"),
+        ("/x/v2/reply/action", "type=11&oid=170001&rpid=11&action=1"),
+        ("/x/v2/reply/hate", "type=1&oid=170001&rpid=11,12&action=1")
+    ])
+    func rejectsCommentRequestsOutsideTheSchema(path: String, body: String) async throws {
+        await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+            try await makeAuthorizer().authorize(
+                try writeRequest(path: path, body: body),
+                boundTo: Self.accountID
+            )
+        }
+    }
+
     /// 夹内移除一次只收一个视频条目：多个条目、其他类型与多个收藏夹都拒绝。
     @Test(arguments: [
         "resources=170001:2,170002:2&media_id=11&platform=web",

@@ -34,7 +34,8 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
             let row = NativePlaybackCommentThreadPresentation(
                 subject: .video(aid: 700_001),
                 thread: commentThread(id: 3, message: "根评论", replyCount: 2),
-                replyState: state
+                replyState: state,
+                writeAvailability: .unavailable
             )
             configureThreadItem(
                 item,
@@ -44,9 +45,20 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
             )
         }
 
-        func visibleButton(_ title: String) -> NSButton? {
-            descendants(of: item.view).compactMap { $0 as? NSButton }
-                .first { !$0.isHidden && $0.title == title }
+        // 系统按钮按标题找；评论行元信息里的操作是自绘视图，按读屏的按钮角色与标签找，按下时走读屏的同一条路径。
+        func visibleButton(_ title: String) -> NSView? {
+            descendants(of: item.view).first { view in
+                guard !view.isHidden else { return false }
+                if let button = view as? NSButton { return button.title == title }
+                return view.accessibilityRole() == .button && view.accessibilityLabel() == title
+            }
+        }
+        func press(_ view: NSView) {
+            if let button = view as? NSButton {
+                button.performClick(nil)
+            } else {
+                _ = view.accessibilityPerformPress()
+            }
         }
 
         // 翻页加载中原页的回复还在，入口不先消失。
@@ -56,7 +68,7 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
 
         state.isLoading = false
         configure(state)
-        try #require(visibleButton(VideoDetailFeatureStrings.localized("查看对话"))).performClick(nil)
+        press(try #require(visibleButton(VideoDetailFeatureStrings.localized("查看对话"))))
         #expect(shownDialogs == [reply])
         #expect(visibleButton(VideoDetailFeatureStrings.localized("返回全部回复")) == nil)
 
@@ -68,7 +80,7 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
         configure(state)
         #expect(visibleButton(VideoDetailFeatureStrings.localized("查看对话")) == nil)
         #expect(visibleButton(VideoDetailFeatureStrings.localized("加载更多")) != nil)
-        try #require(visibleButton(VideoDetailFeatureStrings.localized("返回全部回复"))).performClick(nil)
+        press(try #require(visibleButton(VideoDetailFeatureStrings.localized("返回全部回复"))))
         #expect(closedCount == 1)
 
         // 对话到底却没有可显示的回复：给一句说明，不留空白面板。
@@ -92,7 +104,8 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
             let row = NativePlaybackCommentThreadPresentation(
                 subject: .video(aid: 700_001),
                 thread: commentThread(id: 3, message: "根评论", replyCount: 2),
-                replyState: state
+                replyState: state,
+                writeAvailability: .unavailable
             )
             configureThreadItem(item, with: row)
             // 第一行是根评论，其余是面板里的回复行。
@@ -140,7 +153,8 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
                 with: NativePlaybackCommentThreadPresentation(
                     subject: .video(aid: 700_001),
                     thread: commentThread(id: 4, message: "根评论", replyCount: 10),
-                    replyState: state
+                    replyState: state,
+                    writeAvailability: .unavailable
                 )
             )
             // 第一行是根评论，其余是面板里按子视图顺序排列的回复行。
@@ -168,7 +182,8 @@ struct PlaybackSidebarReplyDialogTests: PlaybackSidebarFixtures {
             NativePlaybackCommentThreadPresentation(
                 subject: .video(aid: 700_001),
                 thread: thread,
-                replyState: state
+                replyState: state,
+                writeAvailability: .unavailable
             ).revision
         }
         let pageList = revision(state)

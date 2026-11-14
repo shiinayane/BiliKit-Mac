@@ -51,7 +51,7 @@ A native Mac app, not a web page in a wrapper: under 10 MB to download and a few
 
 ### A redesigned video page
 
-The player, comments and related videos are on screen together: keep watching while you read the comments, with the next video you want right beside it, no switching back and forth.
+The player, comments and related videos are on screen together: keep watching while you read the comments, with the next video you want right beside it, no switching back and forth. Once signed in, you can also post comments, reply in threads, and like or dislike comments right there.
 
 Picture and sound adapt to your connection: videos up to 4K play in HEVC at about half the bitrate of AVC for the same quality. Bilibili Premium members also get 8K; HDR and Dolby Vision on displays that support HDR; and Hi-Res Lossless once Lossless Audio is turned on in Settings.
 
