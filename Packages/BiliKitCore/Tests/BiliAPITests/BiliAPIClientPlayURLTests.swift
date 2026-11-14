@@ -98,8 +98,9 @@ struct BiliAPIClientPlayURLTests {
         #expect(playback.dashManifest != nil)
     }
 
-    /// 没有 DASH 的单段 durl：`mp4`（360P）与较早视频的 `hdmp4`（720P）都按 progressive MP4 播放。
-    @Test(arguments: [ProgressiveShape.singleSafeSegment, .hdMP4Container])
+    /// 没有 DASH 的单段 durl：`mp4`（360P）、较早视频的 `hdmp4`（720P）与只有 720P 转码稿件的 `mp4720`
+    /// 都按 progressive MP4 播放。
+    @Test(arguments: [ProgressiveShape.singleSafeSegment, .hdMP4Container, .mp4720Container])
     func playURLMapsSingleSafeDURLAsProgressiveMedia(shape: ProgressiveShape) async throws {
         let client = BiliAPIClient(
             transport: StubTransport(
@@ -301,7 +302,7 @@ struct BiliAPIClientPlayURLTests {
     }
 }
 
-/// playurl 只返回 durl 时的各种形状；只有单段、安全来源、MP4（`mp4`／`hdmp4`）可以映射为 progressive 媒体。
+/// playurl 只返回 durl 时的各种形状；只有单段、安全来源、MP4（`mp4*`／`hdmp4`）可以映射为 progressive 媒体。
 enum ProgressiveShape: Sendable {
     case singleSafeSegment
     case emptyDURL
@@ -313,6 +314,7 @@ enum ProgressiveShape: Sendable {
     case missingURL
     case flvContainer
     case hdMP4Container
+    case mp4720Container
 
     func response() throws -> HTTPResponse {
         let backup = "https://backup.fixture.bilivideo.com/preview.mp4"
@@ -332,7 +334,7 @@ enum ProgressiveShape: Sendable {
         }
         let durl: [[String: Any]] =
             switch self {
-            case .singleSafeSegment, .flvContainer, .hdMP4Container: [segment()]
+            case .singleSafeSegment, .flvContainer, .hdMP4Container, .mp4720Container: [segment()]
             case .emptyDURL: []
             case .twoSegments: [segment(), segment(path: "part-2.mp4")]
             case .malformedSecondSegment: [segment(), ["unexpected": true]]
@@ -345,6 +347,7 @@ enum ProgressiveShape: Sendable {
             switch self {
             case .flvContainer: "flv480"
             case .hdMP4Container: "hdmp4"
+            case .mp4720Container: "mp4720"
             default: "mp4"
             }
         return HTTPResponse(

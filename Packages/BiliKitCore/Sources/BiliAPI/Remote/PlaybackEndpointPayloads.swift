@@ -10,10 +10,16 @@ import Foundation
 /// 配音语言与断点字段异常时按缺失处理，不阻断播放。线路测速另用只解码视频轨的
 /// `CDNBenchmarkPlayURLPayload`。
 struct PlayURLPayload: Decodable, Sendable {
-    /// 没有 DASH 时 AVPlayer 能直接播放的单段 durl 格式。
+    /// durl 的 `format` 是否为 AVPlayer 能直接播放的 MP4 整段。
     ///
-    /// `mp4` 与 `hdmp4`（较早视频的 720P 整段）都是 MP4 容器；`flv*` AVPlayer 不支持。
-    static let progressiveMP4Formats: Set<String> = ["mp4", "hdmp4"]
+    /// `mp4` 开头的格式（`mp4`、只有 720P 转码的稿件返回的 `mp4720`）与 `hdmp4`（较早视频的 720P 整段）
+    /// 都是 MP4 容器；`flv*` 与 `hdflv2` AVPlayer 不支持。按前缀而不是逐个列举，是因为服务端把清晰度
+    /// 拼进格式名，漏掉一个就会把能播放的稿件报成不支持的容器。容器判断与 FLV 重取时挑 MP4 清晰度都只经
+    /// 这里，两处不会对同一格式给出不同结论。
+    static func isProgressiveMP4(format: String) -> Bool {
+        let format = format.lowercased()
+        return format.hasPrefix("mp4") || format == "hdmp4"
+    }
 
     let dash: DASHPayload?
     let durl: DURLPayloadSelection?
@@ -57,7 +63,7 @@ struct PlayURLPayload: Decodable, Sendable {
                 forKey: .supportFormats
             )) ?? [])
             .compactMap(\.value)
-            .filter { Self.progressiveMP4Formats.contains($0.format.lowercased()) }
+            .filter { Self.isProgressiveMP4(format: $0.format) }
             .map(\.quality)
             : []
         currentLanguage = try? container.decode(
@@ -77,7 +83,7 @@ struct PlayURLPayload: Decodable, Sendable {
     }
 
     var hasProgressiveMP4Format: Bool {
-        format.map { Self.progressiveMP4Formats.contains($0.lowercased()) } ?? false
+        format.map(Self.isProgressiveMP4(format:)) ?? false
     }
 
     /// 上次播放的分 P 与位置（毫秒）；调用方只在请求实际带凭据发出时采用。
