@@ -300,17 +300,32 @@ public enum CommentProvenance: Sendable, Equatable, Hashable {
     case adminPinned
     case uploaderPinned
     case uploaderLiked
+    /// 当前账户在本窗口刚发出的评论；只由评论 ViewModel 在发出成功后本地加上，接口映射不产生它。
+    case postedByViewer
 }
 
-/// 可见评论的作者、正文、发布时间、IP 属地、计数与来源标记；映射时点赞数与回复数只接受非负值。
+/// 当前账户对一条评论的表态：接口 `action` 0 为无、1 为已赞、2 为已踩；未登录时接口恒给 0。
+///
+/// 赞与踩互斥：服务端点赞会同时取消点踩，反之亦然。
+public enum CommentReaction: Sendable, Equatable, Hashable {
+    case none
+    case liked
+    case disliked
+}
+
+/// 可见评论的作者、正文、发布时间、IP 属地、计数、来源标记与当前账户的表态；映射时点赞数与回复数只接受非负值。
+///
+/// 可变的字段只由评论 ViewModel 在本地改写：`likeCount` 与 `viewerReaction` 随乐观点赞、点踩与回滚，`replyCount` 与
+/// `provenance` 在插入刚发出的回复时（根评论回复数加一、新评论加上 `.postedByViewer`）；其余字段只来自接口。
 public struct CommentDetails: Sendable, Equatable {
     public let author: CommentAuthor
     public let content: CommentContent
     public let createdAt: Date
     public let location: String?
-    public let likeCount: Int64
-    public let replyCount: Int
-    public let provenance: [CommentProvenance]
+    public var likeCount: Int64
+    public var replyCount: Int
+    public var provenance: [CommentProvenance]
+    public var viewerReaction: CommentReaction
 
     public init(
         author: CommentAuthor,
@@ -319,7 +334,8 @@ public struct CommentDetails: Sendable, Equatable {
         location: String? = nil,
         likeCount: Int64,
         replyCount: Int = 0,
-        provenance: [CommentProvenance] = []
+        provenance: [CommentProvenance] = [],
+        viewerReaction: CommentReaction = .none
     ) {
         self.author = author
         self.content = content
@@ -328,6 +344,7 @@ public struct CommentDetails: Sendable, Equatable {
         self.likeCount = likeCount
         self.replyCount = replyCount
         self.provenance = provenance
+        self.viewerReaction = viewerReaction
     }
 }
 
@@ -347,7 +364,8 @@ public struct Comment: Sendable, Equatable, Identifiable {
     public let rootID: CommentID?
     public let parentID: CommentID?
     public let dialogID: CommentID?
-    public let payload: CommentPayload
+    /// 乐观表态与本地插入时由评论 ViewModel 改写 `CommentDetails` 的可变字段。
+    public var payload: CommentPayload
 
     public init(
         id: CommentID,
@@ -376,8 +394,8 @@ public struct Comment: Sendable, Equatable, Identifiable {
 public struct CommentThread: Sendable, Equatable, Identifiable {
     public var id: CommentID { root.id }
 
-    public let root: Comment
-    public let replyPreview: [Comment]
+    public var root: Comment
+    public var replyPreview: [Comment]
 
     public init(root: Comment, replyPreview: [Comment] = []) {
         self.root = root

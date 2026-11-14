@@ -31,7 +31,8 @@ final class NativePlaybackCommentThreadItem: NativeLayoutSizedCollectionItem {
         onCloseDialog: @escaping () -> Void,
         onOpenLink: @escaping (CommentLinkTarget) -> Void,
         onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void,
-        onOpenAuthorSpace: ((CommentAuthor) -> Void)?
+        onOpenAuthorSpace: ((CommentAuthor) -> Void)?,
+        rowActions: NativePlaybackCommentRowActions?
     ) {
         representedObject = presentation
         contentView.configure(
@@ -49,7 +50,8 @@ final class NativePlaybackCommentThreadItem: NativeLayoutSizedCollectionItem {
             onCloseDialog: onCloseDialog,
             onOpenLink: onOpenLink,
             onOpenPictures: onOpenPictures,
-            onOpenAuthorSpace: onOpenAuthorSpace
+            onOpenAuthorSpace: onOpenAuthorSpace,
+            rowActions: rowActions
         )
     }
 
@@ -101,7 +103,8 @@ private final class NativePlaybackCommentThreadView: NSView {
         onCloseDialog: @escaping () -> Void,
         onOpenLink: @escaping (CommentLinkTarget) -> Void,
         onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void,
-        onOpenAuthorSpace: ((CommentAuthor) -> Void)?
+        onOpenAuthorSpace: ((CommentAuthor) -> Void)?,
+        rowActions: NativePlaybackCommentRowActions?
     ) {
         self.presentation = presentation
         self.textRenderer = textRenderer
@@ -116,7 +119,8 @@ private final class NativePlaybackCommentThreadView: NSView {
             onTextLayoutChange: onTextLayoutChange,
             onOpenLink: onOpenLink,
             onOpenPictures: onOpenPictures,
-            onOpenAuthorSpace: onOpenAuthorSpace
+            onOpenAuthorSpace: onOpenAuthorSpace,
+            actions: rowActions
         )
         repliesPanel.configure(
             thread: presentation.thread,
@@ -135,7 +139,8 @@ private final class NativePlaybackCommentThreadView: NSView {
             onCloseDialog: onCloseDialog,
             onOpenLink: onOpenLink,
             onOpenPictures: onOpenPictures,
-            onOpenAuthorSpace: onOpenAuthorSpace
+            onOpenAuthorSpace: onOpenAuthorSpace,
+            rowActions: rowActions
         )
         needsLayout = true
     }

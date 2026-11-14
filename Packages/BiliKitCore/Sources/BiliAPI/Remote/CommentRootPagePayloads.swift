@@ -1,7 +1,8 @@
+import BiliApplication
 import BiliModels
 import Foundation
 
-/// 根评论分页接口（`/x/v2/reply/wbi/main`）的 data：游标、置顶、热评与本页根评论。
+/// 根评论分页接口（`/x/v2/reply/wbi/main`）的 data：游标、置顶、热评、本页根评论与评论区的输入限制。
 ///
 /// 单条评论解码失败只丢弃该条；置顶与热评按 ID 与普通评论去重，未结束却没有下一页游标时
 /// 整页失败。
@@ -11,6 +12,8 @@ struct CommentMainPayload: Decodable, Sendable {
     let topReplies: [LossyDecodable<CommentReplyPayload>]
     let top: CommentTopPayload?
     let upper: CommentUpperPayload?
+    let control: CommentInputControlPayload?
+    let config: CommentAreaConfigPayload?
 
     private enum CodingKeys: String, CodingKey {
         case cursor
@@ -18,6 +21,8 @@ struct CommentMainPayload: Decodable, Sendable {
         case topReplies = "top_replies"
         case top
         case upper
+        case control
+        case config
     }
 
     init(from decoder: any Decoder) throws {
@@ -35,6 +40,22 @@ struct CommentMainPayload: Decodable, Sendable {
             ) ?? []
         top = container.decodeLossyIfPresent(CommentTopPayload.self, forKey: .top)
         upper = container.decodeLossyIfPresent(CommentUpperPayload.self, forKey: .upper)
+        control = container.decodeLossyIfPresent(CommentInputControlPayload.self, forKey: .control)
+        config = container.decodeLossyIfPresent(CommentAreaConfigPayload.self, forKey: .config)
+    }
+
+    /// 评论区的输入限制；字段缺失或形状不对时按可以发处理，发出后由服务端的业务码说明。
+    var inputPolicy: CommentInputPolicy {
+        CommentInputPolicy(
+            acceptsNewComments: control?.inputDisabled != true && config?.isReadOnly != true,
+            rootPlaceholder: control?.rootInputText.flatMap(Self.nonEmpty),
+            replyPlaceholder: control?.childInputText.flatMap(Self.nonEmpty)
+        )
+    }
+
+    private static func nonEmpty(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     func page(for subject: CommentSubjectIdentity) throws -> CommentRemoteRootPage {
@@ -68,7 +89,8 @@ struct CommentMainPayload: Decodable, Sendable {
             threads: threads,
             totalCount: max(cursor.allCount, threads.count),
             nextOffset: cursor.isEnd ? nil : nextOffset,
-            isEnd: cursor.isEnd
+            isEnd: cursor.isEnd,
+            inputPolicy: inputPolicy
         )
     }
 }
@@ -79,6 +101,41 @@ struct CommentRemoteRootPage: Sendable {
     let totalCount: Int
     let nextOffset: String?
     let isEnd: Bool
+    let inputPolicy: CommentInputPolicy
+}
+
+/// 评论区输入属性：是否禁止新增评论与两种占位文字。
+struct CommentInputControlPayload: Decodable, Sendable {
+    let inputDisabled: Bool?
+    let rootInputText: String?
+    let childInputText: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case inputDisabled = "input_disable"
+        case rootInputText = "root_input_text"
+        case childInputText = "child_input_text"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputDisabled = container.decodeLossyBool(forKey: .inputDisabled)
+        rootInputText = container.decodeLossyIfPresent(String.self, forKey: .rootInputText)
+        childInputText = container.decodeLossyIfPresent(String.self, forKey: .childInputText)
+    }
+}
+
+/// 评论区配置里与发评论有关的一项：是否只读。
+struct CommentAreaConfigPayload: Decodable, Sendable {
+    let isReadOnly: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case isReadOnly = "read_only"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isReadOnly = container.decodeLossyBool(forKey: .isReadOnly)
+    }
 }
 
 /// 根评论分页游标：总数、是否结束与下一页偏移。

@@ -193,10 +193,11 @@ struct WatchLaterRepositoryStub: WatchLaterRepository {
     }
 }
 
-/// 稍后再看、收藏、播放页互动、首页推荐反馈与发送弹幕五个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
+/// 稍后再看、收藏、播放页互动、首页推荐反馈、发送弹幕与评论写入六个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
 /// 一律成功）；`holdsWrites` 时每次写入挂起到 `releaseWrites()` 或任务取消。互动读取返回 `engagement`，不计入写入。
 actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepository,
-    VideoEngagementRepository, RecommendationFeedbackRepository, DanmakuPostRepository
+    VideoEngagementRepository, RecommendationFeedbackRepository, DanmakuPostRepository,
+    CommentWriteRepository
 {
     private var outcomes: [AccountWriteError?]
     private let holdsWrites: Bool
@@ -289,6 +290,32 @@ actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepos
     func post(_ request: DanmakuPostRequest, accountID: Int64) async throws -> DanmakuPostReceipt {
         try await record("danmaku \(request.identity.bvid) \(request.text) \(accountID)")
         return DanmakuPostReceipt(danmakuID: "dm-\(calls.count)")
+    }
+
+    func apply(_ operation: CommentReactionOperation, accountID: Int64) async throws {
+        try await record(
+            "comment-\(operation.kind) \(operation.target.commentID.rawValue) \(operation.isOn) \(accountID)"
+        )
+    }
+
+    func post(_ request: CommentPostRequest, accountID: Int64) async throws -> BiliModels.Comment? {
+        try await record("comment-post \(request.subject.oid) \(request.message) \(accountID)")
+        return BiliModels.Comment(
+            id: CommentID(rawValue: Int64(9_000 + calls.count)),
+            rootID: request.replyTarget?.rootID,
+            parentID: request.replyTarget?.parentID,
+            payload: .available(
+                CommentDetails(
+                    author: CommentAuthor(
+                        id: CommentAuthorID(rawValue: String(accountID)),
+                        name: "我"
+                    ),
+                    content: CommentContent(message: request.message),
+                    createdAt: Date(timeIntervalSince1970: 0),
+                    likeCount: 0
+                )
+            )
+        )
     }
 
     func waitForCallCount(_ target: Int) async {

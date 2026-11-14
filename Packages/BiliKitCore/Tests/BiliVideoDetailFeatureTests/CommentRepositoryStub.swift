@@ -219,7 +219,7 @@ enum CommentsFixtureNextPage {
 }
 
 /// 经生产路径构造评论区呈现：驱动 `PlaybackCommentsViewModel` 到目标状态，再取
-/// `NativePlaybackCommentsPresentation(model:)`；结束前放行挂起的请求，ViewModel 随之释放。
+/// `NativePlaybackCommentsPresentation(model:canWrite:)`；结束前放行挂起的请求，ViewModel 随之释放。
 @MainActor
 func liveCommentsPresentation(
     subject: CommentSubjectIdentity = .video(aid: 700_001),
@@ -237,7 +237,8 @@ func liveCommentsPresentation(
         isEnd: {
             guard case .serverEnd = next else { return false }
             return true
-        }()
+        }(),
+        inputPolicy: .open
     )
     let nextFailure: CommentReadError? = {
         if case .failed(let error) = next { return error }
@@ -272,7 +273,7 @@ func liveCommentsPresentation(
             await model.waitForCurrentRootTask()
         }
     }
-    let presentation = NativePlaybackCommentsPresentation(model: model)
+    let presentation = NativePlaybackCommentsPresentation(model: model, canWrite: false)
     await repository.releaseAllHeldRoots(page: firstPage)
     await model.waitForCurrentRootTask()
     return presentation

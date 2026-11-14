@@ -195,6 +195,8 @@ struct CommentReplyPayload: Decodable, Sendable {
     let state: Int?
     let ctime: Int64?
     let like: Int64?
+    /// 当前账户的表态（0 无、1 已赞、2 已踩）；未登录恒为 0，形状不对按无表态处理。
+    let action: Int?
     let rcount: Int?
     let member: CommentMemberPayload?
     let content: CommentContentPayload?
@@ -213,6 +215,7 @@ struct CommentReplyPayload: Decodable, Sendable {
         case state
         case ctime
         case like
+        case action
         case rcount
         case member
         case content
@@ -233,6 +236,7 @@ struct CommentReplyPayload: Decodable, Sendable {
         state = try container.decodeIfPresent(Int.self, forKey: .state)
         ctime = try container.decodeIfPresent(Int64.self, forKey: .ctime)
         like = try container.decodeIfPresent(Int64.self, forKey: .like)
+        action = container.decodeLossyIfPresent(Int.self, forKey: .action)
         rcount = try container.decodeIfPresent(Int.self, forKey: .rcount)
         member = container.decodeLossyIfPresent(CommentMemberPayload.self, forKey: .member)
         content = container.decodeLossyIfPresent(CommentContentPayload.self, forKey: .content)
@@ -331,7 +335,8 @@ struct CommentReplyPayload: Decodable, Sendable {
                     location: replyControl?.normalizedLocation,
                     likeCount: like,
                     replyCount: rcount,
-                    provenance: provenance
+                    provenance: provenance,
+                    viewerReaction: action == 1 ? .liked : action == 2 ? .disliked : .none
                 )
             )
         )

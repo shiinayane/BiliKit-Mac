@@ -1,7 +1,7 @@
 import BiliNetworking
 import Foundation
 
-/// 只授权用户发起的 App 端（`https://app.bilibili.com`）写入（首页推荐的「不感兴趣」与撤销，播放页的点赞、投币与三连）：
+/// 只授权用户发起的 App 端写入（首页推荐的「不感兴趣」与撤销，播放页的点赞、投币与三连，发评论）：
 /// 绑定账户后附加 access_token 并做 APP 签名。
 ///
 /// App 端的写入凭据与签名都在 query 或表单里（「不感兴趣」是 GET，点赞、投币、三连是 POST 表单），不带 Cookie、csrf 与
@@ -21,6 +21,14 @@ public struct BiliAppWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthorizing,
     private struct Schema: Sendable {
         let method: HTTPMethod
         let fields: [String: FieldShape]
+        /// 可以出现、也可以缺省的字段。
+        var optionalFields: [String: FieldShape] = [:]
+        /// 字段之间的约束，在逐字段的形状都通过之后检查（与网页写入共用规则）。
+        var crossFieldRules: [BiliAccountWriteRequestAuthorizer.CrossFieldRule] = []
+        /// 精确主机（不用后缀匹配）；只有不在 App 主机上的写入才另给。
+        var host = AppRequestAuthorizationSupport.appHost
+        /// 表单正文上限；只有带用户正文的写入才放宽。
+        var maximumBodySize = AppRequestAuthorizationSupport.defaultMaximumFormBodySize
     }
 
     /// 全部可授权的 App 写 path 与它们的 schema；path 字面量与 BiliAPI 的 `BiliAppWritePath` 相同（BiliAuth 不能依赖
@@ -46,8 +54,35 @@ public struct BiliAppWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthorizing,
                 "select_like": .oneOf(["0", "1"])
             ]
         ),
-        "/x/v2/view/like/triple": Schema(method: .post, fields: ["aid": .positiveInteger])
+        "/x/v2/view/like/triple": Schema(method: .post, fields: ["aid": .positiveInteger]),
+        // 发评论：主机是 api.bilibili.com（`AppRequestAuthorizationSupport.hostsByPath`），只收视频评论区的单条评论；
+        // `plat` 固定为 2（Android，TV 端 appkey 同属 Android 客户端）；回复时 `root` 与 `parent` 成对出现；@ 提及表只能关联
+        // 正文里「@昵称」出现过的人。网页附带的 `gaia_source`、`pictures`、`sync_to_dynamic` 不发送，schema 也不接受。
+        "/x/v2/reply/add": Schema(
+            method: .post,
+            fields: [
+                "type": .literal("1"),
+                "oid": .positiveInteger,
+                "message": .commentText,
+                "plat": .literal("2")
+            ],
+            optionalFields: [
+                "root": .positiveInteger,
+                "parent": .positiveInteger,
+                "at_name_to_mid": .mentionMap
+            ],
+            crossFieldRules: [
+                .bothOrNeither("root", "parent"),
+                .mentionsAppearIn("at_name_to_mid", message: "message")
+            ],
+            host: "api.bilibili.com",
+            maximumBodySize: commentPostMaximumBodySize
+        )
     ]
+
+    /// 发评论的表单正文上限：正文至多 `CommentPostText.maximumUTF8Length` 字节，百分号编码后每字节最多 3 字节，加上其余
+    /// 字段与 @ 提及表仍在 16 KiB 以内；调大正文上限要同时调大这里。
+    private static let commentPostMaximumBodySize = 16 * 1_024
 
     private static let recommendationFeedbackFields: [String: FieldShape] = [
         "goto": .literal("av"),
@@ -83,11 +118,19 @@ public struct BiliAppWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthorizing,
             subject.allSatisfy({ $0.isASCII && $0.isNumber }),
             let schema = path.flatMap({ Self.schemas[$0] }),
             schema.method == request.method,
-            let parameters = Self.parameters(of: request, allowedPaths: allowedPaths),
-            Set(parameters.fields.keys) == Set(schema.fields.keys),
+            let parameters = Self.parameters(
+                of: request,
+                schema: schema,
+                allowedPaths: allowedPaths
+            ),
+            Set(parameters.fields.keys).isSuperset(of: schema.fields.keys),
+            Set(parameters.fields.keys).isSubset(
+                of: Set(schema.fields.keys).union(schema.optionalFields.keys)
+            ),
             parameters.fields.allSatisfy({ name, value in
-                schema.fields[name]?.accepts(value) ?? false
-            })
+                (schema.fields[name] ?? schema.optionalFields[name])?.accepts(value) ?? false
+            }),
+            schema.crossFieldRules.allSatisfy({ $0.accepts(parameters.fields) })
         else {
             throw BiliRequestAuthorizationError.requestNotAllowed
         }
@@ -115,15 +158,22 @@ public struct BiliAppWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthorizing,
     /// GET 返回 query 字段与 URL 组成（签名写回 query），POST 返回表单字段（签名写回正文）；目标或编码不合规时为 nil。
     private static func parameters(
         of request: HTTPRequest,
+        schema: Schema,
         allowedPaths: Set<String>
     ) -> (fields: [String: String], queryComponents: URLComponents?)? {
         switch request.method {
         case .get:
+            // GET 写入只在 App 主机上（schema 表里没有给 GET 另配主机）。
             AppRequestAuthorizationSupport.validatedGET(request, allowedPaths: allowedPaths)
                 .map { ($0.parameters, $0.components) }
         case .post:
-            AppRequestAuthorizationSupport.validatedPOSTForm(request, allowedPaths: allowedPaths)
-                .map { ($0, nil) }
+            AppRequestAuthorizationSupport.validatedPOSTForm(
+                request,
+                allowedPaths: allowedPaths,
+                host: schema.host,
+                maximumBodySize: schema.maximumBodySize
+            )
+            .map { ($0, nil) }
         case .head:
             nil
         }

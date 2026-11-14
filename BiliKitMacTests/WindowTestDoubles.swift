@@ -33,7 +33,8 @@ actor CommentRepositoryStub: CommentRepository {
             threads: [],
             totalCount: 0,
             continuation: nil,
-            isEnd: true
+            isEnd: true,
+            inputPolicy: .open
         )
     }
 
@@ -257,6 +258,7 @@ func makeTestAdapters(
     videoEngagement: any VideoEngagementRepository = AccountWriteRepositoryStub(),
     recommendationFeedback: any RecommendationFeedbackRepository = AccountWriteRepositoryStub(),
     danmakuPost: any DanmakuPostRepository = AccountWriteRepositoryStub(),
+    commentWrite: any CommentWriteRepository = AccountWriteRepositoryStub(),
     timeline: PlaybackTimelineSnapshot = .idle,
     authentication: any AuthenticationServicing = AuthenticationServiceStub(
         restoreState: .signedOut
@@ -287,6 +289,7 @@ func makeTestAdapters(
         videoEngagementRepository: videoEngagement,
         recommendationFeedbackRepository: recommendationFeedback,
         danmakuPostRepository: danmakuPost,
+        commentWriteRepository: commentWrite,
         commentAssetURLResolver: { _, _ in nil },
         commentLinkRouter: { _ in nil },
         authenticationService: authentication,
@@ -326,6 +329,7 @@ func signedInWindow(
             favoritesWrite: writes,
             videoEngagement: writes,
             danmakuPost: writes,
+            commentWrite: writes,
             authentication: AuthenticationServiceStub(
                 restoreState: .signedIn(
                     AccountIdentity(id: 7, displayName: "账号", avatarURL: nil)

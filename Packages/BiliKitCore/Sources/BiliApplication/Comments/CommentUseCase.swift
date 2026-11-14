@@ -43,7 +43,8 @@ public struct CommentUseCase: Sendable {
             threads: uniqueThreads,
             totalCount: page.totalCount,
             continuation: termination == .serverEnd ? nil : page.continuation,
-            termination: termination
+            termination: termination,
+            inputPolicy: page.inputPolicy
         )
     }
 

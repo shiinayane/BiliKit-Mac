@@ -53,7 +53,8 @@ public actor BiliCommentRepository: CommentRepository {
                 threads: page.threads,
                 totalCount: page.totalCount,
                 continuation: next,
-                isEnd: page.isEnd
+                isEnd: page.isEnd,
+                inputPolicy: page.inputPolicy
             )
         } catch {
             throw map(error)

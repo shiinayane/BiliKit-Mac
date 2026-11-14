@@ -42,6 +42,9 @@ struct WindowAdapters {
     let recommendationFeedbackRepository: any RecommendationFeedbackRepository
     /// 发送弹幕；生产实现走窗口 API 的账户写授权器，绑定窗口账户。
     let danmakuPostRepository: any DanmakuPostRepository
+    /// 评论的点赞、点踩与发评论；生产实现里赞与踩走窗口 API 的账户写授权器，发评论走 App 写授权器，都绑定窗口账户（见
+    /// SECURITY-MODEL §3）。
+    let commentWriteRepository: any CommentWriteRepository
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentLinkRouter: CommentLinkRouter
     let authenticationService: any AuthenticationServicing
@@ -143,6 +146,7 @@ extension WindowAdapters {
             videoEngagementRepository: BiliVideoEngagementRepository(client: api),
             recommendationFeedbackRepository: BiliRecommendationFeedbackRepository(client: api),
             danmakuPostRepository: BiliDanmakuPostRepository(client: api),
+            commentWriteRepository: BiliCommentWriteRepository(client: api),
             commentAssetURLResolver: { reference, box in
                 commentAssetResolver.imageURL(for: reference, fitting: box)
             },

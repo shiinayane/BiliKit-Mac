@@ -16,7 +16,8 @@ struct CommentUseCaseTests {
                     threads: [thread(1), thread(2), thread(2), thread(3)],
                     totalCount: 4,
                     continuation: next,
-                    isEnd: false
+                    isEnd: false,
+                    inputPolicy: .open
                 )
             ]
         )
@@ -43,7 +44,8 @@ struct CommentUseCaseTests {
                         threads: [],
                         totalCount: 0,
                         continuation: continuation,
-                        isEnd: false
+                        isEnd: false,
+                        inputPolicy: .open
                     )
                 ]
             )

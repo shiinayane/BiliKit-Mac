@@ -280,6 +280,11 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
         foreground: .secondaryLabelColor,
         background: NSColor.secondaryLabelColor.withAlphaComponent(0.12)
     )
+    private static let postedByViewerSegment = RenderedSegment(
+        text: VideoDetailFeatureStrings.localized("我发布的"),
+        foreground: .controlAccentColor,
+        background: NSColor.controlAccentColor.withAlphaComponent(0.14)
+    )
     private var segments: [RenderedSegment] = []
     private(set) var displayedTexts: [String] = []
 
@@ -290,6 +295,9 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
         }
         if provenance.contains(.uploaderLiked) {
             result.append(Self.uploaderLikedSegment)
+        }
+        if provenance.contains(.postedByViewer) {
+            result.append(Self.postedByViewerSegment)
         }
         segments = result
         displayedTexts = result.map(\.text)

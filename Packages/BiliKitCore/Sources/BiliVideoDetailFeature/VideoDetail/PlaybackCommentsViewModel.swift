@@ -59,6 +59,9 @@ public struct PlaybackCommentDialogState: Sendable, Equatable {
 }
 
 /// 独立拥有当前视频评论的 root 与楼中楼状态，不拥有或控制播放器。
+///
+/// 写入后的本地改动（乐观的赞踩与回滚、插入刚发出的评论）在同模块的 `PlaybackCommentsViewModel+LocalEdits`，所以
+/// `rootState`、`threads`、`totalCount`、`replyStates` 的 setter 放宽到模块内；模块外仍只读，其他类型不得直接改它们。
 @MainActor
 @Observable
 public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
@@ -83,15 +86,17 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
 
     public private(set) var subject: CommentSubjectIdentity?
     public private(set) var sort: CommentSort = .hot
-    public private(set) var rootState: PlaybackCommentsRootState = .idle
-    public private(set) var threads: [CommentThread] = []
-    public private(set) var totalCount = 0
+    public internal(set) var rootState: PlaybackCommentsRootState = .idle
+    public internal(set) var threads: [CommentThread] = []
+    public internal(set) var totalCount = 0
     public private(set) var isLoadingNextPage = false
     public private(set) var paginationError: CommentReadError?
     public private(set) var paginationTermination: CommentPaginationTermination?
     public private(set) var reachedEnd = false
     public private(set) var reachedMemoryLimit = false
-    public private(set) var replyStates: [CommentID: PlaybackCommentReplyState] = [:]
+    public internal(set) var replyStates: [CommentID: PlaybackCommentReplyState] = [:]
+    /// 评论区能否发新评论与接口给的占位文字，取自最近一页根评论；换排序或重载期间沿用，换评论区或 reset 时回到缺省。
+    public private(set) var inputPolicy = CommentInputPolicy.open
     /// 仅在确认评论凭据失效时递增，由 App 层协调账户重校验。
     public private(set) var authenticationRevalidationGeneration = 0
 
@@ -110,7 +115,7 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
     @ObservationIgnored private var loadingStatusTokens: [CommentID: Int] = [:]
     @ObservationIgnored private var continuation: CommentContinuation?
     /// root 工作集身份；楼中楼请求以它拒绝跨 subject、排序或重载的旧结果。
-    @ObservationIgnored private var rootGeneration = 0
+    @ObservationIgnored private(set) var rootGeneration = 0
     private static let maximumRetainedRootThreads = 1_000
     private static let maximumConcurrentReplyRequests = 4
 
@@ -263,6 +268,7 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         subject = nil
         rootState = .idle
         clearRootState()
+        inputPolicy = .open
     }
 
     public func waitForCurrentRootTask() async {
@@ -276,10 +282,13 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         rootGeneration += 1
         rootTask.cancel()
         cancelAllReplyTasks()
+        let subjectChanged = subject != newSubject
         subject = newSubject
         sort = newSort
         rootState = .idle
         clearRootState()
+        // 换排序或重载仍是同一个评论区，输入限制沿用到新的一页到达；换了评论区就回到缺省。
+        if subjectChanged { inputPolicy = .open }
         loadInitialPage()
     }
 
@@ -342,13 +351,18 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
     }
 
     private func appendRootBatch(_ batch: CommentRootBatch) {
+        // 请求发出时已按当时的列表去重；请求途中本地插入了刚发出的评论（`insertPostedComment`），这一页可能又带回它，
+        // 同一 ID 出现两次会让侧栏的集合视图崩溃，所以落地时按此刻的列表再去重一次。
+        let shownIDs = Set(threads.map(\.id))
+        let freshThreads = batch.threads.filter { !shownIDs.contains($0.id) }
         let remainingCapacity = max(
             0,
             Self.maximumRetainedRootThreads - threads.count
         )
-        let droppedByMemoryLimit = batch.threads.count > remainingCapacity
-        threads.append(contentsOf: batch.threads.prefix(remainingCapacity))
+        let droppedByMemoryLimit = freshThreads.count > remainingCapacity
+        threads.append(contentsOf: freshThreads.prefix(remainingCapacity))
         totalCount = batch.totalCount
+        inputPolicy = batch.inputPolicy
         reachedMemoryLimit =
             droppedByMemoryLimit
             || (threads.count == Self.maximumRetainedRootThreads

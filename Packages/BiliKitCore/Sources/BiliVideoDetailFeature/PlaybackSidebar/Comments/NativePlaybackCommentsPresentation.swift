@@ -2,15 +2,32 @@ import BiliApplication
 import BiliModels
 import Foundation
 
-/// 一条根评论在侧栏里的呈现：评论、楼中楼状态，以及由全部可见内容算出的 `revision`。
+/// 评论行上的写入此刻能不能用：赞与踩要窗口能写入，回复还要评论区接受新评论（只读、禁止新增或已关闭时输入卡片不显示，
+/// 回复点了也没有去处）。
+struct NativePlaybackCommentWriteAvailability: Equatable, Hashable {
+    let canReact: Bool
+    let canReply: Bool
+
+    static let unavailable = NativePlaybackCommentWriteAvailability(
+        canReact: false,
+        canReply: false
+    )
+}
+
+/// 一条根评论在侧栏里的呈现：评论、楼中楼状态，以及由全部可见内容算出的 `revision` 与 `reactionRevision`。
 ///
 /// `revision` 在构造时按评论对象、根评论、预览回复与楼中楼状态（含已加载的回复）求哈希；它变化时这一行重载，
-/// 并作为行高缓存键与正文渲染作用域的一部分，旧作用域里记下的表情失败随之作废。
+/// 并作为行高缓存键与正文渲染作用域的一部分，旧作用域里记下的表情失败随之作废。点赞数与当前账户的赞踩不进 `revision`，
+/// 单独算进 `reactionRevision`：它变化时这一行只就地重新配置；正文的渲染作用域不变，评论行据此跳过正文的重新渲染，行高也不
+/// 重新测量（元信息一行的高度与计数无关）。
 struct NativePlaybackCommentThreadPresentation: Equatable {
     let subject: CommentSubjectIdentity
     let thread: CommentThread
     let replyState: PlaybackCommentReplyState?
     let revision: Int
+    let reactionRevision: Int
+    /// 行上的赞、踩、回复此刻是否可用；变化时并进 `reactionRevision`，行就地重新配置。
+    let writeAvailability: NativePlaybackCommentWriteAvailability
 
     /// 根评论、预览回复或已加载的回复里有没有时间戳链接；只有这些评论随分 P 时长变化需要重新配置。
     var containsTimestampLinks: Bool {
@@ -32,11 +49,13 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
     init(
         subject: CommentSubjectIdentity,
         thread: CommentThread,
-        replyState: PlaybackCommentReplyState?
+        replyState: PlaybackCommentReplyState?,
+        writeAvailability: NativePlaybackCommentWriteAvailability
     ) {
         self.subject = subject
         self.thread = thread
         self.replyState = replyState
+        self.writeAvailability = writeAvailability
         var hasher = Hasher()
         hasher.combine(subject)
         hasher.combine(thread.id)
@@ -64,6 +83,18 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
             }
         }
         revision = hasher.finalize()
+        var reactionHasher = Hasher()
+        reactionHasher.combine(writeAvailability)
+        let reacted =
+            [thread.root] + thread.replyPreview + (replyState?.replies ?? [])
+            + (replyState?.dialog?.replies ?? [])
+        for comment in reacted {
+            guard case .available(let details) = comment.payload else { continue }
+            reactionHasher.combine(comment.id)
+            reactionHasher.combine(details.likeCount)
+            reactionHasher.combine(details.viewerReaction)
+        }
+        reactionRevision = reactionHasher.finalize()
     }
 
     private static func hash(_ comment: BiliModels.Comment, into hasher: inout Hasher) {
@@ -88,7 +119,6 @@ struct NativePlaybackCommentThreadPresentation: Equatable {
             hasher.combine(details.content.pictureCount)
             hasher.combine(details.createdAt)
             hasher.combine(details.location)
-            hasher.combine(details.likeCount)
             hasher.combine(details.replyCount)
             hasher.combine(details.provenance)
         }
@@ -110,8 +140,11 @@ struct NativePlaybackCommentsPresentation: Equatable {
     let reachedEnd: Bool
     let reachedMemoryLimit: Bool
 
+    /// `canWrite` 是窗口此刻能否写入；与评论区是否接受新评论一起决定每一楼行上的操作是否可用。
+    ///
+    /// 没有评论 ViewModel 时没有可写的评论。
     @MainActor
-    init(model: PlaybackCommentsViewModel?) {
+    init(model: PlaybackCommentsViewModel?, canWrite: Bool) {
         subject = model?.subject
         sort = model?.sort ?? .hot
         rootState = model?.rootState ?? .idle
@@ -129,7 +162,11 @@ struct NativePlaybackCommentsPresentation: Equatable {
             NativePlaybackCommentThreadPresentation(
                 subject: subject,
                 thread: $0,
-                replyState: model.replyStates[$0.id]
+                replyState: model.replyStates[$0.id],
+                writeAvailability: NativePlaybackCommentWriteAvailability(
+                    canReact: canWrite,
+                    canReply: canWrite && model.acceptsNewComments
+                )
             )
         }
     }

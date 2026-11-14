@@ -1,7 +1,7 @@
-/// 用户发起的 App 端（`https://app.bilibili.com`）写入的 endpoint path；`BiliAPIClient` 的 endpoint 扩展用它构造请求，App
+/// 用户发起的 App 端写入的 endpoint path（主机是 `https://app.bilibili.com`，发评论例外，见 `commentAdd`）；`BiliAPIClient` 的 endpoint 扩展用它构造请求，App
 /// Composition 用它声明 App 写授权器的 allowlist（`LiveAPIClients.mainAppWriteAllowedPaths`）。
 ///
-/// 只收录以 `RequestAccess.appWrite` 发出的写入（「不感兴趣」是 GET，点赞、投币、三连是 POST 表单）；endpoint 与 allowlist 引用同一个常量的理由同 `BiliAccountWritePath`。
+/// 只收录以 `RequestAccess.appWrite` 发出的写入（「不感兴趣」是 GET，点赞、投币、三连与发评论是 POST 表单）；endpoint 与 allowlist 引用同一个常量的理由同 `BiliAccountWritePath`。
 /// BiliAuth 的 `BiliAppWriteRequestAuthorizer` 另有一张按 path 的封闭 schema 表，Composition 的测试核对 allowlist 里的
 /// 每个 path 都能被它授权。见 SECURITY-MODEL §3。
 public enum BiliAppWritePath {
@@ -17,4 +17,14 @@ public enum BiliAppWritePath {
     public static let videoCoin = "/x/v2/view/coin/add"
     /// 三连（`aid`，POST 表单）；收藏进默认收藏夹。
     public static let videoTriple = "/x/v2/view/like/triple"
+    /// 发评论或回复（`type=1`、`oid`（aid）、`message`、`plat=2`，回复时另带 `root`（根评论）与 `parent`（被回复的那条）、
+    /// 回复楼中楼时带 `at_name_to_mid`；POST 表单）。
+    ///
+    /// 主机是 `api.bilibili.com` 而不是 App 主机，以 App 鉴权调用。
+    ///
+    /// 不用网页 Cookie 写入：实测网页写入发出的评论服务端照样返回成功，却对所有人（包括作者）隐藏，同样内容在官方网页上
+    /// 发出则正常显示；以 App 鉴权发出的评论与楼中楼回复正常显示。网页会多带 `gaia_source`、WBI 签名与整套浏览器 Cookie，
+    /// 没有逐项去试，与点赞投币三连改走 App 端同理，也不做网页失败后再试 App 端的回退。`root`／`parent` 与「回复 @昵称 : 」
+    /// 前缀照官方网页评论组件（前缀由客户端加，服务端不加）；`at_name_to_mid` 照官方客户端，服务端据此把 @ 关联到用户。
+    public static let commentAdd = "/x/v2/reply/add"
 }

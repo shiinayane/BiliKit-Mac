@@ -401,7 +401,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 登录用 TV 端扫码：成功正文同时带网页 Cookie 与 App 端 access_token、refresh_token，三者存在同一份凭据里，一起过期、一起删除；
 续期用 refresh_token 换回整份新凭据（Cookie 一并换新），由进程唯一的 `AccountCredentialRenewal` 串行执行，认证服务在恢复确认仍登录
 后调用它、等它结束才发布已登录：启动时只在临近到期时续期，复核时强制续期一次，使只有 token 失效的凭据在复核后的重载里恢复；
-续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」，播放页的点赞、投币、三连，UP 主空间投稿）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
+续期失败不改变登录状态。网页接口用 Cookie，App 端接口（首页推荐与它的「不感兴趣」，播放页的点赞、投币、三连，UP 主空间投稿，发评论）经 App 授权器带 access_token 并签名，读取在未登录时匿名签名，写入从不匿名。协议没有官方稳定文档，按“fixture 固定的外部观察”处理，未知状态一律失败关闭。秘密只在
 `BiliAuth`；Application 只暴露非秘密认证状态与 `AuthenticationServicing`，二维码图像走 `BiliAuthFeature`
 定义的窄 Presentation port 注入。请求 builder（`RequestAccess` 与请求管线）只在 `BiliAPI` 内部可见，由各域
 endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 `RequestAccess`；授权器由 Composition 注入。
@@ -428,7 +428,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 ### 账户写入
 
 - 链路：卡片菜单、读屏操作与 ⌘⌫ 只转发意图（BVID，收藏夹页的移除是收藏夹与条目 av 号）→ App
-  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕）、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
+  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕与评论写入）、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
   （表单编码、固定 header、状态 envelope 与 -101／-111 映射只在共用的写管线，heartbeat 也走它）→ 账户写授权器（见
   `SECURITY-MODEL.md` §3）。只有窗口主 API 有写授权器。
 - 门槛由 App 算出后经 SwiftUI 环境注入卡片菜单（BiliUI `VideoCardAccountWriting`），与收藏夹列表读取同一规则，不满足时菜单项
@@ -458,6 +458,19 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   提示并通告（弹幕关着或车道已满时画面上看不到那一条），措辞取自结果胶囊的同一套文案。成功不产生跨视图效果。换视频与离开
   播放页时收起胶囊，草稿不会发到另一个视频上。样式选项是胶囊上方同一浮层里的一行，不用 popover：popover 是另一个窗口，会让输入框失去第一响应者，
   播放器快捷键随之接管按键。
+- 评论的发表与赞踩：写入状态在 BiliVideoDetailFeature 的 `PlaybackCommentWriteModel`（每窗口一个、关窗时 reset，持有草稿、回复对象、
+  展开状态与失败说明），请求交给同一个协调者（`AccountWriteCoordinator+Comments`）：窗口里同时只有一条评论在发、同一条评论同时
+  只有一次表态在途（赞与踩互斥，两次请求到达服务端的先后不可知），关窗取消、凭据类失败按同一节流复核。表态先在
+  `PlaybackCommentsViewModel` 里乐观改动同一条评论的每一处出现（根评论、预览、当前页、对话），失败或被取消时放回，换对象、换排序、
+  重载（`rootGeneration`）或评论已不是改动后的样子时丢弃回滚；失败进结果胶囊，成功不提示。发评论的结局交回输入卡片，不进结果
+  胶囊；服务端给回的那条按列表的同一映射插入，解不出时只是不插入，不报失败（否则用户会重发一条已发出的评论）。点赞数与表态不进
+  行的 `revision`（正文渲染作用域与行高缓存键），单独的 `reactionRevision` 让这一行就地重新配置，点赞不重新渲染正文。发评论走 App
+  端接口、赞踩走网页，理由见 `SECURITY-MODEL.md` §3。
+- 评论入口是叠在播放侧栏底部的 SwiftUI 浮层：收起时是右下角一枚玻璃圆钮，展开时同一块玻璃改尺寸与圆角长成卡片（内容淡入淡出、
+  按形状裁剪）。不采用两个视图加 `glassEffectID` 的变形：实测在 macOS 上它不论隐式动画、`withAnimation` 还是声明 matched-geometry
+  过渡都直接跳到终态。「返回顶部」是侧栏滚动视图里的 AppKit 按钮，叠在入口上方：入口里一个 `Animatable` 视图按同一条动画曲线逐帧
+  报告看起来的高度，`NativePlaybackComposerClearance` 直接改按钮的 frame（逐帧写 SwiftUI 状态会在渲染中再触发更新）；列表末尾按入口的
+  布局高度留白，展开、收起各变一次。按键与焦点沿用输入胶囊的规则：输入框永不禁用，收起前先同步放下第一响应者，不按失焦收起。
 - 结果胶囊挂在顶层页面与播放页上，而不是整个 `NavigationStack` 外：在 `NavigationSplitView` 的 detail 列里，挂在
   `NavigationStack` 上的修饰符实际归根页面所有，压栈后随根页面移除。播放页打开时顶层那份不显示，读屏不会把同一条结果
   通告两次。

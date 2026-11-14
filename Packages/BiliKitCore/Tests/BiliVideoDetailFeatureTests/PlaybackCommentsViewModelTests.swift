@@ -23,19 +23,22 @@ struct PlaybackCommentsViewModelTests {
                     threads: [thread(1)],
                     totalCount: 3,
                     continuation: continuation,
-                    isEnd: false
+                    isEnd: false,
+                    inputPolicy: .open
                 ),
                 CommentRootPage(
                     threads: [thread(2)],
                     totalCount: 3,
                     continuation: continuation,
-                    isEnd: false
+                    isEnd: false,
+                    inputPolicy: .open
                 ),
                 CommentRootPage(
                     threads: [thread(3)],
                     totalCount: 3,
                     continuation: continuation,
-                    isEnd: true
+                    isEnd: true,
+                    inputPolicy: .open
                 )
             ]
         )
@@ -70,19 +73,22 @@ struct PlaybackCommentsViewModelTests {
                     threads: [thread(1)],
                     totalCount: 2,
                     continuation: continuation,
-                    isEnd: false
+                    isEnd: false,
+                    inputPolicy: .open
                 ),
                 CommentRootPage(
                     threads: [thread(1)],
                     totalCount: 2,
                     continuation: continuation,
-                    isEnd: false
+                    isEnd: false,
+                    inputPolicy: .open
                 ),
                 CommentRootPage(
                     threads: [thread(2)],
                     totalCount: 2,
                     continuation: nil,
-                    isEnd: true
+                    isEnd: true,
+                    inputPolicy: .open
                 )
             ]
         )
@@ -603,7 +609,8 @@ private func endPage(_ threads: [CommentThread]) -> CommentRootPage {
         threads: threads,
         totalCount: threads.count,
         continuation: nil,
-        isEnd: true
+        isEnd: true,
+        inputPolicy: .open
     )
 }
 

@@ -102,7 +102,8 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
                     threads: threads,
                     totalCount: threads.count,
                     continuation: nil,
-                    isEnd: true
+                    isEnd: true,
+                    inputPolicy: .open
                 )
             ],
             replyTotalCount: 25,
@@ -114,7 +115,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
         await model.waitForCurrentRootTask()
         model.expandReplies(for: Self.rootID)
         await waitForObservedState { model.replyStates[Self.rootID]?.isLoading == false }
-        let expanded = NativePlaybackCommentsPresentation(model: model)
+        let expanded = NativePlaybackCommentsPresentation(model: model, canWrite: false)
         switch next {
         case .page: model.showReplyPage(2, for: Self.rootID)
         case .dialog:
@@ -130,7 +131,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
             )
         case .collapse: model.collapseReplies(for: Self.rootID)
         }
-        let changed = NativePlaybackCommentsPresentation(model: model)
+        let changed = NativePlaybackCommentsPresentation(model: model, canWrite: false)
         return (
             expanded,
             changed,
@@ -150,7 +151,7 @@ struct PlaybackSidebarReplyNavigationTests: PlaybackSidebarFixtures {
                     let state = model.replyStates[Self.rootID]
                     return state?.isLoading != true && state?.dialog?.isLoading != true
                 }
-                return NativePlaybackCommentsPresentation(model: model)
+                return NativePlaybackCommentsPresentation(model: model, canWrite: false)
             }
         )
     }

@@ -154,7 +154,8 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
         onCloseDialog: @escaping () -> Void,
         onOpenLink: @escaping (CommentLinkTarget) -> Void,
         onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void,
-        onOpenAuthorSpace: ((CommentAuthor) -> Void)?
+        onOpenAuthorSpace: ((CommentAuthor) -> Void)?,
+        rowActions: NativePlaybackCommentRowActions?
     ) {
         self.thread = thread
         self.replyState = replyState
@@ -224,7 +225,8 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
                 onOpenAuthorSpace: onOpenAuthorSpace,
                 onViewDialog: offersDialog && reply.isReplyInDialog
                     ? { [weak self] in self?.onShowDialog?(reply) }
-                    : nil
+                    : nil,
+                actions: rowActions
             )
             rows.append(row)
             if fadingReplyIDs.contains(reply.id) {

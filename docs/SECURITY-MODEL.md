@@ -33,7 +33,7 @@
 | --- | --- |
 | Web Cookie | 只接受 TV 端扫码轮询成功或续期成功正文 `cookie_info.cookies` 里的白名单 `DedeUserID`、`DedeUserID__ckMd5`、`SESSDATA`、`bili_jct`、`sid`，五个必须齐全、不重名，`DedeUserID` 必须等于正文 `token_info.mid`，`cookie_info.domains` 必须含 `.bilibili.com`；未知 Cookie 丢弃。正文只给名称、值、到期时间与 `http_only`，domain（`.bilibili.com`）、path（`/`）与 Secure（真）由 `BiliAuth` 填写，不是服务端声明：这些 Cookie 只经授权器发往 HTTPS 的精确主机 |
 | `auth_code`、完整二维码 URL | 只在 `BiliAuth` 内存；URL 封装为不可读的 `TVQRCode`，只在内存生成图像，不复制、不导航、不落盘 |
-| `access_token` | 只接受同一份成功正文 `token_info` 里的 `access_token`（扫码签发为 32 个十六进制字符，续期签发约 220 个；只接受 32–512 个字母、数字、`-` 与 `_`，不需要转义也不会改变 query 结构）与 `expires_in`（正数，到期时刻按收到响应时计算）；轮询正文顶层的副本不解码；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query 或表单正文（§3） |
+| `access_token` | 只接受同一份成功正文 `token_info` 里的 `access_token`（扫码签发为 32 个十六进制字符，续期签发约 220 个；只接受 32–512 个字母、数字、`-` 与 `_`，不需要转义也不会改变 query 结构）与 `expires_in`（正数，到期时刻按收到响应时计算）；轮询正文顶层的副本不解码；与 Cookie 存进同一个 envelope，任一过期整份凭据按过期删除，不存在只有其一的状态；只由 App 授权器放进发往 `app.bilibili.com` 的请求 query 或表单正文，唯一例外是 App 写授权器按 path 登记的精确主机（目前只有发评论的 `api.bilibili.com`，§3） |
 | `refresh_token` | 只接受同一份 `token_info` 里的 `refresh_token`（32 个十六进制字符），与 access_token 同存同删；只由续期放进发往 `passport.bilibili.com` 的续期请求（§2），不进入任何业务请求；`sso` 等其他字段不解码 |
 | 登录身份 | Presentation 只拿显示所需的非秘密投影；Keychain item 名称不含 UID |
 
@@ -159,7 +159,9 @@
   `fid`（正整数），`act` 只能是 1（关注）或 2（取消），`re_src` 固定为 11；拉黑、悄悄关注、移除粉丝等其他 `act` 一律拒绝），
   以及发送普通视频弹幕（`POST /x/v2/dm/post`：`type` 固定为视频、`pool` 固定为普通池，`mode` 只收滚动、底部与顶部，颜色与字号
   只收输入胶囊的候选，正文按发送前同一规则校验为单行、非空、不超过 100 字；高级、代码与 BAS 弹幕一律拒绝。正文由用户提交，
-  只在发送时出现在请求里，不记录、不持久化；本地上屏的那一条随弹幕会话清空）。
+  只在发送时出现在请求里，不记录、不持久化；本地上屏的那一条随弹幕会话清空），以及评论的赞与踩（`POST /x/v2/reply/action`
+  与 `.../reply/hate`：`type` 固定为视频，`oid` 与单条评论 `rpid` 都是正整数，`action` 只能是 1（打开）或 0（取消））。发评论不在这里，
+  走下面的 App 端写入。
   `toview/del` 的 `aid` 在接口文档里
   可选、带 `viewed=true` 会删除全部已看完的视频；schema 强制要求 `aid` 并拒绝 `viewed`，所以发不出“一次清空”，不得把 `aid`
   改成可选。`batch-del` 接受逗号分隔的多个条目，schema 只收单个 `<aid>:2`；`deal` 只收单个视频、固定 `type=2`，两侧夹 id
@@ -185,16 +187,23 @@
 
 **用户发起的 App 端写入**（`BiliAppWriteRequestAuthorizer`）
 
-防：access_token 被带进 allowlist 与 schema 之外的 App 接口；写入以匿名或另一个账户的身份发出；举报类反馈被当作「不感兴趣」
-发出；一次写入扩大成多个稿件或超出投币上限。
+防：access_token 被带进 allowlist 与 schema 之外的 App 接口或主机；写入以匿名或另一个账户的身份发出；举报类反馈被当作「不感兴趣」
+发出；一次写入扩大成多个稿件或超出投币上限；评论关联正文里没有的用户。
 
-- 目前有两类，方法按 path 固定：
+- 目前有三类，方法按 path 固定：
   - 首页推荐的「不感兴趣」与撤销（`GET https://app.bilibili.com/x/feed/dislike` 与 `.../dislike/cancel`）：query 恰为
     `goto=av`、单个稿件 `id`（正整数）、一个 `reason_id`（正整数，取自卡片给出的原因），以及与首页推荐请求相同的
     `mobi_app=iphone`、`device=pad`、`build=1`。卡片同一处的举报类反馈以 `feedback_id` 发送，不提供，schema 也不接受。
   - 播放页的点赞（`POST /x/v2/view/like`，单个 `aid`，`like` 只能是 0（点赞）或 1（取消））、投币（`POST /x/v2/view/coin/add`，
     `multiply` 只能是 1 或 2、`select_like` 0 或 1）与三连（`POST /x/v2/view/like/triple`，只有 `aid`）：urlencoded 表单，只收
     实测成功的最少字段。网页的这三个接口会对部分账号或稿件以 -401／-403 拒绝，同一时刻 App 端成功，所以改走这里。
+  - 发评论与回复（`POST https://api.bilibili.com/x/v2/reply/add`）：`type` 固定为视频，`oid`（正整数），`message` 按发送前
+    同一规则校验（非空、去掉首尾空白后不变、不超过 1000 字、除换行外没有控制字符），`plat` 固定为 2；回复时 `root` 与
+    `parent`（正整数）必须成对出现；`at_name_to_mid` 可选，出现时只能是 1 到 10 项「昵称 → 正整数 mid」的 JSON 对象，且每个昵称都以
+    「@昵称」出现在正文里，挡住借提及关联正文里没有的人。网页附带的 `gaia_source`、`pictures`、`sync_to_dynamic` 不发送，
+    schema 也不接受。这是唯一不在 App 主机上的 App 端写入：主机按 path 精确登记（不用后缀匹配），其余 App 读写仍只认
+    `app.bilibili.com`；正文上限为它单独放宽到 16 KiB。网页 Cookie 写入发出的评论实测被收下却对所有人隐藏，所以走这里。
+    正文由用户提交，只在发送时出现在请求里，不记录、不持久化；本地插入列表的那一条随评论列表清空。
 - 只有窗口主 API 注入这个授权器，allowlist 由 `LiveAPIClients` 声明、只引用 BiliAPI 的 `BiliAppWritePath`，与 App 端读取的
   allowlist 分开；新增 App 写操作同样需要 ROADMAP 的产品决定，并在授权器的 schema 表里逐条登记。
 - 目标校验与 App 端读取相同（精确主机与端口、路径规范、无 userinfo／fragment）；GET 无正文，POST 无 query、

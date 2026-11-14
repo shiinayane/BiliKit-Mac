@@ -52,6 +52,31 @@ public struct CommentContinuation: Sendable, Equatable, Hashable {
     }
 }
 
+/// 评论区此刻能否发新评论，以及接口给的输入框占位文字；由 BiliAPI 从根评论页的 `control` 与 `config` 映射。
+///
+/// 评论区只读（`config.read_only`）或禁止新增（`control.input_disable`，例如用户涉及合约争议时）都不能发；占位文字为空时
+/// 为 nil，由界面用自己的文案。评论区关闭时根评论读取本身就失败（`CommentReadError.closed`），不经这里。
+public struct CommentInputPolicy: Sendable, Equatable {
+    public let acceptsNewComments: Bool
+    /// 发楼层评论时的占位文字。
+    public let rootPlaceholder: String?
+    /// 回复时的占位文字。
+    public let replyPlaceholder: String?
+
+    /// 接口没给限制时的缺省：可以发，用界面自己的占位文字。
+    public static let open = CommentInputPolicy(
+        acceptsNewComments: true,
+        rootPlaceholder: nil,
+        replyPlaceholder: nil
+    )
+
+    public init(acceptsNewComments: Bool, rootPlaceholder: String?, replyPlaceholder: String?) {
+        self.acceptsNewComments = acceptsNewComments
+        self.rootPlaceholder = rootPlaceholder
+        self.replyPlaceholder = replyPlaceholder
+    }
+}
+
 /// `CommentRepository.rootComments` 返回的一页主评论，尚未去重，也未判定分页是否终止。
 ///
 /// `isEnd` 为真或 `continuation` 为 nil 时 `CommentUseCase` 视为远端已到底；`totalCount`
@@ -61,17 +86,20 @@ public struct CommentRootPage: Sendable, Equatable {
     public let totalCount: Int
     public let continuation: CommentContinuation?
     public let isEnd: Bool
+    public let inputPolicy: CommentInputPolicy
 
     public init(
         threads: [CommentThread],
         totalCount: Int,
         continuation: CommentContinuation?,
-        isEnd: Bool
+        isEnd: Bool,
+        inputPolicy: CommentInputPolicy
     ) {
         self.threads = threads
         self.totalCount = totalCount
         self.continuation = continuation
         self.isEnd = isEnd
+        self.inputPolicy = inputPolicy
     }
 }
 
@@ -167,17 +195,20 @@ public struct CommentRootBatch: Sendable, Equatable {
     public let totalCount: Int
     public let continuation: CommentContinuation?
     public let termination: CommentPaginationTermination?
+    public let inputPolicy: CommentInputPolicy
 
     public init(
         threads: [CommentThread],
         totalCount: Int,
         continuation: CommentContinuation?,
-        termination: CommentPaginationTermination?
+        termination: CommentPaginationTermination?,
+        inputPolicy: CommentInputPolicy
     ) {
         self.threads = threads
         self.totalCount = totalCount
         self.continuation = continuation
         self.termination = termination
+        self.inputPolicy = inputPolicy
     }
 }
 
