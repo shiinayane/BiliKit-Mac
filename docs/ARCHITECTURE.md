@@ -332,10 +332,11 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   动画从初始 frame 移到最终位置，看起来像“飞入”。
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
   详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
-- 播放页压在 NavigationStack 根之上。macOS 没有给压栈页面设底色的接口（`ContainerBackgroundPlacement.navigation`
-  在 macOS 不可用），页面本身透明，播放页必须自铺不透明窗口背景并延伸到工具栏与侧栏下。压栈不带动画：放进
-  `withAnimation` 时 SwiftUI 会把根页面留在下面继续绘制，来源网格白白占着视图层级与绘制，播放页背景有缺口时还会透出；
-  不带动画时根页面随即移除，出栈后重建（来源网格由窗口保活原样挂回）。
+- 右侧不用 NavigationStack，`AppShellView` 的 detail 视图按 coordinator 只渲染当前页（来源根页或播放页），工具栏
+  「返回」由 App 自绘，根页时整个工具栏项不放。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
+  闭包里时，闭包内读到的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口
+  保活原样挂回）。macOS 没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面
+  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。
 - AVKit 没有公开进入／退出全屏的方法，`enterFullScreen:`／`exitFullScreen:` 是唯一允许使用的私有 AVKit 接口：
   调用前确认响应，系统移除后 F 键静默无效；是否全屏由公开的 `AVPlayerViewDelegate` 回调记录。
 - 加载转圈分三段衔接：详情未到时是骨架上的转圈；已有详情而 player 还没挂上 item 时由播放器浮层画同款转圈；
@@ -360,8 +361,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   离开停用、账户变化、关窗清理都遍历 `AppSources`；根视图构造与 Browse 激活仍是 `AppTab` 上的穷尽 switch。
 - 侧栏按 `AppSourceGroup` 分段；「收藏夹」组由一个来源为每个收藏夹提供一行，选择值 `AppSidebarSelection`
   让每行带不同的 tag。
-- 右侧栈深最多 1：来源页之上最多一层播放页，换视频只替换当前视频。与首页、热门平级的来源进导航侧栏；
-  围绕当前视频的浏览（UP 主空间）作为侧栏上下文层，不新增右侧压栈层级。
+- 右侧最多两级：来源页，或它之上的一层播放页，换视频只替换当前视频。与首页、热门平级的来源进导航侧栏；
+  围绕当前视频的浏览（UP 主空间）作为侧栏上下文层，不在右侧多加一级。
 - 侧栏 = 底层（导航或播放详情）+ 可选的上下文层。上下文层打开时底层保留状态，但必须真正隐藏：AppKit 底层
   设 `isHidden`，只设 SwiftUI 透明度与 hit testing 管不到 cursor rect 和 tracking area。进出动画只作用于
   上下文层，否则底层集合视图的布局变化也会被做成动画。
@@ -471,9 +472,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   过渡都直接跳到终态。「返回顶部」是侧栏滚动视图里的 AppKit 按钮，叠在入口上方：入口里一个 `Animatable` 视图按同一条动画曲线逐帧
   报告看起来的高度，`NativePlaybackComposerClearance` 直接改按钮的 frame（逐帧写 SwiftUI 状态会在渲染中再触发更新）；列表末尾按入口的
   布局高度留白，展开、收起各变一次。按键与焦点沿用输入胶囊的规则：输入框永不禁用，收起前先同步放下第一响应者，不按失焦收起。
-- 结果胶囊挂在顶层页面与播放页上，而不是整个 `NavigationStack` 外：在 `NavigationSplitView` 的 detail 列里，挂在
-  `NavigationStack` 上的修饰符实际归根页面所有，压栈后随根页面移除。播放页打开时顶层那份不显示，读屏不会把同一条结果
-  通告两次。
+- 结果胶囊只挂在 detail 视图上一处，来源页与播放页互相替换时它都在，读屏不会把同一条结果通告两次。
 - 首页推荐的「不感兴趣」：反馈走 App 端接口（推荐流来自 App 端，服务端按 access_token 认出是谁的推荐流）。子菜单的原因是
   卡片自己给出的列表（id 与中文名字原样显示，不本地化，不设固定原因），Browse 按选中的原因构造反馈；卡片没给原因就没有这一项。
   标记属于 `BrowseViewModel` 的推荐工作集、跟着卡片走（刷新成功后只留新推荐里仍有的）。协调者先乐观标上或去掉，失败或被取消时凭改动时的工作集身份

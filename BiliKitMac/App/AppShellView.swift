@@ -7,10 +7,10 @@ import BiliVideoCollectionUI
 import BiliVideoDetailFeature
 import SwiftUI
 
-/// 描述窗口的原生 NavigationSplitView/NavigationStack 外壳，并保留来源状态与滚动位置。
+/// 描述窗口的原生 NavigationSplitView 外壳，并保留来源状态与滚动位置。
 ///
-/// 系统返回通过 path Binding 回写 coordinator，使播放停止与视觉导航保持同一事实来源；
-/// SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
+/// 右侧只渲染当前页（`AppDetailColumn`），工具栏「返回」经 coordinator 关闭播放，使播放停止与视觉导航保持同一事实
+/// 来源；SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
 struct AppShellView: View {
     @Environment(\.openURL) private var openURL
     let navigationCoordinator: AppNavigationCoordinator
@@ -102,35 +102,23 @@ struct AppShellView: View {
                 max: sidebarColumnMode.maximumWidth
             )
         } detail: {
-            NavigationStack(path: Bindable(navigationCoordinator).playbackPath) {
-                selectedSourceRoot
-                    // 写入结果胶囊挂在各页上而不是整个栈外：在 NavigationSplitView 的 detail 列里，挂在
-                    // NavigationStack 上的修饰符实际归根页面所有，压栈后随根页面移除，播放页上就看不到。播放页打开时
-                    // 这里不显示（根页面万一仍挂着，读屏也不会把同一条结果通告两次），播放页自己挂一份。
-                    .overlay(alignment: .bottom) {
-                        if navigationCoordinator.currentPlaybackBVID == nil {
-                            AccountWriteStatusOverlay(accountWrites: accountWrites)
-                        }
-                    }
-                    .navigationDestination(
-                        for: PlaybackDestination.self
-                    ) { _ in
-                        PlaybackDestinationView(
-                            model: videoModel,
-                            danmakuModel: danmakuModel,
-                            danmakuComposer: danmakuComposer,
-                            engagementModel: engagementModel,
-                            playerContent: playerContent,
-                            imagePipeline: imagePipeline,
-                            onRetry: retryPlayback,
-                            onSelectRelatedVideo:
-                                navigationCoordinator.openPlayback
-                        )
-                        .overlay(alignment: .bottom) {
-                            AccountWriteStatusOverlay(accountWrites: accountWrites)
-                        }
-                    }
-            }
+            AppDetailColumn(
+                navigationCoordinator: navigationCoordinator,
+                accountWrites: accountWrites,
+                root: { selectedSourceRoot },
+                playback: {
+                    PlaybackDestinationView(
+                        model: videoModel,
+                        danmakuModel: danmakuModel,
+                        danmakuComposer: danmakuComposer,
+                        engagementModel: engagementModel,
+                        playerContent: playerContent,
+                        imagePipeline: imagePipeline,
+                        onRetry: retryPlayback,
+                        onSelectRelatedVideo: navigationCoordinator.openPlayback
+                    )
+                }
+            )
         }
         // 来源网格、相关推荐横排与它们的卡片菜单都在这棵树里；写入口只转发意图，门槛与请求在 `AccountWriteCoordinator`。
         .environment(\.videoCardAccountWriting, accountWriting)
@@ -442,15 +430,50 @@ private struct PlaybackDestinationView: View {
         ) {
             playerContent
         }
-        // macOS 没有给压栈页面设底色的接口，页面本身透明：不带动画压栈时根页面已移除，透出的是窗口底；
-        // 带动画压栈时来源页留在下面继续绘制，会透出来。所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方
-        // （见 ARCHITECTURE「播放页」）。
+        // macOS 没有给页面设底色的接口，页面本身透明，所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方
+        // （见 ARCHITECTURE「播放页布局」）。
         .background {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
         }
         .navigationTitle("播放")
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    }
+}
+
+/// 右侧只渲染当前页：来源根页或播放页，二者不同时存在。
+///
+/// 必须是独立的 View 结构体并在自己的 `body` 里读 coordinator：写在 `NavigationSplitView` 的 detail 闭包里时，
+/// 闭包内读到的 Observable 状态不会让 detail 列刷新。写入结果胶囊与工具栏「返回」只挂在这一层：胶囊不随页面替换而
+/// 消失或重复（读屏不会把同一条结果通告两次）；「返回」只在播放页出现，根页时整个工具栏项不放。两页放在 `ZStack`
+/// 而不是 `Group` 里：`Group` 把修饰符分发给每个分支，换页时挂在这一层的视图会随分支重建。
+private struct AppDetailColumn<Root: View, Playback: View>: View {
+    let navigationCoordinator: AppNavigationCoordinator
+    let accountWrites: AccountWriteCoordinator
+    @ViewBuilder let root: () -> Root
+    @ViewBuilder let playback: () -> Playback
+
+    var body: some View {
+        ZStack {
+            if navigationCoordinator.currentPlaybackBVID == nil {
+                root()
+            } else {
+                playback()
+            }
+        }
+        .overlay(alignment: .bottom) {
+            AccountWriteStatusOverlay(accountWrites: accountWrites)
+        }
+        .toolbar {
+            if navigationCoordinator.currentPlaybackBVID != nil {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: navigationCoordinator.goBack) {
+                        Label("返回", systemImage: "chevron.backward")
+                    }
+                    .help(Text("返回"))
+                }
+            }
+        }
     }
 }
 

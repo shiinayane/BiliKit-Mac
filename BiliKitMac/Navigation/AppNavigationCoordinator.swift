@@ -15,25 +15,12 @@ enum AppTab: Hashable, CaseIterable {
     case favorites
 }
 
-/// 播放层在 `NavigationStack` 路径里的唯一元素，只标识播放 surface，不携带视频。
-///
-/// 右侧栈深最多 1（见 docs/ARCHITECTURE.md「动线与侧栏上下文层」）：首次打开播放时生成
-/// `surfaceID`，之后换视频只替换 `ActivePlayback.intent`，surface 不变，导航路径不因换视频而变化。
-struct PlaybackDestination: Hashable {
-    let surfaceID: UUID
-}
-
-/// 当前播放层：建立后不变的 surface 与可替换的选择意图；为 nil 表示不在播放层。
-private struct ActivePlayback: Equatable {
-    let destination: PlaybackDestination
-    var intent: PlaybackSelectionIntent
-}
-
-/// 协调窗口内的顶层 Tab、原生导航路径、播放生命周期副作用与侧栏上下文层。
+/// 协调窗口内的顶层 Tab、右侧是否在播放页、播放生命周期副作用与侧栏上下文层。
 ///
 /// Coordinator 不拥有播放器：开始与停止播放经 `WindowComposition` 注入的闭包交给视频与弹幕模型。
-/// typed path 只表达是否位于播放层级，当前 BVID 则表达该层级内的媒体 identity。系统返回、切换来源、
-/// 登出与关窗都经 `closePlayback()` 这一条播放副作用边界收口。侧栏上下文层（UP 主空间）
+/// 右侧只渲染当前页（来源根页或播放页，见 docs/ARCHITECTURE.md「动线与侧栏上下文层」），`activePlayback` 非 nil
+/// 就是播放页，它同时是播放页里的媒体 identity；换视频只替换它。工具栏返回（`goBack()`）、切换来源、登出与关窗都经
+/// `closePlayback()` 这一条播放副作用边界收口。侧栏上下文层（UP 主空间）
 /// 的打开与关闭入口都在这里，是否打开从空间模型的 `owner` 派生；
 /// 空间模型自己在返回按钮或账户会话切换时关闭，同样反映到 `isSidebarContextOpen`。
 @MainActor
@@ -45,21 +32,11 @@ final class AppNavigationCoordinator {
             closePlayback()
         }
     }
-    var playbackPath: [PlaybackDestination] {
-        get {
-            activePlayback.map { [$0.destination] } ?? []
-        }
-        set {
-            // 只有 openPlayback 可以建立播放 surface；系统 path 写回只负责 pop。
-            guard newValue.isEmpty else { return }
-            closePlayback()
-        }
-    }
     var currentPlaybackBVID: String? {
-        activePlayback?.intent.bvid
+        activePlayback?.bvid
     }
     var currentPlaybackIntent: PlaybackSelectionIntent? {
-        activePlayback?.intent
+        activePlayback
     }
     /// 侧栏上下文层的内容模型；每个窗口都有，空间入口与空间链接都在这里打开。
     @ObservationIgnored let uploaderSpace: UploaderSpaceViewModel
@@ -68,7 +45,8 @@ final class AppNavigationCoordinator {
         uploaderSpace.owner != nil
     }
 
-    private var activePlayback: ActivePlayback?
+    /// 播放页当前的选择意图；nil 表示右侧是来源根页。
+    private var activePlayback: PlaybackSelectionIntent?
     @ObservationIgnored private let startPlayback: (PlaybackSelectionIntent) -> Void
     @ObservationIgnored private let stopPlayback: () -> Void
 
@@ -97,7 +75,7 @@ final class AppNavigationCoordinator {
         uploaderSpace.open(ownerID: ownerID)
     }
 
-    /// 首次打开建立播放 surface；连续打开其他视频只替换媒体 identity。
+    /// 首次打开进入播放页；已在播放页时只替换媒体 identity。
     func openPlayback(_ bvid: String) {
         openPlayback(PlaybackSelectionIntent(bvid: bvid))
     }
@@ -128,8 +106,6 @@ final class AppNavigationCoordinator {
         openPlayback(intent, preservesSidebarContext: false)
     }
 
-    /// 建立播放 surface 即压栈播放页；调用方不得放进 `withAnimation`，否则来源网格会一直挂在播放页下面绘制
-    /// （见 ARCHITECTURE「播放页」）。
     private func openPlayback(
         _ intent: PlaybackSelectionIntent,
         preservesSidebarContext: Bool
@@ -138,23 +114,19 @@ final class AppNavigationCoordinator {
         if !preservesSidebarContext {
             closeSidebarContext()
         }
-        guard currentPlaybackIntent != intent else { return }
-
-        if var activePlayback {
-            activePlayback.intent = intent
-            self.activePlayback = activePlayback
-        } else {
-            activePlayback = ActivePlayback(
-                destination: PlaybackDestination(surfaceID: UUID()),
-                intent: intent
-            )
-        }
+        guard activePlayback != intent else { return }
+        activePlayback = intent
         startPlayback(intent)
     }
 
     func retryPlayback() {
         guard let intent = currentPlaybackIntent else { return }
         startPlayback(intent)
+    }
+
+    /// 工具栏「返回」：离开播放页回到来源根页；不在播放页时不动作，所以连点只停止一次。
+    func goBack() {
+        closePlayback()
     }
 
     /// 登出只关闭当前播放，不改变来源 Tab。

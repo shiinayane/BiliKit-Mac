@@ -104,7 +104,7 @@ struct VideoDetailLifecycleTests {
         try await profileRepository.waitForRequest()
         #expect(videoModel.uploaderProfileState == .loading)
 
-        coordinator.playbackPath = []
+        coordinator.goBack()
         await profileRepository.releaseLateResult()
         try await profileRepository.waitForCompletion()
 
@@ -328,7 +328,7 @@ struct VideoDetailLifecycleTests {
                 == [.video(aid: first.aid), .video(aid: replacement.aid)]
         )
 
-        coordinator.playbackPath = []
+        coordinator.goBack()
         await waitForObservedState {
             commentsModel.subject == nil
                 && commentsModel.rootState == .idle

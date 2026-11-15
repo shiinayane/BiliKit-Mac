@@ -9,14 +9,14 @@ import Testing
 
 @testable import BiliKit
 
-/// 播放页在来源之上只有一层，打开、替换与重试不伪造也不重复开始播放，换来源、关窗与登录变化各只停止一次。
+/// 播放页在来源之上只有一层，打开、替换与重试不重复开始播放，返回、换来源、关窗与登录变化各只停止一次。
 ///
 /// 返回与登录变化保留来源，关窗复位到首页；侧栏上下文层只在从它自己打开视频时保留，关闭播放时随之关闭一次。
 @Suite(.timeLimit(.minutes(1)))
 struct AppNavigationCoordinatorTests {
     @Test(arguments: AppTab.allCases)
     @MainActor
-    func nativeBackReturnsEachSourceInOnePop(source: AppTab) {
+    func backReturnsEachSourceAndStopsOnce(source: AppTab) {
         var stopCount = 0
         let coordinator = AppNavigationCoordinator(
             startPlayback: { _ in },
@@ -26,19 +26,18 @@ struct AppNavigationCoordinatorTests {
         coordinator.selectedTab = source
 
         coordinator.openPlayback("BV1Source")
-        #expect(coordinator.playbackPath.count == 1)
-        coordinator.playbackPath.removeLast()
-        coordinator.playbackPath.removeAll()
+        // 工具栏「返回」在按钮消失前可能被连点两次。
+        coordinator.goBack()
+        coordinator.goBack()
 
         #expect(coordinator.selectedTab == source)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(stopCount == 1)
     }
 
     @Test
     @MainActor
-    func replacementKeepsSurfaceAndSourceWhileOrderingSideEffects() {
+    func replacementKeepsSourceWhileOrderingSideEffects() {
         var events: [String] = []
         let coordinator = AppNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid)") },
@@ -48,12 +47,9 @@ struct AppNavigationCoordinatorTests {
         coordinator.selectedTab = .search
 
         coordinator.openPlayback("BV1RouteA")
-        let surfaceID = coordinator.playbackPath.first?.surfaceID
         coordinator.openPlayback("BV1RouteB")
         coordinator.openPlayback("BV1RouteC")
 
-        #expect(coordinator.playbackPath.count == 1)
-        #expect(coordinator.playbackPath.first?.surfaceID == surfaceID)
         #expect(coordinator.currentPlaybackBVID == "BV1RouteC")
         #expect(coordinator.selectedTab == .search)
         #expect(
@@ -63,31 +59,6 @@ struct AppNavigationCoordinatorTests {
                 "start:BV1RouteC"
             ]
         )
-    }
-
-    @Test
-    @MainActor
-    func nonemptyPathWriteCannotForgeOrReplacePlayback() {
-        var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0.bvid)") },
-            stopPlayback: { events.append("stop") },
-            uploaderSpace: makeUploaderSpace()
-        )
-        let forgedDestination = PlaybackDestination(surfaceID: UUID())
-
-        coordinator.playbackPath = [forgedDestination]
-        #expect(coordinator.playbackPath.isEmpty)
-        #expect(coordinator.currentPlaybackBVID == nil)
-
-        coordinator.openPlayback("BV1Actual")
-        let actualDestination = coordinator.playbackPath.first
-        coordinator.playbackPath = [forgedDestination]
-
-        #expect(coordinator.playbackPath.count == 1)
-        #expect(coordinator.playbackPath.first == actualDestination)
-        #expect(coordinator.currentPlaybackBVID == "BV1Actual")
-        #expect(events == ["start:BV1Actual"])
     }
 
     @Test
@@ -104,7 +75,6 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback("BV1SameA")
 
         #expect(startCount == 1)
-        #expect(coordinator.playbackPath.count == 1)
     }
 
     @Test
@@ -126,12 +96,11 @@ struct AppNavigationCoordinatorTests {
 
         #expect(intents.map(\.preferredCID) == [101, 102])
         #expect(coordinator.currentPlaybackIntent?.preferredCID == 102)
-        #expect(coordinator.playbackPath.count == 1)
     }
 
     @Test
     @MainActor
-    func retryKeepsSurfaceAndMediaIdentity() {
+    func retryKeepsMediaIdentity() {
         var intents: [PlaybackSelectionIntent] = []
         let coordinator = AppNavigationCoordinator(
             startPlayback: { intents.append($0) },
@@ -142,10 +111,8 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback(
             PlaybackSelectionIntent(bvid: "BV1RetryA", preferredCID: 202)
         )
-        let destination = coordinator.playbackPath.first
         coordinator.retryPlayback()
 
-        #expect(coordinator.playbackPath.first == destination)
         #expect(coordinator.currentPlaybackBVID == "BV1RetryA")
         #expect(intents.map(\.preferredCID) == [202, 202])
     }
@@ -165,7 +132,6 @@ struct AppNavigationCoordinatorTests {
         coordinator.selectedTab = .search
 
         #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(stopCount == 1)
     }
@@ -187,7 +153,6 @@ struct AppNavigationCoordinatorTests {
 
         #expect(stopCount == 1)
         #expect(coordinator.selectedTab == .home)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
     }
 
@@ -208,7 +173,6 @@ struct AppNavigationCoordinatorTests {
 
         #expect(stopCount == 1)
         #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
     }
 
@@ -292,7 +256,7 @@ struct AppNavigationCoordinatorTests {
         case "authentication":
             coordinator.closePlaybackForAuthenticationChange()
         default:
-            coordinator.playbackPath.removeAll()
+            coordinator.goBack()
         }
         countNextClose()
         coordinator.closePlaybackForAuthenticationChange()
@@ -335,7 +299,6 @@ struct AppNavigationCoordinatorTests {
 
         coordinator.openPlayback("")
 
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(events.isEmpty)
     }
