@@ -132,7 +132,7 @@ private struct OpenerHarness {
         )
         let recorder = OpenerRecorder()
         self.recorder = recorder
-        coordinator = AppNavigationCoordinator(
+        coordinator = makeNavigationCoordinator(
             startPlayback: { intent in
                 recorder.startedIntents.append(intent)
                 videoModel.select(intent)

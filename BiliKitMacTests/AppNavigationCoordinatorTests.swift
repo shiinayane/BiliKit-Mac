@@ -9,55 +9,203 @@ import Testing
 
 @testable import BiliKit
 
-/// 播放页在来源之上只有一层，打开、替换与重试不伪造也不重复开始播放，换来源、关窗与登录变化各只停止一次。
+/// 播放页在来源之上只有一层，打开、替换与重试不重复开始播放，返回、换来源、关窗与登录变化各只停止一次；只有进出播放页
+/// 转场，返回时先暂停、转场结束才停止。
 ///
 /// 返回与登录变化保留来源，关窗复位到首页；侧栏上下文层只在从它自己打开视频时保留，关闭播放时随之关闭一次。
 @Suite(.timeLimit(.minutes(1)))
 struct AppNavigationCoordinatorTests {
     @Test(arguments: AppTab.allCases)
     @MainActor
-    func nativeBackReturnsEachSourceInOnePop(source: AppTab) {
-        var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { _ in },
-            stopPlayback: { stopCount += 1 },
-            uploaderSpace: makeUploaderSpace()
+    func backReturnsEachSourceAndStopsOnce(source: AppTab) {
+        var events: [String] = []
+        let coordinator = makeNavigationCoordinator(
+            stopPlayback: { events.append("stop") },
+            pausePlayback: {
+                events.append("pause")
+                return true
+            },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                completion()
+            }
         )
         coordinator.selectedTab = source
 
         coordinator.openPlayback("BV1Source")
-        #expect(coordinator.playbackPath.count == 1)
-        coordinator.playbackPath.removeLast()
-        coordinator.playbackPath.removeAll()
+        // 工具栏「返回」在按钮消失前可能被连点两次。
+        coordinator.goBack()
+        coordinator.goBack()
 
         #expect(coordinator.selectedTab == source)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
-        #expect(stopCount == 1)
+        #expect(events == ["transition:push", "pause", "transition:pop", "stop"])
+    }
+
+    /// 返回时先暂停、转场结束才停止；转场还没结束就又进了播放页时，先完成上一次停止再开始，晚到的转场结束不再停止。
+    @Test
+    @MainActor
+    func backDefersTheStopUntilItsTransitionEnds() {
+        var events: [String] = []
+        var pendingCompletion: (() -> Void)?
+        let coordinator = makeNavigationCoordinator(
+            startPlayback: { events.append("start:\($0.bvid)") },
+            stopPlayback: { events.append("stop") },
+            pausePlayback: {
+                events.append("pause")
+                return true
+            },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                if direction == .pop {
+                    pendingCompletion = completion
+                } else {
+                    completion()
+                }
+            }
+        )
+
+        coordinator.openPlayback("BV1First")
+        coordinator.goBack()
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(events == ["transition:push", "start:BV1First", "pause", "transition:pop"])
+
+        coordinator.openPlayback("BV1Second")
+        pendingCompletion?()
+
+        #expect(coordinator.currentPlaybackBVID == "BV1Second")
+        #expect(
+            events == [
+                "transition:push", "start:BV1First", "pause", "transition:pop",
+                "stop", "transition:push", "start:BV1Second"
+            ]
+        )
+    }
+
+    /// 还没有画面可留（仍在加载）时返回照样转场，但立即停止，不等转场结束：否则加载在转场里完成会在根页上起播。
+    @Test
+    @MainActor
+    func backWithoutAPictureStopsAtOnce() {
+        var events: [String] = []
+        var pendingCompletion: (() -> Void)?
+        let coordinator = makeNavigationCoordinator(
+            stopPlayback: { events.append("stop") },
+            pausePlayback: { false },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                if direction == .pop {
+                    pendingCompletion = completion
+                } else {
+                    completion()
+                }
+            }
+        )
+
+        coordinator.openPlayback("BV1Loading")
+        coordinator.goBack()
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(events == ["transition:push", "transition:pop", "stop"])
+
+        pendingCompletion?()
+        #expect(events == ["transition:push", "transition:pop", "stop"])
+    }
+
+    /// 返回的转场进行中，播完的自动连播（下一集在转场里解析回来）不把用户拉回播放页，转场结束照常停止。
+    @Test
+    @MainActor
+    func continuationDuringTheBackTransitionIsIgnored() {
+        var events: [String] = []
+        var pendingCompletion: (() -> Void)?
+        let coordinator = makeNavigationCoordinator(
+            startPlayback: { events.append("start:\($0.bvid)") },
+            stopPlayback: { events.append("stop") },
+            pausePlayback: {
+                events.append("pause")
+                return true
+            },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                if direction == .pop {
+                    pendingCompletion = completion
+                } else {
+                    completion()
+                }
+            }
+        )
+
+        coordinator.openPlayback("BV1First")
+        coordinator.goBack()
+        coordinator.continuePlayback("BV1Next", preferredCID: 2)
+        pendingCompletion?()
+
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(events == ["transition:push", "start:BV1First", "pause", "transition:pop", "stop"])
+    }
+
+    /// 返回的转场进行中换来源、登出或关窗：立即停止且不再转场，晚到的转场结束不重复停止。
+    @Test(arguments: ["tab", "authentication", "window"])
+    @MainActor
+    func closingDuringTheBackTransitionStopsAtOnce(trigger: String) {
+        var events: [String] = []
+        var pendingCompletion: (() -> Void)?
+        let coordinator = makeNavigationCoordinator(
+            stopPlayback: { events.append("stop") },
+            pausePlayback: {
+                events.append("pause")
+                return true
+            },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                pendingCompletion = completion
+            }
+        )
+        coordinator.openPlayback("BV1Leaving")
+        coordinator.goBack()
+
+        switch trigger {
+        case "tab":
+            coordinator.selectedTab = .popular
+        case "authentication":
+            coordinator.closePlaybackForAuthenticationChange()
+        default:
+            coordinator.resetForWindowClosure()
+        }
+        pendingCompletion?()
+
+        #expect(events == ["transition:push", "pause", "transition:pop", "stop"])
     }
 
     @Test
     @MainActor
-    func replacementKeepsSurfaceAndSourceWhileOrderingSideEffects() {
+    func replacementKeepsSourceWhileOrderingSideEffects() {
         var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") },
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
+                change()
+                completion()
+            },
             uploaderSpace: makeUploaderSpace()
         )
         coordinator.selectedTab = .search
 
         coordinator.openPlayback("BV1RouteA")
-        let surfaceID = coordinator.playbackPath.first?.surfaceID
         coordinator.openPlayback("BV1RouteB")
         coordinator.openPlayback("BV1RouteC")
 
-        #expect(coordinator.playbackPath.count == 1)
-        #expect(coordinator.playbackPath.first?.surfaceID == surfaceID)
         #expect(coordinator.currentPlaybackBVID == "BV1RouteC")
         #expect(coordinator.selectedTab == .search)
+        // 只有从来源页进入播放页时转场一次；在播放页里换视频是同类替换，不转场。
         #expect(
             events == [
+                "transition:push",
                 "start:BV1RouteA",
                 "start:BV1RouteB",
                 "start:BV1RouteC"
@@ -67,34 +215,9 @@ struct AppNavigationCoordinatorTests {
 
     @Test
     @MainActor
-    func nonemptyPathWriteCannotForgeOrReplacePlayback() {
-        var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
-            startPlayback: { events.append("start:\($0.bvid)") },
-            stopPlayback: { events.append("stop") },
-            uploaderSpace: makeUploaderSpace()
-        )
-        let forgedDestination = PlaybackDestination(surfaceID: UUID())
-
-        coordinator.playbackPath = [forgedDestination]
-        #expect(coordinator.playbackPath.isEmpty)
-        #expect(coordinator.currentPlaybackBVID == nil)
-
-        coordinator.openPlayback("BV1Actual")
-        let actualDestination = coordinator.playbackPath.first
-        coordinator.playbackPath = [forgedDestination]
-
-        #expect(coordinator.playbackPath.count == 1)
-        #expect(coordinator.playbackPath.first == actualDestination)
-        #expect(coordinator.currentPlaybackBVID == "BV1Actual")
-        #expect(events == ["start:BV1Actual"])
-    }
-
-    @Test
-    @MainActor
     func reopeningCurrentPlaybackDoesNotDuplicateLoad() {
         var startCount = 0
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in startCount += 1 },
             stopPlayback: {},
             uploaderSpace: makeUploaderSpace()
@@ -104,14 +227,13 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback("BV1SameA")
 
         #expect(startCount == 1)
-        #expect(coordinator.playbackPath.count == 1)
     }
 
     @Test
     @MainActor
     func sameBVIDDifferentCIDIsANewAtomicSelectionIntent() {
         var intents: [PlaybackSelectionIntent] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { intents.append($0) },
             stopPlayback: {},
             uploaderSpace: makeUploaderSpace()
@@ -126,14 +248,13 @@ struct AppNavigationCoordinatorTests {
 
         #expect(intents.map(\.preferredCID) == [101, 102])
         #expect(coordinator.currentPlaybackIntent?.preferredCID == 102)
-        #expect(coordinator.playbackPath.count == 1)
     }
 
     @Test
     @MainActor
-    func retryKeepsSurfaceAndMediaIdentity() {
+    func retryKeepsMediaIdentity() {
         var intents: [PlaybackSelectionIntent] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { intents.append($0) },
             stopPlayback: {},
             uploaderSpace: makeUploaderSpace()
@@ -142,10 +263,8 @@ struct AppNavigationCoordinatorTests {
         coordinator.openPlayback(
             PlaybackSelectionIntent(bvid: "BV1RetryA", preferredCID: 202)
         )
-        let destination = coordinator.playbackPath.first
         coordinator.retryPlayback()
 
-        #expect(coordinator.playbackPath.first == destination)
         #expect(coordinator.currentPlaybackBVID == "BV1RetryA")
         #expect(intents.map(\.preferredCID) == [202, 202])
     }
@@ -154,7 +273,7 @@ struct AppNavigationCoordinatorTests {
     @MainActor
     func selectingAnotherSourceClosesPlaybackExactlyOnce() {
         var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 },
             uploaderSpace: makeUploaderSpace()
@@ -165,7 +284,6 @@ struct AppNavigationCoordinatorTests {
         coordinator.selectedTab = .search
 
         #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(stopCount == 1)
     }
@@ -174,7 +292,7 @@ struct AppNavigationCoordinatorTests {
     @MainActor
     func windowClosureIsIdempotentAndResetsWindowState() {
         var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 },
             uploaderSpace: makeUploaderSpace()
@@ -187,7 +305,6 @@ struct AppNavigationCoordinatorTests {
 
         #expect(stopCount == 1)
         #expect(coordinator.selectedTab == .home)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
     }
 
@@ -195,7 +312,7 @@ struct AppNavigationCoordinatorTests {
     @MainActor
     func authenticationChangeClosesPlaybackWithoutLosingSourceContext() {
         var stopCount = 0
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { stopCount += 1 },
             uploaderSpace: makeUploaderSpace()
@@ -208,7 +325,6 @@ struct AppNavigationCoordinatorTests {
 
         #expect(stopCount == 1)
         #expect(coordinator.selectedTab == .search)
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
     }
 
@@ -217,7 +333,7 @@ struct AppNavigationCoordinatorTests {
     func choosingFromTheSidebarContextKeepsIt() {
         let space = makeUploaderSpace()
         var contextOpenAtStart: [Bool] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in contextOpenAtStart.append(space.owner != nil) },
             stopPlayback: {},
             uploaderSpace: space
@@ -238,7 +354,7 @@ struct AppNavigationCoordinatorTests {
     func otherEntriesCloseTheSidebarContextEvenForTheCurrentVideo() {
         let space = makeUploaderSpace()
         var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid) context:\(space.owner != nil)") },
             stopPlayback: { events.append("stop") },
             uploaderSpace: space
@@ -263,7 +379,7 @@ struct AppNavigationCoordinatorTests {
     func closingPlaybackClosesTheSidebarContextOnce(trigger: String) async {
         let space = makeUploaderSpace()
         var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: { events.append("stop context:\(space.owner != nil)") },
             uploaderSpace: space
@@ -292,7 +408,7 @@ struct AppNavigationCoordinatorTests {
         case "authentication":
             coordinator.closePlaybackForAuthenticationChange()
         default:
-            coordinator.playbackPath.removeAll()
+            coordinator.goBack()
         }
         countNextClose()
         coordinator.closePlaybackForAuthenticationChange()
@@ -308,7 +424,7 @@ struct AppNavigationCoordinatorTests {
     func memberIDLinksOpenTheSpace() async throws {
         let profiles = UploaderProfileRepositoryStub(holdsRequests: true)
         let space = makeUploaderSpace(profiles: profiles)
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: {},
             uploaderSpace: space
@@ -327,7 +443,7 @@ struct AppNavigationCoordinatorTests {
     @MainActor
     func emptyBVIDDoesNotCreatePlaybackState() {
         var events: [String] = []
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") },
             uploaderSpace: makeUploaderSpace()
@@ -335,7 +451,6 @@ struct AppNavigationCoordinatorTests {
 
         coordinator.openPlayback("")
 
-        #expect(coordinator.playbackPath.isEmpty)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(events.isEmpty)
     }

@@ -51,7 +51,7 @@ struct AppSourcesTests {
     @Test
     func singleRowSourcesSelectThemselves() {
         let sources = makeSources()
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: {},
             uploaderSpace: makeUploaderSpace()
@@ -71,7 +71,7 @@ struct AppSourcesTests {
     func favoriteFolderRowsMapToTheFavoritesSourceAndItsFolder() {
         let favorites = makeFavoriteModels()
         let sources = makeSources(favorites: favorites)
-        let coordinator = AppNavigationCoordinator(
+        let coordinator = makeNavigationCoordinator(
             startPlayback: { _ in },
             stopPlayback: {},
             uploaderSpace: makeUploaderSpace()

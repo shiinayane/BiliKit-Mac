@@ -362,6 +362,11 @@ final class PlayerOverlayModel {
         fadeOutFeedback()
     }
 
+    /// 立即收起反馈，不淡出：播放页重新挂上宿主时丢掉上一页留下的提示。
+    func clearFeedback() {
+        feedback = nil
+    }
+
     func expireFeedback(id: UUID) {
         guard feedback?.id == id else { return }
         fadeOutFeedback()

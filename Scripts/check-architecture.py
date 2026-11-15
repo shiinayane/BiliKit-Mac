@@ -153,6 +153,8 @@ EXTRA_ALLOWED = {
     # 卡片的取封面 port（DanmakuCoverImageLoading）。
     "BiliKitMac/Composition/WatchProgressWindowConnection.swift": {"BiliVideoCollectionUI"},
     "BiliKitMac/Platform/AccountAvatarImage.swift": {"BiliVideoCollectionUI"},
+    # 播放器宿主的 SwiftUI representable：配置 AVPlayerView 子类（AVKit），接收弹幕 renderer 与 controller、播放引擎的字幕切换结果。
+    "BiliKitMac/Platform/AVPlayerContainerView.swift": {"AVKit", "BiliDanmaku", "BiliPlayback"},
     "BiliKitMac/Platform/AppUpdater.swift": {"Sparkle"},
     # 弹幕 overlay 按播放 item 换绑时钟，并把 renderer 的 layer 挂在时钟层下；时钟层由 item timebase 的
     # 通知在后台队列上驱动，弹幕动画随它运行。
