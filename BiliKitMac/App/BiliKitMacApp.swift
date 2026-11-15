@@ -23,6 +23,7 @@ struct BiliKitMacApp: App {
         .defaultSize(width: 1_320, height: 820)
         .commands {
             AppUpdateCommands(updater: process.updater)
+            AppNavigationCommands()
         }
 
         Settings {

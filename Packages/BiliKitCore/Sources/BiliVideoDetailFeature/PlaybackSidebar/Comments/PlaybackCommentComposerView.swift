@@ -1,6 +1,7 @@
 import AppKit
 import BiliApplication
 import BiliUI
+import BiliVideoCollectionUI
 import SwiftUI
 
 /// 评论区底部浮动的评论入口：默认收起成右下角一枚玻璃圆钮，点它或评论行的「回复」展开成输入卡片；默认发楼层评论，回复时
@@ -282,8 +283,8 @@ private enum CommentComposerLayout {
     /// 回复对象那一行里昵称与 × 之间的间距。
     static let headerItemSpacing: CGFloat = 6
     /// 收起的圆钮与边距取「返回顶部」按钮的同一组值，两枚按钮上下对齐。
-    static let buttonSize = NativeScrollToTopScrollView.Geometry.buttonSize
-    static let edgeInset = NativeScrollToTopScrollView.Geometry.edgeInset
+    static let buttonSize = NativeScrollToTopButton.Geometry.buttonSize
+    static let edgeInset = NativeScrollToTopButton.Geometry.edgeInset
     /// 圆钮里铅笔图标的字号。
     static let buttonIconSize: CGFloat = 17
     /// 有未发出的草稿时圆钮右上角小圆点的直径，以及它离圆钮边缘的距离。

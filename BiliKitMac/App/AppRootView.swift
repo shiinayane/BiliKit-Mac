@@ -214,7 +214,7 @@ struct AppRootView: View {
     }
 
     private var commentActivationAID: Int64? {
-        guard let currentBVID = navigationCoordinator.currentPlaybackBVID,
+        guard let currentBVID = navigationCoordinator.livePlaybackBVID,
             let videoIdentity = videoModel.presentedVideoIdentity,
             videoIdentity.bvid == currentBVID
         else { return nil }

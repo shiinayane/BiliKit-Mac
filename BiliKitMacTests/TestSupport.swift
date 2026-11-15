@@ -486,31 +486,35 @@ struct FixtureVideoRepository: VideoRepository {
 }
 
 /// UP 主名片 port 的唯一测试替身：`holdsRequests` 时请求挂起到 `releaseLateResult()` 为止（验证迟到结果与
-/// 取消），否则立即返回空名片。
+/// 取消），否则立即返回空名片；观看者关注状态取 `viewerFollows`。
 actor UploaderProfileRepositoryStub:
     UploaderProfileRepository
 {
     private let holdsRequests: Bool
+    private let viewerFollows: Bool?
     private var requestStarted = false
     private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private var resultContinuation: CheckedContinuation<UploaderProfile, Never>?
     private var requestCompleted = false
     private var completionWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(holdsRequests: Bool) {
+    init(holdsRequests: Bool, viewerFollows: Bool? = nil) {
         self.holdsRequests = holdsRequests
+        self.viewerFollows = viewerFollows
     }
 
-    func uploaderProfile(for ownerID: Int64) async throws -> UploaderProfile {
+    func uploaderCard(for ownerID: Int64) async throws -> UploaderCard {
         requestStarted = true
         requestWaiters.resumeAll()
-        guard holdsRequests else { return UploaderProfile() }
+        guard holdsRequests else {
+            return UploaderCard(profile: UploaderProfile(), viewerFollows: viewerFollows)
+        }
         let result = await withCheckedContinuation { continuation in
             resultContinuation = continuation
         }
         requestCompleted = true
         completionWaiters.resumeAll()
-        return result
+        return UploaderCard(profile: result, viewerFollows: viewerFollows)
     }
 
     func waitForRequest() async throws {
@@ -588,6 +592,8 @@ final class RecordingPlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async -> Bool { false }
 
+    func play() {}
+
     func pause() {}
 
     func stop() {
@@ -639,7 +645,8 @@ func makeUploaderSpace(
 ) -> UploaderSpaceViewModel {
     UploaderSpaceViewModel(
         useCase: UploaderVideoUseCase(repository: UnavailableUploaderVideoRepository()),
-        profileUseCase: UploaderProfileUseCase(repository: profiles)
+        profileUseCase: UploaderProfileUseCase(repository: profiles),
+        accountID: { nil }
     )
 }
 

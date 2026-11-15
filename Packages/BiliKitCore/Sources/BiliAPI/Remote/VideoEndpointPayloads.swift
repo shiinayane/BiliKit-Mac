@@ -108,21 +108,22 @@ struct OwnerPayload: Decodable, Sendable {
     }
 }
 
-/// UP 主名片（`/x/web-interface/card`）的 `data`，由 `BiliAPIClient.uploaderProfile` 映射为
-/// `UploaderProfile`。
+/// UP 主名片（`/x/web-interface/card`）的 `data`，由 `BiliAPIClient.uploaderCard` 映射为 `UploaderCard`。
 ///
 /// 粉丝数（`follower`）与投稿数（`archive_count`）在 `data` 这一层；它们只是展示，缺失、为负或形状不对时按缺省，
-/// 不拖累签名。登录时同一响应还带 `following`，这里刻意不取：名片按 UP 主沿用、不随账户重读，关注状态来自播放页的互动
-/// 读取。
+/// 不拖累签名。登录时同一响应还带观看者是否关注（`following`），形状不对时按缺失；client 何时采用见
+/// `BiliAPIClient.uploaderCard`。
 struct UploaderCardDataPayload: Decodable, Sendable {
     let card: UploaderCardPayload
     let follower: Int64?
     let archiveCount: Int64?
+    let following: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case card
         case follower
         case archiveCount = "archive_count"
+        case following
     }
 
     init(from decoder: any Decoder) throws {
@@ -132,6 +133,7 @@ struct UploaderCardDataPayload: Decodable, Sendable {
             .flatMap { $0 >= 0 ? $0 : nil }
         archiveCount = container.decodeLossyIfPresent(Int64.self, forKey: .archiveCount)
             .flatMap { $0 >= 0 ? $0 : nil }
+        following = container.decodeLossyIfPresent(Bool.self, forKey: .following)
     }
 
     func model() -> UploaderProfile {

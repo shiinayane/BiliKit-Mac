@@ -241,12 +241,16 @@ extension VideoCardGridGeometry {
         return isShortBelow || isShortAbove
     }
 
+    /// 视野底边是否接近内容底部。
+    ///
+    /// `extraHeight` 是首行之上与末行之下额外让出的高度（顶部附加视图与底部悬浮控件），
+    /// 与 `layoutSection` 的上下边距同源。
     static func isNearEnd(
         itemCount: Int,
         width: CGFloat,
         visibleMaximumY: CGFloat,
         viewportHeight: CGFloat,
-        bottomInset: CGFloat
+        extraHeight: CGFloat
     ) -> Bool {
         guard
             itemCount > 0,
@@ -256,7 +260,7 @@ extension VideoCardGridGeometry {
             viewportHeight > 0
         else { return false }
         let remaining =
-            contentHeight(for: width, itemCount: itemCount, bottomInset: bottomInset)
+            contentHeight(for: width, itemCount: itemCount, bottomInset: extraHeight)
             - visibleMaximumY
         return remaining < viewportHeight * nearEndViewportMultiple
     }
@@ -265,11 +269,13 @@ extension VideoCardGridGeometry {
     ///
     /// `width` 是 section provider 拿到的容器宽度。每行都排满 `columnCount(for:)` 张：卡片宽度向下取整后余下的
     /// 不足一列宽，再放一张至少要多出一个卡片宽加间距，所以组只装得下这么多张；余量经 `.flexible` 间距平均摊进
-    /// 列间，首尾贴齐左右边距，不满的末行各张仍在本列的位置。`bottomInset` 加在底边距上，与 `contentHeight` 同源。
+    /// 列间，首尾贴齐左右边距，不满的末行各张仍在本列的位置。`bottomInset` 加在底边距上、`topInset`（顶部附加视图的
+    /// 高度）加在顶边距上，两者之和与 `isNearEnd` 的 `extraHeight` 同源。
     @MainActor
     static func layoutSection(
         forWidth width: CGFloat,
-        bottomInset: CGFloat
+        bottomInset: CGFloat,
+        topInset: CGFloat
     ) -> NSCollectionLayoutSection {
         let size = itemSize(for: width)
         let item = NSCollectionLayoutItem(
@@ -289,7 +295,7 @@ extension VideoCardGridGeometry {
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = verticalSpacing
         section.contentInsets = NSDirectionalEdgeInsets(
-            top: topContentPadding,
+            top: topContentPadding + topInset,
             leading: contentPadding,
             bottom: contentPadding + bottomInset,
             trailing: contentPadding

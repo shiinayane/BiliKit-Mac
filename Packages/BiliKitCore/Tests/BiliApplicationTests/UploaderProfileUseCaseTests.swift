@@ -66,8 +66,8 @@ private actor UploaderProfileRepositoryStub: UploaderProfileRepository {
         self.result = result
     }
 
-    func uploaderProfile(for ownerID: Int64) async throws -> UploaderProfile {
+    func uploaderCard(for ownerID: Int64) async throws -> UploaderCard {
         callCount += 1
-        return result
+        return UploaderCard(profile: result, viewerFollows: nil)
     }
 }

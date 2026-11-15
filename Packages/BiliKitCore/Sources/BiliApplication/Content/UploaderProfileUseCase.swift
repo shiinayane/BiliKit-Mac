@@ -1,7 +1,7 @@
 import BiliModels
 import Foundation
 
-/// 取得 UP 主的公开名片，并规范化其中可选的名字与签名。
+/// 取得 UP 主的公开名片（可带观看者的关注状态），并规范化其中可选的名字与签名。
 public struct UploaderProfileUseCase: Sendable {
     private let repository: any UploaderProfileRepository
 
@@ -10,18 +10,27 @@ public struct UploaderProfileUseCase: Sendable {
     }
 
     public func profile(for ownerID: Int64) async throws -> UploaderProfile {
+        try await card(for: ownerID).profile
+    }
+
+    /// 名片加上观看者的关注状态（整页空间页的头部与关注按钮）；关注状态的含义见 `UploaderCard`。
+    public func card(for ownerID: Int64) async throws -> UploaderCard {
         guard ownerID > 0 else {
             throw ContentApplicationError.invalidRequest
         }
-        let profile = try await repository.uploaderProfile(for: ownerID)
+        let card = try await repository.uploaderCard(for: ownerID)
         try Task.checkCancellation()
-        return UploaderProfile(
-            name: Self.singleLine(profile.name),
-            avatarURL: profile.avatarURL,
-            signature: Self.singleLine(profile.signature),
-            isVIP: profile.isVIP,
-            followerCount: profile.followerCount,
-            videoCount: profile.videoCount
+        let profile = card.profile
+        return UploaderCard(
+            profile: UploaderProfile(
+                name: Self.singleLine(profile.name),
+                avatarURL: profile.avatarURL,
+                signature: Self.singleLine(profile.signature),
+                isVIP: profile.isVIP,
+                followerCount: profile.followerCount,
+                videoCount: profile.videoCount
+            ),
+            viewerFollows: card.viewerFollows
         )
     }
 

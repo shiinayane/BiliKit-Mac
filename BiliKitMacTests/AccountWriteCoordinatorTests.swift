@@ -200,6 +200,7 @@ struct AccountWriteCoordinatorTests {
             favoriteFolderList: window.favoriteFolderList,
             favoriteFolders: window.favoriteFolders,
             engagementModel: window.engagementModel,
+            uploaderSpacePage: makeUploaderSpace(),
             writableAccount: { WritableAccount(accountID: 7, sessionGeneration: 3) }
         )
 

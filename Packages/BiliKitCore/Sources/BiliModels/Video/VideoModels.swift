@@ -21,6 +21,20 @@ public struct VideoOwner: Sendable, Equatable {
     }
 }
 
+/// UP 主名片，加上此刻登录的观看者是否关注了这位 UP 主。
+///
+/// `viewerFollows` 为 nil 表示未知，不是“未关注”（何时有值见 SECURITY-MODEL §3）。名片可以按 UP 主沿用，关注状态属于
+/// 发出读取时的账户，不能跨账户沿用（见 docs/ARCHITECTURE.md「账户写入」）。
+public struct UploaderCard: Sendable, Equatable {
+    public let profile: UploaderProfile
+    public let viewerFollows: Bool?
+
+    public init(profile: UploaderProfile, viewerFollows: Bool?) {
+        self.profile = profile
+        self.viewerFollows = viewerFollows
+    }
+}
+
 /// 从 UP 主名片补充的公开资料。
 ///
 /// 播放页用签名、大会员状态、粉丝数与投稿数；只凭 MID 打开的空间用名字与头像。计数是名片读到时的数，名片缺失或形状

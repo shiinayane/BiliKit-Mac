@@ -97,16 +97,23 @@ extension NSScrollView {
     /// 用户主动触发的跳转带动画。
     ///
     /// “减弱动态效果”开启或 `animated` 为 false 时直接跳转；程序内部的定位（换内容回到顶部、
-    /// 恢复滚动位置）始终不加动画。
-    package func scrollVertically(toPhysicalOffset offsetY: CGFloat, animated: Bool) {
+    /// 恢复滚动位置）始终不加动画。`completion` 在滚动落定后调用（直接跳转时立即调用）。
+    package func scrollVertically(
+        toPhysicalOffset offsetY: CGFloat,
+        animated: Bool,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
         guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             scrollVertically(toPhysicalOffset: offsetY)
+            completion?()
             return
         }
         let clipView = contentView
         NSAnimationContext.runAnimationGroup { context in
             context.duration = nativeUserScrollAnimationDuration
             clipView.animator().setBoundsOrigin(NSPoint(x: 0, y: offsetY))
+        } completionHandler: {
+            MainActor.assumeIsolated { completion?() }
         }
         reflectScrolledClipView(clipView)
     }

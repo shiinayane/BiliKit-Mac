@@ -7,16 +7,16 @@ import Testing
 @testable import BiliAPI
 
 /// 固定 UP 主名片契约：只请求 `/x/web-interface/card`，MID 必须与请求一致，
-/// 大会员、名字、头像、粉丝数与投稿数异常时按缺省处理而签名照常返回。
+/// 大会员、名字、头像、粉丝数与投稿数异常时按缺省处理而签名照常返回；观看者关注状态只采用带凭据读到的。
 struct BiliAPIClientUploaderProfileTests {
     @Test
-    func uploaderProfileUsesExactCardEndpoint() async throws {
+    func uploaderCardUsesExactCardEndpoint() async throws {
         let transport = StubTransport(
             responses: [try fixtureResponse("uploader-card")]
         )
         let client = BiliAPIClient(transport: transport)
 
-        let profile = try await client.uploaderProfile(for: 10_001)
+        let profile = try await client.uploaderCard(for: 10_001).profile
 
         #expect(
             profile
@@ -52,7 +52,9 @@ struct BiliAPIClientUploaderProfileTests {
         )
         let client = BiliAPIClient(transport: StubTransport(responses: [response]))
 
-        #expect(try await client.uploaderProfile(for: 10_001) == UploaderProfile(signature: "签名"))
+        #expect(
+            try await client.uploaderCard(for: 10_001).profile == UploaderProfile(signature: "签名")
+        )
     }
 
     /// 大会员只是名字颜色的增强：过期或字段异常都按非大会员处理，签名照常返回。
@@ -73,7 +75,7 @@ struct BiliAPIClientUploaderProfileTests {
         )
 
         #expect(
-            try await client.uploaderProfile(for: 10_001)
+            try await client.uploaderCard(for: 10_001).profile
                 == UploaderProfile(signature: "签名", isVIP: false)
         )
     }
@@ -94,10 +96,29 @@ struct BiliAPIClientUploaderProfileTests {
             transport: StubTransport(responses: [response])
         )
 
-        let profile = try await client.uploaderProfile(for: 10_001)
+        let profile = try await client.uploaderCard(for: 10_001).profile
 
         #expect(profile.signature == "签名")
         #expect(profile.avatarURL == nil)
+    }
+
+    /// 观看者关注状态属于发出读取的账户：带凭据读到的 `following` 采用；匿名回退（本地没有凭据）时响应里即使带了也按
+    /// 未知，不当成“未关注”或“已关注”。
+    @Test(arguments: [true, false])
+    func uploaderCardTakesFollowingOnlyFromAnAuthenticatedRead(authenticated: Bool) async throws {
+        let response = jsonResponse(
+            #"{"code":0,"data":{"card":{"mid":"10001","sign":"签名"},"following":true}}"#
+        )
+        let client = BiliAPIClient(
+            transport: StubTransport(responses: [response]),
+            requestAuthorizer: StubAuthorizer(
+                authenticated ? .authorize : .fail(.missingCredential)
+            )
+        )
+
+        let card = try await client.uploaderCard(for: 10_001)
+
+        #expect(card.viewerFollows == (authenticated ? true : nil))
     }
 
     @Test
@@ -110,7 +131,7 @@ struct BiliAPIClientUploaderProfileTests {
         )
 
         await #expect(throws: BiliAPIError.decodingFailed) {
-            try await client.uploaderProfile(for: 10_001)
+            try await client.uploaderCard(for: 10_001).profile
         }
     }
 }

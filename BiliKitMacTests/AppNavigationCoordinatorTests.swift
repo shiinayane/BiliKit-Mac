@@ -9,10 +9,11 @@ import Testing
 
 @testable import BiliKit
 
-/// 播放页在来源之上只有一层，打开、替换与重试不重复开始播放，返回、换来源、关窗与登录变化各只停止一次；只有进出播放页
-/// 转场，返回时先暂停、转场结束才停止。
+/// 播放页的打开、替换与重试不重复开始播放，返回、换来源、关窗与登录变化各只停止一次；离开播放页时先暂停、转场结束才
+/// 停止。
 ///
-/// 返回与登录变化保留来源，关窗复位到首页；侧栏上下文层只在从它自己打开视频时保留，关闭播放时随之关闭一次。
+/// 返回与登录变化保留来源，关窗复位到首页；侧栏上下文层只在从它自己打开视频时保留，关闭播放时随之关闭一次，菜单的
+/// 「返回」在它开着时先关闭它。
 @Suite(.timeLimit(.minutes(1)))
 struct AppNavigationCoordinatorTests {
     @Test(arguments: AppTab.allCases)
@@ -25,8 +26,8 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
                 completion()
             }
@@ -56,10 +57,10 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
-                if direction == .pop {
+                if transition.direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -93,10 +94,10 @@ struct AppNavigationCoordinatorTests {
         let coordinator = makeNavigationCoordinator(
             stopPlayback: { events.append("stop") },
             pausePlayback: { false },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
-                if direction == .pop {
+                if transition.direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -126,10 +127,10 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
-                if direction == .pop {
+                if transition.direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -158,8 +159,8 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
                 pendingCompletion = completion
             }
@@ -187,8 +188,8 @@ struct AppNavigationCoordinatorTests {
         let coordinator = makeNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") },
-            transitionPage: { direction, change, completion in
-                events.append("transition:\(direction)")
+            transitionPage: { transition, change, completion in
+                events.append("transition:\(transition.direction)")
                 change()
                 completion()
             },
@@ -416,6 +417,23 @@ struct AppNavigationCoordinatorTests {
         #expect(!coordinator.isSidebarContextOpen)
         #expect(closeCount.withLock { $0 } == 1)
         #expect(events == ["stop context:false"])
+    }
+
+    /// 「前往 › 返回」（⌘[）：预览开着时先关预览、不离开播放页；预览关着时与工具栏「返回」相同。
+    @Test
+    @MainActor
+    func navigateBackClosesThePreviewBeforeLeavingThePage() {
+        let coordinator = makeNavigationCoordinator(uploaderSpace: makeUploaderSpace())
+
+        coordinator.openPlayback("BV1Preview")
+        coordinator.openUploaderSpace(owner: VideoOwner(id: 7, name: "UP 主"))
+        coordinator.navigateBack()
+        #expect(!coordinator.isSidebarContextOpen)
+        #expect(coordinator.currentPlaybackBVID == "BV1Preview")
+        coordinator.navigateBack()
+
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(!coordinator.canNavigateBack)
     }
 
     /// 空间链接只有 MID：在侧栏空间层打开，并补取名片。

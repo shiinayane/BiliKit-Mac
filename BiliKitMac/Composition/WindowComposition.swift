@@ -69,10 +69,10 @@ final class WindowComposition {
     private let imagePipelineOwner = NativeVideoImagePipelineOwner(cacheLimits: .window)
     /// 各来源网格的保活，保活容器交给 `AppShellView` 构造各来源的网格依赖；关窗时在关闭图片管线之前丢弃。
     let gridRetainerOwner = NativeVideoGridRetainerOwner()
-    /// 进出播放页的转场；锚点由 `AppShellView` 的 detail 列登记，只弱引用视图，关窗不需要清理。
+    /// 右侧换页的转场；锚点由 `AppShellView` 的 detail 列登记，只弱引用视图，关窗不需要清理。
     let pageTransitions: NavigationPageTransitions
     /// 窗口常驻的播放器宿主；关窗时在关闭播放之后拆除。
-    private let playerHostOwner = PlayerHostOwner()
+    private let playerHostOwner: PlayerHostOwner
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator
     private let watchProgressConnection: WatchProgressWindowConnection
     private let adapters: WindowAdapters
@@ -99,30 +99,51 @@ final class WindowComposition {
             playbackAuthenticationInvalidations: adapters.makePlaybackAuthenticationInvalidations()
         )
         let danmakuModel = Self.makeDanmakuModel(adapters: adapters)
+        let authenticationModel = AuthenticationViewModel(
+            service: adapters.authenticationService,
+            qrCodeProvider: adapters.authenticationQRCodeProvider
+        )
+        self.authenticationModel = authenticationModel
+        let accountSession = process.accountSession
+        let writableAccount: @MainActor () -> WritableAccount? = {
+            Self.writableAccount(
+                windowScope: authenticationModel.sessionScope,
+                isRestoring: authenticationModel.resolutionPhase == .restoring,
+                accountSession: accountSession
+            )
+        }
         let uploaderSpace = UploaderSpaceViewModel(
             useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
-            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository)
+            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository),
+            accountID: { writableAccount()?.accountID }
         )
         let pageTransitions = NavigationPageTransitions()
-        let navigationCoordinator = AppNavigationCoordinator(
-            startPlayback: { videoModel.select($0) },
-            stopPlayback: {
-                videoModel.reset()
-                danmakuModel.reset()
-            },
-            pausePlayback: {
-                [playback = adapters.playback, currentTimeline = adapters.currentTimeline] in
-                // 播放器上的 item 是这次请求呈现的那一项时才有画面可留；还在加载时 pause 是空操作，拦不住
-                // 加载完成后的自动起播。
-                guard videoModel.isPresenting(currentTimeline()) else { return false }
-                playback.pause()
-                return true
-            },
-            transitionPage: { [pageTransitions] direction, change, completion in
-                pageTransitions.perform(direction, change: change, completion: completion)
-            },
-            uploaderSpace: uploaderSpace
+        let uploaderSpacePage = UploaderSpaceViewModel(
+            useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
+            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository),
+            accountID: { writableAccount()?.accountID }
         )
+        let playerHostOwner = PlayerHostOwner()
+        let navigationCoordinator = AppNavigationCoordinator(
+            playback: Self.makePlaybackSession(
+                videoModel: videoModel,
+                danmakuModel: danmakuModel,
+                adapters: adapters,
+                pictureInPicture: playerHostOwner.pictureInPicture
+            ),
+            transitionPage: { [pageTransitions] transition, change, completion in
+                pageTransitions.perform(transition, change: change, completion: completion)
+            },
+            uploaderSpace: uploaderSpace,
+            uploaderSpacePage: uploaderSpacePage
+        )
+        playerHostOwner.pictureInPicture.onRestore = { [weak navigationCoordinator] in
+            navigationCoordinator?.restoreLivePlaybackPage() ?? false
+        }
+        playerHostOwner.pictureInPicture.onStopWithoutRestore = { [weak navigationCoordinator] in
+            navigationCoordinator?.pictureInPictureDidStopWithoutRestore()
+        }
+        self.playerHostOwner = playerHostOwner
         let commentsModel = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: adapters.commentRepository)
         )
@@ -141,17 +162,11 @@ final class WindowComposition {
         self.videoModel = videoModel
         self.commentsModel = commentsModel
         self.danmakuModel = danmakuModel
-        let authenticationModel = AuthenticationViewModel(
-            service: adapters.authenticationService,
-            qrCodeProvider: adapters.authenticationQRCodeProvider
-        )
-        self.authenticationModel = authenticationModel
         self.watchLaterModel = watchLaterModel
         let watchLaterSession = WatchLaterSession(model: watchLaterModel)
         self.watchLaterSession = watchLaterSession
         self.historyModel = historyModel
         let favoritesUseCase = FavoritesUseCase(repository: adapters.favoritesRepository)
-        let accountSession = process.accountSession
         let favoriteFolderList = FavoriteFolderListModel(
             useCase: favoritesUseCase,
             accountScope: {
@@ -168,13 +183,6 @@ final class WindowComposition {
         )
         self.favoriteFolderList = favoriteFolderList
         self.favoriteFolders = favoriteFolders
-        let writableAccount: @MainActor () -> WritableAccount? = {
-            Self.writableAccount(
-                windowScope: authenticationModel.sessionScope,
-                isRestoring: authenticationModel.resolutionPhase == .restoring,
-                accountSession: accountSession
-            )
-        }
         let engagementUseCase = VideoEngagementUseCase(
             repository: adapters.videoEngagementRepository
         )
@@ -188,6 +196,7 @@ final class WindowComposition {
             favoriteFolderList: favoriteFolderList,
             favoriteFolders: favoriteFolders,
             engagementModel: engagementModel,
+            uploaderSpacePage: uploaderSpacePage,
             writableAccount: writableAccount
         )
         let accountWriteEffects = process.accountWriteEffects
@@ -260,7 +269,8 @@ final class WindowComposition {
         self.sources = sources
         // 收藏夹列表是侧栏常驻的元数据，窗口已登录就读取，不绑定来源；夹内页面经收藏夹来源的描述绑定。
         let windowWide: [any AccountRevalidationParticipant] = [
-            videoModel, browseModel, danmakuModel, commentsModel, uploaderSpace, favoriteFolderList,
+            videoModel, browseModel, danmakuModel, commentsModel, uploaderSpace, uploaderSpacePage,
+            favoriteFolderList,
             accountWrites, engagementModel
         ]
         revalidationParticipants = AccountRevalidationParticipants(
@@ -416,6 +426,54 @@ final class WindowComposition {
             isSignedIn = false
         }
         watchProgressConnection.setReportingAccess(isSignedIn)
+    }
+
+    /// 导航驱动播放的入口：开始与停止交给视频与弹幕模型，暂停、继续与“此刻的分 P 与秒数”读写同一个播放器。
+    ///
+    /// “有没有画面”“在不在播放”与续播点都以视频模型此刻呈现的那一项为准：播放器上的 item 不是这次请求呈现的那一项
+    /// （还在加载）时，pause 是空操作，拦不住加载完成后的自动起播，也没有可续播的位置。
+    private static func makePlaybackSession(
+        videoModel: VideoViewModel,
+        danmakuModel: DanmakuControlsViewModel,
+        adapters: WindowAdapters,
+        pictureInPicture: PlayerPictureInPicture
+    ) -> AppPlaybackSession {
+        let playback = adapters.playback
+        let currentTimeline = adapters.currentTimeline
+        return AppPlaybackSession(
+            start: { videoModel.select($0) },
+            stop: {
+                videoModel.reset()
+                danmakuModel.reset()
+            },
+            pauseKeepingPicture: {
+                guard videoModel.isPresenting(currentTimeline()) else { return false }
+                playback.pause()
+                return true
+            },
+            isPlaying: {
+                let snapshot = currentTimeline()
+                guard videoModel.isPresenting(snapshot) else { return false }
+                return snapshot.state == .playing || snapshot.state == .buffering
+            },
+            resume: { playback.play() },
+            presentedPosition: {
+                let snapshot = currentTimeline()
+                return videoModel.isPresenting(snapshot) ? snapshot.positionSeconds : nil
+            },
+            resumePoint: {
+                let snapshot = currentTimeline()
+                guard videoModel.isPresenting(snapshot), let identity = snapshot.identity else {
+                    return nil
+                }
+                return PlaybackSelectionIntent(
+                    bvid: identity.bvid,
+                    preferredCID: identity.cid,
+                    preferredStartSeconds: Int(snapshot.positionSeconds)
+                )
+            },
+            isPictureInPictureActive: { pictureInPicture.isActive }
+        )
     }
 
     /// 弹幕控制模型：初值来自设备级偏好，改动立即写回。

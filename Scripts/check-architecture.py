@@ -140,7 +140,8 @@ EXTRA_ALLOWED = {
     # AppKit 集合视图。
     "BiliKitMac/App/AppRootView.swift": {"BiliApplication"},
     # AppShellView 还把窗口的账户写入协调者包成 BiliUI 的卡片写入口（`VideoCardAccountWriting`，经环境交给各来源的卡片
-    # 菜单），并宿主 BiliUI 的写入结果胶囊（`AccountWriteStatusCapsule`）。
+    # 菜单）；右侧的 AppDetailColumn 宿主 BiliUI 的写入结果胶囊（`AccountWriteStatusCapsule`）。
+    "BiliKitMac/App/AppDetailColumn.swift": {"BiliUI"},
     "BiliKitMac/App/AppShellView.swift": {"BiliApplication", "BiliUI", "BiliVideoCollectionUI"},
     "BiliKitMac/App/AppSidebarViews.swift": {"BiliApplication"},
     "BiliKitMac/App/AppSourceRootViews.swift": {"BiliApplication", "BiliVideoCollectionUI"},
@@ -171,6 +172,8 @@ EXTRA_ALLOWED = {
     # 播放器动作菜单的「拷贝链接」与卡片菜单共用 BiliVideoCollectionUI 的剪贴板写法（VideoLinkPasteboard）。
     "BiliKitMac/Platform/PlayerActionMenu.swift": {"BiliVideoCollectionUI"},
     "BiliKitMac/Platform/PlayerHostView.swift": {"AVKit", "BiliDanmaku", "BiliPlayback", "BiliVideoCollectionUI"},
+    # 播放器宿主的画中画委托（`AVPlayerViewPictureInPictureDelegate`）与「还原」交接，从宿主文件拆出。
+    "BiliKitMac/Platform/PlayerPictureInPicture.swift": {"AVKit"},
     "BiliKitMac/Platform/PlayerKeyboardShortcutController.swift": {"BiliPlayback"},
     "BiliKitMac/Platform/PlayerOverlay.swift": {"AVFoundation", "BiliPlayback"},
     # 窗口播放器子类拦截 seek 入口，供播放器浮层判断画面是否还停在旧位置。

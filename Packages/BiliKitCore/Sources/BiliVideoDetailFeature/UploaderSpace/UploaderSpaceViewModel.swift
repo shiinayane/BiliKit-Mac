@@ -22,7 +22,10 @@ public enum UploaderSpaceFooter: Sendable, Equatable {
     case failed(ContentApplicationError)
 }
 
-/// 拥有侧栏 UP 主空间层的 UP 主、排序、已提交的搜索词、已加载的投稿与最新请求 Task。
+/// 拥有一份 UP 主空间的 UP 主、排序、已提交的搜索词与搜索框草稿、已加载的投稿、名片与最新请求 Task。
+///
+/// 每个窗口两份：侧栏上的空间预览（`open(owner:)`）与右侧的整页空间页（`open(owner:order:searchKeyword:)`），互不共享
+/// 内容。整页总取名片（头部要签名与粉丝数）；预览只在凭 MID 打开、名字未知时取，用来补名字与头像。
 ///
 /// 投稿按游标累积（`PagedVideoList`，按 BVID 去重，无进展即停止），滚动到底时由列表调用 `loadMore` 取下一批；同一
 /// UP 主再次打开保持已加载的内容，换 UP 主或排序从第一批重来。有搜索词时列表换成空间内搜索结果（顺序由服务端决定，
@@ -41,6 +44,15 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
     public private(set) var searchKeyword: String?
     /// 服务端给出的投稿总数；第一批成功前、换 UP 主或关闭后为 nil。
     public private(set) var totalCount: Int?
+    /// 名片（签名、粉丝与投稿数），整页空间页的头部用；换 UP 主或关闭时清空，读取失败时保持 nil。
+    public private(set) var profile: UploaderProfile?
+    /// 空间内搜索框里还没提交的文字；换 UP 主或关闭时清空，整页按给定搜索词打开时取那个词。
+    public var searchDraft = ""
+    /// 窗口此刻的账户是否关注了这位 UP 主（整页空间页的关注按钮）；未知时为 nil。
+    ///
+    /// 未知：名片还没到、读取没带凭据，或读取发出后窗口账户变了。换 UP 主或关闭时清空。乐观改动与回滚经
+    /// `applyFollow`／`restoreFollow`，由写入协调者调用。
+    public private(set) var viewerFollows: Bool?
 
     public var authenticationRevalidationGeneration: Int {
         revalidation.generation
@@ -84,10 +96,23 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
     @ObservationIgnored private let profileUseCase: UploaderProfileUseCase
     @ObservationIgnored private let loadTask = LatestTask()
     @ObservationIgnored private let profileTask = LatestTask()
+    @ObservationIgnored private let accountID: @MainActor () -> Int64?
+    /// 关注状态的代次，隔离迟到的回滚与名片读取。
+    ///
+    /// 换 UP 主、关闭、名片落地与写入成功（`followDidChange`）时递增。写入失败的回滚只在代次未变时放回；名片读取发出时
+    /// 记下代次，落地时代次已变（读取在途时写入成功了）就不采用名片里的关注状态：它可能早于那次写入。
+    @ObservationIgnored private var followGeneration: UInt64 = 0
 
-    public init(useCase: UploaderVideoUseCase, profileUseCase: UploaderProfileUseCase) {
+    /// `accountID` 给出窗口此刻可写入的账户 mid（与写入门槛同一规则）；名片读取发出与落地时各求值一次，不一致时关注
+    /// 状态按未知。
+    public init(
+        useCase: UploaderVideoUseCase,
+        profileUseCase: UploaderProfileUseCase,
+        accountID: @escaping @MainActor () -> Int64?
+    ) {
         self.useCase = useCase
         self.profileUseCase = profileUseCase
+        self.accountID = accountID
     }
 
     /// 同一 UP 主再次打开时只更新资料（名字、头像可能已变），失败状态顺带重试。
@@ -103,8 +128,40 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         self.owner = owner
         order = .newest
         searchKeyword = nil
+        searchDraft = ""
+        totalCount = nil
+        profile = nil
+        clearViewerFollows()
+        reload()
+    }
+
+    /// 整页空间页打开或回到历史里的某一项：按给定的排序与搜索词从第一批重新读取，并取名片。
+    ///
+    /// 与 `open(owner:)` 不同，同一 UP 主也从第一批重来：回到更早的空间项时要按那一项记下的条件重建，不能沿用刚才
+    /// 另一项留下的内容。同一 UP 主已有名片时不重取。搜索词按 `submitSearch` 的规则规范化，规范化后为空等于不搜索。
+    public func open(owner: VideoOwner, order: UploaderVideoOrder, searchKeyword: String?) {
+        let changesOwner = self.owner?.id != owner.id
+        if changesOwner {
+            profileTask.cancel()
+            profile = nil
+            clearViewerFollows()
+        }
+        // 同一 UP 主时入口给的可能只有 MID（名字为空、没有头像）：保留已补全的名字与头像，名片不会再取。
+        let current = changesOwner ? nil : self.owner
+        self.owner = VideoOwner(
+            id: owner.id,
+            name: owner.name.isEmpty ? current?.name ?? "" : owner.name,
+            avatarURL: owner.avatarURL ?? current?.avatarURL
+        )
+        self.order = order
+        let keyword = searchKeyword.map(SearchText.normalized) ?? ""
+        self.searchKeyword = keyword.isEmpty ? nil : keyword
+        searchDraft = keyword
         totalCount = nil
         reload()
+        if profile == nil {
+            loadProfile(ownerID: owner.id)
+        }
     }
 
     /// 只有 MID 的入口（评论正文里的空间链接）：先以空名字打开并照常加载投稿，名片到达后补上名字
@@ -125,13 +182,15 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
 
     private func loadProfile(ownerID: Int64) {
         let profileUseCase = profileUseCase
+        let account = accountID()
+        let generation = followGeneration
         profileTask.replace { [weak self] isCurrent in
-            let profile: UploaderProfile?
+            let card: UploaderCard?
             var failure: ContentApplicationError?
             do {
-                profile = try await profileUseCase.profile(for: ownerID)
+                card = try await profileUseCase.card(for: ownerID)
             } catch {
-                profile = nil
+                card = nil
                 failure = error as? ContentApplicationError
             }
             guard let self, isCurrent() else { return }
@@ -139,13 +198,71 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
             if let failure, failure.requiresAccountRevalidation {
                 revalidation.request()
             }
-            guard let profile, let owner = self.owner, owner.id == ownerID else { return }
+            guard let card, let owner = self.owner, owner.id == ownerID else { return }
+            let profile = card.profile
+            self.profile = profile
+            // 关注状态属于发出读取时的账户：落地时窗口账户已不是它，按未知。
+            if followGeneration == generation {
+                followGeneration &+= 1
+                viewerFollows = account != nil && account == accountID() ? card.viewerFollows : nil
+            }
             self.owner = VideoOwner(
                 id: ownerID,
                 name: profile.name ?? owner.name,
                 avatarURL: profile.avatarURL ?? owner.avatarURL
             )
         }
+    }
+
+    /// 整页空间页头部关注按钮的状态：看自己的空间时为 nil（不显示）；`isWritable` 是窗口此刻能否写入（未登录、复核中时
+    /// 不能），关注状态未知时禁用。
+    public func followButton(isWritable: Bool) -> VideoUploaderFollowContent? {
+        guard let owner, owner.id != accountID() else { return nil }
+        return VideoUploaderFollowContent(
+            isFollowing: viewerFollows ?? false,
+            isEnabled: isWritable && viewerFollows != nil
+        )
+    }
+
+    /// 写入失败时放回的关注状态。
+    public struct FollowSnapshot: Sendable, Equatable {
+        let ownerID: Int64
+        let viewerFollows: Bool
+        let generation: UInt64
+    }
+
+    /// 乐观关注或取消关注正在显示的 UP 主，返回写入失败时用来放回的快照；关注状态未知、已是目标状态或不是这位 UP 主
+    /// 时为 nil。
+    public func applyFollow(_ isFollowing: Bool, ownerID: Int64) -> FollowSnapshot? {
+        guard owner?.id == ownerID, let current = viewerFollows, current != isFollowing else {
+            return nil
+        }
+        let snapshot = FollowSnapshot(
+            ownerID: ownerID,
+            viewerFollows: current,
+            generation: followGeneration
+        )
+        viewerFollows = isFollowing
+        return snapshot
+    }
+
+    /// 写入失败的回滚；此间换了 UP 主、关闭、名片重读落地或别处的写入成功过时不放回：那之后的状态不是这次乐观改动之上
+    /// 的状态。
+    public func restoreFollow(_ snapshot: FollowSnapshot) {
+        guard owner?.id == snapshot.ownerID, followGeneration == snapshot.generation else { return }
+        viewerFollows = snapshot.viewerFollows
+    }
+
+    /// 关注或取消关注成功（本窗口或其他窗口）：正在显示这位 UP 主时直接取服务端确认的状态。
+    public func followDidChange(ownerID: Int64, isFollowing: Bool) {
+        guard owner?.id == ownerID else { return }
+        followGeneration &+= 1
+        viewerFollows = isFollowing
+    }
+
+    private func clearViewerFollows() {
+        followGeneration &+= 1
+        viewerFollows = nil
     }
 
     /// 协调器每次换视频都会调用；已经关闭时不再写入，避免无谓地通知观察者。
@@ -156,7 +273,10 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         owner = nil
         order = .newest
         searchKeyword = nil
+        searchDraft = ""
         totalCount = nil
+        profile = nil
+        clearViewerFollows()
         phase = .closed
         list = PagedVideoList(stallPolicy: .stop)
         revalidation.reset()

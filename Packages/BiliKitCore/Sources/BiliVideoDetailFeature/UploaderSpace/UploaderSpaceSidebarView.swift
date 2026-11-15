@@ -8,23 +8,27 @@ import SwiftUI
 /// 压在侧栏上的 UP 主空间层。
 ///
 /// 原生列表画头部、已加载的行与底部加载行；第一批的加载中、空与失败由本视图按 ViewModel 状态叠在头部下方。
-/// 返回按钮与空间内搜索框在顶部浮动的一行里，不随列表滚走，列表从它下方开始。
+/// 返回按钮、空间内搜索框与打开整页空间页的按钮在顶部浮动的一行里，不随列表滚走，列表从它下方开始。
 public struct UploaderSpaceSidebarView: View {
     let model: UploaderSpaceViewModel
     let currentBVID: String?
     let imagePipeline: any VideoDetailImageLoading
     let onSelect: (String) -> Void
+    /// 在右侧打开这位 UP 主的整页空间页（App 的导航）。
+    let onOpenFullSpace: () -> Void
 
     public init(
         model: UploaderSpaceViewModel,
         currentBVID: String?,
         imagePipeline: any VideoDetailImageLoading,
-        onSelect: @escaping (String) -> Void
+        onSelect: @escaping (String) -> Void,
+        onOpenFullSpace: @escaping () -> Void
     ) {
         self.model = model
         self.currentBVID = currentBVID
         self.imagePipeline = imagePipeline
         self.onSelect = onSelect
+        self.onOpenFullSpace = onOpenFullSpace
     }
 
     @Environment(\.locale) private var locale
@@ -61,7 +65,11 @@ public struct UploaderSpaceSidebarView: View {
                         selectVideo: onSelect,
                         loadMore: model.loadMore,
                         cardMenu: { [openURL, accountWriting] row in
-                            Self.cardMenu(for: row, openURL: openURL, writing: accountWriting)
+                            UploaderSpaceCardMenu.menu(
+                                videoID: row.bvid,
+                                openURL: openURL,
+                                writing: accountWriting
+                            )
                         }
                     )
                 )
@@ -73,7 +81,8 @@ public struct UploaderSpaceSidebarView: View {
         }
     }
 
-    /// 顶部浮动的一行：返回按钮（⌘[ 同样返回）与空间内搜索框；叠在列表与状态覆盖层之上。
+    /// 顶部浮动的一行：返回按钮（菜单「前往 › 返回」的 ⌘[ 同样关闭预览）、空间内搜索框与打开整页空间页的按钮；叠在列表与
+    /// 状态覆盖层之上。
     ///
     /// 搜索框以 UP 主为身份重建：换 UP 主时草稿清空，与 ViewModel 清掉的搜索词一致。
     private var topBar: some View {
@@ -83,11 +92,15 @@ public struct UploaderSpaceSidebarView: View {
                 label: VideoDetailFeatureStrings.localized("返回详情"),
                 action: model.close
             )
-            .keyboardShortcut("[", modifiers: .command)
             UploaderSpaceSearchField(onSubmit: model.submitSearch)
                 .id(model.owner?.id)
                 // 超大档的搜索框固有高度 36pt，与左侧返回按钮（large 档、24pt 图标的圆形按钮）等高。
                 .controlSize(.extraLarge)
+            FloatingIconButton(
+                "rectangle.portrait.and.arrow.forward",
+                label: VideoDetailFeatureStrings.localized("打开完整空间"),
+                action: onOpenFullSpace
+            )
         }
         // 它叠在最上层，默认会被读屏排到列表之后；视觉上它在最上面，读屏也先读它。
         .accessibilitySortPriority(1)
@@ -95,26 +108,6 @@ public struct UploaderSpaceSidebarView: View {
         .padding(.horizontal, UploaderSpaceGeometry.topBarHorizontalPadding)
         .padding(.top, UploaderSpaceGeometry.listTopInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 投稿行的卡片菜单：与相关推荐卡片相同的「添加到稍后再看」「收藏到…」一组加「拷贝链接」「在浏览器中打开」一组，
-    /// 规则在共用的 `NativeVideoCardMenu.video`。
-    ///
-    /// 投稿都可进入播放；BVID 不合法时没有菜单。`openURL` 是从环境取得的系统 `OpenURLAction`，`writing` 是 App 从环境注入的
-    /// 写入口（未登录或复核中时写操作项禁用）。
-    static func cardMenu(
-        for row: UploaderVideoRowPresentation,
-        openURL: OpenURLAction,
-        writing: VideoCardAccountWriting?
-    ) -> NativeVideoCardMenu? {
-        NativeVideoCardMenu.video(
-            videoID: row.bvid,
-            isActivatable: true,
-            webPageURL: BVID.webPageURL(row.bvid),
-            openURL: openURL,
-            writing: writing,
-            watchLater: .add
-        )
     }
 
     /// 空间打开期间按 ViewModel 实时生成；关闭后为 nil。

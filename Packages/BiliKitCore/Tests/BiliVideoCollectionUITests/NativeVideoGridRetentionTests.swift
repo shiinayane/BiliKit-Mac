@@ -216,6 +216,7 @@ struct NativeVideoGridRetentionTests {
             accessibilityLabel: "网格",
             tailState: GridHarness.tailState(1),
             bottomInset: 0,
+            decorations: .none,
             scrollResetRequestID: 0,
             acknowledgedScrollResetRequestID: 0,
             imagePipeline: StubCardImageLoader(),

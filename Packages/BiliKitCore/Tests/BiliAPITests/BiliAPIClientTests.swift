@@ -311,7 +311,7 @@ struct AccountReadCase: Sendable, CustomTestStringConvertible {
         AccountReadCase(
             path: "/x/web-interface/card",
             responses: { [try fixtureResponse("uploader-card")] },
-            call: { _ = try await $0.uploaderProfile(for: 10_001) }
+            call: { _ = try await $0.uploaderCard(for: 10_001) }
         ),
         AccountReadCase(
             path: "/x/player/wbi/playurl",

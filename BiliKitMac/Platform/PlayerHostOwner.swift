@@ -2,7 +2,8 @@ import AppKit
 
 /// 窗口唯一的播放器宿主 `NativePlayerHostView` 的 owner：宿主随窗口存活，播放页卸载时只把它从窗口里摘下。
 ///
-/// 拥有宿主实例；不拥有 player、弹幕 renderer 与 controller，它们由窗口组装持有。播放页的 `AVPlayerContainerView`
+/// 拥有宿主实例与画中画的交接（`pictureInPicture`，交给留住的宿主）；不拥有 player、弹幕 renderer 与 controller，它们
+/// 由窗口组装持有。播放页的 `AVPlayerContainerView`
 /// 挂载时经 `host(making:)` 取同一个宿主放进自己的容器，卸载时只摘下：摘下期间 player、弹幕时钟绑定与 item 观察都保留，
 /// 页面被换掉时画面不会随卸载先被清空。逐页的观察与提示由宿主自己在挂上、摘下时开关（见 `NativePlayerHostView`）。
 ///
@@ -12,6 +13,8 @@ import AppKit
 final class PlayerHostOwner {
     private var host: NativePlayerHostView?
     private var isClosed = false
+    /// 窗口的画中画状态与「还原」交接；宿主创建前就在，导航在窗口组装时接上。
+    let pictureInPicture = PlayerPictureInPicture()
 
     /// 窗口的宿主；还没有时用 `make` 创建并留住。
     ///
@@ -20,6 +23,7 @@ final class PlayerHostOwner {
         if let host { return host }
         let created = make()
         if !isClosed {
+            created.pictureInPicture = pictureInPicture
             host = created
         }
         return created
