@@ -318,7 +318,10 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
                         target: .timestamp(seconds: 540)
                     )
                 ],
-                timestampLimitSeconds: 300
+                timestampLimits: TimestampSeekLimits(
+                    selectedPageNumber: 1,
+                    limitsByPageNumber: [1: 300]
+                )
             ),
             font: .systemFont(ofSize: 13),
             color: .labelColor

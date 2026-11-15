@@ -6,8 +6,8 @@ import Testing
 
 @testable import BiliKit
 
-/// 评论链接的执行：视频在应用内播放或原地跳转，时间戳只在有播放时跳转，空间链接在侧栏打开，网页与解析不出的
-/// 短链交给浏览器。
+/// 评论链接的执行：视频在应用内播放或原地跳转，时间戳只在有播放时跳转（带分 P 序号时跳到当前视频的那个分 P），
+/// 空间链接在侧栏打开，网页与解析不出的短链交给浏览器。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct CommentLinkOpenerTests {
@@ -39,13 +39,41 @@ struct CommentLinkOpenerTests {
     func timestampsSeekOnlyWhilePlaying() async {
         let harness = OpenerHarness(fixture: fixture)
 
-        harness.opener.open(.seek(seconds: 10))
+        harness.opener.open(.seek(seconds: 10, page: nil))
+        harness.opener.open(.seek(seconds: 10, page: 2))
         #expect(harness.recorder.seeks.isEmpty)
+        #expect(harness.recorder.startedIntents.isEmpty)
 
         harness.coordinator.openPlayback(fixture.bvid)
         await waitUntilSettled(harness.videoModel)
-        harness.opener.open(.seek(seconds: 10))
+        harness.opener.open(.seek(seconds: 10, page: nil))
         #expect(harness.recorder.seeks == ["\(fixture.bvid)@10"])
+    }
+
+    /// 带分 P 序号的时间戳：正是正在播的分 P 时原地跳转，指向别的分 P 时在当前视频里打开那个分 P 并从该秒数起播。
+    @Test
+    func pagedTimestampsSeekInPlaceOrOpenThatPage() async {
+        let harness = OpenerHarness(fixture: fixture)
+        let playingIntent = PlaybackSelectionIntent(bvid: fixture.bvid)
+        harness.coordinator.openPlayback(fixture.bvid)
+        await waitUntilSettled(harness.videoModel)
+
+        harness.opener.open(.seek(seconds: 20, page: fixture.page.index))
+        #expect(harness.recorder.seeks == ["\(fixture.bvid)@20"])
+        #expect(harness.recorder.startedIntents == [playingIntent])
+
+        harness.opener.open(.seek(seconds: 30, page: fixture.page.index + 1))
+        #expect(harness.recorder.seeks.count == 1)
+        #expect(
+            harness.recorder.startedIntents == [
+                playingIntent,
+                PlaybackSelectionIntent(
+                    bvid: fixture.bvid,
+                    preferredPageNumber: fixture.page.index + 1,
+                    preferredStartSeconds: 30
+                )
+            ]
+        )
     }
 
     @Test

@@ -199,8 +199,10 @@ public enum CommentLinkTarget: Sendable, Equatable, Hashable {
     /// 站内视频；`page` 是链接里的分 P 序号（从 1 开始），`startSeconds` 是链接里的起播秒数（`t=`），
     /// 没有时为 nil。
     case video(bvid: String, page: Int?, startSeconds: Int?)
-    /// 正文里的时间戳；在当前视频正在播的分 P 里跳到该秒数。
-    case timestamp(seconds: Int)
+    /// 正文里的时间戳；`page` 是 `N#` 前缀给的分 P 序号（从 1 开始），没有前缀时为 nil，指当前视频正在播的分 P。
+    ///
+    /// 序号是否在视频的分 P 范围内、秒数是否可跳转，到显示时按目标分 P 判断。
+    case timestamp(seconds: Int, page: Int? = nil)
     /// 正文里 @ 的用户；只填 MID、昵称与头像，进入空间时与评论作者走同一入口。
     case member(CommentAuthor)
     /// 指向 UP 主空间的链接；只有 MID，名字与头像由空间层另行取得。

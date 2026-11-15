@@ -175,8 +175,24 @@ struct CommentTextLinkDetectorTests {
         #expect(links.map(\.target) == seconds.map { .timestamp(seconds: $0) })
     }
 
-    /// 不成为时间戳链接：秒不是两位、全角数字、网址里的时间、带分 P 前缀（`2#01:23` 指别的分 P，
-    /// 不能在当前分 P 里跳）、秒数溢出。
+    /// `N#` 前缀与官方一样指第 N 个分 P，连同前缀成为一个链接；`#` 前没有数字时只认后面的时间。
+    ///
+    /// 序号是否超出视频的分 P 数到显示时再判断。
+    @Test(
+        arguments: [
+            ("2#01:23", ["2#01:23"], [(83, 2)]),
+            ("看 1#1:02:03 和 12#0:30", ["1#1:02:03", "12#0:30"], [(3_723, 1), (30, 12)]),
+            ("0#00:10 #01:23", ["0#00:10", "01:23"], [(10, 0), (83, nil)])
+        ] as [(String, [String], [(Int, Int?)])]
+    )
+    func pagePrefixesTargetThatPage(message: String, texts: [String], targets: [(Int, Int?)]) {
+        let links = detected(message)
+
+        #expect(links.map(\.text) == texts)
+        #expect(links.map(\.target) == targets.map { .timestamp(seconds: $0.0, page: $0.1) })
+    }
+
+    /// 不成为时间戳链接：秒不是两位、全角数字、网址里的时间、秒数或分 P 序号溢出。
     @Test(
         arguments: [
             "1:2",
@@ -184,8 +200,8 @@ struct CommentTextLinkDetectorTests {
             "16:9",
             "１：２３",
             "https://example.com/a?at=10:30",
-            "2#01:23",
-            "9999999999999999:59:59"
+            "9999999999999999:59:59",
+            "99999999999999999999#01:23"
         ]
     )
     func nonTimestampsStayPlainText(message: String) {

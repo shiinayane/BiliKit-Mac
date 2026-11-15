@@ -127,7 +127,7 @@ extension NativePlaybackSidebarController {
             item.configure(
                 summary: content.summary,
                 links: content.summaryLinks,
-                timestampLimitSeconds: content.timestampLimitSeconds,
+                timestampLimits: content.timestampLimits,
                 expanded: summaryExpanded,
                 onToggle: { [weak self] in self?.toggleSummary() },
                 onOpenLink: { [weak self] target in

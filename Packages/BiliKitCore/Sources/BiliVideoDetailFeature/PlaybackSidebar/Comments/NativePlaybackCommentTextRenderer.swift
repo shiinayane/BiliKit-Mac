@@ -40,10 +40,10 @@ final class NativePlaybackCommentTextRenderer {
 
     private let imagePipeline: any VideoDetailImageLoading
     private let resolveURL: CommentAssetURLResolver
-    /// 正文时间戳可跳转的上限（不含），超出或为 nil 时时间戳按普通文字显示。
+    /// 正文时间戳能跳到哪里；目标分 P 跳不到或为 nil 时时间戳按普通文字显示。
     ///
     /// 链接只改颜色、不改行高，所以测量不依赖它。
-    var timestampLimitSeconds: Int?
+    var timestampLimits: TimestampSeekLimits?
     private struct UnavailableAssetKey: Hashable {
         let scope: NativePlaybackCommentTextScope
         let reference: CommentAssetReference
@@ -99,7 +99,7 @@ final class NativePlaybackCommentTextRenderer {
         let (linkTargets, appliedLinks) = NativePlaybackTextLinks.apply(
             content.links,
             to: attributed,
-            timestampLimitSeconds: timestampLimitSeconds
+            timestampLimits: timestampLimits
         )
 
         // 表情与带标题或图标的链接都要替换原文；从后往前替换，前面的位置不受影响，重叠的跳过。

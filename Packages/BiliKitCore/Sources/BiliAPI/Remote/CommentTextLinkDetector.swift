@@ -62,7 +62,7 @@ enum CommentTextLinkDetector {
         // 字符，各段不限 60，半角、全角冒号都认，所以 `哈哈哈:00:11`、`x264:10` 与官方一样成为链接。
         // 自己加边界或取值限制会和官方认的范围对不上，用户看到官方能点而这里不能点。误认的数字串靠显示时
         // 的可跳转时长挡掉。`[0-9]` 不写 `\d`：ICU 的 `\d` 还认全角数字，官方 JS 的不认。`N#` 前缀
-        // 指第 N 个分 P，一并匹配，由 `timestampTarget` 放弃。
+        // 指第 N 个分 P，与官方一样跳到那个分 P 的该秒数。
         Rule(
             pattern: compiled(#"(?:[0-9]+#)?(?:[0-9]+[:：]){1,2}[0-9]{2}"#),
             claimsMatch: false,
@@ -140,21 +140,27 @@ enum CommentTextLinkDetector {
         return .shortLink(reference)
     }
 
-    /// 时间戳的秒数。
+    /// 时间戳的秒数与 `N#` 前缀给的分 P 序号。
     ///
-    /// 带 `N#` 分 P 前缀时不生成链接：`.timestamp` 只在当前分 P 里跳，跳到这里会落在错的分 P。
-    /// 各段位数不限，评论里的超长数字串换算会溢出，溢出时同样不生成链接。
+    /// 序号不在这里校验范围：识别时不知道视频有几个分 P，由显示层按目标分 P 判断。各段位数不限，
+    /// 评论里的超长数字串换算会溢出，秒数或序号溢出时不生成链接。
     private static func timestampTarget(_ text: String) -> CommentLinkTarget? {
-        guard !text.contains("#") else { return nil }
+        var time = Substring(text)
+        var page: Int?
+        if let separator = text.firstIndex(of: "#") {
+            guard let number = Int(text[..<separator]) else { return nil }
+            page = number
+            time = text[text.index(after: separator)...]
+        }
         var seconds = 0
-        for part in text.split(whereSeparator: { $0 == ":" || $0 == "：" }) {
+        for part in time.split(whereSeparator: { $0 == ":" || $0 == "：" }) {
             guard let value = Int(part) else { return nil }
             let (shifted, shiftOverflow) = seconds.multipliedReportingOverflow(by: 60)
             let (sum, sumOverflow) = shifted.addingReportingOverflow(value)
             guard !shiftOverflow, !sumOverflow else { return nil }
             seconds = sum
         }
-        return .timestamp(seconds: seconds)
+        return .timestamp(seconds: seconds, page: page)
     }
 
     private static func videoTarget(_ text: String) -> CommentLinkTarget? {

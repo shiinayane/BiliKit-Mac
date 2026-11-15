@@ -173,22 +173,24 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         #expect(rendered.accessibilityText == "[原神_哈哈]")
     }
 
-    /// 时间戳只在播放器已装好（有上限）且不超出当前分 P 时长时显示为链接。
+    /// 时间戳只在播放器已装好（有上限）且不超出目标分 P 的上限时显示为链接：没有 `N#` 前缀指正在播的分 P，
+    /// 带前缀时按那个分 P 判断，序号超出视频的分 P 数时按普通文字显示。
     @Test
     @MainActor
-    func timestampsLinkOnlyWithinTheCurrentPartDuration() {
+    func timestampsLinkOnlyWithinTheTargetPartDuration() {
+        let targets: [CommentLinkTarget] = [
+            .timestamp(seconds: 60),
+            .timestamp(seconds: 300),
+            .timestamp(seconds: 300, page: 2),
+            .timestamp(seconds: 600, page: 2),
+            .timestamp(seconds: 10, page: 3),
+            .timestamp(seconds: 60, page: 1)
+        ]
         let content = CommentContent(
-            message: "1:00 和 5:00",
-            links: [
-                CommentLink(
-                    range: CommentTextRange(location: 0, length: 4),
-                    target: .timestamp(seconds: 60)
-                ),
-                CommentLink(
-                    range: CommentTextRange(location: 7, length: 4),
-                    target: .timestamp(seconds: 300)
-                )
-            ]
+            message: String(repeating: "0:00 ", count: targets.count),
+            links: targets.enumerated().map { index, target in
+                CommentLink(range: CommentTextRange(location: index * 5, length: 4), target: target)
+            }
         )
         let scope = NativePlaybackCommentTextScope(
             subject: .video(aid: 700_001),
@@ -198,10 +200,17 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         let renderer = makeCommentTextRenderer()
 
         #expect(renderer.render(content, scope: scope).linkTargets.isEmpty)
-        renderer.timestampLimitSeconds = 120
-        #expect(renderer.render(content, scope: scope).linkTargets == [.timestamp(seconds: 60)])
-        renderer.timestampLimitSeconds = 300
-        #expect(renderer.render(content, scope: scope).linkTargets == [.timestamp(seconds: 60)])
+        renderer.timestampLimits = TimestampSeekLimits(
+            selectedPageNumber: 1,
+            limitsByPageNumber: [1: 120, 2: 600]
+        )
+        #expect(
+            renderer.render(content, scope: scope).linkTargets == [
+                .timestamp(seconds: 60),
+                .timestamp(seconds: 300, page: 2),
+                .timestamp(seconds: 60, page: 1)
+            ]
+        )
     }
 
     /// 悬停提示：站外链接与短链提示真实地址（短链换成标题后仍在），应用内目标不提示；文本视图不弹出
