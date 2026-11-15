@@ -69,6 +69,8 @@ final class WindowComposition {
     private let imagePipelineOwner = NativeVideoImagePipelineOwner(cacheLimits: .window)
     /// 各来源网格的保活，保活容器交给 `AppShellView` 构造各来源的网格依赖；关窗时在关闭图片管线之前丢弃。
     let gridRetainerOwner = NativeVideoGridRetainerOwner()
+    /// 窗口常驻的播放器宿主；关窗时在关闭播放之后拆除。
+    private let playerHostOwner = PlayerHostOwner()
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator
     private let watchProgressConnection: WatchProgressWindowConnection
     private let adapters: WindowAdapters
@@ -271,7 +273,8 @@ final class WindowComposition {
                 addToWatchLater: { bvid in accountWrites.addToWatchLater(bvid: bvid) },
                 continuePlayback: { [navigationCoordinator] bvid, preferredCID in
                     navigationCoordinator.continuePlayback(bvid, preferredCID: preferredCID)
-                }
+                },
+                playerHost: playerHostOwner
             )
         )
         commentAssetURLResolver = adapters.commentAssetURLResolver
@@ -304,8 +307,9 @@ final class WindowComposition {
 
     /// 关窗；不可逆，重复调用不再动作。
     ///
-    /// 按顺序：先从进程级测速注销本窗口；再关闭播放（停止播放器、字幕与弹幕）并恢复新窗口的来源；各来源
-    /// 丢弃内容；取消认证临时任务与评论；取消在途账户写入（含弹幕）、清空弹幕输入胶囊并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
+    /// 按顺序：先从进程级测速注销本窗口；再关闭播放（停止播放器、字幕与弹幕）并恢复新窗口的来源；拆除常驻的播放器
+    /// 宿主（断开 player、释放弹幕 surface），放在关闭播放之后，停止播放换掉 item 时宿主仍在观察，弹幕按换 item 的同一
+    /// 路径清屏，拆除只剩解绑与断开；各来源丢弃内容；取消认证临时任务与评论；取消在途账户写入（含弹幕）、清空弹幕输入胶囊并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
     /// 的保存面板按取消结束）再取消图片保存；停止观看进度与 Now Playing；丢弃保活的网格；关闭图片管线；最后
     /// 由 adapter 取消弹幕的内存压力监听、停止播放偏好的持久化、注销窗口 API 的会话并失效短链 session（只在打开过
     /// 之后）。模型与连接先停下自己的任务，再拆掉它们依赖的 adapter。
@@ -314,6 +318,7 @@ final class WindowComposition {
         isClosed = true
         process.settings.removeAuthenticationOwner(benchmarkAuthenticationOwnerID)
         navigationCoordinator.resetForWindowClosure()
+        playerHostOwner.close()
         sources.resetForWindowClosure()
         authenticationModel.cancelTransientWork()
         commentsModel.reset()

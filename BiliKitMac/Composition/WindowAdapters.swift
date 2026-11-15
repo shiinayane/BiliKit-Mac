@@ -209,7 +209,8 @@ extension WindowAdapters {
                         timelineUpdates: {
                             playerEngine.timelineUpdates()
                         },
-                        hdrEnvironment: hdrEnvironment
+                        hdrEnvironment: hdrEnvironment,
+                        hostOwner: playerWindow.playerHost
                     )
                 )
             },
@@ -244,7 +245,8 @@ extension WindowAdapters {
 ///
 /// 弹幕关联视频卡片的封面经窗口的图片管线加载，点击经窗口导航在应用内打开视频；动作菜单的「添加到稍后再看」经窗口的
 /// 写入协调者，门槛（`canWriteAccount`）也由它判断；弹幕输入胶囊归窗口（关窗时由窗口 reset），播放器只呈现它；播完后
-/// 的自动连播经 `continuePlayback` 走与侧栏选分 P、选集相同的导航意图，但保留侧栏上下文层。
+/// 的自动连播经 `continuePlayback` 走与侧栏选分 P、选集相同的导航意图，但保留侧栏上下文层；播放器的 AppKit 宿主归窗口
+/// 的 `playerHost`，关窗时由窗口组装关闭。
 struct PlayerWindowContext {
     let imagePipeline: NativeVideoImagePipeline
     let openVideo: @MainActor (_ bvid: String) -> Void
@@ -253,6 +255,7 @@ struct PlayerWindowContext {
     /// 返回是否发出（`AccountWriteCoordinator.addToWatchLater`）。
     let addToWatchLater: @MainActor (_ bvid: String) -> Bool
     let continuePlayback: @MainActor (_ bvid: String, _ preferredCID: Int64?) -> Void
+    let playerHost: PlayerHostOwner
 }
 
 /// 一个窗口的弹幕实现：Core Animation renderer、呈现控制器、加载分段并转发时间线的会话，以及系统内存压力监听。

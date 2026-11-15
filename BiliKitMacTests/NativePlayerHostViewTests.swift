@@ -4,6 +4,7 @@ import AppKit
 import BiliApplication
 import BiliDanmaku
 import BiliModels
+import SwiftUI
 import Testing
 
 @testable import BiliKit
@@ -11,7 +12,7 @@ import Testing
 /// 播放器宿主视图与弹幕 overlay 的生命周期：Now Playing 交给进程级控制器，准备播放期间屏蔽原生控件的操作。
 ///
 /// overlay 释放时呈现控制器与时钟随之释放；弹幕 surface 在窗口间挪动时保留已挂的弹幕；换 item 时在同一次调用
-/// 里清屏并把时钟换绑到新 item。
+/// 里清屏并把时钟换绑到新 item；宿主随窗口常驻，页面卸载只摘下、关窗才拆除。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct NativePlayerHostViewTests {
     /// 局部时间与 item 时间的容差（秒）：两者按同一个宿主时刻换算，只差浮点与 CMTime 取整误差。
@@ -62,6 +63,117 @@ struct NativePlayerHostViewTests {
         view.setPlaybackPreparationBlocked(false)
         #expect(view.controlsStyle == .default)
         #expect(!view.isAccessibilityHidden())
+    }
+
+    /// 播放器宿主随窗口常驻：页面卸载只摘下，关窗才拆除。
+    ///
+    /// 播放页卸载时宿主只被摘下，player 仍挂着；再次进入同一个视频拿到同一个宿主，键盘焦点照样交给播放器；关窗时由
+    /// owner 拆除并断开 player，之后迟到的挂载拿到新宿主，卸载时就拆除。
+    @Test
+    @MainActor
+    func pageUnmountKeepsTheWindowHostUntilWindowClosure() async throws {
+        let renderer = CoreAnimationDanmakuRenderer(
+            beginTimeAtMediaZero: DanmakuTimebaseClock.beginTimeAtMediaZero
+        )
+        let controller = DanmakuPresentationController(backend: renderer)
+        let player = SeekTrackingPlayer()
+        let owner = PlayerHostOwner()
+        let hdrEnvironment = PlaybackHDREnvironment()
+        let page = {
+            AnyView(
+                AVPlayerContainerView(
+                    player: player,
+                    renderer: renderer,
+                    controller: controller,
+                    blocksNativePlaybackInteraction: false,
+                    resumeNotice: nil,
+                    previewEndedNotice: nil,
+                    restartFromBeginning: {},
+                    beginMomentaryPlaybackRate: nil,
+                    endMomentaryPlaybackRate: nil,
+                    seekByTransportOffset: nil,
+                    adjustVolume: nil,
+                    togglePlayback: nil,
+                    toggleDanmaku: nil,
+                    toggleSubtitles: nil,
+                    engagementShortcuts: nil,
+                    danmakuComposer: nil,
+                    openDanmakuLinkedVideo: nil,
+                    actionMenu: PlayerActionMenuActions(
+                        canAddToWatchLater: { false },
+                        addToWatchLater: { nil },
+                        canPostDanmaku: { false },
+                        shareURL: { nil },
+                        bvid: { nil },
+                        pausePlayback: {},
+                        endBehavior: { .stop },
+                        setEndBehavior: { _ in }
+                    ),
+                    playbackEnd: PlayerPlaybackEndActions(
+                        observeTimeline: { _ in {} },
+                        handleEnded: { _, _ in nil }
+                    ),
+                    focusIdentity: "BV1xx411c7mD",
+                    hdrEnvironment: hdrEnvironment,
+                    hostOwner: owner
+                )
+            )
+        }
+        let hosting = NSHostingView(rootView: page())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { Self.playerHost(in: hosting) != nil })
+        let host = try #require(Self.playerHost(in: hosting))
+        #expect(host.player === player)
+        #expect(Self.focusIsInside(host, of: window))
+
+        hosting.rootView = AnyView(Color.clear)
+        hosting.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { host.window == nil })
+        #expect(host.player === player)
+        window.makeFirstResponder(nil)
+
+        hosting.rootView = page()
+        hosting.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { Self.playerHost(in: hosting) === host })
+        #expect(await waitUntil { Self.focusIsInside(host, of: window) })
+
+        owner.close()
+        #expect(host.player == nil)
+
+        hosting.rootView = AnyView(Color.clear)
+        hosting.layoutSubtreeIfNeeded()
+        hosting.rootView = page()
+        hosting.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { Self.playerHost(in: hosting) != nil })
+        let lateHost = try #require(Self.playerHost(in: hosting))
+        #expect(lateHost !== host)
+        #expect(lateHost.player === player)
+        hosting.rootView = AnyView(Color.clear)
+        hosting.layoutSubtreeIfNeeded()
+        #expect(await waitUntil { lateHost.window == nil })
+        #expect(lateHost.player == nil)
+    }
+
+    /// AVKit 把交给 `AVPlayerView` 的第一响应者转给它内部的内容视图，焦点在宿主里面就算交给了播放器。
+    @MainActor
+    private static func focusIsInside(_ host: NSView, of window: NSWindow) -> Bool {
+        (window.firstResponder as? NSView)?.isDescendant(of: host) == true
+    }
+
+    @MainActor
+    private static func playerHost(in view: NSView) -> NativePlayerHostView? {
+        if let host = view as? NativePlayerHostView { return host }
+        for subview in view.subviews {
+            if let host = playerHost(in: subview) { return host }
+        }
+        return nil
     }
 
     /// overlay 释放之后，呈现控制器与时钟（看它的时钟层）也随之释放：控制器接管 surface 时持有时钟，时钟的
