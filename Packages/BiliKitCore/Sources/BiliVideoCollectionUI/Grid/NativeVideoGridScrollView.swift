@@ -13,6 +13,8 @@ final class NativeVideoGridScrollView: NSScrollView {
     var onWillLeaveWindow: (() -> Void)?
     var onViewportLayout: (() -> Void)?
     var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
+    /// 摆放网格装饰（顶部附加视图与「返回顶部」，见 `NativeVideoGridDecorationHost`）；先于视口回调。
+    var onLayoutDecorations: (() -> Void)?
     private var viewportTracker = NativeScrollViewportTracker()
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -32,6 +34,7 @@ final class NativeVideoGridScrollView: NSScrollView {
 
     /// insets 先于视口报告：Coordinator 按旧 insets 换算出逻辑偏移后，重排才按新 insets 恢复位置。
     private func reportViewport() {
+        onLayoutDecorations?()
         if let previousInsets = viewportTracker.update(for: self).previousInsets {
             onContentInsetsChange?(previousInsets, contentInsets)
         }

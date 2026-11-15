@@ -2,6 +2,7 @@ import AppKit
 import BiliUI
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import BiliVideoCollectionUI
@@ -284,7 +285,8 @@ struct NativeVideoGridTests {
         #expect(!pin.keepsTop(atScrollGeneration: 4))
     }
 
-    /// 视野底边离内容底部不足 `nearEndViewportMultiple` 屏时请求下一页，与可见卡片无关。
+    /// 视野底边离内容底部不足 `nearEndViewportMultiple` 屏时请求下一页，与可见卡片无关；首行之上的附加视图与末行之下的
+    /// 悬浮控件让出的高度计入内容底部。
     @Test
     func nearEndTriggersWithinTheNearEndMultipleOfTheContentBottom() {
         let width: CGFloat = 1_080
@@ -299,7 +301,7 @@ struct NativeVideoGridTests {
                 width: width,
                 visibleMaximumY: threshold,
                 viewportHeight: viewportHeight,
-                bottomInset: 0
+                extraHeight: 0
             )
         )
         #expect(
@@ -308,7 +310,25 @@ struct NativeVideoGridTests {
                 width: width,
                 visibleMaximumY: threshold + 1,
                 viewportHeight: viewportHeight,
-                bottomInset: 0
+                extraHeight: 0
+            )
+        )
+        #expect(
+            !NativeVideoGridGeometry.isNearEnd(
+                itemCount: 100,
+                width: width,
+                visibleMaximumY: threshold + 1,
+                viewportHeight: viewportHeight,
+                extraHeight: 120
+            )
+        )
+        #expect(
+            NativeVideoGridGeometry.isNearEnd(
+                itemCount: 100,
+                width: width,
+                visibleMaximumY: threshold + 121,
+                viewportHeight: viewportHeight,
+                extraHeight: 120
             )
         )
         #expect(
@@ -317,9 +337,36 @@ struct NativeVideoGridTests {
                 width: width,
                 visibleMaximumY: 10_000,
                 viewportHeight: viewportHeight,
-                bottomInset: 0
+                extraHeight: 0
             )
         )
+    }
+
+    /// 顶部附加视图占住首行上方的空间：宿主贴着内容顶端、高度就是给定的高度，首行从它下面开始。
+    @Test
+    @MainActor
+    func topAccessorySitsAboveTheFirstRow() async throws {
+        let harness = try await GridHarness(
+            scrollerStyle: .overlay,
+            decorations: NativeVideoGridDecorations(
+                topAccessory: NativeVideoGridTopAccessory(
+                    height: 112,
+                    content: AnyView(Text("头部"))
+                ),
+                scrollToTopLabel: nil
+            )
+        )
+        let host = try #require(
+            harness.collectionView.subviews.first { $0 is NSHostingView<AnyView> }
+        )
+        let firstCard = try #require(
+            harness.collectionView.collectionViewLayout?
+                .layoutAttributesForItem(at: IndexPath(item: 0, section: 0))?.frame
+        )
+
+        #expect(host.frame.minY == 0)
+        #expect(host.frame.height == 112)
+        #expect(firstCard.minY >= host.frame.maxY, "\(harness.diagnostics)")
     }
 
     /// 预备区域是视野上下各 `preparedViewportMultiple` 屏，夹在内容范围内；某一侧余量少于

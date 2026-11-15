@@ -292,6 +292,13 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   （`NativeVideoGridClipView`）在动画中每次视野移动之后补一次无动画的空批量更新，新视野的卡片立即补齐，进行中的动画
   不受影响。`apply` 返回时排版已是新内容，重配卡片、重排 document、回顶或锚点恢复与翻页判断都在同一轮里做完，不等
   完成回调，没有“新内容、旧偏移”的中间态。
+- 网格可选两样装饰（`NativeVideoGridDecorations`）：内容顶部的附加视图与右下角的「返回顶部」。附加视图是 SwiftUI
+  内容的 `NSHostingView`，作为集合视图的子视图放在首行上方让出的空间里，随文档原生滚动；高度由调用方的几何常量给出、
+  与宽度无关，布局顶边距、它的 frame 与近尾判断共用这一个值。宿主建立后保留到网格拆除，内容变化只换 `rootView`，
+  焦点与 SwiftUI 状态不丢；读屏时排在卡片之前；焦点在它里面时，它没处理的按键不当成卡片的激活与选择移动。不用组合
+  布局的 boundary supplementary item：它滚出准备区域就被回收，焦点与状态随之丢失，高度也仍要自己给。「返回顶部」
+  按钮（`NativeScrollToTopButton`）与播放侧栏评论区、UP 主空间预览共用一份；网格上点它像用户滚动一样带动画滚到顶部，
+  落定后把位置同步回 binding；来源刷新的回顶是程序定位，仍经 `scrollReset` 直接跳转。
 - 卡片菜单：各来源的网格、相关推荐横排与 UP 主空间的投稿行共用一份菜单描述 `NativeVideoCardMenu`，由拥有来源的
   Feature 按视频 ID 与能否播放构造、经 `cardMenu` 注入，不经 App 插槽。右键、Control-点按与读屏「显示菜单」走集合视图
   基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供视频 ID 与上下文描边（`NativeVideoMenuTargetItem`），

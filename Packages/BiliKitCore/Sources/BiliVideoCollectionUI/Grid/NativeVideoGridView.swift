@@ -17,6 +17,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
     let accessibilityLabel: String
     let tailState: NativeVideoGridTailState
     let bottomInset: CGFloat
+    let decorations: NativeVideoGridDecorations
     @Binding var scrollReset: NativeVideoGridScrollResetState
     let imagePipeline: any NativeVideoImageLoading
     let actions: NativeVideoGridActions
@@ -27,6 +28,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         accessibilityLabel: String,
         tailState: NativeVideoGridTailState,
         bottomInset: CGFloat = 0,
+        decorations: NativeVideoGridDecorations = .none,
         host: NativeVideoGridHostContext,
         onNearEnd: @escaping () -> Void,
         onSelect: @escaping (String) -> Void,
@@ -37,6 +39,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
         self.accessibilityLabel = accessibilityLabel
         self.tailState = tailState
         self.bottomInset = bottomInset
+        self.decorations = decorations
         _scrollReset = host.scrollReset
         imagePipeline = host.imageLoader
         retention = host.retention
@@ -69,7 +72,8 @@ package struct NativeVideoGridView: NSViewRepresentable {
             [weak self] _, environment in
             NativeVideoGridGeometry.layoutSection(
                 forWidth: environment.container.effectiveContentSize.width,
-                bottomInset: self?.bottomInset ?? 0
+                bottomInset: self?.bottomInset ?? 0,
+                topInset: self?.decorationHost.topInset ?? 0
             )
         }
         private var images: NativeVideoGridHeldImages
@@ -79,6 +83,8 @@ package struct NativeVideoGridView: NSViewRepresentable {
         private var tailState: NativeVideoGridTailState
         /// 末行下方额外留出的高度，section provider 读它；变化时手动失效布局并重排 document。
         private var bottomInset: CGFloat
+        /// 顶部附加视图与「返回顶部」；它的 `topInset` 与 `bottomInset` 一样由 section provider 读取。
+        private let decorationHost = NativeVideoGridDecorationHost()
         /// 以已确认的回顶 ID 起步，每个新的 `requestID` 只消费一次：网格重建后仍会执行未确认的请求。
         private var scrollResetGate: NativeVideoGridScrollResetGate
         private var nearEndPagination = NearEndPagination<UInt64>(
@@ -133,6 +139,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             accessibilityLabel: String,
             tailState: NativeVideoGridTailState,
             bottomInset: CGFloat,
+            decorations: NativeVideoGridDecorations,
             scrollResetRequestID: UInt64,
             acknowledgedScrollResetRequestID: UInt64,
             imagePipeline: any NativeVideoImageLoading,
@@ -144,6 +151,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             self.accessibilityLabel = accessibilityLabel
             self.tailState = tailState
             self.bottomInset = bottomInset
+            _ = decorationHost.update(decorations)
             scrollResetGate = NativeVideoGridScrollResetGate(
                 initialRequestID: acknowledgedScrollResetRequestID
             )
@@ -236,6 +244,10 @@ package struct NativeVideoGridView: NSViewRepresentable {
             // clip view 先于 document 装上：document 装进去时就挂在补建卡片的 clip view 下。
             scrollView.contentView = clipView
             scrollView.documentView = collectionView
+            // 装饰在 clip view 换好之后装上：「返回顶部」按钮要叠在 clip view 之上。
+            decorationHost.attach(collectionView: collectionView, scrollView: scrollView)
+            decorationHost.onScrollToTop = { [weak self] in self?.scrollToTopFromButton() }
+            scrollView.onLayoutDecorations = { [weak self] in self?.decorationHost.layout() }
             scrollView.hasVerticalScroller = true
             scrollView.autohidesScrollers = true
             scrollView.drawsBackground = false
@@ -292,6 +304,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             accessibilityLabel: String,
             tailState: NativeVideoGridTailState,
             bottomInset: CGFloat,
+            decorations: NativeVideoGridDecorations,
             scrollResetRequestID: UInt64,
             requestedScrollOffsetY: CGFloat,
             onScroll: @escaping (CGFloat) -> Void,
@@ -303,7 +316,8 @@ package struct NativeVideoGridView: NSViewRepresentable {
             self.onAcknowledgeScrollReset = onAcknowledgeScrollReset
             self.actions = actions
             self.tailState = tailState
-            if self.bottomInset != bottomInset {
+            let topInsetChanged = decorationHost.update(decorations)
+            if self.bottomInset != bottomInset || topInsetChanged {
                 self.bottomInset = bottomInset
                 layout.invalidateLayout()
                 documentNeedsLayout = true
@@ -392,6 +406,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
             recordCurrentScrollOffset(requireAttachedWindow: false)
             persistScrollOffset()
             isReset = true
+            decorationHost.reset()
             images.release()
             hover.forgetHoveredItem()
             for item in collectionView.visibleVideoCards { item.invalidate() }
@@ -546,6 +561,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
                 )
             else { return }
             hover.updateForCurrentPointerLocation(in: collectionView)
+            decorationHost.updateScrollToTopVisibility(logicalOffset: currentScrollOffsetY)
             // 视口尺寸过渡中的 bounds 变化不记录、不捕获锚点、不判断翻页，随后的 `onViewportLayout` 按锚点恢复。
             guard !pendingViewportChange.any else { return }
             // 重排 document 时 AppKit 的夹取照常记录，但锚点留给随后的恢复，不从重排中的排版捕获。
@@ -568,6 +584,20 @@ package struct NativeVideoGridView: NSViewRepresentable {
             retainedScrollOffset.record(currentScrollOffsetY)
             scrollGeneration &+= 1
             return true
+        }
+
+        /// 「返回顶部」按钮：像用户滚动一样带动画滚到顶部（减弱动态效果时直接跳），途中的位置照常按滚动记录，落定后同步回
+        /// binding。
+        private func scrollToTopFromButton() {
+            guard !isReset, !isDetached else { return }
+            scrollView.scrollVertically(
+                toPhysicalOffset: NativeVideoScrollCoordinateSpace.physicalOffset(
+                    logicalOffset: 0,
+                    leadingInset: scrollView.contentInsets.top
+                ),
+                animated: true,
+                completion: { [weak self] in self?.persistScrollOffset() }
+            )
         }
 
         private func persistScrollOffset() {
@@ -699,7 +729,7 @@ package struct NativeVideoGridView: NSViewRepresentable {
                     width: collectionView.bounds.width,
                     visibleMaximumY: collectionView.visibleRect.maxY,
                     viewportHeight: collectionView.visibleRect.height,
-                    bottomInset: bottomInset
+                    extraHeight: bottomInset + decorationHost.topInset
                 )
             if nearEndPagination.shouldLoadMore(
                 isInsideThreshold: isInside,

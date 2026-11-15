@@ -6,7 +6,7 @@ import Testing
 /// 带工具栏（顶部 contentInsets）的真实窗口里驱动网格 Coordinator；视口尺寸直接设到滚动视图上，经窗口布局同步送达。
 ///
 /// 本测试 target 里驱动真实网格的 Suite 共用这一份：滚动与尺寸用例用默认的 300 张卡片，菜单用例传入自己的卡片、选中
-/// 回调与 `cardMenu`。窗口不上屏、不进入 AppKit 事件循环；拆除在 `deinit`。
+/// 回调与 `cardMenu`，装饰用例传入 `decorations`。窗口不上屏、不进入 AppKit 事件循环；拆除在 `deinit`。
 @MainActor
 final class GridHarness {
     struct VisibleCard: Equatable {
@@ -24,6 +24,7 @@ final class GridHarness {
     private var tailIdentity: UInt64 = 1
     private let onSelect: (String) -> Void
     private let cardMenu: (NativeVideoCardPresentation) -> NativeVideoCardMenu?
+    private let decorations: NativeVideoGridDecorations
     let coordinator: NativeVideoGridView.Coordinator
     let window: NSWindow
     private let scrollView: NSScrollView
@@ -35,12 +36,14 @@ final class GridHarness {
         width: CGFloat = 800,
         scrollerStyle: NSScroller.Style,
         onSelect: @escaping (String) -> Void = { _ in },
-        cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu? = { _ in nil }
+        cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu? = { _ in nil },
+        decorations: NativeVideoGridDecorations = .none
     ) async throws {
         let cards = cards ?? Self.presentations(for: (0..<300).map { "BV\($0)" })
         self.cards = cards
         self.onSelect = onSelect
         self.cardMenu = cardMenu
+        self.decorations = decorations
         window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.windowSize),
             styleMask: [.titled, .resizable, .fullSizeContentView],
@@ -54,6 +57,7 @@ final class GridHarness {
             accessibilityLabel: "网格",
             tailState: Self.tailState(tailIdentity),
             bottomInset: 0,
+            decorations: decorations,
             scrollResetRequestID: 0,
             acknowledgedScrollResetRequestID: 0,
             imagePipeline: StubCardImageLoader(),
@@ -155,6 +159,7 @@ final class GridHarness {
             accessibilityLabel: "网格",
             tailState: Self.tailState(tailIdentity),
             bottomInset: 0,
+            decorations: decorations,
             scrollResetRequestID: 0,
             requestedScrollOffsetY: 0,
             onScroll: { _ in },
