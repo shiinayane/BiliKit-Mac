@@ -3,8 +3,8 @@ import BiliVideoCollectionUI
 
 /// 右下角带“返回顶部”玻璃按钮的滚动视图；播放侧栏评论区与 UP 主空间共用。
 ///
-/// 滚过 `topButtonVisibilityOffset` 后显示按钮；点击后滚到哪里由 owner 决定。这里负责外观、
-/// 贴着安全区的位置、显隐规则与内容边距变化通知。
+/// 滚过 `topButtonVisibilityOffset` 后淡入按钮（`NativeFadingVisibility`）；点击后滚到哪里由 owner 决定。
+/// 这里负责外观、贴着安全区的位置、显隐规则与内容边距变化通知。
 @MainActor
 final class NativeScrollToTopScrollView: NSScrollView {
     /// 「返回顶部」按钮的尺寸与离侧栏边缘的距离；评论入口收起时的圆钮取同一组值，两枚按钮上下对齐。
@@ -25,6 +25,7 @@ final class NativeScrollToTopScrollView: NSScrollView {
     }
     var onContentInsetsChange: ((NSEdgeInsets, NSEdgeInsets) -> Void)?
     private var viewportTracker = NativeScrollViewportTracker()
+    private let topButtonVisibility: NativeFadingVisibility
 
     init(topButtonLabel: String) {
         topButton = NSButton(
@@ -35,6 +36,7 @@ final class NativeScrollToTopScrollView: NSScrollView {
             target: nil,
             action: nil
         )
+        topButtonVisibility = NativeFadingVisibility(topButton)
         super.init(frame: .zero)
         topButton.imagePosition = .imageOnly
         topButton.imageScaling = .scaleProportionallyDown
@@ -46,7 +48,6 @@ final class NativeScrollToTopScrollView: NSScrollView {
         }
         topButton.setAccessibilityLabel(topButtonLabel)
         topButton.toolTip = topButtonLabel
-        topButton.isHidden = true
         addSubview(topButton)
     }
 
@@ -61,7 +62,7 @@ final class NativeScrollToTopScrollView: NSScrollView {
             physicalOffset: contentView.bounds.minY,
             leadingInset: contentInsets.top
         )
-        topButton.isHidden = isBlocked || offset < Self.topButtonVisibilityOffset
+        topButtonVisibility.setShown(!isBlocked && offset >= Self.topButtonVisibilityOffset)
     }
 
     override func layout() {
