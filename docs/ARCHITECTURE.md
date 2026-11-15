@@ -63,7 +63,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | `BiliPlayback` | DASH→HLS bridge、loopback server、SIDX、`AVPlayerEngine`、线路偏好与测速 | `BiliAPI`、`BiliAuth` |
 | `BiliDanmaku` | 弹幕会话与分段缓存、车道布局、按媒体时间的 materializer、Core Animation renderer。`Session/`、`Layout/`、`Presentation/` 是纯逻辑，渲染框架只在 `Rendering/` | `BiliAPI`、`BiliAuth`、`BiliNetworking`、`BiliPlayback`、Feature、SwiftUI |
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
-| `BiliVideoDetailFeature` | 播放页与侧栏上下文层的 UP 主空间：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
+| `BiliVideoDetailFeature` | 播放页、侧栏上下文层的 UP 主空间预览与右侧的整页空间页（页面由 App 构造，其他 Feature 经 App 的导航打开它）：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
 | `BiliUI` | Feature 共享的 SwiftUI 呈现：卡片与网格几何、骨架、状态胶囊、页码条、失败视图与文案、登录门槛、格式化、B 站图片缩略地址、临时反馈的读屏通告（全仓唯一入口，App 的播放器浮层也用它）；自己的字符串目录。默认 `package`，App 直接使用的才 `public`；无 library product | 除 Foundation、SwiftUI、BiliApplication 外的任何模块（含 BiliModels、AppKit 与其他 Feature） |
 | `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片、原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点视频条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
 | App `BiliKitMac` | composition root（`Composition/` 的进程级与窗口级组装）、导航协调、来源描述、复核汇总与账户写入的协调和效果路由（`Navigation/`）、AVKit 宿主、图片管线、Settings、Now Playing、Sparkle | `App/` 与 `Navigation/` 不直接 import adapter 或平台框架，`Navigation/` 只依赖 Feature、Application 与 Models；具体实现只在 `Composition/`、`Platform/`、`Settings/`；`App/` 里 import Application 或 BiliVideoCollectionUI 的文件由脚本逐个登记 |
@@ -277,7 +277,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   下一页游标”，去重与条目上限只在那里（集合层的 `NativeVideoCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
   状态是 `PageReplacementPaging`。
 - 已有内容、且条件与解析出的请求不变时，刷新原地进行：网格不卸载，成功后整体替换并回顶，失败保留已显示内容。
-- 来源网格由窗口保活：切换来源与进出播放页时 SwiftUI 会拆掉根页面，网格的 Coordinator（连同滚动视图、集合视图、
+- 来源网格由窗口保活：切换来源与压一层其他页面时 SwiftUI 会拆掉根页面，网格的 Coordinator（连同滚动视图、集合视图、
   滚动位置与锚点）由窗口的 `NativeVideoGridRetainer` 每个来源留住一个，同一来源、同一内容身份再次出现时交回同一个
   滚动视图，不重建、不重排位置。内容身份给按内容重建视图的来源用：收藏夹换夹时 Feature 整块重建，新夹不沿用旧夹的
   位置、锚点与图。同一来源同时出现两个实例（过渡中）时留下新的，旧的拆除时照常 `reset()`。
@@ -339,26 +339,27 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   动画从初始 frame 移到最终位置，看起来像“飞入”。
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
   详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
-- 右侧不用 NavigationStack，`AppShellView` 的 detail 视图按 coordinator 只渲染当前页（来源根页或播放页），工具栏
-  「返回」由 App 自绘，根页时整个工具栏项不放。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
+- 右侧不用 NavigationStack，`AppDetailColumn` 按 coordinator 只渲染历史栈顶（来源根页、播放页或整页空间页），工具栏左侧
+  的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，
+  只在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
   闭包里时，闭包内读到的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口
   保活原样挂回）。macOS 没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面
-  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。这样工具栏「返回」、结果胶囊与转场锚点都在 detail 这一层
+  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。这样工具栏的返回控件、结果胶囊与转场锚点都在 detail 这一层
   挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每个页面各挂
   一份，系统返回按钮还要逐页隐藏。
-- 进出播放页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的
+- 右侧换页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的
   图层上：主区推移（进入从右、返回从左），侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。
   新旧两个状态由系统合成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前
-  落地换页，这个时序没有文档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。只有
-  进入播放页与「返回」转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout` 为防新建的 AppKit 视图“飞入”而关掉的
+  落地换页，这个时序没有文档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。压一层、
+  返回与 ⌂ 转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout` 为防新建的 AppKit 视图“飞入”而关掉的
   事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依赖的
   自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
   `CALayer.render` 把侧栏的玻璃材质画成白板）。
-- 返回时旧页面要带着当前画面离开，所以：播放器宿主随窗口常驻（`PlayerHostOwner`），页面卸载只把它摘下，关窗才拆除；
-  「返回」先暂停，转场结束后才停止播放，期间又进入播放页、换来源、登出或关窗都提前完成这次停止（代次见
+- 离开活视频所在的播放页时旧页面要带着当前画面离开，所以：播放器宿主随窗口常驻（`PlayerHostOwner`），页面卸载只把它
+  摘下（被空间页盖住时也是），关窗才拆除；离开时先暂停，转场结束后才停止播放，期间又进入播放页、换来源、登出或关窗都提前完成这次停止（代次见
   `AppNavigationCoordinator`）。停止播放与拆宿主都会立即清空画面，任何一个落在换页的同一次提交里，旧页面的视频区都会
-  先变黑。延后只为留住画面：还在加载、没有画面可留时返回立即停止（暂停拦不住加载完成后的自动起播）；延后期间播放
-  已离开播放页，播完的自动连播不再生效，宿主摘下时也停掉了播完观察。
+  先变黑。延后只为留住画面：还在加载、没有画面可留时立即停止（暂停拦不住加载完成后的自动起播），栈顶是空间页时回根页
+  也立即停止；延后期间播放已离开播放页，播完的自动连播不再生效，宿主摘下时也停掉了播完观察。
 - AVKit 没有公开进入／退出全屏的方法，`enterFullScreen:`／`exitFullScreen:` 是唯一允许使用的私有 AVKit 接口：
   调用前确认响应，系统移除后 F 键静默无效；是否全屏由公开的 `AVPlayerViewDelegate` 回调记录。
 - 加载转圈分三段衔接：详情未到时是骨架上的转圈；已有详情而 player 还没挂上 item 时由播放器浮层画同款转圈；
@@ -383,8 +384,21 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   离开停用、账户变化、关窗清理都遍历 `AppSources`；根视图构造与 Browse 激活仍是 `AppTab` 上的穷尽 switch。
 - 侧栏按 `AppSourceGroup` 分段；「收藏夹」组由一个来源为每个收藏夹提供一行，选择值 `AppSidebarSelection`
   让每行带不同的 tag。
-- 右侧最多两级：来源页，或它之上的一层播放页，换视频只替换当前视频。与首页、热门平级的来源进导航侧栏；
-  围绕当前视频的浏览（UP 主空间）作为侧栏上下文层，不在右侧多加一级。
+- 右侧是历史栈（`AppNavigationCoordinator.history`，空栈是来源根页）：同类页面原地替换（播放页里换视频、选集、连播），
+  异类页面压一层（播放页之上的整页空间页、空间页之上的播放页），层数不设上限，返回回到上一屏，不做前进。页面分两类：
+  浏览类（来源根页、空间页）侧栏是来源导航，内容类（播放页）侧栏是它的详情，侧栏随栈顶页面的类别。与首页、热门平级的
+  来源进导航侧栏；播放页上围绕当前视频的浏览（UP 主空间预览）是侧栏上下文层，压栈与返回时关闭，预览里的按钮在右侧
+  压一层整页空间页。点侧栏其他来源或另一个收藏夹、登出、换号、其他窗口复核与关窗都清空历史并停止播放；点已选中的那
+  一行列表不发选择变化，回根页靠工具栏的 ⌂。
+- 窗口只有一个播放器，所以只有最近一次播放是活的：“栈顶是哪一页”与“活视频在哪一项”分开记，历史项带 id，活视频按
+  id 绑定。活视频所在的播放页被空间页盖住时暂停，回到它时只恢复由盖住暂停的（用户自己暂停或已播完的不动；被盖住期间
+  经媒体键或控制中心播放、拖动过的，位置已不是盖住时的，也不动）；还在加载、没有画面的直接停止（暂停拦不住加载完成后
+  的自动起播），回来重新加载。被新视频取代时，把离开时的分 P 与秒数写回历史里
+  同一视频最近的播放项，回到它时据此重建（秒数续播只对 DASH 生效）。空间页里又点了被盖住的那个视频，活视频改绑到新
+  压的一项，不重新起播。被盖住时连播不生效（只在栈顶就是活视频时生效），迟到的下一集解析也不会换片。
+- 整页空间页只有一个模型（每窗口一份，与预览的模型分开），属于最上面的空间项；被另一项占用前把排序与搜索词写回原来
+  那一项，回到更早的空间项时按它记下的条件从第一批重建并回顶。网格保活只占一个位置（内容身份是空间项），空间页关闭时
+  丢弃，层数增加时内存不随之增长。
 - 侧栏 = 底层（导航或播放详情）+ 可选的上下文层。上下文层打开时底层保留状态，但必须真正隐藏：AppKit 底层
   设 `isHidden`，只设 SwiftUI 透明度与 hit testing 管不到 cursor rect 和 tracking area。进出动画只作用于
   上下文层，否则底层集合视图的布局变化也会被做成动画。

@@ -9,8 +9,8 @@ import SwiftUI
 
 /// 描述窗口的原生 NavigationSplitView 外壳，并保留来源状态与滚动位置。
 ///
-/// 右侧只渲染历史栈顶（`AppDetailColumn`），工具栏「返回」经 coordinator 关闭播放，使播放停止与视觉导航保持同一事实
-/// 来源；SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
+/// 右侧只渲染历史栈顶（`AppDetailColumn`），工具栏「返回｜回到来源根页」经 coordinator 改变历史，使播放停止与视觉导航
+/// 保持同一事实来源；SwiftUI `body` 与普通样式 modifier 不承担资源生命周期。
 struct AppShellView: View {
     @Environment(\.openURL) private var openURL
     let navigationCoordinator: AppNavigationCoordinator
@@ -41,7 +41,7 @@ struct AppShellView: View {
     let imagePipeline: NativeVideoImagePipeline
     /// 各来源网格的保活，按 `AppTab` 留住；账户变化时由本视图丢弃，关窗由窗口组装丢弃。
     let gridRetainer: NativeVideoGridRetainer
-    /// 进出播放页的转场；detail 列把自己登记为它的锚点。
+    /// 右侧换页的转场；detail 列把自己登记为它的锚点。
     let pageTransitions: NavigationPageTransitions
     /// 窗口的账户写入：经环境交给各来源的卡片菜单，结果胶囊盖在主区底部。
     let accountWrites: AccountWriteCoordinator
@@ -50,6 +50,8 @@ struct AppShellView: View {
     @Binding var isAuthenticationPresented: Bool
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var gridScroll = SourceGridScrollStates()
+    /// 整页空间页网格的滚动位置；换空间项、换排序或搜索时回顶。
+    @State private var spaceGridScroll = SourceGridScrollState()
     /// 侧栏「收藏夹」组是否展开；只在窗口内存里，默认展开。
     ///
     /// 放在这里而不是侧栏里：进入、退出播放时导航侧栏会重建。
@@ -108,6 +110,7 @@ struct AppShellView: View {
                 navigationCoordinator: navigationCoordinator,
                 accountWrites: accountWrites,
                 pageTransitions: pageTransitions,
+                rootTitle: sources[navigationCoordinator.selectedTab].title,
                 root: { selectedSourceRoot },
                 playback: {
                     PlaybackDestinationView(
@@ -120,7 +123,8 @@ struct AppShellView: View {
                         onRetry: retryPlayback,
                         onSelectRelatedVideo: navigationCoordinator.openPlayback
                     )
-                }
+                },
+                space: { spacePage }
             )
         }
         // 来源网格、相关推荐横排与它们的卡片菜单都在这棵树里；写入口只转发意图，门槛与请求在 `AccountWriteCoordinator`。
@@ -164,6 +168,12 @@ struct AppShellView: View {
             for tab in AppTab.allCases {
                 scrollToTop(tab)
             }
+        }
+        .onChange(of: navigationCoordinator.liveSpaceEntryID) { _, entryID in
+            // 挂在外壳上而不是空间页上：空间项总在换页的同一次更新里换掉，空间页那时还没挂上。新的一项不沿用上一项的
+            // 滚动位置；空间页已关闭（占用它的那一项不在历史里了）时它的网格不会再挂回，不留在保活里。
+            spaceGridScroll = SourceGridScrollState()
+            if entryID == nil { gridRetainer.discard(key: Self.spaceGridRetentionKey) }
         }
         .onChange(of: navigationCoordinator.currentPlaybackBVID) {
             previousBVID,
@@ -236,6 +246,35 @@ struct AppShellView: View {
         )
     }
 
+    /// 整页空间页：内容归协调器的整页空间模型；网格保活按占用它的空间项区分，换项、换排序或搜索时回顶。
+    private var spacePage: some View {
+        let page = navigationCoordinator.uploaderSpacePage
+        return UploaderSpacePageView(
+            model: page,
+            imagePipeline: imagePipeline,
+            gridHost: NativeVideoGridHostContext(
+                scrollOffsetY: $spaceGridScroll.offsetY,
+                scrollReset: $spaceGridScroll.reset,
+                imageLoader: imagePipeline,
+                retention: NativeVideoGridRetention(
+                    retainer: gridRetainer,
+                    key: Self.spaceGridRetentionKey,
+                    contentIdentity: navigationCoordinator.liveSpaceEntryID
+                )
+            ),
+            onSelect: navigationCoordinator.openPlayback
+        )
+        .onChange(of: page.order) { spaceGridScroll.reset.request() }
+        .onChange(of: page.searchKeyword) { spaceGridScroll.reset.request() }
+        .onChange(of: page.owner == nil) { _, isClosed in
+            if isClosed { navigationCoordinator.restoreTopSpaceIfClosed() }
+        }
+    }
+
+    /// 整页空间页的网格在窗口保活里只占一个位置：内容身份是空间项，新的一项出现时旧的那份被替换，最多留一个；空间页
+    /// 关闭时丢弃。
+    private static let spaceGridRetentionKey = "uploaderSpacePage"
+
     /// 某个来源网格的窗口级依赖：本视图持有的滚动位置与回顶请求，加上窗口图片管线。
     private func gridHost(_ tab: AppTab) -> NativeVideoGridHostContext {
         let scroll = $gridScroll[dynamicMember: \.[tab]]
@@ -278,6 +317,11 @@ struct AppShellView: View {
         .ignoresSafeArea(.container, edges: .top)
     }
 
+    private func openFullSpaceFromPreview() {
+        guard let owner = navigationCoordinator.uploaderSpace.owner else { return }
+        navigationCoordinator.openUploaderSpacePage(owner: owner)
+    }
+
     private var isSidebarContextOpen: Bool {
         navigationCoordinator.isSidebarContextOpen
     }
@@ -289,7 +333,8 @@ struct AppShellView: View {
                 model: navigationCoordinator.uploaderSpace,
                 currentBVID: navigationCoordinator.currentPlaybackBVID,
                 imagePipeline: imagePipeline,
-                onSelect: navigationCoordinator.openPlaybackFromSidebarContext
+                onSelect: navigationCoordinator.openPlaybackFromSidebarContext,
+                onOpenFullSpace: openFullSpaceFromPreview
             )
             .transition(
                 reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)

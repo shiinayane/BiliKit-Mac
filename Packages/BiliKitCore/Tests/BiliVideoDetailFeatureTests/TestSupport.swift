@@ -620,6 +620,8 @@ final class PlayerStub: PlaybackControlling {
         return replaySucceeds
     }
 
+    func play() {}
+
     func pause() {}
 
     func stop() {

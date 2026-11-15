@@ -1,6 +1,7 @@
 import BiliApplication
 import BiliBrowseFeature
 import BiliLibraryFeature
+import BiliModels
 import Testing
 
 @testable import BiliKit
@@ -65,8 +66,8 @@ struct AppSourcesTests {
         }
     }
 
-    /// 每个收藏夹一行、带 ID 的选择值：选中一行切到收藏夹来源并记下收藏夹，夹之间切换不离开来源；离开后侧栏仍按记下的
-    /// 收藏夹恢复高亮。
+    /// 每个收藏夹一行、带 ID 的选择值：选中一行切到收藏夹来源并记下收藏夹，夹之间切换不离开来源，但清空右侧历史回到
+    /// 新夹的根页；离开后侧栏仍按记下的收藏夹恢复高亮。
     @Test
     func favoriteFolderRowsMapToTheFavoritesSourceAndItsFolder() {
         let favorites = makeFavoriteModels()
@@ -82,8 +83,11 @@ struct AppSourcesTests {
         #expect(favorites.folders.selectedFolderID == 10)
         #expect(sources.sidebarSelection(for: .favorites) == .item(.favorites, id: 10))
 
+        coordinator.openPlayback("BV1InFolder")
+        coordinator.openUploaderSpacePage(owner: VideoOwner(id: 7, name: "UP 主"))
         sources.select(.item(.favorites, id: 20), in: coordinator)
         #expect(coordinator.selectedTab == .favorites)
+        #expect(!coordinator.canGoBack)
         #expect(sources.sidebarSelection(for: coordinator.selectedTab) == .item(.favorites, id: 20))
 
         sources.select(.source(.home), in: coordinator)

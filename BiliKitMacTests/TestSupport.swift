@@ -588,6 +588,8 @@ final class RecordingPlayback: PlaybackControlling {
         intent: PlaybackLoadIntent
     ) async -> Bool { false }
 
+    func play() {}
+
     func pause() {}
 
     func stop() {

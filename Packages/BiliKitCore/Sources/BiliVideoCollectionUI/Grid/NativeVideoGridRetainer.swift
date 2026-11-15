@@ -47,6 +47,12 @@ public final class NativeVideoGridRetainer {
         }
     }
 
+    /// 丢弃一个位置上留住的网格（这个位置的内容不会再挂回，例如整页空间页已关闭）。
+    public func discard(key: AnyHashable) {
+        guard let entry = entries.removeValue(forKey: key) else { return }
+        Self.discard(entry.coordinator)
+    }
+
     /// 丢弃全部留住的网格（关窗、账户变化：仍挂着的网格留住的图属于旧账户，也立即释放）。
     public func discardAll() {
         let all = entries.values

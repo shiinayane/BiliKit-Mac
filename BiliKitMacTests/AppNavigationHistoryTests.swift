@@ -1,0 +1,223 @@
+import BiliModels
+import BiliVideoDetailFeature
+import Testing
+
+@testable import BiliKit
+
+/// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声，回来只恢复由盖住暂停、被盖住期间用户
+/// 也没动过的，被取代的按离开时的分 P 与秒数重建。
+@MainActor
+struct AppNavigationHistoryTests {
+    private let owner = VideoOwner(id: 7, name: "UP 主")
+    private let anotherOwner = VideoOwner(id: 8, name: "另一位 UP 主")
+
+    @Test(arguments: [true, false])
+    func coveringPausesAndReturningResumesOnlyWhatCoveringPaused(wasPlaying: Bool) {
+        let playback = PlaybackRecorder()
+        playback.isPlaying = wasPlaying
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Covered")
+        coordinator.openUploaderSpacePage(owner: owner)
+        #expect(coordinator.currentPlaybackBVID == nil)
+        #expect(coordinator.livePlaybackBVID == "BV1Covered")
+        coordinator.goBack()
+
+        #expect(coordinator.currentPlaybackBVID == "BV1Covered")
+        #expect(
+            playback.events == ["start:BV1Covered", "pause"] + (wasPlaying ? ["resume"] : [])
+        )
+    }
+
+    /// 被盖住期间用户经媒体键播放过、又暂停了：位置已经不是盖住时的，回来按用户此刻的暂停保持不动。
+    @Test
+    func playbackTheUserMovedWhileCoveredIsNotResumed() {
+        let playback = PlaybackRecorder()
+        playback.position = 30
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Covered")
+        coordinator.openUploaderSpacePage(owner: owner)
+        playback.position = 42
+        coordinator.goBack()
+
+        #expect(playback.events == ["start:BV1Covered", "pause"])
+    }
+
+    /// 还在加载时暂停拦不住随后的自动起播，所以被盖住就停止；回来时按原来的意图重新加载。
+    @Test
+    func aVideoStillLoadingIsStoppedWhenCoveredAndReloadedOnReturn() {
+        let playback = PlaybackRecorder()
+        playback.isPresenting = false
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Loading")
+        coordinator.openUploaderSpacePage(owner: owner)
+        #expect(coordinator.livePlaybackBVID == nil)
+        coordinator.goBack()
+
+        #expect(playback.events == ["start:BV1Loading", "stop", "start:BV1Loading"])
+        #expect(coordinator.livePlaybackBVID == "BV1Loading")
+    }
+
+    @Test
+    func aReplacedVideoIsRebuiltFromWhereItWasLeft() {
+        let playback = PlaybackRecorder()
+        playback.resumePoint = PlaybackSelectionIntent(
+            bvid: "BV1First",
+            preferredCID: 3,
+            preferredStartSeconds: 42
+        )
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1First")
+        coordinator.openUploaderSpacePage(owner: owner)
+        coordinator.openPlayback("BV1Second")
+        coordinator.goBack()
+        coordinator.goBack()
+
+        #expect(
+            playback.events == [
+                "start:BV1First", "pause", "start:BV1Second", "pause", "stop", "start:BV1First"
+            ]
+        )
+        #expect(playback.lastStart == playback.resumePoint)
+    }
+
+    /// 空间页里又点了被盖住的那个视频：不重新起播，继续同一个；从它返回空间页时下面还是同一个视频，又按被盖住处理。
+    @Test
+    func reopeningTheCoveredVideoKeepsPlayingIt() {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Same")
+        coordinator.openUploaderSpacePage(owner: owner)
+        coordinator.openPlayback("BV1Same")
+        #expect(coordinator.currentPlaybackBVID == "BV1Same")
+        coordinator.goBack()
+        coordinator.goBack()
+
+        #expect(playback.events == ["start:BV1Same", "pause", "resume", "pause", "resume"])
+        #expect(coordinator.history.count == 1)
+    }
+
+    /// 播完后的下一集在空间页盖住之后才解析回来：不换片、不起播，栈顶仍是空间页。
+    @Test
+    func aLateContinuationWhileCoveredIsIgnored() {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Ending")
+        coordinator.openUploaderSpacePage(owner: owner)
+        coordinator.continuePlayback("BV1Next", preferredCID: 2)
+
+        #expect(playback.events == ["start:BV1Ending", "pause"])
+        #expect(coordinator.currentPlaybackBVID == nil)
+    }
+
+    /// 整页空间模型被后来的空间项占用过，回到更早的空间项时按它当时的 UP 主与排序重建。
+    @Test
+    func returningToAnEarlierSpaceRestoresItsOrder() {
+        let playback = PlaybackRecorder()
+        let page = makeUploaderSpace()
+        let coordinator = playback.makeCoordinator(uploaderSpacePage: page)
+
+        coordinator.openPlayback("BV1First")
+        coordinator.openUploaderSpacePage(owner: owner)
+        page.setOrder(.mostPlayed)
+        coordinator.openPlayback("BV1Second")
+        coordinator.openUploaderSpacePage(owner: anotherOwner)
+        #expect(page.owner == anotherOwner)
+        #expect(page.order == .newest)
+        coordinator.goBack()
+        coordinator.goBack()
+
+        #expect(page.owner == owner)
+        #expect(page.order == .mostPlayed)
+    }
+
+    /// 整页空间模型在空间页被盖住时被关掉（认证会话切换），回到这一项时按它记下的条件重新打开，不停在骨架屏。
+    @Test
+    func returningToASpaceWhoseModelWasClosedReopensIt() {
+        let playback = PlaybackRecorder()
+        let page = makeUploaderSpace()
+        let coordinator = playback.makeCoordinator(uploaderSpacePage: page)
+
+        coordinator.openPlayback("BV1First")
+        coordinator.openUploaderSpacePage(owner: owner)
+        page.setOrder(.mostPlayed)
+        coordinator.openPlayback("BV1Second")
+        page.close()
+        coordinator.goBack()
+
+        #expect(page.owner == owner)
+        #expect(page.order == .mostPlayed)
+    }
+
+    /// ⌂ 从活视频的播放页出发时先暂停、转场结束后停止；从空间页出发时没有画面可留，立即停止。
+    @Test(arguments: [true, false])
+    func goingHomeDefersTheStopOnlyFromTheLivePage(fromLivePage: Bool) {
+        let playback = PlaybackRecorder()
+        var pendingCompletion: (() -> Void)?
+        let coordinator = playback.makeCoordinator { direction, change, completion in
+            change()
+            if direction == .pop {
+                pendingCompletion = completion
+            } else {
+                completion()
+            }
+        }
+
+        coordinator.openPlayback("BV1Home")
+        if !fromLivePage { coordinator.openUploaderSpacePage(owner: owner) }
+        coordinator.goHome()
+        let beforeTransitionEnds = playback.events
+        pendingCompletion?()
+
+        #expect(coordinator.history.isEmpty)
+        #expect(beforeTransitionEnds == ["start:BV1Home", "pause"] + (fromLivePage ? [] : ["stop"]))
+        #expect(playback.events == ["start:BV1Home", "pause", "stop"])
+    }
+}
+
+/// 本 Suite 的播放替身：记录开始、暂停、继续与停止，可设“有没有画面”“在不在播放”与续播点；经共用的
+/// `makeNavigationCoordinator` 构造协调器。
+@MainActor
+private final class PlaybackRecorder {
+    var events: [String] = []
+    var isPresenting = true
+    var isPlaying = true
+    var position: Double?
+    var resumePoint: PlaybackSelectionIntent?
+    private(set) var lastStart: PlaybackSelectionIntent?
+
+    func makeCoordinator(
+        uploaderSpacePage: UploaderSpaceViewModel = makeUploaderSpace(),
+        transitionPage:
+            @escaping (
+                AppPageTransition, _ change: () -> Void, _ completion: @escaping () -> Void
+            ) -> Void = { _, change, completion in
+                change()
+                completion()
+            }
+    ) -> AppNavigationCoordinator {
+        makeNavigationCoordinator(
+            startPlayback: { [unowned self] intent in
+                events.append("start:\(intent.bvid)")
+                lastStart = intent
+            },
+            stopPlayback: { [unowned self] in events.append("stop") },
+            pausePlayback: { [unowned self] in
+                guard isPresenting else { return false }
+                events.append("pause")
+                return true
+            },
+            isPlaying: { [unowned self] in isPresenting && isPlaying },
+            resumePlayback: { [unowned self] in events.append("resume") },
+            presentedPosition: { [unowned self] in isPresenting ? position : nil },
+            resumePoint: { [unowned self] in resumePoint },
+            transitionPage: transitionPage,
+            uploaderSpacePage: uploaderSpacePage
+        )
+    }
+}

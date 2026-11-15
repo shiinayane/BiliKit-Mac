@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 进出播放页的页面转场：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区推移、侧栏淡入淡出，
+/// 右侧换页的转场（压一层、返回、回到来源）：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区推移、侧栏淡入淡出，
 /// 再无动画地换页。
 ///
 /// 每个窗口一份，由 `WindowComposition` 构造并以闭包交给 `AppNavigationCoordinator`；只弱引用锚点视图，分栏在每次转场时
@@ -14,7 +14,7 @@ import SwiftUI
 /// 调用，或者其间有人 `CATransaction.flush()`，转场截到的前后状态相同，只是没有动画，完成回调照常到达。
 @MainActor
 final class NavigationPageTransitions {
-    /// 转场时长：比系统压栈略快，连续进出播放页时不拖沓。
+    /// 转场时长：比系统压栈略快，连续压栈、返回时不拖沓。
     ///
     /// 再短推移就看不清方向。返回时播放器在转场结束后才停止，改长会让暂停的旧视频多留一会儿。
     private static let duration: CFTimeInterval = 0.3

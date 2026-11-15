@@ -175,8 +175,9 @@ public protocol PlaybackTimelineProviding: AnyObject {
 
 /// Feature 可驱动的最小播放命令边界；具体 AVPlayer 和 bridge 生命周期留在 adapter。
 ///
-/// 实现是 BiliPlayback 的 `AVPlayerEngine`，调用方是播放页的 `VideoViewModel`。`beginPlayback`、
-/// `restartFromBeginning` 与 `replayFromBeginning` 在实现里与当前 item 的 identity、intent 比对，已过期的意图被拒绝。
+/// 实现是 BiliPlayback 的 `AVPlayerEngine`，调用方是播放页的 `VideoViewModel`，以及 App 的窗口组装（导航在播放页被盖住时
+/// 暂停、回来时继续）。`beginPlayback`、`restartFromBeginning` 与 `replayFromBeginning` 在实现里与当前 item 的 identity、
+/// intent 比对，已过期的意图被拒绝。
 @MainActor
 public protocol PlaybackControlling: AnyObject {
     /// 只发布 adapter 已按当前 item token／generation 验证过的终态失败。每次调用得到独立订阅，
@@ -206,6 +207,8 @@ public protocol PlaybackControlling: AnyObject {
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent
     ) async -> Bool
+    /// 继续播放当前 item；没有 item 时不动作。
+    func play()
     func pause()
     func stop()
 }
