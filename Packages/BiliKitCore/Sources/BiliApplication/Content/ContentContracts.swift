@@ -107,7 +107,9 @@ public protocol UploaderVideoRepository: Sendable {
     ) async throws -> UploaderVideoBatch
 }
 
-/// 播放页只读 UP 主名片（签名与大会员状态）所需的独立 port；具体账户读取策略由 adapter 隐藏。
+/// UP 主名片（签名、大会员状态、粉丝与投稿数）与观看者关注状态的只读 port；具体账户读取策略由 adapter 隐藏。
+///
+/// 实现是 BiliAPI 的 `BiliContentRepository`，只经 `UploaderProfileUseCase` 调用；观看者关注状态的含义见 `UploaderCard`。
 public protocol UploaderProfileRepository: Sendable {
-    func uploaderProfile(for ownerID: Int64) async throws -> UploaderProfile
+    func uploaderCard(for ownerID: Int64) async throws -> UploaderCard
 }

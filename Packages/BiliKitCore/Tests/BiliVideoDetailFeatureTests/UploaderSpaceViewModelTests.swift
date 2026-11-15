@@ -5,12 +5,13 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// UP 主空间视图模型的游标翻页、排序与重开规则。
+/// UP 主空间视图模型的游标翻页、排序、搜索与重开规则，以及名片与关注状态的归属。
 ///
 /// 打开时读最新排序的第一批；滚到底加载下一批并累积，到底后不再请求；加载下一批失败保留已显示的投稿、由用户重试同一
-/// 游标。提交搜索词换成空间内搜索结果、排序不生效，清空搜索或换 UP 主回到投稿列表的第一批。同一 UP 主再次打开保持已加载的内容并更新资料、失败时顺带重试，换 UP 主回到默认排序与第一批，换排序从第一批
-/// 重来；关闭后的迟到结果不写回。只有 MID 的入口先打开、名片到达后补名字；凭据失效请求窗口复核，复核有了结果后停在
-/// 失败页的第一批重载一次；会话在请求途中切换时关闭空间。整页按给定的排序与搜索词从第一批重来，名片随 UP 主清空。
+/// 游标。提交搜索词换成空间内搜索结果、排序不生效，清空搜索或换 UP 主回到投稿列表的第一批。同一 UP 主再次打开保持
+/// 已加载的内容并更新资料、失败时顺带重试，换 UP 主回到默认排序与第一批，换排序从第一批重来；关闭后的迟到结果不写回。
+/// 只有 MID 的入口先打开、名片到达后补名字；凭据失效请求窗口复核，复核有了结果后停在失败页的第一批重载一次；会话在
+/// 请求途中切换时关闭空间。整页按给定的排序与搜索词从第一批重来，名片随 UP 主清空；关注状态只属于发出读取的账户。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct UploaderSpaceViewModelTests {
@@ -352,6 +353,79 @@ struct UploaderSpaceViewModelTests {
         #expect(await profiles.callCount == 2)
     }
 
+    /// 关注状态属于发出读取时的账户：读取期间窗口账户变了按未知；乐观改动失败时放回，此间已被确认的状态取代时不放回；
+    /// 读取在途时写入成功了，落地的名片不覆盖写入确认的状态。
+    @Test
+    func viewerFollowsBelongsToTheAccountThatRead() async throws {
+        let repository = UploaderVideoRepositoryStub()
+        let profiles = ProfileRepositoryStub(viewerFollows: true)
+        let account = WindowAccount(id: 7)
+        let model = makeModel(repository, profiles: profiles, accountID: { account.id })
+
+        model.open(owner: owner, order: .newest, searchKeyword: nil)
+        await profiles.waitForRequestCount(1)
+        await profiles.releaseRequest(0, profile: UploaderProfile(name: "作者"))
+        await waitForObservedState { model.profile != nil }
+        #expect(model.viewerFollows == true)
+
+        let snapshot = model.applyFollow(false, ownerID: owner.id)
+        #expect(model.viewerFollows == false)
+        model.restoreFollow(try #require(snapshot))
+        #expect(model.viewerFollows == true)
+        let superseded = try #require(model.applyFollow(false, ownerID: owner.id))
+        model.followDidChange(ownerID: owner.id, isFollowing: false)
+        model.restoreFollow(superseded)
+        #expect(model.viewerFollows == false)
+
+        model.open(owner: anotherOwner, order: .newest, searchKeyword: nil)
+        #expect(model.viewerFollows == nil)
+        await profiles.waitForRequestCount(2)
+        account.id = 8
+        await profiles.releaseRequest(1, profile: UploaderProfile(name: "另一位作者"))
+        await waitForObservedState { model.profile != nil }
+
+        #expect(model.viewerFollows == nil)
+        #expect(model.applyFollow(true, ownerID: anotherOwner.id) == nil)
+
+        account.id = 7
+        model.open(owner: owner, order: .newest, searchKeyword: nil)
+        await profiles.waitForRequestCount(3)
+        model.followDidChange(ownerID: owner.id, isFollowing: false)
+        await profiles.releaseRequest(2, profile: UploaderProfile(name: "作者"))
+        await waitForObservedState { model.profile != nil }
+
+        #expect(model.viewerFollows == false)
+    }
+
+    /// 关注按钮：看自己的空间时不显示；关注状态未知或窗口此刻不能写入时禁用。
+    @Test
+    func followButtonIsHiddenOnOwnSpaceAndDisabledWhenUnknownOrNotWritable() async {
+        let profiles = ProfileRepositoryStub(
+            immediate: .success(UploaderProfile(name: "作者")),
+            viewerFollows: true
+        )
+        let account = WindowAccount(id: 7)
+        let model = makeModel(
+            UploaderVideoRepositoryStub(),
+            profiles: profiles,
+            accountID: { account.id }
+        )
+
+        model.open(owner: owner, order: .newest, searchKeyword: nil)
+        #expect(
+            model.followButton(isWritable: true)
+                == VideoUploaderFollowContent(isFollowing: false, isEnabled: false)
+        )
+        await waitForObservedState { model.viewerFollows != nil }
+        #expect(
+            model.followButton(isWritable: true)
+                == VideoUploaderFollowContent(isFollowing: true, isEnabled: true)
+        )
+        #expect(model.followButton(isWritable: false)?.isEnabled == false)
+        account.id = owner.id
+        #expect(model.followButton(isWritable: true) == nil)
+    }
+
     @Test
     func sessionChangeDuringLoadMoreClosesTheSpace() async {
         let repository = UploaderVideoRepositoryStub()
@@ -370,11 +444,13 @@ struct UploaderSpaceViewModelTests {
         _ repository: UploaderVideoRepositoryStub,
         profiles: ProfileRepositoryStub = ProfileRepositoryStub(
             immediate: .failure(.unavailable)
-        )
+        ),
+        accountID: @escaping @MainActor () -> Int64? = { nil }
     ) -> UploaderSpaceViewModel {
         UploaderSpaceViewModel(
             useCase: UploaderVideoUseCase(repository: repository),
-            profileUseCase: UploaderProfileUseCase(repository: profiles)
+            profileUseCase: UploaderProfileUseCase(repository: profiles),
+            accountID: accountID
         )
     }
 
@@ -467,5 +543,15 @@ actor UploaderVideoRepositoryStub: UploaderVideoRepository {
                 ? UploaderVideoCursor(value: String(batch + 1)) : nil,
             totalCount: batchCount == 0 ? 0 : 61
         )
+    }
+}
+
+/// 窗口账户的可变替身：测试中途换号。
+@MainActor
+private final class WindowAccount {
+    var id: Int64?
+
+    init(id: Int64?) {
+        self.id = id
     }
 }

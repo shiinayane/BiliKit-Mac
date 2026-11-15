@@ -53,8 +53,11 @@ extension BiliAPIClient {
         return try payload.map { try $0.model() }
     }
 
-    /// 登录增强地读取公开 UP 主名片（签名与大会员状态）；不会请求 WBI 签名。
-    public func uploaderProfile(for ownerID: Int64) async throws -> UploaderProfile {
+    /// 登录增强地读取公开 UP 主名片（签名与大会员状态）与观看者的关注状态；不会请求 WBI 签名。
+    ///
+    /// 关注状态只在请求实际带了凭据时才采用：匿名回退时即使响应带了也不采用，按未知（nil）而不是“未关注”，见
+    /// SECURITY-MODEL §3。
+    public func uploaderCard(for ownerID: Int64) async throws -> UploaderCard {
         guard ownerID > 0 else {
             throw BiliAPIError.invalidRequest
         }
@@ -72,16 +75,22 @@ extension BiliAPIClient {
         else {
             throw BiliAPIError.invalidRequest
         }
-        let payload: UploaderCardDataPayload = try await get(
-            url: url,
-            referer: "https://space.bilibili.com/",
-            access: .accountRead(missingCredential: .useAnonymousRequest)
-        )
+        let response: AuthorizedResponse<UploaderCardDataPayload> =
+            try await getWithAuthorizationProvenance(
+                url: url,
+                referer: "https://space.bilibili.com/",
+                access: .accountRead(missingCredential: .useAnonymousRequest)
+            )
+        let payload = response.payload
         // 名片必须属于请求的 UP 主，错配按解码失败处理。
         guard payload.card.mid == ownerID else {
             throw BiliAPIError.decodingFailed
         }
-        return payload.model()
+        return UploaderCard(
+            profile: payload.model(),
+            viewerFollows: response.authorizationProvenance == .authenticated
+                ? payload.following : nil
+        )
     }
 
     /// 发出账户读取前核对构造出的地址恰好是名片 endpoint：HTTPS、固定主机、无端口与 userinfo、固定

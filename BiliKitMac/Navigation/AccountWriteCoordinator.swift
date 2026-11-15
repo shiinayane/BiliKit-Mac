@@ -1,18 +1,20 @@
 import BiliApplication
 import BiliBrowseFeature
 import BiliLibraryFeature
+import BiliModels
 import BiliVideoDetailFeature
 import Observation
 
 /// 一个窗口里用户发起的账户写入的 owner：卡片菜单（含首页推荐的「不感兴趣」）、读屏操作、⌘⌫、「收藏到…」面板、
-/// 播放页的点赞、投币、三连按钮与快捷键、播放侧栏的关注按钮、播放器输入胶囊发出的弹幕，以及评论区的发评论与赞踩
+/// 播放页的点赞、投币、三连按钮与快捷键、播放侧栏与整页空间页的关注按钮、播放器输入胶囊发出的弹幕，以及评论区的发评论与赞踩
 /// （`AccountWriteCoordinator+Comments`）都交给它。
 ///
 /// 拥有每个在途写入的 Task（同一改动同时只有一个）、正在显示的「收藏到…」面板（`favoritePicker`，同时只有一个；归属的
 /// 读取 Task 归面板模型）、写入结果胶囊显示的最新结果与它的消失计时，以及窗口复核的参与者代次。不拥有门槛的判断
 /// （`writableAccount` 由 `WindowComposition` 按窗口账户算出）、写请求本身（`WatchLaterWriteUseCase`、
 /// `FavoritesWriteUseCase`、`VideoEngagementUseCase`、`RecommendationFeedbackUseCase`、`DanmakuPostUseCase`、`CommentWriteUseCase`）、
-/// 列表与互动状态（乐观改动与回滚在 `WatchLaterViewModel`、`FavoriteFolderViewModel`、`VideoEngagementModel`、`BrowseViewModel`，
+/// 列表与互动状态（乐观改动与回滚在 `WatchLaterViewModel`、`FavoriteFolderViewModel`、`VideoEngagementModel`、`BrowseViewModel`、
+/// 整页空间页的 `UploaderSpaceViewModel`，
 /// 评论的在 `PlaybackCommentsViewModel`，由评论写入模型把回滚交来），也不直接刷新其他视图（效果交给本窗口的
 /// `AccountWriteEffectRouter`，并经进程级集线器转给其他窗口）。
 ///
@@ -260,6 +262,43 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
             }
         )
         return true
+    }
+
+    /// 关注或取消关注整页空间页正在显示的 UP 主：先在空间页模型里乐观改动，失败或被取消时放回；返回是否发出。
+    ///
+    /// 关注状态未知（还没读到，或读取没带凭据）、已是目标状态、UP 主就是窗口账户自己，或这位 UP 主已有一次关注写入在途
+    /// （不分方向：两个请求到达服务端的先后不可知，最终状态可能与按钮相反）时不发。乐观改动只在空间页模型里，不碰播放页
+    /// 的互动状态（它的回滚是整份快照）；成功后由效果路由让各窗口显示这位 UP 主的空间页取确认的状态、播放页重读互动状态。
+    /// 它同样算作关注写入：在途期间播放页的点赞、投币、三连也不发（`hasEngagementWriteInFlight`）。
+    @discardableResult
+    func setFollowing(_ isFollowing: Bool, onSpacePage page: UploaderSpaceViewModel) -> Bool {
+        guard let ownerID = page.owner?.id,
+            let uploader = UploaderWriteTarget(mid: ownerID),
+            let account = currentAccount(), account.accountID != uploader.mid,
+            !inFlight.keys.contains(where: { Self.isFollowWrite($0, of: uploader) }),
+            let snapshot = page.applyFollow(isFollowing, ownerID: uploader.mid)
+        else { return false }
+        start(
+            .followChanged(uploader, isFollowing: isFollowing),
+            account: account,
+            rollback: { page.restoreFollow(snapshot) },
+            write: { [engagement] in
+                try await engagement.setFollowing(
+                    isFollowing,
+                    uploader: uploader,
+                    accountID: account.accountID
+                )
+            }
+        )
+        return true
+    }
+
+    private static func isFollowWrite(
+        _ change: AccountWriteChange,
+        of uploader: UploaderWriteTarget
+    ) -> Bool {
+        guard case .followChanged(let other, _) = change else { return false }
+        return other == uploader
     }
 
     /// 同一视频的点赞、投币、三连同时只发一个，关注在途时它们一个也不发。

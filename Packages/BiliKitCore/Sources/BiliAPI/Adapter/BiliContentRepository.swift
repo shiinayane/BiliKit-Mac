@@ -61,9 +61,9 @@ public struct BiliContentRepository: FeedRepository, VideoRepository,
         }
     }
 
-    public func uploaderProfile(for ownerID: Int64) async throws -> UploaderProfile {
+    public func uploaderCard(for ownerID: Int64) async throws -> UploaderCard {
         try await mapError {
-            try await client.uploaderProfile(for: ownerID)
+            try await client.uploaderCard(for: ownerID)
         }
     }
 

@@ -99,14 +99,29 @@ final class WindowComposition {
             playbackAuthenticationInvalidations: adapters.makePlaybackAuthenticationInvalidations()
         )
         let danmakuModel = Self.makeDanmakuModel(adapters: adapters)
+        let authenticationModel = AuthenticationViewModel(
+            service: adapters.authenticationService,
+            qrCodeProvider: adapters.authenticationQRCodeProvider
+        )
+        self.authenticationModel = authenticationModel
+        let accountSession = process.accountSession
+        let writableAccount: @MainActor () -> WritableAccount? = {
+            Self.writableAccount(
+                windowScope: authenticationModel.sessionScope,
+                isRestoring: authenticationModel.resolutionPhase == .restoring,
+                accountSession: accountSession
+            )
+        }
         let uploaderSpace = UploaderSpaceViewModel(
             useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
-            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository)
+            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository),
+            accountID: { writableAccount()?.accountID }
         )
         let pageTransitions = NavigationPageTransitions()
         let uploaderSpacePage = UploaderSpaceViewModel(
             useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
-            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository)
+            profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository),
+            accountID: { writableAccount()?.accountID }
         )
         let playerHostOwner = PlayerHostOwner()
         let navigationCoordinator = AppNavigationCoordinator(
@@ -147,17 +162,11 @@ final class WindowComposition {
         self.videoModel = videoModel
         self.commentsModel = commentsModel
         self.danmakuModel = danmakuModel
-        let authenticationModel = AuthenticationViewModel(
-            service: adapters.authenticationService,
-            qrCodeProvider: adapters.authenticationQRCodeProvider
-        )
-        self.authenticationModel = authenticationModel
         self.watchLaterModel = watchLaterModel
         let watchLaterSession = WatchLaterSession(model: watchLaterModel)
         self.watchLaterSession = watchLaterSession
         self.historyModel = historyModel
         let favoritesUseCase = FavoritesUseCase(repository: adapters.favoritesRepository)
-        let accountSession = process.accountSession
         let favoriteFolderList = FavoriteFolderListModel(
             useCase: favoritesUseCase,
             accountScope: {
@@ -174,13 +183,6 @@ final class WindowComposition {
         )
         self.favoriteFolderList = favoriteFolderList
         self.favoriteFolders = favoriteFolders
-        let writableAccount: @MainActor () -> WritableAccount? = {
-            Self.writableAccount(
-                windowScope: authenticationModel.sessionScope,
-                isRestoring: authenticationModel.resolutionPhase == .restoring,
-                accountSession: accountSession
-            )
-        }
         let engagementUseCase = VideoEngagementUseCase(
             repository: adapters.videoEngagementRepository
         )
@@ -194,6 +196,7 @@ final class WindowComposition {
             favoriteFolderList: favoriteFolderList,
             favoriteFolders: favoriteFolders,
             engagementModel: engagementModel,
+            uploaderSpacePage: uploaderSpacePage,
             writableAccount: writableAccount
         )
         let accountWriteEffects = process.accountWriteEffects

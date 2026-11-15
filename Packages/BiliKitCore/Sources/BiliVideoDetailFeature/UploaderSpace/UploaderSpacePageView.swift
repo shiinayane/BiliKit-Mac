@@ -14,6 +14,9 @@ public struct UploaderSpacePageView: View {
     let model: UploaderSpaceViewModel
     let imagePipeline: any VideoDetailImageLoading
     let gridHost: NativeVideoGridHostContext
+    /// 关注按钮的状态；看自己的空间时为 nil，不显示按钮。
+    let follow: VideoUploaderFollowContent?
+    let onToggleFollow: () -> Void
     let onSelect: (String) -> Void
     @Environment(\.openURL) private var openURL
     @Environment(\.videoCardAccountWriting) private var accountWriting
@@ -24,11 +27,15 @@ public struct UploaderSpacePageView: View {
         model: UploaderSpaceViewModel,
         imagePipeline: any VideoDetailImageLoading,
         gridHost: NativeVideoGridHostContext,
+        follow: VideoUploaderFollowContent?,
+        onToggleFollow: @escaping () -> Void,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
         self.imagePipeline = imagePipeline
         self.gridHost = gridHost
+        self.follow = follow
+        self.onToggleFollow = onToggleFollow
         self.onSelect = onSelect
     }
 
@@ -81,9 +88,11 @@ public struct UploaderSpacePageView: View {
                         UploaderSpacePageHeader(
                             content: VideoUploaderHeaderContent(
                                 owner: displayOwner,
-                                profileState: model.profile.map { .loaded($0) } ?? .loading
+                                profileState: model.profile.map { .loaded($0) } ?? .loading,
+                                follow: follow
                             ),
-                            imagePipeline: imagePipeline
+                            imagePipeline: imagePipeline,
+                            onToggleFollow: onToggleFollow
                         )
                     )
                 ),

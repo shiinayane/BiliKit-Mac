@@ -262,6 +262,10 @@ struct AppShellView: View {
                     contentIdentity: navigationCoordinator.liveSpaceEntryID
                 )
             ),
+            follow: page.followButton(isWritable: accountWrites.isWritable),
+            onToggleFollow: {
+                accountWrites.setFollowing(!(page.viewerFollows ?? false), onSpacePage: page)
+            },
             onSelect: navigationCoordinator.openPlayback
         )
         .onChange(of: page.order) { spaceGridScroll.reset.request() }

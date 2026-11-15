@@ -317,12 +317,16 @@ func signedInWindow(
     video: any VideoRepository = FixtureVideoRepository(fixtures: []),
     writes: AccountWriteRepositoryStub = AccountWriteRepositoryStub(),
     watchLater bvids: [String] = [],
-    favorites: FavoritesRepositoryStub = FavoritesRepositoryStub()
+    favorites: FavoritesRepositoryStub = FavoritesRepositoryStub(),
+    uploaderProfile: any UploaderProfileRepository = UploaderProfileRepositoryStub(
+        holdsRequests: true
+    )
 ) async throws -> WindowComposition {
     let window = WindowComposition(
         process: process,
         adapters: makeTestAdapters(
             video: video,
+            uploaderProfile: uploaderProfile,
             favorites: favorites,
             watchLater: WatchLaterRepositoryStub(bvids: bvids),
             watchLaterWrite: writes,
