@@ -61,7 +61,11 @@ public struct UploaderSpaceSidebarView: View {
                         selectVideo: onSelect,
                         loadMore: model.loadMore,
                         cardMenu: { [openURL, accountWriting] row in
-                            Self.cardMenu(for: row, openURL: openURL, writing: accountWriting)
+                            UploaderSpaceCardMenu.menu(
+                                videoID: row.bvid,
+                                openURL: openURL,
+                                writing: accountWriting
+                            )
                         }
                     )
                 )
@@ -95,26 +99,6 @@ public struct UploaderSpaceSidebarView: View {
         .padding(.horizontal, UploaderSpaceGeometry.topBarHorizontalPadding)
         .padding(.top, UploaderSpaceGeometry.listTopInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 投稿行的卡片菜单：与相关推荐卡片相同的「添加到稍后再看」「收藏到…」一组加「拷贝链接」「在浏览器中打开」一组，
-    /// 规则在共用的 `NativeVideoCardMenu.video`。
-    ///
-    /// 投稿都可进入播放；BVID 不合法时没有菜单。`openURL` 是从环境取得的系统 `OpenURLAction`，`writing` 是 App 从环境注入的
-    /// 写入口（未登录或复核中时写操作项禁用）。
-    static func cardMenu(
-        for row: UploaderVideoRowPresentation,
-        openURL: OpenURLAction,
-        writing: VideoCardAccountWriting?
-    ) -> NativeVideoCardMenu? {
-        NativeVideoCardMenu.video(
-            videoID: row.bvid,
-            isActivatable: true,
-            webPageURL: BVID.webPageURL(row.bvid),
-            openURL: openURL,
-            writing: writing,
-            watchLater: .add
-        )
     }
 
     /// 空间打开期间按 ViewModel 实时生成；关闭后为 nil。

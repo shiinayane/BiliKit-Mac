@@ -10,7 +10,7 @@ import Testing
 /// 打开时读最新排序的第一批；滚到底加载下一批并累积，到底后不再请求；加载下一批失败保留已显示的投稿、由用户重试同一
 /// 游标。提交搜索词换成空间内搜索结果、排序不生效，清空搜索或换 UP 主回到投稿列表的第一批。同一 UP 主再次打开保持已加载的内容并更新资料、失败时顺带重试，换 UP 主回到默认排序与第一批，换排序从第一批
 /// 重来；关闭后的迟到结果不写回。只有 MID 的入口先打开、名片到达后补名字；凭据失效请求窗口复核，复核有了结果后停在
-/// 失败页的第一批重载一次；会话在请求途中切换时关闭空间。
+/// 失败页的第一批重载一次；会话在请求途中切换时关闭空间。整页按给定的排序与搜索词从第一批重来，名片随 UP 主清空。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct UploaderSpaceViewModelTests {
@@ -299,6 +299,57 @@ struct UploaderSpaceViewModelTests {
 
         #expect(model.owner == nil)
         #expect(model.state == .closed)
+    }
+
+    /// 整页回到历史里的某一项：同一 UP 主也按给定的排序与搜索词从第一批重来，搜索框草稿取那个词；名片同一 UP 主不重取，
+    /// 只给了 MID 的入口沿用已补全的名字。
+    @Test
+    func pageOpenRestartsFromTheGivenOrderAndKeyword() async {
+        let repository = UploaderVideoRepositoryStub()
+        let profiles = ProfileRepositoryStub(immediate: .success(UploaderProfile(name: "作者")))
+        let model = makeModel(repository, profiles: profiles)
+        model.open(owner: owner, order: .mostPlayed, searchKeyword: nil)
+        await waitForLoaded(model, count: 1)
+        await waitForObservedState { model.profile != nil }
+        model.loadMore()
+        await waitForLoaded(model, count: 2)
+
+        model.open(owner: VideoOwner(id: owner.id, name: ""), order: .newest, searchKeyword: " 游戏 ")
+        await waitForLoaded(model, count: 1)
+
+        #expect(model.owner?.name == "作者")
+        #expect(model.order == .newest)
+        #expect(model.searchKeyword == "游戏")
+        #expect(model.searchDraft == "游戏")
+        #expect(
+            await repository.calls == [
+                .init(ownerID: 10_001, order: .mostPlayed, batch: 0),
+                .init(ownerID: 10_001, order: .mostPlayed, batch: 1),
+                .init(ownerID: 10_001, order: .newest, batch: 0, keyword: "游戏")
+            ]
+        )
+        #expect(await profiles.callCount == 1)
+    }
+
+    /// 整页的名片（签名、粉丝与投稿数）随换 UP 主与关闭清空，换人后为新 UP 主重取；搜索框草稿一并清空。
+    @Test
+    func pageProfileAndDraftClearWithTheOwner() async {
+        let repository = UploaderVideoRepositoryStub()
+        let profiles = ProfileRepositoryStub(
+            immediate: .success(UploaderProfile(name: "作者", followerCount: 12))
+        )
+        let model = makeModel(repository, profiles: profiles)
+        model.open(owner: owner, order: .newest, searchKeyword: "游戏")
+        await waitForObservedState { model.profile?.followerCount == 12 }
+
+        model.open(owner: anotherOwner, order: .newest, searchKeyword: nil)
+        #expect(model.profile == nil)
+        #expect(model.searchDraft == "")
+        await waitForObservedState { model.profile != nil }
+        model.close()
+
+        #expect(model.profile == nil)
+        #expect(await profiles.callCount == 2)
     }
 
     @Test

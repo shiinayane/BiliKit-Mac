@@ -22,7 +22,10 @@ public enum UploaderSpaceFooter: Sendable, Equatable {
     case failed(ContentApplicationError)
 }
 
-/// 拥有侧栏 UP 主空间层的 UP 主、排序、已提交的搜索词、已加载的投稿与最新请求 Task。
+/// 拥有一份 UP 主空间的 UP 主、排序、已提交的搜索词与搜索框草稿、已加载的投稿、名片与最新请求 Task。
+///
+/// 每个窗口两份：侧栏上的空间预览（`open(owner:)`）与右侧的整页空间页（`open(owner:order:searchKeyword:)`），互不共享
+/// 内容。整页总取名片（头部要签名与粉丝数）；预览只在凭 MID 打开、名字未知时取，用来补名字与头像。
 ///
 /// 投稿按游标累积（`PagedVideoList`，按 BVID 去重，无进展即停止），滚动到底时由列表调用 `loadMore` 取下一批；同一
 /// UP 主再次打开保持已加载的内容，换 UP 主或排序从第一批重来。有搜索词时列表换成空间内搜索结果（顺序由服务端决定，
@@ -41,6 +44,10 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
     public private(set) var searchKeyword: String?
     /// 服务端给出的投稿总数；第一批成功前、换 UP 主或关闭后为 nil。
     public private(set) var totalCount: Int?
+    /// 名片（签名、粉丝与投稿数），整页空间页的头部用；换 UP 主或关闭时清空，读取失败时保持 nil。
+    public private(set) var profile: UploaderProfile?
+    /// 空间内搜索框里还没提交的文字；换 UP 主或关闭时清空，整页按给定搜索词打开时取那个词。
+    public var searchDraft = ""
 
     public var authenticationRevalidationGeneration: Int {
         revalidation.generation
@@ -103,8 +110,38 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         self.owner = owner
         order = .newest
         searchKeyword = nil
+        searchDraft = ""
+        totalCount = nil
+        profile = nil
+        reload()
+    }
+
+    /// 整页空间页打开或回到历史里的某一项：按给定的排序与搜索词从第一批重新读取，并取名片。
+    ///
+    /// 与 `open(owner:)` 不同，同一 UP 主也从第一批重来：回到更早的空间项时要按那一项记下的条件重建，不能沿用刚才
+    /// 另一项留下的内容。同一 UP 主已有名片时不重取。搜索词按 `submitSearch` 的规则规范化，规范化后为空等于不搜索。
+    public func open(owner: VideoOwner, order: UploaderVideoOrder, searchKeyword: String?) {
+        let changesOwner = self.owner?.id != owner.id
+        if changesOwner {
+            profileTask.cancel()
+            profile = nil
+        }
+        // 同一 UP 主时入口给的可能只有 MID（名字为空、没有头像）：保留已补全的名字与头像，名片不会再取。
+        let current = changesOwner ? nil : self.owner
+        self.owner = VideoOwner(
+            id: owner.id,
+            name: owner.name.isEmpty ? current?.name ?? "" : owner.name,
+            avatarURL: owner.avatarURL ?? current?.avatarURL
+        )
+        self.order = order
+        let keyword = searchKeyword.map(SearchText.normalized) ?? ""
+        self.searchKeyword = keyword.isEmpty ? nil : keyword
+        searchDraft = keyword
         totalCount = nil
         reload()
+        if profile == nil {
+            loadProfile(ownerID: owner.id)
+        }
     }
 
     /// 只有 MID 的入口（评论正文里的空间链接）：先以空名字打开并照常加载投稿，名片到达后补上名字
@@ -140,6 +177,7 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
                 revalidation.request()
             }
             guard let profile, let owner = self.owner, owner.id == ownerID else { return }
+            self.profile = profile
             self.owner = VideoOwner(
                 id: ownerID,
                 name: profile.name ?? owner.name,
@@ -156,7 +194,9 @@ public final class UploaderSpaceViewModel: AccountRevalidationParticipant {
         owner = nil
         order = .newest
         searchKeyword = nil
+        searchDraft = ""
         totalCount = nil
+        profile = nil
         phase = .closed
         list = PagedVideoList(stallPolicy: .stop)
         revalidation.reset()

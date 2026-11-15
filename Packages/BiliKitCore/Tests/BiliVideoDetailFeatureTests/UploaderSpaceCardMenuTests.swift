@@ -8,17 +8,17 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// UP 主空间的投稿行用视频卡片同一份菜单（组成与禁用规则由 BiliVideoCollectionUITests 的 `NativeVideoCardMenuTests`
-/// 固定），按 BVID 打开该视频的网页地址，BVID 不合法时没有菜单；右键弹出时画上下文描边、关闭后撤销，Control-点按只弹
-/// 菜单不进入播放，拆除后不再提供菜单。
+/// UP 主空间（预览的投稿行与整页的网格）用视频卡片同一份菜单（组成与禁用规则由 BiliVideoCollectionUITests 的
+/// `NativeVideoCardMenuTests` 固定），按 BVID 打开该视频的网页地址，BVID 不合法时没有菜单；右键弹出时画上下文描边、
+/// 关闭后撤销，Control-点按只弹菜单不进入播放，拆除后不再提供菜单。
 @MainActor
 struct UploaderSpaceCardMenuTests {
     @Test
     func rowMenuOpensTheVideoWebPage() throws {
         var opened: [URL] = []
         let menu = try #require(
-            UploaderSpaceSidebarView.cardMenu(
-                for: Self.row("BV1SpaceRow"),
+            UploaderSpaceCardMenu.menu(
+                videoID: "BV1SpaceRow",
                 openURL: OpenURLAction { url in
                     opened.append(url)
                     return .handled
@@ -34,8 +34,8 @@ struct UploaderSpaceCardMenuTests {
     @Test
     func rowWithoutAValidBVIDHasNoMenu() {
         #expect(
-            UploaderSpaceSidebarView.cardMenu(
-                for: Self.row("BV1 spaced"),
+            UploaderSpaceCardMenu.menu(
+                videoID: "BV1 spaced",
                 openURL: OpenURLAction { _ in .handled },
                 writing: nil
             ) == nil
@@ -47,8 +47,8 @@ struct UploaderSpaceCardMenuTests {
         var requested: [String] = []
         let list = Self.list(cardMenu: { row in
             requested.append(row.bvid)
-            return UploaderSpaceSidebarView.cardMenu(
-                for: row,
+            return UploaderSpaceCardMenu.menu(
+                videoID: row.bvid,
                 openURL: OpenURLAction { _ in .handled },
                 writing: .unavailable
             )
