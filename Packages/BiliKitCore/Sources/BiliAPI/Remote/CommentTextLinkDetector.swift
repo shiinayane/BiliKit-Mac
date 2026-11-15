@@ -4,8 +4,8 @@ import Foundation
 
 /// 在评论正文的纯文字里识别接口没有标出的链接：网址、b23.tv 短链、BV 号、av 号与时间戳。
 ///
-/// 只认 ASCII 字符组成的标记，紧邻的中文与全角标点不会被吞进链接；结果与接口链接（`jump_url`、
-/// @ 提及）共用同一套分类。接口链接与表情覆盖的文字不再识别；网址整段先占位，即使它本身不能成为
+/// 只认 ASCII 字符组成的标记（时间戳另认全角冒号），紧邻的中文与全角标点不会被吞进链接；结果与
+/// 接口链接（`jump_url`、@ 提及）共用同一套分类。接口链接与表情覆盖的文字不再识别；网址整段先占位，即使它本身不能成为
 /// 链接，里面的片段也不会被单独识别。
 enum CommentTextLinkDetector {
     private struct Rule: Sendable {
@@ -16,7 +16,7 @@ enum CommentTextLinkDetector {
         let target: @Sendable (String) -> CommentLinkTarget?
     }
 
-    /// 按优先级排列：先网址，再不带协议头的短链，最后 BV 号与 av 号。
+    /// 按优先级排列：先网址，再不带协议头的短链，再 BV 号与 av 号，最后时间戳。
     ///
     /// 模式都是常量，编译失败属于编程错误，由 `compiled(_:)` 在首次使用时崩溃暴露，而不是让某条规则静默失效。
     /// 用 `NSRegularExpression` 而不用 Swift `Regex` 字面量：字面量不支持这里依赖的 lookbehind。
@@ -58,14 +58,13 @@ enum CommentTextLinkDetector {
             trimsURLPunctuation: false,
             target: videoTarget
         ),
-        // 时间戳：`h:mm:ss` 或 `m:ss`（分钟最多 3 位），秒与带小时时的分钟必须是两位且小于 60；
-        // 分隔符半角、全角冒号都认，中文输入法下常打出全角。前面紧挨字母、数字或冒号时是型号、编号
-        // 或更长数字串的一部分（`p1:23`、`x264:10`）；后面只排除数字与冒号，紧跟的字母多是单位或
-        // 英文正文（`1:23s`、`1:23this`），与紧跟中文一样照常识别。是否超出可跳转时长到显示时再判断。
+        // 时间戳照搬官方网页评论区（`bili-comments`）的 `(\d+#)?(\d+[:：]){1,2}\d\d`：不看前后紧挨的
+        // 字符，各段不限 60，半角、全角冒号都认，所以 `哈哈哈:00:11`、`x264:10` 与官方一样成为链接。
+        // 自己加边界或取值限制会和官方认的范围对不上，用户看到官方能点而这里不能点。误认的数字串靠显示时
+        // 的可跳转时长挡掉。`[0-9]` 不写 `\d`：ICU 的 `\d` 还认全角数字，官方 JS 的不认。`N#` 前缀
+        // 指第 N 个分 P，一并匹配，由 `timestampTarget` 放弃。
         Rule(
-            pattern: compiled(
-                #"(?<![A-Za-z0-9:：])(?:[0-9]{1,2}[:：][0-5][0-9][:：][0-5][0-9]|[0-9]{1,3}[:：][0-5][0-9])(?![0-9:：])"#
-            ),
+            pattern: compiled(#"(?:[0-9]+#)?(?:[0-9]+[:：]){1,2}[0-9]{2}"#),
             claimsMatch: false,
             trimsURLPunctuation: false,
             target: timestampTarget
@@ -141,10 +140,19 @@ enum CommentTextLinkDetector {
         return .shortLink(reference)
     }
 
+    /// 时间戳的秒数。
+    ///
+    /// 带 `N#` 分 P 前缀时不生成链接：`.timestamp` 只在当前分 P 里跳，跳到这里会落在错的分 P。
+    /// 各段位数不限，评论里的超长数字串换算会溢出，溢出时同样不生成链接。
     private static func timestampTarget(_ text: String) -> CommentLinkTarget? {
-        let parts = text.split { $0 == ":" || $0 == "：" }
-        let seconds = parts.reduce(0) { total, part in
-            total * 60 + (Int(part) ?? 0)
+        guard !text.contains("#") else { return nil }
+        var seconds = 0
+        for part in text.split(whereSeparator: { $0 == ":" || $0 == "：" }) {
+            guard let value = Int(part) else { return nil }
+            let (shifted, shiftOverflow) = seconds.multipliedReportingOverflow(by: 60)
+            let (sum, sumOverflow) = shifted.addingReportingOverflow(value)
+            guard !shiftOverflow, !sumOverflow else { return nil }
+            seconds = sum
         }
         return .timestamp(seconds: seconds)
     }
