@@ -13,9 +13,9 @@ struct NativePlaybackSidebarContent: Equatable {
     let summaryLinks: [CommentLink]
     let selection: PlaybackSelectionProjection
     let comments: NativePlaybackCommentsPresentation
-    /// 简介与评论正文里时间戳可跳转的上限（不含）：播放器就绪的分 P 的可跳转时长
-    /// （`VideoContext.seekableDurationSeconds`）；加载中或时长未知时为 nil，时间戳都按普通文字显示。
-    let timestampLimitSeconds: Int?
+    /// 简介与评论正文里时间戳能跳到哪里（`VideoContext.timestampSeekLimits`）：只在播放器就绪时有值；
+    /// 加载中为 nil，时间戳都按普通文字显示。
+    let timestampLimits: TimestampSeekLimits?
 }
 
 /// 盖在侧栏内容上的状态层：加载中、可重试的失败或不可用。
@@ -251,7 +251,7 @@ extension NativePlaybackSidebarPresentation {
         }
         // 分 P 时长变化只影响时间戳是否显示为链接，不改变行高；只重新配置含时间戳的简介与评论。
         let timestampLimitChanged =
-            previousContent.timestampLimitSeconds != content.timestampLimitSeconds
+            previousContent.timestampLimits != content.timestampLimits
         if previousContent.summary != content.summary
             || previousContent.summaryLinks != content.summaryLinks
             || (timestampLimitChanged

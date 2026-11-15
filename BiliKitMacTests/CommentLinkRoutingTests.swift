@@ -6,7 +6,7 @@ import Testing
 @testable import BiliKit
 @testable import BiliModels
 
-/// 评论链接目标翻译成 App 路由：视频链接带上分 P 与起播秒数，短链给出解析闭包并以原地址兜底。
+/// 评论链接目标翻译成 App 路由：视频链接与时间戳带上分 P 与起播秒数，短链给出解析闭包并以原地址兜底。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct CommentLinkRoutingTests {
@@ -33,6 +33,20 @@ struct CommentLinkRoutingTests {
                     preferredStartSeconds: 30
                 )
         )
+    }
+
+    @Test
+    func timestampsKeepTheirPage() {
+        guard
+            case .seek(let seconds, let page) = routing.route(
+                for: .timestamp(seconds: 83, page: 2)
+            )
+        else {
+            Issue.record("时间戳应在当前视频里跳转")
+            return
+        }
+        #expect(seconds == 83)
+        #expect(page == 2)
     }
 
     /// 短链先解析再打开，解析不出时回退到原地址；不是 b23.tv 短码形状的地址解析时不发请求。

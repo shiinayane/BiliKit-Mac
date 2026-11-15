@@ -295,9 +295,15 @@ struct VideoUseCaseTests {
     }
 
     /// 可跳转时长是时间戳与链接起播的唯一规则：充电试看取试看时长；只有 DASH 采用链接起播位置。
+    ///
+    /// 带分 P 前缀的时间戳指向其他分 P 时按那个分 P 的全长判断，分 P 不存在或时长未知时不能跳。
     @Test
     func seekableDurationAndLinkStartFollowTheDeliveredMedia() throws {
         let page = VideoPage(cid: 900_001, index: 1, title: "P1", durationSeconds: 2_255)
+        let otherPages = [
+            VideoPage(cid: 900_002, index: 2, title: "P2", durationSeconds: 600),
+            VideoPage(cid: 900_003, index: 3, title: "P3", durationSeconds: 0)
+        ]
         let previewContext = VideoContext(
             detail: makeAccessDetail(
                 access: VideoAccess(
@@ -306,7 +312,7 @@ struct VideoUseCaseTests {
                     isUPowerPlayable: false
                 )
             ),
-            pages: [page],
+            pages: [page] + otherPages,
             selectedPage: page,
             playback: try progressivePreview()
         )
@@ -326,6 +332,13 @@ struct VideoUseCaseTests {
         #expect(dashContext.linkStartPosition(seconds: 2_255) == nil)
         #expect(dashContext.linkStartPosition(seconds: nil) == nil)
         #expect(!VideoContext.accepts(seconds: 0, seekableDurationSeconds: nil))
+        let limits = previewContext.timestampSeekLimits
+        #expect(limits.accepts(seconds: 883, page: nil))
+        #expect(!limits.accepts(seconds: 884, page: 1))
+        #expect(limits.accepts(seconds: 599, page: 2))
+        #expect(!limits.accepts(seconds: 600, page: 2))
+        #expect(!limits.accepts(seconds: 0, page: 3))
+        #expect(!limits.accepts(seconds: 0, page: 4))
     }
 
     @Test(

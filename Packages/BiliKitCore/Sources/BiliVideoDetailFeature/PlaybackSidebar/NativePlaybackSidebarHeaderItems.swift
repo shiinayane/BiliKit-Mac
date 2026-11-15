@@ -1,4 +1,5 @@
 import AppKit
+import BiliApplication
 import BiliModels
 import BiliUI
 import BiliVideoCollectionUI
@@ -356,7 +357,7 @@ final class NativePlaybackSidebarSummaryItem: NativeLayoutSizedCollectionItem {
     func configure(
         summary: String,
         links: [CommentLink],
-        timestampLimitSeconds: Int?,
+        timestampLimits: TimestampSeekLimits?,
         expanded: Bool,
         onToggle: @escaping () -> Void,
         onOpenLink: @escaping (CommentLinkTarget) -> Void
@@ -366,7 +367,7 @@ final class NativePlaybackSidebarSummaryItem: NativeLayoutSizedCollectionItem {
             text: NativePlaybackSidebarLinkedText(
                 text: summary,
                 links: links,
-                timestampLimitSeconds: timestampLimitSeconds
+                timestampLimits: timestampLimits
             ),
             expanded: expanded,
             onToggle: onToggle,
@@ -396,7 +397,7 @@ private final class NativePlaybackSidebarSummaryView: NSView {
     private var text = NativePlaybackSidebarLinkedText(
         text: "",
         links: [],
-        timestampLimitSeconds: nil
+        timestampLimits: nil
     )
     private var expanded = false
     private var onToggle: (() -> Void)?
@@ -486,7 +487,7 @@ private final class NativePlaybackSidebarSummaryView: NSView {
     func reset() {
         onToggle = nil
         textView.onOpenLink = nil
-        text = NativePlaybackSidebarLinkedText(text: "", links: [], timestampLimitSeconds: nil)
+        text = NativePlaybackSidebarLinkedText(text: "", links: [], timestampLimits: nil)
         expanded = false
         textView.string = ""
         toggleButton.title = ""

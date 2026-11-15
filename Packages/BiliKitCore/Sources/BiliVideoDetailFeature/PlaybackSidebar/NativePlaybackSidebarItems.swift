@@ -1,4 +1,5 @@
 import AppKit
+import BiliApplication
 import BiliModels
 import BiliUI
 
@@ -329,11 +330,11 @@ struct NativePlaybackSummaryGeometry {
     }
 }
 
-/// 只读侧栏文字与其中的链接；时间戳是否可点取决于 `timestampLimitSeconds`。
+/// 只读侧栏文字与其中的链接；时间戳是否可点取决于 `timestampLimits`。
 struct NativePlaybackSidebarLinkedText: Equatable {
     let text: String
     let links: [CommentLink]
-    let timestampLimitSeconds: Int?
+    let timestampLimits: TimestampSeekLimits?
 }
 
 /// 侧栏里只读、可选中的文字；链接点击经 `onOpenLink` 交出，与评论正文同一套链接值。
@@ -406,7 +407,7 @@ final class NativePlaybackSidebarReadOnlyTextView: NSTextView, NSTextViewDelegat
         let applied = NativePlaybackTextLinks.apply(
             text.links,
             to: attributed,
-            timestampLimitSeconds: text.timestampLimitSeconds
+            timestampLimits: text.timestampLimits
         )
         linkTargets = applied.targets
         textStorage?.setAttributedString(attributed)

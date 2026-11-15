@@ -65,7 +65,7 @@ extension PlaybackSidebarFixtures {
                 summaryLinks: context.detail.summaryLinks,
                 selection: selectionProjection(context: context),
                 comments: comments,
-                timestampLimitSeconds: nil
+                timestampLimits: nil
             ),
             overlay: .none
         )
@@ -107,7 +107,7 @@ extension PlaybackSidebarFixtures {
                 summaryLinks: content.summaryLinks,
                 selection: content.selection,
                 comments: comments,
-                timestampLimitSeconds: nil
+                timestampLimits: nil
             ),
             overlay: .none
         )

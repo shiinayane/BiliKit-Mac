@@ -2,7 +2,7 @@ import AppKit
 import BiliApplication
 import BiliModels
 
-/// 评论正文与简介共用的链接属性：链接值按序号编码，点击时解码回目标；超出可跳转时长的时间戳不加链接。
+/// 评论正文与简介共用的链接属性：链接值按序号编码，点击时解码回目标；目标分 P 跳不到的时间戳不加链接。
 ///
 /// 链接值只是内部序号，不能交给系统当地址显示：文本视图经 `configure` 关掉系统链接提示，需要提示的链接由
 /// `apply` 另加 `.toolTip`。
@@ -25,11 +25,12 @@ enum NativePlaybackTextLinks {
 
     /// 给链接原文加链接属性与悬停提示；返回点击时按序号查找的目标，以及实际加上的链接。
     ///
-    /// `timestampLimitSeconds` 是可跳转上限（不含），超出或为 nil 时时间戳按普通文字显示。
+    /// 时间戳按 `timestampLimits` 判断目标分 P（`N#` 前缀，没有时为正在播的分 P）能否跳到该秒数：
+    /// 分 P 不存在、秒数超出上限或 `timestampLimits` 为 nil 时按普通文字显示。
     static func apply(
         _ links: [CommentLink],
         to attributed: NSMutableAttributedString,
-        timestampLimitSeconds: Int?
+        timestampLimits: TimestampSeekLimits?
     ) -> (targets: [CommentLinkTarget], applied: [CommentLink]) {
         var targets: [CommentLinkTarget] = []
         var applied: [CommentLink] = []
@@ -38,11 +39,8 @@ enum NativePlaybackTextLinks {
             guard range.location >= 0, range.length > 0,
                 NSMaxRange(range) <= attributed.length
             else { continue }
-            if case .timestamp(let seconds) = link.target,
-                !VideoContext.accepts(
-                    seconds: seconds,
-                    seekableDurationSeconds: timestampLimitSeconds
-                )
+            if case .timestamp(let seconds, let page) = link.target,
+                timestampLimits?.accepts(seconds: seconds, page: page) != true
             {
                 continue
             }
@@ -79,7 +77,7 @@ enum NativePlaybackTextLinks {
         return targets[index]
     }
 
-    /// 有没有时间戳链接；只有这些文字随分 P 时长变化需要重新配置。
+    /// 有没有时间戳链接；只有这些文字随正在播的分 P 与其时长变化需要重新配置。
     nonisolated static func containsTimestamp(_ links: [CommentLink]) -> Bool {
         links.contains { link in
             if case .timestamp = link.target { return true }

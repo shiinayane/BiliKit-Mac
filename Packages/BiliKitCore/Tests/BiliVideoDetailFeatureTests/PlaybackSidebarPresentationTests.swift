@@ -132,7 +132,7 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                 summaryLinks: content.summaryLinks,
                 selection: content.selection,
                 comments: content.comments,
-                timestampLimitSeconds: nil
+                timestampLimits: nil
             ),
             overlay: .none
         )
@@ -226,8 +226,8 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
         )
     }
 
-    /// 切换分 P 后可跳转上限变化：只有含时间戳链接的简介与评论重新配置，链接随之更新；行高不变，更新方式与
-    /// 正文修改相同；简介链接本身变化照常重载简介。
+    /// 切换分 P 后可跳转上限变化（换到等长的分 P 也算，`N#` 前缀的时间戳随之变化）：只有含时间戳链接的简介
+    /// 与评论重新配置，链接随之更新；行高不变，更新方式与正文修改相同；简介链接本身变化照常重载简介。
     @Test
     @MainActor
     func timestampLimitChangeReconfiguresOnlyRowsWithTimestamps() async throws {
@@ -245,7 +245,8 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
         )
         let base = try #require(presentation(bvid: "BVCurrent", comments: comments).content)
         func limited(
-            _ seconds: Int?,
+            _ seconds: Int,
+            selectedPageNumber: Int = 1,
             summaryLinks: [CommentLink]
         ) -> NativePlaybackSidebarPresentation {
             NativePlaybackSidebarPresentation(
@@ -256,7 +257,10 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                     summaryLinks: summaryLinks,
                     selection: base.selection,
                     comments: base.comments,
-                    timestampLimitSeconds: seconds
+                    timestampLimits: TimestampSeekLimits(
+                        selectedPageNumber: selectedPageNumber,
+                        limitsByPageNumber: [1: seconds, 2: seconds]
+                    )
                 ),
                 overlay: .none
             )
@@ -271,6 +275,10 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
 
         #expect(changed == [.summary(bvid: "BVCurrent"), timedThread])
         #expect(limited(120, summaryLinks: [timestamp]).changedItemIDs(comparedTo: short).isEmpty)
+        #expect(
+            limited(120, selectedPageNumber: 2, summaryLinks: [timestamp])
+                .changedItemIDs(comparedTo: short) == [.summary(bvid: "BVCurrent"), timedThread]
+        )
         #expect(
             limited(600, summaryLinks: [])
                 .changedItemIDs(comparedTo: limited(120, summaryLinks: []))
