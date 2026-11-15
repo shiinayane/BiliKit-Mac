@@ -72,7 +72,7 @@ final class WindowComposition {
     /// 右侧换页的转场；锚点由 `AppShellView` 的 detail 列登记，只弱引用视图，关窗不需要清理。
     let pageTransitions: NavigationPageTransitions
     /// 窗口常驻的播放器宿主；关窗时在关闭播放之后拆除。
-    private let playerHostOwner = PlayerHostOwner()
+    private let playerHostOwner: PlayerHostOwner
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator
     private let watchProgressConnection: WatchProgressWindowConnection
     private let adapters: WindowAdapters
@@ -108,11 +108,13 @@ final class WindowComposition {
             useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
             profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository)
         )
+        let playerHostOwner = PlayerHostOwner()
         let navigationCoordinator = AppNavigationCoordinator(
             playback: Self.makePlaybackSession(
                 videoModel: videoModel,
                 danmakuModel: danmakuModel,
-                adapters: adapters
+                adapters: adapters,
+                pictureInPicture: playerHostOwner.pictureInPicture
             ),
             transitionPage: { [pageTransitions] direction, change, completion in
                 pageTransitions.perform(direction, change: change, completion: completion)
@@ -120,6 +122,13 @@ final class WindowComposition {
             uploaderSpace: uploaderSpace,
             uploaderSpacePage: uploaderSpacePage
         )
+        playerHostOwner.pictureInPicture.onRestore = { [weak navigationCoordinator] in
+            navigationCoordinator?.restoreLivePlaybackPage() ?? false
+        }
+        playerHostOwner.pictureInPicture.onStopWithoutRestore = { [weak navigationCoordinator] in
+            navigationCoordinator?.pictureInPictureDidStopWithoutRestore()
+        }
+        self.playerHostOwner = playerHostOwner
         let commentsModel = PlaybackCommentsViewModel(
             useCase: CommentUseCase(repository: adapters.commentRepository)
         )
@@ -423,7 +432,8 @@ final class WindowComposition {
     private static func makePlaybackSession(
         videoModel: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
-        adapters: WindowAdapters
+        adapters: WindowAdapters,
+        pictureInPicture: PlayerPictureInPicture
     ) -> AppPlaybackSession {
         let playback = adapters.playback
         let currentTimeline = adapters.currentTimeline
@@ -458,7 +468,8 @@ final class WindowComposition {
                     preferredCID: identity.cid,
                     preferredStartSeconds: Int(snapshot.positionSeconds)
                 )
-            }
+            },
+            isPictureInPictureActive: { pictureInPicture.isActive }
         )
     }
 

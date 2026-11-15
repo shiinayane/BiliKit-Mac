@@ -66,6 +66,8 @@ struct AppPlaybackSession {
     let presentedPosition: () -> Double?
     /// 活视频此刻的分 P 与秒数，写成重建用的选择意图；没有呈现中的视频时为 nil。
     let resumePoint: () -> PlaybackSelectionIntent?
+    /// 画中画是否进行中；被盖住时画中画里的视频继续播放，不暂停。
+    let isPictureInPictureActive: () -> Bool
 }
 
 /// 活视频被盖住时由我们暂停的记录：暂停时的秒数（拿不到时为 nil）。
@@ -372,6 +374,35 @@ final class AppNavigationCoordinator {
         closePlayback()
     }
 
+    /// 画中画「还原」：弹掉盖在活视频播放页上面的层，回到它；返回是否能还原（没有活视频时不能）。
+    ///
+    /// 画中画里的视频一直在播放，回到播放页时不再继续或暂停。
+    func restoreLivePlaybackPage() -> Bool {
+        guard let liveEntryID, let index = history.firstIndex(where: { $0.id == liveEntryID })
+        else {
+            return false
+        }
+        pausedByCovering = nil
+        guard index < history.count - 1 else { return true }
+        transitionPage(
+            .pop,
+            {
+                history.removeSubrange((index + 1)...)
+                closeSidebarContext()
+            },
+            {}
+        )
+        closeSpacePageIfUnused()
+        return true
+    }
+
+    /// 画中画结束、但不是「还原」（用户点了关闭）：活视频被盖住时已没有可见的播放器，按被盖住处理（在播放的暂停，
+    /// 还在加载的停止）；在播放页上时不动作。
+    func pictureInPictureDidStopWithoutRestore() {
+        guard liveEntryID != nil, history.last?.id != liveEntryID else { return }
+        coverLivePlayback()
+    }
+
     /// 登出只关闭当前播放，不改变来源 Tab。
     func closePlaybackForAuthenticationChange() {
         closePlayback()
@@ -413,10 +444,14 @@ final class AppNavigationCoordinator {
         playback.stop()
     }
 
-    /// 活视频所在的播放页被异类页面盖住：在播放的暂停并记下；还在加载（没有画面、暂停拦不住随后的自动起播）的直接
-    /// 停止，它那一项保留原来的意图，回来时重新加载。
+    /// 活视频所在的播放页被异类页面盖住：画中画中的继续播放；在播放的暂停并记下；还在加载（没有画面、暂停拦不住随后的
+    /// 自动起播）的直接停止，它那一项保留原来的意图，回来时重新加载。
     private func coverLivePlayback() {
         guard liveIntent != nil else { return }
+        guard !playback.isPictureInPictureActive() else {
+            pausedByCovering = nil
+            return
+        }
         let wasPlaying = playback.isPlaying()
         guard playback.pauseKeepingPicture() else {
             stopLivePlayback()

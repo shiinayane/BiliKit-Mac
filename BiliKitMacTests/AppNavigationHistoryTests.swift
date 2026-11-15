@@ -4,8 +4,8 @@ import Testing
 
 @testable import BiliKit
 
-/// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声，回来只恢复由盖住暂停、被盖住期间用户
-/// 也没动过的，被取代的按离开时的分 P 与秒数重建。
+/// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声（画中画除外），回来只恢复由盖住暂停、
+/// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建。
 @MainActor
 struct AppNavigationHistoryTests {
     private let owner = VideoOwner(id: 7, name: "UP 主")
@@ -154,6 +154,41 @@ struct AppNavigationHistoryTests {
         #expect(page.order == .mostPlayed)
     }
 
+    /// 画中画中被盖住继续播放，回来不再继续；画中画在被盖住时被关掉，按被盖住暂停，回来再继续。
+    @Test
+    func pictureInPictureKeepsPlayingWhileCoveredUntilItIsClosed() {
+        let playback = PlaybackRecorder()
+        playback.isPictureInPictureActive = true
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Floating")
+        coordinator.openUploaderSpacePage(owner: owner)
+        #expect(playback.events == ["start:BV1Floating"])
+        playback.isPictureInPictureActive = false
+        coordinator.pictureInPictureDidStopWithoutRestore()
+        coordinator.goBack()
+
+        #expect(playback.events == ["start:BV1Floating", "pause", "resume"])
+    }
+
+    /// 「还原」弹掉盖在活视频播放页上面的所有层，画中画里一直在播，不再继续或暂停；没有活视频时不能还原。
+    @Test
+    func restoringPictureInPictureReturnsToTheLivePlaybackPage() {
+        let playback = PlaybackRecorder()
+        playback.isPictureInPictureActive = true
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1Floating")
+        coordinator.openUploaderSpacePage(owner: owner)
+        #expect(coordinator.restoreLivePlaybackPage())
+
+        #expect(coordinator.history.count == 1)
+        #expect(coordinator.currentPlaybackBVID == "BV1Floating")
+        #expect(playback.events == ["start:BV1Floating"])
+        coordinator.goHome()
+        #expect(!coordinator.restoreLivePlaybackPage())
+    }
+
     /// ⌂ 从活视频的播放页出发时先暂停、转场结束后停止；从空间页出发时没有画面可留，立即停止。
     @Test(arguments: [true, false])
     func goingHomeDefersTheStopOnlyFromTheLivePage(fromLivePage: Bool) {
@@ -189,6 +224,7 @@ private final class PlaybackRecorder {
     var isPlaying = true
     var position: Double?
     var resumePoint: PlaybackSelectionIntent?
+    var isPictureInPictureActive = false
     private(set) var lastStart: PlaybackSelectionIntent?
 
     func makeCoordinator(
@@ -216,6 +252,7 @@ private final class PlaybackRecorder {
             resumePlayback: { [unowned self] in events.append("resume") },
             presentedPosition: { [unowned self] in isPresenting ? position : nil },
             resumePoint: { [unowned self] in resumePoint },
+            isPictureInPictureActive: { [unowned self] in isPictureInPictureActive },
             transitionPage: transitionPage,
             uploaderSpacePage: uploaderSpacePage
         )

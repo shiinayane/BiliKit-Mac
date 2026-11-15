@@ -173,6 +173,8 @@ final class NativePlayerHostView: AVPlayerView {
     private let overlayHostingView: PassthroughHostingView<PlayerOverlayView>
     private var installedDanmakuOverlay = false
     private var isPresentingFullScreen = false
+    /// 画中画的状态与「还原」的交接；只有窗口留住的宿主有，由 `PlayerHostOwner` 交来。
+    var pictureInPicture: PlayerPictureInPicture?
     private var momentaryRateSessionID: UUID?
     private var momentaryRatePressID: UUID?
     private weak var observedPlayer: SeekTrackingPlayer?
@@ -231,6 +233,7 @@ final class NativePlayerHostView: AVPlayerView {
         )
         super.init(frame: .zero)
         delegate = self
+        pictureInPictureDelegate = self
         // 控制条样式只设这一次。准备播放期间不切到 `.none`：每次从 `.none` 切回，AVKit 都重建整套控制条视图控制器，
         // 每打开或换一次视频主线程多挡约 30ms。准备期间改由 `setPlaybackPreparationBlocked` 屏蔽命中、第一响应者、
         // 快捷键与读屏，控制条照常显示但操作不到正在被替换的播放。
@@ -417,6 +420,7 @@ final class NativePlayerHostView: AVPlayerView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window != nil { pictureInPicture?.hostDidEnterWindow() }
         installDanmakuOverlayIfNeeded()
         startObservingFocusLoss()
         applyPendingInitialKeyboardFocus()
