@@ -18,9 +18,11 @@ func makeNavigationCoordinator(
     uploaderSpace: UploaderSpaceViewModel = makeUploaderSpace()
 ) -> AppNavigationCoordinator {
     AppNavigationCoordinator(
-        startPlayback: startPlayback,
-        stopPlayback: stopPlayback,
-        pausePlayback: pausePlayback,
+        playback: AppPlaybackSession(
+            start: startPlayback,
+            stop: stopPlayback,
+            pauseKeepingPicture: pausePlayback
+        ),
         transitionPage: transitionPage,
         uploaderSpace: uploaderSpace
     )

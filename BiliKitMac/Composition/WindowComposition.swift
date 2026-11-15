@@ -105,19 +105,21 @@ final class WindowComposition {
         )
         let pageTransitions = NavigationPageTransitions()
         let navigationCoordinator = AppNavigationCoordinator(
-            startPlayback: { videoModel.select($0) },
-            stopPlayback: {
-                videoModel.reset()
-                danmakuModel.reset()
-            },
-            pausePlayback: {
-                [playback = adapters.playback, currentTimeline = adapters.currentTimeline] in
-                // 播放器上的 item 是这次请求呈现的那一项时才有画面可留；还在加载时 pause 是空操作，拦不住
-                // 加载完成后的自动起播。
-                guard videoModel.isPresenting(currentTimeline()) else { return false }
-                playback.pause()
-                return true
-            },
+            playback: AppPlaybackSession(
+                start: { videoModel.select($0) },
+                stop: {
+                    videoModel.reset()
+                    danmakuModel.reset()
+                },
+                pauseKeepingPicture: {
+                    [playback = adapters.playback, currentTimeline = adapters.currentTimeline] in
+                    // 播放器上的 item 是这次请求呈现的那一项时才有画面可留；还在加载时 pause 是空操作，拦不住
+                    // 加载完成后的自动起播。
+                    guard videoModel.isPresenting(currentTimeline()) else { return false }
+                    playback.pause()
+                    return true
+                }
+            ),
             transitionPage: { [pageTransitions] direction, change, completion in
                 pageTransitions.perform(direction, change: change, completion: completion)
             },

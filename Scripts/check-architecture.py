@@ -140,7 +140,8 @@ EXTRA_ALLOWED = {
     # AppKit 集合视图。
     "BiliKitMac/App/AppRootView.swift": {"BiliApplication"},
     # AppShellView 还把窗口的账户写入协调者包成 BiliUI 的卡片写入口（`VideoCardAccountWriting`，经环境交给各来源的卡片
-    # 菜单），并宿主 BiliUI 的写入结果胶囊（`AccountWriteStatusCapsule`）。
+    # 菜单）；右侧的 AppDetailColumn 宿主 BiliUI 的写入结果胶囊（`AccountWriteStatusCapsule`）。
+    "BiliKitMac/App/AppDetailColumn.swift": {"BiliUI"},
     "BiliKitMac/App/AppShellView.swift": {"BiliApplication", "BiliUI", "BiliVideoCollectionUI"},
     "BiliKitMac/App/AppSidebarViews.swift": {"BiliApplication"},
     "BiliKitMac/App/AppSourceRootViews.swift": {"BiliApplication", "BiliVideoCollectionUI"},
