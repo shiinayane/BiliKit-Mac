@@ -336,7 +336,22 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   「返回」由 App 自绘，根页时整个工具栏项不放。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
   闭包里时，闭包内读到的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口
   保活原样挂回）。macOS 没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面
-  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。
+  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。这样工具栏「返回」、结果胶囊与转场锚点都在 detail 这一层
+  挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每个页面各挂
+  一份，系统返回按钮还要逐页隐藏。
+- 进出播放页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的
+  图层上：主区推移（进入从右、返回从左），侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。
+  新旧两个状态由系统合成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前
+  落地换页，这个时序没有文档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。只有
+  进入播放页与「返回」转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout` 为防新建的 AppKit 视图“飞入”而关掉的
+  事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依赖的
+  自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
+  `CALayer.render` 把侧栏的玻璃材质画成白板）。
+- 返回时旧页面要带着当前画面离开，所以：播放器宿主随窗口常驻（`PlayerHostOwner`），页面卸载只把它摘下，关窗才拆除；
+  「返回」先暂停，转场结束后才停止播放，期间又进入播放页、换来源、登出或关窗都提前完成这次停止（代次见
+  `AppNavigationCoordinator`）。停止播放与拆宿主都会立即清空画面，任何一个落在换页的同一次提交里，旧页面的视频区都会
+  先变黑。延后只为留住画面：还在加载、没有画面可留时返回立即停止（暂停拦不住加载完成后的自动起播）；延后期间播放
+  已离开播放页，播完的自动连播不再生效，宿主摘下时也停掉了播完观察。
 - AVKit 没有公开进入／退出全屏的方法，`enterFullScreen:`／`exitFullScreen:` 是唯一允许使用的私有 AVKit 接口：
   调用前确认响应，系统移除后 F 键静默无效；是否全屏由公开的 `AVPlayerViewDelegate` 回调记录。
 - 加载转圈分三段衔接：详情未到时是骨架上的转圈；已有详情而 player 还没挂上 item 时由播放器浮层画同款转圈；

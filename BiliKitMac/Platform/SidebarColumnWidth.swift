@@ -206,9 +206,13 @@ final class SidebarWidthRestoringView: NSView {
             pendingWidth = nil
         }
     }
+}
 
-    /// 侧栏列内容向上第一个由 `NSSplitViewController` 管理的 `NSSplitView`，即 `NavigationSplitView` 的两栏。
-    private func enclosingNavigationSplitView() -> NSSplitView? {
+extension NSView {
+    /// 向上第一个由 `NSSplitViewController` 管理的 `NSSplitView`，即 `NavigationSplitView` 的两栏。
+    ///
+    /// 按委托类型找而不按私有视图类名，系统换内部层级时仍成立；侧栏宽度记忆与页面转场共用。
+    func enclosingNavigationSplitView() -> NSSplitView? {
         var candidate = superview
         while let view = candidate {
             if let splitView = view as? NSSplitView, splitView.delegate is NSSplitViewController {

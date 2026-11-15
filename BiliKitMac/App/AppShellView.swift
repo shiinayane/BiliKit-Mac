@@ -41,6 +41,8 @@ struct AppShellView: View {
     let imagePipeline: NativeVideoImagePipeline
     /// 各来源网格的保活，按 `AppTab` 留住；账户变化时由本视图丢弃，关窗由窗口组装丢弃。
     let gridRetainer: NativeVideoGridRetainer
+    /// 进出播放页的转场；detail 列把自己登记为它的锚点。
+    let pageTransitions: NavigationPageTransitions
     /// 窗口的账户写入：经环境交给各来源的卡片菜单，结果胶囊盖在主区底部。
     let accountWrites: AccountWriteCoordinator
     /// 播放页点赞、投币、收藏按钮的状态；窗口写入账户变化时交给它重读。
@@ -105,6 +107,7 @@ struct AppShellView: View {
             AppDetailColumn(
                 navigationCoordinator: navigationCoordinator,
                 accountWrites: accountWrites,
+                pageTransitions: pageTransitions,
                 root: { selectedSourceRoot },
                 playback: {
                     PlaybackDestinationView(
@@ -450,6 +453,7 @@ private struct PlaybackDestinationView: View {
 private struct AppDetailColumn<Root: View, Playback: View>: View {
     let navigationCoordinator: AppNavigationCoordinator
     let accountWrites: AccountWriteCoordinator
+    let pageTransitions: NavigationPageTransitions
     @ViewBuilder let root: () -> Root
     @ViewBuilder let playback: () -> Playback
 
@@ -460,6 +464,9 @@ private struct AppDetailColumn<Root: View, Playback: View>: View {
             } else {
                 playback()
             }
+        }
+        .background {
+            NavigationPageTransitionAnchor(transitions: pageTransitions)
         }
         .overlay(alignment: .bottom) {
             AccountWriteStatusOverlay(accountWrites: accountWrites)

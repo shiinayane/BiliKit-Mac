@@ -69,6 +69,8 @@ final class WindowComposition {
     private let imagePipelineOwner = NativeVideoImagePipelineOwner(cacheLimits: .window)
     /// 各来源网格的保活，保活容器交给 `AppShellView` 构造各来源的网格依赖；关窗时在关闭图片管线之前丢弃。
     let gridRetainerOwner = NativeVideoGridRetainerOwner()
+    /// 进出播放页的转场；锚点由 `AppShellView` 的 detail 列登记，只弱引用视图，关窗不需要清理。
+    let pageTransitions: NavigationPageTransitions
     /// 窗口常驻的播放器宿主；关窗时在关闭播放之后拆除。
     private let playerHostOwner = PlayerHostOwner()
     private let systemNowPlayingCoordinator: SystemNowPlayingWindowCoordinator
@@ -101,11 +103,23 @@ final class WindowComposition {
             useCase: UploaderVideoUseCase(repository: adapters.uploaderVideoRepository),
             profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository)
         )
+        let pageTransitions = NavigationPageTransitions()
         let navigationCoordinator = AppNavigationCoordinator(
             startPlayback: { videoModel.select($0) },
             stopPlayback: {
                 videoModel.reset()
                 danmakuModel.reset()
+            },
+            pausePlayback: {
+                [playback = adapters.playback, currentTimeline = adapters.currentTimeline] in
+                // 播放器上的 item 是这次请求呈现的那一项时才有画面可留；还在加载时 pause 是空操作，拦不住
+                // 加载完成后的自动起播。
+                guard videoModel.isPresenting(currentTimeline()) else { return false }
+                playback.pause()
+                return true
+            },
+            transitionPage: { [pageTransitions] direction, change, completion in
+                pageTransitions.perform(direction, change: change, completion: completion)
             },
             uploaderSpace: uploaderSpace
         )
@@ -122,6 +136,7 @@ final class WindowComposition {
             useCase: TrendingSearchUseCase(repository: adapters.trendingSearchRepository)
         )
         self.navigationCoordinator = navigationCoordinator
+        self.pageTransitions = pageTransitions
         self.browseModel = browseModel
         self.videoModel = videoModel
         self.commentsModel = commentsModel
