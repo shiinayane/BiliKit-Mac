@@ -15,10 +15,19 @@ enum AppTab: Hashable, CaseIterable {
     case favorites
 }
 
-/// 进出页面时页面切换的方向，供视图层选择转场；同类替换、换来源、登出与关窗不转场。
-enum AppPageTransition {
-    case push
-    case pop
+/// 进出页面时的一次换页，供视图层选择转场；同类替换、换来源、登出与关窗不转场。
+struct AppPageTransition: Equatable {
+    enum Direction {
+        case push
+        case pop
+    }
+
+    let direction: Direction
+    /// 这次移动的那一页是不是播放页：压一层时是压进来的新栈顶，弹出时是弹出去的旧栈顶（经 ⌂ 与「还原」一次弹出多层时
+    /// 也只看旧栈顶）。
+    ///
+    /// 只有播放页铺满不透明底色，视图层据此决定能不能让它叠在另一页上滑动，透明的页面只能并排推移。
+    let movesPlaybackPage: Bool
 }
 
 /// 右侧历史里一页的内容；来源根页不在历史里。
@@ -29,6 +38,10 @@ enum AppDestination: Equatable {
     case playback(PlaybackSelectionIntent)
     /// 整页 UP 主空间：回到这一页时按记下的排序与搜索词重建。
     case uploaderSpace(UploaderSpaceDestination)
+
+    var isPlayback: Bool {
+        if case .playback = self { true } else { false }
+    }
 }
 
 /// 整页空间页这一项记下的内容条件；页面上改排序或搜索时，在模型被另一项占用之前写回这里。
@@ -197,7 +210,7 @@ final class AppNavigationCoordinator {
         completePendingStop()
         coverLivePlayback()
         let entry = AppHistoryEntry(id: takeEntryID(), destination: .uploaderSpace(destination))
-        transitionPage(.push, { history.append(entry) }, {})
+        pushPage(entry)
         showSpace(destination, entryID: entry.id)
     }
 
@@ -272,7 +285,7 @@ final class AppNavigationCoordinator {
                 id: takeEntryID(),
                 destination: .playback(switchesPage ? intent : live)
             )
-            transitionPage(.push, { history.append(entry) }, {})
+            pushPage(entry)
             if switchesPage {
                 makeLive(intent, entryID: entry.id)
             } else {
@@ -283,7 +296,7 @@ final class AppNavigationCoordinator {
         }
         rememberResumePoint(excluding: nil)
         let entry = AppHistoryEntry(id: takeEntryID(), destination: .playback(intent))
-        transitionPage(.push, { history.append(entry) }, {})
+        pushPage(entry)
         makeLive(intent, entryID: entry.id)
     }
 
@@ -308,7 +321,7 @@ final class AppNavigationCoordinator {
         switch newTop?.destination {
         case .playback(let intent)?:
             completePendingStop()
-            transitionPage(.pop, change, {})
+            popPage(change)
             closeSpacePageIfUnused()
             guard let newTop else { return }
             if newTop.id == liveEntryID {
@@ -327,12 +340,12 @@ final class AppNavigationCoordinator {
                     history[historyIndex(of: lower.id)].destination = .playback(liveIntent)
                 }
                 liveEntryID = lower.id
-                transitionPage(.pop, change, {})
+                popPage(change)
                 coverLivePlayback()
             } else if top.id == liveEntryID {
                 popStoppingLivePlayback(change)
             } else {
-                transitionPage(.pop, change, {})
+                popPage(change)
             }
             // 模型被会话切换关掉时，即使仍属于这一项也重新打开，否则回来只看到骨架屏。
             if liveSpaceEntryID != newTop.id || uploaderSpacePage.owner == nil {
@@ -342,7 +355,7 @@ final class AppNavigationCoordinator {
             if top.id == liveEntryID {
                 popStoppingLivePlayback(change)
             } else {
-                transitionPage(.pop, change, {})
+                popPage(change)
                 stopLivePlayback()
             }
             closeSpacePageIfUnused()
@@ -375,7 +388,7 @@ final class AppNavigationCoordinator {
         if top.id == liveEntryID {
             popStoppingLivePlayback(change)
         } else {
-            transitionPage(.pop, change, {})
+            popPage(change)
             stopLivePlayback()
         }
         closeSpacePageIfUnused()
@@ -398,14 +411,10 @@ final class AppNavigationCoordinator {
         }
         pausedByCovering = nil
         guard index < history.count - 1 else { return true }
-        transitionPage(
-            .pop,
-            {
-                history.removeSubrange((index + 1)...)
-                closeSidebarContext()
-            },
-            {}
-        )
+        popPage {
+            history.removeSubrange((index + 1)...)
+            closeSidebarContext()
+        }
         closeSpacePageIfUnused()
         return true
     }
@@ -554,28 +563,43 @@ final class AppNavigationCoordinator {
     /// 离开活视频所在的页面：有画面可留时先暂停，转场结束后再停止；没有时转场照常、立即停止。
     private func popStoppingLivePlayback(_ change: () -> Void) {
         guard liveIntent != nil else {
-            transitionPage(.pop, change, {})
+            popPage(change)
             return
         }
         clearLive()
         guard playback.pauseKeepingPicture() else {
-            transitionPage(.pop, change, {})
+            popPage(change)
             playback.stop()
             return
         }
         hasPendingStop = true
         pendingStopGeneration &+= 1
         let generation = pendingStopGeneration
-        transitionPage(
-            .pop,
-            change,
-            { [weak self] in
-                guard let self, self.hasPendingStop, self.pendingStopGeneration == generation else {
-                    return
-                }
-                self.hasPendingStop = false
-                self.playback.stop()
+        popPage(change) { [weak self] in
+            guard let self, self.hasPendingStop, self.pendingStopGeneration == generation else {
+                return
             }
+            self.hasPendingStop = false
+            self.playback.stop()
+        }
+    }
+
+    /// 压一层的转场：移动的是压进来的这一页。
+    private func pushPage(_ entry: AppHistoryEntry) {
+        transitionPage(
+            AppPageTransition(direction: .push, movesPlaybackPage: entry.destination.isPlayback),
+            { history.append(entry) },
+            {}
+        )
+    }
+
+    /// 弹出的转场：移动的是此刻的栈顶，所以必须在 `change` 弹掉它之前调用。
+    private func popPage(_ change: () -> Void, completion: @escaping () -> Void = {}) {
+        let movesPlaybackPage = history.last?.destination.isPlayback ?? false
+        transitionPage(
+            AppPageTransition(direction: .pop, movesPlaybackPage: movesPlaybackPage),
+            change,
+            completion
         )
     }
 

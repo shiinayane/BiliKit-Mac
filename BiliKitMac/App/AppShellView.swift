@@ -491,8 +491,8 @@ private struct PlaybackDestinationView: View {
         ) {
             playerContent
         }
-        // macOS 没有给页面设底色的接口，页面本身透明，所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方
-        // （见 ARCHITECTURE「播放页布局」）。
+        // macOS 没有给页面设底色的接口，页面本身透明，所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方；换页转场让
+        // 播放页叠在别的页面上滑动，也靠这层不透明（见 ARCHITECTURE「播放页布局」）。
         .background {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()

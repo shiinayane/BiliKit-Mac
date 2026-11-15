@@ -131,8 +131,8 @@ final class WindowComposition {
                 adapters: adapters,
                 pictureInPicture: playerHostOwner.pictureInPicture
             ),
-            transitionPage: { [pageTransitions] direction, change, completion in
-                pageTransitions.perform(direction, change: change, completion: completion)
+            transitionPage: { [pageTransitions] transition, change, completion in
+                pageTransitions.perform(transition, change: change, completion: completion)
             },
             uploaderSpace: uploaderSpace,
             uploaderSpacePage: uploaderSpacePage

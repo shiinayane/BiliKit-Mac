@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 右侧换页的转场（压一层、返回、回到来源）：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区推移、侧栏淡入淡出，
+/// 右侧换页的转场（压一层、返回、回到来源）：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区滑动、侧栏淡入淡出，
 /// 再无动画地换页。
 ///
 /// 每个窗口一份，由 `WindowComposition` 构造并以闭包交给 `AppNavigationCoordinator`；只弱引用锚点视图，分栏在每次转场时
@@ -34,7 +34,7 @@ final class NavigationPageTransitions {
     /// 两栏按锚点认：锚点所在的那一栏是主区，第一栏是侧栏，分栏里多出别的栏也不会把转场挂错。找不到分栏或主区没有
     /// 图层时不加动画，直接换页并立即完成；侧栏收起时只跳过侧栏的转场。打开「减少动态效果」时主区也只淡入淡出。
     func perform(
-        _ direction: AppPageTransition,
+        _ pageTransition: AppPageTransition,
         change: () -> Void,
         completion: @escaping () -> Void
     ) {
@@ -50,7 +50,7 @@ final class NavigationPageTransitions {
             return
         }
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let detailTransition = Self.transition(reducesMotion ? nil : direction)
+        let detailTransition = Self.transition(reducesMotion ? nil : pageTransition)
         let finish = TransitionCompletion(completion)
         detailTransition.delegate = finish
         detailLayer.add(detailTransition, forKey: Self.animationKey)
@@ -71,19 +71,28 @@ final class NavigationPageTransitions {
         withTransaction(transaction, change)
     }
 
-    /// 有方向时推移：进入播放页时新页面从右边推入，返回时从左边推回；没有方向时淡入淡出。
-    private static func transition(_ direction: AppPageTransition?) -> CATransition {
+    /// 有换页时滑动，没有时淡入淡出。
+    ///
+    /// 移动的是播放页时它叠在另一页上滑：压进来时从右边盖上去，弹出时向右滑走、露出下面不动的那一页。其余页面并排
+    /// 推移：来源根页与空间页是透明的，叠在别的页面上滑动时会透出下面那一页。
+    private static func transition(_ pageTransition: AppPageTransition?) -> CATransition {
         let transition = CATransition()
         transition.duration = duration
         transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        switch direction {
-        case .push:
+        switch (pageTransition?.direction, pageTransition?.movesPlaybackPage ?? false) {
+        case (.push?, true):
+            transition.type = .moveIn
+            transition.subtype = .fromRight
+        case (.pop?, true):
+            transition.type = .reveal
+            transition.subtype = .fromLeft
+        case (.push?, false):
             transition.type = .push
             transition.subtype = .fromRight
-        case .pop:
+        case (.pop?, false):
             transition.type = .push
             transition.subtype = .fromLeft
-        case nil:
+        case (nil, _):
             transition.type = .fade
         }
         return transition
