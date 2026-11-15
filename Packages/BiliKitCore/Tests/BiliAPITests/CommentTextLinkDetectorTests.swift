@@ -5,7 +5,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定评论正文自识别：纯文字里的视频网址、BV／av 号、b23.tv 短链与时间戳成为链接，句读、不成对括号、
-/// 表情与中文不算进网址，嵌在单词里或通不过 HTTPS 复核的不识别，接口已标出的范围优先，范围按 UTF-16 计算。
+/// 表情与中文不算进网址，嵌在单词里或通不过 HTTPS 复核的不识别，时间戳与官方网页评论区认同一段文字，
+/// 接口已标出的范围优先，范围按 UTF-16 计算。
 @Suite("Comment text link detector")
 struct CommentTextLinkDetectorTests {
     private func detected(_ message: String) -> [(text: String, target: CommentLinkTarget)] {
@@ -149,49 +150,42 @@ struct CommentTextLinkDetectorTests {
         )
     }
 
-    /// 时间戳：`m:ss`（分钟最多 3 位）与 `h:mm:ss`，分隔符半角、全角冒号都认，后面紧跟字母或中文照常识别；
-    /// 是否超出视频时长到显示时再判断。
-    @Test
-    func timestampsInPlainText() {
-        let links = detected(
-            "1:23 处，还有 01:02:03 和 120:00，以及（12:34）、2：05、1：02：03、3:45s、4:56this"
-        )
+    /// 时间戳与官方网页评论区认同一段文字、跳到同一秒数：前后紧挨什么都不影响，冒号半角全角都认，
+    /// 各段不限 60，四段时取前三段；是否超出视频时长到显示时再判断。
+    @Test(
+        arguments: [
+            (
+                "1:23 处，还有 01:02:03 和 120:00，以及（12:34）", ["1:23", "01:02:03", "120:00", "12:34"],
+                [83, 3_723, 7_200, 754]
+            ),
+            ("哈哈哈:00:11", ["00:11"], [11]),
+            ("2：05、1：02：03", ["2：05", "1：02：03"], [125, 3_723]),
+            (
+                "p1:23 x264:10 3:45s 4:56this", ["1:23", "264:10", "3:45", "4:56"],
+                [83, 15_850, 225, 296]
+            ),
+            ("1:60 1:60:00 1234:56", ["1:60", "1:60:00", "1234:56"], [120, 7_200, 74_096]),
+            ("12:34:56:78 1:234", ["12:34:56", "1:23"], [45_296, 83])
+        ]
+    )
+    func timestampsMatchOfficialTokenizer(message: String, texts: [String], seconds: [Int]) {
+        let links = detected(message)
 
-        #expect(
-            links.map(\.text) == [
-                "1:23", "01:02:03", "120:00", "12:34", "2：05", "1：02：03", "3:45", "4:56"
-            ]
-        )
-        #expect(
-            links.map(\.target) == [
-                .timestamp(seconds: 83),
-                .timestamp(seconds: 3_723),
-                .timestamp(seconds: 7_200),
-                .timestamp(seconds: 754),
-                .timestamp(seconds: 125),
-                .timestamp(seconds: 3_723),
-                .timestamp(seconds: 225),
-                .timestamp(seconds: 296)
-            ]
-        )
+        #expect(links.map(\.text) == texts)
+        #expect(links.map(\.target) == seconds.map { .timestamp(seconds: $0) })
     }
 
-    /// 不是时间的写法不识别：秒不是两位或不小于 60、比例、更长的数字串、前面紧挨字母、全角数字、网址里的时间。
+    /// 不成为时间戳链接：秒不是两位、全角数字、网址里的时间、带分 P 前缀（`2#01:23` 指别的分 P，
+    /// 不能在当前分 P 里跳）、秒数溢出。
     @Test(
         arguments: [
             "1:2",
-            "1:60",
             "3:2",
             "16:9",
-            "1234:56",
-            "12:34:56:78",
-            "1:60:00",
             "１：２３",
-            "p1:23",
-            "x264:10",
-            "12：34：56：78",
-            "p1：23",
-            "https://example.com/a?at=10:30"
+            "https://example.com/a?at=10:30",
+            "2#01:23",
+            "9999999999999999:59:59"
         ]
     )
     func nonTimestampsStayPlainText(message: String) {
