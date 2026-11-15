@@ -81,7 +81,8 @@ public struct UploaderSpaceSidebarView: View {
         }
     }
 
-    /// 顶部浮动的一行：返回按钮（⌘[ 同样返回）、空间内搜索框与打开整页空间页的按钮；叠在列表与状态覆盖层之上。
+    /// 顶部浮动的一行：返回按钮（菜单「前往 › 返回」的 ⌘[ 同样关闭预览）、空间内搜索框与打开整页空间页的按钮；叠在列表与
+    /// 状态覆盖层之上。
     ///
     /// 搜索框以 UP 主为身份重建：换 UP 主时草稿清空，与 ViewModel 清掉的搜索词一致。
     private var topBar: some View {
@@ -91,7 +92,6 @@ public struct UploaderSpaceSidebarView: View {
                 label: VideoDetailFeatureStrings.localized("返回详情"),
                 action: model.close
             )
-            .keyboardShortcut("[", modifiers: .command)
             UploaderSpaceSearchField(onSubmit: model.submitSearch)
                 .id(model.owner?.id)
                 // 超大档的搜索框固有高度 36pt，与左侧返回按钮（large 档、24pt 图标的圆形按钮）等高。

@@ -131,6 +131,15 @@ struct AppShellView: View {
         .environment(\.videoCardAccountWriting, accountWriting)
         .environment(\.videoEngagementActions, engagementActions)
         .navigationSplitViewStyle(.balanced)
+        .focusedSceneValue(
+            \.appNavigation,
+            AppNavigationMenuTarget(
+                coordinator: navigationCoordinator,
+                rootTitle: sources[navigationCoordinator.selectedTab].title,
+                canNavigateBack: navigationCoordinator.canNavigateBack,
+                canGoHome: navigationCoordinator.canGoBack
+            )
+        )
         .frame(minWidth: 760, minHeight: 560)
         .sheet(isPresented: $isAuthenticationPresented) {
             AuthenticationView(model: authenticationModel)

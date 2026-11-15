@@ -349,6 +349,20 @@ final class AppNavigationCoordinator {
         }
     }
 
+    /// 「前往 › 返回」（⌘[）：侧栏的 UP 主空间预览开着时先关预览（与预览自己的返回按钮一样），否则同工具栏「返回」。
+    func navigateBack() {
+        if isSidebarContextOpen {
+            closeSidebarContext()
+        } else {
+            goBack()
+        }
+    }
+
+    /// 「前往 › 返回」此刻能否动作。
+    var canNavigateBack: Bool {
+        isSidebarContextOpen || canGoBack
+    }
+
     /// 工具栏 ⌂：清空历史回到来源根页并停止播放。
     ///
     /// 栈顶就是活视频时先暂停、转场后停止（旧页面带着画面离开）；栈顶是空间页时没有画面可留，立即停止。
