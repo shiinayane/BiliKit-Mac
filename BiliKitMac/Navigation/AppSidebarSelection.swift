@@ -32,7 +32,8 @@ extension AppSources {
     /// 侧栏选中一行：多行来源先把条目交给来源，再切换到该来源（同一来源内换行不切换来源、不停用来源）。
     ///
     /// 选中的行与此刻高亮的不同就清空右侧历史并停止播放，回到那一行的根页：浏览类页面（整页空间页）上侧栏是来源导航，
-    /// 点另一行就是离开。点已选中的那一行，列表不发出选择变化，不回根页。
+    /// 点另一行就是离开。点已选中的那一行，列表不发出选择变化，不经过这里：由侧栏的 `SidebarReselectDetector` 识别后
+    /// 回根页。
     func select(_ selection: AppSidebarSelection, in coordinator: AppNavigationCoordinator) {
         if selection != sidebarSelection(for: coordinator.selectedTab) {
             coordinator.closeForSidebarSelection()

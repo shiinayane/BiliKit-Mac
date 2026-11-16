@@ -110,7 +110,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private let configuredItems = NSHashTable<NativeVideoCollectionItem>.weakObjects()
         private var dataSource: NSCollectionViewDiffableDataSource<Int, String>?
         private var contentIdentity: String
-        private var contents: NativeVideoCardContents
+        private var contents: NativeCardContents<NativeVideoCardPresentation>
         private var reduceMotion: Bool
         private var isInteractionEnabled: Bool
         private var onSelect: (String) -> Void
@@ -132,7 +132,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu?
         ) {
             self.contentIdentity = contentIdentity
-            contents = NativeVideoCardContents(items)
+            contents = NativeCardContents(items)
             self.imagePipeline = imagePipeline
             self.reduceMotion = reduceMotion
             self.isInteractionEnabled = isInteractionEnabled
@@ -187,7 +187,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             )
             collectionView.setAccessibilityLabel(VideoDetailFeatureStrings.localized("横向相关推荐"))
 
-            dataSource = NativeVideoCardDataSource.make(
+            dataSource = NativeCardDataSource<NativeVideoCollectionItem>.make(
                 collectionView: collectionView,
                 presentation: { [weak self] id in self?.contents[id] },
                 configure: { [weak self] item, presentation in
@@ -242,7 +242,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             self.onSelect = onSelect
             self.cardMenu = cardMenu
             applyInteractionState(isInteractionEnabled, reconfiguresCards: true)
-            let updatedContents = NativeVideoCardContents(items)
+            let updatedContents = NativeCardContents(items)
             let plan = NativeVideoGridUpdatePlan(
                 previousIDs: contents.orderedIDs,
                 previousContents: contents.byID,
@@ -294,7 +294,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             collectionView.dataSource = nil
             dataSource = nil
             scrollView.reset()
-            contents = NativeVideoCardContents()
+            contents = NativeCardContents()
             onSelect = { _ in }
             cardMenu = { _ in nil }
         }
@@ -346,7 +346,12 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private func reconfigureVisibleCards(ids: Set<String>? = nil) {
-            for (item, presentation) in contents.visibleCards(in: collectionView, ids: ids) {
+            let visibleCards = contents.visibleCards(
+                of: NativeVideoCollectionItem.self,
+                in: collectionView,
+                ids: ids
+            )
+            for (item, presentation) in visibleCards {
                 configure(item, with: presentation)
             }
         }

@@ -3,7 +3,7 @@ import BiliUI
 import BiliVideoCollectionUI
 import SwiftUI
 
-/// 观看历史、稍后再看与收藏夹网格的卡片菜单：列表主区（`LibraryVideoListContentView`）与收藏夹内容
+/// 观看历史、稍后再看与收藏夹网格的卡片菜单：视频列表的网格（`LibraryVideoGrid`）与收藏夹内容
 /// （`FavoriteFolderContentView`）都把它交给 `NativeVideoGridView` 的 `cardMenu`。
 ///
 /// 写操作一组加「拷贝链接」「在浏览器中打开」一组，规则在共用的 `NativeVideoCardMenu.video`：观看历史与收藏夹给

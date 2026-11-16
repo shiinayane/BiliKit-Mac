@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// 右侧换页的转场（压一层、返回、回到来源）：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区滑动、侧栏淡入淡出，
-/// 再无动画地换页。
+/// 右侧换页的转场（压一层、返回、回到来源）：在 `NavigationSplitView` 两栏的图层上各挂一个 Core Animation 转场，主区
+/// 覆盖或揭开、侧栏淡入淡出，再无动画地换页。
 ///
 /// 每个窗口一份，由 `WindowComposition` 构造并以闭包交给 `AppNavigationCoordinator`；只弱引用锚点视图，分栏在每次转场时
 /// 从锚点向上临时查找，不持有分栏或观察。每次转场起一个兜底计时的 Task，不保存也不取消：它只持有这次的一次性完成
@@ -16,7 +16,7 @@ import SwiftUI
 final class NavigationPageTransitions {
     /// 转场时长：比系统压栈略快，连续压栈、返回时不拖沓。
     ///
-    /// 再短推移就看不清方向。返回时播放器在转场结束后才停止，改长会让暂停的旧视频多留一会儿。
+    /// 再短就看不清新页从右边盖上、旧页向右揭开的方向。返回时播放器在转场结束后才停止，改长会让暂停的旧视频多留一会儿。
     private static let duration: CFTimeInterval = 0.3
     /// 两栏转场共用的 key：转场进行中再次导航时替换在途的转场，不叠加。
     private static let animationKey = "BiliKitPageTransition"
@@ -34,7 +34,7 @@ final class NavigationPageTransitions {
     /// 两栏按锚点认：锚点所在的那一栏是主区，第一栏是侧栏，分栏里多出别的栏也不会把转场挂错。找不到分栏或主区没有
     /// 图层时不加动画，直接换页并立即完成；侧栏收起时只跳过侧栏的转场。打开「减少动态效果」时主区也只淡入淡出。
     func perform(
-        _ pageTransition: AppPageTransition,
+        _ direction: AppPageTransition,
         change: () -> Void,
         completion: @escaping () -> Void
     ) {
@@ -50,7 +50,7 @@ final class NavigationPageTransitions {
             return
         }
         let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let detailTransition = Self.transition(reducesMotion ? nil : pageTransition)
+        let detailTransition = Self.transition(reducesMotion ? nil : direction)
         let finish = TransitionCompletion(completion)
         detailTransition.delegate = finish
         detailLayer.add(detailTransition, forKey: Self.animationKey)
@@ -71,28 +71,22 @@ final class NavigationPageTransitions {
         withTransaction(transaction, change)
     }
 
-    /// 有换页时滑动，没有时淡入淡出。
+    /// 有方向时滑动，没有时淡入淡出。
     ///
-    /// 移动的是播放页时它叠在另一页上滑：压进来时从右边盖上去，弹出时向右滑走、露出下面不动的那一页。其余页面并排
-    /// 推移：来源根页与空间页是透明的，叠在别的页面上滑动时会透出下面那一页。
-    private static func transition(_ pageTransition: AppPageTransition?) -> CATransition {
+    /// 移动的页叠在不动的那一页上：压一层时新页从右边盖上去，返回时旧页向右滑走、露出下面的页面。这要求历史页都铺
+    /// 不透明底色，否则叠着滑会透出下面那一页（见 ARCHITECTURE「播放页布局」）。
+    private static func transition(_ direction: AppPageTransition?) -> CATransition {
         let transition = CATransition()
         transition.duration = duration
         transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        switch (pageTransition?.direction, pageTransition?.movesPlaybackPage ?? false) {
-        case (.push?, true):
+        switch direction {
+        case .push:
             transition.type = .moveIn
             transition.subtype = .fromRight
-        case (.pop?, true):
+        case .pop:
             transition.type = .reveal
             transition.subtype = .fromLeft
-        case (.push?, false):
-            transition.type = .push
-            transition.subtype = .fromRight
-        case (.pop?, false):
-            transition.type = .push
-            transition.subtype = .fromLeft
-        case (nil, _):
+        case nil:
             transition.type = .fade
         }
         return transition

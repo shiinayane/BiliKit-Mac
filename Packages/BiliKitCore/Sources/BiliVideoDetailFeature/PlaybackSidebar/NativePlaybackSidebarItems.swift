@@ -68,16 +68,16 @@ enum NativePlaybackSidebarItemMeasurement {
 /// UP 主行的唯一几何来源；高度测量与 `layout()` 共用，缓存高度不会与实际布局漂移。
 ///
 /// 行高按名字、计数、签名三行都在时计算，与名片状态无关：加载中两行占位，到达后缺了哪行也不改行高，名片到达的过渡只需
-/// 覆盖这一行（见 `NativePlaybackUploaderProfileReveal`）。实际出现的几行作为一块、与头像一起在行内上下居中；“查看空间”
-/// 箭头紧跟在名字末尾，像一个可点的标题；关注按钮独占行尾、与头像一起上下居中，文字各行都止于它左侧。
+/// 覆盖这一行（见 `NativePlaybackUploaderProfileReveal`）。实际出现的几行作为一块、与头像一起在行内上下居中；关注按钮紧跟
+/// 在名字后面（名字放不下时先截断名字，按钮总是完整），“查看空间”箭头独占行尾、与头像一起上下居中，文字各行都止于它左侧。
 @MainActor
 struct NativePlaybackUploaderGeometry {
     static let textLeading = NativePlaybackSidebarItemMeasurement.avatarSize + 12
-    /// 名字末尾“查看空间”箭头按钮的边长，以及它与名字之间的间距。
+    /// 行尾“查看空间”箭头按钮的边长，以及它与左侧文字之间的间距。
     static let spaceButtonSize: CGFloat = 16
-    static let spaceButtonSpacing: CGFloat = 2
-    /// 关注按钮与左侧文字之间的间距。
-    static let followButtonSpacing: CGFloat = 12
+    static let spaceButtonSpacing: CGFloat = 12
+    /// 关注按钮与它前面的名字之间的间距。
+    static let followButtonSpacing: CGFloat = 8
     static let loadingBarHeight: CGFloat = 12
     static let statsLoadingBarWidth: CGFloat = 120
     static let signatureLoadingBarWidth: CGFloat = 196
@@ -94,11 +94,9 @@ struct NativePlaybackUploaderGeometry {
         )
     }
     static var signatureFont: NSFont { .preferredFont(forTextStyle: .callout) }
-    static var followTitle: String { VideoDetailFeatureStrings.localized("关注") }
-    static var followingTitle: String { VideoDetailFeatureStrings.localized("已关注") }
 
     let avatarFrame: NSRect
-    /// 名字行可用的整段宽度；名字与箭头的实际位置由 `nameRow` 在其中排出。
+    /// 名字行可用的整段宽度；名字与关注按钮的实际位置由 `nameRow` 在其中排出。
     let nameFrame: NSRect
     /// 计数与签名各一行，固定单行、超出省略；隐藏时高度为 0。
     let statsFrame: NSRect
@@ -106,11 +104,16 @@ struct NativePlaybackUploaderGeometry {
     /// 加载中占位条；不在加载时为 `.zero`。
     let statsLoadingBarFrame: NSRect
     let signatureLoadingBarFrame: NSRect
-    /// 没有关注按钮时为 `.zero`。
-    let followButtonFrame: NSRect
     let height: CGFloat
+    private let width: CGFloat
+    private let hasFollowButton: Bool
+    private let showsSpaceButton: Bool
 
-    init(content: VideoUploaderHeaderContent, width: CGFloat) {
+    /// `showsSpaceButton` 为 false（没有空间入口）时行尾不留箭头的位置；只用来测量行高时可以省略，行高与它无关。
+    init(content: VideoUploaderHeaderContent, width: CGFloat, showsSpaceButton: Bool = true) {
+        self.width = width
+        self.showsSpaceButton = showsSpaceButton
+        hasFollowButton = content.follow != nil
         let spacing = NativePlaybackSidebarItemMeasurement.textSpacing
         let avatarSize = NativePlaybackSidebarItemMeasurement.avatarSize
         let nameHeight = ceil(Self.nameFont.pointSize * 1.35)
@@ -127,18 +130,8 @@ struct NativePlaybackUploaderGeometry {
             height: avatarSize
         )
 
-        let followSize = content.follow == nil ? NSSize.zero : Self.followButtonSize
-        followButtonFrame =
-            content.follow == nil
-            ? .zero
-            : NSRect(
-                x: width - followSize.width,
-                y: floor((height - followSize.height) / 2),
-                width: followSize.width,
-                height: followSize.height
-            )
         let trailingReserve =
-            content.follow == nil ? 0 : followSize.width + Self.followButtonSpacing
+            showsSpaceButton ? Self.spaceButtonSize + Self.spaceButtonSpacing : 0
         let textWidth = max(40, width - Self.textLeading - trailingReserve)
 
         let lineHeights =
@@ -170,24 +163,38 @@ struct NativePlaybackUploaderGeometry {
             : .zero
     }
 
-    /// 名字与紧随其后的箭头：名字按不截断时的宽度 `nameWidth` 排，放不下时截断、给箭头留出位置；没有空间入口时箭头为
-    /// `.zero`，名字可占满整段。
-    func nameRow(
-        nameWidth: CGFloat,
-        showsSpaceButton: Bool
-    ) -> (name: NSRect, spaceButton: NSRect) {
-        let buttonSize = Self.spaceButtonSize
-        let reserve = showsSpaceButton ? buttonSize + Self.spaceButtonSpacing : 0
+    /// 名字、紧随其后的关注按钮与行尾的箭头：名字按不截断时的宽度 `nameWidth` 排，放不下时截断、给关注按钮留出位置；没有
+    /// 关注按钮或空间入口时对应的框为 `.zero`。
+    ///
+    /// 关注按钮与名字行上下居中，但不越出这一行：按钮比名字行高、名字行又贴着行顶时，居中会让它伸出集合项的上边界被裁掉。
+    func nameRow(nameWidth: CGFloat) -> (name: NSRect, spaceButton: NSRect, followButton: NSRect) {
+        let followSize = hasFollowButton ? Self.followButtonSize : .zero
+        let reserve = hasFollowButton ? followSize.width + Self.followButtonSpacing : 0
         var name = nameFrame
         name.size.width = max(0, min(ceil(nameWidth), nameFrame.width - reserve))
-        guard showsSpaceButton else { return (name, .zero) }
-        let button = NSRect(
-            x: name.maxX + Self.spaceButtonSpacing,
-            y: floor(nameFrame.midY - buttonSize / 2),
-            width: buttonSize,
-            height: buttonSize
-        )
-        return (name, button)
+        let follow =
+            hasFollowButton
+            ? NSRect(
+                x: name.maxX + Self.followButtonSpacing,
+                y: min(
+                    max(0, floor(nameFrame.midY - followSize.height / 2)),
+                    max(0, height - followSize.height)
+                ),
+                width: followSize.width,
+                height: followSize.height
+            )
+            : .zero
+        let buttonSize = Self.spaceButtonSize
+        let space =
+            showsSpaceButton
+            ? NSRect(
+                x: width - buttonSize,
+                y: floor((height - buttonSize) / 2),
+                width: buttonSize,
+                height: buttonSize
+            )
+            : .zero
+        return (name, space, follow)
     }
 
     private static func loadingBar(in line: NSRect, maximumWidth: CGFloat) -> NSRect {
@@ -221,10 +228,22 @@ struct NativePlaybackUploaderGeometry {
         return label
     }
 
-    /// 关注按钮；真实按钮与测量用按钮都由这里创建，宽度按两种标题中较宽的一个算，切换关注状态时名字的宽度不跳动。
+    /// 关注按钮；真实按钮与测量用按钮都由这里创建，宽度按两种标题与图标中较宽的一个算，切换关注状态时名字的宽度不跳动。
+    ///
+    /// macOS 26 起是胶囊形的液态玻璃（「关注」由 `bezelColor` 染成强调色）：small 档的自动形状是圆角矩形，显式指定胶囊，与
+    /// 整页空间页头部的按钮一致；更早的系统是普通按钮。
     static func makeFollowButton() -> NSButton {
-        let button = NSButton(title: followTitle, target: nil, action: nil)
-        button.bezelStyle = .push
+        let button = NSButton(
+            title: UploaderFollowButtonLabel.title(isFollowing: false),
+            target: nil,
+            action: nil
+        )
+        if #available(macOS 26.0, *) {
+            button.bezelStyle = .glass
+            button.borderShape = .capsule
+        } else {
+            button.bezelStyle = .push
+        }
         button.controlSize = .small
         button.font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
         return button
@@ -268,10 +287,20 @@ struct NativePlaybackUploaderGeometry {
         return ceil(label.fittingSize.height)
     }
 
+    /// 按钮的标题与图标（映射在 `UploaderFollowButtonLabel`）；真实按钮与测量按钮共用。
+    static func applyFollowLabel(isFollowing: Bool, to button: NSButton) {
+        button.title = UploaderFollowButtonLabel.title(isFollowing: isFollowing)
+        button.image = NSImage(
+            systemSymbolName: UploaderFollowButtonLabel.systemImage(isFollowing: isFollowing),
+            accessibilityDescription: nil
+        )
+        button.imagePosition = .imageLeading
+    }
+
     static var followButtonSize: NSSize {
         var size = NSSize.zero
-        for title in [followTitle, followingTitle] {
-            followSizingButton.title = title
+        for isFollowing in [false, true] {
+            applyFollowLabel(isFollowing: isFollowing, to: followSizingButton)
             let fitting = followSizingButton.fittingSize
             size.width = max(size.width, ceil(fitting.width))
             size.height = max(size.height, ceil(fitting.height))

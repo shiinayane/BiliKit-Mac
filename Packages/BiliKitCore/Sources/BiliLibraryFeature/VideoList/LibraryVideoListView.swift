@@ -39,13 +39,27 @@ struct LibraryVideoListView<Item: Sendable & Equatable, Cursor: Equatable & Send
             isBusy: { model.isBusy },
             refresh: refresh ?? model.reload,
             content: {
-                LibraryVideoListContentView(
+                LibraryListContentView(
                     model: model,
                     text: text,
-                    card: card,
-                    watchLaterAction: watchLaterAction,
-                    gridHost: gridHost,
-                    onSelect: onSelect
+                    loading: {
+                        VideoCardGridSkeleton(
+                            loadingLabel: text.loading,
+                            expectedItemCount: model.expectedLoadingItemCount
+                        )
+                    },
+                    grid: { items, tailState in
+                        LibraryVideoGrid(
+                            items: items,
+                            tailState: tailState,
+                            accessibilityLabel: text.gridAccessibilityLabel,
+                            card: card,
+                            watchLaterAction: watchLaterAction,
+                            gridHost: gridHost,
+                            onNearEnd: model.loadMore,
+                            onSelect: onSelect
+                        )
+                    }
                 )
                 .task {
                     model.loadIfNeeded()

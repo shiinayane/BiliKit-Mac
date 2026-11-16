@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 首载骨架：列数、卡片尺寸、间距、内容边距与占位卡片数都取自生产网格的 `VideoCardGridGeometry`。
+/// 首载骨架：列数、卡片尺寸、间距、内容边距与占位卡片数都取自生产网格的 `CardGridGeometry.video`。
 ///
 /// 卡片数按可见尺寸计算（`placeholderCount(for:expectedItemCount:)`），窗口缩放时跟着增减；来源知道本页
 /// 条数时不超过它，否则铺满可见区域。骨架禁用滚动，只画视野内的卡片。
@@ -15,22 +15,23 @@ package struct VideoCardGridSkeleton: View {
     }
 
     package var body: some View {
+        let grid = CardGridGeometry.video
         GeometryReader { geometry in
-            let itemSize = VideoCardGridGeometry.itemSize(for: geometry.size.width)
+            let itemSize = grid.itemSize(for: geometry.size.width)
             ScrollView {
                 LazyVGrid(
                     columns: Array(
                         repeating: GridItem(
                             .fixed(itemSize.width),
-                            spacing: VideoCardGridGeometry.horizontalSpacing
+                            spacing: grid.horizontalSpacing
                         ),
-                        count: VideoCardGridGeometry.columnCount(for: geometry.size.width)
+                        count: grid.columnCount(for: geometry.size.width)
                     ),
                     alignment: .leading,
-                    spacing: VideoCardGridGeometry.verticalSpacing
+                    spacing: grid.verticalSpacing
                 ) {
                     ForEach(
-                        0..<VideoCardGridGeometry.placeholderCount(
+                        0..<grid.placeholderCount(
                             for: geometry.size,
                             expectedItemCount: expectedItemCount
                         ),
@@ -40,8 +41,8 @@ package struct VideoCardGridSkeleton: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, VideoCardGridGeometry.topContentPadding)
-                .padding([.horizontal, .bottom], VideoCardGridGeometry.contentPadding)
+                .padding(.top, CardGridGeometry.topContentPadding)
+                .padding([.horizontal, .bottom], grid.contentPadding)
             }
             .scrollDisabled(true)
             .scrollIndicators(.hidden)

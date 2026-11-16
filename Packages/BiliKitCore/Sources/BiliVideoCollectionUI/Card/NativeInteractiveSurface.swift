@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// 可点的视频条目（网格与横排的视频卡片、UP 主空间的投稿行）的悬停、按下与焦点外观，唯一一份。
+/// 可点的条目（网格与横排的视频卡片、关注列表的人物卡片、UP 主空间的投稿行）的悬停、按下与焦点外观，唯一一份。
 ///
 /// 只把外观写进调用方视图自己的 layer：底色、描边、按下时的缩放与变淡。不持有状态，悬停、按下与焦点由各视图
 /// 自己维护，状态或外观变化时调用 `apply`；条目是否可用、正在播放等额外外观也由调用方处理。
@@ -23,6 +23,8 @@ package enum NativeInteractiveSurface {
         package static let idle = State(isHovered: false, isPressed: false, showsFocusRing: false)
     }
 
+    /// 网格卡片（视频卡片与人物卡片）悬停底色的圆角；两种卡片同一圆角，切换来源时外观一致。
+    static let cornerRadius: CGFloat = 12
     /// 悬停底色在 `labelColor` 上的不透明度，配合描边在透明的侧栏与网格背景上都看得出；调低会让悬停不易察觉。
     static let hoveredFillOpacity: CGFloat = 0.08
     /// 按下底色的不透明度，比悬停深，表示点击已被接住。

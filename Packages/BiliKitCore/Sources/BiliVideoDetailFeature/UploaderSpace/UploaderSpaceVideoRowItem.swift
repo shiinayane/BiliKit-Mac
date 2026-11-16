@@ -21,7 +21,7 @@ final class UploaderSpaceVideoRowItem: NativeLayoutSizedCollectionItem,
     private var hasCoverImage = false
 
     /// 此刻显示的投稿 BVID；复用时清空，菜单与读屏操作执行前按它核对。
-    private(set) var representedVideoID: String?
+    private(set) var representedCardID: String?
 
     override func loadView() {
         view = rowView
@@ -35,7 +35,7 @@ final class UploaderSpaceVideoRowItem: NativeLayoutSizedCollectionItem,
         onSelect: @escaping (String) -> Void,
         hoverChanged: @escaping (UploaderSpaceVideoRowItem, Bool) -> Void
     ) {
-        representedVideoID = row.bvid
+        representedCardID = row.bvid
         rowView.configure(row: row, isCurrent: isCurrent)
         rowView.onActivate = { onSelect(row.bvid) }
         rowView.onHoverChange = { [weak self] isHovered in
@@ -73,7 +73,7 @@ final class UploaderSpaceVideoRowItem: NativeLayoutSizedCollectionItem,
 
     override func prepareForReuse() {
         invalidateImageRequests()
-        representedVideoID = nil
+        representedCardID = nil
         loadedCoverURL = nil
         hasCoverImage = false
         rowView.reset()

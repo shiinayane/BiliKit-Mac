@@ -1,15 +1,22 @@
 import Foundation
 
-/// 网格卡片展示数据的缓存：同一位置的来源条目没变、且卡片建出不久时直接沿用，只为新追加或变化的条目重新格式化。
+/// 视频卡片的展示数据缓存（见 `NativeGridCardCache`）。
+package typealias NativeVideoCardCache<Source: Equatable> = NativeGridCardCache<
+    Source, NativeVideoCardPresentation
+>
+
+/// 网格卡片（视频卡片、人物卡片）展示数据的缓存：同一位置的来源条目没变、且卡片建出不久时直接沿用，只为新追加或变化的
+/// 条目重新生成。
 ///
 /// 网格包装在 SwiftUI `body` 里把整张列表映射成卡片；列表一长，每次 `body` 求值（翻页开始与完成各一次）都要把
-/// 全部卡片的数字、日期与读屏标签重新格式化，首页滚到二十多页时单次约 40ms，列表越长越慢。由网格包装用 `@State`
-/// 持有，跟包装同生命周期；按列表位置缓存，每次调用只留下这次列表里的位置，条目数不超过当前列表。
+/// 全部卡片的数字、日期与读屏标签重新格式化，首页滚到二十多页时单次约 40ms，列表越长越慢（关注列表最多 2000 人）。
+/// 由网格包装用 `@State` 持有，跟包装同生命周期；按列表位置缓存，每次调用只留下这次列表里的位置，条目数不超过当前列表。
+/// `Source` 必须包含决定卡片外观的全部输入，否则输入变了卡片也不更新。
 ///
 /// 按位置而不是卡片 ID：各来源的条目类型不都可按 ID 取，追加时前面的位置不变；中间插入或删除时其后的位置
 /// 来源不再相等，按需重建，结果仍正确。
 @MainActor
-package final class NativeVideoCardCache<Source: Equatable> {
+package final class NativeGridCardCache<Source: Equatable, Card> {
     /// 卡片里有「N 分钟前」这类相对时间：建出超过这个时长的卡片重新生成，文字最多晚一分钟。
     ///
     /// 调长则相对时间更可能过时；调短则翻页时更常整表重算。
@@ -17,7 +24,7 @@ package final class NativeVideoCardCache<Source: Equatable> {
 
     private struct Entry {
         let source: Source
-        let card: NativeVideoCardPresentation
+        let card: Card
         let createdAt: Date
     }
 
@@ -28,8 +35,8 @@ package final class NativeVideoCardCache<Source: Equatable> {
     /// 按顺序给出每个来源条目的卡片；同一位置的来源相等且未过期时沿用上次的卡片。
     package func cards(
         for sources: [Source],
-        make: (Source) -> NativeVideoCardPresentation
-    ) -> [NativeVideoCardPresentation] {
+        make: (Source) -> Card
+    ) -> [Card] {
         let now = Date()
         var next: [Entry] = []
         next.reserveCapacity(sources.count)

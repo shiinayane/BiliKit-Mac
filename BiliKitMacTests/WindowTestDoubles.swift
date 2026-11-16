@@ -253,9 +253,11 @@ func makeTestAdapters(
     comments: any CommentRepository = CommentRepositoryStub(),
     favorites: any FavoritesRepository = FavoritesRepositoryStub(),
     watchLater: any WatchLaterRepository = WatchLaterRepositoryStub(),
+    followList: any FollowListRepository = FollowListRepositoryStub(),
     watchLaterWrite: any WatchLaterWriteRepository = AccountWriteRepositoryStub(),
     favoritesWrite: any FavoritesWriteRepository = AccountWriteRepositoryStub(),
     videoEngagement: any VideoEngagementRepository = AccountWriteRepositoryStub(),
+    followRelationWrite: any FollowRelationWriteRepository = AccountWriteRepositoryStub(),
     recommendationFeedback: any RecommendationFeedbackRepository = AccountWriteRepositoryStub(),
     danmakuPost: any DanmakuPostRepository = AccountWriteRepositoryStub(),
     commentWrite: any CommentWriteRepository = AccountWriteRepositoryStub(),
@@ -285,8 +287,10 @@ func makeTestAdapters(
         watchLaterRepository: watchLater,
         watchLaterWriteRepository: watchLaterWrite,
         favoritesRepository: favorites,
+        followListRepository: followList,
         favoritesWriteRepository: favoritesWrite,
         videoEngagementRepository: videoEngagement,
+        followRelationWriteRepository: followRelationWrite,
         recommendationFeedbackRepository: recommendationFeedback,
         danmakuPostRepository: danmakuPost,
         commentWriteRepository: commentWrite,
@@ -318,6 +322,7 @@ func signedInWindow(
     writes: AccountWriteRepositoryStub = AccountWriteRepositoryStub(),
     watchLater bvids: [String] = [],
     favorites: FavoritesRepositoryStub = FavoritesRepositoryStub(),
+    followList: FollowListRepositoryStub = FollowListRepositoryStub(),
     uploaderProfile: any UploaderProfileRepository = UploaderProfileRepositoryStub(
         holdsRequests: true
     )
@@ -329,9 +334,11 @@ func signedInWindow(
             uploaderProfile: uploaderProfile,
             favorites: favorites,
             watchLater: WatchLaterRepositoryStub(bvids: bvids),
+            followList: followList,
             watchLaterWrite: writes,
             favoritesWrite: writes,
             videoEngagement: writes,
+            followRelationWrite: writes,
             danmakuPost: writes,
             commentWrite: writes,
             authentication: AuthenticationServiceStub(

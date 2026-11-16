@@ -193,7 +193,7 @@ struct WatchLaterRepositoryStub: WatchLaterRepository {
     }
 }
 
-/// 稍后再看、收藏、播放页互动、首页推荐反馈、发送弹幕与评论写入六个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
+/// 稍后再看、收藏、互动、首页推荐反馈、弹幕、评论与关注关系七个写入 port 的唯一测试替身：记录每次写入，按顺序取 `outcomes`（用完后
 /// 一律成功）；`holdsWrites` 时每次写入挂起到 `releaseWrites()` 或任务取消。互动读取返回 `engagement`，不计入写入。
 actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepository,
     VideoEngagementRepository, RecommendationFeedbackRepository, DanmakuPostRepository,
@@ -327,7 +327,7 @@ actor AccountWriteRepositoryStub: WatchLaterWriteRepository, FavoritesWriteRepos
         held.resumeAll()
     }
 
-    private func record(_ call: String) async throws {
+    func record(_ call: String) async throws {
         calls.append(call)
         callWaiters.resume(reaching: calls.count)
         let outcome = outcomes.isEmpty ? nil : outcomes.removeFirst()

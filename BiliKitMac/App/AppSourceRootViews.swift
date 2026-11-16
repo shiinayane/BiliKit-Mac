@@ -190,7 +190,7 @@ struct FavoritesTabRoot: View {
     }
 }
 
-/// 资料库来源（稍后再看、收藏夹）工具栏尾部的紧凑搜索框：系统 `.searchable`，只在已登录时挂上；回车提交、清空恢复
+/// 资料库来源（稍后再看、关注、收藏夹）工具栏尾部的紧凑搜索框：系统 `.searchable`，只在已登录时挂上；回车提交、清空恢复
 /// 全部（清空的规则在来源的模型里）。
 ///
 /// 不放工具栏正中：那是搜索来源的全局搜索框，这里只过滤本来源。
@@ -199,14 +199,65 @@ private struct LibrarySearchField: ViewModifier {
     @Binding var text: String
     let prompt: String
     let onSubmit: () -> Void
+    /// 来源此刻是否提供搜索（关注只在全部关注时提供）。
+    var isAvailable = true
 
     func body(content: Content) -> some View {
-        if case .signedIn = accountState {
+        if case .signedIn = accountState, isAvailable {
             content
                 .searchable(text: $text, placement: .toolbar, prompt: Text(prompt))
                 .onSubmit(of: .search, onSubmit)
         } else {
             content
+        }
+    }
+}
+
+/// 关注来源的 App 接线：登录门槛、刷新、加载语义、空态与人物卡片网格在 Library 的 `FollowListView`，选中的行与条件在
+/// Library 的 `FollowListSession`。
+///
+/// 这里转交账户呈现状态、窗口级网格依赖与打开登录页的动作，构造排序菜单（`FollowsToolbarControls`，只在全部关注且没有
+/// 搜索时），并挂工具栏尾部的紧凑搜索框（只在全部关注时；回车提交、清空恢复）。导航标题是选中的行（「全部关注」或分组名，
+/// 分组列表未到时用来源标题），副标题是当前列表的总人数（分组成员接口不给总数，分组页没有副标题）。点卡片压一层整页空间页。
+struct FollowsTabRoot: View {
+    @Environment(\.locale) private var locale
+    let title: LocalizedStringResource
+    @Bindable var session: FollowListSession
+    let groupList: FollowGroupListModel
+    let accountState: AccountPresentationState
+    let gridHost: NativeVideoGridHostContext
+    let onSelect: FollowListView.Selection
+    let onPresentAuthentication: () -> Void
+
+    var body: some View {
+        FollowListView(
+            session: session,
+            accountState: accountState,
+            gridHost: gridHost,
+            onSelect: onSelect,
+            onPresentAuthentication: onPresentAuthentication,
+            toolbarControls: AnyView(FollowsToolbarControls(session: session))
+        )
+        .navigationTitle(navigationTitle)
+        .navigationSubtitle(
+            LibraryToolbarText.personCount(session.model.totalCount, locale: locale)
+        )
+        .modifier(
+            LibrarySearchField(
+                accountState: accountState,
+                text: $session.searchDraft,
+                prompt: AppStrings.localized("在关注中搜索", locale: locale),
+                onSubmit: session.submitSearch,
+                isAvailable: session.isShowingAllFollowings
+            )
+        )
+    }
+
+    private var navigationTitle: Text {
+        if let rowTitle = session.selectedRowTitle(groupList: groupList, locale: locale) {
+            Text(verbatim: rowTitle)
+        } else {
+            Text(title)
         }
     }
 }
@@ -217,6 +268,12 @@ private enum LibraryToolbarText {
     static func totalCount(_ count: Int?, locale: Locale) -> String {
         guard let count else { return "" }
         return AppStrings.localized("共 \(count) 个", locale: locale)
+    }
+
+    /// 关注页的副标题：按人计的“共 N 人”，其他同 `totalCount`。
+    static func personCount(_ count: Int?, locale: Locale) -> String {
+        guard let count else { return "" }
+        return AppStrings.localized("共 \(count) 人", locale: locale)
     }
 }
 

@@ -12,6 +12,8 @@ enum AppSourceGroup: CaseIterable {
     case browse
     /// 「资料库」：只属于当前账户的个人列表（稍后再看、观看历史）。
     case library
+    /// 「关注」：一个来源（关注）为「全部关注」与每个分组各提供一行，可折叠；只在已登录时显示。
+    case follows
     /// 「收藏夹」：一个来源（收藏夹）为每个自己创建的收藏夹提供一行，可折叠；只在已登录时显示。
     case favorites
 
@@ -20,6 +22,7 @@ enum AppSourceGroup: CaseIterable {
         switch self {
         case .browse: nil
         case .library: "资料库"
+        case .follows: "关注"
         case .favorites: "收藏夹"
         }
     }
@@ -28,7 +31,7 @@ enum AppSourceGroup: CaseIterable {
     var isShownOnlyWhenSignedIn: Bool {
         switch self {
         case .browse, .library: false
-        case .favorites: true
+        case .follows, .favorites: true
         }
     }
 }
@@ -57,8 +60,8 @@ struct AppSourceDescriptor: Identifiable {
     let requiresAccount: Bool
     /// 内容被整体替换的代次；`AppShellView` 在它前进时只把这个来源的网格滚回顶部。
     ///
-    /// 按各来源现有语义透传：推荐、热门与搜索只在原地刷新成功时前进，稍后再看与观看历史每次加载成功（含首次加载）
-    /// 都前进，收藏夹每次整体替换成功（选夹、换夹、翻页、换排序或关键词、刷新）都前进。
+    /// 按各来源现有语义透传：推荐、热门与搜索只在原地刷新成功时前进，稍后再看、观看历史与关注每次加载成功（含首次加载、
+    /// 换行、换排序或关键词）都前进，收藏夹每次整体替换成功（选夹、换夹、翻页、换排序或关键词、刷新）都前进。
     let refreshGeneration: @MainActor () -> UInt64
     /// 从本来源切到另一个来源时调用一次；推荐、热门与搜索的停用由 Browse 激活（`AppRootView.browseActivation`）
     /// 统一承担，这里不动作。
@@ -71,12 +74,12 @@ struct AppSourceDescriptor: Identifiable {
     let synchronizeAccountSession: @MainActor (AccountSessionChange) -> Void
     /// 绑定本来源的账户复核参与者：只在本来源是当前来源时收到复核结果（`AccountRevalidationParticipants`）。
     ///
-    /// 稍后再看、观看历史与收藏夹的夹内页面复核成功后会加载，不在本页时不能让它在后台读取账户内容。不绑定来源的参与者
-    /// （视频、弹幕、评论、UP 主空间、三个来源共用的 Browse，以及侧栏常驻的收藏夹列表）由 `WindowComposition` 另行
-    /// 登记；收藏夹列表是例外：它是侧栏行的元数据，窗口已登录就读取（见 SECURITY-MODEL §3）。
+    /// 稍后再看、观看历史、关注页与收藏夹的夹内页面复核成功后会加载，不在本页时不能让它在后台读取账户内容。不绑定来源
+    /// 的参与者（视频、弹幕、评论、UP 主空间、三个来源共用的 Browse，以及侧栏常驻的收藏夹列表与关注分组）由
+    /// `WindowComposition` 另行登记；侧栏的这两组是例外：它们是侧栏行的元数据，窗口已登录就读取（见 SECURITY-MODEL §3）。
     let revalidationParticipant: (any AccountRevalidationParticipant)?
-    /// 取消本来源自己的请求并丢弃自己的内容（搜索的草稿与热搜、稍后再看的列表与条件、观看历史、收藏夹的列表、
-    /// 选择、条件与夹内内容）。
+    /// 取消本来源自己的请求并丢弃自己的内容（搜索的草稿与热搜、稍后再看的列表与条件、观看历史、关注的分组、选中的行、
+    /// 条件与列表、收藏夹的列表、选择、条件与夹内内容）。
     ///
     /// 由 `AppSources` 调用：关窗时对所有来源，其他窗口换号时只对 `requiresAccount` 的来源。推荐、热门与搜索
     /// 共用的 Browse 工作集不属于某一个来源，不在这里，由 `AppSources.resetForWindowClosure` 整体丢弃一次。
@@ -123,6 +126,8 @@ struct AppSources {
         historyModel: WatchHistoryViewModel,
         favoriteFolderList: FavoriteFolderListModel,
         favoriteFolders: FavoriteFolderViewModel,
+        followGroupList: FollowGroupListModel,
+        followSession: FollowListSession,
         searchSession: VideoSearchSession,
         trendingSearchModel: TrendingSearchViewModel
     ) {
@@ -220,6 +225,33 @@ struct AppSources {
                     },
                     revalidationParticipant: historyModel,
                     reset: historyModel.reset
+                )
+            case .follows:
+                AppSourceDescriptor(
+                    id: tab,
+                    title: "关注",
+                    systemImage: "person.2",
+                    group: .follows,
+                    itemSelection: AppSourceItemSelection(
+                        selectedID: { followSession.selectedRowID },
+                        select: { followSession.select(rowID: $0) }
+                    ),
+                    requiresAccount: true,
+                    refreshGeneration: { followSession.model.successfulReloadGeneration },
+                    deactivate: followSession.deactivateRoute,
+                    // 页面丢弃上一账户的条件与内容；分组列表不论是否当前来源都按新账户重读。
+                    synchronizeAccountSession: {
+                        followSession.synchronizeAuthenticationSession(
+                            scope: $0.scope,
+                            isCurrentRoute: $0.isCurrentRoute
+                        )
+                        followGroupList.synchronizeAuthenticationSession()
+                    },
+                    revalidationParticipant: followSession.model,
+                    reset: {
+                        followSession.reset()
+                        followGroupList.reset()
+                    }
                 )
             case .favorites:
                 AppSourceDescriptor(

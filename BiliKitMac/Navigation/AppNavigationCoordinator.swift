@@ -11,23 +11,19 @@ enum AppTab: Hashable, CaseIterable {
     case popular
     case watchLater
     case history
+    /// 关注：侧栏「关注」组里「全部关注」与每个分组一行（`AppSidebarSelection.item`），选中的行记在关注会话里。
+    case follows
     /// 收藏夹：侧栏「收藏夹」组里每个收藏夹一行（`AppSidebarSelection.item`），选中的收藏夹记在收藏夹模型里。
     case favorites
 }
 
-/// 进出页面时的一次换页，供视图层选择转场；同类替换、换来源、登出与关窗不转场。
-struct AppPageTransition: Equatable {
-    enum Direction {
-        case push
-        case pop
-    }
-
-    let direction: Direction
-    /// 这次移动的那一页是不是播放页：压一层时是压进来的新栈顶，弹出时是弹出去的旧栈顶（经 ⌂ 与「还原」一次弹出多层时
-    /// 也只看旧栈顶）。
-    ///
-    /// 只有播放页铺满不透明底色，视图层据此决定能不能让它叠在另一页上滑动，透明的页面只能并排推移。
-    let movesPlaybackPage: Bool
+/// 进出页面时页面切换的方向，供视图层选择转场；同类替换、换来源、登出与关窗不转场。
+///
+/// 移动的总是历史里的页（压一层时是压进来的新栈顶，弹出时是弹出去的旧栈顶），根页从不移动；历史页都铺不透明底色，
+/// 所以视图层只按方向选转场（见 ARCHITECTURE「播放页布局」）。
+enum AppPageTransition {
+    case push
+    case pop
 }
 
 /// 右侧历史里一页的内容；来源根页不在历史里。
@@ -38,10 +34,6 @@ enum AppDestination: Equatable {
     case playback(PlaybackSelectionIntent)
     /// 整页 UP 主空间：回到这一页时按记下的排序与搜索词重建。
     case uploaderSpace(UploaderSpaceDestination)
-
-    var isPlayback: Bool {
-        if case .playback = self { true } else { false }
-    }
 }
 
 /// 整页空间页这一项记下的内容条件；页面上改排序或搜索时，在模型被另一项占用之前写回这里。
@@ -586,21 +578,12 @@ final class AppNavigationCoordinator {
 
     /// 压一层的转场：移动的是压进来的这一页。
     private func pushPage(_ entry: AppHistoryEntry) {
-        transitionPage(
-            AppPageTransition(direction: .push, movesPlaybackPage: entry.destination.isPlayback),
-            { history.append(entry) },
-            {}
-        )
+        transitionPage(.push, { history.append(entry) }, {})
     }
 
-    /// 弹出的转场：移动的是此刻的栈顶，所以必须在 `change` 弹掉它之前调用。
+    /// 弹出的转场：`change` 弹掉栈顶，转场结束（或没有转场）后调用 `completion`。
     private func popPage(_ change: () -> Void, completion: @escaping () -> Void = {}) {
-        let movesPlaybackPage = history.last?.destination.isPlayback ?? false
-        transitionPage(
-            AppPageTransition(direction: .pop, movesPlaybackPage: movesPlaybackPage),
-            change,
-            completion
-        )
+        transitionPage(.pop, change, completion)
     }
 
     /// 提前完成返回时延后的停止；没有延后的停止时不动作。

@@ -9,9 +9,9 @@ package struct VideoListPage<Item, Cursor> {
     }
 }
 
-/// 首页推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿共用的分页列表。
+/// 首页推荐、热门、搜索、观看历史、稍后再看、UP 主空间投稿与关注列表共用的分页列表。
 ///
-/// 按 BVID 去重累积条目，决定何时继续、停止、暂停自动加载或要求用户显式继续，并给出近尾自动加载用的
+/// 按调用方给出的键（视频是 BVID，关注列表是 MID）去重累积条目，决定何时继续、停止、暂停自动加载或要求用户显式继续，并给出近尾自动加载用的
 /// 尾标；各条规则写在下方对应的成员上。
 ///
 /// 拥有已显示条目、下一页游标、本次分页会话已消费的游标、加载更多与原地刷新是否进行、加载更多失败、
@@ -21,7 +21,7 @@ package struct VideoListPage<Item, Cursor> {
 package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
     /// 一页没有并入任何新条目（空页、全重复页或已没有余量）时的处理。
     package enum StallPolicy: Sendable, Equatable {
-        /// 停止翻页：推荐、热门、搜索、稍后再看与空间投稿再请求下一页也不会更有进展。
+        /// 停止翻页：推荐、热门、搜索、稍后再看、空间投稿与关注列表再请求下一页也不会更有进展。
         case stop
         /// 保留游标但收起尾标，由用户显式继续：历史的空页之后可能还有更早的记录，但不在后台连续扫描。
         case requireManualContinue
@@ -46,6 +46,9 @@ package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
     package private(set) var isRefreshing = false
 
     private let stallPolicy: StallPolicy
+    /// 一次分页会话最多保留的条目数；视频来源取 `VideoListRetention.maximumItemCount`，关注列表另取
+    /// `FollowListUseCase.maximumItemCount`。
+    private let maximumItemCount: Int
     /// 本次分页会话（自最近一次 `replaceFirstPage`）加载更多请求过的游标。
     ///
     /// 新的下一页游标落在其中即回环（含游标不前进）；数量即已加载更多的页数。`.stop` 下每页至少并入一条，
@@ -62,8 +65,12 @@ package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
     /// 本次加载更多开始前是否处于显式继续门；加载失败或被取消时据此恢复，避免被打断的显式继续变成自动扫描。
     private var requiredManualContinueBeforeLoad = false
 
-    package init(stallPolicy: StallPolicy) {
+    package init(
+        stallPolicy: StallPolicy,
+        maximumItemCount: Int = VideoListRetention.maximumItemCount
+    ) {
         self.stallPolicy = stallPolicy
+        self.maximumItemCount = maximumItemCount
     }
 
     /// 近尾自动加载的尾标：仍有下一页、且没有因失败、显式继续门或原地刷新而暂停时为当前尾标计数，否则 nil。
@@ -201,7 +208,7 @@ package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
         cursorLoops: Bool,
         bvid: (Item) -> String
     ) {
-        let remainingCapacity = Swift.max(0, VideoListRetention.maximumItemCount - items.count)
+        let remainingCapacity = Swift.max(0, maximumItemCount - items.count)
         let appended = page.items.uniquedByBVID(after: items, bvid).prefix(remainingCapacity)
         items += appended
         ordinals += (0..<UInt64(appended.count)).map { nextOrdinal + $0 }
@@ -213,7 +220,7 @@ package struct PagedVideoList<Item, Cursor: Equatable & Sendable> {
         // 页数上限只约束显式继续：`.stop` 下每页至少并入一条，页数已被条目上限封住，再加页数上限会让
         // 每批条目较少的来源（推荐）在条目上限之前静默停止。
         let reachedLimit =
-            items.count >= VideoListRetention.maximumItemCount
+            items.count >= maximumItemCount
             || (stallPolicy == .requireManualContinue
                 && consumedCursors.count >= VideoListRetention.maximumLoadedPages)
         guard let next = page.nextCursor, !cursorLoops, !reachedLimit else {

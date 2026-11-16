@@ -424,7 +424,11 @@ final class RecordedWrites {
             chooseFavoriteFolders: { _ in },
             removeFromFavoriteFolder: { _ in },
             dislikeRecommendation: { [weak self] in self?.disliked.append($0) },
-            cancelRecommendationDislike: { [weak self] in self?.cancelled.append($0) }
+            cancelRecommendationDislike: { [weak self] in self?.cancelled.append($0) },
+            followSpecialState: { _ in nil },
+            setFollowSpecial: { _, _ in },
+            chooseFollowGroups: { _ in },
+            unfollow: { _ in }
         )
     }
 }

@@ -291,12 +291,12 @@ struct NativeVideoGridTests {
     func nearEndTriggersWithinTheNearEndMultipleOfTheContentBottom() {
         let width: CGFloat = 1_080
         let viewportHeight: CGFloat = 800
-        let contentHeight = NativeVideoGridGeometry.contentHeight(for: width, itemCount: 100)
+        let contentHeight = CardGridGeometry.video.contentHeight(for: width, itemCount: 100)
         let threshold =
-            contentHeight - viewportHeight * NativeVideoGridGeometry.nearEndViewportMultiple
+            contentHeight - viewportHeight * CardGridGeometry.nearEndViewportMultiple
 
         #expect(
-            !NativeVideoGridGeometry.isNearEnd(
+            !CardGridGeometry.video.isNearEnd(
                 itemCount: 100,
                 width: width,
                 visibleMaximumY: threshold,
@@ -305,7 +305,7 @@ struct NativeVideoGridTests {
             )
         )
         #expect(
-            NativeVideoGridGeometry.isNearEnd(
+            CardGridGeometry.video.isNearEnd(
                 itemCount: 100,
                 width: width,
                 visibleMaximumY: threshold + 1,
@@ -314,7 +314,7 @@ struct NativeVideoGridTests {
             )
         )
         #expect(
-            !NativeVideoGridGeometry.isNearEnd(
+            !CardGridGeometry.video.isNearEnd(
                 itemCount: 100,
                 width: width,
                 visibleMaximumY: threshold + 1,
@@ -323,7 +323,7 @@ struct NativeVideoGridTests {
             )
         )
         #expect(
-            NativeVideoGridGeometry.isNearEnd(
+            CardGridGeometry.video.isNearEnd(
                 itemCount: 100,
                 width: width,
                 visibleMaximumY: threshold + 121,
@@ -332,7 +332,7 @@ struct NativeVideoGridTests {
             )
         )
         #expect(
-            !NativeVideoGridGeometry.isNearEnd(
+            !CardGridGeometry.video.isNearEnd(
                 itemCount: 0,
                 width: width,
                 visibleMaximumY: 10_000,
@@ -375,20 +375,20 @@ struct NativeVideoGridTests {
     func preparedContentKeepsAMarginAroundTheVisibleRect() {
         let bounds = NSRect(x: 0, y: 0, width: 1_000, height: 20_000)
         let visible = NSRect(x: 0, y: 8_000, width: 1_000, height: 800)
-        let margin = visible.height * NativeVideoGridGeometry.preparedViewportMultiple
-        let slack = visible.height * NativeVideoGridGeometry.preparedRefreshViewportMultiple
+        let margin = visible.height * CardGridGeometry.preparedViewportMultiple
+        let slack = visible.height * CardGridGeometry.preparedRefreshViewportMultiple
         let target = visible.insetBy(dx: 0, dy: -margin)
 
         #expect(
-            NativeVideoGridGeometry.preparedContentRect(visible: visible, bounds: bounds) == target
+            CardGridGeometry.preparedContentRect(visible: visible, bounds: bounds) == target
         )
         let atTop = NSRect(x: 0, y: 0, width: 1_000, height: 800)
         #expect(
-            NativeVideoGridGeometry.preparedContentRect(visible: atTop, bounds: bounds)
+            CardGridGeometry.preparedContentRect(visible: atTop, bounds: bounds)
                 == NSRect(x: 0, y: 0, width: 1_000, height: atTop.height + margin)
         )
         #expect(
-            !NativeVideoGridGeometry.needsPreparedContentRefresh(
+            !CardGridGeometry.needsPreparedContentRefresh(
                 prepared: target,
                 visible: visible,
                 bounds: bounds
@@ -397,7 +397,7 @@ struct NativeVideoGridTests {
         var shortBelow = target
         shortBelow.size.height = visible.maxY + slack - 1 - target.minY
         #expect(
-            NativeVideoGridGeometry.needsPreparedContentRefresh(
+            CardGridGeometry.needsPreparedContentRefresh(
                 prepared: shortBelow,
                 visible: visible,
                 bounds: bounds
@@ -407,14 +407,14 @@ struct NativeVideoGridTests {
         shortAbove.origin.y = visible.minY - slack + 1
         shortAbove.size.height = target.maxY - shortAbove.minY
         #expect(
-            NativeVideoGridGeometry.needsPreparedContentRefresh(
+            CardGridGeometry.needsPreparedContentRefresh(
                 prepared: shortAbove,
                 visible: visible,
                 bounds: bounds
             )
         )
         #expect(
-            NativeVideoGridGeometry.needsPreparedContentRefresh(
+            CardGridGeometry.needsPreparedContentRefresh(
                 prepared: .zero,
                 visible: visible,
                 bounds: bounds
@@ -423,8 +423,8 @@ struct NativeVideoGridTests {
         // 视野已到内容底部：下方没有可准备的内容，不算余量不足。
         let bottom = NSRect(x: 0, y: bounds.maxY - 800, width: 1_000, height: 800)
         #expect(
-            !NativeVideoGridGeometry.needsPreparedContentRefresh(
-                prepared: NativeVideoGridGeometry.preparedContentRect(
+            !CardGridGeometry.needsPreparedContentRefresh(
+                prepared: CardGridGeometry.preparedContentRect(
                     visible: bottom,
                     bounds: bounds
                 ),

@@ -88,7 +88,7 @@ struct NativeVideoCardInteractionTests {
     /// 网格只把可进入播放的卡片当作可激活、可被鼠标选中；不在内容里的 ID 同样不可激活。
     @Test
     func gridContentsOnlyActivateAvailableCards() {
-        let contents = NativeVideoCardContents([
+        let contents = NativeCardContents([
             Self.presentation(id: "BV1Play", availability: .available),
             Self.presentation(id: "BV1Gone", availability: .unavailable(badge: "课程"))
         ])

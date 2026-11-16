@@ -65,7 +65,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
 | `BiliVideoDetailFeature` | 播放页、侧栏上下文层的 UP 主空间预览与右侧的整页空间页（页面由 App 构造，其他 Feature 经 App 的导航打开它）：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
 | `BiliUI` | Feature 共享的 SwiftUI 呈现：卡片与网格几何、骨架、状态胶囊、页码条、失败视图与文案、登录门槛、格式化、B 站图片缩略地址、临时反馈的读屏通告（全仓唯一入口，App 的播放器浮层也用它）；自己的字符串目录。默认 `package`，App 直接使用的才 `public`；无 library product | 除 Foundation、SwiftUI、BiliApplication 外的任何模块（含 BiliModels、AppKit 与其他 Feature） |
-| `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片、原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点视频条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
+| `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片（视频卡片、关注列表的人物卡片）、按卡片种类泛型的原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）与网格卡片共用的交互状态、大会员名字配色 `NativeMemberNameColor`（评论、播放侧栏与空间页头部也用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
 | App `BiliKitMac` | composition root（`Composition/` 的进程级与窗口级组装）、导航协调、来源描述、复核汇总与账户写入的协调和效果路由（`Navigation/`）、AVKit 宿主、图片管线、Settings、Now Playing、Sparkle | `App/` 与 `Navigation/` 不直接 import adapter 或平台框架，`Navigation/` 只依赖 Feature、Application 与 Models；具体实现只在 `Composition/`、`Platform/`、`Settings/`；`App/` 里 import Application 或 BiliVideoCollectionUI 的文件由脚本逐个登记 |
 
 补充规则：
@@ -258,6 +258,13 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   表明 SwiftUI `LazyVGrid`/AttributeGraph 是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer`
   后，同样约 20 秒滚动 cycles 下降约 39%，0 hitch。网格只是已加载状态的呈现，loading／empty／failure 在同一个
   Feature 视图里。
+- 网格按卡片种类泛型（`NativeGridView<Kind>`；视频卡片是 `NativeVideoGridView`，关注列表的人物卡片是
+  `NativePersonCardKind`）。网格拥有保活、滚动位置与锚点恢复、近尾翻页与尾部状态、顶部附加视图、「返回顶部」、键盘
+  选择与卡片菜单的取用；卡片种类只给出展示值（`NativeGridCardPresentation`）、集合项（外观、读屏描述与取图，
+  `NativeGridCardItem`）与几何。不为人物卡片另写一份网格：保活、锚点与翻页的这些不变量只能有一份。
+- 网格几何是一个参数化的值 `CardGridGeometry`（在 BiliUI，加载骨架也要用）：内容边距、列距、行距、最小卡片宽度、
+  列数范围与卡片高度。列数、卡片尺寸、内容高度、骨架占位数、布局的一节与近尾判断都只按它实现一份，各种卡片是它的
+  实例；准备区域与近尾倍数不随种类变化，是网格共用的策略常量。
 - 集合项的尺寸只由布局给出：所有集合项继承 `NativeLayoutSizedCollectionItem`，对 `preferredLayoutAttributesFitting`
   原样返回。默认实现在每次排可见项时为整棵条目视图临时建 Auto Layout 引擎量尺寸，而我们的布局不采纳结果；1.6.1
   评论区滚动的 Time Profiler 里它约占主线程三分之一。
@@ -265,7 +272,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   `prepareContent(in:)` 把准备区域扩到视野上下各一屏。`NSCollectionViewPrefetching` 只给出即将进入视野的
   index、不创建卡片，替代不了。
 - 网格用组合布局（`NSCollectionViewCompositionalLayout`），唯一一节按容器宽度由 section provider 给出，卡片尺寸取
-  `VideoCardGridGeometry`，与骨架同源；宽度一变由系统失效重排，卡片尺寸不靠网格同步。不用流式布局加
+  该卡片种类的 `CardGridGeometry`（视频卡片的实例与骨架同源）；宽度一变由系统失效重排，卡片尺寸不靠网格同步。不用流式布局加
   `sizeForItemAt`：它在宽度变化时先按旧卡片尺寸重排，要等网格手动失效才换尺寸，其间按旧尺寸排出少一列的错列。
   provider 读到的布局环境之外的状态（末行下方留白）变化时仍要手动失效。
 - 网格的视口锚点是用户最后看到的视野首卡：只在滚动或程序定位落定、且排版就是当前视口尺寸时捕获；宽度、
@@ -273,8 +280,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   AppKit 会在网格按锚点恢复之前先按新宽度重排、夹取偏移，这段过渡里的偏移不可信，不捕获锚点、不判断翻页；
   宽度变化只吸收浮点误差，半点也算（`NativeViewportSize`），否则跨列数分界的那一步不恢复，视野跳一行。
   纯删除（例如稍后再看的乐观移除）删掉锚点卡片时，由旧顺序里它之后第一张仍在的卡片按同一距离接替，视野不跳。
-- 分页：推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿由 `PagedVideoList` 承担，来源只把远端页适配为“条目 +
-  下一页游标”，去重与条目上限只在那里（集合层的 `NativeVideoCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
+- 分页：推荐、热门、搜索、观看历史、稍后再看、关注列表与 UP 主空间投稿由 `PagedVideoList` 承担，来源只把远端页适配为
+  “条目 + 下一页游标”，去重与条目上限只在那里（上限按列表给出：视频来源 1000 条，关注列表 2000 人）（集合层的 `NativeCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
   状态是 `PageReplacementPaging`。
 - 已有内容、且条件与解析出的请求不变时，刷新原地进行：网格不卸载，成功后整体替换并回顶，失败保留已显示内容。
 - 来源网格由窗口保活：切换来源与压一层其他页面时 SwiftUI 会拆掉根页面，网格的 Coordinator（连同滚动视图、集合视图、
@@ -301,9 +308,14 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   落定后把位置同步回 binding；来源刷新的回顶是程序定位，仍经 `scrollReset` 直接跳转。
 - 卡片菜单：各来源的网格、相关推荐横排与 UP 主空间的投稿行共用一份菜单描述 `NativeVideoCardMenu`，由拥有来源的
   Feature 按视频 ID 与能否播放构造、经 `cardMenu` 注入，不经 App 插槽。右键、Control-点按与读屏「显示菜单」走集合视图
-  基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供视频 ID 与上下文描边（`NativeVideoMenuTargetItem`），
+  基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供卡片 ID 与上下文描边（`NativeVideoMenuTargetItem`），
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
-  只给卡片 ID 是合法 BVID 的可播放卡片，打开只经系统 `OpenURLAction`（见 `SECURITY-MODEL.md` §4）。
+  只给卡片 ID 是合法 BVID 的可播放卡片（人物卡片是正整数 mid 的空间链接），打开只经系统 `OpenURLAction`（见
+  `SECURITY-MODEL.md` §4）。「已关注」菜单的三项只由 BiliUI 的 `UploaderFollowingMenuContent` 定义（只用基本类型），
+  `NativeVideoCardMenu.Item.following` 把它变成菜单项（关注页卡片的右键，以及整页空间页头部与播放页侧栏点「已关注」弹出的
+  菜单，后两处经 VideoDetail 的 `UploaderFollowingMenu`，由 App 经环境注入状态与写入口），`NativeVideoCardMenu.makeMenu()`
+  是生成 `NSMenu` 的唯一入口。空间页头部是嵌套 `NSHostingView` 里的 SwiftUI，`Menu` 在 macOS 上不吃按钮样式，所以「已关注」
+  在 macOS 26 起是玻璃按钮、点按时在按钮背后的 AppKit 视图下方弹出这份菜单。
 - **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
   模糊。底部加载行进入视野时请求下一批（`NearEndPagination`，每个尾部一次，实时滚动中一次手势一次）；App 端投稿接口
   只有游标，不能跳页，所以不用页码条。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
@@ -323,8 +335,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 - 骨架屏只给形态固定、能照原样画出的内容：各来源的视频卡片网格、相关推荐横排与播放页主区，用于首次加载与
   整块换掉内容（换来源、排序、夹内翻页）。骨架立即出现：它占住版面，延迟只会先露出空白。
-- 其余加载用系统转圈：形态不一的内容（评论、楼中楼、投稿列表、热搜、收藏夹列表）不画占位行，免得误导条数与
-  长度；追加、刷新、缓冲与评论图片预览也用转圈，封面与头像只显示占位。占满一块区域时用大转圈居中，行内、
+- 其余加载用系统转圈：形态不一的内容（评论、楼中楼、投稿列表、热搜、收藏夹列表、关注分组）不画占位行，免得误导条数与
+  长度；人物卡片矮、每屏条数多，关注页的第一批也用转圈；追加、刷新、缓冲与评论图片预览也用转圈，封面与头像只显示占位。占满一块区域时用大转圈居中，行内、
   页脚与胶囊里用小转圈。
 - 转圈（连同旁边的“正在加载…”文字）一律等 `LoadingIndicatorPolicy.presentationDelay` 后仍在加载才露出：
   SwiftUI 用 `revealsAfterLoadingDelay()`，AppKit 侧栏用 `NativeLoadingReveal`，楼中楼与播放器浮层在各自的
@@ -340,23 +352,22 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
   详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
 - 右侧不用 NavigationStack，`AppDetailColumn` 按 coordinator 只渲染历史栈顶（来源根页、播放页或整页空间页），工具栏左侧
-  的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，
-  只在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
-  闭包里时，闭包内读到的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口
-  保活原样挂回）。macOS 没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面
-  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。这样工具栏的返回控件、结果胶囊与转场锚点都在 detail 这一层
-  挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每个页面各挂
-  一份，系统返回按钮还要逐页隐藏。
-- 右侧换页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的
-  图层上：主区滑动，侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。移动的是播放页（压进来的
-  或弹出去的）时它叠在另一页上滑，进入从右边盖上、返回向右滑走露出下面的页面，这要求播放页铺满不透明底色；其余换页并排
-  推移（进入从右、返回从左），因为来源根页与空间页透明，叠着滑会透出下面那一页。
-  新旧两个状态由系统合成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前
-  落地换页，这个时序没有文档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。压一层、
-  返回、⌂ 与画中画「还原」转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout`
-  为防新建的 AppKit 视图“飞入”而关掉的
-  事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依赖的
-  自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
+  的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，只
+  在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail 闭包里时，闭包内读到
+  的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口保活原样挂回）。macOS
+  没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面本身透明；历史页（播放页、整
+  页空间页）自铺不透明窗口背景并延伸到工具栏与侧栏下，来源根页保持透明。这样工具栏的返回控件、结果胶囊与转场锚点都在
+  detail 这一层挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每
+  个页面各挂一份，系统返回按钮还要逐页隐藏。
+- 右侧换页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的图
+  层上：主区覆盖与揭开，侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。移动的总是历史页（压
+  一层时是压进来的新栈顶，返回时是弹出去的旧栈顶），根页从不移动：压一层时新页从右边盖在不动的页面上，返回时旧页向右滑走、
+  露出下面的页面。这要求历史页都铺不透明底色，否则叠着滑会透出下面那一页；新增的历史页类型同样要铺。新旧两个状态由系统合
+  成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前落地换页，这个时序没有文
+  档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。压一层、返回、⌂ 与画中画「还原」
+  转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout` 为防新建的 AppKit 视图“飞入”
+  而关掉的事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依
+  赖的自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
   `CALayer.render` 把侧栏的玻璃材质画成白板）。
 - 离开活视频所在的播放页时旧页面要带着当前画面离开，所以：播放器宿主随窗口常驻（`PlayerHostOwner`），页面卸载只把它
   摘下（被空间页盖住时也是），关窗才拆除；离开时先暂停，转场结束后才停止播放，期间又进入播放页、换来源、登出或关窗都提前完成这次停止（代次见
@@ -392,7 +403,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   浏览类（来源根页、空间页）侧栏是来源导航，内容类（播放页）侧栏是它的详情，侧栏随栈顶页面的类别。与首页、热门平级的
   来源进导航侧栏；播放页上围绕当前视频的浏览（UP 主空间预览）是侧栏上下文层，压栈与返回时关闭，预览里的按钮在右侧
   压一层整页空间页。点侧栏其他来源或另一个收藏夹、登出、换号、其他窗口复核与关窗都清空历史并停止播放；点已选中的那
-  一行列表不发选择变化，回根页靠工具栏的 ⌂。
+  一行列表不发选择变化，所以在 AppKit 层识别（`SidebarReselectDetector`：前台 key 窗口里不带修饰键的单击，按下与抬起
+  都在按下前已选中的行上），同样回到这个来源的根页；SwiftUI 手势只覆盖行里的文字，不采用。
 - 窗口只有一个播放器，所以只有最近一次播放是活的：“栈顶是哪一页”与“活视频在哪一项”分开记，历史项带 id，活视频按
   id 绑定。活视频所在的播放页被空间页盖住时暂停，回到它时只恢复由盖住暂停的（用户自己暂停或已播完的不动；被盖住期间
   经媒体键或控制中心播放、拖动过的，位置已不是盖住时的，也不动）；还在加载、没有画面的直接停止（暂停拦不住加载完成后
@@ -454,8 +466,8 @@ endpoint 扩展逐请求选择访问方式，Repository adapter 不自行构造 
 `&+=` 递增 `authenticationRevalidationGeneration`。参与者集合由 `WindowComposition` 构造一次，`AppRootView`
 只比较各参与者的代次，前后不等（不比大小，回绕仍算）就调用一次 `revalidate()`，结束后把结果（仍登录、确认未登录或
 没能确认）交给参与者；
-绑定来源的参与者只在该来源是当前来源时收到，不在本页时不在后台读取账户内容。收藏夹列表是侧栏常驻的
-元数据，按窗口级登记，例外地不论当前来源都读取并接收结果。Feature 不直接调用认证服务。用户发起的账户写入由窗口的
+绑定来源的参与者只在该来源是当前来源时收到，不在本页时不在后台读取账户内容。收藏夹列表与关注分组（连同全部关注人数）
+是侧栏常驻的元数据，共用 `LibrarySidebarListModel`，按窗口级登记，例外地不论当前来源都读取并接收结果。Feature 不直接调用认证服务。用户发起的账户写入由窗口的
 写入协调者作为窗口级参与者，凭据类失败只请求一次复核，同一账户与会话代次里直到下一次写入成功不再请求。
 
 内容域的认证失败分四态，由 `ContentApplicationError` 决定是否复核与是否给重试：无凭据是“需要登录”（不给重试）、
@@ -471,7 +483,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 ### 账户写入
 
 - 链路：卡片菜单、读屏操作与 ⌘⌫ 只转发意图（BVID，收藏夹页的移除是收藏夹与条目 av 号）→ App
-  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕与评论写入）、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
+  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕与评论写入）、「收藏到…」与「设置分组…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
   （表单编码、固定 header、状态 envelope 与 -101／-111 映射只在共用的写管线，heartbeat 也走它）→ 账户写授权器（见
   `SECURITY-MODEL.md` §3）。只有窗口主 API 有写授权器。
 - 门槛由 App 算出后经 SwiftUI 环境注入卡片菜单（BiliUI `VideoCardAccountWriting`），与收藏夹列表读取同一规则，不满足时菜单项
@@ -479,6 +491,23 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 - 「收藏到…」面板由协调者持有、`AppShellView` 以 sheet 呈现；每次打开都按窗口账户重读归属（收藏夹列表带 `rid`），
   确认时只提交勾选与初始归属的差异，一次请求。面板绑定打开时的窗口账户（含会话代次）：窗口账户一变就关闭，重试与确认
   前再核对一次，否则会在另一个账户下显示、重读或提交上一账户的归属；面板读取的凭据类失败与写入共用一次复核的节流。
+- 关注关系：关注、取消关注、特别关注与设置分组是同一族写入，同一个人同时只有一个在途（`isRelationWrite`，播放页与空间页的
+  关注按钮也按它判断）：它们改同一份关系，到达服务端的先后不可知，而设置分组（`tags/addUsers`）按完整集合覆盖，后到的会抹掉
+  先到的。在途登记在每个窗口自己的协调者里，互斥只在窗口内：两个窗口同时改同一个人时互不阻挡，后到服务端的写入仍可能抹掉
+  另一个窗口先到的，两个窗口按各自收到的效果显示、直到下一次读取。不做进程级登记：那要跨窗口共享在途状态与关窗取消，而
+  同时在两个窗口改同一个人很少见。特别关注与设置分组的状态不放进播放页的整份互动快照（那份回滚会把它们拖进与点赞、投币的互斥），放在窗口级的
+  `Navigation/FollowRelationStore`：按 mid 的已知关系（单人关系读取、关注页每一页说明的关系、写入确认的值与乐观改动；
+  `FollowRelation` 区分没有关注、分组已知与只知道已关注），关注页卡片的菜单与特别关注标记、空间页与播放页「已关注」菜单的
+  状态（两处在关注状态是已关注时预读，侧栏的空间预览不读）、「设置分组…」面板的底、写入的
+  前置条件（只对已知关注的人发特别关注与设置分组）与写前关系都只从这里取，账户一变就清空。写后立刻读到的关系、人数与分组成员
+  可能还是旧值：存储里的 `FollowRelationLedger`（BiliApplication，纯值、时刻由调用方传入）记下写入确认的关系与时刻，宽限期
+  （`relationReadLagGrace`）内与之矛盾的单人关系按确认值，关注页的一页去掉确认已离开的人、换上确认的分组
+  （`FollowListViewModel` 的 `reconcile`，在到底判断之后）；存储持有唯一一个等到宽限期结束的 Task，把关注页标记为过期。侧栏
+  人数的旧值由侧栏列表自己处理（见下文「效果分发」）。不采用写后立即重读：读到的是旧值，按它作
+  「设置分组…」的底会把刚加入的分组悄悄抹掉。效果带写前与写后的分组（`.followSpecialChanged`、`.followGroupsChanged`；
+  `.followChanged` 不带，各窗口取自己的关系存储），每个窗口按前后差异在本地改人数（各行按 `FollowMembership.groupIDs` 计，
+  只加入特别关注时默认分组随之减一），任一侧分组未知时只等宽限期后的补读；关注页去掉已不属于正在显示的列表的卡片，刚加入的人不插入。
+  「收藏到…」与「设置分组…」面板的开、关、重试、账户变化与确认是同一个按账户绑定的帮手 `AccountBoundPanel`。
 - 播放页互动：点赞、投币、收藏按钮的状态在 BiliVideoDetailFeature 的 `VideoEngagementModel`（每窗口一个，按展示的详情与
   写入门槛的账户读取 `archive/relation`），按钮经环境 `VideoEngagementActions`、快捷键 Q／W／E 经 `PlayerEngagementShortcuts`
   把意图交给同一个协调者。同一视频的点赞、投币、三连同时只发一个（都可能改点赞，到达服务端的先后不可知）；保留的旧详情
@@ -499,7 +528,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   按未知（按钮禁用，不当成“未关注”）；读取发出与落地时窗口账户不同也按未知；换 UP 主或关闭时清空。账户一变历史就清空，
   空间页不会带着旧账户的状态留下。不采用另建关注读取（多一次请求、多一个 endpoint），也不把它放进 `UploaderProfile`
   （名片会跨视频、跨账户沿用）。写入按 mid（意图取自空间页模型的 UP 主，自己的空间不显示按钮），乐观改动只在空间模型里，
-  不碰播放页的整份互动快照；同一 mid 同时只有一次关注在途，不分方向。成功的效果让各窗口正在显示这位 UP 主的空间页取
+  不碰播放页的整份互动快照；同一 mid 同时只有一次关系写入在途，不分方向与种类（见上文「关注关系」）。成功的效果让各窗口正在显示这位 UP 主的空间页取
   确认的状态、播放页按 mid 重读互动状态。
 - 发送弹幕：播放器 content overlay 里的输入胶囊（BiliVideoDetailFeature 的 `DanmakuComposerModel`，每窗口一个、关窗时 reset；
   视图在 App `Platform/`）由回车、播放器动作菜单与播放页工具栏呼出，窗口与 AVKit 独立全屏同一套，不做读取 AVKit 私有视图
@@ -530,9 +559,11 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 - 乐观移除：稍后再看页与收藏夹页的移除先在本地删掉，失败或被取消时放回原位（稍后再看按 `PagedVideoList` 的并入序号，
   收藏夹按页内位置）；之后内容被整体替换过就不再放回。已知边界：页码分页在服务端删掉条目后整体前移，移除之后继续向下加载可能漏掉与移除条数相同的几条，刷新后恢复。
 - 效果分发：成功的写入带着账户 mid 与发起时的会话代次，经本窗口的 `AccountWriteEffectRouter` 与进程级集线器转给所有窗口；
-  只处理与本窗口账户、会话代次都一致的效果。稍后再看只标记为过期，下次页面出现时原地刷新一次，不在后台读取；收藏写入让
-  侧栏收藏夹列表在后台重读条数（它本来就常驻读取），受影响的收藏夹正在显示时原地刷新（不回顶部），不在本页时回来再
-  刷新。乐观移除是否“已在本地改过”在写入成功时判断：期间有读取落地或在途，就按未改过处理、重读一次。
+  只处理与本窗口账户、会话代次都一致的效果。稍后再看只标记为过期，下次页面出现时原地刷新一次，不在后台读取；收藏写入在
+  每个窗口按效果增减侧栏收藏夹的条数（三连不知道写前是否已在默认收藏夹，不改），受影响的收藏夹正在显示时原地刷新（不回
+  顶部），不在本页时回来再刷新。侧栏的条数（收藏夹与关注分组）写后立刻重读到的可能是旧值：`LibrarySidebarListModel` 的
+  `adjustAfterWrite` 在本地改值，宽限期（`countReadLagGrace`）内落地的后台重读丢弃，宽限期结束时补读一次；不采用写后立即
+  重读，它会把刚改过的条数改回写前。乐观移除是否“已在本地改过”在写入成功时判断：期间有读取落地或在途，就按未改过处理、重读一次。
 
 ### 播放线路偏好与测速
 

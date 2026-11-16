@@ -6,9 +6,36 @@ import Testing
 @testable import BiliLibraryFeature
 
 /// 稍后再看会话：排序、应用筛选、提交或清空关键词都以新条件的第一页从空列表重新加载，旧条件的在途结果不并入；
-/// 弹窗草稿未应用不发请求；有筛选或关键词时界面可给出“清除筛选”；`reset` 与账户变化把条件恢复为默认。
+/// 弹窗草稿未应用不发请求，超长的关键词提交被忽略；有筛选或关键词时界面可给出“清除筛选”；`reset` 与账户变化把条件
+/// 恢复为默认。
 @Suite(.timeLimit(.minutes(1)))
 struct WatchLaterSessionTests {
+    /// 超长的关键词与空间页一样忽略这次提交：不发请求、不进失败页，原来的列表留着（规则在 `LibrarySearchKeyword`，
+    /// 收藏夹与关注共用）。
+    @Test
+    @MainActor
+    func overlongKeywordSubmissionIsIgnored() async {
+        let repository = WatchLaterRepositoryStub(
+            results: [laterPage(["BV1Old"], page: 1, next: nil, total: 1)]
+        )
+        let model = WatchLaterViewModel(useCase: WatchLaterUseCase(repository: repository))
+        let session = WatchLaterSession(model: model)
+        model.loadIfNeeded()
+        await model.waitForCurrentTask()
+
+        session.searchDraft = String(repeating: "猫", count: SearchText.maximumLength + 1)
+        session.submitSearch()
+        await model.waitForCurrentTask()
+
+        #expect(await repository.requests.count == 1)
+        #expect(session.appliedKeyword.isEmpty)
+        if case .loaded(let items, _, _) = model.state {
+            #expect(items.map(\.bvid) == ["BV1Old"])
+        } else {
+            Issue.record("列表不应离开已加载状态：\(model.state)")
+        }
+    }
+
     @Test
     @MainActor
     func criteriaChangeReloadsFromScratchAndDropsTheOldInFlightResult() async throws {

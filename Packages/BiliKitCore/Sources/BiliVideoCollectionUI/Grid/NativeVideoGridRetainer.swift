@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 窗口级的网格保活：每个来源留住一个从 SwiftUI 层级里摘下的网格（`NativeVideoGridView.Coordinator` 连同它的滚动视图、
-/// 集合视图、滚动位置与锚点），同一来源、同一内容身份再次出现时原样挂回，不重建。
+/// 窗口级的网格保活：每个来源留住一个从 SwiftUI 层级里摘下的网格（`NativeGridView.Coordinator` 连同它的滚动视图、
+/// 集合视图、滚动位置与锚点），同一来源、同一内容身份、同一卡片种类再次出现时原样挂回，不重建。
 ///
 /// 规则与取舍见 ARCHITECTURE「原生 AppKit 集合视图」。每个窗口一份，由 App 的窗口组装持有，生命周期由它的
 /// owner 管理。拥有留住的 Coordinator；不拥有图片管线与内容。丢弃一个 Coordinator 时，已摘下的立即 `reset()`；
@@ -10,24 +10,27 @@ import SwiftUI
 public final class NativeVideoGridRetainer {
     private struct Entry {
         let contentIdentity: AnyHashable?
-        let coordinator: NativeVideoGridView.Coordinator
+        let coordinator: any NativeGridRetainableCoordinator
     }
 
     private var entries: [AnyHashable: Entry] = [:]
 
     public init() {}
 
-    /// 网格的 Coordinator：本来源留住的那个已摘下、内容身份相同时复用它，否则另建一个并留住它、丢弃旧的。
+    /// 网格的 Coordinator：本来源留住的那个已摘下、内容身份与卡片种类都相同时复用它，否则另建一个并留住它、丢弃旧的。
     ///
     /// 同一来源的网格仍挂着时又要一个（过渡中新旧两个实例同时存在），留下新的：旧的随后被拆除，留下的是还在显示的那个。
-    /// 内容身份不同（例如换了收藏夹，Feature 按夹重建视图）时不把旧内容的位置、锚点与图带给新内容。
-    func coordinator(
+    /// 内容身份不同（例如换了收藏夹，Feature 按夹重建视图）时不把旧内容的位置、锚点与图带给新内容；同一个 key 换了卡片
+    /// 种类时旧网格的内容与锚点对新种类没有意义，同样丢弃。
+    func coordinator<Coordinator: NativeGridRetainableCoordinator>(
         for retention: NativeVideoGridRetention,
-        make: () -> NativeVideoGridView.Coordinator
-    ) -> NativeVideoGridView.Coordinator {
+        make: () -> Coordinator
+    ) -> Coordinator {
         if let entry = entries[retention.key] {
-            if entry.contentIdentity == retention.contentIdentity, entry.coordinator.isDetached {
-                return entry.coordinator
+            if entry.contentIdentity == retention.contentIdentity, entry.coordinator.isDetached,
+                let retained = entry.coordinator as? Coordinator
+            {
+                return retained
             }
             Self.discard(entry.coordinator)
         }
@@ -62,11 +65,23 @@ public final class NativeVideoGridRetainer {
         }
     }
 
-    private static func discard(_ coordinator: NativeVideoGridView.Coordinator) {
+    private static func discard(_ coordinator: any NativeGridRetainableCoordinator) {
         coordinator.isRetained = false
         coordinator.releaseHeldImages()
         if coordinator.isDetached { coordinator.reset() }
     }
+}
+
+/// 保活容器对网格 Coordinator（各卡片种类的 `NativeGridView.Coordinator`）的要求：保活标记、是否已摘下、释放留住的图
+/// 与不可逆的拆除。
+///
+/// 只由 `NativeGridView.Coordinator` 实现；保活容器只经它设置与清除 `isRetained`，语义见 Coordinator 的说明。
+@MainActor
+protocol NativeGridRetainableCoordinator: AnyObject {
+    var isRetained: Bool { get set }
+    var isDetached: Bool { get }
+    func releaseHeldImages()
+    func reset()
 }
 
 /// 一个网格在窗口保活里的位置：窗口的保活容器、来源 key，以及来源内的内容身份。

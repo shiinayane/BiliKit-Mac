@@ -7,9 +7,10 @@ import SwiftUI
 /// 分段标题，行按段内顺序与描述渲染。
 ///
 /// 选择值是 `AppSidebarSelection`，读写由 `AppShellView` 经 `AppSources` 映射到
-/// 导航协调器。「收藏夹」组只在已登录时显示，由 Library 的 `FavoriteFolderSidebarSection` 渲染每个收藏夹一行
-/// （tag 为 `.item(.favorites, id:)`），折叠状态由 `AppShellView` 持有；侧栏出现与窗口账户范围变化时让收藏夹列表按
-/// 账户范围对齐（未解析到已登录不算账户变化，首次读取只能由这里触发）。
+/// 导航协调器。「关注」与「收藏夹」组只在已登录时显示，分别由 Library 的 `FollowGroupSidebarSection`（「全部关注」与每个
+/// 分组一行，tag 为 `.item(.follows, id:)`）与 `FavoriteFolderSidebarSection`（每个收藏夹一行，tag 为
+/// `.item(.favorites, id:)`）渲染，折叠状态由 `AppShellView` 持有；侧栏出现与窗口账户范围变化时让这两组按账户范围对齐
+/// （未解析到已登录不算账户变化，首次读取只能由这里触发）。
 ///
 /// 底部账号行的头像经窗口图片管线加载（`AccountAvatarImage`），不拥有管线。
 struct AppNavigationSidebar: View {
@@ -17,6 +18,10 @@ struct AppNavigationSidebar: View {
     @Binding var selection: AppSidebarSelection
     let favoriteFolderList: FavoriteFolderListModel
     @Binding var isFavoritesExpanded: Bool
+    let followGroupList: FollowGroupListModel
+    @Binding var isFollowsExpanded: Bool
+    /// 在已选中的行上再点一下（行内任何位置）；列表这时不发出选择变化，由 `SidebarReselectDetector` 识别。
+    let onReselect: () -> Void
     let accountScope: AccountSessionScope
     let accountState: AccountPresentationState
     let imagePipeline: NativeVideoImagePipeline
@@ -26,6 +31,7 @@ struct AppNavigationSidebar: View {
         sidebarContent
             .task(id: accountScope) {
                 favoriteFolderList.synchronize()
+                followGroupList.synchronize()
             }
     }
 
@@ -63,6 +69,16 @@ struct AppNavigationSidebar: View {
                             rows(section.sources)
                         }
                     }
+                case .follows:
+                    // 「关注」组总有标题。
+                    if let title = section.group.title {
+                        FollowGroupSidebarSection(
+                            model: followGroupList,
+                            title: title,
+                            isExpanded: $isFollowsExpanded,
+                            tag: { AppSidebarSelection.item(.follows, id: $0) }
+                        )
+                    }
                 case .favorites:
                     // 「收藏夹」组总有标题。
                     if let title = section.group.title {
@@ -77,6 +93,7 @@ struct AppNavigationSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .background(SidebarReselectDetector(onReselect: onReselect))
     }
 
     /// 未登录（含仍在确认、无法确认）时不显示只在登录后才有行的组。

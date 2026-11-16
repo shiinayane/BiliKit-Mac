@@ -35,7 +35,7 @@ package struct NativeVideoGridDecorations {
 
 /// 网格装饰的 owner：顶部附加视图的宿主与「返回顶部」按钮。
 ///
-/// 由 `NativeVideoGridView.Coordinator` 持有一份，在建好滚动视图时 `attach`，每次 `update` 交回最新的装饰，`reset()`
+/// 由 `NativeGridView.Coordinator` 持有一份，在建好滚动视图时 `attach`，每次 `update` 交回最新的装饰，`reset()`
 /// 时一并拆除。宿主一旦建立就保留到 `reset()`，内容变化只换 `rootView`，其中的 SwiftUI 状态与键盘焦点不丢；读屏顺序由
 /// 集合视图把它排在卡片之前（`leadingAccessoryView`）。宿主放在首行上方让出的空间里、按钮点击带动画滚动的理由见
 /// docs/ARCHITECTURE.md「原生 AppKit 集合视图」。

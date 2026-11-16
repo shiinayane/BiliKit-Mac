@@ -3,26 +3,27 @@ import AppKit
 /// 网格与 shelf 共用的卡片内容：去重、按 ID 查找与 diffable 快照。
 ///
 /// 空 ID 与重复 ID 被丢弃，保留第一次出现的那张；值类型，由网格与 shelf 的 Coordinator 各自持有。
-package struct NativeVideoCardContents: Sendable {
-    static let section = 0
+package struct NativeCardContents<Presentation: NativeGridCardPresentation>: Sendable {
+    /// 泛型类型不能有静态存储属性，所以写成计算属性。
+    static var section: Int { 0 }
 
-    package private(set) var byID: [String: NativeVideoCardPresentation]
+    package private(set) var byID: [String: Presentation]
     package private(set) var orderedIDs: [String]
 
-    package init(_ items: [NativeVideoCardPresentation] = []) {
+    package init(_ items: [Presentation] = []) {
         var seen: Set<String> = []
         let uniqueItems = items.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
         byID = Dictionary(uniqueKeysWithValues: uniqueItems.map { ($0.id, $0) })
         orderedIDs = uniqueItems.map(\.id)
     }
 
-    package subscript(id: String) -> NativeVideoCardPresentation? { byID[id] }
+    package subscript(id: String) -> Presentation? { byID[id] }
 
     package func indexPath(of id: String) -> IndexPath? {
         orderedIDs.firstIndex(of: id).map { IndexPath(item: $0, section: Self.section) }
     }
 
-    /// 该 ID 的卡片存在且可进入播放；不在内容里的 ID 按不可激活处理。
+    /// 该 ID 的卡片存在且可激活；不在内容里的 ID 按不可激活处理。
     ///
     /// 网格与横排（VideoDetail 的相关推荐）的激活
     /// 入口都经它拦截，所以是 `package`。
@@ -30,7 +31,7 @@ package struct NativeVideoCardContents: Sendable {
         byID[id]?.isActivatable ?? false
     }
 
-    /// 只保留可进入播放的卡片位置：网格据此拒绝鼠标选中与按下高亮不可用卡片。
+    /// 只保留可激活的卡片位置：网格据此拒绝鼠标选中与按下高亮不可激活的卡片。
     func activatableIndexPaths(in indexPaths: Set<IndexPath>) -> Set<IndexPath> {
         indexPaths.filter {
             $0.section == Self.section && orderedIDs.indices.contains($0.item)
@@ -45,15 +46,17 @@ package struct NativeVideoCardContents: Sendable {
         return snapshot
     }
 
-    /// 可见卡片及其当前内容；`ids` 为空表示全部可见卡片。
+    /// 已实例化的 `Item` 卡片及其当前内容；`ids` 为空表示全部。
     @MainActor
-    package func visibleCards(
+    package func visibleCards<Item: NativeGridCardItem>(
+        of _: Item.Type,
         in collectionView: NSCollectionView,
         ids: Set<String>? = nil
-    ) -> [(NativeVideoCollectionItem, NativeVideoCardPresentation)] {
-        collectionView.visibleVideoCards.compactMap { item in
+    ) -> [(Item, Presentation)] where Item.Presentation == Presentation {
+        collectionView.visibleItems().compactMap { visibleItem in
             guard
-                let id = item.representedVideoID,
+                let item = visibleItem as? Item,
+                let id = item.representedCardID,
                 ids?.contains(id) ?? true,
                 let presentation = byID[id]
             else { return nil }
@@ -62,16 +65,16 @@ package struct NativeVideoCardContents: Sendable {
     }
 }
 
-/// 网格与 shelf 共用的 diffable 数据源：按 ID 取卡片内容、配置复用的卡片并同步键盘选择框。
+/// 网格与 shelf 共用的 diffable 数据源：按 ID 取卡片内容、配置复用的 `Item` 并同步键盘选择框。
+///
+/// 调用方先按 `Item.reuseIdentifier` 注册 `Item`。
 @MainActor
-package enum NativeVideoCardDataSource {
+package enum NativeCardDataSource<Item: NativeGridCardItem> {
     /// 调用方以 `[weak self]` 捕获 Coordinator，工厂本身不持有任何 owner。
     package static func make(
         collectionView: NSCollectionView,
-        presentation: @escaping @MainActor (String) -> NativeVideoCardPresentation?,
-        configure:
-            @escaping @MainActor (NativeVideoCollectionItem, NativeVideoCardPresentation)
-            -> Void,
+        presentation: @escaping @MainActor (String) -> Item.Presentation?,
+        configure: @escaping @MainActor (Item, Item.Presentation) -> Void,
         showsKeyboardSelection: @escaping @MainActor () -> Bool
     ) -> NSCollectionViewDiffableDataSource<Int, String> {
         NSCollectionViewDiffableDataSource<Int, String>(
@@ -80,9 +83,9 @@ package enum NativeVideoCardDataSource {
             guard
                 let presentation = presentation(id),
                 let item = collectionView.makeItem(
-                    withIdentifier: .nativeVideoCard,
+                    withIdentifier: Item.reuseIdentifier,
                     for: indexPath
-                ) as? NativeVideoCollectionItem
+                ) as? Item
             else { return nil }
             configure(item, presentation)
             item.setKeyboardFocusVisible(
@@ -94,7 +97,7 @@ package enum NativeVideoCardDataSource {
     }
 }
 
-/// 可被 `NativeVideoHoverTracker` 管理悬停外观的集合项（网格卡片、UP 主空间投稿行）。
+/// 可被 `NativeVideoHoverTracker` 管理悬停外观的集合项（网格与横排的卡片、UP 主空间投稿行）。
 @MainActor
 package protocol NativeHoverableCollectionItem: NSCollectionViewItem {
     func setHovered(_ hovered: Bool)
@@ -198,14 +201,15 @@ package enum NativeVideoCollectionKeys {
     }
 }
 
-/// 能弹出卡片菜单的集合项：卡片菜单按它代表的视频 ID 取，菜单打开期间由它自己画上下文描边。
+/// 能弹出卡片菜单的集合项：卡片菜单按它代表的卡片 ID 取，菜单打开期间由它自己画上下文描边。
 ///
-/// 网格与横排的视频卡片（`NativeVideoCollectionItem`）与 UP 主空间的投稿行都实现它；菜单的取用、弹出与读屏操作只在
+/// 网格与横排的卡片（`NativeCardCollectionItem`）与 UP 主空间的投稿行都实现它；菜单的取用、弹出与读屏操作只在
 /// `NativeVideoCardCollectionView` 写一份，各集合项只提供 ID 与描边。
 @MainActor
 package protocol NativeVideoMenuTargetItem: NSCollectionViewItem {
-    /// 此刻代表的视频 ID；复用、拆除后为 nil。异步弹出菜单与读屏操作执行前按它核对集合项是否已换了视频。
-    var representedVideoID: String? { get }
+    /// 此刻代表的卡片 ID（视频卡片是 BVID，人物卡片是 MID）；复用、拆除后为 nil。异步弹出菜单与读屏操作执行前按它
+    /// 核对集合项是否已换了卡片。
+    var representedCardID: String? { get }
     func setContextMenuTarget(_ isTarget: Bool)
 }
 
@@ -341,19 +345,20 @@ public struct NativeVideoNotificationObservers {
 }
 
 extension NSCollectionView {
-    var visibleVideoCards: [NativeVideoCollectionItem] {
-        visibleItems().compactMap { $0 as? NativeVideoCollectionItem }
+    /// 已实例化的网格与横排卡片（各种卡片种类）；UP 主空间的投稿行不在其中。
+    var visibleCardItems: [any NativeCardCollectionItem] {
+        visibleItems().compactMap { $0 as? any NativeCardCollectionItem }
     }
 
     /// 键盘选择框只在键盘导航后显示，鼠标点击与失焦会隐藏。
     func updateVisibleKeyboardSelection(showsKeyboardSelection: Bool) {
-        for item in visibleVideoCards {
+        for item in visibleCardItems {
             item.setKeyboardFocusVisible(showsKeyboardSelection && item.isSelected)
         }
     }
 
     /// 系统辅助功能显示选项（提高对比度、降低透明度）变化后刷新可见卡片。
     package func refreshVisibleCardAppearance() {
-        for item in visibleVideoCards { item.refreshEnvironmentAppearance() }
+        for item in visibleCardItems { item.refreshEnvironmentAppearance() }
     }
 }

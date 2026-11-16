@@ -2,6 +2,7 @@ import AppKit
 import BiliApplication
 import BiliModels
 import BiliUI
+import BiliVideoCollectionUI
 
 /// 评论行上的写入操作：赞、踩与回复，由侧栏控制器接到评论写入模型。
 ///

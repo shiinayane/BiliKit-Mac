@@ -27,6 +27,8 @@ struct AppShellView: View {
     let historyModel: WatchHistoryViewModel
     let favoriteFolderList: FavoriteFolderListModel
     let favoriteFolders: FavoriteFolderViewModel
+    let followGroupList: FollowGroupListModel
+    let followSession: FollowListSession
     let trendingSearchModel: TrendingSearchViewModel
     let searchSession: VideoSearchSession
     let searchHistory: SearchHistoryStore
@@ -56,6 +58,8 @@ struct AppShellView: View {
     ///
     /// 放在这里而不是侧栏里：进入、退出播放时导航侧栏会重建。
     @State private var isFavoritesExpanded = true
+    /// 侧栏「关注」组是否展开；同收藏夹组。
+    @State private var isFollowsExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -74,6 +78,10 @@ struct AppShellView: View {
                             selection: sidebarSelection,
                             favoriteFolderList: favoriteFolderList,
                             isFavoritesExpanded: $isFavoritesExpanded,
+                            followGroupList: followGroupList,
+                            isFollowsExpanded: $isFollowsExpanded,
+                            // 点当前来源的行回到它的根页；已在根页时 `goHome` 不动作。
+                            onReselect: navigationCoordinator.goHome,
                             accountScope: historyAccountScope,
                             accountState: authenticationModel.accountPresentationState,
                             imagePipeline: imagePipeline,
@@ -130,6 +138,7 @@ struct AppShellView: View {
         // 来源网格、相关推荐横排与它们的卡片菜单都在这棵树里；写入口只转发意图，门槛与请求在 `AccountWriteCoordinator`。
         .environment(\.videoCardAccountWriting, accountWriting)
         .environment(\.videoEngagementActions, engagementActions)
+        .environment(\.uploaderFollowingMenu, followingMenu)
         .navigationSplitViewStyle(.balanced)
         .focusedSceneValue(
             \.appNavigation,
@@ -152,8 +161,17 @@ struct AppShellView: View {
                 onConfirm: accountWrites.confirmFavoritePicker
             )
         }
+        .sheet(item: followGroupPicker) { picker in
+            FollowGroupPickerView(
+                model: picker,
+                onCancel: accountWrites.dismissFollowGroupPicker,
+                onRetry: accountWrites.retryFollowGroupPicker,
+                onConfirm: accountWrites.confirmFollowGroupPicker
+            )
+        }
         .onChange(of: accountWrites.currentWritableAccount) {
-            // 登出、换号、其他窗口换号待复核：属于旧账户的「收藏到…」面板立即关闭，播放页按新账户重读互动状态。
+            // 登出、换号、其他窗口换号待复核：属于旧账户的「收藏到…」与「设置分组…」面板立即关闭、关系存储丢弃上一账户的
+            // 关系，播放页按新账户重读互动状态。
             accountWrites.writableAccountDidChange()
             engagementModel.present(videoModel.presentedContext?.detail)
         }
@@ -171,7 +189,7 @@ struct AppShellView: View {
             else {
                 return
             }
-            // 账户变化会替换每个来源的内容（Browse 丢弃全部工作集，稍后再看、观看历史与收藏夹随账户重载），所有网格都
+            // 账户变化会替换每个来源的内容（Browse 丢弃全部工作集，稍后再看、观看历史、关注与收藏夹随账户重载），所有网格都
             // 回到顶部；留住的网格还持有旧账户的卡片，一并丢弃。
             gridRetainer.discardAll()
             for tab in AppTab.allCases {
@@ -202,7 +220,23 @@ struct AppShellView: View {
             chooseFavoriteFolders: { accountWrites.chooseFavoriteFolders(bvid: $0) },
             removeFromFavoriteFolder: { accountWrites.removeFromFavoriteFolder($0) },
             dislikeRecommendation: { accountWrites.dislikeRecommendation($0) },
-            cancelRecommendationDislike: { accountWrites.cancelRecommendationDislike($0) }
+            cancelRecommendationDislike: { accountWrites.cancelRecommendationDislike($0) },
+            followSpecialState: { accountWrites.followRelations.specialState(of: $0) },
+            setFollowSpecial: { accountWrites.setFollowSpecial($1, mid: $0) },
+            chooseFollowGroups: { accountWrites.chooseFollowGroups(mid: $0) },
+            unfollow: { accountWrites.unfollow(mid: $0) }
+        )
+    }
+
+    /// 空间页头部与播放页侧栏「已关注」菜单的写入口：状态取窗口的关系存储，动作转给窗口的写入协调者。
+    private var followingMenu: UploaderFollowingMenu {
+        let accountWrites = accountWrites
+        return UploaderFollowingMenu(
+            isSpecial: { accountWrites.followRelations.specialState(of: $0) },
+            isWritable: { accountWrites.isWritable },
+            prefetch: { accountWrites.followRelations.prefetch($0) },
+            setSpecial: { _ = accountWrites.setFollowSpecial($0, mid: $1) },
+            chooseGroups: { accountWrites.chooseFollowGroups(mid: $0) }
         )
     }
 
@@ -225,6 +259,17 @@ struct AppShellView: View {
             get: { accountWrites.favoritePicker },
             set: { picker in
                 if picker == nil { accountWrites.dismissFavoritePicker() }
+            }
+        )
+    }
+
+    /// 「设置分组…」面板的呈现：同「收藏到…」。
+    private var followGroupPicker: Binding<FollowGroupPickerModel?> {
+        let accountWrites = accountWrites
+        return Binding(
+            get: { accountWrites.followGroupPicker },
+            set: { picker in
+                if picker == nil { accountWrites.dismissFollowGroupPicker() }
             }
         )
     }
@@ -275,8 +320,10 @@ struct AppShellView: View {
             onToggleFollow: {
                 accountWrites.setFollowing(!(page.viewerFollows ?? false), onSpacePage: page)
             },
+            onUnfollow: { accountWrites.setFollowing(false, onSpacePage: page) },
             onSelect: navigationCoordinator.openPlayback
         )
+        .historyPageBackground()
         .onChange(of: page.order) { spaceGridScroll.reset.request() }
         .onChange(of: page.searchKeyword) { spaceGridScroll.reset.request() }
         .onChange(of: page.owner == nil) { _, isClosed in
@@ -438,6 +485,18 @@ struct AppShellView: View {
                     isAuthenticationPresented = true
                 }
             )
+        case .follows:
+            FollowsTabRoot(
+                title: sources[.follows].title,
+                session: followSession,
+                groupList: followGroupList,
+                accountState: authenticationModel.accountPresentationState,
+                gridHost: gridHost(.follows),
+                onSelect: navigationCoordinator.openUploaderSpacePage,
+                onPresentAuthentication: {
+                    isAuthenticationPresented = true
+                }
+            )
         case .favorites:
             FavoritesTabRoot(
                 title: sources[.favorites].title,
@@ -491,13 +550,21 @@ private struct PlaybackDestinationView: View {
         ) {
             playerContent
         }
-        // macOS 没有给页面设底色的接口，页面本身透明，所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方；换页转场让
-        // 播放页叠在别的页面上滑动，也靠这层不透明（见 ARCHITECTURE「播放页布局」）。
-        .background {
+        .historyPageBackground()
+        .navigationTitle("播放")
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    }
+}
+
+extension View {
+    /// 历史页（播放页、整页空间页）的不透明窗口底色，延伸到工具栏与侧栏下方。
+    ///
+    /// macOS 没有给页面设底色的接口，页面本身透明，所以自铺。换页转场让移动的历史页叠在不动的那一页上滑，也靠这层
+    /// 不透明；新增历史页类型都要铺它（见 ARCHITECTURE「播放页布局」）。
+    fileprivate func historyPageBackground() -> some View {
+        background {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
         }
-        .navigationTitle("播放")
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 }

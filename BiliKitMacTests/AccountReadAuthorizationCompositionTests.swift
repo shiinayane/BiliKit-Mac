@@ -55,6 +55,11 @@ struct AccountReadAuthorizationCompositionTests {
             LiveAPIClients.mainAccountReadAllowedPaths == [
                 "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
+                "/x/relation",
+                "/x/relation/followings",
+                "/x/relation/followings/search",
+                "/x/relation/tag",
+                "/x/relation/tags",
                 "/x/v2/dm/web/view",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/v2/history/toview/web",
@@ -165,6 +170,9 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/v3/fav/resource/deal",
                 "/x/v3/fav/resource/batch-del",
                 "/x/relation/modify",
+                "/x/relation/tag/special/add",
+                "/x/relation/tag/special/del",
+                "/x/relation/tags/addUsers",
                 "/x/v2/dm/post",
                 "/x/v2/reply/action",
                 "/x/v2/reply/hate"
@@ -211,6 +219,11 @@ struct AccountWriteAuthorizationCompositionTests {
             ),
             BiliAccountWritePath.relationModify: (
                 "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
+            ),
+            BiliAccountWritePath.followSpecialAdd: ("https://www.bilibili.com/", "fid=7"),
+            BiliAccountWritePath.followSpecialRemove: ("https://www.bilibili.com/", "fid=7"),
+            BiliAccountWritePath.followGroupsAssign: (
+                "https://www.bilibili.com/", "fids=7&tagids=-10%2C12"
             ),
             BiliAccountWritePath.danmakuPost: (
                 "https://www.bilibili.com/",

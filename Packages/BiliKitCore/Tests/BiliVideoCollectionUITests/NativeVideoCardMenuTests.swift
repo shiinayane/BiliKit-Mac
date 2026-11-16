@@ -11,9 +11,35 @@ import Testing
 /// 播放的卡片，「从稍后再看移除」与收藏夹页的「从此收藏夹移除」也给不可用卡片并带 ⌘⌫；不满足写入门槛时
 /// 写操作项在菜单里禁用、不进入读屏操作；读屏操作执行时按卡片 ID 重新核对；没有项时不弹菜单；Control-点按走右键同一条
 /// 菜单路径，不激活卡片。来源自己的写操作项排在写操作一组末尾；子菜单在 `NSMenu` 里展开为一级子菜单，在读屏操作里
-/// 展开为带父项名字的各个子项，子项都不可用时父项也不可用。
+/// 展开为带父项名字的各个子项，子项都不可用时父项也不可用。「已关注」菜单的三项按是否特别关注给出标题与方向，不知道时
+/// 前两项不可用、取消关注照常，不满足写入门槛时都不可用。
 struct NativeVideoCardMenuTests {
     private static let webPage = URL(string: "https://www.bilibili.com/video/BV1Menu")
+
+    @Test(arguments: [
+        (Bool?.none, true, [false, false, true]),
+        (true, true, [true, true, true]),
+        (false, false, [false, false, false])
+    ])
+    @MainActor
+    func followingItemsFollowTheKnownRelationAndTheWriteGate(
+        isSpecial: Bool?,
+        isWritable: Bool,
+        enabled: [Bool]
+    ) throws {
+        var performed: [UploaderFollowingMenuContent.Action] = []
+        let content = UploaderFollowingMenuContent(isSpecial: isSpecial, isWritable: isWritable)
+        let items = NativeVideoCardMenu.Item.following(content) { performed.append($0) }
+        let menu = try #require(NativeVideoCardMenu(sections: [items]))
+        let removeTitle = UploaderFollowingMenuContent(isSpecial: true, isWritable: true)
+            .entries[0].title
+
+        #expect(menu.makeMenu().items.map(\.title) == content.entries.map(\.title))
+        #expect((items[0].title == removeTitle) == (isSpecial == true))
+        #expect(items.map(\.isEnabled) == enabled)
+        for item in items { item.action() }
+        #expect(performed == [.setSpecial(isSpecial != true), .chooseGroups, .unfollow])
+    }
 
     @Test @MainActor
     func submenuIsNestedInTheMenuAndFlattenedForVoiceOver() throws {
@@ -485,7 +511,11 @@ struct NativeVideoCardMenuTests {
             chooseFavoriteFolders: { chosen($0) },
             removeFromFavoriteFolder: { _ in },
             dislikeRecommendation: { _ in },
-            cancelRecommendationDislike: { _ in }
+            cancelRecommendationDislike: { _ in },
+            followSpecialState: { _ in nil },
+            setFollowSpecial: { _, _ in },
+            chooseFollowGroups: { _ in },
+            unfollow: { _ in }
         )
     }
 
