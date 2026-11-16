@@ -1,17 +1,16 @@
 import BiliModels
 
-/// 写入确认的关注关系与它们的确认时刻：写入之后的宽限期内，读到的关系、分组人数与分组成员可能还是写前的旧值，按这里的
-/// 确认值纠正或丢弃。
+/// 写入确认的关注关系与它们的确认时刻：写入之后的宽限期内，读到的关系与分组成员可能还是写前的旧值，按这里的确认值纠正。
 ///
 /// 存在的理由：「设置分组…」按完整集合覆盖这个人的分组，面板以读到的关系为底；写后立刻读到旧值作底时，用户只改一项就会
-/// 把刚加入的分组（或特别关注）悄悄抹掉。侧栏人数在写入成功时已按前后差异在本地改过，宽限期内落地的读取会把它改回旧值。
+/// 把刚加入的分组（或特别关注）悄悄抹掉。侧栏人数的旧值不在这里处理，见 `LibrarySidebarListModel.adjustAfterWrite`。
 ///
 /// 纯值类型，不观察、不计时：时刻都由调用方传入（App 的 `FollowRelationStore` 传 `ContinuousClock.now`，并由它在宽限期结束时
 /// 补读）。每个窗口一份，随窗口账户清空；只记写入确认的值，读到的值由调用方另存。
 public struct FollowRelationLedger: Sendable {
     /// 写入之后多久内不信任与确认值矛盾的读取。
     ///
-    /// 实测写后立刻读到的关系与人数是旧值，第二次实测几秒内已一致；取 15 秒留出余量。调长时宽限期内的人数与成员页更久不随
+    /// 实测写后立刻读到的关系与人数是旧值，第二次实测几秒内已一致；取 15 秒留出余量。调长时宽限期内的关系与关注页更久不随
     /// 服务端变化、补读更晚；调短可能让旧值盖过确认值。
     public static let relationReadLagGrace: Duration = .seconds(15)
 
@@ -21,7 +20,7 @@ public struct FollowRelationLedger: Sendable {
     }
 
     private var confirmations: [Int64: Confirmation] = [:]
-    /// 最近一次确认写入的时刻；分组人数的读取按它判断（任何一个人的关系变化都会改人数）。
+    /// 最近一次确认写入的时刻；关注页的补读按它判断（任何一个人的关系变化都可能改动正在显示的那一页）。
     private var latestConfirmation: ContinuousClock.Instant?
 
     public init() {}
@@ -43,11 +42,6 @@ public struct FollowRelationLedger: Sendable {
             return nil
         }
         return latestConfirmation.advanced(by: Self.relationReadLagGrace)
-    }
-
-    /// 此刻落地的分组人数读取能否采用：宽限期内的一律丢弃，由调用方在 `graceEnd` 之后补读一次。
-    public func admitsGroupCountRead(at now: ContinuousClock.Instant) -> Bool {
-        graceEnd(at: now) == nil
     }
 
     /// 宽限期内写入确认的这个人的关系；没有或已过期时为 nil。

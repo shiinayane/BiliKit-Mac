@@ -242,7 +242,7 @@ struct AccountWriteCoordinatorTests {
     }
 
     @Test
-    func pickerConfirmsOnlyTheDifferenceAndRefreshesTheFolderList() async throws {
+    func pickerConfirmsOnlyTheDifferenceAndAdjustsTheFolderCounts() async throws {
         let writes = AccountWriteRepositoryStub()
         let favorites = FavoritesRepositoryStub()
         let window = try await signedInWindow(
@@ -269,8 +269,8 @@ struct AccountWriteCoordinatorTests {
 
         #expect(await writes.calls == ["favorite BV17x411w7KC +[20] -[10] 7"])
         #expect(window.accountWrites.report?.failure == nil)
-        // 面板一次读取归属，成功后侧栏收藏夹在后台重读条数。
-        await favorites.waitForFolderRequestCount(3)
+        // 成功后侧栏条数立刻在本地增减（移出的默认收藏夹本来是 0，不低于 0），不等宽限期后的补读。
+        #expect(window.favoriteFolderList.folders.map(\.mediaCount) == [0, 1])
     }
 
     /// 打开面板后换了账户：面板里的归属属于上一账户，确认时直接丢弃、不发请求；没有改动的确认同样不发请求。
@@ -611,7 +611,7 @@ struct AccountWriteCoordinatorTests {
     }
 
     @Test
-    func coinsAndTripleApplyOnSuccessAndTripleRefreshesFavorites() async throws {
+    func coinsAndTripleApplyOnSuccess() async throws {
         let writes = AccountWriteRepositoryStub(
             tripleOutcome: VideoTripleOutcome(
                 isLiked: true,
@@ -649,8 +649,6 @@ struct AccountWriteCoordinatorTests {
                 == VideoEngagementState(isLiked: true, coinCount: 2, isFavorited: true)
         )
         #expect(await writes.calls == ["coin 1 +like BV17x411w7KC 7", "triple BV17x411w7KC 7"])
-        // 三连的收藏进默认收藏夹：侧栏收藏夹在后台重读条数。
-        await favorites.waitForFolderRequestCount(2)
     }
 
     @Test

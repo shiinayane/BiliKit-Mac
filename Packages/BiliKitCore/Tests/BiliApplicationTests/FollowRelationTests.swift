@@ -36,20 +36,18 @@ struct FollowRelationTests {
         #expect(ledger.reconciled(stale, for: 1, at: Self.afterGrace) == stale)
     }
 
-    /// 侧栏人数在写入成功时已在本地改过：宽限期内落地的读取丢弃，结束时刻随最近一次确认延后。
+    /// 关注页的补读等到最近一次确认的宽限期结束：结束时刻随新的确认延后，过了就没有宽限期。
     @Test
-    func groupCountReadsAreDiscardedUntilTheGraceOfTheLatestWriteEnds() {
+    func theGraceEndsAfterTheLatestConfirmation() {
         var ledger = FollowRelationLedger()
-        #expect(ledger.admitsGroupCountRead(at: Self.written))
         #expect(ledger.graceEnd(at: Self.written) == nil)
 
         ledger.confirm(.following(Self.groupA), for: 1, at: Self.written)
         ledger.confirm(.notFollowing, for: 2, at: Self.withinGrace)
 
         let end = Self.withinGrace.advanced(by: FollowRelationLedger.relationReadLagGrace)
-        #expect(!ledger.admitsGroupCountRead(at: Self.afterGrace))
         #expect(ledger.graceEnd(at: Self.afterGrace) == end)
-        #expect(ledger.admitsGroupCountRead(at: end))
+        #expect(ledger.graceEnd(at: end) == nil)
     }
 
     /// 分组页去掉确认已不在这个分组的人，刚加入的人不插入；全部关注换上确认的分组、去掉已取消关注的人。

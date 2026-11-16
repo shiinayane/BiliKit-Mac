@@ -83,22 +83,10 @@ public struct FollowGroupSidebarSection<Tag: Hashable>: View {
     }
 
     private func row(title: String, systemImage: String, count: Int?) -> some View {
-        Label {
-            HStack {
-                Text(title)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if let count {
-                    Text(count, format: .number)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
-            }
-        } icon: {
-            Image(systemName: systemImage)
+        LibrarySidebarCountRow(systemImage: systemImage, count: count) {
+            Text(title)
+                .lineLimit(1)
         }
-        .accessibilityValue(count.map { String($0) } ?? "")
     }
 
     private func icon(of group: FollowGroup) -> String {

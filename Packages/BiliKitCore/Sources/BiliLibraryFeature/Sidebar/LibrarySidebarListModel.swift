@@ -24,6 +24,9 @@ public enum LibrarySidebarListState<Value: Sendable & Equatable>: Sendable, Equa
 /// 出现时的 `synchronize()` 触发（未解析到已登录不算账户变化，不会收到账户变化通知），账户范围变化时由来源的描述 `reset`
 /// 后重新 `synchronize()`，关窗与其他窗口换号时 `reset`。行对应的页面内容仍绑定来源，不在本页时不读取（见 SECURITY-MODEL
 /// §3）。
+///
+/// 写入成功后条数在本地增减（`adjustAfterWrite`）：写后立刻重读到的条数可能还是写前的旧值，宽限期
+/// （`countReadLagGrace`）内落地的后台重读一律丢弃，宽限期结束时由本模型持有的唯一一个 Task 补读一次。
 @MainActor
 @Observable
 public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
@@ -57,11 +60,17 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
     private var revalidation = AccountRevalidationProgress()
     @ObservationIgnored private let read: @Sendable (_ accountID: Int64) async throws -> Value
     @ObservationIgnored private let accountScope: @MainActor () -> AccountSessionScope
-    /// 已有值时的后台重读落地前求值：返回 false 时丢弃读到的值、保留原有的行。
+    /// 写入之后多久内不信任后台重读到的条数。
     ///
-    /// 关注分组由 App 的关系存储给出：写入后的宽限期内读到的人数可能还是写前的旧值，会盖掉本地按写入改过的人数（见
-    /// `FollowRelationLedger`）；存储在宽限期结束后补读。收藏夹总是采用。
-    @ObservationIgnored private let admitsRefreshedValue: @MainActor () -> Bool
+    /// 关注分组的人数实测写后立刻读到旧值、几秒内一致（与 `FollowRelationLedger.relationReadLagGrace` 同一次实测）；收藏夹
+    /// 条数实机上同样迟到，没有单独量过，沿用同一取值。调长时宽限期内条数更久不随服务端变化、补读更晚；调短时迟到的旧值
+    /// 会在宽限期结束后把条数改回写前。
+    static var countReadLagGrace: Duration { .seconds(15) }
+
+    /// 最近一次写入的宽限期结束时刻；`adjustAfterWrite` 设置（新的写入延长），补读或 `reset` 时清空。
+    @ObservationIgnored private var countGraceEnd: ContinuousClock.Instant?
+    /// 等到宽限期结束再补读的 Task；新的写入替换它，`reset` 取消。
+    @ObservationIgnored private var graceReread: Task<Void, Never>?
     /// 当前状态（加载中、值或失败）属于哪个账户；开始读取时记录，`reset` 时清空。
     ///
     /// 账户范围换了 mid 时 `synchronize()` 先丢弃旧状态。
@@ -75,12 +84,10 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
     /// 换号、本窗口复核未完时给出 `unresolved`。`read` 读取这个 mid 的值，失败抛出 `ContentApplicationError`。
     init(
         accountScope: @escaping @MainActor () -> AccountSessionScope,
-        admitsRefreshedValue: @escaping @MainActor () -> Bool = { true },
         read: @escaping @Sendable (_ accountID: Int64) async throws -> Value
     ) {
         self.read = read
         self.accountScope = accountScope
-        self.admitsRefreshedValue = admitsRefreshedValue
     }
 
     /// 按窗口此刻的账户范围对齐列表：已登录且 mid 已知时，列表不属于这个 mid 就丢弃，空闲时加载；mid 未知时显示说明；
@@ -113,21 +120,34 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
         load(accountID: accountID)
     }
 
-    /// 写入成功后由 App 的写入效果路由调用：各行的条数变了，已有值时在后台重读、保留原有的行；其余状态不动作。
-    public func refreshAfterWrite() {
-        guard case .loaded = state else { return }
-        reload()
-    }
-
-    /// 写入效果在本地改已加载的值（关注分组的人数）；其他状态不动作。
-    func updateLoadedValue(_ transform: (Value) -> Value) {
-        guard case .loaded(let value) = state else { return }
-        state = .loaded(transform(value))
+    /// 写入成功后由各组的入口调用（App 的写入效果路由经它们转来）：已加载时按 `transform` 在本地改条数，并开始或延长宽限期。
+    ///
+    /// `transform` 返回 nil 表示这次写入改了哪些行不知道（如三连收藏），只等宽限期后补读。还没有已加载的值时也开始宽限期：
+    /// 首次读取可能在写入前已经发出，落地的是写前的条数，而首次读取不在宽限期里丢弃，靠宽限期后的补读纠正。调用方先核对
+    /// 写入属于本窗口的账户。
+    func adjustAfterWrite(_ transform: (Value) -> Value?) {
+        if case .loaded(let value) = state, let adjusted = transform(value) {
+            state = .loaded(adjusted)
+        }
+        let graceEnd = ContinuousClock.now.advanced(by: Self.countReadLagGrace)
+        countGraceEnd = graceEnd
+        graceReread?.cancel()
+        graceReread = Task { [weak self] in
+            try? await Task.sleep(until: graceEnd, clock: .continuous)
+            guard let self, !Task.isCancelled else { return }
+            graceReread = nil
+            countGraceEnd = nil
+            guard case .loaded = state else { return }
+            reload()
+        }
     }
 
     /// 取消请求并从内存删除读到的值，供登出、换号与关窗调用；复核代次保留。
     public func reset() {
         loadTask.cancel()
+        graceReread?.cancel()
+        graceReread = nil
+        countGraceEnd = nil
         isRefreshing = false
         stateAccountID = nil
         revalidation.reset()
@@ -181,7 +201,10 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
                 guard let self, isCurrent() else { return }
                 isRefreshing = false
                 revalidation.loadSucceeded()
-                guard !refreshesInPlace || admitsRefreshedValue() else { return }
+                // 宽限期内的后台重读可能是写前的旧条数，会盖掉本地改过的值；宽限期结束时另有补读。
+                if refreshesInPlace, let countGraceEnd, ContinuousClock.now < countGraceEnd {
+                    return
+                }
                 state = .loaded(value)
                 onLoaded?(value)
             } catch is CancellationError {

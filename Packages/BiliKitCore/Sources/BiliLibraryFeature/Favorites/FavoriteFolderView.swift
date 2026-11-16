@@ -59,9 +59,10 @@ public struct FavoriteFolderView: View {
 
 /// 侧栏「收藏夹」组：可折叠的分段，每个自己创建的收藏夹一行；列表加载中、失败与账户未知时各显示一行说明。
 ///
-/// 每行用调用方给的 `tag(id)` 作选择值，行图标统一是 `folder`；私密收藏夹在名称右边紧跟一个次要颜色的小锁（名称
-/// 过长时截断名称、锁仍可见；读屏不读图标，改在行的值里读“私密”），默认收藏夹不特殊标记，数量不在行上显示。说明行
-/// 不可选中：失败行是重试按钮，账户未知只说明、不给重试。不拥有列表与折叠状态：列表归 `FavoriteFolderListModel`（由 App 按窗口账户范围触发读取），
+/// 每行用调用方给的 `tag(id)` 作选择值，行图标统一是 `folder`；私密收藏夹在名称右边紧跟一个次要颜色的小锁，条数在行尾
+/// （接口的 `media_count`，含失效条目）。名称过长时截断名称，锁与条数仍可见；读屏不读图标，“私密”与条数作为行的值。
+/// 默认收藏夹不特殊标记。条数在收藏写入成功后本地增减（见 `adjustAfterWrite`）。说明行不可选中：失败行是重试按钮，账户
+/// 未知只说明、不给重试。不拥有列表与折叠状态：列表归 `FavoriteFolderListModel`（由 App 按窗口账户范围触发读取），
 /// 折叠只在窗口内存里、由 App 持有。
 public struct FavoriteFolderSidebarSection<Tag: Hashable>: View {
     @Environment(\.locale) private var locale
@@ -128,14 +129,14 @@ public struct FavoriteFolderSidebarSection<Tag: Hashable>: View {
     }
 
     private func row(_ folder: FavoriteFolder) -> some View {
-        Label {
+        LibrarySidebarCountRow(
+            systemImage: "folder",
+            count: folder.mediaCount,
+            accessibilityStates: folder.isPrivate
+                ? [LibraryFeatureStrings.localized("私密", locale: locale)] : []
+        ) {
             FavoriteFolderTitle(folder: folder)
-        } icon: {
-            Image(systemName: "folder")
         }
-        .accessibilityValue(
-            folder.isPrivate ? LibraryFeatureStrings.localized("私密", locale: locale) : ""
-        )
     }
 
     private var loadingRow: some View {

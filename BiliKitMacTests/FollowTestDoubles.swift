@@ -93,8 +93,7 @@ struct FollowWriteDependencies {
         let relations = FollowRelationStore(useCase: useCase, writableAccount: writableAccount)
         groupList = FollowGroupListModel(
             useCase: useCase,
-            accountScope: { .signedOut },
-            admitsRefreshedValue: { relations.admitsGroupCountRead() }
+            accountScope: { .signedOut }
         )
         session = FollowListSession(
             model: FollowListViewModel(

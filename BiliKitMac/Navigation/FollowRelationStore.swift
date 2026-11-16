@@ -7,8 +7,8 @@ import Observation
 ///
 /// 每个窗口一个，由 `WindowComposition` 构造。拥有按 mid 的已知关系（`relations`：单人关系的读取、关注页每一页说明的关系、
 /// 写入确认的值与乐观改动；没有这一项就是不知道）、单人关系读取的 Task 与状态、写入确认的 `FollowRelationLedger`，以及
-/// 宽限期结束时补读的那一个 Task。不拥有写入（`AccountWriteCoordinator`）、侧栏人数与关注页列表（`FollowGroupListModel`、
-/// `FollowListSession`，补读经 `rereadGroupCounts`／`markFollowPageStale` 交给它们）。
+/// 宽限期结束时把关注页标记为过期的那一个 Task。不拥有写入（`AccountWriteCoordinator`）、侧栏人数（`FollowGroupListModel`
+/// 自己在写入后的宽限期里丢弃旧人数、补读）与关注页列表（`FollowListSession`，经 `markFollowPageStale` 交给它）。
 ///
 /// 关系属于窗口的写入账户（含会话代次）：账户一变（`synchronizeAccount`，或下一次读写时发现）就全部丢弃、取消读取与补读；
 /// 读取落地时账户已变的结果丢弃，关注页的一页只记在读取它的账户名下。时刻取 `ContinuousClock.now`。`reset()`（关窗）
@@ -33,9 +33,7 @@ final class FollowRelationStore {
     private var relations: [Int64: FollowRelation] = [:]
     private var reads: [Int64: ReadPhase] = [:]
 
-    /// 宽限期结束时补读侧栏人数；`WindowComposition` 在侧栏分组构造之后接上一次。
-    @ObservationIgnored var rereadGroupCounts: @MainActor () -> Void = {}
-    /// 宽限期结束时把关注页标记为过期（下次出现时原地刷新）；接线同上。
+    /// 宽限期结束时把关注页标记为过期（下次出现时原地刷新）；`WindowComposition` 在关注页构造之后接上一次。
     @ObservationIgnored var markFollowPageStale: @MainActor () -> Void = {}
     /// 记下这个人已经没有关注时（单人关系读到、或写入确认）调用。
     ///
@@ -50,9 +48,8 @@ final class FollowRelationStore {
     @ObservationIgnored private var readTasks: [Int64: Task<Void, Never>] = [:]
     /// 等到宽限期结束再补读的 Task；有新的确认时替换（宽限期随之延长），账户变化与 `reset` 时取消。
     @ObservationIgnored private var graceRecheck: Task<Void, Never>?
-    /// 宽限期里欠着的补读：侧栏人数（有读取被丢弃，或写前分组未知、没能在本地改人数）与关注页（有关系变化，或宽限期里
-    /// 落地过任何一页：那一页可能是写前的旧值，纠正只去掉确认已离开的人，刚加入的人不会被插入）。
-    @ObservationIgnored private var owesGroupCountRead = false
+    /// 宽限期里欠着关注页的补读：有关系变化，或宽限期里落地过任何一页（那一页可能是写前的旧值，纠正只去掉确认已离开的人，
+    /// 刚加入的人不会被插入）。
     @ObservationIgnored private var owesFollowPageRead = false
     @ObservationIgnored private var isClosed = false
 
@@ -124,23 +121,6 @@ final class FollowRelationStore {
         owesFollowPageRead = true
         scheduleGraceRecheck()
         if relation == .notFollowing { followDidEnd(mid) }
-    }
-
-    /// 写前分组未知，人数没能在本地改：宽限期结束后重读侧栏人数（宽限期内落地的读取照样丢弃）。
-    func rereadGroupCountsAfterGrace() {
-        guard !isClosed, account != nil else { return }
-        owesGroupCountRead = true
-        scheduleGraceRecheck()
-    }
-
-    /// 侧栏人数的重读落地时调用（`FollowGroupListModel` 的 `admitsRefreshedValue`）：宽限期内的丢弃，结束后补读一次。
-    func admitsGroupCountRead() -> Bool {
-        guard writableAccount() == account, !ledger.admitsGroupCountRead(at: .now) else {
-            return true
-        }
-        owesGroupCountRead = true
-        scheduleGraceRecheck()
-        return false
     }
 
     /// 关注页每一页落地时调用（`FollowListViewModel` 的 `reconcile`）：按 ledger 纠正这一页，记下这一页说明的关系，宽限期
@@ -217,7 +197,6 @@ final class FollowRelationStore {
         relations.removeAll()
         reads.removeAll()
         ledger = FollowRelationLedger()
-        owesGroupCountRead = false
         owesFollowPageRead = false
     }
 
@@ -237,10 +216,6 @@ final class FollowRelationStore {
 
     private func performOwedRereads() {
         graceRecheck = nil
-        if owesGroupCountRead {
-            owesGroupCountRead = false
-            rereadGroupCounts()
-        }
         if owesFollowPageRead {
             owesFollowPageRead = false
             markFollowPageStale()

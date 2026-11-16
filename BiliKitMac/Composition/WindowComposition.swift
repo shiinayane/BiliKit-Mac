@@ -191,15 +191,14 @@ final class WindowComposition {
         self.favoriteFolderList = favoriteFolderList
         self.favoriteFolders = favoriteFolders
         let followUseCase = FollowListUseCase(repository: adapters.followListRepository)
-        // 关系存储先于侧栏分组与关注页构造：两者的读取落地时都要经它核对写入后的宽限期；宽限期后的补读再接回给它们。
+        // 关系存储先于关注页构造：每一页落地时都要经它核对写入后的宽限期；宽限期后的补读再接回给关注页。
         let followRelations = FollowRelationStore(
             useCase: followUseCase,
             writableAccount: writableAccount
         )
         let followGroupList = FollowGroupListModel(
             useCase: followUseCase,
-            accountScope: accountScope,
-            admitsRefreshedValue: { followRelations.admitsGroupCountRead() }
+            accountScope: accountScope
         )
         let followSession = FollowListSession(
             model: FollowListViewModel(
@@ -212,10 +211,7 @@ final class WindowComposition {
             ),
             groupList: followGroupList
         )
-        // 弱引用：侧栏分组与关注页的读取闭包已经强引用关系存储，反过来再强引用会成环、关窗后不释放。
-        followRelations.rereadGroupCounts = { [weak followGroupList] in
-            followGroupList?.refreshAfterWrite()
-        }
+        // 弱引用：关注页的读取闭包已经强引用关系存储，反过来再强引用会成环、关窗后不释放。
         followRelations.markFollowPageStale = { [weak followSession] in
             followSession?.model.markNeedsReload()
         }

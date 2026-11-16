@@ -55,16 +55,11 @@ extension FollowGroupList {
 
 extension LibrarySidebarListModel where Value == FollowGroupList {
     /// 分组与总人数并发读取；分组读不到即整体失败，总人数读不到只缺人数。
-    ///
-    /// `admitsRefreshedValue` 在已有值时的重读落地前求值，返回 false 时丢弃（见 `LibrarySidebarListModel`）；由 App 的关系
-    /// 存储按写入后的宽限期给出。
     public convenience init(
         useCase: FollowListUseCase,
-        accountScope: @escaping @MainActor () -> AccountSessionScope,
-        admitsRefreshedValue: @escaping @MainActor () -> Bool
+        accountScope: @escaping @MainActor () -> AccountSessionScope
     ) {
-        self.init(accountScope: accountScope, admitsRefreshedValue: admitsRefreshedValue) {
-            ownerID in
+        self.init(accountScope: accountScope) { ownerID in
             async let count = useCase.followingCount(ownerID: ownerID)
             let groups = try await useCase.groups(ownerID: ownerID)
             return FollowGroupList(groups: groups, totalCount: try? await count)
@@ -74,16 +69,11 @@ extension LibrarySidebarListModel where Value == FollowGroupList {
     /// 已加载的分组；其他状态为空。
     public var groups: [FollowGroup] { loadedValue?.groups ?? [] }
 
-    /// 写入确认一个人的关系从 `before` 变成 `after`：在本地改人数；返回是否改了。
+    /// 写入确认一个人的关系从 `before` 变成 `after`：在本地改人数。
     ///
-    /// 任一侧分组未知、或还没有已加载的列表时不改、返回 false，调用方安排宽限期后重读：首次读取可能在写入前已经发出，落地的
-    /// 是写前的人数，而首次读取不经 `admitsRefreshedValue` 核对。由 App 的写入效果路由调用。
-    @discardableResult
-    public func adjustCounts(from before: FollowRelation, to after: FollowRelation) -> Bool {
-        guard let list = loadedValue else { return false }
-        guard let adjusted = list.adjusted(from: before, to: after) else { return false }
-        updateLoadedValue { _ in adjusted }
-        return true
+    /// 宽限期后补读（见 `adjustAfterWrite`）；任一侧分组未知时不改，只等补读。由 App 的写入效果路由调用。
+    public func relationDidChange(from before: FollowRelation, to after: FollowRelation) {
+        adjustAfterWrite { $0.adjusted(from: before, to: after) }
     }
 }
 
