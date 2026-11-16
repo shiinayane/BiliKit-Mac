@@ -35,7 +35,12 @@ enum LiveAPIClients {
         BiliAccountReadPath.favoriteFolderContent,
         BiliAccountReadPath.popular,
         BiliAccountReadPath.videoSearch,
-        BiliAccountReadPath.videoDetail
+        BiliAccountReadPath.videoDetail,
+        BiliAccountReadPath.followings,
+        BiliAccountReadPath.followingSearch,
+        BiliAccountReadPath.followGroups,
+        BiliAccountReadPath.followGroupMembers,
+        BiliAccountReadPath.relation
     ]
 
     /// 窗口主 API 可发出的用户账户写入；只引用 BiliAPI 的 `BiliAccountWritePath`，授权器另按自己的 schema 表逐条校验。

@@ -39,4 +39,14 @@ public enum BiliAccountReadPath {
     public static let popular = "/x/web-interface/popular"
     /// 视频搜索。
     public static let videoSearch = "/x/web-interface/wbi/search/type"
+    /// 关注列表（全部关注，也用来取总人数；只按账户读取）。
+    public static let followings = "/x/relation/followings"
+    /// 在关注中搜索（签 WBI；只按账户读取）。
+    public static let followingSearch = "/x/relation/followings/search"
+    /// 关注分组列表与各组人数（只按账户读取）。
+    public static let followGroups = "/x/relation/tags"
+    /// 一个关注分组里的人（只按账户读取）。
+    public static let followGroupMembers = "/x/relation/tag"
+    /// 当前账户与一个人的关注关系：是否关注、特别关注与所在分组（只按账户读取）。
+    public static let relation = "/x/relation"
 }

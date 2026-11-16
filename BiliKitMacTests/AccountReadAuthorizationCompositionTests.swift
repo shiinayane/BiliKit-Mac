@@ -55,6 +55,11 @@ struct AccountReadAuthorizationCompositionTests {
             LiveAPIClients.mainAccountReadAllowedPaths == [
                 "/x/player/wbi/playurl",
                 "/x/player/wbi/v2",
+                "/x/relation",
+                "/x/relation/followings",
+                "/x/relation/followings/search",
+                "/x/relation/tag",
+                "/x/relation/tags",
                 "/x/v2/dm/web/view",
                 "/x/v2/dm/wbi/web/seg.so",
                 "/x/v2/history/toview/web",
