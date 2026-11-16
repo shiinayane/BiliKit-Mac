@@ -17,6 +17,8 @@ struct AppNavigationSidebar: View {
     @Binding var selection: AppSidebarSelection
     let favoriteFolderList: FavoriteFolderListModel
     @Binding var isFavoritesExpanded: Bool
+    /// 在已选中的行上再点一下（行内任何位置）；列表这时不发出选择变化，由 `SidebarReselectDetector` 识别。
+    let onReselect: () -> Void
     let accountScope: AccountSessionScope
     let accountState: AccountPresentationState
     let imagePipeline: NativeVideoImagePipeline
@@ -77,6 +79,7 @@ struct AppNavigationSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .background(SidebarReselectDetector(onReselect: onReselect))
     }
 
     /// 未登录（含仍在确认、无法确认）时不显示只在登录后才有行的组。

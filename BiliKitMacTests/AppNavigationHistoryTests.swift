@@ -190,11 +190,15 @@ struct AppNavigationHistoryTests {
     }
 
     /// ⌂ 从活视频的播放页出发时先暂停、转场结束后停止；从空间页出发时没有画面可留，立即停止。
+    ///
+    /// 已在根页时再回根页（点当前来源的侧栏行）不转场、不停止。
     @Test(arguments: [true, false])
     func goingHomeDefersTheStopOnlyFromTheLivePage(fromLivePage: Bool) {
         let playback = PlaybackRecorder()
         var pendingCompletion: (() -> Void)?
+        var transitionCount = 0
         let coordinator = playback.makeCoordinator { direction, change, completion in
+            transitionCount += 1
             change()
             if direction == .pop {
                 pendingCompletion = completion
@@ -211,6 +215,10 @@ struct AppNavigationHistoryTests {
 
         #expect(coordinator.history.isEmpty)
         #expect(beforeTransitionEnds == ["start:BV1Home", "pause"] + (fromLivePage ? [] : ["stop"]))
+        #expect(playback.events == ["start:BV1Home", "pause", "stop"])
+        let transitionsAtRoot = transitionCount
+        coordinator.goHome()
+        #expect(transitionCount == transitionsAtRoot)
         #expect(playback.events == ["start:BV1Home", "pause", "stop"])
     }
 }

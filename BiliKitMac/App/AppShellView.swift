@@ -74,6 +74,8 @@ struct AppShellView: View {
                             selection: sidebarSelection,
                             favoriteFolderList: favoriteFolderList,
                             isFavoritesExpanded: $isFavoritesExpanded,
+                            // 点当前来源的行回到它的根页；已在根页时 `goHome` 不动作。
+                            onReselect: navigationCoordinator.goHome,
                             accountScope: historyAccountScope,
                             accountState: authenticationModel.accountPresentationState,
                             imagePipeline: imagePipeline,
