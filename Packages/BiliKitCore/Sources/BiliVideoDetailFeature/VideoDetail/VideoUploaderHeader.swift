@@ -27,6 +27,29 @@ public struct VideoUploaderFollowContent: Equatable, Sendable {
     }
 }
 
+/// 关注按钮（播放页侧栏的 AppKit 按钮、整页空间页头部的 SwiftUI 按钮）的标题、图标与读屏值，两处共用这一份。
+///
+/// 标题说明现状：「关注」前是加号，「已关注」前是三条横线（点开是菜单）；读屏标签固定为「关注」，值说明是否已关注。
+enum UploaderFollowButtonLabel {
+    static var accessibilityLabel: String { VideoDetailFeatureStrings.localized("关注") }
+
+    static func title(isFollowing: Bool) -> String {
+        isFollowing
+            ? VideoDetailFeatureStrings.localized("已关注")
+            : VideoDetailFeatureStrings.localized("关注")
+    }
+
+    static func systemImage(isFollowing: Bool) -> String {
+        isFollowing ? "line.3.horizontal" : "plus"
+    }
+
+    static func accessibilityValue(isFollowing: Bool) -> String {
+        isFollowing
+            ? VideoDetailFeatureStrings.localized("已关注")
+            : VideoDetailFeatureStrings.localized("未关注")
+    }
+}
+
 /// 把 UP 主字段规范化为平台 renderer 可直接消费的稳定展示值。
 public struct VideoUploaderHeaderContent: Equatable, Sendable {
     public let name: String

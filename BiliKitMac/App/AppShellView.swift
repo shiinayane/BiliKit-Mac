@@ -138,6 +138,7 @@ struct AppShellView: View {
         // 来源网格、相关推荐横排与它们的卡片菜单都在这棵树里；写入口只转发意图，门槛与请求在 `AccountWriteCoordinator`。
         .environment(\.videoCardAccountWriting, accountWriting)
         .environment(\.videoEngagementActions, engagementActions)
+        .environment(\.uploaderFollowingMenu, followingMenu)
         .navigationSplitViewStyle(.balanced)
         .focusedSceneValue(
             \.appNavigation,
@@ -227,6 +228,18 @@ struct AppShellView: View {
         )
     }
 
+    /// 空间页头部与播放页侧栏「已关注」菜单的写入口：状态取窗口的关系存储，动作转给窗口的写入协调者。
+    private var followingMenu: UploaderFollowingMenu {
+        let accountWrites = accountWrites
+        return UploaderFollowingMenu(
+            isSpecial: { accountWrites.followRelations.specialState(of: $0) },
+            isWritable: { accountWrites.isWritable },
+            prefetch: { accountWrites.followRelations.prefetch($0) },
+            setSpecial: { _ = accountWrites.setFollowSpecial($0, mid: $1) },
+            chooseGroups: { accountWrites.chooseFollowGroups(mid: $0) }
+        )
+    }
+
     /// 播放页点赞、投币、收藏按钮与侧栏关注按钮的写入口：门槛在按钮求值时读取，动作转给窗口的写入协调者。
     private var engagementActions: VideoEngagementActions {
         let accountWrites = accountWrites
@@ -307,6 +320,7 @@ struct AppShellView: View {
             onToggleFollow: {
                 accountWrites.setFollowing(!(page.viewerFollows ?? false), onSpacePage: page)
             },
+            onUnfollow: { accountWrites.setFollowing(false, onSpacePage: page) },
             onSelect: navigationCoordinator.openPlayback
         )
         .historyPageBackground()

@@ -1,3 +1,4 @@
+import AppKit
 import BiliApplication
 import BiliModels
 import BiliUI
@@ -11,12 +12,15 @@ import SwiftUI
 /// 视图，始终是同一个宿主：换排序、搜索或首次加载完成都不拆网格、不丢头部里的焦点；加载中、空与失败的内容画在头部
 /// 下方。选中投稿交给 `onSelect`。
 public struct UploaderSpacePageView: View {
+    @Environment(\.uploaderFollowingMenu) private var followingMenu
     let model: UploaderSpaceViewModel
     let imagePipeline: any VideoDetailImageLoading
     let gridHost: NativeVideoGridHostContext
     /// 关注按钮的状态；看自己的空间时为 nil，不显示按钮。
     let follow: VideoUploaderFollowContent?
-    let onToggleFollow: () -> Void
+    let onToggleFollow: @MainActor () -> Void
+    /// 「已关注」菜单里的取消关注：显式取消，不经切换（菜单弹出后关注状态可能已经变了）。
+    let onUnfollow: @MainActor () -> Void
     let onSelect: (String) -> Void
     @Environment(\.openURL) private var openURL
     @Environment(\.videoCardAccountWriting) private var accountWriting
@@ -28,7 +32,8 @@ public struct UploaderSpacePageView: View {
         imagePipeline: any VideoDetailImageLoading,
         gridHost: NativeVideoGridHostContext,
         follow: VideoUploaderFollowContent?,
-        onToggleFollow: @escaping () -> Void,
+        onToggleFollow: @escaping @MainActor () -> Void,
+        onUnfollow: @escaping @MainActor () -> Void,
         onSelect: @escaping (String) -> Void
     ) {
         self.model = model
@@ -36,6 +41,7 @@ public struct UploaderSpacePageView: View {
         self.gridHost = gridHost
         self.follow = follow
         self.onToggleFollow = onToggleFollow
+        self.onUnfollow = onUnfollow
         self.onSelect = onSelect
     }
 
@@ -58,6 +64,21 @@ public struct UploaderSpacePageView: View {
             }
         }
         .modifier(UploaderSpacePageSearch(model: model))
+        // 已关注时预读关系，「已关注」菜单弹出时就有状态。
+        .task(id: follow?.isFollowing == true ? displayOwner.id : nil) {
+            guard follow?.isFollowing == true else { return }
+            followingMenu?.prefetch(displayOwner.id)
+        }
+    }
+
+    /// 已关注时点按钮弹出的「已关注」菜单；菜单里的取消关注经本页的 `onUnfollow`。
+    private var showFollowingMenu: ((NSView) -> Void)? {
+        guard let followingMenu else { return nil }
+        let ownerID = displayOwner.id
+        let onUnfollow = onUnfollow
+        return { button in
+            followingMenu.popUp(mid: ownerID, below: button, unfollow: onUnfollow)
+        }
     }
 
     /// 只凭 MID 打开、名片还没到或失败时名字为空，显示 UID（与预览一致，“UID”不做本地化）。
@@ -92,7 +113,8 @@ public struct UploaderSpacePageView: View {
                                 follow: follow
                             ),
                             imagePipeline: imagePipeline,
-                            onToggleFollow: onToggleFollow
+                            onToggleFollow: onToggleFollow,
+                            showFollowingMenu: showFollowingMenu
                         )
                     )
                 ),

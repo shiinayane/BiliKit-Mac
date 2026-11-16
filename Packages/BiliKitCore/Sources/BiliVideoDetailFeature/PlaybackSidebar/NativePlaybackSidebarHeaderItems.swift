@@ -20,19 +20,24 @@ final class NativePlaybackSidebarUploaderItem: NativeLayoutSizedCollectionItem {
         view = contentView
     }
 
-    /// `onSetFollowing` 收到点按后的目标状态（true 为关注）；只转发意图，门槛与写入在 App 的写入协调者。
+    /// 接上关注按钮的两个出口，都只转发意图，门槛与写入在 App 的写入协调者。
+    ///
+    /// `onSetFollowing` 收到点按后的目标状态（true 为关注）；已关注且给了 `onShowFollowingMenu` 时点按改为交出按钮，由调用方
+    /// 在它下方弹出「已关注」菜单。
     func configure(
         content: VideoUploaderHeaderContent,
         imagePipeline: any VideoDetailImageLoading,
         onOpenSpace: (() -> Void)?,
-        onSetFollowing: ((Bool) -> Void)? = nil
+        onSetFollowing: ((Bool) -> Void)? = nil,
+        onShowFollowingMenu: ((NSView) -> Void)? = nil
     ) {
         representedObject = content
         contentView.configure(
             content: content,
             imagePipeline: imagePipeline,
             onOpenSpace: onOpenSpace,
-            onSetFollowing: onSetFollowing
+            onSetFollowing: onSetFollowing,
+            onShowFollowingMenu: onShowFollowingMenu
         )
     }
 
@@ -61,7 +66,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
     private let signatureLabel = NativePlaybackUploaderGeometry.makeSignatureLabel()
     private let statsLoadingBar = NSView()
     private let signatureLoadingBar = NSView()
-    /// 头像与名字这一行可点进入 UP 主空间；名字末尾的箭头同时是给键盘与 VoiceOver 的显式按钮。
+    /// 头像与名字这一行可点进入 UP 主空间；行尾的箭头同时是给键盘与 VoiceOver 的显式按钮。
     private let spaceButton = NSButton(
         image: NSImage(
             systemSymbolName: "chevron.right",
@@ -70,10 +75,12 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         target: nil,
         action: nil
     )
-    /// 关注与取消关注；不在空间入口的可点区域里，点它不会进空间。
+    /// 未关注时点一下关注，已关注时点开「已关注」菜单（没有菜单时点一下取消关注）；不在空间入口的可点区域里，点它不会
+    /// 进空间。
     private let followButton = NativePlaybackUploaderGeometry.makeFollowButton()
     private var onOpenSpace: (() -> Void)?
     private var onSetFollowing: ((Bool) -> Void)?
+    private var onShowFollowingMenu: ((NSView) -> Void)?
     /// 只认头像与名字这一行，点签名不会进空间。
     private let spaceRegion = NativeClickRegion()
     private var imageTask: Task<Void, Never>?
@@ -114,15 +121,16 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         statsLabel.setAccessibilityLabel(VideoDetailFeatureStrings.localized("粉丝与投稿"))
         signatureLabel.setAccessibilityLabel(VideoDetailFeatureStrings.localized("UP 主签名"))
 
+        // 子视图顺序就是读屏顺序：与视觉一致，名字之后是紧跟它的关注按钮，最后是行尾的“查看空间”。
         for subview in [
             avatar,
             nameLabel,
+            followButton,
             statsLabel,
             signatureLabel,
             statsLoadingBar,
             signatureLoadingBar,
-            spaceButton,
-            followButton
+            spaceButton
         ] {
             addSubview(subview)
         }
@@ -149,10 +157,12 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         content: VideoUploaderHeaderContent,
         imagePipeline: any VideoDetailImageLoading,
         onOpenSpace: (() -> Void)?,
-        onSetFollowing: ((Bool) -> Void)?
+        onSetFollowing: ((Bool) -> Void)?,
+        onShowFollowingMenu: ((NSView) -> Void)?
     ) {
         self.onOpenSpace = onOpenSpace
         self.onSetFollowing = onSetFollowing
+        self.onShowFollowingMenu = onShowFollowingMenu
         spaceButton.isHidden = onOpenSpace == nil
         let avatarChanged = self.content?.avatarURL != content.avatarURL
         if NativePlaybackUploaderProfileReveal.fades(from: self.content, to: content) {
@@ -205,30 +215,33 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         }
     }
 
-    /// 标题说明现状（「关注」／「已关注」），提示与读屏的值说明点按的结果与当前状态；未关注且可点时用强调色（与网页
-    /// 一致），禁用时不用：强调色的禁用按钮在侧栏里仍像可点。
+    /// 标题说明现状（「关注」／「已关注」），读屏的值说明当前状态，提示与读屏帮助说明点按的结果（已关注且有菜单时是弹出
+    /// 关注选项，不是取消关注）；未关注且可点时用强调色（与网页一致），禁用时不用：强调色的禁用按钮在侧栏里仍像可点。
     private func configureFollowButton(_ follow: VideoUploaderFollowContent?) {
         guard let follow else {
             followButton.isHidden = true
             return
         }
         followButton.isHidden = false
-        followButton.title =
-            follow.isFollowing
-            ? NativePlaybackUploaderGeometry.followingTitle
-            : NativePlaybackUploaderGeometry.followTitle
+        NativePlaybackUploaderGeometry.applyFollowLabel(
+            isFollowing: follow.isFollowing,
+            to: followButton
+        )
         followButton.bezelColor =
             follow.isFollowing || !follow.isEnabled ? nil : .controlAccentColor
         followButton.isEnabled = follow.isEnabled
-        followButton.toolTip =
-            follow.isFollowing
-            ? VideoDetailFeatureStrings.localized("取消关注")
-            : VideoDetailFeatureStrings.localized("关注")
-        followButton.setAccessibilityLabel(VideoDetailFeatureStrings.localized("关注"))
+        let help =
+            if !follow.isFollowing {
+                VideoDetailFeatureStrings.localized("关注")
+            } else if onShowFollowingMenu != nil {
+                VideoDetailFeatureStrings.localized("显示关注选项")
+            } else {
+                VideoDetailFeatureStrings.localized("取消关注")
+            }
+        followButton.toolTip = help
+        followButton.setAccessibilityLabel(UploaderFollowButtonLabel.accessibilityLabel)
         followButton.setAccessibilityValue(
-            follow.isFollowing
-                ? VideoDetailFeatureStrings.localized("已关注")
-                : VideoDetailFeatureStrings.localized("未关注")
+            UploaderFollowButtonLabel.accessibilityValue(isFollowing: follow.isFollowing)
         )
         followButton.setAccessibilityHelp(followButton.toolTip)
     }
@@ -244,11 +257,14 @@ private final class NativePlaybackSidebarUploaderView: NSView {
             )
             return
         }
-        let geometry = NativePlaybackUploaderGeometry(content: content, width: bounds.width)
+        let geometry = NativePlaybackUploaderGeometry(
+            content: content,
+            width: bounds.width,
+            showsSpaceButton: !spaceButton.isHidden
+        )
         avatar.frame = geometry.avatarFrame
         let nameRow = geometry.nameRow(
-            nameWidth: NativePlaybackUploaderGeometry.nameWidth(content.name),
-            showsSpaceButton: !spaceButton.isHidden
+            nameWidth: NativePlaybackUploaderGeometry.nameWidth(content.name)
         )
         nameLabel.frame = nameRow.name
         spaceButton.frame = nameRow.spaceButton
@@ -256,14 +272,16 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         signatureLabel.frame = geometry.signatureTextFrame
         statsLoadingBar.frame = geometry.statsLoadingBarFrame
         signatureLoadingBar.frame = geometry.signatureLoadingBarFrame
-        followButton.frame = geometry.followButtonFrame
+        followButton.frame = nameRow.followButton
         spaceRegion.setRects([spaceHitRect])
     }
 
-    /// 头像加上名字与箭头；没有计数与签名时到箭头为止的整块都可点；关注按钮不在其中；没有空间入口时为空。
+    /// 头像加上名字；没有计数与签名时到名字末尾为止的整块都可点；关注按钮与箭头不在其中（各自是按钮）；没有空间入口时
+    /// 为空。
     private var spaceHitRect: NSRect {
         guard onOpenSpace != nil, let content else { return .zero }
-        let textMaxX = max(nameLabel.frame.maxX, spaceButton.isHidden ? 0 : spaceButton.frame.maxX)
+        // 箭头在行尾，自己是按钮；可点区域只到名字末尾，不盖住紧跟名字的关注按钮。
+        let textMaxX = nameLabel.frame.maxX
         if content.stats == .hidden, content.signature == .hidden {
             return NSRect(x: 0, y: 0, width: textMaxX, height: bounds.height)
         }
@@ -292,6 +310,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         content = nil
         onOpenSpace = nil
         onSetFollowing = nil
+        onShowFollowingMenu = nil
         spaceButton.isHidden = true
         followButton.isHidden = true
         spaceRegion.setRects([spaceHitRect])
@@ -335,8 +354,13 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         onOpenSpace?()
     }
 
+    /// 未关注时点一下关注；已关注时弹出「已关注」菜单（取消关注在菜单里），没有菜单时照旧点一下取消关注。
     @objc private func toggleFollowing() {
         guard let follow = content?.follow, follow.isEnabled else { return }
+        if follow.isFollowing, let onShowFollowingMenu {
+            onShowFollowingMenu(followButton)
+            return
+        }
         onSetFollowing?(!follow.isFollowing)
     }
 }

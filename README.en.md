@@ -66,7 +66,7 @@ Videos with a Dolby track play real Dolby audio (E-AC-3), not plain AAC stereo. 
 
 ### A real Mac app
 
-One window, one sidebar: Home, Search, Watch Later and each of your favorites folders live there, and going back returns you to the list right where you left it. While watching, you can open an uploader's full channel from the preview and step back, page by page, to the video you started from. Right-click menus, keyboard shortcuts, Picture in Picture, media keys and Control Center work the way they do on a Mac; your sign-in information stays in the keychain, and the interface follows your system language (Simplified Chinese, Traditional Chinese, English and Japanese).
+One window, one sidebar: Home, Search, Watch Later, Following (by group) and each of your favorites folders live there, and going back returns you to the list right where you left it. While watching, you can open an uploader's full channel from the preview and step back, page by page, to the video you started from. Right-click menus, keyboard shortcuts, Picture in Picture, media keys and Control Center work the way they do on a Mac; your sign-in information stays in the keychain, and the interface follows your system language (Simplified Chinese, Traditional Chinese, English and Japanese).
 
 ### Compared with the website and the official client
 

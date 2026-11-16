@@ -312,8 +312,10 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
   只给卡片 ID 是合法 BVID 的可播放卡片（人物卡片是正整数 mid 的空间链接），打开只经系统 `OpenURLAction`（见
   `SECURITY-MODEL.md` §4）。「已关注」菜单的三项只由 BiliUI 的 `UploaderFollowingMenuContent` 定义（只用基本类型），
-  `NativeVideoCardMenu.Item.following` 把它变成菜单项（关注页卡片的右键），`NativeVideoCardMenu.makeMenu()` 是生成 `NSMenu`
-  的唯一入口。
+  `NativeVideoCardMenu.Item.following` 把它变成菜单项（关注页卡片的右键，以及整页空间页头部与播放页侧栏点「已关注」弹出的
+  菜单，后两处经 VideoDetail 的 `UploaderFollowingMenu`，由 App 经环境注入状态与写入口），`NativeVideoCardMenu.makeMenu()`
+  是生成 `NSMenu` 的唯一入口。空间页头部是嵌套 `NSHostingView` 里的 SwiftUI，`Menu` 在 macOS 上不吃按钮样式，所以「已关注」
+  在 macOS 26 起是玻璃按钮、点按时在按钮背后的 AppKit 视图下方弹出这份菜单。
 - **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
   模糊。底部加载行进入视野时请求下一批（`NearEndPagination`，每个尾部一次，实时滚动中一次手势一次）；App 端投稿接口
   只有游标，不能跳页，所以不用页码条。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
@@ -495,7 +497,8 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   另一个窗口先到的，两个窗口按各自收到的效果显示、直到下一次读取。不做进程级登记：那要跨窗口共享在途状态与关窗取消，而
   同时在两个窗口改同一个人很少见。特别关注与设置分组的状态不放进播放页的整份互动快照（那份回滚会把它们拖进与点赞、投币的互斥），放在窗口级的
   `Navigation/FollowRelationStore`：按 mid 的已知关系（单人关系读取、关注页每一页说明的关系、写入确认的值与乐观改动；
-  `FollowRelation` 区分没有关注、分组已知与只知道已关注），关注页卡片的菜单与特别关注标记、「设置分组…」面板的底、写入的
+  `FollowRelation` 区分没有关注、分组已知与只知道已关注），关注页卡片的菜单与特别关注标记、空间页与播放页「已关注」菜单的
+  状态（两处在关注状态是已关注时预读，侧栏的空间预览不读）、「设置分组…」面板的底、写入的
   前置条件（只对已知关注的人发特别关注与设置分组）与写前关系都只从这里取，账户一变就清空。写后立刻读到的关系、人数与分组成员
   可能还是旧值：存储里的 `FollowRelationLedger`（BiliApplication，纯值、时刻由调用方传入）记下写入确认的关系与时刻，宽限期
   （`relationReadLagGrace`）内与之矛盾的单人关系按确认值，侧栏人数的重读丢弃（`LibrarySidebarListModel` 的

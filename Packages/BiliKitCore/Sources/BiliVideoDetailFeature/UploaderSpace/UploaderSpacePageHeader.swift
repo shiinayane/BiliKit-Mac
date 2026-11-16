@@ -1,3 +1,4 @@
+import AppKit
 import BiliModels
 import BiliVideoCollectionUI
 import SwiftUI
@@ -21,7 +22,13 @@ enum UploaderSpacePageGeometry {
 struct UploaderSpacePageHeader: View {
     let content: VideoUploaderHeaderContent
     let imagePipeline: any VideoDetailImageLoading
-    let onToggleFollow: () -> Void
+    let onToggleFollow: @MainActor () -> Void
+    /// 已关注时点按交出按钮背后的视图，由调用方在它下方弹出「已关注」菜单；nil 时点按照旧切换关注。
+    ///
+    /// 有菜单而按钮背后的视图已经不在（还没挂上或已拆下）时点按什么也不做：退回切换会把“打开菜单”变成直接取消关注。
+    let showFollowingMenu: ((NSView) -> Void)?
+    /// 按钮背后的 AppKit 视图，菜单弹在它下方；改它不触发重新渲染。
+    @State private var menuAnchor = FollowMenuAnchor()
 
     var body: some View {
         HStack(alignment: .center, spacing: UploaderSpacePageGeometry.avatarTextSpacing) {
@@ -49,18 +56,30 @@ struct UploaderSpacePageHeader: View {
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
             if let follow = content.follow {
-                Button(action: onToggleFollow) {
-                    Text(
-                        follow.isFollowing
-                            ? VideoDetailFeatureStrings.localized("已关注")
-                            : VideoDetailFeatureStrings.localized("关注")
+                Button {
+                    if follow.isFollowing, let showFollowingMenu {
+                        if let view = menuAnchor.view { showFollowingMenu(view) }
+                    } else {
+                        onToggleFollow()
+                    }
+                } label: {
+                    Label(
+                        UploaderFollowButtonLabel.title(isFollowing: follow.isFollowing),
+                        systemImage: UploaderFollowButtonLabel.systemImage(
+                            isFollowing: follow.isFollowing
+                        )
                     )
                     .frame(minWidth: UploaderSpacePageGeometry.followButtonMinimumWidth)
                 }
-                .buttonStyle(.bordered)
-                .tint(follow.isFollowing ? nil : .accentColor)
+                .modifier(UploaderFollowButtonStyle(isProminent: !follow.isFollowing))
                 .controlSize(.large)
                 .disabled(!follow.isEnabled)
+                // 与播放页侧栏的按钮一致：标签固定为「关注」，值说明是否已关注。
+                .accessibilityLabel(UploaderFollowButtonLabel.accessibilityLabel)
+                .accessibilityValue(
+                    UploaderFollowButtonLabel.accessibilityValue(isFollowing: follow.isFollowing)
+                )
+                .background(FollowMenuAnchorView(anchor: menuAnchor))
             }
         }
         .padding(.horizontal, UploaderSpacePageGeometry.horizontalPadding)
@@ -97,5 +116,46 @@ private struct UploaderSpacePageAvatar: View {
             }
             image = await imagePipeline.image(for: url, purpose: .avatar)?.image
         }
+    }
+}
+
+/// 关注按钮的样式：macOS 26 起是胶囊形的液态玻璃，「关注」用强调色的玻璃；更早的系统用带边框按钮，「关注」染强调色。
+///
+/// 胶囊形写明而不靠自动形状：自动形状按尺寸档决定，播放页侧栏那一个是 small 档、会成圆角矩形，两处要一致。
+private struct UploaderFollowButtonStyle: ViewModifier {
+    let isProminent: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            if isProminent {
+                content.buttonStyle(.glassProminent).buttonBorderShape(.capsule)
+            } else {
+                content.buttonStyle(.glass).buttonBorderShape(.capsule)
+            }
+        } else {
+            content
+                .buttonStyle(.bordered)
+                .tint(isProminent ? .accentColor : nil)
+        }
+    }
+}
+
+/// 弱引用关注按钮背后的那块 AppKit 视图；头部是嵌套 `NSHostingView` 的根，菜单要按它定位。
+private final class FollowMenuAnchor {
+    weak var view: NSView?
+}
+
+private struct FollowMenuAnchorView: NSViewRepresentable {
+    let anchor: FollowMenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
     }
 }

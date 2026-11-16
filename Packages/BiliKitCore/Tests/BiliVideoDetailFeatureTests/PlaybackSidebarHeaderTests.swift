@@ -8,7 +8,7 @@ import Testing
 @testable import BiliVideoDetailFeature
 
 /// UP 主名片与简介的排版：签名单行、简介超过五行才折叠、资料到达不改行高且只有新到的资料淡入，文字与头像一起上下居中，
-/// 关注按钮在行尾、文字止于它左侧、点按交出相反的目标状态；简介链接与时间戳按可跳转范围显示。
+/// 关注按钮紧跟名字、“查看空间”箭头在行尾、文字止于箭头左侧，点按关注按钮交出相反的目标状态；简介链接与时间戳按可跳转范围显示。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
     @Test
@@ -84,9 +84,11 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
         #expect(full.signatureTextFrame.maxY <= full.height)
     }
 
+    /// 关注按钮紧跟名字，名字太长时先截断、按钮仍完整，按钮不越出这一行；箭头在行尾、与头像一起上下居中，文字各行止于它
+    /// 左侧；有没有关注按钮不改行高；没有空间入口时文字可以到行尾。
     @Test
     @MainActor
-    func followButtonSitsAtTheTrailingEdgeAndTextStopsBeforeIt() {
+    func followButtonFollowsTheNameAndTheSpaceArrowEndsTheRow() {
         let content = VideoUploaderHeaderContent(
             owner: VideoOwner(id: 1, name: "UP 主"),
             profileState: .loaded(
@@ -106,52 +108,48 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
             ),
             width: 408
         )
-
-        #expect(geometry.followButtonFrame.maxX == 408)
-        #expect(geometry.followButtonFrame.width > 0)
-        for line in [geometry.nameFrame, geometry.statsFrame, geometry.signatureTextFrame] {
-            #expect(line.maxX < geometry.followButtonFrame.minX)
-        }
-        #expect(geometry.height == withoutFollow.height)
-        #expect(withoutFollow.followButtonFrame == .zero)
-    }
-
-    /// 箭头紧跟名字末尾；名字放不下时截断，箭头仍在关注按钮左侧；没有空间入口时名字可占满整段。
-    @Test
-    @MainActor
-    func spaceArrowFollowsTheNameAndStaysBeforeTheFollowButton() {
-        let geometry = NativePlaybackUploaderGeometry(
-            content: VideoUploaderHeaderContent(
-                owner: VideoOwner(id: 1, name: "UP 主"),
-                profileState: .loaded(UploaderProfile(signature: "签名")),
-                follow: VideoUploaderFollowContent(isFollowing: false, isEnabled: true)
-            ),
-            width: 408
+        let withoutSpace = NativePlaybackUploaderGeometry(
+            content: content,
+            width: 408,
+            showsSpaceButton: false
         )
-        let spacing = NativePlaybackUploaderGeometry.spaceButtonSpacing
 
-        let short = geometry.nameRow(nameWidth: 60, showsSpaceButton: true)
+        let short = geometry.nameRow(nameWidth: 60)
         #expect(short.name.width == 60)
-        #expect(short.spaceButton.minX == short.name.maxX + spacing)
-        #expect(abs(short.spaceButton.midY - geometry.nameFrame.midY) <= 1)
+        #expect(
+            short.followButton.minX == short.name.maxX
+                + NativePlaybackUploaderGeometry.followButtonSpacing
+        )
+        #expect(abs(short.followButton.midY - geometry.nameFrame.midY) <= 1)
+        #expect(short.followButton.minY >= 0)
+        #expect(short.followButton.maxY <= geometry.height)
+        #expect(short.spaceButton.maxX == 408)
+        #expect(abs(short.spaceButton.midY - geometry.avatarFrame.midY) <= 1)
 
-        let long = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: true)
+        let long = geometry.nameRow(nameWidth: 2_000)
         #expect(long.name.width < geometry.nameFrame.width)
-        #expect(long.spaceButton.maxX <= geometry.nameFrame.maxX)
-        #expect(long.spaceButton.maxX < geometry.followButtonFrame.minX)
+        #expect(long.followButton.width == short.followButton.width)
+        #expect(long.followButton.maxX <= geometry.nameFrame.maxX)
+        for line in [geometry.nameFrame, geometry.statsFrame, geometry.signatureTextFrame] {
+            #expect(line.maxX < long.spaceButton.minX)
+        }
 
-        let withoutSpace = geometry.nameRow(nameWidth: 2_000, showsSpaceButton: false)
-        #expect(withoutSpace.name.width == geometry.nameFrame.width)
-        #expect(withoutSpace.spaceButton == .zero)
+        #expect(geometry.height == withoutFollow.height)
+        #expect(withoutFollow.nameRow(nameWidth: 60).followButton == .zero)
+        #expect(withoutSpace.nameFrame.maxX == 408)
+        #expect(withoutSpace.nameRow(nameWidth: 60).spaceButton == .zero)
     }
 
-    /// 标题说明现状，读屏的值说明是否已关注；点按交出相反的目标状态，禁用或没有关注内容时不交出。
-    @Test(arguments: [false, true])
+    /// 标题说明现状，读屏的值说明是否已关注，提示说明点按的结果；未关注时点按交出关注，已关注时点按交出按钮去弹「已关注」
+    /// 菜单、不直接取消；没有菜单时已关注的点按照旧交出取消关注；禁用或没有关注内容时点按什么也不交出。
+    @Test(arguments: [(false, true), (true, true), (true, false)])
     @MainActor
-    func followButtonReportsStateAndSendsTheOppositeTarget(isFollowing: Bool) throws {
+    func followButtonReportsStateAndSendsTheOppositeTarget(isFollowing: Bool, hasMenu: Bool) throws
+    {
         let item = NativePlaybackSidebarUploaderItem()
         item.view.frame = NSRect(x: 0, y: 0, width: 408, height: 60)
         var requested: [Bool] = []
+        var menuAnchors: [NSView] = []
         item.configure(
             content: VideoUploaderHeaderContent(
                 owner: VideoOwner(id: 1, name: "UP 主"),
@@ -160,7 +158,8 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
             ),
             imagePipeline: StubVideoDetailImageLoader(),
             onOpenSpace: nil,
-            onSetFollowing: { requested.append($0) }
+            onSetFollowing: { requested.append($0) },
+            onShowFollowingMenu: hasMenu ? { menuAnchors.append($0) } : nil
         )
         let button = try #require(
             descendants(of: item.view).compactMap { $0 as? NSButton }.first {
@@ -180,9 +179,25 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
                     ? VideoDetailFeatureStrings.localized("已关注")
                     : VideoDetailFeatureStrings.localized("未关注"))
         )
+        let help =
+            if !isFollowing {
+                VideoDetailFeatureStrings.localized("关注")
+            } else if hasMenu {
+                VideoDetailFeatureStrings.localized("显示关注选项")
+            } else {
+                VideoDetailFeatureStrings.localized("取消关注")
+            }
+        #expect(button.toolTip == help)
         #expect(button.isEnabled)
         button.performClick(nil)
-        #expect(requested == [!isFollowing])
+        if isFollowing, hasMenu {
+            #expect(requested.isEmpty)
+            #expect(menuAnchors.map(ObjectIdentifier.init) == [ObjectIdentifier(button)])
+        } else {
+            #expect(requested == [!isFollowing])
+        }
+        requested = []
+        menuAnchors = []
 
         item.configure(
             content: VideoUploaderHeaderContent(
@@ -192,9 +207,16 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
             ),
             imagePipeline: StubVideoDetailImageLoader(),
             onOpenSpace: nil,
-            onSetFollowing: { requested.append($0) }
+            onSetFollowing: { requested.append($0) },
+            onShowFollowingMenu: hasMenu ? { menuAnchors.append($0) } : nil
         )
         #expect(!button.isEnabled)
+        button.performClick(nil)
+        // 动作不经按钮本身送达（键盘、读屏或别的入口）时，按钮的处理同样按内容里的禁用拒绝。
+        let action = try #require(button.action)
+        NSApplication.shared.sendAction(action, to: button.target, from: button)
+        #expect(requested.isEmpty)
+        #expect(menuAnchors.isEmpty)
         item.configure(
             content: VideoUploaderHeaderContent(
                 owner: VideoOwner(id: 1, name: "UP 主"),
@@ -205,7 +227,7 @@ struct PlaybackSidebarHeaderTests: PlaybackSidebarFixtures {
             onSetFollowing: { requested.append($0) }
         )
         #expect(button.isHidden)
-        #expect(requested == [!isFollowing])
+        #expect(requested.isEmpty)
     }
 
     /// 名片加载完成前名字保持默认色，不会先粉后灰地闪一下；大会员同时告知 VoiceOver。

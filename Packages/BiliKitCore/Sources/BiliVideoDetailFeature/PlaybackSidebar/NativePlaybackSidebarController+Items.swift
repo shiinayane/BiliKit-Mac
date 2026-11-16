@@ -14,7 +14,9 @@ extension NativePlaybackSidebarController {
             imagePipeline: imagePipeline,
             onOpenSpace: actions.openUploaderSpace == nil
                 ? nil : { [weak self] in self?.releasingFocus { $0.actions.openUploaderSpace?() } },
-            onSetFollowing: { [weak self] in self?.actions.setFollowing?($0) }
+            onSetFollowing: { [weak self] in self?.actions.setFollowing?($0) },
+            onShowFollowingMenu: actions.showFollowingMenu == nil
+                ? nil : { [weak self] in self?.actions.showFollowingMenu?($0) }
         )
     }
 
