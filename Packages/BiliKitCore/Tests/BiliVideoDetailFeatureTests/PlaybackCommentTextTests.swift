@@ -213,6 +213,78 @@ struct PlaybackCommentTextTests: PlaybackSidebarFixtures {
         )
     }
 
+    /// 评论先于播放器就绪显示时时间戳是普通文字；就绪后同一行就地重新配置，时间戳变成链接。
+    @Test
+    @MainActor
+    func timestampsBecomeLinksWhenLimitsArriveAfterTheRowIsShown() throws {
+        let presentation = NativePlaybackCommentThreadPresentation(
+            subject: .video(aid: 700_001),
+            thread: commentThread(
+                id: 41,
+                message: "1:23",
+                links: [
+                    CommentLink(
+                        range: CommentTextRange(location: 0, length: 4),
+                        target: .timestamp(seconds: 83)
+                    )
+                ]
+            ),
+            replyState: nil,
+            writeAvailability: .unavailable
+        )
+        let renderer = makeCommentTextRenderer()
+        let item = NativePlaybackCommentThreadItem()
+        func hasLink() throws -> Bool {
+            let body = try #require(
+                descendants(of: item.view).compactMap { $0 as? NativePlaybackCommentTextView }
+                    .first
+            )
+            let storage = try #require(body.textStorage)
+            return storage.attribute(.link, at: 0, effectiveRange: nil) != nil
+        }
+
+        configureThreadItem(item, with: presentation, textRenderer: renderer)
+        #expect(try !hasLink())
+
+        renderer.timestampLimits = TimestampSeekLimits(
+            selectedPageNumber: 1,
+            limitsByPageNumber: [1: 600]
+        )
+        configureThreadItem(item, with: presentation, textRenderer: renderer)
+        #expect(try hasLink())
+    }
+
+    /// 时间戳只在同一段已显示的文字原地换上限时淡入变色；首次显示与文字本身变化照常立即生效。
+    @Test
+    func onlyInPlaceTimestampLimitChangesFade() {
+        let limits = TimestampSeekLimits(selectedPageNumber: 1, limitsByPageNumber: [1: 600])
+
+        #expect(
+            NativePlaybackTextLinks.fadesTimestampChange(
+                from: (content: 1, limits: nil),
+                to: (content: 1, limits: limits)
+            )
+        )
+        #expect(
+            !NativePlaybackTextLinks.fadesTimestampChange(
+                from: nil,
+                to: (content: 1, limits: limits)
+            )
+        )
+        #expect(
+            !NativePlaybackTextLinks.fadesTimestampChange(
+                from: (content: 1, limits: nil),
+                to: (content: 2, limits: limits)
+            )
+        )
+        #expect(
+            !NativePlaybackTextLinks.fadesTimestampChange(
+                from: (content: 1, limits: limits),
+                to: (content: 1, limits: limits)
+            )
+        )
+    }
+
     /// 悬停提示：站外链接与短链提示真实地址（短链换成标题后仍在），应用内目标不提示；文本视图不弹出
     /// 系统按内部链接值生成的提示。
     @Test

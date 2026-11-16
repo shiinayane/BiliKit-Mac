@@ -227,6 +227,7 @@ extension PlaybackSidebarFixtures {
     func configureThreadItem(
         _ item: NativePlaybackCommentThreadItem,
         with row: NativePlaybackCommentThreadPresentation,
+        textRenderer: NativePlaybackCommentTextRenderer? = nil,
         onShowDialog: @escaping (BiliModels.Comment) -> Void = { _ in },
         onCloseDialog: @escaping () -> Void = {},
         onOpenPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void = { _ in },
@@ -240,7 +241,7 @@ extension PlaybackSidebarFixtures {
         )
         item.configure(
             presentation: row,
-            textRenderer: makeCommentTextRenderer(),
+            textRenderer: textRenderer ?? makeCommentTextRenderer(),
             avatarLoader: NativePlaybackCommentAvatarLoader(
                 imagePipeline: StubVideoDetailImageLoader(),
                 resolveURL: { _, _ in nil }
