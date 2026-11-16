@@ -9,7 +9,7 @@ import Testing
 ///
 /// 覆盖 `AVPlayerTimelineAdapter` 的 seek 落点吸收与取代、旧回调隔离、结束通知与观察者注销，
 /// `TransportSeekOperationState` 的累加、夹取与旧完成回调拒绝，`PlaybackInteractionTracker` 对系统
-/// 跳变、起播位置与内部 seek 的排除，以及临时倍速结束后的恢复策略。
+/// 跳变、起播位置、内部 seek 与播到结尾的系统暂停的排除，以及临时倍速结束后的恢复策略。
 @Suite(.timeLimit(.minutes(1)))
 struct AVPlayerTimelineAdapterTests {
     @Test
@@ -598,6 +598,34 @@ struct AVPlayerTimelineAdapterTests {
             playbackRate: 0
         )
         #expect(tracker.revision == 1)
+    }
+
+    /// 播到结尾后系统补报的那次暂停晚于重播入口到达时，不能作废单集循环的重播；它只抵一次，先到的是
+    /// 重新开播时作废，之后的真实暂停都照常计数。
+    @Test
+    func systemPauseOwedAtItemEndDoesNotCancelReplay() {
+        let tracker = PlaybackInteractionTracker()
+        tracker.observeTimeControlStatus(isPaused: false, isPlaying: true, playbackRate: 1)
+
+        tracker.expectEndOfItemPause()
+        tracker.markObservedAllowingInternalSeek(to: 0)
+        let replayRevision = tracker.revision
+        tracker.observeTimeControlStatus(isPaused: true, isPlaying: false, playbackRate: 0)
+        tracker.observeTimeJump(at: 0)
+        #expect(tracker.revision == replayRevision)
+
+        tracker.completeInternalSeek(at: 0)
+        tracker.allowInternalPlayStart()
+        tracker.observeTimeControlStatus(isPaused: false, isPlaying: true, playbackRate: 1)
+        tracker.observeTimeControlStatus(isPaused: true, isPlaying: false, playbackRate: 0)
+        #expect(tracker.revision == replayRevision + 1)
+
+        // 系统暂停先于结束通知到达时，欠报标记由下一次开播作废，不吞掉之后的暂停。
+        tracker.expectEndOfItemPause()
+        tracker.observeTimeControlStatus(isPaused: false, isPlaying: true, playbackRate: 1)
+        let resumedRevision = tracker.revision
+        tracker.observeTimeControlStatus(isPaused: true, isPlaying: false, playbackRate: 0)
+        #expect(tracker.revision == resumedRevision + 1)
     }
 
     /// 受控 seek 期间无论已真正播放还是仍在按请求速率等待，随后的暂停都算一次新的用户操作。

@@ -200,6 +200,10 @@ final class AVPlayerTimelineAdapter {
                 guard let self, let item, self.player.currentItem === item else {
                     return
                 }
+                // 结束通知与系统随后的 paused 报告先后不定；这里仍报告未暂停时，那次 paused 还没到。
+                if self.player.timeControlStatus != .paused {
+                    interactionTracker.expectEndOfItemPause()
+                }
                 self.store.update(
                     token: token,
                     positionSeconds: Self.seconds(from: item.currentTime()),

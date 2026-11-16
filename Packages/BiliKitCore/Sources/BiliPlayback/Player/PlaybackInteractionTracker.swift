@@ -5,15 +5,16 @@ import Synchronization
 /// 拥有交互 revision 与内部 seek／内部起播的在途标记，不拥有 player 或时间线（交给
 /// `AVPlayerTimelineAdapter`）。revision 在被判为用户操作时递增：seek 命令（含从头播放）在入口
 /// 先递增一次并登记为内部 seek，之后这次 seek 引起的系统跳变与状态变化、内部起播，以及就绪时落在
-/// 起播位置的系统跳变都不再递增。`AVPlayerEngine` 在入口之后取 revision、落点时比对，不一致
-/// 即放弃落点。
+/// 起播位置的系统跳变都不再递增；播到结尾时系统欠报的那次 paused 同样不递增。`AVPlayerEngine` 在
+/// 入口之后取 revision、落点时比对，不一致即放弃落点。
 /// 每个 item 一个实例，由 `AVPlayerTimelineAdapter.begin` 替换；KVO 回调在任意线程直接调用，
 /// 状态只经 `Mutex` 访问。
 final class PlaybackInteractionTracker: Sendable {
     /// playlist `EXT-X-START` 给出的起播位置；就绪附近落在这里的系统跳变不是用户操作。
     private let startPositionSeconds: Double
 
-    /// 锁内状态：交互 revision、内部 seek 的目标与在途标记、内部起播在途标记，以及是否已开始播放。
+    /// 锁内状态：交互 revision、内部 seek 的目标与在途标记、内部起播在途标记、是否已开始播放，以及播到结尾
+    /// 后是否还欠系统的一次 paused 报告。
     private struct State {
         var revision: UInt64 = 0
         var internalSeekTarget: Double?
@@ -21,6 +22,7 @@ final class PlaybackInteractionTracker: Sendable {
         var internalPlayStartInFlight = false
         var hasPlaybackStarted = false
         var observedNonPausedDuringInternalSeek = false
+        var owesEndOfItemPause = false
     }
 
     private let state = Mutex(State())
@@ -63,6 +65,10 @@ final class PlaybackInteractionTracker: Sendable {
         playbackRate: Float
     ) {
         state.withLock {
+            if $0.owesEndOfItemPause {
+                $0.owesEndOfItemPause = false
+                if isPaused { return }
+            }
             if $0.internalPlayStartInFlight {
                 if isPaused {
                     $0.revision &+= 1
@@ -100,6 +106,15 @@ final class PlaybackInteractionTracker: Sendable {
             $0.internalSeekInFlight = false
             $0.observedNonPausedDuringInternalSeek = false
         }
+    }
+
+    /// 由 `AVPlayerTimelineAdapter` 的结束通知在系统尚未报 paused 时调用：之后第一次状态报告若是 paused，
+    /// 就是播到结尾的系统暂停，不算用户操作。
+    ///
+    /// 这次 paused 可能晚于时间线发布 `.ended` 才到达，正落在单集循环重播的内部 seek 期间；按用户暂停计数会
+    /// 作废重播的落点。只抵一次：先到的是非 paused 报告（重新开播）时直接作废，之后的暂停照常计数。
+    func expectEndOfItemPause() {
+        state.withLock { $0.owesEndOfItemPause = true }
     }
 
     func allowInternalPlayStart() {
