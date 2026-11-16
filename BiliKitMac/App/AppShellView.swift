@@ -277,6 +277,7 @@ struct AppShellView: View {
             },
             onSelect: navigationCoordinator.openPlayback
         )
+        .historyPageBackground()
         .onChange(of: page.order) { spaceGridScroll.reset.request() }
         .onChange(of: page.searchKeyword) { spaceGridScroll.reset.request() }
         .onChange(of: page.owner == nil) { _, isClosed in
@@ -491,13 +492,21 @@ private struct PlaybackDestinationView: View {
         ) {
             playerContent
         }
-        // macOS 没有给页面设底色的接口，页面本身透明，所以自铺不透明窗口背景，并延伸到工具栏与侧栏下方；换页转场让
-        // 播放页叠在别的页面上滑动，也靠这层不透明（见 ARCHITECTURE「播放页布局」）。
-        .background {
+        .historyPageBackground()
+        .navigationTitle("播放")
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    }
+}
+
+extension View {
+    /// 历史页（播放页、整页空间页）的不透明窗口底色，延伸到工具栏与侧栏下方。
+    ///
+    /// macOS 没有给页面设底色的接口，页面本身透明，所以自铺。换页转场让移动的历史页叠在不动的那一页上滑，也靠这层
+    /// 不透明；新增历史页类型都要铺它（见 ARCHITECTURE「播放页布局」）。
+    fileprivate func historyPageBackground() -> some View {
+        background {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
         }
-        .navigationTitle("播放")
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 }

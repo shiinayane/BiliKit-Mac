@@ -5,7 +5,7 @@ import Testing
 @testable import BiliKit
 
 /// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声（画中画除外），回来只恢复由盖住暂停、
-/// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建；每次换页标出移动的那一页是不是播放页。
+/// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建。
 @MainActor
 struct AppNavigationHistoryTests {
     private let owner = VideoOwner(id: 7, name: "UP 主")
@@ -189,43 +189,14 @@ struct AppNavigationHistoryTests {
         #expect(!coordinator.restoreLivePlaybackPage())
     }
 
-    /// 视图层只让不透明的播放页叠在别的页面上滑：压一层看压进来的页，返回与 ⌂ 看弹出去的旧栈顶。
-    @Test
-    func transitionsMarkWhetherThePlaybackPageIsTheOneMoving() {
-        let playback = PlaybackRecorder()
-        var moves: [String] = []
-        let coordinator = playback.makeCoordinator { transition, change, completion in
-            moves.append("\(transition.direction):\(transition.movesPlaybackPage)")
-            change()
-            completion()
-        }
-
-        coordinator.openPlayback("BV1First")
-        coordinator.openUploaderSpacePage(owner: owner)
-        coordinator.openPlayback("BV1Second")
-        coordinator.goBack()
-        coordinator.goBack()
-        coordinator.goHome()
-        coordinator.openPlayback("BV1Third")
-        coordinator.openUploaderSpacePage(owner: owner)
-        coordinator.goHome()
-
-        #expect(
-            moves == [
-                "push:true", "push:false", "push:true", "pop:true", "pop:false", "pop:true",
-                "push:true", "push:false", "pop:false"
-            ]
-        )
-    }
-
     /// ⌂ 从活视频的播放页出发时先暂停、转场结束后停止；从空间页出发时没有画面可留，立即停止。
     @Test(arguments: [true, false])
     func goingHomeDefersTheStopOnlyFromTheLivePage(fromLivePage: Bool) {
         let playback = PlaybackRecorder()
         var pendingCompletion: (() -> Void)?
-        let coordinator = playback.makeCoordinator { transition, change, completion in
+        let coordinator = playback.makeCoordinator { direction, change, completion in
             change()
-            if transition.direction == .pop {
+            if direction == .pop {
                 pendingCompletion = completion
             } else {
                 completion()

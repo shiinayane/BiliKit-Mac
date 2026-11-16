@@ -26,8 +26,8 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
                 completion()
             }
@@ -57,10 +57,10 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
-                if transition.direction == .pop {
+                if direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -94,10 +94,10 @@ struct AppNavigationCoordinatorTests {
         let coordinator = makeNavigationCoordinator(
             stopPlayback: { events.append("stop") },
             pausePlayback: { false },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
-                if transition.direction == .pop {
+                if direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -127,10 +127,10 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
-                if transition.direction == .pop {
+                if direction == .pop {
                     pendingCompletion = completion
                 } else {
                     completion()
@@ -159,8 +159,8 @@ struct AppNavigationCoordinatorTests {
                 events.append("pause")
                 return true
             },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
                 pendingCompletion = completion
             }
@@ -188,8 +188,8 @@ struct AppNavigationCoordinatorTests {
         let coordinator = makeNavigationCoordinator(
             startPlayback: { events.append("start:\($0.bvid)") },
             stopPlayback: { events.append("stop") },
-            transitionPage: { transition, change, completion in
-                events.append("transition:\(transition.direction)")
+            transitionPage: { direction, change, completion in
+                events.append("transition:\(direction)")
                 change()
                 completion()
             },

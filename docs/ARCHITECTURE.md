@@ -340,23 +340,22 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
   详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
 - 右侧不用 NavigationStack，`AppDetailColumn` 按 coordinator 只渲染历史栈顶（来源根页、播放页或整页空间页），工具栏左侧
-  的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，
-  只在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail
-  闭包里时，闭包内读到的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口
-  保活原样挂回）。macOS 没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面
-  本身透明，播放页自铺不透明窗口背景并延伸到工具栏与侧栏下。这样工具栏的返回控件、结果胶囊与转场锚点都在 detail 这一层
-  挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每个页面各挂
-  一份，系统返回按钮还要逐页隐藏。
-- 右侧换页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的
-  图层上：主区滑动，侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。移动的是播放页（压进来的
-  或弹出去的）时它叠在另一页上滑，进入从右边盖上、返回向右滑走露出下面的页面，这要求播放页铺满不透明底色；其余换页并排
-  推移（进入从右、返回从左），因为来源根页与空间页透明，叠着滑会透出下面那一页。
-  新旧两个状态由系统合成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前
-  落地换页，这个时序没有文档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。压一层、
-  返回、⌂ 与画中画「还原」转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout`
-  为防新建的 AppKit 视图“飞入”而关掉的
-  事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依赖的
-  自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
+  的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，只
+  在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail 闭包里时，闭包内读到
+  的 Observable 状态不会让 detail 列刷新。进入播放页时来源根页随即移除，回来时重建（来源网格由窗口保活原样挂回）。macOS
+  没有给页面设底色的接口（`ContainerBackgroundPlacement.navigation` 在 macOS 不可用），页面本身透明；历史页（播放页、整
+  页空间页）自铺不透明窗口背景并延伸到工具栏与侧栏下，来源根页保持透明。这样工具栏的返回控件、结果胶囊与转场锚点都在
+  detail 这一层挂一次，不随换页重建；用 NavigationStack 时挂在它上面的修饰符归根页面所有、压栈后随根页面移除，这些都得每
+  个页面各挂一份，系统返回按钮还要逐页隐藏。
+- 右侧换页的转场（`NavigationPageTransitions`）用 Core Animation 的 `CATransition`，挂在 `NavigationSplitView` 两栏的图
+  层上：主区覆盖与揭开，侧栏淡入淡出，「减少动态效果」时都淡入淡出；随后在同一次提交里无动画地换页。移动的总是历史页（压
+  一层时是压进来的新栈顶，返回时是弹出去的旧栈顶），根页从不移动：压一层时新页从右边盖在不动的页面上，返回时旧页向右滑走、
+  露出下面的页面。这要求历史页都铺不透明底色，否则叠着滑会透出下面那一页；新增的历史页类型同样要铺。新旧两个状态由系统合
+  成层截取，视频画面与玻璃材质都在，真实视图不参与动画；截取依赖 SwiftUI 在当前隐式事务提交之前落地换页，这个时序没有文
+  档保证（见 `NavigationPageTransitions`）。工具栏不在两栏里，转场开始时就换成新页面的。压一层、返回、⌂ 与画中画「还原」
+  转场；同类替换、换来源、登出与关窗不转场。不采用 SwiftUI 自带转场：`PlaybackDetailLayout` 为防新建的 AppKit 视图“飞入”
+  而关掉的事务动画会连整页位移一起关掉，AppKit 列表不随 SwiftUI 位移，`geometryGroup()`／`clipped()` 会打乱横排与网格依
+  赖的自动内容边距，`.animation(_:value:)` 在 detail 列里不触发；也不采用自己拍快照（`cacheDisplay` 拍不到图层内容，
   `CALayer.render` 把侧栏的玻璃材质画成白板）。
 - 离开活视频所在的播放页时旧页面要带着当前画面离开，所以：播放器宿主随窗口常驻（`PlayerHostOwner`），页面卸载只把它
   摘下（被空间页盖住时也是），关窗才拆除；离开时先暂停，转场结束后才停止播放，期间又进入播放页、换来源、登出或关窗都提前完成这次停止（代次见
