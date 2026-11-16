@@ -3,44 +3,54 @@ import Testing
 
 @testable import BiliVideoCollectionUI
 
-/// 带工具栏（顶部 contentInsets）的真实窗口里驱动网格 Coordinator；视口尺寸直接设到滚动视图上，经窗口布局同步送达。
+/// 视频卡片网格的驱动器；本测试 target 的视频网格 Suite 都用它。
+typealias GridHarness = CardGridHarness<NativeVideoCardKind>
+
+/// 带工具栏（顶部 contentInsets）的真实窗口里驱动某种卡片的网格 Coordinator；视口尺寸直接设到滚动视图上，经窗口布局同步
+/// 送达。
 ///
 /// 本测试 target 里驱动真实网格的 Suite 共用这一份：滚动与尺寸用例用默认的 300 张卡片，菜单用例传入自己的卡片、选中
-/// 回调与 `cardMenu`，装饰用例传入 `decorations`。窗口不上屏、不进入 AppKit 事件循环；拆除在 `deinit`。
+/// 回调与 `cardMenu`，装饰用例传入 `decorations`；`makeCard` 按 ID 造这种卡片的展示值。窗口不上屏、不进入 AppKit
+/// 事件循环；拆除在 `deinit`。
 @MainActor
-final class GridHarness {
+final class CardGridHarness<Kind: NativeGridCardKind> {
+    typealias Presentation = Kind.Item.Presentation
+
     struct VisibleCard: Equatable {
         let id: String
         let offsetFromViewportTop: CGFloat
     }
 
-    static let defaultHeight: CGFloat = 700
-    private static let windowSize = NSSize(width: 1_200, height: 1_100)
+    static var defaultHeight: CGFloat { 700 }
+    private static var windowSize: NSSize { NSSize(width: 1_200, height: 1_100) }
 
-    private(set) var cards: [NativeVideoCardPresentation]
+    private(set) var cards: [Presentation]
     var ids: [String] { cards.map(\.id) }
     private(set) var nearEndRequests = 0
     /// 每次换内容都换尾标，让每一页都可以请求下一页。
     private var tailIdentity: UInt64 = 1
+    private let makeCard: (String) -> Presentation
     private let onSelect: (String) -> Void
-    private let cardMenu: (NativeVideoCardPresentation) -> NativeVideoCardMenu?
+    private let cardMenu: (Presentation) -> NativeVideoCardMenu?
     private let decorations: NativeVideoGridDecorations
-    let coordinator: NativeVideoGridView.Coordinator
+    let coordinator: NativeGridView<Kind>.Coordinator
     let window: NSWindow
     private let scrollView: NSScrollView
     let collectionView: NSCollectionView
 
-    /// `cards` 为 nil 时是 `BV0`–`BV299` 的 300 张可播放卡片。
+    /// `cards` 为 nil 时是 `makeCard` 造出的、ID 为 `0`–`299` 的 300 张卡片。
     init(
-        cards: [NativeVideoCardPresentation]? = nil,
+        cards: [Presentation]? = nil,
+        makeCard: @escaping (String) -> Presentation,
         width: CGFloat = 800,
         scrollerStyle: NSScroller.Style,
         onSelect: @escaping (String) -> Void = { _ in },
-        cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu? = { _ in nil },
+        cardMenu: @escaping (Presentation) -> NativeVideoCardMenu? = { _ in nil },
         decorations: NativeVideoGridDecorations = .none
     ) async throws {
-        let cards = cards ?? Self.presentations(for: (0..<300).map { "BV\($0)" })
+        let cards = cards ?? (0..<300).map { makeCard("\($0)") }
         self.cards = cards
+        self.makeCard = makeCard
         self.onSelect = onSelect
         self.cardMenu = cardMenu
         self.decorations = decorations
@@ -51,7 +61,7 @@ final class GridHarness {
             defer: false
         )
         window.toolbar = NSToolbar(identifier: "GridHarness")
-        let coordinator = NativeVideoGridView.Coordinator(
+        let coordinator = NativeGridView<Kind>.Coordinator(
             items: cards,
             initialScrollOffsetY: 0,
             accessibilityLabel: "网格",
@@ -63,7 +73,7 @@ final class GridHarness {
             imagePipeline: StubCardImageLoader(),
             onScroll: { _ in },
             onAcknowledgeScrollReset: { _ in },
-            actions: NativeVideoGridActions(
+            actions: NativeGridActions(
                 onNearEnd: {},
                 onSelect: onSelect,
                 cardMenu: cardMenu
@@ -148,10 +158,10 @@ final class GridHarness {
 
     /// 像来源刷新或翻页一样整体换内容（含严格尾部追加），并换上新尾标。
     func replaceItems(with ids: [String]) {
-        apply(Self.presentations(for: ids))
+        apply(ids.map(makeCard))
     }
 
-    private func apply(_ cards: [NativeVideoCardPresentation]) {
+    private func apply(_ cards: [Presentation]) {
         self.cards = cards
         tailIdentity += 1
         coordinator.update(
@@ -164,7 +174,7 @@ final class GridHarness {
             requestedScrollOffsetY: 0,
             onScroll: { _ in },
             onAcknowledgeScrollReset: { _ in },
-            actions: NativeVideoGridActions(
+            actions: NativeGridActions(
                 onNearEnd: { [weak self] in self?.nearEndRequests += 1 },
                 onSelect: onSelect,
                 cardMenu: cardMenu
@@ -263,8 +273,8 @@ final class GridHarness {
     func cardView(_ id: String) throws -> NSView {
         let item = try #require(
             collectionView.visibleItems()
-                .compactMap { $0 as? NativeVideoCollectionItem }
-                .first { $0.representedVideoID == id }
+                .compactMap { $0 as? Kind.Item }
+                .first { $0.representedCardID == id }
         )
         return item.view
     }
@@ -293,21 +303,45 @@ final class GridHarness {
         )
     }
 
-    static func presentations(for ids: [String]) -> [NativeVideoCardPresentation] {
-        ids.map { id in
-            NativeVideoCardPresentation(
-                id: id,
-                title: "视频 \(id)",
-                coverURL: nil,
-                avatarURL: nil,
-                showsAvatar: false,
-                footerLeadingText: "UP",
-                accessibilityLabel: "视频 \(id)"
-            )
-        }
-    }
-
     static func tailState(_ identity: UInt64) -> NativeVideoGridTailState {
         NativeVideoGridTailState(canLoadMore: true, tailIdentity: identity, isLoading: false)
+    }
+}
+
+extension CardGridHarness where Kind == NativeVideoCardKind {
+    /// `cards` 为 nil 时是 `BV0`–`BV299` 的 300 张可播放卡片。
+    convenience init(
+        cards: [NativeVideoCardPresentation]? = nil,
+        width: CGFloat = 800,
+        scrollerStyle: NSScroller.Style,
+        onSelect: @escaping (String) -> Void = { _ in },
+        cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu? = { _ in nil },
+        decorations: NativeVideoGridDecorations = .none
+    ) async throws {
+        try await self.init(
+            cards: cards ?? Self.presentations(for: (0..<300).map { "BV\($0)" }),
+            makeCard: Self.presentation(id:),
+            width: width,
+            scrollerStyle: scrollerStyle,
+            onSelect: onSelect,
+            cardMenu: cardMenu,
+            decorations: decorations
+        )
+    }
+
+    static func presentations(for ids: [String]) -> [NativeVideoCardPresentation] {
+        ids.map(presentation(id:))
+    }
+
+    private static func presentation(id: String) -> NativeVideoCardPresentation {
+        NativeVideoCardPresentation(
+            id: id,
+            title: "视频 \(id)",
+            coverURL: nil,
+            avatarURL: nil,
+            showsAvatar: false,
+            footerLeadingText: "UP",
+            accessibilityLabel: "视频 \(id)"
+        )
     }
 }

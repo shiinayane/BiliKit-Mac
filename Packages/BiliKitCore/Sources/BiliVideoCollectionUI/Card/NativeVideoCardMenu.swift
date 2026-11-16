@@ -2,14 +2,14 @@ import AppKit
 import BiliUI
 import SwiftUI
 
-/// 视频卡片的菜单描述：右键／Control-点按与读屏「显示菜单」弹出的 `NSMenu`、卡片的读屏自定义操作（VoiceOver「操作」
+/// 卡片的菜单描述：右键／Control-点按与读屏「显示菜单」弹出的 `NSMenu`、卡片的读屏自定义操作（VoiceOver「操作」
 /// 转子）以及网格的 ⌘⌫ 都只由它生成，几处的项、顺序与标题因此一致。
 ///
 /// 项按分组排列，组与组之间在菜单里画分隔线（写操作一组、链接一组）。菜单与读屏自定义操作只有两处差别：禁用的项在
 /// 菜单里显示为灰色，读屏自定义操作没有“禁用”的表示，所以只列出可用的项（未登录或复核中时写操作项不进入转子）；子菜单
 /// 在读屏操作里没有层级，展开为带父项名字的各项（`actionableItems`）。
 ///
-/// 各来源的 Feature 按卡片构造（经 `NativeVideoGridView`、相关推荐横排与 UP 主空间列表的 `cardMenu` 注入），哪些项出现由来源决定；
+/// 各来源的 Feature 按卡片构造（经 `NativeGridView`、相关推荐横排与 UP 主空间列表的 `cardMenu` 注入），哪些项出现由来源决定；
 /// 集合视图只在命中卡片时取用，取到 nil 就不弹菜单。描述是一次性的值：不持有卡片、集合视图或会话，每次弹出、读屏
 /// 询问或执行时重新构造。动作在主线程同步调用，只转发意图：写操作的 Task 由 App 的写入协调者拥有。
 @MainActor
@@ -327,7 +327,7 @@ private final class NativeVideoCardMenuActionTarget: NSObject {
 extension NativeVideoCardCollectionView {
     /// 卡片菜单的唯一取用处：右键、读屏自定义操作、读屏「显示菜单」与 ⌘⌫ 都经这里，只把卡片 ID 交给 `cardMenu`。
     func cardMenu(for item: any NativeVideoMenuTargetItem) -> NativeVideoCardMenu? {
-        guard let id = item.representedVideoID else { return nil }
+        guard let id = item.representedCardID else { return nil }
         return cardMenu?(id)
     }
 
@@ -337,12 +337,12 @@ extension NativeVideoCardCollectionView {
     /// 推到下一轮 runloop 再弹：菜单的跟踪循环会一直阻塞到菜单关闭，在辅助功能请求里同步弹出会让读屏等到超时。
     /// 届时卡片可能已被复用给其他视频，所以按发起时的 ID 重新核对。
     func presentCardMenu(for item: any NativeVideoMenuTargetItem) -> Bool {
-        guard let id = item.representedVideoID, cardMenu(for: item) != nil else { return false }
+        guard let id = item.representedCardID, cardMenu(for: item) != nil else { return false }
         DispatchQueue.main.async { [weak self, weak item] in
             guard
                 let self,
                 let item,
-                item.representedVideoID == id,
+                item.representedCardID == id,
                 let window = self.window,
                 let event = NSEvent.mouseEvent(
                     with: .rightMouseDown,
@@ -372,7 +372,7 @@ extension NativeVideoCardCollectionView {
     func accessibilityCustomActions(
         for item: any NativeVideoMenuTargetItem
     ) -> [NSAccessibilityCustomAction]? {
-        guard let id = item.representedVideoID, let menu = cardMenu(for: item) else { return nil }
+        guard let id = item.representedCardID, let menu = cardMenu(for: item) else { return nil }
         let actions = menu.actionableItems.filter(\.isEnabled).map { menuItem in
             let itemID = menuItem.id
             return NSAccessibilityCustomAction(name: menuItem.title) { [weak self, weak item] in
@@ -381,7 +381,7 @@ extension NativeVideoCardCollectionView {
                     guard
                         let self,
                         let item,
-                        item.representedVideoID == id,
+                        item.representedCardID == id,
                         let current = self.cardMenu(for: item)?.enabledItem(id: itemID)
                     else { return false }
                     current.action()
@@ -394,7 +394,7 @@ extension NativeVideoCardCollectionView {
 }
 
 extension NativeVideoMenuTargetItem {
-    /// 集合项的读屏入口（视频卡片、空间投稿行）取操作与弹出菜单都转给所在的集合视图；不在集合视图里时没有菜单。
+    /// 集合项的读屏入口（视频卡片、人物卡片、空间投稿行）取操作与弹出菜单都转给所在的集合视图；不在集合视图里时没有菜单。
     package var accessibilityCardActions: [NSAccessibilityCustomAction]? {
         (collectionView as? NativeVideoCardCollectionView)?.accessibilityCustomActions(for: self)
     }

@@ -4,7 +4,7 @@ import CoreGraphics
 import QuartzCore
 
 extension NSUserInterfaceItemIdentifier {
-    /// 网格与 shelf 注册、取用 `NativeVideoCollectionItem` 的复用标识。
+    /// 网格与 shelf 注册、取用 `NativeVideoCollectionItem` 的复用标识（`NativeVideoCollectionItem.reuseIdentifier`）。
     package static let nativeVideoCard = Self("native.video-card")
 }
 
@@ -114,58 +114,36 @@ struct NativeVideoSingleLineWidthCache {
     }
 }
 
-/// 网格与 shelf 复用的卡片集合项，用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
+/// 网格与 shelf 复用的视频卡片集合项，用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 ///
-/// 拥有封面与头像的取图 Task 及配置代次；不拥有图片管线与悬停仲裁（交给 `NativeVideoHoverTracker`）。
-/// 离屏（`invalidateImageRequests`）、复用与拆除（`invalidate`）时取消 Task，deinit 兜底取消；`generation`
-/// 在换视频、换封面或头像地址、头像显隐变化与 `invalidate` 时递增，晚到的结果经 `NativeVideoImageApplicationGate`
-/// 比对身份后丢弃。
+/// 拥有封面与头像两个图片位（`NativeCardImageSlot`）及配置代次；不拥有图片管线与悬停仲裁（交给
+/// `NativeVideoHoverTracker`）。离屏（`invalidateImageRequests`）、复用与拆除（`invalidate`）时取消取图，图片位释放时
+/// 兜底取消；`generation` 在换视频、换封面或头像地址、头像显隐变化与 `invalidate` 时递增，晚到的结果按复用身份比对后丢弃。
 @MainActor
-package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
-    NativeHoverableCollectionItem,
-    NativeVideoMenuTargetItem
-{
-    /// 只在 `.idle` 时发起请求；取消把加载中与失败都退回 `.idle`，卡片再次显示时重试。
-    private enum ImagePhase: Equatable {
-        case idle
-        case loading(URL)
-        /// 带着正显示的图：保活的网格摘下前经 `displayedImages` 取走（`NativeVideoGridHeldImages`）。
-        case loaded(URL, CGImage)
-        case failed(URL)
-    }
+package final class NativeVideoCollectionItem: NativeInteractiveCardItem, NativeGridCardItem {
+    package static let reuseIdentifier = NSUserInterfaceItemIdentifier.nativeVideoCard
 
     private let card = NativeVideoCardView()
-    private var coverTask: Task<Void, Never>?
-    private var avatarTask: Task<Void, Never>?
-    private var coverPhase: ImagePhase = .idle
-    private var avatarPhase: ImagePhase = .idle
+    private let coverImage = NativeCardImageSlot(kind: .cover)
+    private let avatarImage = NativeCardImageSlot(kind: .avatar)
     private var reuseIdentity: NativeVideoReuseIdentity?
     private var generation: UInt64 = 0
     private var currentPresentation: NativeVideoCardPresentation?
     private var activation: ((String) -> Void)?
     private var hoverChanged: ((NativeVideoCollectionItem, Bool) -> Void)?
 
-    package override var isSelected: Bool {
-        didSet { card.setSelected(isSelected) }
-    }
+    override var interactiveCard: NativeInteractiveCardView { card }
 
-    package override var highlightState: NSCollectionViewItem.HighlightState {
-        didSet { card.setPressed(highlightState == .forSelection) }
-    }
-
-    package var representedVideoID: String? { currentPresentation?.id }
+    package var representedCardID: String? { currentPresentation?.id }
 
     /// 卡片此刻显示着的封面与头像，按图片地址。
-    var displayedImages: [URL: CGImage] {
+    package var displayedImages: [URL: CGImage] {
         var images: [URL: CGImage] = [:]
-        if case .loaded(let url, let image) = coverPhase { images[url] = image }
-        if case .loaded(let url, let image) = avatarPhase { images[url] = image }
+        let displayed = [coverImage.displayedImage, avatarImage.displayedImage]
+        for (url, image) in displayed.compactMap(\.self) {
+            images[url] = image
+        }
         return images
-    }
-
-    package override func loadView() {
-        view = card
-        card.menuHost = self
     }
 
     /// 内容相同时只补发缺失的取图；换视频或换图片地址时先取消旧请求、清掉旧图再配置。
@@ -197,11 +175,11 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
             invalidateImageRequests()
             generation &+= 1
             if changesIdentity || changesCover {
-                coverPhase = .idle
+                coverImage.clear()
                 card.setCover(nil, animated: false)
             }
             if changesIdentity || changesAvatar {
-                avatarPhase = .idle
+                avatarImage.clear()
                 card.setAvatar(nil, animated: false)
             }
         }
@@ -231,20 +209,9 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
         invalidate()
     }
 
-    deinit {
-        coverTask?.cancel()
-        avatarTask?.cancel()
-    }
-
     package func invalidateImageRequests() {
-        coverTask?.cancel()
-        avatarTask?.cancel()
-        if case .loading = coverPhase { coverPhase = .idle }
-        if case .failed = coverPhase { coverPhase = .idle }
-        if case .loading = avatarPhase { avatarPhase = .idle }
-        if case .failed = avatarPhase { avatarPhase = .idle }
-        coverTask = nil
-        avatarTask = nil
+        coverImage.cancel()
+        avatarImage.cancel()
     }
 
     package func invalidate() {
@@ -252,107 +219,48 @@ package final class NativeVideoCollectionItem: NativeLayoutSizedCollectionItem,
         generation &+= 1
         currentPresentation = nil
         reuseIdentity = nil
-        coverPhase = .idle
-        avatarPhase = .idle
+        coverImage.clear()
+        avatarImage.clear()
         activation = nil
         representedObject = nil
         card.reset()
         hoverChanged = nil
     }
 
-    package func setHovered(_ isHovered: Bool) { card.setHovered(isHovered) }
-    package func clearHover() { card.setHovered(false) }
-    func setKeyboardFocusVisible(_ isVisible: Bool) {
-        card.setKeyboardFocusVisible(isVisible)
-    }
-    package func setContextMenuTarget(_ isTarget: Bool) { card.setContextMenuTarget(isTarget) }
-    func refreshEnvironmentAppearance() { card.refreshEnvironmentAppearance() }
-
     private func restartMissingImageRequests(
         presentation: NativeVideoCardPresentation,
         identity: NativeVideoReuseIdentity,
         pipeline: any NativeVideoImageLoading
     ) {
-        if let coverURL = presentation.coverURL, coverPhase == .idle {
-            if let cached = pipeline.cachedImage(for: coverURL, kind: .cover) {
-                coverPhase = .loaded(coverURL, cached)
-                card.setCover(cached, animated: false)
-            } else {
-                coverPhase = .loading(coverURL)
-                coverTask = loadImage(
-                    at: coverURL,
-                    kind: .cover,
-                    identity: identity,
-                    pipeline: pipeline
-                ) { [weak self] result in
-                    guard let self else { return }
-                    coverTask = nil
-                    if let result {
-                        coverPhase = .loaded(coverURL, result.image)
-                        card.setCover(result.image, animated: result.fadesIn)
-                    } else {
-                        coverPhase = .failed(coverURL)
-                    }
-                }
-            }
+        let currentIdentity: @MainActor () -> NativeVideoReuseIdentity? = { [weak self] in
+            self?.reuseIdentity
         }
-        if presentation.showsAvatar,
-            let avatarURL = presentation.avatarURL,
-            avatarPhase == .idle
-        {
-            if let cached = pipeline.cachedImage(for: avatarURL, kind: .avatar) {
-                avatarPhase = .loaded(avatarURL, cached)
-                card.setAvatar(cached, animated: false)
-                return
-            }
-            avatarPhase = .loading(avatarURL)
-            avatarTask = loadImage(
-                at: avatarURL,
-                kind: .avatar,
-                identity: identity,
-                pipeline: pipeline
-            ) { [weak self] result in
-                guard let self else { return }
-                avatarTask = nil
-                if let result {
-                    avatarPhase = .loaded(avatarURL, result.image)
-                    card.setAvatar(result.image, animated: result.fadesIn)
-                } else {
-                    avatarPhase = .failed(avatarURL)
-                }
-            }
+        coverImage.requestIfIdle(
+            presentation.coverURL,
+            identity: identity,
+            currentIdentity: currentIdentity,
+            pipeline: pipeline
+        ) { [weak self] image, fadesIn in
+            self?.card.setCover(image, animated: fadesIn)
         }
-    }
-
-    private func loadImage(
-        at url: URL,
-        kind: NativeVideoCardImageKind,
-        identity: NativeVideoReuseIdentity,
-        pipeline: any NativeVideoImageLoading,
-        apply: @escaping @MainActor (NativeVideoCardImage?) -> Void
-    ) -> Task<Void, Never> {
-        Task { [weak self] in
-            let result = await pipeline.image(for: url, kind: kind)
-            guard
-                NativeVideoImageApplicationGate.accepts(
-                    currentIdentity: self?.reuseIdentity,
-                    resultIdentity: identity,
-                    isCancelled: Task.isCancelled
-                )
-            else { return }
-            apply(result)
+        guard presentation.showsAvatar else { return }
+        avatarImage.requestIfIdle(
+            presentation.avatarURL,
+            identity: identity,
+            currentIdentity: currentIdentity,
+            pipeline: pipeline
+        ) { [weak self] image, fadesIn in
+            self?.card.setAvatar(image, animated: fadesIn)
         }
     }
 }
 
-/// 卡片视图：封面、头像与文字层的排版，悬停、按下、键盘选中与菜单目标的外观，读屏按钮语义。
+/// 视频卡片视图：封面、头像与文字层的排版；交互状态与读屏按钮语义在 `NativeInteractiveCardView`。
 ///
-/// 不取图，图片由 `NativeVideoCollectionItem` 设置；悬停变化经回调交给集合项。不可用卡片
-/// （`NativeVideoCardAvailability.unavailable`）变暗并显示原因角标，不画悬停与按下，读屏呈现为
-/// 不可用的按钮且按下不激活；键盘选中框照常显示，焦点可以停在上面。网格另在自己的激活入口拦截。
-/// 读屏自定义操作与「显示菜单」经 `menuHost` 取所在集合视图的卡片菜单，与右键菜单同源。
+/// 不取图，图片由 `NativeVideoCollectionItem` 设置。不可用卡片（`NativeVideoCardAvailability.unavailable`）变暗并显示
+/// 原因角标，交互上按不可激活处理（不画悬停与按下，读屏呈现为不可用的按钮且按下不激活）；网格另在自己的激活入口拦截。
 @MainActor
-final class NativeVideoCardView: NSView {
+final class NativeVideoCardView: NativeInteractiveCardView {
     private let cover = NativeVideoMergedCoverView(frame: .zero)
     private let avatar = NativeVideoLayerImageView(
         placeholderSystemSymbolName: NativeAvatarPlaceholder.systemSymbolName,
@@ -364,33 +272,15 @@ final class NativeVideoCardView: NSView {
     )
     private let footerFont = NSFont.preferredFont(forTextStyle: .body)
     private let textRenderer = NativeVideoCardTextRenderer()
-    private var activation: (() -> Void)?
-    private var hoverDidChange: ((Bool) -> Void)?
-    /// 读屏自定义操作与「显示菜单」的转发对象，即拥有这张卡片的集合项（`NativeVideoCardMenu.swift`）。
-    weak var menuHost: NativeVideoCollectionItem?
-    private var trackingArea: NSTrackingArea?
     private var showsAvatar = true
-    private var isHovered = false
-    private var selected = false
-    private var showsKeyboardFocus = false
-    private var isPressed = false
-    /// 菜单打开期间的上下文描边，与键盘选中框同一外观。
-    private var isContextMenuTarget = false
-    private var isActivatable = true
-
-    override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
-        layer?.cornerRadius = 12
         for subview in [cover, avatar] {
             subview.setAccessibilityElement(false)
             addSubview(subview)
         }
         if let layer { textRenderer.install(in: layer) }
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
     }
 
     required init?(coder: NSCoder) {
@@ -402,8 +292,7 @@ final class NativeVideoCardView: NSView {
         hoverDidChange: @escaping (Bool) -> Void,
         activation: @escaping () -> Void
     ) {
-        self.activation = activation
-        self.hoverDidChange = hoverDidChange
+        configureInteraction(hoverDidChange: hoverDidChange, activation: activation)
         showsAvatar = presentation.showsAvatar
         avatar.isHidden = !showsAvatar
         let badgeText: String?
@@ -425,7 +314,7 @@ final class NativeVideoCardView: NSView {
             footerTrailingSymbolName: presentation.footerTrailingSymbolName,
             footerTrailingStyle: presentation.footerTrailingStyle
         )
-        setActivatable(presentation.isActivatable)
+        setContentActivatable(presentation.isActivatable)
         setAccessibilityLabel(presentation.accessibilityLabel)
         setAccessibilityHelp(presentation.accessibilityHelp)
         updateAccessibilityValue()
@@ -440,63 +329,14 @@ final class NativeVideoCardView: NSView {
         avatar.setImage(image, animated: animated)
     }
 
-    func setSelected(_ selected: Bool) {
-        self.selected = selected
-        updateAccessibilityValue()
-        updateInteractionAppearance()
-    }
-
-    func setKeyboardFocusVisible(_ isVisible: Bool) {
-        guard showsKeyboardFocus != isVisible else { return }
-        showsKeyboardFocus = isVisible
-        updateInteractionAppearance()
-    }
-
-    func setContextMenuTarget(_ isTarget: Bool) {
-        guard isContextMenuTarget != isTarget else { return }
-        isContextMenuTarget = isTarget
-        updateInteractionAppearance()
-    }
-
-    func setPressed(_ isPressed: Bool) {
-        self.isPressed = isPressed
-        updateInteractionAppearance()
-    }
-
-    func setHovered(_ isHovered: Bool) {
-        guard self.isHovered != isHovered else { return }
-        self.isHovered = isHovered
-        updateInteractionAppearance()
-        hoverDidChange?(isHovered)
-    }
-
-    func reset() {
-        layer?.removeAllAnimations()
-        let wasHovered = isHovered
-        activation = nil
+    override func resetContent() {
         cover.reset()
         textRenderer.reset()
         avatar.isHidden = false
         showsAvatar = true
         setCover(nil, animated: false)
         setAvatar(nil, animated: false)
-        isHovered = false
-        selected = false
-        showsKeyboardFocus = false
-        isPressed = false
-        isContextMenuTarget = false
-        setActivatable(true)
-        updateInteractionAppearance(animated: false)
-        setAccessibilityLabel(nil)
-        setAccessibilityHelp(nil)
-        setAccessibilityValue(nil)
-        if wasHovered { hoverDidChange?(false) }
-        hoverDidChange = nil
-    }
-
-    func refreshEnvironmentAppearance() {
-        updateInteractionAppearance(animated: false)
-        needsLayout = true
+        setContentActivatable(true)
     }
 
     override func viewDidMoveToWindow() {
@@ -512,8 +352,6 @@ final class NativeVideoCardView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsLayout = true
-        // 悬停与键盘选中的描边、底色是按外观解析后写进 layer 的，换主题时要重新解析。
-        updateInteractionAppearance(animated: false)
     }
 
     override func layout() {
@@ -612,69 +450,11 @@ final class NativeVideoCardView: NSView {
         )
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let updated = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow],
-            owner: self
-        )
-        addTrackingArea(updated)
-        trackingArea = updated
-    }
-
-    override func mouseEntered(with event: NSEvent) { setHovered(true) }
-    override func mouseExited(with event: NSEvent) { setHovered(false) }
-
-    override func accessibilityPerformPress() -> Bool {
-        guard isActivatable, let activation else { return false }
-        activation()
-        return true
-    }
-
-    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
-        menuHost?.accessibilityCardActions
-    }
-
-    /// 不可用卡片仍有可执行的菜单项时（稍后再看里失效视频的「从稍后再看移除」）保持读屏可用，否则读屏可能不列出操作、
-    /// 也不提供「显示菜单」；按下仍由 `accessibilityPerformPress` 拒绝，不会进入播放。
-    override func isAccessibilityEnabled() -> Bool {
-        isActivatable || accessibilityCustomActions() != nil
-    }
-
-    override func accessibilityPerformShowMenu() -> Bool {
-        menuHost?.presentCardMenu() ?? false
-    }
-
-    /// 可用性变化时同步变暗与读屏可用状态；外观由 `updateInteractionAppearance` 按它忽略悬停与按下。
-    private func setActivatable(_ activatable: Bool) {
+    /// 可用性变化时同步变暗，交互外观与读屏可用状态交给 `setActivatable`。
+    private func setContentActivatable(_ activatable: Bool) {
         let opacity: Float = activatable ? 1 : NativeVideoCardLayout.unavailableContentOpacity
         textRenderer.setContentOpacity(opacity)
         avatar.alphaValue = CGFloat(opacity)
-        guard isActivatable != activatable else { return }
-        isActivatable = activatable
-        updateInteractionAppearance(animated: false)
-    }
-
-    private func updateAccessibilityValue() {
-        setAccessibilityValue(
-            VideoCardAccessibilityText.value(isSelected: selected, isActivatable: isActivatable)
-        )
-    }
-
-    private func updateInteractionAppearance(animated: Bool = true) {
-        guard let layer else { return }
-        // 不可用卡片不画悬停与按下：它们暗示点了会有反应；键盘选中框仍画，表示焦点停在这里。
-        NativeInteractiveSurface.apply(
-            NativeInteractiveSurface.State(
-                isHovered: isHovered && isActivatable,
-                isPressed: isPressed && isActivatable,
-                showsFocusRing: (selected && showsKeyboardFocus) || isContextMenuTarget
-            ),
-            to: layer,
-            appearance: effectiveAppearance,
-            animated: animated
-        )
+        setActivatable(activatable)
     }
 }

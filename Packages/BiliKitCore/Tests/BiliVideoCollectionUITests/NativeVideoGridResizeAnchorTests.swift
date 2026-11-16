@@ -36,7 +36,7 @@ struct NativeVideoGridResizeAnchorTests {
             grid.setViewport(width: width)
             #expect(
                 grid.firstRowCardCount()
-                    == NativeVideoGridGeometry.columnCount(for: grid.viewportWidth),
+                    == CardGridGeometry.video.columnCount(for: grid.viewportWidth),
                 "宽度 \(width) 时首行张数不是当前列数；\(grid.diagnostics)"
             )
             let card = try #require(grid.card(original.id))

@@ -65,7 +65,7 @@ BiliNetworking 不依赖任何 Bili 模块
 | `Bili*Feature` | SwiftUI View 与 `@MainActor` ViewModel：Browse（推荐、热门、搜索）、Library（观看历史、稍后再看、收藏夹）、Auth（扫码登录、登出与账户投影的来源）。来源条目到卡片的网格包装在拥有该来源的 Feature | adapter target、其他 Feature、直接 import AppKit/AVKit/AVFoundation |
 | `BiliVideoDetailFeature` | 播放页、侧栏上下文层的 UP 主空间预览与右侧的整页空间页（页面由 App 构造，其他 Feature 经 App 的导航打开它）：视频与分 P 意图、续播与链接起播、评论、弹幕设置、空间投稿，以及这些页面的呈现投影与 AppKit 视图（播放侧栏、评论图片预览、相关推荐横排、空间列表）。导航给出的选择意图怎样落到当前视频、失败后由谁重试，以及播放页失败的文案与是否可重试，只在这里 | 同其他 Feature，但可 import AppKit、CoreText（评论排版）与 ImageIO（动图逐帧解码）；不依赖 AVKit/AVFoundation、网络与 adapter；下载、校验、首帧解码、动图门槛与缓存只在 App 管线 |
 | `BiliUI` | Feature 共享的 SwiftUI 呈现：卡片与网格几何、骨架、状态胶囊、页码条、失败视图与文案、登录门槛、格式化、B 站图片缩略地址、临时反馈的读屏通告（全仓唯一入口，App 的播放器浮层也用它）；自己的字符串目录。默认 `package`，App 直接使用的才 `public`；无 library product | 除 Foundation、SwiftUI、BiliApplication 外的任何模块（含 BiliModels、AppKit 与其他 Feature） |
-| `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片、原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点视频条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
+| `BiliVideoCollectionUI` | 网格与横排共用的 AppKit 卡片（视频卡片、关注列表的人物卡片）、按卡片种类泛型的原生网格及其状态（回顶、锚点、准备区域）、集合视图的悬停、键盘与通知观察、可点条目的悬停与按下外观（卡片与 UP 主空间投稿行共用）与网格卡片共用的交互状态、大会员名字配色 `NativeMemberNameColor`（评论、播放侧栏与空间页头部也用）、图片淡入、近尾分页、内容差异、卡片取图 port `NativeVideoImageLoading` 与网格从窗口拿到的依赖 `NativeVideoGridHostContext`。App 用到的为 `public`，只有 Feature 用到的为 `package` | 除 BiliUI 外的 Bili 模块（含 BiliNetworking、adapter 与 Feature）；图片下载与缓存只经 port 注入 |
 | App `BiliKitMac` | composition root（`Composition/` 的进程级与窗口级组装）、导航协调、来源描述、复核汇总与账户写入的协调和效果路由（`Navigation/`）、AVKit 宿主、图片管线、Settings、Now Playing、Sparkle | `App/` 与 `Navigation/` 不直接 import adapter 或平台框架，`Navigation/` 只依赖 Feature、Application 与 Models；具体实现只在 `Composition/`、`Platform/`、`Settings/`；`App/` 里 import Application 或 BiliVideoCollectionUI 的文件由脚本逐个登记 |
 
 补充规则：
@@ -258,6 +258,13 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   表明 SwiftUI `LazyVGrid`/AttributeGraph 是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer`
   后，同样约 20 秒滚动 cycles 下降约 39%，0 hitch。网格只是已加载状态的呈现，loading／empty／failure 在同一个
   Feature 视图里。
+- 网格按卡片种类泛型（`NativeGridView<Kind>`；视频卡片是 `NativeVideoGridView`，关注列表的人物卡片是
+  `NativePersonCardKind`）。网格拥有保活、滚动位置与锚点恢复、近尾翻页与尾部状态、顶部附加视图、「返回顶部」、键盘
+  选择与卡片菜单的取用；卡片种类只给出展示值（`NativeGridCardPresentation`）、集合项（外观、读屏描述与取图，
+  `NativeGridCardItem`）与几何。不为人物卡片另写一份网格：保活、锚点与翻页的这些不变量只能有一份。
+- 网格几何是一个参数化的值 `CardGridGeometry`（在 BiliUI，加载骨架也要用）：内容边距、列距、行距、最小卡片宽度、
+  列数范围与卡片高度。列数、卡片尺寸、内容高度、骨架占位数、布局的一节与近尾判断都只按它实现一份，各种卡片是它的
+  实例；准备区域与近尾倍数不随种类变化，是网格共用的策略常量。
 - 集合项的尺寸只由布局给出：所有集合项继承 `NativeLayoutSizedCollectionItem`，对 `preferredLayoutAttributesFitting`
   原样返回。默认实现在每次排可见项时为整棵条目视图临时建 Auto Layout 引擎量尺寸，而我们的布局不采纳结果；1.6.1
   评论区滚动的 Time Profiler 里它约占主线程三分之一。
@@ -265,7 +272,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   `prepareContent(in:)` 把准备区域扩到视野上下各一屏。`NSCollectionViewPrefetching` 只给出即将进入视野的
   index、不创建卡片，替代不了。
 - 网格用组合布局（`NSCollectionViewCompositionalLayout`），唯一一节按容器宽度由 section provider 给出，卡片尺寸取
-  `VideoCardGridGeometry`，与骨架同源；宽度一变由系统失效重排，卡片尺寸不靠网格同步。不用流式布局加
+  该卡片种类的 `CardGridGeometry`（视频卡片的实例与骨架同源）；宽度一变由系统失效重排，卡片尺寸不靠网格同步。不用流式布局加
   `sizeForItemAt`：它在宽度变化时先按旧卡片尺寸重排，要等网格手动失效才换尺寸，其间按旧尺寸排出少一列的错列。
   provider 读到的布局环境之外的状态（末行下方留白）变化时仍要手动失效。
 - 网格的视口锚点是用户最后看到的视野首卡：只在滚动或程序定位落定、且排版就是当前视口尺寸时捕获；宽度、
@@ -274,7 +281,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   宽度变化只吸收浮点误差，半点也算（`NativeViewportSize`），否则跨列数分界的那一步不恢复，视野跳一行。
   纯删除（例如稍后再看的乐观移除）删掉锚点卡片时，由旧顺序里它之后第一张仍在的卡片按同一距离接替，视野不跳。
 - 分页：推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿由 `PagedVideoList` 承担，来源只把远端页适配为“条目 +
-  下一页游标”，去重与条目上限只在那里（集合层的 `NativeVideoCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
+  下一页游标”，去重与条目上限只在那里（集合层的 `NativeCardContents` 另按卡片 ID 兜底）；收藏夹按页整体替换，翻页
   状态是 `PageReplacementPaging`。
 - 已有内容、且条件与解析出的请求不变时，刷新原地进行：网格不卸载，成功后整体替换并回顶，失败保留已显示内容。
 - 来源网格由窗口保活：切换来源与压一层其他页面时 SwiftUI 会拆掉根页面，网格的 Coordinator（连同滚动视图、集合视图、
@@ -301,7 +308,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   落定后把位置同步回 binding；来源刷新的回顶是程序定位，仍经 `scrollReset` 直接跳转。
 - 卡片菜单：各来源的网格、相关推荐横排与 UP 主空间的投稿行共用一份菜单描述 `NativeVideoCardMenu`，由拥有来源的
   Feature 按视频 ID 与能否播放构造、经 `cardMenu` 注入，不经 App 插槽。右键、Control-点按与读屏「显示菜单」走集合视图
-  基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供视频 ID 与上下文描边（`NativeVideoMenuTargetItem`），
+  基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供卡片 ID 与上下文描边（`NativeVideoMenuTargetItem`），
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
   只给卡片 ID 是合法 BVID 的可播放卡片，打开只经系统 `OpenURLAction`（见 `SECURITY-MODEL.md` §4）。
 - **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘

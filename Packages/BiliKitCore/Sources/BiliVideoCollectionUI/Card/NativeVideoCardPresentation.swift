@@ -31,7 +31,7 @@ package enum NativeVideoCardAvailability: Equatable, Sendable {
 ///
 /// Feature 的网格与横排包装（Browse、Library 与 VideoDetail）负责图片缩略地址、
 /// 数字／日期／进度格式化与读屏文案；renderer 不读取 endpoint model，也不推断任何业务状态。
-package struct NativeVideoCardPresentation: Equatable, Sendable {
+package struct NativeVideoCardPresentation: NativeGridCardPresentation {
     package let id: String
     package let title: String
     package let coverURL: URL?
@@ -85,7 +85,7 @@ package struct NativeVideoCardPresentation: Equatable, Sendable {
     }
 }
 
-/// 复用卡片的身份：视频 ID 加卡片自己的配置代次，异步取图回来时据此判断卡片是否已改配。
+/// 复用卡片的身份：卡片 ID 加卡片自己的配置代次，异步取图回来时据此判断卡片是否已改配。
 struct NativeVideoReuseIdentity: Equatable {
     let itemID: String
     let generation: UInt64

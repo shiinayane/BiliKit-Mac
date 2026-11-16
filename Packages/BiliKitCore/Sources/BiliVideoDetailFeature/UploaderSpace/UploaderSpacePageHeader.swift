@@ -1,4 +1,5 @@
 import BiliModels
+import BiliVideoCollectionUI
 import SwiftUI
 
 /// 整页空间页头部的尺寸；头部高度是网格顶部附加视图的高度，与宽度无关。

@@ -3,9 +3,21 @@ import BiliUI
 
 /// 网格的集合视图：扩大预备区域，处理点击激活、按列数移动的键盘选择，以及选中卡片按 ⌘⌫ 执行的菜单项。
 ///
-/// 只由 `NativeVideoGridView` 创建；用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
+/// 只由 `NativeGridView` 创建，各种卡片共用；用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 @MainActor
 final class NativeVideoCollectionView: NativeVideoCardCollectionView {
+    /// 所在网格的几何；上下方向键按它的列数移动，与组合布局的每行张数同源。
+    private let geometry: CardGridGeometry
+
+    init(geometry: CardGridGeometry) {
+        self.geometry = geometry
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     /// 首行上方的附加视图（由 `NativeVideoGridDecorationHost` 设置）；读屏时排在卡片之前。
     var leadingAccessoryView: NSView?
 
@@ -26,7 +38,7 @@ final class NativeVideoCollectionView: NativeVideoCardCollectionView {
             return
         }
         super.prepareContent(
-            in: NativeVideoGridGeometry.preparedContentRect(visible: visibleRect, bounds: bounds)
+            in: CardGridGeometry.preparedContentRect(visible: visibleRect, bounds: bounds)
         )
     }
 
@@ -44,7 +56,7 @@ final class NativeVideoCollectionView: NativeVideoCardCollectionView {
     func refreshPreparedContentIfNeeded() {
         guard
             window != nil,
-            NativeVideoGridGeometry.needsPreparedContentRefresh(
+            CardGridGeometry.needsPreparedContentRefresh(
                 prepared: preparedContentRect,
                 visible: visibleRect,
                 bounds: bounds
@@ -95,7 +107,7 @@ final class NativeVideoCollectionView: NativeVideoCardCollectionView {
         }
         if let delta = NativeVideoCollectionKeys.selectionDelta(
             for: event,
-            rowLength: NativeVideoGridGeometry.columnCount(for: bounds.width)
+            rowLength: geometry.columnCount(for: bounds.width)
         ), numberOfItems(inSection: 0) > 0 {
             let visibleStart = firstVisibleItem()?.indexPath?.item ?? 0
             let current = selectionIndexPaths.first?.item ?? visibleStart

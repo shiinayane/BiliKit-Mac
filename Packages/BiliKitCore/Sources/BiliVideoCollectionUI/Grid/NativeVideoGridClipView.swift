@@ -2,8 +2,8 @@ import AppKit
 
 /// 网格滚动视图的 clip view：差异动画进行中视野原点每移动一次，就让集合视图为新视野补建卡片。
 ///
-/// 拥有进行中的差异动画计数与补建的重入标记；不拥有快照与数据源（归 `NativeVideoGridView.Coordinator`），
-/// 也不决定是否做动画（规则见 `NativeVideoGridUpdatePlan.animatesDifferences`）。只由 `NativeVideoGridView` 创建，
+/// 拥有进行中的差异动画计数与补建的重入标记；不拥有快照与数据源（归 `NativeGridView.Coordinator`），
+/// 也不决定是否做动画（规则见 `NativeVideoGridUpdatePlan.animatesDifferences`）。只由 `NativeGridView` 创建，
 /// 装为滚动视图的 `contentView`，document 是网格的集合视图。
 ///
 /// 为什么需要补建：批量更新动画进行中（约 250ms），`NSCollectionView` 不为新露出的区域创建卡片，直到动画结束。

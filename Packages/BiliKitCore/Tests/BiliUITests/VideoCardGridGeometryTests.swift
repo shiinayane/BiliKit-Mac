@@ -12,7 +12,7 @@ struct VideoCardGridGeometryTests {
         (width: 0, columns: 2)
     ])
     func columnCountStaysWithinTwoToFiveColumns(_ sample: (width: CGFloat, columns: Int)) {
-        #expect(VideoCardGridGeometry.columnCount(for: sample.width) == sample.columns)
+        #expect(CardGridGeometry.video.columnCount(for: sample.width) == sample.columns)
     }
 
     @Test(arguments: [
@@ -27,20 +27,20 @@ struct VideoCardGridGeometryTests {
         _ sample: (width: CGFloat, renderable: Bool)
     ) {
         #expect(
-            VideoCardGridGeometry.isRenderableViewport(width: sample.width) == sample.renderable
+            CardGridGeometry.video.isRenderableViewport(width: sample.width) == sample.renderable
         )
     }
 
     @Test
     func itemSizeAndContentHeightPreservePopularGridContract() {
-        let size = VideoCardGridGeometry.itemSize(for: 1_080)
+        let size = CardGridGeometry.video.itemSize(for: 1_080)
         #expect(size.width == 243)
         #expect(size.height == 220)
-        #expect(VideoCardGridGeometry.contentHeight(for: 1_080, itemCount: 50) == 3_220)
-        #expect(VideoCardGridGeometry.contentHeight(for: 1_080, itemCount: 0) == 0)
+        #expect(CardGridGeometry.video.contentHeight(for: 1_080, itemCount: 50) == 3_220)
+        #expect(CardGridGeometry.video.contentHeight(for: 1_080, itemCount: 0) == 0)
         // 为悬浮页码条留出的高度只加在有内容时的末行下方。
         #expect(
-            VideoCardGridGeometry.contentHeight(for: 1_080, itemCount: 50, bottomInset: 60)
+            CardGridGeometry.video.contentHeight(for: 1_080, itemCount: 50, bottomInset: 60)
                 == 3_280
         )
     }
@@ -60,7 +60,7 @@ struct VideoCardGridGeometryTests {
         _ sample: (width: CGFloat, height: CGFloat, count: Int)
     ) {
         #expect(
-            VideoCardGridGeometry.placeholderCount(
+            CardGridGeometry.video.placeholderCount(
                 for: CGSize(width: sample.width, height: sample.height)
             ) == sample.count
         )
@@ -69,21 +69,21 @@ struct VideoCardGridGeometryTests {
     @Test
     func placeholderCountDrawsNoExtraRowForExactRowsAndCoversAPartialRow() {
         let width: CGFloat = 1_080
-        let columns = VideoCardGridGeometry.columnCount(for: width)
-        let rowHeight = VideoCardGridGeometry.itemSize(for: width).height
+        let columns = CardGridGeometry.video.columnCount(for: width)
+        let rowHeight = CardGridGeometry.video.itemSize(for: width).height
         let threeRows =
-            VideoCardGridGeometry.topContentPadding
+            CardGridGeometry.topContentPadding
             + rowHeight * 3
-            + VideoCardGridGeometry.verticalSpacing * 2
+            + CardGridGeometry.video.verticalSpacing * 2
         #expect(
-            VideoCardGridGeometry.placeholderCount(for: CGSize(width: width, height: threeRows))
+            CardGridGeometry.video.placeholderCount(for: CGSize(width: width, height: threeRows))
                 == columns * 3
         )
         #expect(
-            VideoCardGridGeometry.placeholderCount(
+            CardGridGeometry.video.placeholderCount(
                 for: CGSize(
                     width: width,
-                    height: threeRows + VideoCardGridGeometry.verticalSpacing + rowHeight / 2
+                    height: threeRows + CardGridGeometry.video.verticalSpacing + rowHeight / 2
                 )
             ) == columns * 4
         )
@@ -100,7 +100,7 @@ struct VideoCardGridGeometryTests {
         CGSize(width: 1_080, height: .nan)
     ])
     func placeholderCountIsZeroWithoutARenderableViewport(_ size: CGSize) {
-        #expect(VideoCardGridGeometry.placeholderCount(for: size) == 0)
+        #expect(CardGridGeometry.video.placeholderCount(for: size) == 0)
     }
 
     @Test(arguments: [
@@ -115,7 +115,7 @@ struct VideoCardGridGeometryTests {
         _ sample: (expected: Int?, count: Int)
     ) {
         #expect(
-            VideoCardGridGeometry.placeholderCount(
+            CardGridGeometry.video.placeholderCount(
                 for: CGSize(width: 1_080, height: 760),
                 expectedItemCount: sample.expected
             ) == sample.count
@@ -124,7 +124,7 @@ struct VideoCardGridGeometryTests {
 
     @Test(arguments: [CGFloat.zero, 1, 48, 67])
     func provisionalWidthsStillProducePositiveCards(_ width: CGFloat) {
-        let size = VideoCardGridGeometry.itemSize(for: width)
+        let size = CardGridGeometry.video.itemSize(for: width)
         #expect(size.width >= 1)
         #expect(size.height >= VideoCardGeometry.textAreaHeight)
     }
