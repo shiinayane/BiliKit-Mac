@@ -18,11 +18,14 @@ struct AccountWriteEffectDelivery: Equatable {
     let sessionGeneration: UInt64
 }
 
-/// 把写入效果落到本窗口的视图上：稍后再看列表只标记为过期，下次页面出现时原地刷新，不在后台读取；收藏写入让侧栏的
-/// 收藏夹列表在后台重读条数（它本来就在已登录时常驻读取），受影响的收藏夹正在显示时原地刷新，否则回来时刷新；点赞、
+/// 把写入效果落到本窗口的视图上。
+///
+/// 稍后再看列表只标记为过期，下次页面出现时原地刷新，不在后台读取；收藏写入让侧栏的收藏夹列表在后台重读条数（它本来就在已登录时常驻读取），受影响的收藏夹正在显示时原地刷新，否则回来时刷新；点赞、
 /// 投币、三连与收藏改动让正在播放同一视频的播放页重读互动状态（三连的收藏进默认收藏夹，也按收藏写入刷新），关注与取消
 /// 关注让正在播放同一 UP 主视频的播放页重读（关注状态在同一份互动状态里），正在显示这位 UP 主的整页空间页直接取确认的
-/// 状态。「不感兴趣」
+/// 状态。关注、取消关注、特别关注与设置分组都让关系存储取确认的关系、侧栏「关注」组按写前与写后的关系在本地改人数（写前
+/// 分组未知时宽限期后重读），关注页去掉已不属于正在显示的列表的卡片（刚加入的人不插入，宽限期后重读那一页）；取消关注的
+/// 写前分组取自本窗口的关系存储，效果里没有。「不感兴趣」
 /// 与撤销不落到任何视图：标记只在发起窗口的推荐网格里（由写入协调者乐观改动），各窗口的推荐流本来就各不相同。
 ///
 /// 每个窗口一个，由 `WindowComposition` 构造；本窗口的写入协调者直接交给它，其他窗口的效果经进程级 `AccountWriteEffectHub`
@@ -35,6 +38,9 @@ final class AccountWriteEffectRouter {
     private let favoriteFolders: FavoriteFolderViewModel
     private let engagementModel: VideoEngagementModel
     private let uploaderSpacePage: UploaderSpaceViewModel
+    private let followRelations: FollowRelationStore
+    private let followGroupList: FollowGroupListModel
+    private let followSession: FollowListSession
     private let writableAccount: @MainActor () -> WritableAccount?
 
     init(
@@ -43,6 +49,9 @@ final class AccountWriteEffectRouter {
         favoriteFolders: FavoriteFolderViewModel,
         engagementModel: VideoEngagementModel,
         uploaderSpacePage: UploaderSpaceViewModel,
+        followRelations: FollowRelationStore,
+        followGroupList: FollowGroupListModel,
+        followSession: FollowListSession,
         writableAccount: @escaping @MainActor () -> WritableAccount?
     ) {
         self.watchLaterModel = watchLaterModel
@@ -50,6 +59,9 @@ final class AccountWriteEffectRouter {
         self.favoriteFolders = favoriteFolders
         self.engagementModel = engagementModel
         self.uploaderSpacePage = uploaderSpacePage
+        self.followRelations = followRelations
+        self.followGroupList = followGroupList
+        self.followSession = followSession
         self.writableAccount = writableAccount
     }
 
@@ -90,11 +102,49 @@ final class AccountWriteEffectRouter {
             engagementModel.markNeedsReload(bvid: target.bvid)
         case .followChanged(let uploader, let isFollowing):
             uploaderSpacePage.followDidChange(ownerID: uploader.mid, isFollowing: isFollowing)
+            let known = followRelations.relation(of: uploader.mid)
+            if isFollowing {
+                // 协调者只在按钮显示「关注」时发出关注，写前固定是没有关注：存储里这时的“已关注”是写入落地后才读到的
+                // （预读与写入赛跑），按它作写前会让人数少加一。读到的分组就是写后的位置，没有时进默认分组。
+                applyRelation(
+                    from: .notFollowing,
+                    to: known.flatMap { $0.isFollowing ? $0 : nil }
+                        ?? .following(.defaultGroupOnly),
+                    mid: uploader.mid
+                )
+            } else {
+                applyRelation(
+                    from: known ?? .followingWithUnknownGroups(isSpecial: nil),
+                    to: .notFollowing,
+                    mid: uploader.mid
+                )
+            }
             guard !appliedLocally else { return }
             engagementModel.markNeedsReload(uploaderID: uploader.mid)
+        case .followSpecialChanged(let uploader, let isSpecial, let before):
+            // 写前只用效果里带的分组（来自发起窗口写入之前）：发起窗口的存储此时已是乐观改动后的值，其他窗口的也可能是。
+            // 不知道时写前分组未知，人数宽限期后重读。
+            applyRelation(
+                from: before.map(FollowRelation.following)
+                    ?? .followingWithUnknownGroups(isSpecial: nil),
+                to: .settingSpecial(isSpecial, before: before),
+                mid: uploader.mid
+            )
+        case .followGroupsChanged(let uploader, let before, let after):
+            applyRelation(from: .following(before), to: .following(after), mid: uploader.mid)
         case .recommendationDisliked, .recommendationDislikeCancelled, .danmakuPosted,
             .commentReactionChanged, .commentPosted:
             break
         }
+    }
+
+    /// 写入确认一个人的关系从 `before` 变成 `after`：关系存储取确认值，侧栏人数在本地调整（任一侧分组未知时宽限期后重读），
+    /// 关注页去掉已不属于正在显示的列表的卡片。
+    private func applyRelation(from before: FollowRelation, to after: FollowRelation, mid: Int64) {
+        followRelations.confirm(after, for: mid)
+        if !followGroupList.adjustCounts(from: before, to: after) {
+            followRelations.rereadGroupCountsAfterGrace()
+        }
+        followSession.relationDidChange(after, mid: mid)
     }
 }

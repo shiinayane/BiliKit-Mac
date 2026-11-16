@@ -57,6 +57,11 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
     private var revalidation = AccountRevalidationProgress()
     @ObservationIgnored private let read: @Sendable (_ accountID: Int64) async throws -> Value
     @ObservationIgnored private let accountScope: @MainActor () -> AccountSessionScope
+    /// 已有值时的后台重读落地前求值：返回 false 时丢弃读到的值、保留原有的行。
+    ///
+    /// 关注分组由 App 的关系存储给出：写入后的宽限期内读到的人数可能还是写前的旧值，会盖掉本地按写入改过的人数（见
+    /// `FollowRelationLedger`）；存储在宽限期结束后补读。收藏夹总是采用。
+    @ObservationIgnored private let admitsRefreshedValue: @MainActor () -> Bool
     /// 当前状态（加载中、值或失败）属于哪个账户；开始读取时记录，`reset` 时清空。
     ///
     /// 账户范围换了 mid 时 `synchronize()` 先丢弃旧状态。
@@ -70,10 +75,12 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
     /// 换号、本窗口复核未完时给出 `unresolved`。`read` 读取这个 mid 的值，失败抛出 `ContentApplicationError`。
     init(
         accountScope: @escaping @MainActor () -> AccountSessionScope,
+        admitsRefreshedValue: @escaping @MainActor () -> Bool = { true },
         read: @escaping @Sendable (_ accountID: Int64) async throws -> Value
     ) {
         self.read = read
         self.accountScope = accountScope
+        self.admitsRefreshedValue = admitsRefreshedValue
     }
 
     /// 按窗口此刻的账户范围对齐列表：已登录且 mid 已知时，列表不属于这个 mid 就丢弃，空闲时加载；mid 未知时显示说明；
@@ -110,6 +117,12 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
     public func refreshAfterWrite() {
         guard case .loaded = state else { return }
         reload()
+    }
+
+    /// 写入效果在本地改已加载的值（关注分组的人数）；其他状态不动作。
+    func updateLoadedValue(_ transform: (Value) -> Value) {
+        guard case .loaded(let value) = state else { return }
+        state = .loaded(transform(value))
     }
 
     /// 取消请求并从内存删除读到的值，供登出、换号与关窗调用；复核代次保留。
@@ -168,6 +181,7 @@ public final class LibrarySidebarListModel<Value: Sendable & Equatable>:
                 guard let self, isCurrent() else { return }
                 isRefreshing = false
                 revalidation.loadSucceeded()
+                guard !refreshesInPlace || admitsRefreshedValue() else { return }
                 state = .loaded(value)
                 onLoaded?(value)
             } catch is CancellationError {

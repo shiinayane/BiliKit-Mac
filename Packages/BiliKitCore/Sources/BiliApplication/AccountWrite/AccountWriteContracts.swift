@@ -1,7 +1,8 @@
 import BiliModels
 import Foundation
 
-/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连、关注、首页推荐的「不感兴趣」与发送弹幕）共用的应用级错误。
+/// 用户发起的账户写入（稍后再看、收藏、点赞、投币、三连、关注、特别关注与设置分组、首页推荐的「不感兴趣」与发送弹幕）共用的
+/// 应用级错误。
 ///
 /// 由 BiliAPI 的写 adapter 映射：-101、-111 与凭据账户不符为 `authenticationInvalid`；窗口以为已登录、本地却没有凭据为
 /// `authenticationRequired`；Keychain 不可用为 `authenticationUnavailable`；HTTP 403／412、-352 等风控为 `restricted`；
@@ -82,7 +83,7 @@ public struct VideoWriteTarget: Sendable, Hashable {
     }
 }
 
-/// 关注写入作用的 UP 主：只接受正数 mid。
+/// 关注、特别关注与设置分组作用的人：只接受正数 mid。
 public struct UploaderWriteTarget: Sendable, Hashable {
     public let mid: Int64
 
@@ -108,7 +109,15 @@ public enum AccountWriteChange: Sendable, Hashable {
     /// 三连；尝试中的改动没有结果，成功的效果带服务端报告的逐项结果。
     case tripled(VideoWriteTarget, VideoTripleOutcome?)
     /// 关注或取消关注 UP 主。
+    ///
+    /// 不带写前的分组：播放页与空间页发出时多半还不知道；各窗口按自己的关系存储补上（见 `AccountWriteEffectRouter`）。
     case followChanged(UploaderWriteTarget, isFollowing: Bool)
+    /// 把一个已关注的人加入（`isSpecial`）或移出特别关注；`before` 是写前的分组，发出时不知道就是 nil。
+    ///
+    /// 只带目标方向而不另带写后的分组：写后就是 `before?.settingSpecial(isSpecial)`，写前未知时也知道方向，结果文案要用它。
+    case followSpecialChanged(UploaderWriteTarget, isSpecial: Bool, before: FollowMembership?)
+    /// 「设置分组…」把一个已关注的人的分组从 `before` 改成 `after`（含特别关注）；面板只在读到写前分组时提交，所以两者都已知。
+    case followGroupsChanged(UploaderWriteTarget, before: FollowMembership, after: FollowMembership)
     /// 对首页推荐的一条说「不感兴趣」。
     case recommendationDisliked(RecommendationFeedback)
     /// 撤销「不感兴趣」。
@@ -157,7 +166,8 @@ public struct AccountWriteReport: Sendable, Equatable {
             BVID.webPageURL(target.bvid)
         case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
             .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled,
-            .followChanged, .danmakuPosted, .commentReactionChanged, .commentPosted:
+            .followChanged, .followSpecialChanged, .followGroupsChanged, .danmakuPosted,
+            .commentReactionChanged, .commentPosted:
             nil
         }
     }

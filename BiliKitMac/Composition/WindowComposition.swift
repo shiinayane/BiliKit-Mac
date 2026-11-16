@@ -9,8 +9,8 @@ import SwiftUI
 /// 窗口级组装：一个窗口必须同代、跨 SwiftUI `body` 重算保持稳定的整个对象图，由 `AppRootView` 在视图身份首次
 /// 出现时构造一次（`ProcessComposition.makeWindow()`）。
 ///
-/// 拥有本窗口的全部模型（浏览、视频、评论、弹幕、认证、稍后再看与稍后再看会话、观看历史、收藏夹列表与夹内页面、UP 主空间、热搜与
-/// 联想、搜索会话）、账户写入的协调者与效果路由、导航协调、
+/// 拥有本窗口的全部模型（浏览、视频、评论、弹幕、认证、稍后再看与稍后再看会话、观看历史、收藏夹列表与夹内页面、关注分组、关注页与
+/// 关注关系、UP 主空间、热搜与联想、搜索会话）、账户写入的协调者与效果路由、导航协调、
 /// 来源描述与复核参与者、播放器视图、窗口图片管线、来源网格的保活、评论短链解析、评论图片预览面板与图片保存、Now Playing 与观看进度的连接，以及
 /// 经 `WindowAdapters` 拿到的具体实现。只引用进程级对象（账户会话、设置、Now Playing 控制器、搜索历史），不创建
 /// 也不关闭它们。视频、弹幕模型与播放器视图必须共享 adapter 里同一个播放器；分别重建会让画面、时间线与弹幕指向
@@ -38,6 +38,8 @@ final class WindowComposition {
     /// 侧栏「关注」组的分组与人数；同收藏夹列表，是窗口级复核参与者。
     let followGroupList: FollowGroupListModel
     let followSession: FollowListSession
+    /// 当前账户与每个人的关注关系；卡片菜单、「设置分组…」面板与关系写入都从这里取，关窗时 reset。
+    let followRelations: FollowRelationStore
     /// 收藏夹来源的选择、条件与夹内内容；经收藏夹来源的描述绑定来源。
     let favoriteFolders: FavoriteFolderViewModel
     /// 本窗口用户发起的账户写入（卡片菜单、读屏操作、⌘⌫ 与播放页的点赞投币）；窗口级复核参与者，关窗时取消在途写入。
@@ -189,9 +191,15 @@ final class WindowComposition {
         self.favoriteFolderList = favoriteFolderList
         self.favoriteFolders = favoriteFolders
         let followUseCase = FollowListUseCase(repository: adapters.followListRepository)
+        // 关系存储先于侧栏分组与关注页构造：两者的读取落地时都要经它核对写入后的宽限期；宽限期后的补读再接回给它们。
+        let followRelations = FollowRelationStore(
+            useCase: followUseCase,
+            writableAccount: writableAccount
+        )
         let followGroupList = FollowGroupListModel(
             useCase: followUseCase,
-            accountScope: accountScope
+            accountScope: accountScope,
+            admitsRefreshedValue: { followRelations.admitsGroupCountRead() }
         )
         let followSession = FollowListSession(
             model: FollowListViewModel(
@@ -199,12 +207,21 @@ final class WindowComposition {
                 accountID: {
                     guard case .signedIn(let accountID?) = accountScope() else { return nil }
                     return accountID
-                }
+                },
+                reconcile: { followRelations.reconcile($2, in: $1, ownerID: $0) }
             ),
             groupList: followGroupList
         )
+        // 弱引用：侧栏分组与关注页的读取闭包已经强引用关系存储，反过来再强引用会成环、关窗后不释放。
+        followRelations.rereadGroupCounts = { [weak followGroupList] in
+            followGroupList?.refreshAfterWrite()
+        }
+        followRelations.markFollowPageStale = { [weak followSession] in
+            followSession?.model.markNeedsReload()
+        }
         self.followGroupList = followGroupList
         self.followSession = followSession
+        self.followRelations = followRelations
         let engagementUseCase = VideoEngagementUseCase(
             repository: adapters.videoEngagementRepository
         )
@@ -219,6 +236,9 @@ final class WindowComposition {
             favoriteFolders: favoriteFolders,
             engagementModel: engagementModel,
             uploaderSpacePage: uploaderSpacePage,
+            followRelations: followRelations,
+            followGroupList: followGroupList,
+            followSession: followSession,
             writableAccount: writableAccount
         )
         let accountWriteEffects = process.accountWriteEffects
@@ -236,6 +256,12 @@ final class WindowComposition {
             ),
             danmakuPost: DanmakuPostUseCase(repository: adapters.danmakuPostRepository),
             commentWrite: CommentWriteUseCase(repository: adapters.commentWriteRepository),
+            followRelationWrite: FollowRelationWriteUseCase(
+                repository: adapters.followRelationWriteRepository
+            ),
+            followRelations: followRelations,
+            followSession: followSession,
+            followGroupList: followGroupList,
             browseModel: browseModel,
             writableAccount: writableAccount,
             publish: { delivery, appliedLocally in
@@ -244,6 +270,10 @@ final class WindowComposition {
             }
         )
         self.accountWrites = accountWrites
+        // 弱引用：协调者强引用关系存储。
+        followRelations.followDidEnd = { [weak accountWrites] in
+            accountWrites?.followDidEnd(mid: $0)
+        }
         // 发出成功的弹幕交给同一个弹幕会话上屏；发送时刻取同一个播放器的时间线。
         let danmakuComposer = DanmakuComposerModel(
             presentation: adapters.danmakuPresentation,
@@ -358,7 +388,7 @@ final class WindowComposition {
     ///
     /// 按顺序：先从进程级测速注销本窗口；再关闭播放（停止播放器、字幕与弹幕）并恢复新窗口的来源；拆除常驻的播放器
     /// 宿主（断开 player、释放弹幕 surface），放在关闭播放之后，停止播放换掉 item 时宿主仍在观察，弹幕按换 item 的同一
-    /// 路径清屏，拆除只剩解绑与断开；各来源丢弃内容；取消认证临时任务与评论；取消在途账户写入（含弹幕）、清空弹幕输入胶囊并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
+    /// 路径清屏，拆除只剩解绑与断开；各来源丢弃内容；取消认证临时任务与评论；取消在途账户写入（含弹幕）、取消关注关系的读取与补读、清空弹幕输入胶囊并从写入效果集线器注销；取消短链解析；关闭评论图片预览（挂在它上面
     /// 的保存面板按取消结束）再取消图片保存；停止观看进度与 Now Playing；丢弃保活的网格；关闭图片管线；最后
     /// 由 adapter 取消弹幕的内存压力监听、停止播放偏好的持久化、注销窗口 API 的会话并失效短链 session（只在打开过
     /// 之后）。模型与连接先停下自己的任务，再拆掉它们依赖的 adapter。
@@ -372,6 +402,7 @@ final class WindowComposition {
         authenticationModel.cancelTransientWork()
         commentsModel.reset()
         accountWrites.close()
+        followRelations.reset()
         engagementModel.reset()
         danmakuComposer.reset()
         commentWrite.reset()

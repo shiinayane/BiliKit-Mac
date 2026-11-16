@@ -3,7 +3,7 @@ import BiliModels
 import BiliNetworking
 import Foundation
 
-/// 只授权用户发起的网页端账户写入（稍后再看的加入与移除、收藏到收藏夹与从收藏夹移除、关注；点赞、投币与三连走 App 端，
+/// 只授权用户发起的网页端账户写入（稍后再看的加入与移除、收藏到收藏夹与从收藏夹移除、关注、特别关注与设置分组；点赞、投币与三连走 App 端，
 /// 见 `BiliAppWriteRequestAuthorizer`），
 /// 并在 `BiliAuth` 内绑定账户、注入最小 Cookie 与 CSRF。
 ///
@@ -85,6 +85,11 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
         /// @ 提及表：JSON 对象，昵称到正整数 mid，条数不超过 `CommentPostMentions.maximumCount`；与正文的对应由
         /// `CrossFieldRule.mentionsAppearIn` 检查。
         case mentionMap
+        /// 一个人要在的全部关注分组（`tags/addUsers` 的 `tagids`）：单独的 `0`（默认分组），或逗号分隔、互不重复的 `-10`
+        /// （特别关注）与正整数，最多 `maximumListCount` 个。
+        ///
+        /// 这个接口按完整集合覆盖（特别关注也在其中），空串与 `0` 混在其他 id 里时服务端怎样解释不可知，一律拒绝。
+        case followGroupIDs
 
         /// 一次收藏改动最多涉及的收藏夹数：远多于一个账户实际拥有的夹数，超出说明请求构造有误。
         static let maximumListCount = 100
@@ -109,6 +114,8 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
                 DanmakuPostText.normalized(value) == value
             case .commentText:
                 CommentPostText.normalized(value) == value
+            case .followGroupIDs:
+                Self.isFollowGroupIDs(value)
             case .mentionMap:
                 Self.decodedMentions(value).map {
                     !$0.isEmpty && $0.count <= CommentPostMentions.maximumCount
@@ -145,6 +152,14 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
                 && items.allSatisfy { isPositiveInteger($0) }
         }
 
+        private static func isFollowGroupIDs(_ value: String) -> Bool {
+            guard value != "0" else { return true }
+            let items = value.split(separator: ",", omittingEmptySubsequences: false)
+            return !value.isEmpty && items.count <= maximumListCount
+                && Set(items).count == items.count
+                && items.allSatisfy { $0 == "-10" || isPositiveInteger($0) }
+        }
+
         private static func isSingleVideoResource(_ value: String) -> Bool {
             let parts = value.split(separator: ":", omittingEmptySubsequences: false)
             return parts.count == 2 && isPositiveInteger(parts[0]) && parts[1] == "2"
@@ -173,6 +188,10 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
     /// 关注只登记 `relation/modify` 的关注与取消：`fid` 单个 UP 主，`act` 只能是 1（关注）或 2（取消），`re_src` 固定为
     /// 11。同一接口的其他 `act`（悄悄关注、拉黑、移除粉丝等）改动的是另一种关系，一律拒绝；网页附带的 `gaia_source`、
     /// `spmid`、`extend_content` 不发送，schema 也不接受。
+    ///
+    /// 特别关注与设置分组只登记三条，都只收单个人：`tag/special/add`／`del` 的 `fid`，`tags/addUsers` 的 `fids`（接口
+    /// 接受逗号分隔的多个人，这里只收一个）与 `tagids`（`FieldShape.followGroupIDs`）。`tags/addUsers` 按完整集合覆盖这个人
+    /// 的分组，所以 `tagids` 不能为空，回到默认分组只能是单独的 `0`。
     ///
     /// 弹幕只登记 `dm/post` 的普通视频弹幕：`type` 固定为视频、`pool` 固定为普通池，`mode` 只收滚动、底部与顶部，
     /// 颜色与字号只收 `DanmakuPostStyle` 的候选（与输入胶囊的选项同一来源）；正文按 `DanmakuPostText` 的同一规则
@@ -214,6 +233,14 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
             referer: "https://www.bilibili.com/",
             cookieNames: [.session]
         ),
+        "/x/relation/tag/special/add": followSpecialSchema,
+        "/x/relation/tag/special/del": followSpecialSchema,
+        "/x/relation/tags/addUsers": Schema(
+            requiredFields: ["fids": .positiveInteger, "tagids": .followGroupIDs],
+            optionalFields: [:],
+            referer: "https://www.bilibili.com/",
+            cookieNames: [.session]
+        ),
         "/x/v2/dm/post": Schema(
             requiredFields: [
                 "type": .literal("1"),
@@ -244,6 +271,14 @@ public struct BiliAccountWriteRequestAuthorizer: HTTPSubjectBoundRequestAuthoriz
             cookieNames: [.session]
         )
     ]
+
+    /// 加入与移出特别关注共用的 schema：单个人 `fid`，与关注同一个 Referer 与 Cookie。
+    private static let followSpecialSchema = Schema(
+        requiredFields: ["fid": .positiveInteger],
+        optionalFields: [:],
+        referer: "https://www.bilibili.com/",
+        cookieNames: [.session]
+    )
 
     /// 评论点赞与点踩共用的 schema：单条评论，`action` 只能是 1（打开）或 0（取消）。
     private static let commentReactionSchema = Schema(

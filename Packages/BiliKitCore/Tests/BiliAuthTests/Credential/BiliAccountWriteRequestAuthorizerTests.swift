@@ -5,7 +5,7 @@ import Testing
 @testable import BiliAuth
 
 /// 账户写入授权器只放行 schema 表里精确形状的 POST，绑定预期账户，只注入 `SESSDATA` 与表单 csrf；收藏移除一次只收
-/// 一个视频条目；关注只收单个 UP 主的关注与取消；弹幕只收普通池的单行视频弹幕。
+/// 一个视频条目；关注只收单个 UP 主的关注与取消，特别关注与设置分组只收单个人与完整的分组集合；弹幕只收普通池的单行视频弹幕。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAccountWriteRequestAuthorizerTests {
     private static let addPath = "/x/v2/history/toview/add"
@@ -16,6 +16,9 @@ struct BiliAccountWriteRequestAuthorizerTests {
         "rid=170001&type=2&add_media_ids=11,12&del_media_ids=&platform=web"
     private static let favoriteRemoveBody = "resources=170001:2&media_id=11&platform=web"
     private static let followPath = "/x/relation/modify"
+    private static let followSpecialAddPath = "/x/relation/tag/special/add"
+    private static let followSpecialRemovePath = "/x/relation/tag/special/del"
+    private static let followGroupsPath = "/x/relation/tags/addUsers"
     private static let danmakuPath = "/x/v2/dm/post"
     /// 正文是“好+1”：中文与 `+` 都已百分号编码。
     private static func danmakuBody(
@@ -128,6 +131,44 @@ struct BiliAccountWriteRequestAuthorizerTests {
                 try writeRequest(path: path, body: body),
                 boundTo: Self.accountID
             )
+        }
+    }
+
+    /// 特别关注与设置分组只收单个人；设置分组按完整集合覆盖，`tagids` 只能是单独的 0，或不重复的 -10 与正整数。
+    @Test(arguments: [
+        (followSpecialAddPath, "fid=7", true),
+        (followSpecialRemovePath, "fid=7", true),
+        (followGroupsPath, "fids=7&tagids=0", true),
+        (followGroupsPath, "fids=7&tagids=-10", true),
+        (followGroupsPath, "fids=7&tagids=-10,12,13", true),
+        (followSpecialAddPath, "fid=7,8", false),
+        (followSpecialRemovePath, "fid=0", false),
+        (followGroupsPath, "fids=7,8&tagids=12", false),
+        (followGroupsPath, "fids=7&tagids=", false),
+        (followGroupsPath, "fids=7&tagids=0,12", false),
+        (followGroupsPath, "fids=7&tagids=12,12", false),
+        (followGroupsPath, "fids=7&tagids=-11", false),
+        (followGroupsPath, "fids=7&tagids=012", false),
+        (followGroupsPath, "fids=7&tagids=12,", false),
+        (followGroupsPath, "fids=7", false)
+    ])
+    func followGroupWritesAcceptOnlyOnePersonAndAWholeSet(
+        path: String,
+        body: String,
+        isAllowed: Bool
+    ) async throws {
+        let authorizer = try makeAuthorizer()
+        let request = try writeRequest(path: path, body: body)
+
+        if isAllowed {
+            let authorized = try await authorizer.authorize(request, boundTo: Self.accountID)
+            #expect(authorized.headers["Cookie"] == "SESSDATA=FIXTURE_SESSDATA_VALUE")
+            let sent = try #require(authorized.body.flatMap { String(data: $0, encoding: .utf8) })
+            #expect(sent == "\(body)&csrf=FIXTURE_bili_jct_VALUE")
+        } else {
+            await #expect(throws: BiliRequestAuthorizationError.requestNotAllowed) {
+                try await authorizer.authorize(request, boundTo: Self.accountID)
+            }
         }
     }
 

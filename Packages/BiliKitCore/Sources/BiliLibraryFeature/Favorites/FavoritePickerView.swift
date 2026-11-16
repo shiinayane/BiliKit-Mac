@@ -33,16 +33,16 @@ public struct FavoritePickerView: View {
             Text(LibraryFeatureStrings.localized("收藏到", locale: locale))
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
-                .padding([.horizontal, .top], FavoritePickerGeometry.padding)
-                .padding(.bottom, FavoritePickerGeometry.headerSpacing)
+                .padding([.horizontal, .top], LibraryPanelGeometry.padding)
+                .padding(.bottom, LibraryPanelGeometry.headerSpacing)
             // 宽度只给下限与理想值：sheet 可能比理想宽度宽（系统的最小宽度），列表要跟着撑满，不能固定宽度靠左。
             content
                 .frame(
-                    minWidth: FavoritePickerGeometry.width,
-                    idealWidth: FavoritePickerGeometry.width,
+                    minWidth: LibraryPanelGeometry.width,
+                    idealWidth: LibraryPanelGeometry.width,
                     maxWidth: .infinity
                 )
-                .frame(height: FavoritePickerGeometry.listHeight)
+                .frame(height: LibraryPanelGeometry.listHeight)
             Divider()
             HStack {
                 Spacer()
@@ -52,7 +52,7 @@ public struct FavoritePickerView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.change == nil)
             }
-            .padding(FavoritePickerGeometry.padding)
+            .padding(LibraryPanelGeometry.padding)
         }
     }
 
@@ -81,7 +81,7 @@ public struct FavoritePickerView: View {
                     // 私密与条数放进标签而不是值：勾选框的值是勾选状态，覆盖掉读屏就读不出是否已勾选；条数单独成元素
                     // 时读屏只读出一个没有上下文的数字。
                     .accessibilityLabel(accessibilityLabel(membership.folder))
-                    Spacer(minLength: FavoritePickerGeometry.countSpacing)
+                    Spacer(minLength: LibraryPanelGeometry.itemSpacing)
                     Text(formattedCount(membership.folder))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -108,14 +108,4 @@ public struct FavoritePickerView: View {
             set: { model.setSelected($0, folderID: folderID) }
         )
     }
-}
-
-/// 「收藏到…」面板的几何。
-private enum FavoritePickerGeometry {
-    static let width: CGFloat = 360
-    /// 列表区固定高度：约十行，夹再多就在列表内滚动，面板尺寸不随读取状态跳动。
-    static let listHeight: CGFloat = 320
-    static let padding: CGFloat = 16
-    static let headerSpacing: CGFloat = 8
-    static let countSpacing: CGFloat = 12
 }

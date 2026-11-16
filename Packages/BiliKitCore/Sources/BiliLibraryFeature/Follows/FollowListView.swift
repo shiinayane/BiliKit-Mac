@@ -122,12 +122,15 @@ public struct FollowListView: View {
     }
 }
 
-/// 关注页的人物卡片网格：每人一张卡片，点卡片交出这个人；右键菜单是空间链接。
+/// 关注页的人物卡片网格：每人一张卡片，点卡片交出这个人；右键菜单是「已关注」菜单的三项加空间链接。
 ///
-/// 互相关注与特别关注只在 `showsRelation`（全部关注与搜索）时显示：分组成员接口不给这两项（见 `FollowedUser`）。
+/// 互相关注与特别关注只在 `showsRelation`（全部关注与搜索）时显示：分组成员接口不给这两项（见 `FollowedUser`）。特别关注
+/// 与菜单的状态取自窗口的关系存储（经 `VideoCardAccountWriting.followSpecialState`，它记着每一页读到的关系与写入确认的值），
+/// 写入成功后不必重读这一页就会更新；存储不知道或没有注入写入口（预览、测试）时按卡片自己的分组。
 private struct FollowPersonGrid: View {
     @Environment(\.locale) private var locale
     @Environment(\.openURL) private var openURL
+    @Environment(\.videoCardAccountWriting) private var writing
     let users: [FollowedUser]
     let tailState: NativeVideoGridTailState
     let showsRelation: Bool
@@ -138,7 +141,7 @@ private struct FollowPersonGrid: View {
     /// 卡片展示数据按位置缓存，加载更多时只生成新追加的卡片，见 `NativeGridCardCache`。
     @State private var cards = NativeGridCardCache<CardSource, NativePersonCardPresentation>()
 
-    /// 决定一张卡片外观的全部输入：这个人、是否显示关系与是否特别关注。
+    /// 决定一张卡片外观的全部输入：这个人、是否显示关系与是否特别关注（取自关系存储，写入后会变）。
     struct CardSource: Equatable {
         let user: FollowedUser
         let showsRelation: Bool
@@ -152,7 +155,7 @@ private struct FollowPersonGrid: View {
                     CardSource(
                         user: $0,
                         showsRelation: showsRelation,
-                        isSpecial: showsRelation && $0.membership?.isSpecial == true
+                        isSpecial: showsRelation && isSpecial($0) == true
                     )
                 },
                 make: card
@@ -181,6 +184,10 @@ private struct FollowPersonGrid: View {
         )
     }
 
+    private func isSpecial(_ user: FollowedUser) -> Bool? {
+        writing?.followSpecialState(user.id) ?? user.membership?.isSpecial
+    }
+
     /// 有认证时显示认证说明（比签名更能说明这是谁），否则显示签名；都没有就不显示这一行。
     ///
     /// 与名字一样经 `UploaderProfileUseCase.singleLine` 规整成一行（与播放页侧栏的签名同一规则）：签名常带换行，卡片只排一行。
@@ -198,8 +205,15 @@ private struct FollowPersonGrid: View {
         guard let mid = Int64(card.id), let url = UploaderSpaceWebLink.url(mid: mid) else {
             return nil
         }
+        let following =
+            writing.map { writing in
+                NativeVideoCardMenu.Item.following(writing.followingMenu(mid: mid)) { action in
+                    writing.perform(action, mid: mid)
+                }
+            } ?? []
         return NativeVideoCardMenu(
             sections: [
+                following,
                 NativeVideoCardMenu.Item.webLinks(
                     isActivatable: true,
                     webPageURL: url,

@@ -18,13 +18,53 @@ public struct FollowGroupList: Sendable, Equatable {
 /// 侧栏「关注」组的分组与人数；加载、账户绑定与复核是侧栏各组共用的 `LibrarySidebarListModel`。
 public typealias FollowGroupListModel = LibrarySidebarListModel<FollowGroupList>
 
+extension FollowGroupList {
+    /// 一个人的关系从 `before` 变成 `after` 之后的人数；任一侧分组未知时为 nil，人数只能重读。
+    ///
+    /// 全部关注随是否关注增减；各行按 `FollowMembership.groupIDs` 计数，减去写前所在的行、加上写后所在的行，所以只加入特别
+    /// 关注时默认分组随之减一。列表里没有的分组（已在网页上删掉）不计。分组人数与总人数都不低于 0（读到的人数可能已过时）。
+    public func adjusted(from before: FollowRelation, to after: FollowRelation) -> FollowGroupList?
+    {
+        guard let beforeIDs = Self.countedGroupIDs(before),
+            let afterIDs = Self.countedGroupIDs(after)
+        else { return nil }
+        let totalDelta = (after.isFollowing ? 1 : 0) - (before.isFollowing ? 1 : 0)
+        return FollowGroupList(
+            groups: groups.map { group in
+                let delta =
+                    (afterIDs.contains(group.id) ? 1 : 0) - (beforeIDs.contains(group.id) ? 1 : 0)
+                return FollowGroup(
+                    id: group.id,
+                    name: group.name,
+                    count: max(0, group.count + delta)
+                )
+            },
+            totalCount: totalCount.map { max(0, $0 + totalDelta) }
+        )
+    }
+
+    /// 计数时这个人算在哪几行：没有关注时不算任何一行；分组未知时为 nil。
+    private static func countedGroupIDs(_ relation: FollowRelation) -> Set<Int64>? {
+        switch relation {
+        case .notFollowing: []
+        case .following(let membership): membership.groupIDs
+        case .followingWithUnknownGroups: nil
+        }
+    }
+}
+
 extension LibrarySidebarListModel where Value == FollowGroupList {
     /// 分组与总人数并发读取；分组读不到即整体失败，总人数读不到只缺人数。
+    ///
+    /// `admitsRefreshedValue` 在已有值时的重读落地前求值，返回 false 时丢弃（见 `LibrarySidebarListModel`）；由 App 的关系
+    /// 存储按写入后的宽限期给出。
     public convenience init(
         useCase: FollowListUseCase,
-        accountScope: @escaping @MainActor () -> AccountSessionScope
+        accountScope: @escaping @MainActor () -> AccountSessionScope,
+        admitsRefreshedValue: @escaping @MainActor () -> Bool
     ) {
-        self.init(accountScope: accountScope) { ownerID in
+        self.init(accountScope: accountScope, admitsRefreshedValue: admitsRefreshedValue) {
+            ownerID in
             async let count = useCase.followingCount(ownerID: ownerID)
             let groups = try await useCase.groups(ownerID: ownerID)
             return FollowGroupList(groups: groups, totalCount: try? await count)
@@ -33,6 +73,18 @@ extension LibrarySidebarListModel where Value == FollowGroupList {
 
     /// 已加载的分组；其他状态为空。
     public var groups: [FollowGroup] { loadedValue?.groups ?? [] }
+
+    /// 写入确认一个人的关系从 `before` 变成 `after`：在本地改人数；返回是否改了。
+    ///
+    /// 任一侧分组未知、或还没有已加载的列表时不改、返回 false，调用方安排宽限期后重读：首次读取可能在写入前已经发出，落地的
+    /// 是写前的人数，而首次读取不经 `admitsRefreshedValue` 核对。由 App 的写入效果路由调用。
+    @discardableResult
+    public func adjustCounts(from before: FollowRelation, to after: FollowRelation) -> Bool {
+        guard let list = loadedValue else { return false }
+        guard let adjusted = list.adjusted(from: before, to: after) else { return false }
+        updateLoadedValue { _ in adjusted }
+        return true
+    }
 }
 
 /// 关注页的列表：资料库列表的共用状态机，游标是列表种类加页码；选中的行、排序与关键词由 `FollowListSession` 拥有。
@@ -45,9 +97,16 @@ extension LibraryVideoListModel where Item == FollowedUser, Cursor == FollowList
     /// 的 mid 去读，按认证会话切换中途处理（抛 `CancellationError`）：列表回到未加载、不显示失败也不请求复核，等复核或
     /// 账户变化后重新加载；当成凭据失败会在复核本来就在进行时再请求一次，并把“需要登录”显示给已登录的窗口。第一页游标由
     /// `FollowListSession` 构造时接管。
+    ///
+    /// `reconcile` 拿到每一页的人之后、并入列表之前调用，由 App 的关系存储给出：写入后的宽限期内去掉确认已不在这一页的人、
+    /// 换上确认的分组（见 `FollowRelationLedger`），并记下这一页说明的关系。在到底判断之后调用：先去掉人会让分组页不满一页、
+    /// 被误判为到底。
     public convenience init(
         useCase: FollowListUseCase,
-        accountID: @escaping @MainActor () -> Int64?
+        accountID: @escaping @MainActor () -> Int64?,
+        reconcile:
+            @escaping @MainActor (_ ownerID: Int64, FollowListQuery, [FollowedUser]) ->
+            [FollowedUser]
     ) {
         self.init(
             stallPolicy: .stop,
@@ -57,7 +116,14 @@ extension LibraryVideoListModel where Item == FollowedUser, Cursor == FollowList
             load: { cursor in
                 guard let cursor else { throw ContentApplicationError.invalidRequest }
                 guard let ownerID = accountID() else { throw CancellationError() }
-                return try await useCase.page(cursor, ownerID: ownerID)
+                let result = try await useCase.page(cursor, ownerID: ownerID)
+                return (
+                    VideoListPage(
+                        items: reconcile(ownerID, cursor.query, result.page.items),
+                        nextCursor: result.page.nextCursor
+                    ),
+                    result.totalCount
+                )
             }
         )
     }
@@ -160,6 +226,22 @@ public final class FollowListSession {
             return FollowListUseCase.searchCursor(for: appliedKeyword)
         }
         return FollowListCursor(query: .all(order))
+    }
+
+    /// 写入确认这个人的关系变成了 `relation`：已不关注，或已不在正在显示的分组里时，从列表里去掉这张卡片。
+    ///
+    /// 刚加入这个分组的人不插入（位置只有服务端知道），由 App 的关系存储在宽限期后让这一页重读。由 App 的写入效果路由调用。
+    public func relationDidChange(_ relation: FollowRelation, mid: Int64) {
+        let stillListed =
+            isShowingAllFollowings
+            ? relation.isFollowing : relation.allowsMembership(in: selectedRowID)
+        guard !stillListed else { return }
+        _ = removeUser(mid: mid)
+    }
+
+    /// 乐观移除一个人（卡片菜单的取消关注），不在列表里时为 nil；失败时交回 `model.restoreItem` 放回原位。
+    public func removeUser(mid: Int64) -> LibraryVideoListRemoval<FollowedUser, FollowListCursor>? {
+        model.removeItem(bvid: String(mid))
     }
 
     /// 选中的分组已不存在时回落到全部关注，规则同收藏夹（`FavoriteFolderViewModel`）：在本页时照常重读；不在本页时只改

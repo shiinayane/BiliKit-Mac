@@ -201,6 +201,9 @@ struct AccountWriteCoordinatorTests {
             favoriteFolders: window.favoriteFolders,
             engagementModel: window.engagementModel,
             uploaderSpacePage: makeUploaderSpace(),
+            followRelations: window.followRelations,
+            followGroupList: window.followGroupList,
+            followSession: window.followSession,
             writableAccount: { WritableAccount(accountID: 7, sessionGeneration: 3) }
         )
 
@@ -504,6 +507,7 @@ struct AccountWriteCoordinatorTests {
     ) -> AccountWriteCoordinator {
         let favoritesUseCase = FavoritesUseCase(repository: favorites)
         let engagementUseCase = VideoEngagementUseCase(repository: writes)
+        let follow = FollowWriteDependencies(writableAccount: { session.account })
         return AccountWriteCoordinator(
             watchLater: WatchLaterWriteUseCase(repository: writes),
             watchLaterModel: WatchLaterViewModel(
@@ -526,6 +530,10 @@ struct AccountWriteCoordinatorTests {
             recommendationFeedback: RecommendationFeedbackUseCase(repository: writes),
             danmakuPost: DanmakuPostUseCase(repository: writes),
             commentWrite: CommentWriteUseCase(repository: writes),
+            followRelationWrite: FollowRelationWriteUseCase(repository: writes),
+            followRelations: follow.relations,
+            followSession: follow.session,
+            followGroupList: follow.groupList,
             browseModel: browse,
             writableAccount: { session.account },
             publish: { _, _ in }

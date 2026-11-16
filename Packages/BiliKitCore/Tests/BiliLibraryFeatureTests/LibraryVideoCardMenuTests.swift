@@ -155,7 +155,11 @@ private final class RecordedWrites {
                 self?.events.append("unfavorite \($0.videoAID) from \($0.folderID)")
             },
             dislikeRecommendation: { _ in },
-            cancelRecommendationDislike: { _ in }
+            cancelRecommendationDislike: { _ in },
+            followSpecialState: { _ in nil },
+            setFollowSpecial: { _, _ in },
+            chooseFollowGroups: { _ in },
+            unfollow: { _ in }
         )
     }
 }

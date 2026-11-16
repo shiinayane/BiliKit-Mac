@@ -462,7 +462,11 @@ extension VideoCardAccountWriting {
         chooseFavoriteFolders: { _ in },
         removeFromFavoriteFolder: { _ in },
         dislikeRecommendation: { _ in },
-        cancelRecommendationDislike: { _ in }
+        cancelRecommendationDislike: { _ in },
+        followSpecialState: { _ in nil },
+        setFollowSpecial: { _, _ in },
+        chooseFollowGroups: { _ in },
+        unfollow: { _ in }
     )
 }
 

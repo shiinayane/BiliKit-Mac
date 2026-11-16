@@ -112,10 +112,11 @@ struct FollowListSessionTests {
         let useCase = FollowListUseCase(repository: repository)
         let groupList = FollowGroupListModel(
             useCase: useCase,
-            accountScope: { .signedIn(accountID: 7) }
+            accountScope: { .signedIn(accountID: 7) },
+            admitsRefreshedValue: { true }
         )
         let session = FollowListSession(
-            model: FollowListViewModel(useCase: useCase, accountID: accountID),
+            model: FollowListViewModel(useCase: useCase, accountID: accountID, reconcile: { $2 }),
             groupList: groupList
         )
         return (session, groupList)

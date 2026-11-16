@@ -170,6 +170,9 @@ struct AccountWriteAuthorizationCompositionTests {
                 "/x/v3/fav/resource/deal",
                 "/x/v3/fav/resource/batch-del",
                 "/x/relation/modify",
+                "/x/relation/tag/special/add",
+                "/x/relation/tag/special/del",
+                "/x/relation/tags/addUsers",
                 "/x/v2/dm/post",
                 "/x/v2/reply/action",
                 "/x/v2/reply/hate"
@@ -216,6 +219,11 @@ struct AccountWriteAuthorizationCompositionTests {
             ),
             BiliAccountWritePath.relationModify: (
                 "https://www.bilibili.com/", "fid=7&act=1&re_src=11"
+            ),
+            BiliAccountWritePath.followSpecialAdd: ("https://www.bilibili.com/", "fid=7"),
+            BiliAccountWritePath.followSpecialRemove: ("https://www.bilibili.com/", "fid=7"),
+            BiliAccountWritePath.followGroupsAssign: (
+                "https://www.bilibili.com/", "fids=7&tagids=-10%2C12"
             ),
             BiliAccountWritePath.danmakuPost: (
                 "https://www.bilibili.com/",

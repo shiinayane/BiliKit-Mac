@@ -19,6 +19,13 @@ public struct FollowMembership: Sendable, Hashable {
 
     public var isInDefaultGroup: Bool { !isSpecial && customGroupIDs.isEmpty }
 
+    /// 加入或移出特别关注之后的位置：自定义分组不变。
+    ///
+    /// 只假定特别关注的加入与移出不动自定义分组（移出已实测，加入未实测）。
+    public func settingSpecial(_ isSpecial: Bool) -> FollowMembership {
+        FollowMembership(isSpecial: isSpecial, customGroupIDs: customGroupIDs)
+    }
+
     /// 侧栏各行按 id 计数时，这个人算在哪几行（特别关注、各自定义分组，或只算默认分组）。
     public var groupIDs: Set<Int64> {
         if isInDefaultGroup { return [FollowGroup.defaultID] }

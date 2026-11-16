@@ -93,6 +93,11 @@ public enum AccountWriteStatusText {
             case .tripled: BiliUIStrings.localized("已三连")
             case .followChanged(_, let isFollowing):
                 isFollowing ? BiliUIStrings.localized("已关注") : BiliUIStrings.localized("已取消关注")
+            case .followSpecialChanged(_, let isSpecial, _):
+                isSpecial
+                    ? BiliUIStrings.localized("已加入特别关注")
+                    : BiliUIStrings.localized("已移出特别关注")
+            case .followGroupsChanged: BiliUIStrings.localized("已设置分组")
             case .recommendationDisliked: VideoCardMenuText.dislikedBadge
             case .recommendationDislikeCancelled: BiliUIStrings.localized("已撤销不感兴趣")
             case .danmakuPosted: BiliUIStrings.localized("已发送弹幕")
@@ -121,6 +126,11 @@ public enum AccountWriteStatusText {
             isFollowing
                 ? BiliUIStrings.localized("无法关注：\(reason)")
                 : BiliUIStrings.localized("无法取消关注：\(reason)")
+        case .followSpecialChanged(_, let isSpecial, _):
+            isSpecial
+                ? BiliUIStrings.localized("无法加入特别关注：\(reason)")
+                : BiliUIStrings.localized("无法移出特别关注：\(reason)")
+        case .followGroupsChanged: BiliUIStrings.localized("无法设置分组：\(reason)")
         case .recommendationDisliked: BiliUIStrings.localized("无法提交不感兴趣：\(reason)")
         case .recommendationDislikeCancelled: BiliUIStrings.localized("无法撤销不感兴趣：\(reason)")
         case .danmakuPosted: BiliUIStrings.localized("无法发送弹幕：\(reason)")
@@ -140,12 +150,17 @@ public enum AccountWriteStatusText {
             switch change {
             case .watchLaterAdded, .watchLaterRemoved, .likeChanged, .coinsAdded, .tripled,
                 .recommendationDisliked, .recommendationDislikeCancelled, .followChanged,
-                .danmakuPosted, .commentReactionChanged, .commentPosted:
+                .followSpecialChanged, .followGroupsChanged, .danmakuPosted,
+                .commentReactionChanged,
+                .commentPosted:
                 false
             case .favoriteMembershipChanged, .removedFromFavoriteFolder: true
             }
         let isFollow =
-            if case .followChanged = change { true } else { false }
+            switch change {
+            case .followChanged, .followSpecialChanged, .followGroupsChanged: true
+            default: false
+            }
         let isDanmaku =
             if case .danmakuPosted = change { true } else { false }
         let isComment =

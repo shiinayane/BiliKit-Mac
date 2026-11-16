@@ -160,8 +160,17 @@ struct AppShellView: View {
                 onConfirm: accountWrites.confirmFavoritePicker
             )
         }
+        .sheet(item: followGroupPicker) { picker in
+            FollowGroupPickerView(
+                model: picker,
+                onCancel: accountWrites.dismissFollowGroupPicker,
+                onRetry: accountWrites.retryFollowGroupPicker,
+                onConfirm: accountWrites.confirmFollowGroupPicker
+            )
+        }
         .onChange(of: accountWrites.currentWritableAccount) {
-            // 登出、换号、其他窗口换号待复核：属于旧账户的「收藏到…」面板立即关闭，播放页按新账户重读互动状态。
+            // 登出、换号、其他窗口换号待复核：属于旧账户的「收藏到…」与「设置分组…」面板立即关闭、关系存储丢弃上一账户的
+            // 关系，播放页按新账户重读互动状态。
             accountWrites.writableAccountDidChange()
             engagementModel.present(videoModel.presentedContext?.detail)
         }
@@ -210,7 +219,11 @@ struct AppShellView: View {
             chooseFavoriteFolders: { accountWrites.chooseFavoriteFolders(bvid: $0) },
             removeFromFavoriteFolder: { accountWrites.removeFromFavoriteFolder($0) },
             dislikeRecommendation: { accountWrites.dislikeRecommendation($0) },
-            cancelRecommendationDislike: { accountWrites.cancelRecommendationDislike($0) }
+            cancelRecommendationDislike: { accountWrites.cancelRecommendationDislike($0) },
+            followSpecialState: { accountWrites.followRelations.specialState(of: $0) },
+            setFollowSpecial: { accountWrites.setFollowSpecial($1, mid: $0) },
+            chooseFollowGroups: { accountWrites.chooseFollowGroups(mid: $0) },
+            unfollow: { accountWrites.unfollow(mid: $0) }
         )
     }
 
@@ -233,6 +246,17 @@ struct AppShellView: View {
             get: { accountWrites.favoritePicker },
             set: { picker in
                 if picker == nil { accountWrites.dismissFavoritePicker() }
+            }
+        )
+    }
+
+    /// 「设置分组…」面板的呈现：同「收藏到…」。
+    private var followGroupPicker: Binding<FollowGroupPickerModel?> {
+        let accountWrites = accountWrites
+        return Binding(
+            get: { accountWrites.followGroupPicker },
+            set: { picker in
+                if picker == nil { accountWrites.dismissFollowGroupPicker() }
             }
         )
     }

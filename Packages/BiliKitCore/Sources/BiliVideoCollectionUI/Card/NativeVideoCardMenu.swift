@@ -104,7 +104,8 @@ package struct NativeVideoCardMenu {
         actionableItems.first { $0.id == id && $0.isEnabled }
     }
 
-    func makeMenu() -> NSMenu {
+    /// 按分组生成 `NSMenu`；卡片右键经集合视图取用，其他弹出菜单的入口（`package`）也只经这里生成。
+    package func makeMenu() -> NSMenu {
         let menu = NSMenu()
         // 关掉自动启用：否则 AppKit 看到 target 响应 action 就会把禁用的项重新启用。
         menu.autoenablesItems = false
@@ -235,6 +236,22 @@ extension NativeVideoCardMenu.Item {
                 openURL(webPageURL)
             }
         ]
+    }
+
+    /// 「已关注」菜单的三项（`UploaderFollowingMenuContent`），关注页卡片的右键菜单用它；动作只把意图交给 `perform`，门槛与
+    /// 请求由 App 的写入协调者在执行时重新核对。
+    package static func following(
+        _ content: UploaderFollowingMenuContent,
+        perform: @escaping @MainActor (UploaderFollowingMenuContent.Action) -> Void
+    ) -> [Self] {
+        content.entries.map { entry in
+            Self(
+                id: entry.id,
+                title: entry.title,
+                systemImage: entry.systemImage,
+                isEnabled: entry.isEnabled
+            ) { perform(entry.action) }
+        }
     }
 
     /// 稍后再看的写操作项；动作只把卡片 ID 交给写入口，门槛与请求由 App 的写入协调者在执行时重新核对。

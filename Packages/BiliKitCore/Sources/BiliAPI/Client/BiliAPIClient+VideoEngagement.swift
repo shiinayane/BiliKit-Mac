@@ -11,8 +11,9 @@ extension BiliAPIClient {
     /// 关注的来源代码：11（空间），网页空间页与多个第三方客户端都用它。
     private static let followSourceCode = "11"
 
-    /// 关注的 Referer：播放页的按钮，用固定的站点首页，不随 UP 主变化（授权器每个 path 只认一个固定 Referer）。
-    private static let followWriteReferer = "https://www.bilibili.com/"
+    /// 关注、特别关注与设置分组的 Referer：入口在播放页、空间页与关注页，用固定的站点首页，不随人变化（授权器每个 path
+    /// 只认一个固定 Referer）。
+    static let followWriteReferer = "https://www.bilibili.com/"
 
     /// 读取当前账户对 `bvid` 的点赞、投币与收藏状态；`aid` 与 `bvid` 都带上，与网页一致。
     public func videoEngagement(bvid: String) async throws -> VideoEngagementState {

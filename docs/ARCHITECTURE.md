@@ -310,7 +310,10 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   Feature 按视频 ID 与能否播放构造、经 `cardMenu` 注入，不经 App 插槽。右键、Control-点按与读屏「显示菜单」走集合视图
   基类 `NativeVideoCardCollectionView` 的同一条右键路径，集合项只提供卡片 ID 与上下文描边（`NativeVideoMenuTargetItem`），
   读屏自定义操作取同一份描述，项、顺序与标题与菜单一致。右键与访达、「音乐」一致，不改选中、不移动键盘选择框。链接项
-  只给卡片 ID 是合法 BVID 的可播放卡片，打开只经系统 `OpenURLAction`（见 `SECURITY-MODEL.md` §4）。
+  只给卡片 ID 是合法 BVID 的可播放卡片（人物卡片是正整数 mid 的空间链接），打开只经系统 `OpenURLAction`（见
+  `SECURITY-MODEL.md` §4）。「已关注」菜单的三项只由 BiliUI 的 `UploaderFollowingMenuContent` 定义（只用基本类型），
+  `NativeVideoCardMenu.Item.following` 把它变成菜单项（关注页卡片的右键），`NativeVideoCardMenu.makeMenu()` 是生成 `NSMenu`
+  的唯一入口。
 - **UP 主空间列表**：头部、投稿行与底部加载行是同一个 `NSCollectionView` 的原生 item，随列表滚到工具栏下由系统做边缘
   模糊。底部加载行进入视野时请求下一批（`NearEndPagination`，每个尾部一次，实时滚动中一次手势一次）；App 端投稿接口
   只有游标，不能跳页，所以不用页码条。列表不接收键盘焦点，方向键、空格留给播放器快捷键。
@@ -478,7 +481,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 ### 账户写入
 
 - 链路：卡片菜单、读屏操作与 ⌘⌫ 只转发意图（BVID，收藏夹页的移除是收藏夹与条目 av 号）→ App
-  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕与评论写入）、「收藏到…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
+  `Navigation/AccountWriteCoordinator`（每窗口一个，拥有在途写入的 Task（含发送弹幕与评论写入）、「收藏到…」与「设置分组…」面板、结果胶囊的最新结果与复核代次）→ BiliApplication 的写 use case → BiliAPI 的 adapter 与 `BiliAPIClient+AccountWrite`
   （表单编码、固定 header、状态 envelope 与 -101／-111 映射只在共用的写管线，heartbeat 也走它）→ 账户写授权器（见
   `SECURITY-MODEL.md` §3）。只有窗口主 API 有写授权器。
 - 门槛由 App 算出后经 SwiftUI 环境注入卡片菜单（BiliUI `VideoCardAccountWriting`），与收藏夹列表读取同一规则，不满足时菜单项
@@ -486,6 +489,22 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
 - 「收藏到…」面板由协调者持有、`AppShellView` 以 sheet 呈现；每次打开都按窗口账户重读归属（收藏夹列表带 `rid`），
   确认时只提交勾选与初始归属的差异，一次请求。面板绑定打开时的窗口账户（含会话代次）：窗口账户一变就关闭，重试与确认
   前再核对一次，否则会在另一个账户下显示、重读或提交上一账户的归属；面板读取的凭据类失败与写入共用一次复核的节流。
+- 关注关系：关注、取消关注、特别关注与设置分组是同一族写入，同一个人同时只有一个在途（`isRelationWrite`，播放页与空间页的
+  关注按钮也按它判断）：它们改同一份关系，到达服务端的先后不可知，而设置分组（`tags/addUsers`）按完整集合覆盖，后到的会抹掉
+  先到的。在途登记在每个窗口自己的协调者里，互斥只在窗口内：两个窗口同时改同一个人时互不阻挡，后到服务端的写入仍可能抹掉
+  另一个窗口先到的，两个窗口按各自收到的效果显示、直到下一次读取。不做进程级登记：那要跨窗口共享在途状态与关窗取消，而
+  同时在两个窗口改同一个人很少见。特别关注与设置分组的状态不放进播放页的整份互动快照（那份回滚会把它们拖进与点赞、投币的互斥），放在窗口级的
+  `Navigation/FollowRelationStore`：按 mid 的已知关系（单人关系读取、关注页每一页说明的关系、写入确认的值与乐观改动；
+  `FollowRelation` 区分没有关注、分组已知与只知道已关注），关注页卡片的菜单与特别关注标记、「设置分组…」面板的底、写入的
+  前置条件（只对已知关注的人发特别关注与设置分组）与写前关系都只从这里取，账户一变就清空。写后立刻读到的关系、人数与分组成员
+  可能还是旧值：存储里的 `FollowRelationLedger`（BiliApplication，纯值、时刻由调用方传入）记下写入确认的关系与时刻，宽限期
+  （`relationReadLagGrace`）内与之矛盾的单人关系按确认值，侧栏人数的重读丢弃（`LibrarySidebarListModel` 的
+  `admitsRefreshedValue`），关注页的一页去掉确认已离开的人、换上确认的分组（`FollowListViewModel` 的 `reconcile`，在到底判断
+  之后）；存储持有唯一一个等到宽限期结束的 Task，补读一次人数、把关注页标记为过期。不采用写后立即重读：读到的是旧值，按它作
+  「设置分组…」的底会把刚加入的分组悄悄抹掉。效果带写前与写后的分组（`.followSpecialChanged`、`.followGroupsChanged`；
+  `.followChanged` 不带，各窗口取自己的关系存储），每个窗口按前后差异在本地改人数（各行按 `FollowMembership.groupIDs` 计，
+  只加入特别关注时默认分组随之减一），任一侧分组未知时宽限期后重读；关注页去掉已不属于正在显示的列表的卡片，刚加入的人不插入。
+  「收藏到…」与「设置分组…」面板的开、关、重试、账户变化与确认是同一个按账户绑定的帮手 `AccountBoundPanel`。
 - 播放页互动：点赞、投币、收藏按钮的状态在 BiliVideoDetailFeature 的 `VideoEngagementModel`（每窗口一个，按展示的详情与
   写入门槛的账户读取 `archive/relation`），按钮经环境 `VideoEngagementActions`、快捷键 Q／W／E 经 `PlayerEngagementShortcuts`
   把意图交给同一个协调者。同一视频的点赞、投币、三连同时只发一个（都可能改点赞，到达服务端的先后不可知）；保留的旧详情
@@ -506,7 +525,7 @@ Keychain，并按新 generation 重启依赖账户的内容。账户变化由来
   按未知（按钮禁用，不当成“未关注”）；读取发出与落地时窗口账户不同也按未知；换 UP 主或关闭时清空。账户一变历史就清空，
   空间页不会带着旧账户的状态留下。不采用另建关注读取（多一次请求、多一个 endpoint），也不把它放进 `UploaderProfile`
   （名片会跨视频、跨账户沿用）。写入按 mid（意图取自空间页模型的 UP 主，自己的空间不显示按钮），乐观改动只在空间模型里，
-  不碰播放页的整份互动快照；同一 mid 同时只有一次关注在途，不分方向。成功的效果让各窗口正在显示这位 UP 主的空间页取
+  不碰播放页的整份互动快照；同一 mid 同时只有一次关系写入在途，不分方向与种类（见上文「关注关系」）。成功的效果让各窗口正在显示这位 UP 主的空间页取
   确认的状态、播放页按 mid 重读互动状态。
 - 发送弹幕：播放器 content overlay 里的输入胶囊（BiliVideoDetailFeature 的 `DanmakuComposerModel`，每窗口一个、关窗时 reset；
   视图在 App `Platform/`）由回车、播放器动作菜单与播放页工具栏呼出，窗口与 AVKit 独立全屏同一套，不做读取 AVKit 私有视图

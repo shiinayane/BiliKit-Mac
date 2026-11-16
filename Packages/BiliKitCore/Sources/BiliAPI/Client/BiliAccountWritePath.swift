@@ -30,6 +30,15 @@ public enum BiliAccountWritePath {
     /// 网页从空间页发出时还带 `gaia_source`、`spmid`、`extend_content` 等统计字段，这里不发；`re_src=11`（空间）是网页与
     /// 多个第三方客户端共同的取值。Origin 与 Referer 与其他写入一样用 www。
     public static let relationModify = "/x/relation/modify"
+    /// 把一个已关注的人加入特别关注（`fid`、`csrf`，urlencoded，不签 WBI）。
+    public static let followSpecialAdd = "/x/relation/tag/special/add"
+    /// 把一个人移出特别关注（字段同加入）。
+    public static let followSpecialRemove = "/x/relation/tag/special/del"
+    /// 设置一个已关注的人所在的全部分组（`fids`、`tagids`、`csrf`，urlencoded，不签 WBI）。
+    ///
+    /// 实测按完整集合覆盖这个人的分组，特别关注（-10）也在其中；`tagids=0` 回到默认分组。接口接受逗号分隔的多个人，这里只发
+    /// 一个。
+    public static let followGroupsAssign = "/x/relation/tags/addUsers"
     /// 发送一条视频弹幕（`type=1`、`oid`（cid）、`msg`、`bvid`、`progress`（毫秒）、`color`、`fontsize`、`pool=0`、`mode`、
     /// `rnd`、`csrf`，urlencoded，不签 WBI）。
     ///

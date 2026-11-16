@@ -5,16 +5,18 @@ import BiliModels
 import BiliVideoDetailFeature
 import Observation
 
-/// 一个窗口里用户发起的账户写入的 owner：卡片菜单（含首页推荐的「不感兴趣」）、读屏操作、⌘⌫、「收藏到…」面板、
-/// 播放页的点赞、投币、三连按钮与快捷键、播放侧栏与整页空间页的关注按钮、播放器输入胶囊发出的弹幕，以及评论区的发评论与赞踩
-/// （`AccountWriteCoordinator+Comments`）都交给它。
+/// 一个窗口里用户发起的账户写入的 owner：卡片菜单（含首页推荐的「不感兴趣」与关注页卡片的「已关注」菜单）、读屏操作、⌘⌫、
+/// 「收藏到…」与「设置分组…」面板、播放页的点赞、投币、三连按钮与快捷键、播放侧栏与整页空间页的关注按钮、播放器输入胶囊发出的
+/// 弹幕，以及评论区的发评论与赞踩（`AccountWriteCoordinator+Comments`）都交给它；特别关注、设置分组与关注页的取消关注在
+/// `AccountWriteCoordinator+Follow`。
 ///
 /// 拥有每个在途写入的 Task（同一改动同时只有一个）、正在显示的「收藏到…」面板（`favoritePicker`，同时只有一个；归属的
-/// 读取 Task 归面板模型）、写入结果胶囊显示的最新结果与它的消失计时，以及窗口复核的参与者代次。不拥有门槛的判断
-/// （`writableAccount` 由 `WindowComposition` 按窗口账户算出）、写请求本身（`WatchLaterWriteUseCase`、
-/// `FavoritesWriteUseCase`、`VideoEngagementUseCase`、`RecommendationFeedbackUseCase`、`DanmakuPostUseCase`、`CommentWriteUseCase`）、
+/// 读取 Task 归面板模型）与「设置分组…」面板（`followGroupPicker`，底的读取归关系存储）、写入结果胶囊显示的最新结果与它的
+/// 消失计时，以及窗口复核的参与者代次。不拥有门槛的判断（`writableAccount` 由 `WindowComposition` 按窗口账户算出）、
+/// 写请求本身（`WatchLaterWriteUseCase`、`FavoritesWriteUseCase`、`VideoEngagementUseCase`、`RecommendationFeedbackUseCase`、
+/// `DanmakuPostUseCase`、`CommentWriteUseCase`、`FollowRelationWriteUseCase`）、
 /// 列表与互动状态（乐观改动与回滚在 `WatchLaterViewModel`、`FavoriteFolderViewModel`、`VideoEngagementModel`、`BrowseViewModel`、
-/// 整页空间页的 `UploaderSpaceViewModel`，
+/// 整页空间页的 `UploaderSpaceViewModel`、关注页的 `FollowListSession` 与窗口的 `FollowRelationStore`，
 /// 评论的在 `PlaybackCommentsViewModel`，由评论写入模型把回滚交来），也不直接刷新其他视图（效果交给本窗口的
 /// `AccountWriteEffectRouter`，并经进程级集线器转给其他窗口）。
 ///
@@ -42,10 +44,10 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
     private(set) var reportSequence: UInt64 = 0
     /// 写入遇到凭据类失败时递增（`AccountRevalidationParticipant`），窗口汇总后复核一次。
     private(set) var authenticationRevalidationGeneration = 0
-    /// 正在显示的「收藏到…」面板，nil 时不显示。
-    ///
-    /// `AppShellView` 以它呈现 sheet。
-    private(set) var favoritePicker: FavoritePickerModel?
+    /// 正在显示的「收藏到…」面板，nil 时不显示；`AppShellView` 以它呈现 sheet。
+    var favoritePicker: FavoritePickerModel? { favoritePickerPanel.model }
+    /// 「收藏到…」面板与打开它时的窗口账户。
+    private var favoritePickerPanel = AccountBoundPanel<FavoritePickerModel> { $0.cancel() }
 
     @ObservationIgnored private let watchLater: WatchLaterWriteUseCase
     @ObservationIgnored private let watchLaterModel: WatchLaterViewModel
@@ -53,28 +55,39 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
     /// 面板读取归属用的读取 use case。
     @ObservationIgnored private let favorites: FavoritesUseCase
     @ObservationIgnored private let favoriteFolders: FavoriteFolderViewModel
-    @ObservationIgnored private let engagement: VideoEngagementUseCase
+    /// 互动与关注写入；关注页的取消关注也经它（`+Follow`）。
+    @ObservationIgnored let engagement: VideoEngagementUseCase
     @ObservationIgnored private let engagementModel: VideoEngagementModel
     @ObservationIgnored private let recommendationFeedback: RecommendationFeedbackUseCase
     @ObservationIgnored private let danmakuPost: DanmakuPostUseCase
     /// 评论表态与发评论；入口在 `AccountWriteCoordinator+Comments`。
     @ObservationIgnored let commentWrite: CommentWriteUseCase
+    /// 特别关注与设置分组；入口在 `AccountWriteCoordinator+Follow`。
+    @ObservationIgnored let followRelationWrite: FollowRelationWriteUseCase
+    /// 窗口的关注关系：关系写入的前置条件、写前关系与乐观改动都在这里（`+Follow`）。
+    @ObservationIgnored let followRelations: FollowRelationStore
+    /// 关注页：卡片菜单的取消关注在这里乐观移除卡片。
+    @ObservationIgnored let followSession: FollowListSession
+    /// 侧栏的关注分组：「设置分组…」面板按它列出分组名字。
+    @ObservationIgnored let followGroupList: FollowGroupListModel
+    /// 「设置分组…」面板与打开它时的窗口账户，只由 `+Follow` 打开与关闭；面板不持有读取（底的读取归关系存储），关闭时
+    /// 没有要取消的。
+    var followGroupPickerPanel = AccountBoundPanel<FollowGroupPickerModel> { _ in }
     @ObservationIgnored private let browseModel: BrowseViewModel
     @ObservationIgnored private let writableAccount: @MainActor () -> WritableAccount?
     @ObservationIgnored private let publish:
         @MainActor (AccountWriteEffectDelivery, _ appliedLocally: Bool) -> Void
     /// 在途写入，按改动去重；完成、失败或取消时移除。
     ///
-    /// 模块内可读，供本类型在其他文件的扩展（`+Comments`）判断某类写入是否在途；只由 `run` 写入。
-    @ObservationIgnored private(set) var inFlight: [AccountWriteChange: Task<Void, Never>] = [:]
+    /// 模块内可读，供本类型在其他文件的扩展（`+Comments`、`+Follow`）判断某类写入是否在途；只由 `run` 写入。被观察：
+    /// 「设置分组…」面板据此在同一个人的关系写入在途时禁用「完成」。
+    private(set) var inFlight: [AccountWriteChange: Task<Void, Never>] = [:]
     @ObservationIgnored private var reportDismissal: Task<Void, Never>?
     /// 因凭据类失败请求过复核时的账户与会话代次；此后还没有写入成功。
     ///
     /// 失败时的账户与它相同就不再递增复核代次；写入成功时清空，账户或会话代次不同（换号、登出再登录）时视为作废，避免
     /// 上一会话的节流让新会话的写入再也不复核。
     @ObservationIgnored private var revalidationRequestedFor: WritableAccount?
-    /// 打开面板时的窗口账户；面板关闭时清空。
-    @ObservationIgnored private var favoritePickerAccount: WritableAccount?
     @ObservationIgnored private var isClosed = false
 
     /// `publish` 把成功的效果交给本窗口的效果路由与其他窗口（`WindowComposition` 接线）。
@@ -89,6 +102,10 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         recommendationFeedback: RecommendationFeedbackUseCase,
         danmakuPost: DanmakuPostUseCase,
         commentWrite: CommentWriteUseCase,
+        followRelationWrite: FollowRelationWriteUseCase,
+        followRelations: FollowRelationStore,
+        followSession: FollowListSession,
+        followGroupList: FollowGroupListModel,
         browseModel: BrowseViewModel,
         writableAccount: @escaping @MainActor () -> WritableAccount?,
         publish: @escaping @MainActor (AccountWriteEffectDelivery, _ appliedLocally: Bool) -> Void
@@ -103,6 +120,10 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         self.recommendationFeedback = recommendationFeedback
         self.danmakuPost = danmakuPost
         self.commentWrite = commentWrite
+        self.followRelationWrite = followRelationWrite
+        self.followRelations = followRelations
+        self.followSession = followSession
+        self.followGroupList = followGroupList
         self.browseModel = browseModel
         self.writableAccount = writableAccount
         self.publish = publish
@@ -239,13 +260,15 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
     /// 返回是否发出。
     ///
     /// UP 主取自互动状态（`bvid` 必须仍是它正在显示的视频），按钮不给 mid。关注状态未知、已是目标状态、UP 主就是窗口账户
-    /// 自己，或播放页还有互动写入在途时不发（理由见 `hasEngagementWriteInFlight`）。
+    /// 自己、播放页还有互动写入在途（理由见 `hasEngagementWriteInFlight`），或这位 UP 主已有关系写入在途（`isRelationWrite`）
+    /// 时不发。
     @discardableResult
     func setFollowing(_ isFollowing: Bool, bvid: String) -> Bool {
         guard engagementModel.bvid == bvid,
             let uploader = engagementModel.uploaderID.flatMap(UploaderWriteTarget.init(mid:)),
             let account = currentAccount(), account.accountID != uploader.mid,
             !inFlight.keys.contains(where: Self.isEngagementWrite),
+            !inFlight.keys.contains(where: { Self.isRelationWrite($0, of: uploader) }),
             let snapshot = engagementModel.applyFollow(isFollowing, bvid: bvid)
         else { return false }
         start(
@@ -266,16 +289,16 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
 
     /// 关注或取消关注整页空间页正在显示的 UP 主：先在空间页模型里乐观改动，失败或被取消时放回；返回是否发出。
     ///
-    /// 关注状态未知（还没读到，或读取没带凭据）、已是目标状态、UP 主就是窗口账户自己，或这位 UP 主已有一次关注写入在途
-    /// （不分方向：两个请求到达服务端的先后不可知，最终状态可能与按钮相反）时不发。乐观改动只在空间页模型里，不碰播放页
-    /// 的互动状态（它的回滚是整份快照）；成功后由效果路由让各窗口显示这位 UP 主的空间页取确认的状态、播放页重读互动状态。
+    /// 关注状态未知（还没读到，或读取没带凭据）、已是目标状态、UP 主就是窗口账户自己，或这位 UP 主已有一次关系写入在途
+    /// （`isRelationWrite`，不分方向与种类：两个请求到达服务端的先后不可知，最终状态可能与按钮相反）时不发。乐观改动只在
+    /// 空间页模型里，不碰播放页的互动状态（它的回滚是整份快照）；成功后由效果路由让各窗口显示这位 UP 主的空间页取确认的状态、播放页重读互动状态。
     /// 它同样算作关注写入：在途期间播放页的点赞、投币、三连也不发（`hasEngagementWriteInFlight`）。
     @discardableResult
     func setFollowing(_ isFollowing: Bool, onSpacePage page: UploaderSpaceViewModel) -> Bool {
         guard let ownerID = page.owner?.id,
             let uploader = UploaderWriteTarget(mid: ownerID),
             let account = currentAccount(), account.accountID != uploader.mid,
-            !inFlight.keys.contains(where: { Self.isFollowWrite($0, of: uploader) }),
+            !inFlight.keys.contains(where: { Self.isRelationWrite($0, of: uploader) }),
             let snapshot = page.applyFollow(isFollowing, ownerID: uploader.mid)
         else { return false }
         start(
@@ -293,18 +316,11 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         return true
     }
 
-    private static func isFollowWrite(
-        _ change: AccountWriteChange,
-        of uploader: UploaderWriteTarget
-    ) -> Bool {
-        guard case .followChanged(let other, _) = change else { return false }
-        return other == uploader
-    }
-
     /// 同一视频的点赞、投币、三连同时只发一个，关注在途时它们一个也不发。
     ///
     /// 它们都可能改点赞，两个请求到达服务端的先后不可知，最终状态可能与界面相反；两次投币同时在途也可能超过可投数。关注
     /// 也只在它们都不在途时发：互动状态的乐观改动与回滚按整份快照进行，同时在途时一方失败的回滚会抹掉另一方的乐观改动。
+    /// 特别关注与设置分组不碰互动状态（乐观改动在关系存储），不在其中。
     private func hasEngagementWriteInFlight(for target: VideoWriteTarget) -> Bool {
         inFlight.keys.contains { change in
             switch change {
@@ -314,8 +330,8 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
                 true
             case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
                 .removedFromFavoriteFolder, .recommendationDisliked,
-                .recommendationDislikeCancelled, .danmakuPosted, .commentReactionChanged,
-                .commentPosted:
+                .recommendationDislikeCancelled, .followSpecialChanged, .followGroupsChanged,
+                .danmakuPosted, .commentReactionChanged, .commentPosted:
                 false
             }
         }
@@ -328,7 +344,8 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
             true
         case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
             .removedFromFavoriteFolder, .recommendationDisliked, .recommendationDislikeCancelled,
-            .danmakuPosted, .commentReactionChanged, .commentPosted:
+            .followSpecialChanged, .followGroupsChanged, .danmakuPosted, .commentReactionChanged,
+            .commentPosted:
             false
         }
     }
@@ -384,7 +401,9 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
                 feedback.target == target
             case .watchLaterAdded, .watchLaterRemoved, .favoriteMembershipChanged,
                 .removedFromFavoriteFolder, .likeChanged, .coinsAdded, .tripled, .followChanged,
-                .danmakuPosted, .commentReactionChanged, .commentPosted:
+                .followSpecialChanged, .followGroupsChanged, .danmakuPosted,
+                .commentReactionChanged,
+                .commentPosted:
                 false
             }
         }
@@ -431,54 +450,41 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         guard let target = VideoWriteTarget(bvid: bvid), let account = currentAccount() else {
             return
         }
-        favoritePicker?.cancel()
         let picker = FavoritePickerModel(
             target: target,
             accountID: account.accountID,
             useCase: favorites,
             onCredentialFailure: { [weak self] in self?.requestRevalidation(for: account) }
         )
-        favoritePicker = picker
-        favoritePickerAccount = account
+        favoritePickerPanel.open(picker, account: account)
         picker.load()
     }
 
     /// 面板的取消，以及 sheet 被系统关闭。
     func dismissFavoritePicker() {
-        favoritePicker?.cancel()
-        favoritePicker = nil
-        favoritePickerAccount = nil
+        favoritePickerPanel.close()
     }
 
-    /// 面板读取失败后的重试：窗口账户已不是打开面板时的账户就关闭面板，否则重读。
-    ///
-    /// 面板的读取固定用打开时的 mid；账户变了还重读，就会用新账户的 Cookie 读旧账户的 mid（见 SECURITY-MODEL §3）。
+    /// 面板读取失败后的重试：窗口账户已不是打开面板时的账户就关闭面板，否则重读（规则在 `AccountBoundPanel`）。
     func retryFavoritePicker() {
-        guard let picker = favoritePicker else { return }
-        guard currentAccount() == favoritePickerAccount else {
-            dismissFavoritePicker()
-            return
-        }
-        picker.load()
+        favoritePickerPanel.modelForRetry(currentAccount: currentAccount())?.load()
     }
 
-    /// 窗口的写入账户变了（登出、换号、其他窗口换号待复核、会话代次变化）：属于旧账户的面板立即关闭，它列出的收藏夹
-    /// 与归属不再显示。
+    /// 窗口的写入账户变了（登出、换号、其他窗口换号待复核、会话代次变化）：属于旧账户的面板立即关闭，它列出的收藏夹、
+    /// 归属与分组不再显示；关系存储丢弃上一账户的关系。
     func writableAccountDidChange() {
-        guard favoritePicker != nil, currentAccount() != favoritePickerAccount else { return }
-        dismissFavoritePicker()
+        favoritePickerPanel.closeIfAccountChanged(currentAccount: currentAccount())
+        followGroupPickerPanel.closeIfAccountChanged(currentAccount: currentAccount())
+        followRelations.synchronizeAccount()
     }
 
-    /// 面板的确认：关闭面板，有改动时提交。
-    ///
-    /// 窗口账户此刻必须仍是打开面板时的账户：换号或登出后面板里的归属属于上一账户，按它提交会改动错的账户，直接丢弃。
+    /// 面板的确认：关闭面板，有改动且窗口账户仍是打开面板时的账户时提交。
     func confirmFavoritePicker() {
-        guard let picker = favoritePicker else { return }
-        let pickerAccount = favoritePickerAccount
-        dismissFavoritePicker()
-        guard let change = picker.change,
-            let account = currentAccount(),
-            account == pickerAccount
+        guard
+            let (picker, account) = favoritePickerPanel.closeForConfirmation(
+                currentAccount: currentAccount()
+            ),
+            let change = picker.change
         else { return }
         start(.favoriteMembershipChanged(change), account: account) { [favoritesWrite] in
             try await favoritesWrite.update(change, accountID: account.accountID)
@@ -513,6 +519,7 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
     /// 关窗：关闭面板，取消全部在途写入与胶囊计时，之后不再接受意图；不可逆。
     func close() {
         dismissFavoritePicker()
+        dismissFollowGroupPicker()
         isClosed = true
         for task in inFlight.values { task.cancel() }
         inFlight.removeAll()
@@ -531,8 +538,9 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
 
     /// `appliedLocally` 在写入成功时求值：本窗口的视图此刻是否已经是写入后的样子。
     ///
-    /// 结果进写入结果胶囊，成功的效果交给效果路由与其他窗口；写入没有成功（失败或被取消）时先 `rollback`。
-    private func start(
+    /// 结果进写入结果胶囊，成功的效果交给效果路由与其他窗口；写入没有成功（失败或被取消）时先 `rollback`。只由本类型与
+    /// 它在其他文件里的扩展（`+Follow`）调用，调用方先用 `currentAccount()` 拿到账户。
+    func start(
         _ change: AccountWriteChange,
         account: WritableAccount,
         appliedLocally: @escaping @MainActor () -> Bool = { false },

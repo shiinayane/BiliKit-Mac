@@ -354,9 +354,13 @@ private func makeFollowModels(
             groups: [FollowGroup(id: FollowGroup.specialID, name: "特别关注", count: 1)]
         )
     )
-    let groupList = FollowGroupListModel(useCase: useCase, accountScope: { scope })
+    let groupList = FollowGroupListModel(
+        useCase: useCase,
+        accountScope: { scope },
+        admitsRefreshedValue: { true }
+    )
     let session = FollowListSession(
-        model: FollowListViewModel(useCase: useCase, accountID: { 7 }),
+        model: FollowListViewModel(useCase: useCase, accountID: { 7 }, reconcile: { $2 }),
         groupList: groupList
     )
     return (groupList, session)

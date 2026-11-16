@@ -50,6 +50,9 @@ enum LiveAPIClients {
         BiliAccountWritePath.favoriteMembershipUpdate,
         BiliAccountWritePath.favoriteFolderEntryRemove,
         BiliAccountWritePath.relationModify,
+        BiliAccountWritePath.followSpecialAdd,
+        BiliAccountWritePath.followSpecialRemove,
+        BiliAccountWritePath.followGroupsAssign,
         BiliAccountWritePath.danmakuPost,
         BiliAccountWritePath.commentLike,
         BiliAccountWritePath.commentDislike
