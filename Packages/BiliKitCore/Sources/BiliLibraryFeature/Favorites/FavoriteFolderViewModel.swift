@@ -142,7 +142,7 @@ public final class FavoriteFolderViewModel: AccountRevalidationParticipant {
     public init(useCase: FavoritesUseCase, folderList: FavoriteFolderListModel) {
         self.useCase = useCase
         self.folderList = folderList
-        folderList.onFoldersLoaded = { [weak self] in self?.folderListDidLoad($0) }
+        folderList.onLoaded = { [weak self] in self?.folderListDidLoad($0) }
     }
 
     /// 收藏夹页面出现或选中的收藏夹变化时由页面调用：标记正在显示；没有内容时加载当前页，还没有选择时选默认收藏夹。
