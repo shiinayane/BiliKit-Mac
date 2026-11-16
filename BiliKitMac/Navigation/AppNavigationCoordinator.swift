@@ -11,6 +11,8 @@ enum AppTab: Hashable, CaseIterable {
     case popular
     case watchLater
     case history
+    /// 关注：侧栏「关注」组里「全部关注」与每个分组一行（`AppSidebarSelection.item`），选中的行记在关注会话里。
+    case follows
     /// 收藏夹：侧栏「收藏夹」组里每个收藏夹一行（`AppSidebarSelection.item`），选中的收藏夹记在收藏夹模型里。
     case favorites
 }

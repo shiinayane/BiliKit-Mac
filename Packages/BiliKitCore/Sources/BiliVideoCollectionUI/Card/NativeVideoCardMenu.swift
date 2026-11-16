@@ -203,7 +203,7 @@ extension NativeVideoCardMenu {
                     )
                     + folderRemoval
                     + additionalWriteItems,
-                Item.videoLinks(
+                Item.webLinks(
                     isActivatable: isActivatable,
                     webPageURL: webPageURL,
                     openURL: openURL
@@ -214,10 +214,10 @@ extension NativeVideoCardMenu {
 }
 
 extension NativeVideoCardMenu.Item {
-    /// 「拷贝链接」「在浏览器中打开」两项：只给可进入播放的卡片，否则为空。
+    /// 「拷贝链接」「在浏览器中打开」两项：只给可进入的卡片（视频卡片可播放、人物卡片总是），否则为空。
     ///
     /// 拷贝经 `VideoLinkPasteboard`；打开只经系统的 `OpenURLAction`，不预取、不附加凭据，见 SECURITY-MODEL §4。
-    static func videoLinks(
+    package static func webLinks(
         isActivatable: Bool,
         webPageURL: URL,
         openURL: OpenURLAction

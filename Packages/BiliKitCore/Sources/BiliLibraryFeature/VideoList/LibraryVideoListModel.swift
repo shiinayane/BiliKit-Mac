@@ -24,14 +24,14 @@ public enum LibraryVideoListState<Item: Sendable & Equatable, Cursor: Equatable 
     case failed(ContentApplicationError)
 }
 
-/// 资料库里只按账户读取的视频列表（观看历史、稍后再看）共用的 ViewModel：拥有当前登录会话的列表
+/// 资料库里只按账户读取的分页列表（观看历史、稍后再看、关注）共用的 ViewModel：拥有当前登录会话的列表
 /// （`PagedVideoList`）、加载阶段、凭据复核状态与最新请求 Task。
 ///
-/// 两个来源只在分页游标、第一页游标、无进展页策略与读取闭包上不同，由各自的构造入口给出（`WatchHistoryViewModel`、
-/// `WatchLaterViewModel`）。游标是完整请求时（稍后再看的条件加页码），第一页游标在每次开始新的分页会话时由
-/// `firstPageCursor` 重新求值（稍后再看的相对加入时间因此按当时的日历解析）；条件变化由来源的会话经
-/// `reloadReplacingContent()` 从空列表重新加载；旧条件的迟到结果由 `LatestTask` 丢弃，旧条件的下一页游标也与新列表
-/// 的游标不等而被 `PagedVideoList` 拒收。去重、上限、无进展页、回环、加载更多失败与原地刷新的分页恢复都由 `PagedVideoList`
+/// 各来源只在条目类型、分页游标、第一页游标、无进展页策略、条目上限与读取闭包上不同，由各自的构造入口给出
+/// （`WatchHistoryViewModel`、`WatchLaterViewModel`、`FollowListViewModel`）。游标是完整请求时（稍后再看的条件加页码、
+/// 关注的列表种类加页码），第一页游标在每次开始新的分页会话时由 `firstPageCursor` 重新求值（稍后再看的相对加入时间
+/// 因此按当时的日历解析）；条件变化由来源的会话经 `reloadReplacingContent()` 从空列表重新加载；旧条件的迟到结果由
+/// `LatestTask` 丢弃，旧条件的下一页游标也与新列表的游标不等而被 `PagedVideoList` 拒收。去重、上限、无进展页、回环、加载更多失败与原地刷新的分页恢复都由 `PagedVideoList`
 /// 承担；空页跳过等来源规则在各自的 Use Case。`reset` 会清除个性化内容；普通路由停用只取消在途请求，并在分页或
 /// 刷新中断时保留已显示条目。已有条目时刷新原地进行：条目保持显示，成功后整体替换，失败时保留条目并给出
 /// `refreshError`；凭据缺失或失效则放弃条目、转入失败页并请求账户复核。
@@ -154,6 +154,7 @@ public final class LibraryVideoListModel<
     /// 来源每页条数，用来把已知总数封顶为一页；来源没有总数（观看历史）时为 nil。
     @ObservationIgnored private let pageSize: Int?
     @ObservationIgnored private let stallPolicy: PagedVideoList<Item, Cursor>.StallPolicy
+    @ObservationIgnored private let maximumItemCount: Int
     @ObservationIgnored private let load: Load
     @ObservationIgnored private let bvid: (Item) -> String
     /// 刷新与加载更多共用的最新意图 Task：新请求替换旧请求，迟到结果经 `isCurrent` 丢弃；`reset` 与
@@ -169,6 +170,7 @@ public final class LibraryVideoListModel<
     init(
         stallPolicy: PagedVideoList<Item, Cursor>.StallPolicy,
         pageSize: Int?,
+        maximumItemCount: Int = VideoListRetention.maximumItemCount,
         firstPageCursor: @escaping @MainActor () -> Cursor? = { nil },
         bvid: @escaping (Item) -> String,
         load: @escaping Load
@@ -176,9 +178,10 @@ public final class LibraryVideoListModel<
         self.firstPageCursor = firstPageCursor
         self.stallPolicy = stallPolicy
         self.pageSize = pageSize
+        self.maximumItemCount = maximumItemCount
         self.bvid = bvid
         self.load = load
-        list = PagedVideoList(stallPolicy: stallPolicy)
+        list = PagedVideoList(stallPolicy: stallPolicy, maximumItemCount: maximumItemCount)
     }
 
     /// 页面出现、账户变化或复核成功时调用：从未加载（idle）时加载；已显示内容但被标记为过期
@@ -418,7 +421,7 @@ public final class LibraryVideoListModel<
     }
 
     private func emptyList() -> PagedVideoList<Item, Cursor> {
-        PagedVideoList(stallPolicy: stallPolicy)
+        PagedVideoList(stallPolicy: stallPolicy, maximumItemCount: maximumItemCount)
     }
 
     /// 换成空列表，并作废此前的乐观移除。

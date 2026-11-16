@@ -96,3 +96,12 @@ public struct FollowedUser: Sendable, Equatable, Identifiable {
         self.isMutual = isMutual
     }
 }
+
+/// UP 主空间的网页地址；卡片菜单的「拷贝链接」「在浏览器中打开」只经这里构造。
+public enum UploaderSpaceWebLink {
+    /// 只收正整数 mid，其他取值为 nil，不拼出指向别处的地址（见 SECURITY-MODEL §4）。
+    public static func url(mid: Int64) -> URL? {
+        guard mid > 0 else { return nil }
+        return URL(string: "https://space.bilibili.com/\(mid)")
+    }
+}

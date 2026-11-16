@@ -75,11 +75,13 @@ struct AccountRevalidationParticipantsTests {
             (owner.navigationCoordinator.uploaderSpace, nil),
             (owner.navigationCoordinator.uploaderSpacePage, nil),
             (owner.favoriteFolderList, nil),
+            (owner.followGroupList, nil),
             (owner.accountWrites, nil),
             (owner.engagementModel, nil),
             (owner.watchLaterModel, .watchLater),
             (owner.historyModel, .history),
-            (owner.favoriteFolders, .favorites)
+            (owner.favoriteFolders, .favorites),
+            (owner.followSession.model, .follows)
         ]
         let entries = owner.revalidationParticipants.entries
 

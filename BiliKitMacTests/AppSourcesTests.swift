@@ -6,8 +6,9 @@ import Testing
 
 @testable import BiliKit
 
-/// 每个来源恰好一份描述，侧栏按固定的组顺序分段、组内按 case 顺序排列；只有稍后再看、观看历史与收藏夹要求账户，离开、
-/// 换号与关窗的停用与清理经描述作用到来源的模型；侧栏选择值在来源与收藏夹行之间映射，登出时离开收藏夹回到首页。
+/// 每个来源恰好一份描述，侧栏按固定的组顺序分段、组内按 case 顺序排列；只有稍后再看、观看历史、关注与收藏夹要求账户，
+/// 离开、换号与关窗的停用与清理经描述作用到来源的模型；侧栏选择值在来源与关注、收藏夹的行之间映射，登出时离开只在登录后
+/// 显示的组回到首页。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct AppSourcesTests {
@@ -22,29 +23,30 @@ struct AppSourcesTests {
         }
         #expect(
             sources.ordered.filter(\.requiresAccount).map(\.id) == [
-                .watchLater, .history, .favorites
+                .watchLater, .history, .follows, .favorites
             ]
         )
     }
 
-    /// 顶部无标题的一组是搜索、首页、热门，带标题的「资料库」组依次是稍后再看、观看历史，最后是只在登录后显示的
-    /// 「收藏夹」组；侧栏顺序就是各段依次展开。
+    /// 顶部无标题的一组是搜索、首页、热门，带标题的「资料库」组依次是稍后再看、观看历史，之后是只在登录后显示的
+    /// 「关注」与「收藏夹」组；侧栏顺序就是各段依次展开。
     @Test
     func sidebarGroupsSourcesUnderFixedSections() {
         let sources = makeSources()
 
-        #expect(sources.sections.map(\.group) == [.browse, .library, .favorites])
+        #expect(sources.sections.map(\.group) == [.browse, .library, .follows, .favorites])
         #expect(
             sources.sections.map { $0.sources.map(\.id) } == [
-                [.search, .home, .popular], [.watchLater, .history], [.favorites]
+                [.search, .home, .popular], [.watchLater, .history], [.follows], [.favorites]
             ]
         )
         #expect(sources.ordered.map(\.id) == sources.sections.flatMap { $0.sources.map(\.id) })
         #expect(AppSourceGroup.browse.title == nil)
         #expect(AppSourceGroup.library.title != nil)
+        #expect(AppSourceGroup.follows.title != nil)
         #expect(AppSourceGroup.favorites.title != nil)
         #expect(
-            AppSourceGroup.allCases.filter(\.isShownOnlyWhenSignedIn) == [.favorites]
+            AppSourceGroup.allCases.filter(\.isShownOnlyWhenSignedIn) == [.follows, .favorites]
         )
     }
 
@@ -101,6 +103,8 @@ struct AppSourcesTests {
         (.favorites, .unresolved, .home),
         (.favorites, .signedIn(accountID: 8), .favorites),
         (.favorites, .signedIn(accountID: nil), .favorites),
+        (.follows, .signedOut, .home),
+        (.follows, .signedIn(accountID: 8), .follows),
         (.watchLater, .signedOut, .watchLater),
         (.history, .signedOut, .history)
     ])
@@ -134,6 +138,41 @@ struct AppSourcesTests {
 
         sources.resetForWindowClosure()
         #expect(favorites.list.state == .idle)
+    }
+
+    /// 关注的描述：「全部关注」与每个分组一行，选中一行切到关注来源并记下这一行；页面绑定来源，账户变化回到全部关注，
+    /// 关窗丢弃分组。
+    @Test
+    func followsDescriptorMapsRowsAndFollowsItsModels() async {
+        let follows = makeFollowModels()
+        let sources = makeSources(follows: follows)
+        let coordinator = makeNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: {},
+            uploaderSpace: makeUploaderSpace()
+        )
+        #expect(
+            sources.sidebarSelection(for: .follows)
+                == .item(.follows, id: FollowListSession.allFollowingsRowID)
+        )
+
+        sources.select(.item(.follows, id: FollowGroup.specialID), in: coordinator)
+        #expect(coordinator.selectedTab == .follows)
+        #expect(follows.session.selectedRowID == FollowGroup.specialID)
+        #expect(sources[.follows].revalidationParticipant === follows.session.model)
+
+        follows.groupList.synchronize()
+        await waitForObservedState {
+            if case .loaded = follows.groupList.state { return true }
+            return false
+        }
+        sources[.follows].synchronizeAccountSession(
+            AccountSessionChange(generation: 1, scope: .signedOut, isCurrentRoute: true)
+        )
+        #expect(follows.session.selectedRowID == FollowListSession.allFollowingsRowID)
+
+        sources.resetForWindowClosure()
+        #expect(follows.groupList.state == .idle)
     }
 
     @Test
@@ -270,6 +309,7 @@ struct AppSourcesTests {
         ),
         favorites: (list: FavoriteFolderListModel, folders: FavoriteFolderViewModel) =
             makeFavoriteModels(),
+        follows: (groupList: FollowGroupListModel, session: FollowListSession) = makeFollowModels(),
         watchLaterSession: WatchLaterSession? = nil,
         browseModel: BrowseViewModel = BrowseViewModel(
             useCase: FeedUseCase(repository: FeedRepositoryStub())
@@ -283,6 +323,8 @@ struct AppSourcesTests {
             historyModel: historyModel,
             favoriteFolderList: favorites.list,
             favoriteFolders: favorites.folders,
+            followGroupList: follows.groupList,
+            followSession: follows.session,
             searchSession: searchSession
                 ?? VideoSearchSession(browseModel: browseModel, recordHistory: { _ in }),
             trendingSearchModel: TrendingSearchViewModel(
@@ -300,4 +342,22 @@ private func makeFavoriteModels(
     let useCase = FavoritesUseCase(repository: FavoritesRepositoryStub())
     let list = FavoriteFolderListModel(useCase: useCase, accountScope: { scope })
     return (list, FavoriteFolderViewModel(useCase: useCase, folderList: list))
+}
+
+/// 已登录（mid 7）窗口的关注分组与关注会话，仓库是共享的替身（一个特别关注分组）。
+@MainActor
+private func makeFollowModels(
+    scope: AccountSessionScope = .signedIn(accountID: 7)
+) -> (groupList: FollowGroupListModel, session: FollowListSession) {
+    let useCase = FollowListUseCase(
+        repository: FollowListRepositoryStub(
+            groups: [FollowGroup(id: FollowGroup.specialID, name: "特别关注", count: 1)]
+        )
+    )
+    let groupList = FollowGroupListModel(useCase: useCase, accountScope: { scope })
+    let session = FollowListSession(
+        model: FollowListViewModel(useCase: useCase, accountID: { 7 }),
+        groupList: groupList
+    )
+    return (groupList, session)
 }

@@ -43,6 +43,8 @@ struct AppRootView: View {
             historyModel: historyModel,
             favoriteFolderList: window.favoriteFolderList,
             favoriteFolders: window.favoriteFolders,
+            followGroupList: window.followGroupList,
+            followSession: window.followSession,
             trendingSearchModel: window.trendingSearchModel,
             searchSession: window.searchSession,
             searchHistory: window.process.searchHistory,
@@ -230,7 +232,7 @@ struct AppRootView: View {
             .popular
         case .search:
             window.searchSession.browseActivation
-        case .watchLater, .history, .favorites:
+        case .watchLater, .history, .follows, .favorites:
             .inactive
         }
     }

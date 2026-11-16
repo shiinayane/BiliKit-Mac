@@ -27,6 +27,8 @@ struct AppShellView: View {
     let historyModel: WatchHistoryViewModel
     let favoriteFolderList: FavoriteFolderListModel
     let favoriteFolders: FavoriteFolderViewModel
+    let followGroupList: FollowGroupListModel
+    let followSession: FollowListSession
     let trendingSearchModel: TrendingSearchViewModel
     let searchSession: VideoSearchSession
     let searchHistory: SearchHistoryStore
@@ -56,6 +58,8 @@ struct AppShellView: View {
     ///
     /// 放在这里而不是侧栏里：进入、退出播放时导航侧栏会重建。
     @State private var isFavoritesExpanded = true
+    /// 侧栏「关注」组是否展开；同收藏夹组。
+    @State private var isFollowsExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -74,6 +78,8 @@ struct AppShellView: View {
                             selection: sidebarSelection,
                             favoriteFolderList: favoriteFolderList,
                             isFavoritesExpanded: $isFavoritesExpanded,
+                            followGroupList: followGroupList,
+                            isFollowsExpanded: $isFollowsExpanded,
                             // 点当前来源的行回到它的根页；已在根页时 `goHome` 不动作。
                             onReselect: navigationCoordinator.goHome,
                             accountScope: historyAccountScope,
@@ -173,7 +179,7 @@ struct AppShellView: View {
             else {
                 return
             }
-            // 账户变化会替换每个来源的内容（Browse 丢弃全部工作集，稍后再看、观看历史与收藏夹随账户重载），所有网格都
+            // 账户变化会替换每个来源的内容（Browse 丢弃全部工作集，稍后再看、观看历史、关注与收藏夹随账户重载），所有网格都
             // 回到顶部；留住的网格还持有旧账户的卡片，一并丢弃。
             gridRetainer.discardAll()
             for tab in AppTab.allCases {
@@ -437,6 +443,18 @@ struct AppShellView: View {
                 accountState: authenticationModel.accountPresentationState,
                 gridHost: gridHost(.history),
                 onSelect: navigationCoordinator.openPlayback,
+                onPresentAuthentication: {
+                    isAuthenticationPresented = true
+                }
+            )
+        case .follows:
+            FollowsTabRoot(
+                title: sources[.follows].title,
+                session: followSession,
+                groupList: followGroupList,
+                accountState: authenticationModel.accountPresentationState,
+                gridHost: gridHost(.follows),
+                onSelect: navigationCoordinator.openUploaderSpacePage,
                 onPresentAuthentication: {
                     isAuthenticationPresented = true
                 }

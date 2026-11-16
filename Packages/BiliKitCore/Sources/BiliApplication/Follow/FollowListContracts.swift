@@ -67,6 +67,10 @@ public protocol FollowListRepository: Sendable {
 public struct FollowListUseCase: Sendable {
     /// 每页人数：接口允许的上限；调小只会多发请求。
     public static let pageSize = 50
+    /// 一次分页会话最多保留的人数，交给 `PagedVideoList`。
+    ///
+    /// 取 B 站一个账户能关注的人数上限，全部关注能翻到底；人物条目很小，比视频来源的 1000 条上限多保留不会成为负担。
+    public static let maximumItemCount = 2_000
 
     private let repository: any FollowListRepository
 

@@ -34,6 +34,8 @@ struct WindowAdapters {
     /// 稍后再看的加入与移除；生产实现走窗口 API 的账户写授权器，绑定窗口账户。
     let watchLaterWriteRepository: any WatchLaterWriteRepository
     let favoritesRepository: any FavoritesRepository
+    /// 关注列表、分组与单人关系的读取；生产实现走窗口 API 的账户读取。
+    let followListRepository: any FollowListRepository
     /// 收藏到收藏夹与从收藏夹移除；生产实现走窗口 API 的账户写授权器，绑定窗口账户。
     let favoritesWriteRepository: any FavoritesWriteRepository
     /// 播放页的互动读取与点赞、投币、三连；生产实现走窗口 API 的账户读取与账户写授权器。
@@ -142,6 +144,7 @@ extension WindowAdapters {
             watchLaterRepository: BiliWatchLaterRepository(client: api),
             watchLaterWriteRepository: BiliWatchLaterWriteRepository(client: api),
             favoritesRepository: BiliFavoritesRepository(client: api),
+            followListRepository: BiliFollowListRepository(client: api),
             favoritesWriteRepository: BiliFavoritesWriteRepository(client: api),
             videoEngagementRepository: BiliVideoEngagementRepository(client: api),
             recommendationFeedbackRepository: BiliRecommendationFeedbackRepository(client: api),

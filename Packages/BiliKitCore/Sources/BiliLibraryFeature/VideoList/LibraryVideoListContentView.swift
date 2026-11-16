@@ -71,25 +71,26 @@ struct LibraryVideoListLoadedSurface<Item: Sendable & Equatable, Cursor: Equatab
     }
 }
 
-/// 已登录时的资料库列表主区：按 `LibraryVideoListModel` 的状态显示骨架、空页、失败页或原生网格，叠加刷新与
-/// 分页状态胶囊；凭据失败的说明按模型的账户复核进度区分。
+/// 已登录时的资料库列表主区：视频列表（观看历史、稍后再看）与关注页共用。
 ///
-/// 不拥有请求、分页与复核（`LibraryVideoListModel`）；条目到卡片的映射由来源给出，滚动位置、回顶请求与图片
-/// 管线由根视图从 App 窗口转交；卡片菜单取 `LibraryVideoCardMenu`，写入口来自 App 注入的环境 `videoCardAccountWriting`。
-struct LibraryVideoListContentView<Item: Sendable & Equatable, Cursor: Equatable & Sendable>: View {
+/// 按 `LibraryVideoListModel` 的状态显示加载中、空页、失败页或原生网格，叠加刷新与分页状态胶囊；凭据失败的说明按模型的
+/// 账户复核进度区分。
+///
+/// 不拥有请求、分页与复核（`LibraryVideoListModel`）。加载中的样子与网格由来源给出：视频列表是卡片骨架与视频卡片网格
+/// （`LibraryVideoGrid`），关注页是转圈与人物卡片网格；网格的近尾加载接到模型，尾标与刷新、分页胶囊在这里。
+struct LibraryListContentView<
+    Item: Sendable & Equatable,
+    Cursor: Equatable & Sendable,
+    Loading: View,
+    Grid: View
+>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
-    @Environment(\.openURL) private var openURL
-    @Environment(\.videoCardAccountWriting) private var accountWriting
     let model: LibraryVideoListModel<Item, Cursor>
     let text: LibraryVideoListText
-    let card: (Item) -> NativeVideoCardPresentation
-    /// 卡片展示数据按位置缓存，加载更多时只格式化新追加的条目，见 `NativeVideoCardCache`。
-    @State private var cards = NativeVideoCardCache<Item>()
-    /// 卡片菜单的稍后再看写操作：稍后再看页是移除，观看历史是加入。
-    let watchLaterAction: NativeVideoCardMenu.WatchLaterAction
-    let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    @ViewBuilder let loading: () -> Loading
+    /// 有条目时的网格：参数是条目与尾部状态，近尾时调用 `model.loadMore`。
+    @ViewBuilder let grid: (_ items: [Item], _ tailState: NativeVideoGridTailState) -> Grid
 
     var body: some View {
         ZStack {
@@ -106,10 +107,7 @@ struct LibraryVideoListContentView<Item: Sendable & Equatable, Cursor: Equatable
     private var content: some View {
         switch model.state {
         case .idle, .loading:
-            VideoCardGridSkeleton(
-                loadingLabel: text.loading,
-                expectedItemCount: model.expectedLoadingItemCount
-            )
+            loading()
         case .loaded(let items, let continuation, let loadMoreError) where items.isEmpty:
             emptyList(
                 canLoadMore: continuation != nil,
@@ -124,7 +122,7 @@ struct LibraryVideoListContentView<Item: Sendable & Equatable, Cursor: Equatable
                 state: model.state,
                 requiresManualLoadMore: model.requiresManualLoadMore
             ) {
-                videoList(surface)
+                list(surface)
             }
         }
     }
@@ -186,29 +184,17 @@ struct LibraryVideoListContentView<Item: Sendable & Equatable, Cursor: Equatable
         }
     }
 
-    private func videoList(
+    private func list(
         _ surface: LibraryVideoListLoadedSurface<Item, Cursor>
     ) -> some View {
-        NativeVideoGridView(
-            items: cards.cards(for: surface.items, make: card),
-            accessibilityLabel: text.gridAccessibilityLabel,
+        grid(
+            surface.items,
             // 尾标只在可自动加载时存在：显式继续门、加载更多失败与原地刷新都暂停近尾触发。
-            tailState: NativeVideoGridTailState(
+            NativeVideoGridTailState(
                 canLoadMore: model.paginationTailIdentity != nil,
                 tailIdentity: model.paginationTailIdentity,
                 isLoading: surface.isLoadingMore
-            ),
-            host: gridHost,
-            onNearEnd: model.loadMore,
-            onSelect: onSelect,
-            cardMenu: {
-                LibraryVideoCardMenu.menu(
-                    for: $0,
-                    openURL: openURL,
-                    writing: accountWriting,
-                    watchLater: watchLaterAction
-                )
-            }
+            )
         )
         .ignoresSafeArea(.container, edges: .top)
         .overlay(alignment: .top) {
@@ -250,6 +236,43 @@ struct LibraryVideoListContentView<Item: Sendable & Equatable, Cursor: Equatable
         LibraryContentFailure(
             isAwaitingRevalidation: model.isAwaitingAuthenticationRevalidation,
             locale: locale
+        )
+    }
+}
+
+/// 视频列表（观看历史、稍后再看）的网格：视频卡片按位置缓存，卡片菜单取 `LibraryVideoCardMenu`，写入口来自 App 注入的
+/// 环境 `videoCardAccountWriting`；滚动位置、回顶请求与图片管线由根视图从 App 窗口转交。
+struct LibraryVideoGrid<Item: Sendable & Equatable>: View {
+    @Environment(\.openURL) private var openURL
+    @Environment(\.videoCardAccountWriting) private var accountWriting
+    let items: [Item]
+    let tailState: NativeVideoGridTailState
+    let accessibilityLabel: String
+    let card: (Item) -> NativeVideoCardPresentation
+    /// 卡片菜单的稍后再看写操作：稍后再看页是移除，观看历史是加入。
+    let watchLaterAction: NativeVideoCardMenu.WatchLaterAction
+    let gridHost: NativeVideoGridHostContext
+    let onNearEnd: () -> Void
+    let onSelect: (String) -> Void
+    /// 卡片展示数据按位置缓存，加载更多时只格式化新追加的条目，见 `NativeVideoCardCache`。
+    @State private var cards = NativeVideoCardCache<Item>()
+
+    var body: some View {
+        NativeVideoGridView(
+            items: cards.cards(for: items, make: card),
+            accessibilityLabel: accessibilityLabel,
+            tailState: tailState,
+            host: gridHost,
+            onNearEnd: onNearEnd,
+            onSelect: onSelect,
+            cardMenu: {
+                LibraryVideoCardMenu.menu(
+                    for: $0,
+                    openURL: openURL,
+                    writing: accountWriting,
+                    watchLater: watchLaterAction
+                )
+            }
         )
     }
 }

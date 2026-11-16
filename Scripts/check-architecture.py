@@ -128,8 +128,8 @@ SCOPES = {
 # 单个文件额外允许的模块：每一项都是有明确理由的宿主或适配点。
 EXTRA_ALLOWED = {
     # App 壳里搜索、稍后再看与收藏夹条件或账户投影（会话 scope、账户呈现状态）的使用点：搜索与稍后再看工具栏的排序与
-    # 筛选、收藏夹的排序（SearchToolbarControls、WatchLaterToolbarControls、FavoritesToolbarControls；搜索与稍后再看共用的时长档标题与日期筛选错误文案在
-    # SearchToolbarControls，三者共用的菜单、按钮与弹窗外壳在不依赖 Application 的 ToolbarFilterControls）、搜索提交后的回顶（AppShellView），侧栏账号行与收藏夹列表按账户范围对齐（AppSidebarViews）、资料库来源
+    # 筛选、收藏夹的排序（SearchToolbarControls、WatchLaterToolbarControls、FavoritesToolbarControls、FollowsToolbarControls；搜索与稍后再看共用的时长档标题与日期筛选错误文案在
+    # SearchToolbarControls，各工具栏共用的菜单、按钮与弹窗外壳在不依赖 Application 的 ToolbarFilterControls）、搜索提交后的回顶（AppShellView），侧栏账号行与收藏夹列表按账户范围对齐（AppSidebarViews）、资料库来源
     # 的登录门槛（AppSourceRootViews）；AppRootView、AppShellView 读取账户 scope。窗口组装 WindowComposition
     # 在 Composition/，那里本就允许 Application。
     # MemberImportVisibility 下成员只对直接 import 定义模块的文件可见，经 Feature 转出类型名不够用，
@@ -148,6 +148,7 @@ EXTRA_ALLOWED = {
     "BiliKitMac/App/SearchToolbarControls.swift": {"BiliApplication"},
     "BiliKitMac/App/WatchLaterToolbarControls.swift": {"BiliApplication"},
     "BiliKitMac/App/FavoritesToolbarControls.swift": {"BiliApplication"},
+    "BiliKitMac/App/FollowsToolbarControls.swift": {"BiliApplication"},
     # 观看进度连接、播放器宿主与网格、侧栏共用同一份通知观察集合（NativeVideoNotificationObservers）；
     # 图片管线在 NativeVideoImageLoadingPorts 实现卡片取图 port（NativeVideoImageLoading）；侧栏账号头像
     # （AccountAvatarImage）的 SwiftUI 淡入与评论图片预览共用 NativeImageFadeTransition；同一文件还实现弹幕关联视频

@@ -1,4 +1,6 @@
-/// 首页推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿一次分页会话的上限（`PagedVideoList`）；达到任一项即停止翻页。
+/// 视频来源（首页推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿）一次分页会话的上限（`PagedVideoList`）。
+///
+/// 达到任一项即停止翻页。关注列表的条目上限另由 `FollowListUseCase.maximumItemCount` 给出。
 package enum VideoListRetention {
     /// 内存中最多保留的条目数。
     ///
@@ -17,8 +19,8 @@ package enum VideoListRetention {
 extension Array {
     /// 按 BVID 去重：丢弃与 `existing` 或自身前文重复的条目，保持原顺序。
     ///
-    /// 列表分页（`PagedVideoList`，首页推荐、热门、搜索、观看历史、稍后再看与 UP 主空间投稿唯一的去重处）、
-    /// 收藏夹页（按条目 ID，可播放条目的 ID 就是 BVID）与相关推荐共用。
+    /// 列表分页（`PagedVideoList`，各视频来源与关注列表唯一的去重处；关注列表传入的键是 MID）、收藏夹页（按条目 ID，
+    /// 可播放条目的 ID 就是 BVID）与相关推荐共用。
     package func uniquedByBVID(
         after existing: [Element] = [],
         _ bvid: (Element) -> String

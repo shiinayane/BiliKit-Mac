@@ -35,6 +35,9 @@ final class WindowComposition {
     let historyModel: WatchHistoryViewModel
     /// 侧栏「收藏夹」组的列表；窗口级复核参与者，mid 取自本窗口认证模型的账户范围。
     let favoriteFolderList: FavoriteFolderListModel
+    /// 侧栏「关注」组的分组与人数；同收藏夹列表，是窗口级复核参与者。
+    let followGroupList: FollowGroupListModel
+    let followSession: FollowListSession
     /// 收藏夹来源的选择、条件与夹内内容；经收藏夹来源的描述绑定来源。
     let favoriteFolders: FavoriteFolderViewModel
     /// 本窗口用户发起的账户写入（卡片菜单、读屏操作、⌘⌫ 与播放页的点赞投币）；窗口级复核参与者，关窗时取消在途写入。
@@ -166,16 +169,18 @@ final class WindowComposition {
         let watchLaterSession = WatchLaterSession(model: watchLaterModel)
         self.watchLaterSession = watchLaterSession
         self.historyModel = historyModel
+        // 侧栏各组（收藏夹、关注分组）与关注页按它取 mid：认证仍在确认或其他窗口换号、本窗口复核未完时是 `unresolved`。
+        let accountScope: @MainActor () -> AccountSessionScope = {
+            Self.settledAccountScope(
+                windowScope: authenticationModel.sessionScope,
+                isRestoring: authenticationModel.resolutionPhase == .restoring,
+                accountSession: accountSession
+            )
+        }
         let favoritesUseCase = FavoritesUseCase(repository: adapters.favoritesRepository)
         let favoriteFolderList = FavoriteFolderListModel(
             useCase: favoritesUseCase,
-            accountScope: {
-                Self.settledAccountScope(
-                    windowScope: authenticationModel.sessionScope,
-                    isRestoring: authenticationModel.resolutionPhase == .restoring,
-                    accountSession: accountSession
-                )
-            }
+            accountScope: accountScope
         )
         let favoriteFolders = FavoriteFolderViewModel(
             useCase: favoritesUseCase,
@@ -183,6 +188,23 @@ final class WindowComposition {
         )
         self.favoriteFolderList = favoriteFolderList
         self.favoriteFolders = favoriteFolders
+        let followUseCase = FollowListUseCase(repository: adapters.followListRepository)
+        let followGroupList = FollowGroupListModel(
+            useCase: followUseCase,
+            accountScope: accountScope
+        )
+        let followSession = FollowListSession(
+            model: FollowListViewModel(
+                useCase: followUseCase,
+                accountID: {
+                    guard case .signedIn(let accountID?) = accountScope() else { return nil }
+                    return accountID
+                }
+            ),
+            groupList: followGroupList
+        )
+        self.followGroupList = followGroupList
+        self.followSession = followSession
         let engagementUseCase = VideoEngagementUseCase(
             repository: adapters.videoEngagementRepository
         )
@@ -263,14 +285,16 @@ final class WindowComposition {
             historyModel: historyModel,
             favoriteFolderList: favoriteFolderList,
             favoriteFolders: favoriteFolders,
+            followGroupList: followGroupList,
+            followSession: followSession,
             searchSession: searchSession,
             trendingSearchModel: trendingSearchModel
         )
         self.sources = sources
-        // 收藏夹列表是侧栏常驻的元数据，窗口已登录就读取，不绑定来源；夹内页面经收藏夹来源的描述绑定。
+        // 收藏夹列表与关注分组是侧栏常驻的元数据，窗口已登录就读取，不绑定来源；夹内页面与关注页经各自来源的描述绑定。
         let windowWide: [any AccountRevalidationParticipant] = [
             videoModel, browseModel, danmakuModel, commentsModel, uploaderSpace, uploaderSpacePage,
-            favoriteFolderList,
+            favoriteFolderList, followGroupList,
             accountWrites, engagementModel
         ]
         revalidationParticipants = AccountRevalidationParticipants(
