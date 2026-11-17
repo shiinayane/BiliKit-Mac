@@ -82,7 +82,7 @@ private struct AccountWriteStatusOverlay: View {
 
     var body: some View {
         AccountWriteStatusCapsule(
-            report: accountWrites.report,
+            report: accountWrites.windowReport,
             sequence: accountWrites.reportSequence,
             bottomClearance: bottomClearance
         )

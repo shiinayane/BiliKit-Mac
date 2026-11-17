@@ -55,6 +55,8 @@ enum PlayerLoadingPolicy {
 enum PlayerOverlayLayout {
     static let edgeInset: CGFloat = 20
     static let bottomInset: CGFloat = 64
+    /// 顶部反馈徽标与其下写入结果徽标之间的距离。
+    static let badgeSpacing: CGFloat = 8
     /// 浮层命名坐标空间；非隔离常量，可在 `onGeometryChange` 的 Sendable 闭包中引用。
     static let coordinateSpace = "PlayerOverlay"
 }
@@ -143,7 +145,8 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// 播放器 content overlay 上的全部临时提示：准备与加载转圈、快捷键反馈、“从头播放”按钮与试看结束徽章。
+/// 播放器 content overlay 上的全部临时提示：准备与加载转圈、快捷键反馈、显示在播放器上的写入结果、“从头播放”按钮与
+/// 试看结束徽章。
 ///
 /// 自动消失的计时由 `PlayerOverlayView` 的 `.task(id:)` 持有；这里只保存状态与 identity 规则。
 @MainActor
@@ -166,6 +169,8 @@ final class PlayerOverlayModel {
     private(set) var feedback: Feedback?
     private(set) var resumeNotice: PlaybackResumeNotice?
     private(set) var previewEndedMessage: String?
+    /// 写入结果显示在播放器上时由浮层在反馈徽标下方显示；宿主从 `PlayerHostOwner` 拿到后交来。
+    @ObservationIgnored var writeResults: PlayerWriteResults?
     private(set) var showsPreparationActivity = false
     /// 当前这次等画面的 identity，不在等待时为 nil。
     ///
@@ -347,7 +352,22 @@ struct PlayerOverlayView: View {
         Color.clear
             .overlay { loadingActivity }
             .overlay { preparationActivity }
-            .overlay(alignment: .top) { feedbackBadge }
+            .overlay(alignment: .top) {
+                VStack(spacing: PlayerOverlayLayout.badgeSpacing) {
+                    feedbackBadge
+                    writeResultBadge
+                }
+                .padding(.top, PlayerOverlayLayout.edgeInset)
+                .padding(.horizontal, PlayerOverlayLayout.edgeInset)
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: writeResult
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: model.writeResults?.latestSequence()
+                )
+            }
             .overlay(alignment: .bottomLeading) { resumeButton }
             .overlay(alignment: .bottom) { previewEndedBadge }
             .overlay(alignment: .bottom) {
@@ -366,6 +386,12 @@ struct PlayerOverlayView: View {
                 model.feedback?.content.accessibilityLabel,
                 trigger: model.feedback?.id,
                 interruptsPrevious: model.feedback?.interruptsAnnouncement ?? true
+            )
+            // 结果显示在播放器上时由这里通告，窗口底部的胶囊此时不显示也不通告。按最新结果的序号触发（不论显示在哪），
+            // 不按正在显示的那条：结果从窗口换到播放器时序号不变，不再报一遍。
+            .accessibilityAnnouncement(
+                writeResult.map(AccountWriteStatusText.message(for:)),
+                trigger: model.writeResults?.latestSequence()
             )
             .task(id: model.loadingID) {
                 guard let loadingID = model.loadingID else { return }
@@ -392,11 +418,24 @@ struct PlayerOverlayView: View {
         }
     }
 
+    /// 此刻显示在播放器上的写入结果；结果显示在窗口底部时为 nil。
+    private var writeResult: AccountWriteReport? {
+        model.writeResults?.current()
+    }
+
+    @ViewBuilder
+    private var writeResultBadge: some View {
+        if let writeResult {
+            PlayerWriteResultBadge(report: writeResult)
+                .id(model.writeResults?.latestSequence())
+                .transition(reduceMotion ? .identity : .opacity)
+        }
+    }
+
     @ViewBuilder
     private var feedbackBadge: some View {
         if let feedback = model.feedback {
             PlayerShortcutFeedbackBadge(feedback: feedback.content)
-                .padding(.top, PlayerOverlayLayout.edgeInset)
                 .transition(reduceMotion ? .identity : .opacity)
                 .task(id: feedback.id) {
                     guard feedback.dismissesAutomatically else { return }

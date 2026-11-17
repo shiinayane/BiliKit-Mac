@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliPlayback
 import BiliUI
 import SwiftUI
@@ -135,29 +136,64 @@ enum PlayerShortcutFeedbackDismissalPolicy {
     static let fadeDuration: TimeInterval = 0.16
 }
 
-/// 播放器顶部的反馈徽标：图标加一句话，回显用大字单行，说明用正文字号、最多两行。
+/// 播放器顶部的快捷键与动作反馈徽标；长按 Q 时图标换成三连进度环。
 struct PlayerShortcutFeedbackBadge: View {
-    private static let messageLineLimit = 2
-
     let feedback: PlayerShortcutFeedback
 
     var body: some View {
-        HStack(spacing: 8) {
+        PlayerNoticeBadge(
+            tier: feedback.tier,
+            label: feedback.label,
+            accessibilityLabel: feedback.accessibilityLabel
+        ) {
             if feedback == .engagement(.tripleProgress) {
                 PlayerTripleProgressRing()
             } else {
                 Image(systemName: feedback.symbolName)
             }
-            Text(feedback.label)
+        }
+    }
+}
+
+/// 播放器上的写入结果（结果显示在播放器上时，见 `PlayerWriteResults`）：与窗口底部胶囊同一句话，按说明一档排版。
+///
+/// 被 B 站拒绝、网页上可以完成的结果不放「在浏览器中打开」：全屏下跳到浏览器会打断观看，说明里已经写了可以在网页上完成；
+/// 浮层也不为它开可点区域。
+struct PlayerWriteResultBadge: View {
+    let report: AccountWriteReport
+
+    var body: some View {
+        let message = AccountWriteStatusText.message(for: report)
+        PlayerNoticeBadge(tier: .message, label: message, accessibilityLabel: message) {
+            Image(
+                systemName: report.failure == nil ? "checkmark.circle" : "exclamationmark.circle"
+            )
+        }
+    }
+}
+
+/// 播放器顶部徽标的共同排版：图标加一句话，回显用大字单行，说明用正文字号、最多两行，玻璃胶囊底。
+private struct PlayerNoticeBadge<Icon: View>: View {
+    private static var messageLineLimit: Int { 2 }
+
+    let tier: PlayerShortcutFeedback.Tier
+    let label: String
+    let accessibilityLabel: String
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        HStack(spacing: 8) {
+            icon
+            Text(label)
                 .monospacedDigit()
-                .lineLimit(feedback.tier == .echo ? 1 : Self.messageLineLimit)
+                .lineLimit(tier == .echo ? 1 : Self.messageLineLimit)
                 .multilineTextAlignment(.leading)
         }
-        .font(feedback.tier == .echo ? .title3.weight(.semibold) : .body.weight(.semibold))
+        .font(tier == .echo ? .title3.weight(.semibold) : .body.weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .modifier(PlayerGlassCapsuleBackground())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(feedback.accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
     }
 }

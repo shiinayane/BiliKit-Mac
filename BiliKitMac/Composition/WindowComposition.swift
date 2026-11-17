@@ -266,6 +266,13 @@ final class WindowComposition {
             }
         )
         self.accountWrites = accountWrites
+        playerHostOwner.writeResults = PlayerWriteResults(
+            latestSequence: { [weak accountWrites] in accountWrites?.reportSequence ?? 0 },
+            current: { [weak accountWrites] in accountWrites?.playerReport },
+            presentOnPlayer: { [weak accountWrites] onPlayer in
+                accountWrites?.resultSurface = onPlayer ? .player : .window
+            }
+        )
         // 弱引用：协调者强引用关系存储。
         followRelations.followDidEnd = { [weak accountWrites] in
             accountWrites?.followDidEnd(mid: $0)
