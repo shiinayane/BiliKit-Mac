@@ -176,6 +176,8 @@ EXTRA_ALLOWED = {
     # 播放器宿主的画中画委托（`AVPlayerViewPictureInPictureDelegate`）与「还原」交接，从宿主文件拆出。
     "BiliKitMac/Platform/PlayerPictureInPicture.swift": {"AVKit"},
     "BiliKitMac/Platform/PlayerKeyboardShortcutController.swift": {"BiliPlayback"},
+    # 播放器反馈徽标的内容包括字幕开关的结果（`NativeSubtitleToggleResult`），从浮层文件拆出。
+    "BiliKitMac/Platform/PlayerFeedbackBadge.swift": {"BiliPlayback"},
     "BiliKitMac/Platform/PlayerOverlay.swift": {"AVFoundation", "BiliPlayback"},
     # 窗口播放器子类拦截 seek 入口，供播放器浮层判断画面是否还停在旧位置。
     "BiliKitMac/Platform/SeekTrackingPlayer.swift": {"AVFoundation"},

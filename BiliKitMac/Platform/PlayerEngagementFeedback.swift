@@ -17,6 +17,14 @@ enum PlayerEngagementFeedback: Equatable {
     case exitFullScreenToCoin
     case exitFullScreenToFavorite
 
+    var tier: PlayerShortcutFeedback.Tier {
+        switch self {
+        case .liked, .unliked, .tripleRequested, .tripleProgress: .echo
+        case .signInRequired, .unavailable, .exitFullScreenToCoin, .exitFullScreenToFavorite:
+            .message
+        }
+    }
+
     var label: String {
         switch self {
         case .liked: AppStrings.localized("已点赞")

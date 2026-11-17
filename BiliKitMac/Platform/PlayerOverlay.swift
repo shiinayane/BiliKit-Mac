@@ -5,140 +5,6 @@ import BiliUI
 import BiliVideoDetailFeature
 import SwiftUI
 
-/// 长按左右键的临时倍速：左 0.5 倍、右 2 倍；`rawValue` 即交给播放器的速率。
-enum PlayerMomentaryRate: Float, Equatable, Sendable {
-    case slow = 0.5
-    case fast = 2
-
-    var label: String {
-        switch self {
-        case .slow: "0.5X"
-        case .fast: "2X"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .slow: "backward.fill"
-        case .fast: "forward.fill"
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch self {
-        case .slow: AppStrings.localized("临时播放速度 0.5 倍")
-        case .fast: AppStrings.localized("临时播放速度 2 倍")
-        }
-    }
-}
-
-/// 快捷键与动作菜单操作后在播放器顶部显示的反馈徽标内容：文字、SF Symbol 与 VoiceOver 文案。
-enum PlayerShortcutFeedback: Equatable {
-    case momentaryRate(PlayerMomentaryRate)
-    case relativeSeek(Int)
-    case volume(Int)
-    case playback(Bool)
-    case danmaku(Bool)
-    case subtitles(NativeSubtitleToggleResult)
-    case engagement(PlayerEngagementFeedback)
-    case action(PlayerActionFeedback)
-
-    var label: String {
-        switch self {
-        case .engagement(let feedback): feedback.label
-        case .action(let feedback): feedback.label
-        case .momentaryRate(let rate): rate.label
-        case .relativeSeek(let seconds):
-            seconds < 0
-                ? AppStrings.localized("后退 \(-seconds) 秒")
-                : AppStrings.localized("前进 \(seconds) 秒")
-        case .volume(let percent): Self.volumeText(percent)
-        case .playback(let isPlaying):
-            isPlaying ? AppStrings.localized("播放") : AppStrings.localized("暂停")
-        case .danmaku(let enabled):
-            enabled ? AppStrings.localized("弹幕 开") : AppStrings.localized("弹幕 关")
-        case .subtitles(.enabled(let label)): AppStrings.localized("字幕 \(label)")
-        case .subtitles(.disabled): AppStrings.localized("字幕 关")
-        case .subtitles(.unavailable): AppStrings.localized("无可用字幕")
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .engagement(let feedback): feedback.symbolName
-        case .action(let feedback): feedback.symbolName
-        case .momentaryRate(let rate): rate.symbolName
-        case .relativeSeek(let seconds):
-            seconds < 0 ? "gobackward.5" : "goforward.5"
-        case .volume(let percent):
-            percent == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        case .playback(let isPlaying):
-            isPlaying ? "play.fill" : "pause.fill"
-        case .danmaku(let enabled):
-            enabled ? "text.bubble.fill" : "text.bubble"
-        case .subtitles(.enabled): "captions.bubble.fill"
-        case .subtitles(.disabled), .subtitles(.unavailable):
-            "captions.bubble"
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch self {
-        case .engagement(let feedback): feedback.accessibilityLabel
-        case .action(let feedback): feedback.label
-        case .momentaryRate(let rate): rate.accessibilityLabel
-        case .relativeSeek(let seconds):
-            seconds < 0
-                ? AppStrings.localized("已后退 \(-seconds) 秒")
-                : AppStrings.localized("已前进 \(seconds) 秒")
-        case .volume(let percent): AppStrings.localized("播放器音量 \(Self.volumeText(percent))")
-        case .playback(let isPlaying):
-            isPlaying ? AppStrings.localized("已开始播放") : AppStrings.localized("已暂停播放")
-        case .danmaku(let enabled):
-            enabled ? AppStrings.localized("弹幕已开启") : AppStrings.localized("弹幕已关闭")
-        case .subtitles(.enabled(let label)): AppStrings.localized("字幕已开启，\(label)")
-        case .subtitles(.disabled): AppStrings.localized("字幕已关闭")
-        case .subtitles(.unavailable): AppStrings.localized("当前视频没有可用字幕")
-        }
-    }
-
-    /// 音量百分比的唯一写法，locale 取与文案同语言的 `InterfaceLocale`。
-    private static func volumeText(_ percent: Int) -> String {
-        percent.formatted(.percent.locale(InterfaceLocale.current))
-    }
-}
-
-/// 快捷键反馈徽标的自动消失时机。
-///
-/// `delay` 是显示多久后淡出，连续操作会生成新反馈并重新计时；调长更久遮挡画面，调短来不及看清。
-enum PlayerShortcutFeedbackDismissalPolicy {
-    static let delay: Duration = .milliseconds(800)
-    static let fadeDuration: TimeInterval = 0.16
-}
-
-private struct PlayerShortcutFeedbackBadge: View {
-    let feedback: PlayerShortcutFeedback
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if feedback == .engagement(.tripleProgress) {
-                PlayerTripleProgressRing()
-            } else {
-                Image(systemName: feedback.symbolName)
-            }
-            Text(feedback.label)
-                .monospacedDigit()
-                .lineLimit(1)
-        }
-        .font(.title3.weight(.semibold))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .modifier(PlayerGlassCapsuleBackground())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(feedback.accessibilityLabel)
-    }
-}
-
 /// 播放器浮层上的胶囊底：macOS 26 起是液态玻璃，之前是磨砂材质加细描边；快捷键反馈、按钮与弹幕输入胶囊共用。
 struct PlayerGlassCapsuleBackground: ViewModifier {
     @ViewBuilder
@@ -291,7 +157,10 @@ final class PlayerOverlayModel {
         let id = UUID()
         let content: PlayerShortcutFeedback
         /// 临时倍速在按住期间保持显示；其他反馈到时自动消失。
-        let dismissesAutomatically: Bool
+        var dismissesAutomatically = true
+        /// 通告这条时打断还没读完的上一条：回显总是打断，说明只在与正在显示的那条相同时打断（连按同一个键时只读最新
+        /// 一遍，不排成一串）。
+        var interruptsAnnouncement = true
     }
 
     private(set) var feedback: Feedback?
@@ -340,7 +209,10 @@ final class PlayerOverlayModel {
     }
 
     func showFeedback(_ content: PlayerShortcutFeedback) {
-        feedback = Feedback(content: content, dismissesAutomatically: true)
+        feedback = Feedback(
+            content: content,
+            interruptsAnnouncement: content.tier == .echo || feedback?.content == content
+        )
     }
 
     func showMomentaryRate(_ rate: PlayerMomentaryRate) {
@@ -488,12 +360,12 @@ struct PlayerOverlayView: View {
             }
             .coordinateSpace(.named(PlayerOverlayLayout.coordinateSpace))
             // 快捷键的结果只在徽标上停留片刻，读屏焦点也不在播放器浮层上，所以每条新反馈都通告一次；按反馈的
-            // id 触发，连按同一个键也逐次报。高优先级让连按或长按时只读最新结果。临时倍速只在按下时报，松开时
-            // 徽标消失、不再通告。
+            // id 触发，连按同一个键也逐次报。是否打断上一条见 `Feedback.interruptsAnnouncement`：说明不打断读屏
+            // 正在读的其他内容。临时倍速只在按下时报，松开时徽标消失、不再通告。
             .accessibilityAnnouncement(
                 model.feedback?.content.accessibilityLabel,
                 trigger: model.feedback?.id,
-                interruptsPrevious: true
+                interruptsPrevious: model.feedback?.interruptsAnnouncement ?? true
             )
             .task(id: model.loadingID) {
                 guard let loadingID = model.loadingID else { return }
@@ -528,7 +400,7 @@ struct PlayerOverlayView: View {
                 .transition(reduceMotion ? .identity : .opacity)
                 .task(id: feedback.id) {
                     guard feedback.dismissesAutomatically else { return }
-                    try? await Task.sleep(for: PlayerShortcutFeedbackDismissalPolicy.delay)
+                    try? await Task.sleep(for: feedback.content.tier.displayDuration)
                     guard !Task.isCancelled else { return }
                     model.expireFeedback(id: feedback.id)
                 }

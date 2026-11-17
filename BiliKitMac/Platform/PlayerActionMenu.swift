@@ -72,6 +72,15 @@ enum PlayerActionFeedback: Equatable {
     /// 下一集缺少能播放它的身份，或它的分 P 解析失败，停下。
     case nextUnavailable
 
+    var tier: PlayerShortcutFeedback.Tier {
+        switch self {
+        case .watchLaterRequested, .linkCopied, .bvidCopied, .endBehavior: .echo
+        case .signInRequired, .danmakuSignInRequired, .danmakuPosted, .unavailable, .replayFailed,
+            .advancing, .nextUnavailable:
+            .message
+        }
+    }
+
     var label: String {
         switch self {
         case .watchLaterRequested: AppStrings.localized("正在添加到稍后再看")

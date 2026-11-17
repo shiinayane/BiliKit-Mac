@@ -34,6 +34,19 @@ struct PlayerOverlayModelTests {
         #expect(model.feedback == nil)
     }
 
+    /// 说明不打断读屏正在读的内容，但连按同一个键时只读最新一遍，不排成一串。
+    @Test
+    func aRepeatedMessageInterruptsItselfButNotOtherAnnouncements() throws {
+        let model = PlayerOverlayModel()
+
+        model.showFeedback(.engagement(.signInRequired))
+        #expect(model.feedback?.interruptsAnnouncement == false)
+        model.showFeedback(.engagement(.signInRequired))
+        #expect(model.feedback?.interruptsAnnouncement == true)
+        model.showFeedback(.volume(40))
+        #expect(model.feedback?.interruptsAnnouncement == true)
+    }
+
     @Test
     func feedbackExpiryOnlyRemovesTheScheduledBadge() throws {
         let model = PlayerOverlayModel()
