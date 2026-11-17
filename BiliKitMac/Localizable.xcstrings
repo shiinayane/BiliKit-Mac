@@ -4313,86 +4313,114 @@
         }
       }
     },
-    "已点赞" : {
+    "已从上次看到的位置继续播放" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Liked"
+            "value" : "Resumed from where you left off"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "いいねしました"
+            "value" : "前回の続きから再生しています"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已点赞"
+            "value" : "已从上次看到的位置继续播放"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已按讚"
+            "value" : "已從上次看到的位置繼續播放"
           }
         }
       }
     },
-    "已取消点赞" : {
+    "正在点赞" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Like Removed"
+            "value" : "Liking"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "いいねを取り消しました"
+            "value" : "いいねしています"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消点赞"
+            "value" : "正在点赞"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消按讚"
+            "value" : "正在按讚"
           }
         }
       }
     },
-    "三连" : {
+    "正在取消点赞" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Like, Coin, and Save"
+            "value" : "Removing Like"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "いいね・コイン・お気に入り"
+            "value" : "いいねを取り消しています"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "三连"
+            "value" : "正在取消点赞"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "三連"
+            "value" : "正在取消按讚"
+          }
+        }
+      }
+    },
+    "正在三连" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liking, Coining, and Saving"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いいね・コイン・お気に入りしています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在三连"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在三連"
           }
         }
       }

@@ -29,19 +29,15 @@ import Observation
 @MainActor
 @Observable
 final class AccountWriteCoordinator: AccountRevalidationParticipant {
-    /// 写入结果胶囊停留的时长。
-    ///
-    /// 够读完两行说明；读屏另有通告，不依赖胶囊停留。调长会让连续操作时旧结果盖住新内容更久。
-    static let reportDisplayDuration: Duration = .seconds(4)
-    /// 带「在浏览器中打开」的结果停留的时长（`AccountWriteReport.webFallbackURL`）。
-    ///
-    /// 要留出读完说明、再把指针移过去点按的时间；调短来不及点，调长会久久盖住相关推荐。
-    static let actionableReportDisplayDuration: Duration = .seconds(8)
-
-    /// 胶囊显示的最新结果；nil 时不显示。
+    /// 正在显示的最新结果，不论显示在哪一处（`resultSurface`）；nil 时不显示。
     private(set) var report: AccountWriteReport?
-    /// 每出现一条新结果递增；胶囊据此在相同结果连续出现时也重新通告。
+    /// 每出现一条新结果递增；显示结果的一处据此在相同结果连续出现时也重新通告。
     private(set) var reportSequence: UInt64 = 0
+    /// 写入结果此刻显示在哪一处，同一时刻只有一处显示并通告。
+    ///
+    /// 由播放器宿主在进入、退出 AVKit 独立全屏、挂上与摘下播放页、拆除时设置（经窗口组装交给它的 `PlayerWriteResults`）。
+    /// 只决定位置：切换时正在显示的那条换到另一处，不重新计时、不递增 `reportSequence`，读屏不再报一遍。
+    var resultSurface = AccountWriteResultSurface.window
     /// 写入遇到凭据类失败时递增（`AccountRevalidationParticipant`），窗口汇总后复核一次。
     private(set) var authenticationRevalidationGeneration = 0
     /// 正在显示的「收藏到…」面板，nil 时不显示；`AppShellView` 以它呈现 sheet。
@@ -411,8 +407,9 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
 
     /// 发一条弹幕；返回是否发出：BVID 不合法、没有写入账户，或本窗口已有一条弹幕在途时不发。
     ///
-    /// 结局交给 `completion`（输入胶囊据此上屏或在胶囊下方说明），不进写入结果胶囊：全屏时看不到窗口底部的胶囊，窗口下
-    /// 两处同时说明又重复；也不产生跨视图效果。同一窗口同时只有一条在途，不按正文区分，免得连按回车发出两条。
+    /// 结局交给 `completion`（输入胶囊据此上屏或在胶囊下方说明）；成功另作为写入结果显示（窗口底部或全屏时的播放器上，
+    /// 弹幕关着或车道已满时画面上看不到那一条），失败只在输入胶囊下方说明、草稿留在那里。不产生跨视图效果。同一窗口同时只有
+    /// 一条在途，不按正文区分，免得连按回车发出两条。
     @discardableResult
     func postDanmaku(
         _ request: DanmakuPostRequest,
@@ -428,9 +425,11 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
             write: { [danmakuPost] in
                 try await danmakuPost.post(request, accountID: account.accountID)
             },
-            finished: { outcome in
+            finished: { [weak self] outcome in
                 switch outcome {
-                case .succeeded(let receipt): completion(.posted(receipt))
+                case .succeeded(let receipt):
+                    self?.show(AccountWriteReport(change: .danmakuPosted(target), failure: nil))
+                    completion(.posted(receipt))
                 case .failed(let error): completion(.failed(error))
                 case .cancelled: completion(.cancelled)
                 }
@@ -628,7 +627,8 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
         reportDismissal = Task { [weak self] in
             try? await Task.sleep(
                 for: report.webFallbackURL == nil
-                    ? Self.reportDisplayDuration : Self.actionableReportDisplayDuration
+                    ? TransientNoticePolicy.messageDuration
+                    : TransientNoticePolicy.actionableMessageDuration
             )
             guard !Task.isCancelled, let self, self.reportSequence == sequence else { return }
             self.report = nil

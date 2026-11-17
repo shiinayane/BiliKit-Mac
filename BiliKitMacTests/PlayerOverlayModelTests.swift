@@ -9,7 +9,8 @@ import Testing
 
 /// 播放器浮层的临时提示、续播提示与转圈各自只在该出现时出现。
 ///
-/// 按住的临时倍速徽章留到松开，其他徽章按各自计时消失；关掉的续播提示在撤回前不再出现，跳离续播位置即关闭；
+/// 按住的临时倍速徽章留到松开，其他徽章按各自计时消失；发出写入的按键不作为反馈显示（不先说还没发生的事），只在结果
+/// 显示在播放器上时先占住结果的位置、结果一到就让开；关掉的续播提示在撤回前不再出现，跳离续播位置即关闭；
 /// 转圈只覆盖准备期没有 item 与等待画面且延迟到期仍在等的时候；浮层只在可交互区域拦截点击。
 @MainActor
 struct PlayerOverlayModelTests {
@@ -32,6 +33,49 @@ struct PlayerOverlayModelTests {
 
         model.endMomentaryRate()
         #expect(model.feedback == nil)
+    }
+
+    /// 说明不打断读屏正在读的内容，但连按同一个键时只读最新一遍，不排成一串。
+    @Test
+    func aRepeatedMessageInterruptsItselfButNotOtherAnnouncements() throws {
+        let model = PlayerOverlayModel()
+
+        model.showFeedback(.engagement(.signInRequired))
+        #expect(model.feedback?.interruptsAnnouncement == false)
+        model.showFeedback(.engagement(.signInRequired))
+        #expect(model.feedback?.interruptsAnnouncement == true)
+        model.showFeedback(.volume(40))
+        #expect(model.feedback?.interruptsAnnouncement == true)
+    }
+
+    @Test(arguments: [
+        PlayerShortcutFeedback.engagement(.likeRequested), .engagement(.tripleRequested),
+        .action(.watchLaterRequested)
+    ])
+    func aSentWriteHoldsTheResultPlaceOnlyOnThePlayer(_ request: PlayerShortcutFeedback) {
+        let results = WriteResultsState()
+        let model = PlayerOverlayModel()
+        model.writeResults = PlayerWriteResults(
+            isOnPlayer: { results.isOnPlayer },
+            latestSequence: { results.sequence },
+            current: { nil },
+            presentOnPlayer: { _ in }
+        )
+
+        model.showFeedback(request)
+        #expect(model.feedback == nil)
+        #expect(model.shownPendingWrite == nil)
+
+        results.isOnPlayer = true
+        model.showFeedback(request)
+        #expect(model.feedback == nil)
+        #expect(model.shownPendingWrite?.content == request)
+
+        results.isOnPlayer = false
+        #expect(model.shownPendingWrite == nil)
+        results.isOnPlayer = true
+        results.sequence += 1
+        #expect(model.shownPendingWrite == nil)
     }
 
     @Test
@@ -245,4 +289,11 @@ struct PlayerOverlayModelTests {
         #expect(host.hitTest(nearTopLeading) != nil)
         #expect(host.hitTest(nearBottomLeading) == nil)
     }
+}
+
+/// 写入协调者交给播放器的结果状态的替身：是否显示在播放器上与最新结果序号。
+@MainActor
+private final class WriteResultsState {
+    var isOnPlayer = false
+    var sequence: UInt64 = 3
 }

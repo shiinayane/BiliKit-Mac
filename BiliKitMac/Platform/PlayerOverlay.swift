@@ -5,140 +5,6 @@ import BiliUI
 import BiliVideoDetailFeature
 import SwiftUI
 
-/// 长按左右键的临时倍速：左 0.5 倍、右 2 倍；`rawValue` 即交给播放器的速率。
-enum PlayerMomentaryRate: Float, Equatable, Sendable {
-    case slow = 0.5
-    case fast = 2
-
-    var label: String {
-        switch self {
-        case .slow: "0.5X"
-        case .fast: "2X"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .slow: "backward.fill"
-        case .fast: "forward.fill"
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch self {
-        case .slow: AppStrings.localized("临时播放速度 0.5 倍")
-        case .fast: AppStrings.localized("临时播放速度 2 倍")
-        }
-    }
-}
-
-/// 快捷键与动作菜单操作后在播放器顶部显示的反馈徽标内容：文字、SF Symbol 与 VoiceOver 文案。
-enum PlayerShortcutFeedback: Equatable {
-    case momentaryRate(PlayerMomentaryRate)
-    case relativeSeek(Int)
-    case volume(Int)
-    case playback(Bool)
-    case danmaku(Bool)
-    case subtitles(NativeSubtitleToggleResult)
-    case engagement(PlayerEngagementFeedback)
-    case action(PlayerActionFeedback)
-
-    var label: String {
-        switch self {
-        case .engagement(let feedback): feedback.label
-        case .action(let feedback): feedback.label
-        case .momentaryRate(let rate): rate.label
-        case .relativeSeek(let seconds):
-            seconds < 0
-                ? AppStrings.localized("后退 \(-seconds) 秒")
-                : AppStrings.localized("前进 \(seconds) 秒")
-        case .volume(let percent): Self.volumeText(percent)
-        case .playback(let isPlaying):
-            isPlaying ? AppStrings.localized("播放") : AppStrings.localized("暂停")
-        case .danmaku(let enabled):
-            enabled ? AppStrings.localized("弹幕 开") : AppStrings.localized("弹幕 关")
-        case .subtitles(.enabled(let label)): AppStrings.localized("字幕 \(label)")
-        case .subtitles(.disabled): AppStrings.localized("字幕 关")
-        case .subtitles(.unavailable): AppStrings.localized("无可用字幕")
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .engagement(let feedback): feedback.symbolName
-        case .action(let feedback): feedback.symbolName
-        case .momentaryRate(let rate): rate.symbolName
-        case .relativeSeek(let seconds):
-            seconds < 0 ? "gobackward.5" : "goforward.5"
-        case .volume(let percent):
-            percent == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        case .playback(let isPlaying):
-            isPlaying ? "play.fill" : "pause.fill"
-        case .danmaku(let enabled):
-            enabled ? "text.bubble.fill" : "text.bubble"
-        case .subtitles(.enabled): "captions.bubble.fill"
-        case .subtitles(.disabled), .subtitles(.unavailable):
-            "captions.bubble"
-        }
-    }
-
-    var accessibilityLabel: String {
-        switch self {
-        case .engagement(let feedback): feedback.accessibilityLabel
-        case .action(let feedback): feedback.label
-        case .momentaryRate(let rate): rate.accessibilityLabel
-        case .relativeSeek(let seconds):
-            seconds < 0
-                ? AppStrings.localized("已后退 \(-seconds) 秒")
-                : AppStrings.localized("已前进 \(seconds) 秒")
-        case .volume(let percent): AppStrings.localized("播放器音量 \(Self.volumeText(percent))")
-        case .playback(let isPlaying):
-            isPlaying ? AppStrings.localized("已开始播放") : AppStrings.localized("已暂停播放")
-        case .danmaku(let enabled):
-            enabled ? AppStrings.localized("弹幕已开启") : AppStrings.localized("弹幕已关闭")
-        case .subtitles(.enabled(let label)): AppStrings.localized("字幕已开启，\(label)")
-        case .subtitles(.disabled): AppStrings.localized("字幕已关闭")
-        case .subtitles(.unavailable): AppStrings.localized("当前视频没有可用字幕")
-        }
-    }
-
-    /// 音量百分比的唯一写法，locale 取与文案同语言的 `InterfaceLocale`。
-    private static func volumeText(_ percent: Int) -> String {
-        percent.formatted(.percent.locale(InterfaceLocale.current))
-    }
-}
-
-/// 快捷键反馈徽标的自动消失时机。
-///
-/// `delay` 是显示多久后淡出，连续操作会生成新反馈并重新计时；调长更久遮挡画面，调短来不及看清。
-enum PlayerShortcutFeedbackDismissalPolicy {
-    static let delay: Duration = .milliseconds(800)
-    static let fadeDuration: TimeInterval = 0.16
-}
-
-private struct PlayerShortcutFeedbackBadge: View {
-    let feedback: PlayerShortcutFeedback
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if feedback == .engagement(.tripleProgress) {
-                PlayerTripleProgressRing()
-            } else {
-                Image(systemName: feedback.symbolName)
-            }
-            Text(feedback.label)
-                .monospacedDigit()
-                .lineLimit(1)
-        }
-        .font(.title3.weight(.semibold))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .modifier(PlayerGlassCapsuleBackground())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(feedback.accessibilityLabel)
-    }
-}
-
 /// 播放器浮层上的胶囊底：macOS 26 起是液态玻璃，之前是磨砂材质加细描边；快捷键反馈、按钮与弹幕输入胶囊共用。
 struct PlayerGlassCapsuleBackground: ViewModifier {
     @ViewBuilder
@@ -189,6 +55,8 @@ enum PlayerLoadingPolicy {
 enum PlayerOverlayLayout {
     static let edgeInset: CGFloat = 20
     static let bottomInset: CGFloat = 64
+    /// 顶部反馈徽标与其下写入结果徽标之间的距离。
+    static let badgeSpacing: CGFloat = 8
     /// 浮层命名坐标空间；非隔离常量，可在 `onGeometryChange` 的 Sendable 闭包中引用。
     static let coordinateSpace = "PlayerOverlay"
 }
@@ -277,7 +145,8 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// 播放器 content overlay 上的全部临时提示：准备与加载转圈、快捷键反馈、“从头播放”按钮与试看结束徽章。
+/// 播放器 content overlay 上的全部临时提示：准备与加载转圈、快捷键反馈、显示在播放器上的写入结果、“从头播放”按钮与
+/// 试看结束徽章。
 ///
 /// 自动消失的计时由 `PlayerOverlayView` 的 `.task(id:)` 持有；这里只保存状态与 identity 规则。
 @MainActor
@@ -291,12 +160,28 @@ final class PlayerOverlayModel {
         let id = UUID()
         let content: PlayerShortcutFeedback
         /// 临时倍速在按住期间保持显示；其他反馈到时自动消失。
-        let dismissesAutomatically: Bool
+        var dismissesAutomatically = true
+        /// 通告这条时打断还没读完的上一条：回显总是打断，说明只在与正在显示的那条相同时打断（连按同一个键时只读最新
+        /// 一遍，不排成一串）。
+        var interruptsAnnouncement = true
     }
 
     private(set) var feedback: Feedback?
     private(set) var resumeNotice: PlaybackResumeNotice?
     private(set) var previewEndedMessage: String?
+    /// 写入结果显示在播放器上时由浮层在反馈徽标下方显示；宿主从 `PlayerHostOwner` 拿到后交来。
+    @ObservationIgnored var writeResults: PlayerWriteResults?
+    /// 全屏时按下写入键后、结果到达前在结果位置显示的一句「正在…」。
+    ///
+    /// `sequence` 是发出时最新结果的序号：之后有了新结果（序号变了）就让给结果，不再显示；写入被取消、没有结果时按说明一档
+    /// 的时长收起。窗口里不设置：工具栏按钮当下就翻转。
+    struct PendingWrite: Equatable {
+        let id = UUID()
+        let content: PlayerShortcutFeedback
+        let sequence: UInt64
+    }
+
+    private(set) var pendingWrite: PendingWrite?
     private(set) var showsPreparationActivity = false
     /// 当前这次等画面的 identity，不在等待时为 nil。
     ///
@@ -313,17 +198,13 @@ final class PlayerOverlayModel {
     @ObservationIgnored fileprivate var resumeButtonFrame: CGRect?
     /// 发送弹幕的输入胶囊；由窗口的播放器内容注入，nil 时回车不呼出。
     ///
-    /// 呼出被拒（未登录、没有在播的视频）与发出成功时在顶部提示。
+    /// 呼出被拒（未登录、没有在播的视频）时在顶部提示；发出成功由写入结果的一处说明，失败在输入胶囊下方说明。
     var danmakuComposer: DanmakuComposerModel? {
         didSet {
             danmakuComposer?.onPresentationRefused = { [weak self] failure in
                 self?.showFeedback(
                     .action(failure == .signInRequired ? .danmakuSignInRequired : .unavailable)
                 )
-            }
-            danmakuComposer?.onPosted = { [weak self] report in
-                let message = AccountWriteStatusText.message(for: report)
-                self?.showFeedback(.action(.danmakuPosted(message)))
             }
         }
     }
@@ -339,8 +220,32 @@ final class PlayerOverlayModel {
         return frames
     }
 
+    /// 显示一条反馈；发出写入的那几种（`isWriteRequest`）不显示，只在结果显示在播放器上时先占住结果的位置。
     func showFeedback(_ content: PlayerShortcutFeedback) {
-        feedback = Feedback(content: content, dismissesAutomatically: true)
+        guard content.isWriteRequest else {
+            feedback = Feedback(
+                content: content,
+                interruptsAnnouncement: content.tier == .echo || feedback?.content == content
+            )
+            return
+        }
+        guard let writeResults, writeResults.isOnPlayer() else { return }
+        pendingWrite = PendingWrite(content: content, sequence: writeResults.latestSequence())
+    }
+
+    /// 占位到时还没等到结果（写入被取消时没有结果）就收起。
+    func expirePendingWrite(id: UUID) {
+        guard pendingWrite?.id == id else { return }
+        pendingWrite = nil
+    }
+
+    /// 此刻在结果位置显示的占位：结果仍显示在播放器上、发出之后还没有新结果时才显示，结果一到就让给结果；途中退出全屏
+    /// 时也不再显示，结果改由窗口底部的胶囊说明。
+    var shownPendingWrite: PendingWrite? {
+        guard let pendingWrite, let writeResults, writeResults.isOnPlayer(),
+            writeResults.latestSequence() == pendingWrite.sequence
+        else { return nil }
+        return pendingWrite
     }
 
     func showMomentaryRate(_ rate: PlayerMomentaryRate) {
@@ -365,6 +270,7 @@ final class PlayerOverlayModel {
     /// 立即收起反馈，不淡出：播放页重新挂上宿主时丢掉上一页留下的提示。
     func clearFeedback() {
         feedback = nil
+        pendingWrite = nil
     }
 
     func expireFeedback(id: UUID) {
@@ -470,12 +376,33 @@ final class PlayerOverlayModel {
 struct PlayerOverlayView: View {
     let model: PlayerOverlayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 弹幕输入胶囊的高度，试看结束徽章据此排到呼出的胶囊上方。
+    @State private var danmakuComposerHeight: CGFloat = 0
 
     var body: some View {
         Color.clear
             .overlay { loadingActivity }
             .overlay { preparationActivity }
-            .overlay(alignment: .top) { feedbackBadge }
+            .overlay(alignment: .top) {
+                VStack(spacing: PlayerOverlayLayout.badgeSpacing) {
+                    feedbackBadge
+                    writeResultBadge
+                }
+                .padding(.top, PlayerOverlayLayout.edgeInset)
+                .padding(.horizontal, PlayerOverlayLayout.edgeInset)
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: writeResult
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: model.writeResults?.latestSequence()
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: model.shownPendingWrite
+                )
+            }
             .overlay(alignment: .bottomLeading) { resumeButton }
             .overlay(alignment: .bottom) { previewEndedBadge }
             .overlay(alignment: .bottom) {
@@ -488,13 +415,37 @@ struct PlayerOverlayView: View {
             }
             .coordinateSpace(.named(PlayerOverlayLayout.coordinateSpace))
             // 快捷键的结果只在徽标上停留片刻，读屏焦点也不在播放器浮层上，所以每条新反馈都通告一次；按反馈的
-            // id 触发，连按同一个键也逐次报。高优先级让连按或长按时只读最新结果。临时倍速只在按下时报，松开时
-            // 徽标消失、不再通告。
+            // id 触发，连按同一个键也逐次报。是否打断上一条见 `Feedback.interruptsAnnouncement`：说明不打断读屏
+            // 正在读的其他内容。临时倍速只在按下时报，松开时徽标消失、不再通告。
             .accessibilityAnnouncement(
                 model.feedback?.content.accessibilityLabel,
                 trigger: model.feedback?.id,
-                interruptsPrevious: true
+                interruptsPrevious: model.feedback?.interruptsAnnouncement ?? true
             )
+            // 结果显示在播放器上时由这里通告，窗口底部的胶囊此时不显示也不通告。按最新结果的序号触发（不论显示在哪），
+            // 不按正在显示的那条：结果从窗口换到播放器时序号不变，不再报一遍。
+            .accessibilityAnnouncement(
+                writeResult.map(AccountWriteStatusText.message(for:)),
+                trigger: model.writeResults?.latestSequence()
+            )
+            // 续播与试看结束都是播放器自己做的事，读屏焦点不在浮层上；各通告一次（同一次续播按 token，试看结束按这句话）。
+            .accessibilityAnnouncement(
+                model.resumeNotice == nil
+                    ? nil : AppStrings.localized("已从上次看到的位置继续播放"),
+                trigger: model.resumeNotice?.token
+            )
+            .accessibilityAnnouncement(
+                model.previewEndedMessage,
+                trigger: model.previewEndedMessage
+            )
+            // 占位的收起计时挂在一直在的根视图上，不挂在占位徽章上：徽章在退出全屏或结果到达时被移除，计时随之取消，
+            // 占位就会留在模型里，再进全屏时又冒出来。
+            .task(id: model.pendingWrite?.id) {
+                guard let id = model.pendingWrite?.id else { return }
+                try? await Task.sleep(for: TransientNoticePolicy.messageDuration)
+                guard !Task.isCancelled else { return }
+                model.expirePendingWrite(id: id)
+            }
             .task(id: model.loadingID) {
                 guard let loadingID = model.loadingID else { return }
                 try? await Task.sleep(for: LoadingIndicatorPolicy.presentationDelay)
@@ -520,15 +471,32 @@ struct PlayerOverlayView: View {
         }
     }
 
+    /// 此刻显示在播放器上的写入结果；结果显示在窗口底部时为 nil。
+    private var writeResult: AccountWriteReport? {
+        model.writeResults?.current()
+    }
+
+    @ViewBuilder
+    private var writeResultBadge: some View {
+        if let pending = model.shownPendingWrite {
+            // 占位不通告：结果到达时那一句才是要读的，先报「正在…」再报结果就成了两条。
+            PlayerShortcutFeedbackBadge(feedback: pending.content)
+                .transition(reduceMotion ? .identity : .opacity)
+        } else if let writeResult {
+            PlayerWriteResultBadge(report: writeResult)
+                .id(model.writeResults?.latestSequence())
+                .transition(reduceMotion ? .identity : .opacity)
+        }
+    }
+
     @ViewBuilder
     private var feedbackBadge: some View {
         if let feedback = model.feedback {
             PlayerShortcutFeedbackBadge(feedback: feedback.content)
-                .padding(.top, PlayerOverlayLayout.edgeInset)
                 .transition(reduceMotion ? .identity : .opacity)
                 .task(id: feedback.id) {
                     guard feedback.dismissesAutomatically else { return }
-                    try? await Task.sleep(for: PlayerShortcutFeedbackDismissalPolicy.delay)
+                    try? await Task.sleep(for: feedback.content.tier.displayDuration)
                     guard !Task.isCancelled else { return }
                     model.expireFeedback(id: feedback.id)
                 }
@@ -565,6 +533,7 @@ struct PlayerOverlayView: View {
                     proxy.frame(in: .named(PlayerOverlayLayout.coordinateSpace))
                 } action: { frame in
                     model.danmakuComposerFrame = frame
+                    danmakuComposerHeight = frame.height
                 }
                 .padding(.horizontal, PlayerOverlayLayout.edgeInset)
                 .padding(.bottom, PlayerOverlayLayout.bottomInset)
@@ -574,12 +543,18 @@ struct PlayerOverlayView: View {
         }
     }
 
+    /// 试看结束徽章与弹幕输入胶囊都在底部正中：胶囊呼出时徽章排到它上方，不叠在一起。
     @ViewBuilder
     private var previewEndedBadge: some View {
         if let message = model.previewEndedMessage {
             PlayerPreviewEndedBadge(message: message)
                 .padding(.horizontal, PlayerOverlayLayout.edgeInset)
-                .padding(.bottom, PlayerOverlayLayout.bottomInset)
+                .padding(
+                    .bottom,
+                    PlayerOverlayLayout.bottomInset
+                        + (model.danmakuComposer?.isPresented == true
+                            ? danmakuComposerHeight + PlayerOverlayLayout.badgeSpacing : 0)
+                )
         }
     }
 }

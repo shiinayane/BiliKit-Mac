@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 账户写入结果的胶囊：盖在窗口主区底部，成功或失败都用一句话说明，并在每次新结果出现时发一次读屏通告。
 ///
-/// 外形与刷新、分页胶囊同源（`StatusCapsuleGeometry`），出现与消失按 `LoadingStateTransition` 淡入淡出。只负责排版、
+/// 外观与刷新、分页胶囊同一来源（`statusCapsuleChrome()`），出现与消失按 `LoadingStateTransition` 淡入淡出。只负责排版、
 /// 措辞与通告；显示哪一条、显示多久由 App 的写入协调者决定（`sequence` 每条新结果递增，相同结果连续出现也会再通告）。
 /// 被 B 站拒绝、但网页上可以完成的点赞、投币与三连另带「在浏览器中打开」（`AccountWriteReport.webFallbackURL`），
 /// 只经系统 `OpenURLAction` 打开视频网页，不附加凭据（见 SECURITY-MODEL §4）；带按钮时整颗胶囊接收点按，按钮是唯一的
@@ -15,10 +15,13 @@ public struct AccountWriteStatusCapsule: View {
     @Environment(\.openURL) private var openURL
     private let report: AccountWriteReport?
     private let sequence: UInt64
+    private let bottomClearance: CGFloat
 
-    public init(report: AccountWriteReport?, sequence: UInt64) {
+    /// `bottomClearance` 是页面底部已被分页胶囊占去的高度（`PaginationStatusLaneHeightKey`），大于 0 时本胶囊排在它上方。
+    public init(report: AccountWriteReport?, sequence: UInt64, bottomClearance: CGFloat = 0) {
         self.report = report
         self.sequence = sequence
+        self.bottomClearance = bottomClearance
     }
 
     public var body: some View {
@@ -45,9 +48,7 @@ public struct AccountWriteStatusCapsule: View {
                         .accessibilityHint(AccountWriteStatusText.message(for: report))
                     }
                 }
-                .font(.callout)
-                .padding(Geometry.contentPadding)
-                .background(.regularMaterial, in: Capsule())
+                .statusCapsuleChrome()
                 // 没有按钮时整个胶囊都不拦截点按；有按钮时胶囊本身就是这个操作的入口。
                 .allowsHitTesting(report.webFallbackURL != nil)
                 .id(sequence)
@@ -55,8 +56,15 @@ public struct AccountWriteStatusCapsule: View {
             }
         }
         .padding(.horizontal, Geometry.horizontalInset)
-        .padding(.bottom, Geometry.bottomInset)
+        .padding(
+            .bottom,
+            bottomClearance > 0 ? bottomClearance + Geometry.spacing : Geometry.bottomInset
+        )
         .animation(LoadingStateTransition.animation(reduceMotion: reduceMotion), value: sequence)
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: bottomClearance
+        )
         .animation(
             LoadingStateTransition.animation(reduceMotion: reduceMotion),
             value: report == nil
@@ -105,7 +113,8 @@ public enum AccountWriteStatusText {
                 switch (operation.kind, operation.isOn) {
                 case (.like, true): BiliUIStrings.localized("已点赞评论")
                 case (.dislike, true): BiliUIStrings.localized("已点踩评论")
-                case (_, false): BiliUIStrings.localized("已取消")
+                case (.like, false): BiliUIStrings.localized("已取消点赞评论")
+                case (.dislike, false): BiliUIStrings.localized("已取消点踩评论")
                 }
             case .commentPosted: BiliUIStrings.localized("已发布评论")
             }
@@ -138,7 +147,8 @@ public enum AccountWriteStatusText {
             switch (operation.kind, operation.isOn) {
             case (.like, true): BiliUIStrings.localized("无法点赞评论：\(reason)")
             case (.dislike, true): BiliUIStrings.localized("无法点踩评论：\(reason)")
-            case (_, false): BiliUIStrings.localized("无法取消：\(reason)")
+            case (.like, false): BiliUIStrings.localized("无法取消点赞评论：\(reason)")
+            case (.dislike, false): BiliUIStrings.localized("无法取消点踩评论：\(reason)")
             }
         case .commentPosted: BiliUIStrings.localized("无法发布评论：\(reason)")
         }

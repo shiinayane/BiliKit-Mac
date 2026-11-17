@@ -175,6 +175,10 @@ final class NativePlayerHostView: AVPlayerView {
     private var isPresentingFullScreen = false
     /// 画中画的状态与「还原」的交接；只有窗口留住的宿主有，由 `PlayerHostOwner` 交来。
     var pictureInPicture: PlayerPictureInPicture?
+    /// 写入结果在全屏时改到播放器上显示；只有窗口留住的宿主有，由 `PlayerHostOwner` 交来。
+    var writeResults: PlayerWriteResults? {
+        didSet { overlayModel.writeResults = writeResults }
+    }
     private var momentaryRateSessionID: UUID?
     private var momentaryRatePressID: UUID?
     private weak var observedPlayer: SeekTrackingPlayer?
@@ -446,9 +450,10 @@ final class NativePlayerHostView: AVPlayerView {
     /// 拆除宿主：常驻宿主由 `PlayerHostOwner.close()` 在关窗时调用一次，关窗后迟到挂载的不留住宿主由
     /// `AVPlayerContainerView` 在卸载时调用。
     ///
-    /// 按顺序：清除提示、停止播完的处理、撤销弹幕 surface、解开弹幕时钟与 item timebase 的绑定、停止失焦与 player
+    /// 按顺序：写入结果交回窗口、清除提示、停止播完的处理、撤销弹幕 surface、解开弹幕时钟与 item timebase 的绑定、停止失焦与 player
     /// 观察、停止键盘监听、结束临时倍速，最后断开 player，避免宿主继续呈现。
     func tearDown() {
+        writeResults?.presentOnPlayer(false)
         setResumeNotice(nil, restartFromBeginning: {})
         setPreviewEndedNotice(nil)
         stopPlaybackEndObservation()
@@ -461,8 +466,8 @@ final class NativePlayerHostView: AVPlayerView {
         player = nil
     }
 
-    /// 播放页挂上宿主时调用，在宿主进入窗口之前：开始这一页的播完观察与键盘监听，丢掉上一页留下的提示，并清空初始
-    /// 焦点记录。
+    /// 播放页挂上宿主时调用，在宿主进入窗口之前：开始这一页的播完观察与键盘监听，丢掉上一页留下的提示，按全屏状态取回
+    /// 写入结果的位置，并清空初始焦点记录。
     ///
     /// 逐页的状态不随宿主常驻：清空焦点记录后，再次进入同一个视频时 `requestInitialKeyboardFocus` 照样把键盘焦点交给
     /// 播放器；上一页没消失的提示不会出现在新一页上。新容器可能先于旧容器卸载就把宿主取走，旧容器之后找不到宿主、
@@ -472,16 +477,20 @@ final class NativePlayerHostView: AVPlayerView {
         lastInitialFocusIdentity = nil
         pendingInitialFocusIdentity = nil
         overlayModel.clearFeedback()
+        writeResults?.presentOnPlayer(isPresentingFullScreen)
         stopPlaybackEndObservation()
         startPlaybackEndObservation(playbackEnd)
         keyboardShortcuts.startMonitoring()
     }
 
-    /// 播放页卸载、宿主被摘下时调用：停止播完观察（连同在途的处理，迟到的连播与提示不再落到这一页）与键盘监听。
+    /// 播放页卸载、宿主被摘下时调用：停止播完观察（连同在途的处理，迟到的连播与提示不再落到这一页）与键盘监听，并把
+    /// 写入结果交回窗口。
     ///
     /// player、弹幕绑定与 item 观察都保留，被换掉的页面带着画面离开；失焦观察与临时倍速在离开窗口时
     /// （`viewWillMove(toWindow:)`）收掉。
     func unmountFromPage() {
+        // 全屏中离开播放页时 AVKit 是否先回调退出全屏不确定；不在播放页上就把结果交回窗口，挂上时按全屏状态再取回。
+        writeResults?.presentOnPlayer(false)
         stopPlaybackEndObservation()
         stopKeyboardMonitoring()
     }
@@ -713,9 +722,11 @@ final class NativePlayerHostView: AVPlayerView {
 extension NativePlayerHostView: AVPlayerViewDelegate {
     func playerViewWillEnterFullScreen(_ playerView: AVPlayerView) {
         isPresentingFullScreen = true
+        writeResults?.presentOnPlayer(true)
     }
 
     func playerViewWillExitFullScreen(_ playerView: AVPlayerView) {
         isPresentingFullScreen = false
+        writeResults?.presentOnPlayer(false)
     }
 }

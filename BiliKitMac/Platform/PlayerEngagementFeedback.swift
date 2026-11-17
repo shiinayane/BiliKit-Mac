@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// 点赞、投币、收藏快捷键（Q／长按 Q／W／E）在播放器顶部的提示：动作本身，或做不了的原因。
+/// 点赞、投币、收藏快捷键（Q／长按 Q／W／E）在播放器上的提示：发出了哪次写入、三连进度，或做不了的原因。
 ///
-/// 写入结果（成功、失败原因）由窗口底部的写入结果胶囊说明；这里只给按键当下的反馈，所以点赞显示的是乐观结果。
+/// 写入结果（成功、失败原因）只由写入结果的一处说明（见 docs/ARCHITECTURE.md「临时提示与结果」）；发出写入的几项
+/// （`isWriteRequest`）不作为反馈显示，只在全屏时于结果的位置先显示「正在…」，结果到达后原位换成结果。
 /// 全屏（AVKit 独立全屏窗口）下投币面板与「收藏到…」面板在主窗口里看不到，W／E 只提示先退出全屏。
 enum PlayerEngagementFeedback: Equatable {
-    case liked
-    case unliked
+    case likeRequested
+    case unlikeRequested
     case tripleRequested
     /// 按住 Q 到 `longPressDelay`：继续按住到 `tripleHoldDuration` 就三连。
     case tripleProgress
@@ -17,11 +18,29 @@ enum PlayerEngagementFeedback: Equatable {
     case exitFullScreenToCoin
     case exitFullScreenToFavorite
 
+    var tier: PlayerShortcutFeedback.Tier {
+        switch self {
+        case .tripleProgress: .echo
+        case .likeRequested, .unlikeRequested, .tripleRequested, .signInRequired, .unavailable,
+            .exitFullScreenToCoin, .exitFullScreenToFavorite:
+            .message
+        }
+    }
+
+    var isWriteRequest: Bool {
+        switch self {
+        case .likeRequested, .unlikeRequested, .tripleRequested: true
+        case .tripleProgress, .signInRequired, .unavailable, .exitFullScreenToCoin,
+            .exitFullScreenToFavorite:
+            false
+        }
+    }
+
     var label: String {
         switch self {
-        case .liked: AppStrings.localized("已点赞")
-        case .unliked: AppStrings.localized("已取消点赞")
-        case .tripleRequested: AppStrings.localized("三连")
+        case .likeRequested: AppStrings.localized("正在点赞")
+        case .unlikeRequested: AppStrings.localized("正在取消点赞")
+        case .tripleRequested: AppStrings.localized("正在三连")
         case .tripleProgress: AppStrings.localized("继续按住三连")
         case .signInRequired: AppStrings.localized("登录后可点赞、投币与收藏")
         case .unavailable: AppStrings.localized("暂时无法点赞、投币与收藏")
@@ -32,8 +51,8 @@ enum PlayerEngagementFeedback: Equatable {
 
     var symbolName: String {
         switch self {
-        case .liked, .tripleRequested, .tripleProgress: "hand.thumbsup.fill"
-        case .unliked: "hand.thumbsup"
+        case .likeRequested, .tripleRequested, .tripleProgress: "hand.thumbsup.fill"
+        case .unlikeRequested: "hand.thumbsup"
         case .signInRequired: "person.crop.circle"
         case .unavailable: "exclamationmark.circle"
         case .exitFullScreenToCoin: "bitcoinsign.circle"
@@ -44,7 +63,7 @@ enum PlayerEngagementFeedback: Equatable {
     var accessibilityLabel: String {
         switch self {
         case .tripleProgress: AppStrings.localized("继续按住 Q 三连")
-        case .liked, .unliked, .tripleRequested, .signInRequired, .unavailable,
+        case .likeRequested, .unlikeRequested, .tripleRequested, .signInRequired, .unavailable,
             .exitFullScreenToCoin, .exitFullScreenToFavorite:
             label
         }

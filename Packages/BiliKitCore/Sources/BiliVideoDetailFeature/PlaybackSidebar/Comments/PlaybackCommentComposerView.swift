@@ -167,10 +167,11 @@ struct PlaybackCommentComposerView: View {
                 .onSubmit { model.send() }
             HStack(spacing: CommentComposerLayout.rowSpacing) {
                 if let failure = failureText {
-                    Text(failure)
+                    // 失败与其他说明一样用感叹号图标与正文颜色、最多两行（与窗口里的状态胶囊同一上限，读屏另有通告读出
+                    // 全文），红色只留给字数超限。
+                    Label(failure, systemImage: "exclamationmark.circle")
                         .font(.footnote)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
+                        .lineLimit(StatusCapsuleGeometry.messageLineLimit)
                 } else {
                     Text(verbatim: "\(model.messageLength)/\(CommentPostText.maximumLength)")
                         .font(.footnote)

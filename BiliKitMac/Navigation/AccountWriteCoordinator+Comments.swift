@@ -41,7 +41,8 @@ extension AccountWriteCoordinator {
 
     /// 发一条评论或回复；返回是否发出：没有写入账户，或本窗口已有一条评论在途时不发。
     ///
-    /// 结局交给 `completion`（输入框据此插入列表或说明失败），不进写入结果胶囊，也不产生跨视图效果。同一窗口同时只有一条
+    /// 结局交给 `completion`（输入框据此插入列表或说明失败）；成功另作为一条写入结果显示：服务端给回的那条解不出时列表里不
+    /// 插入，没有这句用户就不知道已经发出。失败只在输入卡片里说明、草稿留在那里。不产生跨视图效果。同一窗口同时只有一条
     /// 在途，不按正文区分，免得连按回车发出两条。
     @discardableResult
     func postComment(
@@ -57,9 +58,13 @@ extension AccountWriteCoordinator {
             write: { [commentWrite] in
                 try await commentWrite.post(request, accountID: account.accountID)
             },
-            finished: { outcome in
+            finished: { [weak self] outcome in
                 switch outcome {
-                case .succeeded(let comment): completion(.posted(comment))
+                case .succeeded(let comment):
+                    self?.show(
+                        AccountWriteReport(change: .commentPosted(request.subject), failure: nil)
+                    )
+                    completion(.posted(comment))
                 case .failed(let error): completion(.failed(error))
                 case .cancelled: completion(.cancelled)
                 }

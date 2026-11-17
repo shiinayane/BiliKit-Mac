@@ -4,8 +4,8 @@ import BiliVideoDetailFeature
 import Testing
 
 /// 弹幕输入胶囊：只在窗口能写入且有在播的视频时呼出，否则交给浮层提示；发送取发送那一刻的播放位置与选定外观，
-/// 同时只有一条在途；成功后立即以“自己发的”上屏、清空草稿、收起并交给浮层提示，失败时停在胶囊里说明原因、草稿保留，
-/// 收起期间才到达的失败在再次呼出时仍看得到；成功后冷却内不再发出请求。
+/// 同时只有一条在途；成功后立即以“自己发的”上屏、清空草稿并收起（成功的说明由写入协调者给出），失败时停在胶囊里
+/// 说明原因、草稿保留，收起期间才到达的失败在再次呼出时仍看得到；成功后冷却内不再发出请求。
 @MainActor
 @Suite
 struct DanmakuComposerModelTests {
@@ -32,8 +32,6 @@ struct DanmakuComposerModelTests {
     func postedDanmakuAppearsAsOwnAndClosesTheComposer() throws {
         let harness = ComposerHarness()
         let model = harness.model
-        var posted: [AccountWriteReport] = []
-        model.onPosted = { posted.append($0) }
         model.present()
         model.draft = "  好+1  "
         model.appearance = DanmakuPostAppearance(mode: .top, fontSize: 18, colorRGB: 0xFE_0302)
@@ -54,7 +52,6 @@ struct DanmakuComposerModelTests {
         #expect(shown.event.id == "42" && shown.event.isOwn && shown.event.mode == .top)
         #expect(model.draft.isEmpty)
         #expect(!model.isPresented)
-        #expect(posted.map(\.failure) == [nil])
 
         // 冷却内再发：本地说明还要等，不发请求。
         model.present()

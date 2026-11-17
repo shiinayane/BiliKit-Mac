@@ -69,6 +69,46 @@ struct NativePlayerHostViewTests {
     ///
     /// 播放页卸载时宿主只被摘下，player 仍挂着；再次进入同一个视频拿到同一个宿主，键盘焦点照样交给播放器；关窗时由
     /// owner 拆除并断开 player，之后迟到的挂载拿到新宿主，卸载时就拆除。
+    /// 写入结果只在全屏且播放页挂着宿主时显示在播放器上：全屏中离开播放页时交回窗口，再挂上时按全屏状态取回。
+    @Test
+    @MainActor
+    func writeResultsFollowFullScreenOnlyWhileThePageHoldsTheHost() {
+        let renderer = CoreAnimationDanmakuRenderer(
+            beginTimeAtMediaZero: DanmakuTimebaseClock.beginTimeAtMediaZero
+        )
+        let view = NativePlayerHostView(
+            renderer: renderer,
+            controller: DanmakuPresentationController(backend: renderer),
+            beginMomentaryPlaybackRate: nil,
+            endMomentaryPlaybackRate: nil
+        )
+        let surface = ResultSurfaceRecorder()
+        view.writeResults = PlayerWriteResults(
+            isOnPlayer: { surface.isOnPlayer },
+            latestSequence: { 0 },
+            current: { nil },
+            presentOnPlayer: { surface.isOnPlayer = $0 }
+        )
+        let playbackEnd = PlayerPlaybackEndActions(
+            observeTimeline: { _ in {} },
+            handleEnded: { _, _ in nil }
+        )
+
+        view.mountInPage(playbackEnd: playbackEnd)
+        #expect(!surface.isOnPlayer)
+        view.playerViewWillEnterFullScreen(view)
+        #expect(surface.isOnPlayer)
+        view.unmountFromPage()
+        #expect(!surface.isOnPlayer)
+        view.mountInPage(playbackEnd: playbackEnd)
+        #expect(surface.isOnPlayer)
+        view.playerViewWillExitFullScreen(view)
+        #expect(!surface.isOnPlayer)
+        view.playerViewWillEnterFullScreen(view)
+        view.tearDown()
+        #expect(!surface.isOnPlayer)
+    }
+
     @Test
     @MainActor
     func pageUnmountKeepsTheWindowHostUntilWindowClosure() async throws {
@@ -449,4 +489,10 @@ private final class InstallSignalingBackend: DanmakuRenderingBackend {
         renderer.updateSurfaceSize(width: width, height: height, backingScale: backingScale)
     }
     func stop() { renderer.stop() }
+}
+
+/// 宿主交出的写入结果位置。
+@MainActor
+private final class ResultSurfaceRecorder {
+    var isOnPlayer = false
 }
