@@ -2,7 +2,8 @@ import SwiftUI
 
 /// 列表底部的分页状态胶囊：加载更多时转圈，失败时显示原因与可选重试，需要用户显式继续时显示按钮。
 ///
-/// 首页推荐、热门、搜索、观看历史与稍后再看共用同一种样式（与顶部 `RefreshStatusCapsule` 一致的材质胶囊）。
+/// 首页推荐、热门、搜索、观看历史、稍后再看、关注页与 UP 主空间页共用，外观与顶部 `RefreshStatusCapsule` 同一来源
+/// （`statusCapsuleChrome()`）。
 /// 只负责排版；标签与动作由调用方的 Feature 本地化并提供，是否给重试由调用方按 `isRetryable` 决定。
 /// 加载更多失败时把原因通告给读屏：分页在读屏焦点停在网格里时自动发生，底部胶囊不在焦点处。转圈不通告，
 /// 每翻一页都报会打断正在读的卡片；「继续加载」按钮是常驻控件，读屏可以像其他按钮一样找到它，也不通告。
@@ -42,8 +43,7 @@ package struct PaginationStatusOverlay: View {
             case .loadingMore(let label):
                 ProgressView()
                     .controlSize(.small)
-                    .padding(Geometry.contentPadding)
-                    .background(.regularMaterial, in: Capsule())
+                    .statusCapsuleChrome()
                     .accessibilityLabel(label)
                     .revealsAfterLoadingDelay()
                     .transition(.opacity)
@@ -55,15 +55,12 @@ package struct PaginationStatusOverlay: View {
                         Button(BiliUIStrings.localized("重试", locale: locale), action: retry)
                     }
                 }
-                .font(.caption)
-                .padding(Geometry.contentPadding)
-                .background(.regularMaterial, in: Capsule())
+                .statusCapsuleChrome()
                 .transition(.opacity)
             case .manualLoadMore(let title, let action):
                 Button(title, action: action)
                     .buttonStyle(.borderedProminent)
-                    .padding(Geometry.contentPadding)
-                    .background(.regularMaterial, in: Capsule())
+                    .statusCapsuleChrome()
                     .transition(.opacity)
             }
         }
