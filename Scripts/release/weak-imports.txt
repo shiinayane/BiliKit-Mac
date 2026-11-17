@@ -2,7 +2,9 @@
 #
 # 弱链接符号在“版本号已到、实际还没有该符号”的测试版系统上为空地址，调用即崩溃（见 ARCHITECTURE「平台与命名」）。
 # 这里收录已裁决为在 macOS 15 与测试版上安全的符号：代码里用 `if #available` 有意调用的新 API
-# （SwiftUI glass、safeAreaBar、ToolbarSpacer 等）、编译器为并发与 AVFoundation 生成的回退分支，以及系统库自带的加载标记。
+# （SwiftUI glass、safeAreaBar、ToolbarSpacer 等）、编译器为并发与 AVFoundation 生成的回退分支、SDK 给已有协议新增的
+# 带 availability 的要求（如 macOS 27 的 `PreferenceKey._preferenceValuesEqual`：我们的代码不调用，旧系统的 SwiftUI 不认识这一项，
+# 运行时实例化见证表时跳过为空的要求；认识它的系统上要求与默认实现同在一个库里），以及系统库自带的加载标记。
 # Foundation `Date` 的 `<=`／`>=`（macOS 27.2 才有）不在其中。升级 Xcode 或新增代码后出现新条目时，先查它由
 # 哪行代码引入、在旧系统与测试版上是否安全，能改写就改写，确需保留再加进来。
 # 每行：mangled 名，`#` 后是来源库与可读名。
@@ -11,6 +13,8 @@ _$s7SwiftUI12SpacerSizingV5fixedACvgZ  # SwiftUI: static SwiftUI.SpacerSizing.fi
 _$s7SwiftUI12SpacerSizingVMa  # SwiftUI: type metadata accessor for SwiftUI.SpacerSizing
 _$s7SwiftUI13NSHostingViewC5coder04rootD0ACyxGSgSo7NSCoderC_xtcfCTq  # SwiftUI: method descriptor for SwiftUI.NSHostingView.__allocating_init(coder: __C.NSCoder, rootView: A) -> SwiftUI.NSHostingView<A>?
 _$s7SwiftUI13NSHostingViewC5coder04rootD0ACyxGSgSo7NSCoderC_xtcfc  # SwiftUI: SwiftUI.NSHostingView.init(coder: __C.NSCoder, rootView: A) -> SwiftUI.NSHostingView<A>?
+_$s7SwiftUI13PreferenceKeyP22_preferenceValuesEqualySb5ValueQz_AFtFZTq  # SwiftUI: method descriptor for static SwiftUI.PreferenceKey._preferenceValuesEqual(A.Value, A.Value) -> Swift.Bool
+_$s7SwiftUI13PreferenceKeyPAASQ5ValueRpzrlE22_preferenceValuesEqualySbAE_AEtFZ  # SwiftUI: static (extension in SwiftUI):SwiftUI.PreferenceKey< where A.Value: Swift.Equatable>._preferenceValuesEqual(A.Value, A.Value) -> Swift.Bool
 _$s7SwiftUI13ToolbarSpacerVAA0C7ContentAAWP  # SwiftUI: protocol witness table for SwiftUI.ToolbarSpacer : SwiftUI.ToolbarContent in SwiftUI
 _$s7SwiftUI13ToolbarSpacerVMa  # SwiftUI: type metadata accessor for SwiftUI.ToolbarSpacer
 _$s7SwiftUI13ToolbarSpacerV_9placementAcA0D6SizingV_AA0C13ItemPlacementVtcfC  # SwiftUI: SwiftUI.ToolbarSpacer.init(_: SwiftUI.SpacerSizing, placement: SwiftUI.ToolbarItemPlacement) -> SwiftUI.ToolbarSpacer
