@@ -161,11 +161,14 @@ final class AppNavigationCoordinator {
     @ObservationIgnored private let playback: AppPlaybackSession
     @ObservationIgnored private let transitionPage:
         (AppPageTransition, _ change: () -> Void, _ completion: @escaping () -> Void) -> Void
+    @ObservationIgnored private let transitionSidebarContext:
+        (AppPageTransition, _ change: () -> Void) -> Void
 
     /// - Parameters:
     ///   - playback: 开始、暂停与停止播放。
     ///   - transitionPage: 进出页面的转场。必须同步调用 `change` 恰好一次，转场结束（或没有转场）后调用 `completion`
     ///     恰好一次；`completion` 可以晚于本次调用。
+    ///   - transitionSidebarContext: 侧栏上下文层打开（`.push`）与用户关闭（`.pop`）的转场。必须同步调用 `change` 恰好一次。
     ///   - uploaderSpace: 侧栏上下文层（UP 主空间预览）的模型。上下文层只在播放页上存在，离开播放页、或从
     ///     上下文层以外的入口换视频时关闭它。
     ///   - uploaderSpacePage: 整页空间页的模型。
@@ -175,23 +178,42 @@ final class AppNavigationCoordinator {
             @escaping (
                 AppPageTransition, _ change: () -> Void, _ completion: @escaping () -> Void
             ) -> Void,
+        transitionSidebarContext: @escaping (AppPageTransition, _ change: () -> Void) -> Void,
         uploaderSpace: UploaderSpaceViewModel,
         uploaderSpacePage: UploaderSpaceViewModel
     ) {
         self.playback = playback
         self.transitionPage = transitionPage
+        self.transitionSidebarContext = transitionSidebarContext
         self.uploaderSpace = uploaderSpace
         self.uploaderSpacePage = uploaderSpacePage
     }
 
     /// 在侧栏上下文层打开某位 UP 主的空间（播放侧栏的 UP 主行、评论作者与 @ 提及）。
     func openUploaderSpace(owner: VideoOwner) {
-        uploaderSpace.open(owner: owner)
+        openSidebarContext { uploaderSpace.open(owner: owner) }
     }
 
     /// 只有 MID 的入口（评论正文里的空间链接）：先以 UID 作头部打开，名片到达后补上名字与头像。
     func openUploaderSpace(ownerID: Int64) {
-        uploaderSpace.open(ownerID: ownerID)
+        openSidebarContext { uploaderSpace.open(ownerID: ownerID) }
+    }
+
+    /// 上下文层已开着时原地换人，不再推一次。
+    private func openSidebarContext(_ open: () -> Void) {
+        if isSidebarContextOpen {
+            open()
+        } else {
+            transitionSidebarContext(.push, open)
+        }
+    }
+
+    /// 用户关掉上下文层（预览的返回按钮、⌘[、从上下文层以外换视频）：侧栏把原来的内容推回来。
+    ///
+    /// 换页的同时关闭（压一层、返回、回首页、换来源、登出、关窗）不走这里：换页转场已经让侧栏淡入淡出，不再叠一次推。
+    func dismissSidebarContext() {
+        guard isSidebarContextOpen else { return }
+        transitionSidebarContext(.pop) { closeSidebarContext() }
     }
 
     /// 打开某位 UP 主的整页空间页（预览里的「打开完整空间」）：栈顶已是空间页时原地换人，否则压一层；被盖住的活视频
@@ -264,7 +286,7 @@ final class AppNavigationCoordinator {
     ) {
         guard !intent.bvid.isEmpty else { return }
         if !preservesSidebarContext {
-            closeSidebarContext()
+            dismissSidebarContext()
         }
         if let top = history.last, case .playback(let current) = top.destination {
             guard current != intent else { return }
@@ -368,7 +390,7 @@ final class AppNavigationCoordinator {
     /// 「前往 › 返回」（⌘[）：侧栏的 UP 主空间预览开着时先关预览（与预览自己的返回按钮一样），否则同工具栏「返回」。
     func navigateBack() {
         if isSidebarContextOpen {
-            closeSidebarContext()
+            dismissSidebarContext()
         } else {
             goBack()
         }

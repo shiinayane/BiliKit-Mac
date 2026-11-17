@@ -16,44 +16,35 @@ public struct UploaderSpaceSidebarView: View {
     let onSelect: (String) -> Void
     /// 在右侧打开这位 UP 主的整页空间页（App 的导航）。
     let onOpenFullSpace: () -> Void
+    /// 关掉预览回到详情（App 的导航，带侧栏转场）。
+    let onClose: () -> Void
 
     public init(
         model: UploaderSpaceViewModel,
         currentBVID: String?,
         imagePipeline: any VideoDetailImageLoading,
         onSelect: @escaping (String) -> Void,
-        onOpenFullSpace: @escaping () -> Void
+        onOpenFullSpace: @escaping () -> Void,
+        onClose: @escaping () -> Void
     ) {
         self.model = model
         self.currentBVID = currentBVID
         self.imagePipeline = imagePipeline
         self.onSelect = onSelect
         self.onOpenFullSpace = onOpenFullSpace
+        self.onClose = onClose
     }
 
     @Environment(\.locale) private var locale
     @Environment(\.openURL) private var openURL
     @Environment(\.videoCardAccountWriting) private var accountWriting
-    /// 关闭前的最后一帧。
-    ///
-    /// 关闭时 ViewModel 立即清空，而移除动画还要播一段：保留最后一帧，让滑出去的是原来的列表，
-    /// 而不是一层空白。放在引用类型里，记录它不会再触发一次渲染。
-    @State private var lastFrame = RetainedFrame()
-
-    /// 保存关闭前最后一帧的引用盒子；改它不触发 SwiftUI 重新渲染。
-    private final class RetainedFrame {
-        var content: UploaderSpaceListContent?
-    }
-
     public var body: some View {
         let presentation = UploaderSpaceSidebarPresentation(
             state: model.state,
             totalCount: model.totalCount,
             isSearching: model.searchKeyword != nil
         )
-        let live = liveContent(presentation)
-        let content = live ?? lastFrame.content
-        if let live { lastFrame.content = live }
+        let content = liveContent(presentation)
 
         return ZStack(alignment: .top) {
             if let content {
@@ -90,7 +81,7 @@ public struct UploaderSpaceSidebarView: View {
             FloatingIconButton(
                 "chevron.left",
                 label: VideoDetailFeatureStrings.localized("返回详情"),
-                action: model.close
+                action: onClose
             )
             UploaderSpaceSearchField(onSubmit: model.submitSearch)
                 .id(model.owner?.id)

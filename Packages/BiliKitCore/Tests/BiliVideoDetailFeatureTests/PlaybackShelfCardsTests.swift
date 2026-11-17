@@ -7,7 +7,7 @@ import Testing
 @testable import BiliVideoDetailFeature
 
 /// 播放页横排的卡片：合集里当前一集是停靠锚点并画正在播放外观、不可播放的集不能点、封面请求缩略图、卡片能对回选集；
-/// 「刚才看过」第一张是正在播放的视频（点了不动作），其余按离开的位置续播。
+/// 「刚才看过」第一张是正在播放的视频（点了不动作），其余按离开的位置续播，封面同样请求缩略图。
 struct PlaybackShelfCardsTests {
     @Test
     func collectionCardsMarkAndAnchorTheCurrentEpisodeAndMapBackToEpisodes() {
@@ -53,8 +53,9 @@ struct PlaybackShelfCardsTests {
 
     @Test
     func recentCardsPutTheVideoNowPlayingFirstAndResumeTheOthers() throws {
+        let cover = URL(string: "https://i0.hdslb.com/bfs/archive/now.jpg")
         let nowPlaying = RecentlyWatchedVideo(
-            nowPlaying: makeVideoDetail(bvid: "BVNow", pages: [makeTestPage(1)])
+            nowPlaying: makeVideoDetail(bvid: "BVNow", coverURL: cover, pages: [makeTestPage(1)])
         )
         let page = VideoPage(cid: 1_001, index: 1, title: "P1", durationSeconds: 600)
         let leftPoint = PlaybackSelectionIntent(
@@ -73,5 +74,8 @@ struct PlaybackShelfCardsTests {
         #expect(cards.presentations.map { $0.nowPlayingText != nil } == [true, false])
         #expect(cards.resumePoint(forCardID: "BVNow") == nil)
         #expect(cards.resumePoint(forCardID: "BVLeft") == leftPoint)
+        // 与其他视频卡片同一条规则：封面请求 CDN 缩略图，不请求原图。
+        #expect(cards.presentations[0].coverURL == BiliImageThumbnail.url(cover, size: .videoCover))
+        #expect(cards.presentations[0].coverURL != cover)
     }
 }

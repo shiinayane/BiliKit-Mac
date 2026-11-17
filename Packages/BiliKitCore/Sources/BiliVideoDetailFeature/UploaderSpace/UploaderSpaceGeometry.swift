@@ -42,9 +42,6 @@ public enum UploaderSpaceGeometry {
     static let badgeSpacing: CGFloat = 6
     static let badgeToMetadataSpacing: CGFloat = 4
 
-    /// 空间层滑入／滑出侧栏的动画时长。
-    public static let layerTransitionDuration: Double = 0.28
-
     /// 列表底部加载下一批的转圈或失败说明那一行的高度，与说明和重试按钮之间的间距。
     static let footerHeight: CGFloat = 44
     static let footerSpacing: CGFloat = 8
