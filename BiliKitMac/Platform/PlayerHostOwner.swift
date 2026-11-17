@@ -49,11 +49,12 @@ final class PlayerHostOwner {
 
 /// 窗口的写入结果交给播放器的一面：AVKit 独立全屏时结果改在播放器上显示，主窗口底部的胶囊在全屏窗口里看不到。
 ///
-/// 由窗口组装用写入协调者构造，经 `PlayerHostOwner` 交给宿主。读取的几项都在浮层求值时调用，读的是写入协调者的
-/// Observable 状态（结果变化会让浮层刷新）：`latestSequence` 是最新一条结果的序号（不论显示在哪），`current` 只在结果
-/// 显示在播放器上时给出正在显示的那条。`presentOnPlayer` 由宿主在进入、退出全屏、挂上与摘下播放页、拆除时调用；不在
-/// 播放页上时必须交回窗口，否则全屏中离开播放页会把之后的结果都留在已不显示的播放器上。
+/// 由窗口组装用写入协调者构造，经 `PlayerHostOwner` 交给宿主。读取的几项都在浮层求值或按键时调用，读的是写入协调者的
+/// Observable 状态（结果变化会让浮层刷新）：`isOnPlayer` 是结果此刻是否显示在播放器上，`latestSequence` 是最新一条结果的
+/// 序号（不论显示在哪），`current` 只在结果显示在播放器上时给出正在显示的那条。`presentOnPlayer` 由宿主在进入、退出全屏、
+/// 挂上与摘下播放页、拆除时调用；不在播放页上时必须交回窗口，否则全屏中离开播放页会把之后的结果都留在已不显示的播放器上。
 struct PlayerWriteResults {
+    let isOnPlayer: @MainActor () -> Bool
     let latestSequence: @MainActor () -> UInt64
     let current: @MainActor () -> AccountWriteReport?
     let presentOnPlayer: @MainActor (Bool) -> Void

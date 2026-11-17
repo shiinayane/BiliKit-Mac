@@ -407,8 +407,9 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
 
     /// 发一条弹幕；返回是否发出：BVID 不合法、没有写入账户，或本窗口已有一条弹幕在途时不发。
     ///
-    /// 结局交给 `completion`（输入胶囊据此上屏或在胶囊下方说明），不进写入结果胶囊：全屏时看不到窗口底部的胶囊，窗口下
-    /// 两处同时说明又重复；也不产生跨视图效果。同一窗口同时只有一条在途，不按正文区分，免得连按回车发出两条。
+    /// 结局交给 `completion`（输入胶囊据此上屏或在胶囊下方说明）；成功另作为写入结果显示（窗口底部或全屏时的播放器上，
+    /// 弹幕关着或车道已满时画面上看不到那一条），失败只在输入胶囊下方说明、草稿留在那里。不产生跨视图效果。同一窗口同时只有
+    /// 一条在途，不按正文区分，免得连按回车发出两条。
     @discardableResult
     func postDanmaku(
         _ request: DanmakuPostRequest,
@@ -424,9 +425,11 @@ final class AccountWriteCoordinator: AccountRevalidationParticipant {
             write: { [danmakuPost] in
                 try await danmakuPost.post(request, accountID: account.accountID)
             },
-            finished: { outcome in
+            finished: { [weak self] outcome in
                 switch outcome {
-                case .succeeded(let receipt): completion(.posted(receipt))
+                case .succeeded(let receipt):
+                    self?.show(AccountWriteReport(change: .danmakuPosted(target), failure: nil))
+                    completion(.posted(receipt))
                 case .failed(let error): completion(.failed(error))
                 case .cancelled: completion(.cancelled)
                 }

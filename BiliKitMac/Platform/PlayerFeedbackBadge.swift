@@ -64,6 +64,18 @@ enum PlayerShortcutFeedback: Equatable {
         }
     }
 
+    /// 发出了一次写入（点赞、取消点赞、三连、加入稍后再看）。
+    ///
+    /// 不作为反馈显示：写入结果只在一处说明（窗口底部或全屏时的播放器上），按下时再说一遍就成了两条。窗口里工具栏的按钮
+    /// 当下就翻转；全屏时看不到按钮，在结果的位置先显示这一句，结果到达后原位换成结果（`PlayerOverlayModel.showFeedback`）。
+    var isWriteRequest: Bool {
+        switch self {
+        case .momentaryRate, .relativeSeek, .volume, .playback, .danmaku, .subtitles: false
+        case .engagement(let feedback): feedback.isWriteRequest
+        case .action(let feedback): feedback.isWriteRequest
+        }
+    }
+
     var label: String {
         switch self {
         case .engagement(let feedback): feedback.label

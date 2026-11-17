@@ -1,7 +1,8 @@
 import BiliApplication
 import BiliVideoDetailFeature
 
-/// 播放器快捷键 Q（点赞）、长按 Q（三连）、W（投币）、E（收藏）的意图：执行并返回要在播放器上显示的提示。
+/// 播放器快捷键 Q（点赞）、长按 Q（三连）、W（投币）、E（收藏）的意图：执行并返回按键的结局（发出了哪次写入，或做不了的
+/// 原因）；发出写入的那几种怎样显示由浮层决定（`PlayerShortcutFeedback.isWriteRequest`）。
 ///
 /// 由 `WindowComposition` 用窗口的写入协调者与播放页互动状态构造（`make`），经播放器内容一路交给
 /// `NativePlayerHostView` 的键盘 controller。门槛与写入都在协调者里，这里只决定按键当下给什么提示：没有可写入的
@@ -40,7 +41,7 @@ struct PlayerEngagementShortcuts {
                     return feedback
                 case .ready(let bvid, let isLiked):
                     guard accountWrites.setLiked(!isLiked, bvid: bvid) else { return nil }
-                    return isLiked ? .unliked : .liked
+                    return isLiked ? .unlikeRequested : .likeRequested
                 }
             },
             triple: {

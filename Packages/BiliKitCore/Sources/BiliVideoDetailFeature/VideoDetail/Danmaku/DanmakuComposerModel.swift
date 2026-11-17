@@ -56,10 +56,6 @@ public final class DanmakuComposerModel {
     /// 由播放器浮层在拿到胶囊时设置，在播放器顶部提示；回车、动作菜单与工具栏按钮都只调用 `present()`，提示因此只有
     /// 这一处。
     @ObservationIgnored public var onPresentationRefused: @MainActor (Failure) -> Void = { _ in }
-    /// 发出成功时调用，参数是结果说明（`AccountWriteStatusText` 的措辞）。
-    ///
-    /// 由播放器浮层设置，在顶部提示并通告：弹幕关着、这种位置被隐藏或车道已满时画面上看不到这一条，读屏用户也看不到。
-    @ObservationIgnored public var onPosted: @MainActor (AccountWriteReport) -> Void = { _ in }
 
     @ObservationIgnored private let presentation: any DanmakuSessionControlling
     @ObservationIgnored private let timeline: @MainActor () -> PlaybackTimelineSnapshot
@@ -189,9 +185,6 @@ public final class DanmakuComposerModel {
             phase = .editing
             isPresented = false
             showsOptions = false
-            if let target = VideoWriteTarget(bvid: request.identity.bvid) {
-                onPosted(AccountWriteReport(change: .danmakuPosted(target), failure: nil))
-            }
         case .failed(let error):
             guard let target = VideoWriteTarget(bvid: request.identity.bvid) else {
                 phase = .editing

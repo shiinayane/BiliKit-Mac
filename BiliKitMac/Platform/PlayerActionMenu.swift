@@ -51,15 +51,13 @@ struct PlayerActionMenuActions {
 
 /// 动作菜单操作与「播放结束后」生效时在播放器顶部的提示。
 ///
-/// 全屏（AVKit 独立全屏窗口）下窗口底部的写入结果胶囊看不到，所以操作当下在播放器上给一句；稍后再看的写入结果
-/// 仍由胶囊说明，与点赞快捷键相同。`unavailable` 是执行时发现已没有可操作的视频（全屏下菜单的可用状态可能是旧的）。
+/// 加入稍后再看是一次写入（`isWriteRequest`），结果只由写入结果的一处说明，与点赞快捷键相同：全屏时在结果的位置先显示
+/// 「正在添加到稍后再看」。`unavailable` 是执行时发现已没有可操作的视频（全屏下菜单的可用状态可能是旧的）。
 enum PlayerActionFeedback: Equatable {
     case watchLaterRequested
     case signInRequired
     /// 未登录时呼出弹幕输入胶囊。
     case danmakuSignInRequired
-    /// 弹幕发出成功；参数是写入结果的说明。
-    case danmakuPosted(String)
     case unavailable
     case linkCopied
     case bvidCopied
@@ -74,19 +72,20 @@ enum PlayerActionFeedback: Equatable {
 
     var tier: PlayerShortcutFeedback.Tier {
         switch self {
-        case .watchLaterRequested, .linkCopied, .bvidCopied, .endBehavior: .echo
-        case .signInRequired, .danmakuSignInRequired, .danmakuPosted, .unavailable, .replayFailed,
-            .advancing, .nextUnavailable:
+        case .linkCopied, .bvidCopied, .endBehavior: .echo
+        case .watchLaterRequested, .signInRequired, .danmakuSignInRequired, .unavailable,
+            .replayFailed, .advancing, .nextUnavailable:
             .message
         }
     }
+
+    var isWriteRequest: Bool { self == .watchLaterRequested }
 
     var label: String {
         switch self {
         case .watchLaterRequested: AppStrings.localized("正在添加到稍后再看")
         case .signInRequired: AppStrings.localized("登录后可添加到稍后再看")
         case .danmakuSignInRequired: AppStrings.localized("登录后可发送弹幕")
-        case .danmakuPosted(let message): message
         case .unavailable: AppStrings.localized("暂时无法操作当前视频")
         case .linkCopied: AppStrings.localized("已拷贝链接")
         case .bvidCopied: AppStrings.localized("已拷贝 BV 号")
@@ -101,7 +100,6 @@ enum PlayerActionFeedback: Equatable {
         switch self {
         case .watchLaterRequested: "clock"
         case .signInRequired, .danmakuSignInRequired: "person.crop.circle"
-        case .danmakuPosted: "checkmark.circle"
         case .unavailable: "exclamationmark.circle"
         case .linkCopied: "link"
         case .bvidCopied: "doc.on.doc"

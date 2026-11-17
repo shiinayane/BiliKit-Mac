@@ -267,6 +267,7 @@ final class WindowComposition {
         )
         self.accountWrites = accountWrites
         playerHostOwner.writeResults = PlayerWriteResults(
+            isOnPlayer: { [weak accountWrites] in accountWrites?.resultSurface == .player },
             latestSequence: { [weak accountWrites] in accountWrites?.reportSequence ?? 0 },
             current: { [weak accountWrites] in accountWrites?.playerReport },
             presentOnPlayer: { [weak accountWrites] onPlayer in

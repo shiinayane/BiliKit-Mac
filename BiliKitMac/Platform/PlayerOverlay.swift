@@ -171,6 +171,17 @@ final class PlayerOverlayModel {
     private(set) var previewEndedMessage: String?
     /// 写入结果显示在播放器上时由浮层在反馈徽标下方显示；宿主从 `PlayerHostOwner` 拿到后交来。
     @ObservationIgnored var writeResults: PlayerWriteResults?
+    /// 全屏时按下写入键后、结果到达前在结果位置显示的一句「正在…」。
+    ///
+    /// `sequence` 是发出时最新结果的序号：之后有了新结果（序号变了）就让给结果，不再显示；写入被取消、没有结果时按说明一档
+    /// 的时长收起。窗口里不设置：工具栏按钮当下就翻转。
+    struct PendingWrite: Equatable {
+        let id = UUID()
+        let content: PlayerShortcutFeedback
+        let sequence: UInt64
+    }
+
+    private(set) var pendingWrite: PendingWrite?
     private(set) var showsPreparationActivity = false
     /// 当前这次等画面的 identity，不在等待时为 nil。
     ///
@@ -187,17 +198,13 @@ final class PlayerOverlayModel {
     @ObservationIgnored fileprivate var resumeButtonFrame: CGRect?
     /// 发送弹幕的输入胶囊；由窗口的播放器内容注入，nil 时回车不呼出。
     ///
-    /// 呼出被拒（未登录、没有在播的视频）与发出成功时在顶部提示。
+    /// 呼出被拒（未登录、没有在播的视频）时在顶部提示；发出成功由写入结果的一处说明，失败在输入胶囊下方说明。
     var danmakuComposer: DanmakuComposerModel? {
         didSet {
             danmakuComposer?.onPresentationRefused = { [weak self] failure in
                 self?.showFeedback(
                     .action(failure == .signInRequired ? .danmakuSignInRequired : .unavailable)
                 )
-            }
-            danmakuComposer?.onPosted = { [weak self] report in
-                let message = AccountWriteStatusText.message(for: report)
-                self?.showFeedback(.action(.danmakuPosted(message)))
             }
         }
     }
@@ -213,11 +220,32 @@ final class PlayerOverlayModel {
         return frames
     }
 
+    /// 显示一条反馈；发出写入的那几种（`isWriteRequest`）不显示，只在结果显示在播放器上时先占住结果的位置。
     func showFeedback(_ content: PlayerShortcutFeedback) {
-        feedback = Feedback(
-            content: content,
-            interruptsAnnouncement: content.tier == .echo || feedback?.content == content
-        )
+        guard content.isWriteRequest else {
+            feedback = Feedback(
+                content: content,
+                interruptsAnnouncement: content.tier == .echo || feedback?.content == content
+            )
+            return
+        }
+        guard let writeResults, writeResults.isOnPlayer() else { return }
+        pendingWrite = PendingWrite(content: content, sequence: writeResults.latestSequence())
+    }
+
+    /// 占位到时还没等到结果（写入被取消时没有结果）就收起。
+    func expirePendingWrite(id: UUID) {
+        guard pendingWrite?.id == id else { return }
+        pendingWrite = nil
+    }
+
+    /// 此刻在结果位置显示的占位：结果仍显示在播放器上、发出之后还没有新结果时才显示，结果一到就让给结果；途中退出全屏
+    /// 时也不再显示，结果改由窗口底部的胶囊说明。
+    var shownPendingWrite: PendingWrite? {
+        guard let pendingWrite, let writeResults, writeResults.isOnPlayer(),
+            writeResults.latestSequence() == pendingWrite.sequence
+        else { return nil }
+        return pendingWrite
     }
 
     func showMomentaryRate(_ rate: PlayerMomentaryRate) {
@@ -242,6 +270,7 @@ final class PlayerOverlayModel {
     /// 立即收起反馈，不淡出：播放页重新挂上宿主时丢掉上一页留下的提示。
     func clearFeedback() {
         feedback = nil
+        pendingWrite = nil
     }
 
     func expireFeedback(id: UUID) {
@@ -367,6 +396,10 @@ struct PlayerOverlayView: View {
                     reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
                     value: model.writeResults?.latestSequence()
                 )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: OverlayFadePolicy.durationSeconds),
+                    value: model.shownPendingWrite
+                )
             }
             .overlay(alignment: .bottomLeading) { resumeButton }
             .overlay(alignment: .bottom) { previewEndedBadge }
@@ -393,6 +426,14 @@ struct PlayerOverlayView: View {
                 writeResult.map(AccountWriteStatusText.message(for:)),
                 trigger: model.writeResults?.latestSequence()
             )
+            // 占位的收起计时挂在一直在的根视图上，不挂在占位徽章上：徽章在退出全屏或结果到达时被移除，计时随之取消，
+            // 占位就会留在模型里，再进全屏时又冒出来。
+            .task(id: model.pendingWrite?.id) {
+                guard let id = model.pendingWrite?.id else { return }
+                try? await Task.sleep(for: TransientNoticePolicy.messageDuration)
+                guard !Task.isCancelled else { return }
+                model.expirePendingWrite(id: id)
+            }
             .task(id: model.loadingID) {
                 guard let loadingID = model.loadingID else { return }
                 try? await Task.sleep(for: LoadingIndicatorPolicy.presentationDelay)
@@ -425,7 +466,11 @@ struct PlayerOverlayView: View {
 
     @ViewBuilder
     private var writeResultBadge: some View {
-        if let writeResult {
+        if let pending = model.shownPendingWrite {
+            // 占位不通告：结果到达时那一句才是要读的，先报「正在…」再报结果就成了两条。
+            PlayerShortcutFeedbackBadge(feedback: pending.content)
+                .transition(reduceMotion ? .identity : .opacity)
+        } else if let writeResult {
             PlayerWriteResultBadge(report: writeResult)
                 .id(model.writeResults?.latestSequence())
                 .transition(reduceMotion ? .identity : .opacity)
