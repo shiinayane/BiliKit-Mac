@@ -8,6 +8,7 @@ import SwiftUI
 public struct RelatedVideoCardPresentation: Identifiable, Equatable, Sendable {
     public let bvid: String
     public let title: String
+    /// 封面的请求地址：与视频卡片同一尺寸的 B 站图片 CDN 缩略图。
     public let coverURL: URL?
     public let ownerName: String
     public let viewCountText: String
@@ -40,7 +41,7 @@ public struct RelatedVideoCardPresentation: Identifiable, Equatable, Sendable {
     init(video: RelatedVideo, locale: Locale = InterfaceLocale.current) {
         bvid = video.bvid
         title = video.title
-        coverURL = video.coverURL
+        coverURL = BiliImageThumbnail.url(video.coverURL, size: .videoCover)
         ownerName = video.ownerName
         viewCountText = VideoMetadataFormatting.compactCount(video.viewCount, locale: locale)
         danmakuCountText = VideoMetadataFormatting.compactCount(video.danmakuCount, locale: locale)

@@ -22,6 +22,9 @@ enum NativePlaybackCommentAuthorSpace {
     }
 
     /// 头像经评论资源解析器取得，沿用评论头像的来源限制；解析失败时空间头部显示占位。
+    ///
+    /// 解析时不带像素框，交出图床原地址：空间预览头部与整页空间页头部按各自尺寸追加缩略参数，已带参数的地址
+    /// 不会再改写，带着评论头像的小框进空间会让整页头部的大头像发软。
     static func owner(
         for author: CommentAuthor,
         resolveAvatar: CommentAssetURLResolver
@@ -30,9 +33,7 @@ enum NativePlaybackCommentAuthorSpace {
         return VideoOwner(
             id: id,
             name: author.name,
-            avatarURL: author.avatar.flatMap {
-                resolveAvatar($0, NativePlaybackCommentAssetSizing.pixelBox(for: .avatar))
-            }
+            avatarURL: author.avatar.flatMap { resolveAvatar($0, nil) }
         )
     }
 }

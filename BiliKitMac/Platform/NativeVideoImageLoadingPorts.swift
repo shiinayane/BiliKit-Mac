@@ -74,6 +74,7 @@ extension NativeVideoImageVariant {
     init(_ purpose: VideoDetailImagePurpose) {
         switch purpose {
         case .avatar: self = .avatar
+        case .largeAvatar: self = .largeAvatar
         case .cover: self = .cover
         case .commentEmote: self = .commentEmote
         case .commentPicture: self = .commentPicture

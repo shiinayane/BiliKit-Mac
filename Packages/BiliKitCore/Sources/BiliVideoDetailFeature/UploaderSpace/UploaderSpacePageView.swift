@@ -110,7 +110,8 @@ public struct UploaderSpacePageView: View {
                             content: VideoUploaderHeaderContent(
                                 owner: displayOwner,
                                 profileState: model.profile.map { .loaded($0) } ?? .loading,
-                                follow: follow
+                                follow: follow,
+                                avatarSize: .large
                             ),
                             imagePipeline: imagePipeline,
                             onToggleFollow: onToggleFollow,

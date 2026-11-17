@@ -29,8 +29,10 @@ public protocol VideoDetailImageLoading: Sendable {
 
 /// 本 target 的图片用途；每种用途的解码尺寸、响应上限与是否保留动图由实现方决定。
 public enum VideoDetailImagePurpose: Hashable, Sendable {
-    /// 侧栏 UP 主名片、评论作者与空间头部的头像。
+    /// 侧栏 UP 主名片、评论作者与空间预览头部的头像。
     case avatar
+    /// 整页空间页头部的大头像：解码上限按 `BiliAvatarImageSize.largePixelSide`，调用方请求同一尺寸的缩略图。
+    case largeAvatar
     /// 空间投稿行的封面。
     case cover
     /// 评论正文里的表情与链接前置图标。

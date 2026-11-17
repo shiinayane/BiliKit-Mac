@@ -52,7 +52,7 @@ struct NativeVideoImagePipelineTests {
                 != nil
         )
         for variant in [
-            NativeVideoImageVariant.cover, .avatar, .commentEmote, .trendingSearchIcon
+            NativeVideoImageVariant.cover, .avatar, .largeAvatar, .commentEmote, .trendingSearchIcon
         ] {
             #expect(NativeVideoImagePipeline.decodeAnimation(animated, variant: variant) == nil)
         }
@@ -191,7 +191,7 @@ struct NativeVideoImagePipelineTests {
         let data = try #require(Self.encode(source, as: .png))
 
         for variant in [
-            NativeVideoImageVariant.cover, .avatar, .commentEmote, .commentPicture,
+            NativeVideoImageVariant.cover, .avatar, .largeAvatar, .commentEmote, .commentPicture,
             .commentPicturePreview, .trendingSearchIcon
         ] {
             let image = try #require(NativeVideoImagePipeline.decodeImage(data, variant: variant))
