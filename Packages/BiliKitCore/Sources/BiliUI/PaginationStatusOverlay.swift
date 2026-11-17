@@ -18,6 +18,16 @@ package struct PaginationStatusOverlay: View {
         /// 空页或全重复页之后不自动翻页，由用户点按继续。
         case manualLoadMore(title: String, action: () -> Void)
 
+        /// 胶囊会停留、需要写入结果胶囊让开：失败与「继续加载」。
+        ///
+        /// 加载更多的转圈不算：它几乎每翻一页都出现、很快消失，算进去写入结果胶囊会随翻页上下跳；短暂被盖住的只是转圈。
+        var holdsLane: Bool {
+            switch self {
+            case .failed, .manualLoadMore: true
+            case .idle, .loadingMore: false
+            }
+        }
+
         /// 只有失败原因要通告；加载中为 nil，所以重试后再次失败时同一句话也会再报一次。
         package var announcement: String? {
             if case .failed(let message, _) = self { return message }
@@ -66,6 +76,14 @@ package struct PaginationStatusOverlay: View {
         }
         .padding(.horizontal, Geometry.horizontalInset)
         .padding(.bottom, Geometry.bottomInset)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PaginationStatusLaneHeightKey.self,
+                    value: status.holdsLane ? proxy.size.height : 0
+                )
+            }
+        }
         .animation(LoadingStateTransition.animation(reduceMotion: reduceMotion), value: phase)
         .accessibilityAnnouncement(status.announcement, trigger: status.announcement)
     }
@@ -77,5 +95,17 @@ package struct PaginationStatusOverlay: View {
         case .failed: .failure
         case .manualLoadMore: .content
         }
+    }
+}
+
+/// 底部分页胶囊此刻占去的高度（含它与列表底边的距离）；没有停留的胶囊（`Status.holdsLane`）时为 0。
+///
+/// 由 `PaginationStatusOverlay` 上报；App 的详情栏据此把写入结果胶囊抬到它上方（`AccountWriteStatusCapsule` 的
+/// `bottomClearance`），两颗胶囊不叠在同一位置。详情栏只渲染栈顶那一页，被盖住的页面不在视图树里，不会上报。
+public struct PaginationStatusLaneHeightKey: PreferenceKey {
+    public static var defaultValue: CGFloat { 0 }
+
+    public static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

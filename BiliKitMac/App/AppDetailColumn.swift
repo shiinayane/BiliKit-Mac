@@ -17,6 +17,8 @@ struct AppDetailColumn<Root: View, Playback: View, Space: View>: View {
     @ViewBuilder let root: () -> Root
     @ViewBuilder let playback: () -> Playback
     @ViewBuilder let space: () -> Space
+    /// 栈顶页面底部分页胶囊的高度，写入结果胶囊据此避开它。
+    @State private var paginationLaneHeight: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -29,11 +31,17 @@ struct AppDetailColumn<Root: View, Playback: View, Space: View>: View {
                 space()
             }
         }
+        .onPreferenceChange(PaginationStatusLaneHeightKey.self) { height in
+            paginationLaneHeight = height
+        }
         .background {
             NavigationPageTransitionAnchor(transitions: pageTransitions)
         }
         .overlay(alignment: .bottom) {
-            AccountWriteStatusOverlay(accountWrites: accountWrites)
+            AccountWriteStatusOverlay(
+                accountWrites: accountWrites,
+                bottomClearance: paginationLaneHeight
+            )
         }
         .toolbar {
             if navigationCoordinator.canGoBack {
@@ -70,11 +78,13 @@ extension Text {
 /// 写入结果胶囊的宿主：单独成一个 View，只有它读取协调者的结果，结果变化时不让整个外壳重新求值。
 private struct AccountWriteStatusOverlay: View {
     let accountWrites: AccountWriteCoordinator
+    let bottomClearance: CGFloat
 
     var body: some View {
         AccountWriteStatusCapsule(
             report: accountWrites.report,
-            sequence: accountWrites.reportSequence
+            sequence: accountWrites.reportSequence,
+            bottomClearance: bottomClearance
         )
     }
 }

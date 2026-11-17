@@ -15,10 +15,13 @@ public struct AccountWriteStatusCapsule: View {
     @Environment(\.openURL) private var openURL
     private let report: AccountWriteReport?
     private let sequence: UInt64
+    private let bottomClearance: CGFloat
 
-    public init(report: AccountWriteReport?, sequence: UInt64) {
+    /// `bottomClearance` 是页面底部已被分页胶囊占去的高度（`PaginationStatusLaneHeightKey`），大于 0 时本胶囊排在它上方。
+    public init(report: AccountWriteReport?, sequence: UInt64, bottomClearance: CGFloat = 0) {
         self.report = report
         self.sequence = sequence
+        self.bottomClearance = bottomClearance
     }
 
     public var body: some View {
@@ -53,8 +56,15 @@ public struct AccountWriteStatusCapsule: View {
             }
         }
         .padding(.horizontal, Geometry.horizontalInset)
-        .padding(.bottom, Geometry.bottomInset)
+        .padding(
+            .bottom,
+            bottomClearance > 0 ? bottomClearance + Geometry.spacing : Geometry.bottomInset
+        )
         .animation(LoadingStateTransition.animation(reduceMotion: reduceMotion), value: sequence)
+        .animation(
+            LoadingStateTransition.animation(reduceMotion: reduceMotion),
+            value: bottomClearance
+        )
         .animation(
             LoadingStateTransition.animation(reduceMotion: reduceMotion),
             value: report == nil
