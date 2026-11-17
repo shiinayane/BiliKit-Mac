@@ -35,6 +35,7 @@ struct AppRootView: View {
             videoModel: videoModel,
             commentsModel: commentsModel,
             danmakuModel: danmakuModel,
+            chapterModel: window.chapterModel,
             danmakuComposer: window.danmakuComposer,
             commentWrite: window.commentWrite,
             authenticationModel: authenticationModel,

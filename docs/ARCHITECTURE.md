@@ -170,7 +170,7 @@ session path，提供内存中生成的 master／media playlist，并把 AVPlaye
 
 ### 媒体时间轴
 
-`BiliApplication.PlaybackTimelineProviding` 是弹幕、Now Playing 与观看进度的唯一时间来源，由
+`BiliApplication.PlaybackTimelineProviding` 是弹幕、Now Playing、观看进度与播放页章节的唯一时间来源，由
 `BiliPlayback` 用 AVPlayer observation 与 item 通知实现。消费者不自建 wall-clock timer，也不接触
 `AVPlayer`／`CMTime`／KVO：各自的 timer 无法正确表达卡顿、暂停、倍速和 seek。唯一的例外是弹幕动画：弹幕
 layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏上也按时钟层发布的显示时间 D 决定，时间线
@@ -179,8 +179,9 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 - 续播位置在 load 时写入 master playlist 的 `#EXT-X-START`，item 就绪即位于该处，不再“先就绪、再 seek”，
   也就没有 seek 期间辨认 time-jump 来源的竞态。progressive 单文件没有 playlist，不续播。
-- `discontinuityGeneration` 只给 Now Playing 决定何时重新发布已播时长；观看进度与弹幕不读它。同一次 seek
-  只推进一次（吞掉落点附近的重复跳变）。
+- `discontinuityGeneration` 只给 Now Playing 决定何时重新发布已播时长、给章节提示认出跳变；观看进度与弹幕不读它。
+  同一次 seek 只推进一次（吞掉落点附近的重复跳变）。跳变通知与新位置的周期快照到达先后不固定，识别 seek 的消费者
+  不能只看代次：章节提示把同一代里位置的大步移动也当作跳变。
 - 关心边界的消费者（观看进度、播完的处理）用 `observe`，不用 `updates()`：后者订阅时补发当前快照、只保留最新值，
   会把已经结束的快照当成新的结束，或漏掉夹在中间的边界。seek 会把 `ended` 改成 `paused`，所以“播完后又开始
   播放”只能按会话是否已报过 ended 判断，不能只看上一个快照；观看进度据此把重播当作新的一次观看。
@@ -346,9 +347,12 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 ### 播放页布局
 
 - 主区固定不滚动：视频取剩余空间里最大的 16:9，下方是固定高度的横排；真实页面与加载骨架
-  共用 `PlaybackDetailLayout`。布局交给 SwiftUI，不测量 frame。横排分「相关视频」「刚才看过」「合集」三页
+  共用 `PlaybackDetailLayout`。布局交给 SwiftUI，不测量 frame。横排分「相关视频」「刚才看过」「章节」「合集」
   （`PlaybackShelf`）：合集的分区与选集只在横排，侧栏只留分 P；“当前是哪一集”只由 `PlaybackSelectionProjection`
-  判断，横排与侧栏都读它。「刚才看过」由导航协调器按窗口持有（见下文历史栈）。
+  判断，横排与侧栏都读它。「刚才看过」由导航协调器按窗口持有（见下文历史栈）。分段章节与“当前是哪一章”只由
+  `VideoChapterModel` 按时间线维护，横排、动作菜单的「章节」子菜单与播放器上的章节提示（AVKit 的
+  `flashChapterNumber`）都读它；提示只在播放落定到另一章时发出，跳转方（横排、菜单）不各自提示。AVKit 在 macOS 上没有
+  章节导航与进度条缩略图，章节不画在原生进度条上；不按固定间隔铺缩略图做时间轴：普通视频的等距截图看不出内容。
 - 骨架与内容切换只在外层交叉淡化，`PlaybackDetailLayout` 内部整体不参与动画：新建的 AppKit 视图会随布局
   动画从初始 frame 移到最终位置，看起来像“飞入”。
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载

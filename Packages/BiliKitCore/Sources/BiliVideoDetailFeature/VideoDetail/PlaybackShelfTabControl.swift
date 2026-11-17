@@ -70,6 +70,7 @@ extension PlaybackShelfTab {
         switch self {
         case .related: VideoDetailFeatureStrings.localized("相关视频")
         case .recent: VideoDetailFeatureStrings.localized("刚才看过")
+        case .chapters: VideoDetailFeatureStrings.localized("章节")
         case .collection: VideoDetailFeatureStrings.localized("合集")
         }
     }

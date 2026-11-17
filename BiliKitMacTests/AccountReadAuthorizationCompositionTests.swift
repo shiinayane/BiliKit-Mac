@@ -97,7 +97,7 @@ struct AccountReadAuthorizationCompositionTests {
         #expect(BiliAuthenticationService.sessionValidationPath == "/x/web-interface/nav")
         let constants: [(String, String)] = [
             (BiliAccountReadPath.playURL, "/x/player/wbi/playurl"),
-            (BiliAccountReadPath.subtitleCatalog, "/x/player/wbi/v2"),
+            (BiliAccountReadPath.playerInfo, "/x/player/wbi/v2"),
             (BiliAccountReadPath.danmakuSegment, "/x/v2/dm/wbi/web/seg.so"),
             (BiliAccountReadPath.danmakuView, "/x/v2/dm/web/view"),
             (BiliAccountReadPath.rootComments, "/x/v2/reply/wbi/main"),

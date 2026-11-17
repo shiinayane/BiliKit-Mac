@@ -4,17 +4,18 @@ import BiliUI
 import BiliVideoCollectionUI
 import SwiftUI
 
-/// 把视频准备状态连接到弹幕的播放 identity 生命周期。
+/// 把视频准备状态连接到弹幕与分段章节的播放 identity 生命周期。
 ///
-/// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
-/// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
-/// 下方横排（相关视频、刚才看过、合集）由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）、「刚才看过」
-/// 列表与选择回调。展示的详情变化时交给
+/// 详情上下文一旦可用就为同一 BVID/CID 选择弹幕与章节；状态回到 idle/loading/failed 时 identity 变为
+/// `nil`，由 `.task(id:)` 完整 reset 弹幕与章节。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
+/// 下方横排（相关视频、刚才看过、章节、合集）由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）、「刚才看过」
+/// 列表、选择与跳转回调。展示的详情变化时交给
 /// `VideoEngagementModel` 重读互动状态（窗口账户变化由 App 另行交给它）。
 public struct VideoPlaybackView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let model: VideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
+    private let chapterModel: VideoChapterModel
     private let danmakuComposer: DanmakuComposerModel?
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
@@ -23,11 +24,14 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let recentlyWatched: [RecentlyWatchedVideo]
     private let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
     private let relatedImageLoader: any NativeVideoImageLoading
+    /// 在播放器里跳到当前视频的某一秒（「章节」分页）；参数是 BV 号与秒数，播放器 item 不属于该视频时由实现忽略。
+    private let onSeek: @MainActor (String, Int) -> Void
     private let playerContent: () -> PlayerContent
 
     public init(
         model: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
+        chapterModel: VideoChapterModel,
         danmakuComposer: DanmakuComposerModel? = nil,
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
@@ -36,10 +40,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         recentlyWatched: [RecentlyWatchedVideo] = [],
         onSelectRecentlyWatched: @escaping (PlaybackSelectionIntent) -> Void = { _ in },
         relatedImageLoader: any NativeVideoImageLoading,
+        onSeek: @escaping @MainActor (String, Int) -> Void = { _, _ in },
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
         self.model = model
         self.danmakuModel = danmakuModel
+        self.chapterModel = chapterModel
         self.danmakuComposer = danmakuComposer
         self.engagementModel = engagementModel
         self.onRetry = onRetry
@@ -48,6 +54,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         self.recentlyWatched = recentlyWatched
         self.onSelectRecentlyWatched = onSelectRecentlyWatched
         self.relatedImageLoader = relatedImageLoader
+        self.onSeek = onSeek
         self.playerContent = playerContent
     }
 
@@ -70,9 +77,11 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             danmakuComposer?.dismiss()
             guard let playbackIdentity else {
                 danmakuModel.reset()
+                chapterModel.reset()
                 return
             }
             danmakuModel.selectVideo(playbackIdentity)
+            chapterModel.select(playbackIdentity)
         }
         .onChange(of: currentContext?.detail, initial: true) { _, detail in
             engagementModel.present(detail)
@@ -93,6 +102,21 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         case .idle, .preparingPlayback, .ready, .failed, .failedPage:
             return false
         }
+    }
+
+    private func chapterShelfInput(_ context: VideoContext) -> ChapterShelfInput? {
+        let identity = PlaybackItemIdentity(
+            bvid: context.detail.bvid,
+            cid: context.selectedPage.cid
+        )
+        guard let list = chapterModel.chapters, list.identity == identity, !list.chapters.isEmpty
+        else { return nil }
+        let onSeek = onSeek
+        return ChapterShelfInput(
+            list: list,
+            model: chapterModel,
+            onSeek: { onSeek(identity.bvid, $0) }
+        )
     }
 
     private func collectionShelfInput(_ context: VideoContext) -> PlaybackSelectionProjection? {
@@ -127,6 +151,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 onSelectRelatedVideo: onSelectRelatedVideo,
                 onRetryRelatedVideos: model.retryRelatedVideos,
                 collectionShelf: collectionShelfInput(currentContext),
+                chapterShelf: chapterShelfInput(currentContext),
                 // 正在播放的排最前；「返回」回到列表里的视频时它不会从协调器的列表移出，这里去掉重复的那一项。
                 recentlyWatched: [RecentlyWatchedVideo(nowPlaying: currentContext.detail)]
                     + recentlyWatched.filter { $0.id != currentContext.detail.bvid },

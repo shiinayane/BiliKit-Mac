@@ -19,6 +19,8 @@ struct AppShellView: View {
     let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel
     let danmakuModel: DanmakuControlsViewModel
+    /// 播放页的分段章节；呈现的分 P 由播放页选择，停止播放时由窗口组装 reset。
+    let chapterModel: VideoChapterModel
     let danmakuComposer: DanmakuComposerModel
     let commentWrite: PlaybackCommentWriteModel
     let authenticationModel: AuthenticationViewModel
@@ -113,21 +115,7 @@ struct AppShellView: View {
                 pageTransitions: pageTransitions,
                 rootTitle: sources[navigationCoordinator.selectedTab].title,
                 root: { selectedSourceRoot },
-                playback: {
-                    PlaybackDestinationView(
-                        model: videoModel,
-                        danmakuModel: danmakuModel,
-                        danmakuComposer: danmakuComposer,
-                        engagementModel: engagementModel,
-                        playerContent: playerContent,
-                        imagePipeline: imagePipeline,
-                        onRetry: retryPlayback,
-                        onSelectRelatedVideo: navigationCoordinator.openPlayback,
-                        onSelectPlayback: navigationCoordinator.openPlayback(_:preferredCID:),
-                        recentlyWatched: { navigationCoordinator.recentlyWatched },
-                        onSelectRecentlyWatched: navigationCoordinator.openPlayback
-                    )
-                },
+                playback: { playbackDestination },
                 space: { spacePage }
             )
         }
@@ -373,6 +361,24 @@ struct AppShellView: View {
         .ignoresSafeArea(.container, edges: .top)
     }
 
+    private var playbackDestination: PlaybackDestinationView {
+        PlaybackDestinationView(
+            model: videoModel,
+            danmakuModel: danmakuModel,
+            chapterModel: chapterModel,
+            danmakuComposer: danmakuComposer,
+            engagementModel: engagementModel,
+            playerContent: playerContent,
+            imagePipeline: imagePipeline,
+            onRetry: retryPlayback,
+            onSelectRelatedVideo: navigationCoordinator.openPlayback,
+            onSelectPlayback: navigationCoordinator.openPlayback(_:preferredCID:),
+            recentlyWatched: { navigationCoordinator.recentlyWatched },
+            onSelectRecentlyWatched: navigationCoordinator.openPlayback,
+            onSeek: seekPlayback
+        )
+    }
+
     private func openFullSpaceFromPreview() {
         guard let owner = navigationCoordinator.uploaderSpace.owner else { return }
         navigationCoordinator.openUploaderSpacePage(owner: owner)
@@ -525,6 +531,7 @@ private struct SourceGridScrollStates {
 private struct PlaybackDestinationView: View {
     let model: VideoViewModel
     let danmakuModel: DanmakuControlsViewModel
+    let chapterModel: VideoChapterModel
     let danmakuComposer: DanmakuComposerModel
     let engagementModel: VideoEngagementModel
     let playerContent: AnyView
@@ -535,11 +542,13 @@ private struct PlaybackDestinationView: View {
     /// 在本视图的 body 里读，让「刚才看过」的变化只刷新播放页（见 ARCHITECTURE「播放页」对 detail 观察的要求）。
     let recentlyWatched: () -> [RecentlyWatchedVideo]
     let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
+    let onSeek: @MainActor (String, Int) -> Void
 
     var body: some View {
         VideoPlaybackView(
             model: model,
             danmakuModel: danmakuModel,
+            chapterModel: chapterModel,
             danmakuComposer: danmakuComposer,
             engagementModel: engagementModel,
             onRetry: onRetry,
@@ -547,7 +556,8 @@ private struct PlaybackDestinationView: View {
             onSelectPlayback: onSelectPlayback,
             recentlyWatched: recentlyWatched(),
             onSelectRecentlyWatched: onSelectRecentlyWatched,
-            relatedImageLoader: imagePipeline
+            relatedImageLoader: imagePipeline,
+            onSeek: onSeek
         ) {
             playerContent
         }

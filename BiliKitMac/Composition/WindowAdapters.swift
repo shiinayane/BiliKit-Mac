@@ -24,6 +24,7 @@ struct WindowAdapters {
     let feedRepository: any FeedRepository
     let videoRepository: any VideoRepository
     let relatedVideoRepository: any RelatedVideoRepository
+    let chapterRepository: any VideoChapterRepository
     let trendingSearchRepository: any TrendingSearchRepository
     let searchSuggestionRepository: any SearchSuggestionRepository
     let uploaderProfileRepository: any UploaderProfileRepository
@@ -55,8 +56,8 @@ struct WindowAdapters {
     let authenticationQRCodeProvider: any AuthenticationQRCodeProviding
     /// 窗口唯一的播放控制；视频模型、播放器视图、弹幕、Now Playing 与观看进度必须指向同一个播放器。
     let playback: any PlaybackControlling
-    /// 同一个播放器此刻的时间线快照。
-    let currentTimeline: @MainActor () -> PlaybackTimelineSnapshot
+    /// 同一个播放器的时间线：此刻的快照与订阅（章节模型据此维护当前章节）。
+    let playbackTimeline: any PlaybackTimelineProviding
     /// 播放附带的账户读取（字幕目录）发现的凭据失效；每构造一个视频模型调用一次，只有最新的流收到事件。
     let makePlaybackAuthenticationInvalidations: @MainActor () -> AsyncStream<Void>
     let danmakuPresentation: any DanmakuSessionControlling
@@ -64,7 +65,8 @@ struct WindowAdapters {
     /// 播放器宿主视图；窗口组装时调用一次，结果随窗口存活。
     let makePlayerContent:
         @MainActor (
-            VideoViewModel, DanmakuControlsViewModel, PlayerEngagementShortcuts, PlayerWindowContext
+            VideoViewModel, DanmakuControlsViewModel, VideoChapterModel, PlayerEngagementShortcuts,
+            PlayerWindowContext
         ) -> AnyView
     /// 在当前视频的播放器里跳到某秒并播放；播放器 item 不属于该视频时不动作。
     let seekPlayback: @MainActor (_ bvid: String, _ seconds: Int) -> Void
@@ -121,6 +123,14 @@ extension WindowAdapters {
                 )
             }
         )
+        // 跳到当前 item 的某一秒并继续播放：动作菜单的章节与播放页的跳转共用；跳不了（还没有可跳的画面）时返回 false。
+        let seekAndPlay: @MainActor (Int) -> Bool = { seconds in
+            guard seconds >= 0, playerEngine.requestSeek(to: .seconds(seconds)) else {
+                return false
+            }
+            playerEngine.play()
+            return true
+        }
         // 「播放结束后」偏好：设备级，动作菜单与播完的处理读写同一处。
         let endBehavior = PlaybackEndBehaviorStore()
         let danmaku = LiveDanmaku(
@@ -137,6 +147,7 @@ extension WindowAdapters {
             feedRepository: contentRepository,
             videoRepository: contentRepository,
             relatedVideoRepository: contentRepository,
+            chapterRepository: contentRepository,
             trendingSearchRepository: contentRepository,
             searchSuggestionRepository: contentRepository,
             uploaderProfileRepository: contentRepository,
@@ -162,11 +173,16 @@ extension WindowAdapters {
                 service: authenticationService
             ),
             playback: playerEngine,
-            currentTimeline: { playerEngine.currentTimelineSnapshot },
+            playbackTimeline: playerEngine,
             makePlaybackAuthenticationInvalidations: subtitleAuthenticationInvalidations.makeStream,
             danmakuPresentation: danmaku.session,
             danmakuPreferences: UserDefaultsDanmakuPreferencesStore(),
-            makePlayerContent: { videoModel, danmakuModel, engagementShortcuts, playerWindow in
+            makePlayerContent: {
+                videoModel,
+                danmakuModel,
+                chapterModel,
+                engagementShortcuts,
+                playerWindow in
                 danmaku.renderer.coverImages = playerWindow.imagePipeline
                 return AnyView(
                     PlayerHostView(
@@ -200,7 +216,9 @@ extension WindowAdapters {
                         openDanmakuLinkedVideo: playerWindow.openVideo,
                         actionMenu: .make(
                             videoModel: videoModel,
+                            chapterModel: chapterModel,
                             timeline: { playerEngine.currentTimelineSnapshot },
+                            seek: seekAndPlay,
                             pausePlayback: { playerEngine.pause() },
                             endBehavior: endBehavior,
                             window: playerWindow
@@ -212,6 +230,7 @@ extension WindowAdapters {
                             store: endBehavior,
                             continuePlayback: playerWindow.continuePlayback
                         ),
+                        chapterAnnouncements: chapterModel.observeAnnouncements,
                         timelineUpdates: {
                             playerEngine.timelineUpdates()
                         },
@@ -221,11 +240,8 @@ extension WindowAdapters {
                 )
             },
             seekPlayback: { bvid, seconds in
-                guard seconds >= 0,
-                    playerEngine.currentTimelineSnapshot.identity?.bvid == bvid,
-                    playerEngine.requestSeek(to: .seconds(seconds))
-                else { return }
-                playerEngine.play()
+                guard playerEngine.currentTimelineSnapshot.identity?.bvid == bvid else { return }
+                _ = seekAndPlay(seconds)
             },
             nowPlayingConnection: .live(engine: playerEngine),
             makeWatchProgressConnection: { videoModel in

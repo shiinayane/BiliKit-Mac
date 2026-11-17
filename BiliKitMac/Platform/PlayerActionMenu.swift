@@ -1,13 +1,15 @@
 import AppKit
 import BiliApplication
+import BiliModels
 import BiliUI
 import BiliVideoCollectionUI
 import BiliVideoDetailFeature
 import SwiftUI
 
-/// 播放器动作菜单的意图：加入稍后再看、能否发送弹幕、取当前视频的网页地址与 BV 号、暂停播放，读写「播放结束后」偏好。
+/// 播放器动作菜单的意图：加入稍后再看、能否发送弹幕、取当前视频的网页地址与 BV 号、暂停播放、跳到某一章，读写「播放结束后」
+/// 偏好。
 ///
-/// 由 `WindowAdapters` 的播放器内容用视频模型、播放引擎的时间线与暂停、窗口的写入入口构造（`make`），交给
+/// 由 `WindowAdapters` 的播放器内容用视频模型、章节模型、播放引擎的时间线、跳转与暂停、窗口的写入入口构造（`make`），交给
 /// `PlayerActionMenuController`。门槛与写入在窗口的写入协调者里，这里只决定当下能不能做、给什么提示；协调者没有发出
 /// 写入时不给提示，免得说出没有发生的事。不持有状态。
 struct PlayerActionMenuActions {
@@ -23,11 +25,19 @@ struct PlayerActionMenuActions {
     let pausePlayback: @MainActor () -> Void
     let endBehavior: @MainActor () -> PlaybackEndBehavior
     let setEndBehavior: @MainActor (PlaybackEndBehavior) -> Void
+    /// 播放器里正在播放的分 P 的分段章节与当前章节下标（`VideoChapterModel`）；章节不属于正在播放的 item 时为空。
+    let chapters: @MainActor () -> (chapters: [VideoChapter], current: Int?)
+    /// 跳到当前 item 的某一秒并继续播放；跳不了（还没有可跳的画面）时返回 false。
+    ///
+    /// 跳过去后的章节提示由章节模型发出，菜单不另外提示。
+    let seek: @MainActor (Int) -> Bool
 
     @MainActor
     static func make(
         videoModel: VideoViewModel,
+        chapterModel: VideoChapterModel,
         timeline: @escaping @MainActor () -> PlaybackTimelineSnapshot,
+        seek: @escaping @MainActor (Int) -> Bool,
         pausePlayback: @escaping @MainActor () -> Void,
         endBehavior: PlaybackEndBehaviorStore,
         window: PlayerWindowContext
@@ -44,7 +54,12 @@ struct PlayerActionMenuActions {
             bvid: { videoModel.operableBVID },
             pausePlayback: pausePlayback,
             endBehavior: { endBehavior.behavior },
-            setEndBehavior: { endBehavior.behavior = $0 }
+            setEndBehavior: { endBehavior.behavior = $0 },
+            chapters: {
+                let chapters = chapterModel.chapters(playing: timeline().identity)
+                return (chapters, chapters.isEmpty ? nil : chapterModel.currentIndex)
+            },
+            seek: seek
         )
     }
 }
@@ -136,7 +151,7 @@ extension PlaybackEndBehavior {
 ///
 /// 用 AppKit：菜单由 AVKit 的原生控制条弹出，只接受 `NSMenu`。窗口下在控制条的动作菜单按钮里；全屏下 AVKit 把它收进
 /// 浮动控制条的「»」→「其他」子菜单。由 `NativePlayerHostView` 持有；菜单项只在创建时建一次，之后只原地改可用状态与勾选，
-/// 菜单打开期间宿主更新也不会删掉用户正指着的项。宿主在创建与每次更新时经 `update` 换上意图并刷新可用状态，窗口下菜单
+/// 菜单打开期间宿主更新也不会删掉用户正指着的项；唯一的例外是「章节」子菜单，章节列表变了（换了分 P）才重建它的项。宿主在创建与每次更新时经 `update` 换上意图并刷新可用状态，窗口下菜单
 /// 每次打开时（`menuNeedsUpdate`）再刷新一次；全屏时 AVKit 不保证调用它，可用状态可能停在上次刷新时，所以执行时再核对，
 /// 已没有可操作的视频就提示，不对旧视频动作。「播放结束后」是设备级偏好：另一个窗口改了它，全屏中的这个菜单在下次刷新前
 /// 可能还勾着旧值，播完时的处理总是读当下的值。打开网页只经 SwiftUI 的 `OpenURLAction`，地址只由合法 BVID 拼出，
@@ -151,6 +166,17 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
     var presentFeedback: (PlayerActionFeedback) -> Void = { _ in }
     /// 「发送弹幕…」；宿主接到播放器浮层的输入胶囊（`DanmakuComposerModel.present`）。
     var openDanmakuComposer: () -> Void = {}
+    /// 「章节」子菜单：只在正在播放的分 P 有分段章节时出现（连同它下面的分隔线）。
+    ///
+    /// 章节变了才重建子菜单项，否则只改勾选，菜单打开期间的刷新不会删掉用户正指着的章节。
+    private lazy var chaptersItem: NSMenuItem = {
+        let item = item(AppStrings.localized("章节"), symbol: "list.bullet.rectangle", action: nil)
+        item.submenu = NSMenu()
+        return item
+    }()
+    private let chaptersSeparator = NSMenuItem.separator()
+    /// 子菜单当前列出的章节，菜单项的 `representedObject` 是下标。
+    private var listedChapters: [VideoChapter] = []
 
     private lazy var watchLaterItem = item(
         VideoCardMenuText.addToWatchLater,
@@ -182,6 +208,8 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
         super.init()
         menu.autoenablesItems = false
         menu.delegate = self
+        menu.addItem(chaptersItem)
+        menu.addItem(chaptersSeparator)
         menu.addItem(watchLaterItem)
         menu.addItem(danmakuItem)
         menu.addItem(.separator())
@@ -210,6 +238,7 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
         for item in videoItems {
             item.isEnabled = hasVideo
         }
+        refreshChapters()
         // 偏好与当前视频无关，没有视频时也可以改；宿主第一次 `update` 之前没有意图，禁用。
         let selected = actions?.endBehavior()
         for item in endBehaviorItems {
@@ -218,7 +247,31 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func item(_ title: String, symbol: String, action: Selector) -> NSMenuItem {
+    private func refreshChapters() {
+        let (chapters, current) = actions?.chapters() ?? ([], nil)
+        chaptersItem.isHidden = chapters.isEmpty
+        chaptersSeparator.isHidden = chapters.isEmpty
+        guard let submenu = chaptersItem.submenu else { return }
+        if chapters != listedChapters {
+            listedChapters = chapters
+            submenu.removeAllItems()
+            for (index, chapter) in chapters.enumerated() {
+                let item = NSMenuItem(
+                    title: "\(index + 1). \(chapter.title)",
+                    action: #selector(chooseChapter),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = index
+                submenu.addItem(item)
+            }
+        }
+        for item in submenu.items {
+            item.state = item.representedObject as? Int == current ? .on : .off
+        }
+    }
+
+    private func item(_ title: String, symbol: String, action: Selector?) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
@@ -244,6 +297,17 @@ final class PlayerActionMenuController: NSObject, NSMenuDelegate {
         guard let bvid = actions?.bvid() else { return presentFeedback(.unavailable) }
         VideoLinkPasteboard.copy(text: bvid)
         presentFeedback(.bvidCopied)
+    }
+
+    /// 执行时再核对一次，章节已经不是正在播放的这份就提示、不按旧的秒数跳。
+    ///
+    /// 全屏菜单可能停在上一个分 P 的章节上。跳过去后的章节提示由章节模型发出。
+    @objc private func chooseChapter(_ sender: NSMenuItem) {
+        guard let actions, let index = sender.representedObject as? Int,
+            listedChapters.indices.contains(index),
+            actions.chapters().chapters == listedChapters,
+            actions.seek(listedChapters[index].startSeconds)
+        else { return presentFeedback(.unavailable) }
     }
 
     @objc private func chooseEndBehavior(_ sender: NSMenuItem) {

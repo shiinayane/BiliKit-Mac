@@ -21,6 +21,8 @@ struct VideoDetailView<PlayerContent: View>: View {
     let onRetryRelatedVideos: () -> Void
     /// 选集投影；视频不属于合集时为 nil，横排没有「合集」分页。
     let collectionShelf: PlaybackSelectionProjection?
+    /// 正在呈现的分 P 的分段章节；没有章节时为 nil，横排没有「章节」分页。
+    let chapterShelf: ChapterShelfInput?
     let recentlyWatched: [RecentlyWatchedVideo]
     let isReplacingVideo: Bool
     let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
@@ -39,6 +41,7 @@ struct VideoDetailView<PlayerContent: View>: View {
         } related: {
             PlaybackShelf(
                 collection: collectionShelf,
+                chapters: chapterShelf,
                 recentlyWatched: recentlyWatched,
                 isReplacingVideo: isReplacingVideo,
                 relatedState: shelfState,

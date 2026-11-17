@@ -32,7 +32,7 @@ struct PlayerPlaybackEndTests {
         timeline.current = snapshot(first, .ended)
         observer.start(
             PlayerPlaybackEndActions(
-                observeTimeline: timeline.observe,
+                observeTimeline: timeline.observeTimeline,
                 handleEnded: { snapshot, _ in
                     handled.snapshots.append(snapshot)
                     return .endBehavior(.repeatOne)
@@ -68,27 +68,6 @@ struct PlayerPlaybackEndTests {
             discontinuityGeneration: 0,
             loadIntent: intent
         )
-    }
-}
-
-/// 手动推进的时间线：订阅时先补发当前快照，与真实时间线的 `observe` 一致。
-@MainActor
-private final class ManualTimeline {
-    var current = PlaybackTimelineSnapshot.idle
-    private(set) var observers: [UUID: @MainActor (PlaybackTimelineSnapshot) -> Void] = [:]
-
-    func observe(
-        _ observer: @escaping @MainActor (PlaybackTimelineSnapshot) -> Void
-    ) -> @MainActor @Sendable () -> Void {
-        let id = UUID()
-        observers[id] = observer
-        observer(current)
-        return { [weak self] in self?.observers[id] = nil }
-    }
-
-    func send(_ snapshot: PlaybackTimelineSnapshot) {
-        current = snapshot
-        for observer in observers.values { observer(snapshot) }
     }
 }
 

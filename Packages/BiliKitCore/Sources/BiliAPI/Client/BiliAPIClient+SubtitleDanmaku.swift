@@ -5,8 +5,6 @@ import Foundation
 
 /// 字幕目录与弹幕 protobuf 分段；字幕正文由 `BiliSubtitleRepository` 另行读取。
 extension BiliAPIClient {
-    /// 字幕目录只含轨道元数据与正文地址；超出按响应异常失败关闭。
-    private static let maximumSubtitleCatalogSize = 1 * 1_024 * 1_024
     /// 弹幕分段正文上限，与评论页相同，见 SECURITY-MODEL §4；超出不交给 protobuf 解码。
     private static let maximumDanmakuSegmentSize = 2 * 1_024 * 1_024
     /// 互动弹幕响应上限：一个视频通常只有几条互动弹幕、几 KB；超出按响应异常失败关闭，不交给 protobuf 解码。
@@ -22,28 +20,12 @@ extension BiliAPIClient {
     func subtitleResources(
         for identity: PlaybackItemIdentity
     ) async throws -> [SubtitleRemoteTrack] {
-        guard BVID.isValid(identity.bvid), identity.cid > 0 else {
-            throw BiliAPIError.invalidRequest
-        }
         guard hasAccountAuthorizer else {
             throw BiliAPIError.authorizationRequired
         }
-        let payload: SubtitleCatalogPayload = try await signedRequest(
-            path: BiliAccountReadPath.subtitleCatalog,
-            parameters: {
-                [
-                    "bvid": identity.bvid,
-                    "cid": String(identity.cid)
-                ]
-            },
-            send: { url in
-                try await get(
-                    url: url,
-                    referer: try Self.videoReferer(identity.bvid),
-                    access: .accountRead(missingCredential: .fail),
-                    maximumResponseSize: Self.maximumSubtitleCatalogSize
-                )
-            }
+        let payload: SubtitleCatalogPayload = try await playerInfo(
+            for: identity,
+            missingCredential: .fail
         )
         return try payload.resources()
     }

@@ -30,6 +30,7 @@ struct AVPlayerContainerView: NSViewRepresentable {
     let openDanmakuLinkedVideo: ((String) -> Void)?
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
+    let chapterAnnouncements: NativePlayerHostView.ChapterAnnouncementObserving
     let focusIdentity: String?
     let hdrEnvironment: PlaybackHDREnvironment
     let hostOwner: PlayerHostOwner
@@ -44,7 +45,7 @@ struct AVPlayerContainerView: NSViewRepresentable {
         let container = NSView()
         let host = hostOwner.host { makeHost() }
         host.removeFromSuperview()
-        host.mountInPage(playbackEnd: playbackEnd)
+        host.mountInPage(playbackEnd: playbackEnd, chapterAnnouncements: chapterAnnouncements)
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
         container.addSubview(host)
