@@ -81,8 +81,8 @@ BiliNetworking 不依赖任何 Bili 模块
 - 新 target 需同时具备稳定独立领域、独立状态或安全／性能边界、真实调用方与测试；默认在现有
   target 内加子目录。不建立 `Common`／`Shared`／`Utils`，不建立空占位 target。
 - 两个以上 Feature（或 Feature 与 App）共用的呈现放进 `BiliUI`，只有一个调用方的留在拥有它的 Feature。
-  BiliUI 的组件只负责排版与措辞，标签、动作与“是否可重试”由调用方给出。视频卡片的缩略参数只由
-  `BiliImageThumbnail` 追加；评论资源是不透明引用，其图片地址只由 BiliAPI 的 resolver 生成。
+  BiliUI 的组件只负责排版与措辞，标签、动作与“是否可重试”由调用方给出。B 站图片 CDN 上封面与头像的缩略参数
+  只由 `BiliImageThumbnail` 追加；评论资源是不透明引用，其图片地址只由 BiliAPI 的 resolver 生成。
 - Feature 视图直接渲染自己的网格、横排与 loading／empty／failure，不经 App 填充的泛型内容插槽；App 只注入
   窗口级依赖（取图 port、每个来源一个 `NativeVideoGridHostContext`、评论资源地址闭包、评论图片预览与保存图片的 owner）。
 - 图片只经 port 取：卡片与网格经 `NativeVideoImageLoading`（只分封面与头像、结果只带图与是否淡入），某个

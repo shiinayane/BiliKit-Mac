@@ -391,13 +391,14 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         #expect(opened == [rootAuthor.id, replyAuthor.id])
     }
 
-    /// 进入空间的身份：正整数 MID、评论昵称，头像经评论资源解析器取得。
+    /// 进入空间的身份：正整数 MID、评论昵称，头像经评论资源解析器取得图床原地址（不带评论头像的像素框），
+    /// 空间头部再按自己的尺寸请求缩略图。
     @Test
     func commentAuthorSpaceOwnerUsesMemberIDAndResolvedAvatar() throws {
         let avatar = fixtureAssetReference()
         let avatarURL = try #require(URL(string: "https://i0.hdslb.com/bfs/face/a.jpg"))
-        let resolver: CommentAssetURLResolver = { reference, _ in
-            reference == avatar ? avatarURL : nil
+        let resolver: CommentAssetURLResolver = { reference, box in
+            reference == avatar && box == nil ? avatarURL : nil
         }
         let author = CommentAuthor(
             id: CommentAuthorID(rawValue: "1001"),

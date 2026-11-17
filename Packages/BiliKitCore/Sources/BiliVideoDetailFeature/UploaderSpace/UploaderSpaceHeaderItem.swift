@@ -1,16 +1,33 @@
 import AppKit
 import BiliModels
+import BiliUI
 import BiliVideoCollectionUI
 
 /// 空间层头部的展示值。
 struct UploaderSpaceHeaderContent: Equatable {
     let name: String
+    /// 头像的请求地址：B 站图片 CDN 的头像缩略图（`BiliImageThumbnail`），不请求原图。
     let avatarURL: URL?
     /// 投稿总数（搜索时是结果数）未知时为 nil，不显示。
     let totalCount: Int?
     let order: UploaderVideoOrder
     /// 在空间内搜索：排序对搜索结果不生效，不显示排序；数目写作结果数。
     let isSearching: Bool
+
+    /// `avatarURL` 传接口给的头像地址，这里换成缩略地址。
+    init(
+        name: String,
+        avatarURL: URL?,
+        totalCount: Int?,
+        order: UploaderVideoOrder,
+        isSearching: Bool
+    ) {
+        self.name = name
+        self.avatarURL = BiliImageThumbnail.url(avatarURL, size: .avatar)
+        self.totalCount = totalCount
+        self.order = order
+        self.isSearching = isSearching
+    }
 }
 
 /// 空间层头部：头像、名字与投稿数，右侧排序（搜索时不显示）。

@@ -8,6 +8,7 @@ public struct UploaderVideoRowPresentation: Identifiable, Equatable, Sendable {
 
     public let bvid: String
     public let title: String
+    /// 封面的请求地址：按投稿行封面宽度（`UploaderSpaceGeometry.coverWidth`）取的 B 站图片 CDN 缩略图。
     public let coverURL: URL?
     public let durationText: String?
     /// “12万播放 · 3000弹幕 · 3天前”；统计被隐藏时省略对应部分。
@@ -19,7 +20,10 @@ public struct UploaderVideoRowPresentation: Identifiable, Equatable, Sendable {
     public init(video: UploaderVideo, locale: Locale = InterfaceLocale.current) {
         bvid = video.bvid
         title = video.title
-        coverURL = video.coverURL
+        coverURL = BiliImageThumbnail.url(
+            video.coverURL,
+            size: .cover(pointWidth: UploaderSpaceGeometry.coverWidth)
+        )
         durationText = video.durationSeconds.map {
             VideoDurationFormatting.string(seconds: $0, locale: locale)
         }

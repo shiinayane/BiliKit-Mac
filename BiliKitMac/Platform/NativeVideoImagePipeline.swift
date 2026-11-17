@@ -58,6 +58,7 @@ enum NativeAnimatedImagePolicy {
 enum NativeVideoImageVariant: Hashable, Sendable {
     case cover
     case avatar
+    case largeAvatar
     case commentEmote
     case commentPicture
     case commentPicturePreview
@@ -68,7 +69,7 @@ enum NativeVideoImageVariant: Hashable, Sendable {
         switch self {
         case .commentPicture, .commentPicturePreview:
             true
-        case .cover, .avatar, .commentEmote, .trendingSearchIcon:
+        case .cover, .avatar, .largeAvatar, .commentEmote, .trendingSearchIcon:
             false
         }
     }
@@ -83,6 +84,8 @@ enum NativeVideoImageVariant: Hashable, Sendable {
             640
         case .avatar:
             BiliAvatarImageSize.pixelSide
+        case .largeAvatar:
+            BiliAvatarImageSize.largePixelSide
         case .commentEmote:
             128
         case .commentPicture:
@@ -103,7 +106,7 @@ enum NativeVideoImageVariant: Hashable, Sendable {
         switch self {
         case .commentPicturePreview:
             20 * 1_024 * 1_024
-        case .cover, .avatar, .commentEmote, .commentPicture, .trendingSearchIcon:
+        case .cover, .avatar, .largeAvatar, .commentEmote, .commentPicture, .trendingSearchIcon:
             8 * 1_024 * 1_024
         }
     }

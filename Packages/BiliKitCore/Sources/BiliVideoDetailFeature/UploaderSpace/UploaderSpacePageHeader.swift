@@ -32,11 +32,15 @@ struct UploaderSpacePageHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: UploaderSpacePageGeometry.avatarTextSpacing) {
-            UploaderSpacePageAvatar(url: content.avatarURL, imagePipeline: imagePipeline)
-                .frame(
-                    width: UploaderSpacePageGeometry.avatarSize,
-                    height: UploaderSpacePageGeometry.avatarSize
-                )
+            UploaderSpacePageAvatar(
+                url: content.avatarURL,
+                purpose: content.avatarPurpose,
+                imagePipeline: imagePipeline
+            )
+            .frame(
+                width: UploaderSpacePageGeometry.avatarSize,
+                height: UploaderSpacePageGeometry.avatarSize
+            )
             VStack(alignment: .leading, spacing: UploaderSpacePageGeometry.lineSpacing) {
                 Text(content.name)
                     .font(.title2.weight(.semibold))
@@ -91,6 +95,7 @@ struct UploaderSpacePageHeader: View {
 /// 头部的圆形头像：先取已解码的缓存，没有再经窗口图片管线加载；地址变了重新取。
 private struct UploaderSpacePageAvatar: View {
     let url: URL?
+    let purpose: VideoDetailImagePurpose
     let imagePipeline: any VideoDetailImageLoading
     @State private var image: CGImage?
 
@@ -110,11 +115,11 @@ private struct UploaderSpacePageAvatar: View {
                 image = nil
                 return
             }
-            if let cached = imagePipeline.cachedImage(for: url, purpose: .avatar) {
+            if let cached = imagePipeline.cachedImage(for: url, purpose: purpose) {
                 image = cached
                 return
             }
-            image = await imagePipeline.image(for: url, purpose: .avatar)?.image
+            image = await imagePipeline.image(for: url, purpose: purpose)?.image
         }
     }
 }

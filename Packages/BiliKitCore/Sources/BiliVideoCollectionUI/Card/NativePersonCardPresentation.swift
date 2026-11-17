@@ -9,6 +9,7 @@ package struct NativePersonCardPresentation: NativeGridCardPresentation {
     /// 卡片 ID：这个人的 MID（十进制）。
     package let id: String
     package let name: String
+    /// 头像的请求地址：B 站图片 CDN 的头像缩略图（`BiliImageThumbnail`，与视频卡片头像同一尺寸），不请求原图。
     package let avatarURL: URL?
     /// 名字按大会员配色（`NativeMemberNameColor`）。
     package let isVIP: Bool
@@ -35,7 +36,7 @@ package struct NativePersonCardPresentation: NativeGridCardPresentation {
     ) {
         self.id = id
         self.name = name
-        self.avatarURL = avatarURL
+        self.avatarURL = BiliImageThumbnail.url(avatarURL, size: .avatar)
         self.isVIP = isVIP
         self.subtitle = subtitle?.isEmpty == false ? subtitle : nil
         self.mutualBadge = mutualBadge

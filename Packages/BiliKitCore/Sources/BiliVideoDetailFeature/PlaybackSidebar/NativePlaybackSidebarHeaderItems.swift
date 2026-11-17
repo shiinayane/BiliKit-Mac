@@ -192,7 +192,11 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         needsLayout = true
         spaceRegion.setRects([spaceHitRect])
         if avatarChanged || avatar.image == nil {
-            loadAvatar(content.avatarURL, imagePipeline: imagePipeline)
+            loadAvatar(
+                content.avatarURL,
+                purpose: content.avatarPurpose,
+                imagePipeline: imagePipeline
+            )
         }
     }
 
@@ -324,6 +328,7 @@ private final class NativePlaybackSidebarUploaderView: NSView {
 
     private func loadAvatar(
         _ url: URL?,
+        purpose: VideoDetailImagePurpose,
         imagePipeline: any VideoDetailImageLoading
     ) {
         cancelImageRequest()
@@ -334,12 +339,12 @@ private final class NativePlaybackSidebarUploaderView: NSView {
         guard let url else { return }
         generation &+= 1
         let requestGeneration = generation
-        if let cached = imagePipeline.cachedImage(for: url, purpose: .avatar) {
+        if let cached = imagePipeline.cachedImage(for: url, purpose: purpose) {
             avatar.image = NSImage(cgImage: cached, size: .zero)
             return
         }
         imageTask = Task { [weak self] in
-            let result = await imagePipeline.image(for: url, purpose: .avatar)
+            let result = await imagePipeline.image(for: url, purpose: purpose)
             guard let self, !Task.isCancelled,
                 self.generation == requestGeneration,
                 self.content?.avatarURL == url,

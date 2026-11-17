@@ -5,30 +5,25 @@ import Foundation
 
 /// 评论图片按用途请求的像素框，是唯一来源。
 ///
-/// 列表格子按最大显示尺寸的 2 倍（Retina）请求缩小图，头像按 `BiliAvatarImageSize`（与图片管线的头像
-/// 解码上限同源）请求；预览与表情请求原图。
+/// 列表格子按最大显示尺寸乘 `BiliImageThumbnail.displayPixelScale` 请求缩小图，头像按 `BiliAvatarImageSize`
+/// （与图片管线的头像解码上限同源）请求；预览与表情请求原图；封面与大头像不经评论资源解析，没有框。
 /// 图床把图片按比例缩进框内、不放大，所以一个框覆盖所有格子尺寸。
 enum NativePlaybackCommentAssetSizing {
-    static let displayPixelScale: CGFloat = 2
-
     static func pixelBox(for purpose: VideoDetailImagePurpose) -> CommentAssetPixelBox? {
         switch purpose {
         case .commentPicture:
-            CommentAssetPixelBox(
-                width: Int(
-                    NativePlaybackCommentPictureLayout.maximumContentWidth * displayPixelScale
-                ),
-                height: Int(
-                    NativePlaybackCommentPictureLayout.maximumImageHeight * displayPixelScale
-                )
+            let scale = BiliImageThumbnail.displayPixelScale
+            return CommentAssetPixelBox(
+                width: Int(NativePlaybackCommentPictureLayout.maximumContentWidth * scale),
+                height: Int(NativePlaybackCommentPictureLayout.maximumImageHeight * scale)
             )
         case .avatar:
-            CommentAssetPixelBox(
+            return CommentAssetPixelBox(
                 width: BiliAvatarImageSize.pixelSide,
                 height: BiliAvatarImageSize.pixelSide
             )
-        case .cover, .commentEmote, .commentPicturePreview:
-            nil
+        case .cover, .largeAvatar, .commentEmote, .commentPicturePreview:
+            return nil
         }
     }
 }

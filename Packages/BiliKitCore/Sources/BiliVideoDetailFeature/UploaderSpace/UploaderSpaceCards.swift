@@ -51,7 +51,7 @@ enum UploaderSpacePageCards {
         return NativeVideoCardPresentation(
             id: video.bvid,
             title: video.title,
-            coverURL: video.coverURL,
+            coverURL: BiliImageThumbnail.url(video.coverURL, size: .videoCover),
             avatarURL: nil,
             showsAvatar: false,
             coverMetrics: metrics,
