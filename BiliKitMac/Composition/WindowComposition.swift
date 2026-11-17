@@ -139,6 +139,9 @@ final class WindowComposition {
             transitionPage: { [pageTransitions] direction, change, completion in
                 pageTransitions.perform(direction, change: change, completion: completion)
             },
+            transitionSidebarContext: { [pageTransitions] direction, change in
+                pageTransitions.performSidebarContext(direction, change: change)
+            },
             uploaderSpace: uploaderSpace,
             uploaderSpacePage: uploaderSpacePage
         )

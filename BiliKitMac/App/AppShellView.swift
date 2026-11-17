@@ -60,7 +60,6 @@ struct AppShellView: View {
     @State private var isFavoritesExpanded = true
     /// 侧栏「关注」组是否展开；同收藏夹组。
     @State private var isFollowsExpanded = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -96,15 +95,9 @@ struct AppShellView: View {
                 .allowsHitTesting(!isSidebarContextOpen)
                 .accessibilityHidden(isSidebarContextOpen)
 
-                // 只给上下文层自己的插入／移除加动画；底层立即隐藏，不参与这次 transaction，
-                // 否则底层的 AppKit 集合视图会把布局变化也做成动画而跳动。
-                ZStack { sidebarContextLayer }
-                    .animation(
-                        reduceMotion
-                            ? nil
-                            : .snappy(duration: UploaderSpaceGeometry.layerTransitionDuration),
-                        value: isSidebarContextOpen
-                    )
+                // 进出动画由侧栏图层上的 `push` 转场负责（`NavigationPageTransitions.performSidebarContext`），
+                // 这里不加 SwiftUI 动画。
+                sidebarContextLayer
             }
             // 浏览与播放各自记住用户拖出的宽度；挂在 ZStack 上而不是随进出播放重建的 Group 里。
             .background(SidebarWidthRestorer(mode: sidebarColumnMode))
@@ -397,10 +390,8 @@ struct AppShellView: View {
                 currentBVID: navigationCoordinator.currentPlaybackBVID,
                 imagePipeline: imagePipeline,
                 onSelect: navigationCoordinator.openPlaybackFromSidebarContext,
-                onOpenFullSpace: openFullSpaceFromPreview
-            )
-            .transition(
-                reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)
+                onOpenFullSpace: openFullSpaceFromPreview,
+                onClose: navigationCoordinator.dismissSidebarContext
             )
         }
     }

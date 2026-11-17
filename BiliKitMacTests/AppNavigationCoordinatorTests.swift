@@ -349,6 +349,41 @@ struct AppNavigationCoordinatorTests {
         #expect(coordinator.currentPlaybackBVID == "BV1FromSpace")
     }
 
+    /// 上下文层由用户打开与关闭时侧栏各推一次（打开向前、关闭向后）；已开着时原地换人、从上下文层里选视频都不推；换页的
+    /// 同时关闭（打开整页空间页）交给换页转场，不再推。
+    @Test
+    @MainActor
+    func sidebarContextPushesOnlyWhenTheUserOpensOrClosesIt() {
+        let space = makeUploaderSpace()
+        var pushes: [AppPageTransition] = []
+        let coordinator = makeNavigationCoordinator(
+            startPlayback: { _ in },
+            stopPlayback: {},
+            transitionSidebarContext: { direction, change in
+                pushes.append(direction)
+                change()
+            },
+            uploaderSpace: space
+        )
+        coordinator.openPlayback("BV1Source")
+
+        coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
+        coordinator.openUploaderSpace(owner: VideoOwner(id: 43, name: "另一位"))
+        coordinator.openPlaybackFromSidebarContext("BV1FromSpace")
+        #expect(pushes == [.push])
+        coordinator.navigateBack()
+        #expect(!coordinator.isSidebarContextOpen)
+
+        coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
+        coordinator.openPlayback("BV1Related")
+        #expect(!coordinator.isSidebarContextOpen)
+
+        coordinator.openUploaderSpace(owner: VideoOwner(id: 42, name: "UP"))
+        coordinator.openUploaderSpacePage(owner: VideoOwner(id: 42, name: "UP"))
+        #expect(!coordinator.isSidebarContextOpen)
+        #expect(pushes == [.push, .pop, .push, .pop, .push])
+    }
+
     /// 其他入口换视频先关闭上下文层再开始播放；重新打开正在播放的视频也关闭它。
     @Test
     @MainActor

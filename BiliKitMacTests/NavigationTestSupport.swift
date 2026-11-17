@@ -23,6 +23,8 @@ func makeNavigationCoordinator(
             change()
             completion()
         },
+    transitionSidebarContext:
+        @escaping (AppPageTransition, _ change: () -> Void) -> Void = { _, change in change() },
     uploaderSpace: UploaderSpaceViewModel = makeUploaderSpace(),
     uploaderSpacePage: UploaderSpaceViewModel = makeUploaderSpace()
 ) -> AppNavigationCoordinator {
@@ -39,6 +41,7 @@ func makeNavigationCoordinator(
             isPictureInPictureActive: isPictureInPictureActive
         ),
         transitionPage: transitionPage,
+        transitionSidebarContext: transitionSidebarContext,
         uploaderSpace: uploaderSpace,
         uploaderSpacePage: uploaderSpacePage
     )
