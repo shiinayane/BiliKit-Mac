@@ -26,7 +26,7 @@ struct PlayerDanmakuComposerView: View {
             }
             inputCapsule
             if let message = failureMessage {
-                Text(message)
+                Label(message, systemImage: "exclamationmark.circle")
                     .font(.callout)
                     .padding(.horizontal, PlayerDanmakuComposerLayout.horizontalPadding)
                     .padding(.vertical, PlayerDanmakuComposerLayout.verticalPadding / 2)

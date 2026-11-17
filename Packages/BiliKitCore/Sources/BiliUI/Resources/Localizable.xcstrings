@@ -2857,30 +2857,58 @@
         }
       }
     },
-    "已取消" : {
+    "已取消点赞评论" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removed"
+            "value" : "Comment like removed"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取り消しました"
+            "value" : "コメントのいいねを取り消しました"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消"
+            "value" : "已取消点赞评论"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已取消"
+            "value" : "已取消按讚評論"
+          }
+        }
+      }
+    },
+    "已取消点踩评论" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comment dislike removed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コメントの低評価を取り消しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消点踩评论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消倒讚評論"
           }
         }
       }
@@ -2969,30 +2997,58 @@
         }
       }
     },
-    "无法取消：%@" : {
+    "无法取消点赞评论：%@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn’t remove: %@"
+            "value" : "Couldn’t remove comment like: %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取り消せません：%@"
+            "value" : "コメントのいいねを取り消せません：%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法取消：%@"
+            "value" : "无法取消点赞评论：%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法取消：%@"
+            "value" : "無法取消按讚評論：%@"
+          }
+        }
+      }
+    },
+    "无法取消点踩评论：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t remove comment dislike: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コメントの低評価を取り消せません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法取消点踩评论：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取消倒讚評論：%@"
           }
         }
       }

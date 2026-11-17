@@ -128,7 +128,7 @@ public enum AccountWriteChange: Sendable, Hashable {
     case danmakuPosted(VideoWriteTarget)
     /// 对一条评论点赞、点踩或取消；只在失败时进写入结果胶囊，成功不提示、不产生跨视图效果。
     case commentReactionChanged(CommentReactionOperation)
-    /// 在这个评论区发了一条评论或回复；结局交回评论输入框，不进写入结果胶囊，也不产生跨视图效果。
+    /// 在这个评论区发了一条评论或回复；结局交回评论输入框，失败只在输入框里说明，成功另作为一条写入结果；不产生跨视图效果。
     case commentPosted(CommentSubjectIdentity)
 }
 

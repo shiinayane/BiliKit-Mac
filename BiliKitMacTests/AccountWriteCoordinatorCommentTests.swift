@@ -6,7 +6,7 @@ import Testing
 @testable import BiliKit
 
 /// 写入协调者的评论路径：同一条评论的表态同时只有一次在途，失败先放回本地改动再在结果胶囊里说明；发评论窗口里同时只有
-/// 一条在途，结局只交回输入卡片、不进结果胶囊；关窗取消在途的发评论，之后不再接受。
+/// 一条在途，结局交回输入卡片、成功另作为一条写入结果；关窗取消在途的发评论，之后不再接受。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct AccountWriteCoordinatorCommentTests {
@@ -41,7 +41,7 @@ struct AccountWriteCoordinatorCommentTests {
     }
 
     @Test
-    func commentPostsOneAtATimeReportOnlyToTheComposerAndCloseCancels() async throws {
+    func commentPostsOneAtATimeReportTheSuccessOnceAndCloseCancels() async throws {
         let writes = AccountWriteRepositoryStub(holdsWrites: true)
         let window = try await signedInWindow(process: makeTestProcess(), writes: writes)
         let outcomes = CommentOutcomeRecorder()
@@ -67,7 +67,8 @@ struct AccountWriteCoordinatorCommentTests {
             return
         }
         #expect(comment != nil)
-        #expect(window.accountWrites.report == nil)
+        #expect(window.accountWrites.report?.failure == nil)
+        #expect(window.accountWrites.reportSequence == 1)
 
         let held = AccountWriteRepositoryStub(holdsWrites: true)
         let closing = try await signedInWindow(process: makeTestProcess(), writes: held)

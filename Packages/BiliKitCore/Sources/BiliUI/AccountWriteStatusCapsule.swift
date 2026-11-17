@@ -113,7 +113,8 @@ public enum AccountWriteStatusText {
                 switch (operation.kind, operation.isOn) {
                 case (.like, true): BiliUIStrings.localized("已点赞评论")
                 case (.dislike, true): BiliUIStrings.localized("已点踩评论")
-                case (_, false): BiliUIStrings.localized("已取消")
+                case (.like, false): BiliUIStrings.localized("已取消点赞评论")
+                case (.dislike, false): BiliUIStrings.localized("已取消点踩评论")
                 }
             case .commentPosted: BiliUIStrings.localized("已发布评论")
             }
@@ -146,7 +147,8 @@ public enum AccountWriteStatusText {
             switch (operation.kind, operation.isOn) {
             case (.like, true): BiliUIStrings.localized("无法点赞评论：\(reason)")
             case (.dislike, true): BiliUIStrings.localized("无法点踩评论：\(reason)")
-            case (_, false): BiliUIStrings.localized("无法取消：\(reason)")
+            case (.like, false): BiliUIStrings.localized("无法取消点赞评论：\(reason)")
+            case (.dislike, false): BiliUIStrings.localized("无法取消点踩评论：\(reason)")
             }
         case .commentPosted: BiliUIStrings.localized("无法发布评论：\(reason)")
         }
