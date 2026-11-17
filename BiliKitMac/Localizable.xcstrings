@@ -4313,6 +4313,34 @@
         }
       }
     },
+    "已从上次看到的位置继续播放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumed from where you left off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の続きから再生しています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从上次看到的位置继续播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已從上次看到的位置繼續播放"
+          }
+        }
+      }
+    },
     "正在点赞" : {
       "localizations" : {
         "en" : {

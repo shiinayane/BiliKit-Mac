@@ -376,6 +376,8 @@ final class PlayerOverlayModel {
 struct PlayerOverlayView: View {
     let model: PlayerOverlayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 弹幕输入胶囊的高度，试看结束徽章据此排到呼出的胶囊上方。
+    @State private var danmakuComposerHeight: CGFloat = 0
 
     var body: some View {
         Color.clear
@@ -425,6 +427,16 @@ struct PlayerOverlayView: View {
             .accessibilityAnnouncement(
                 writeResult.map(AccountWriteStatusText.message(for:)),
                 trigger: model.writeResults?.latestSequence()
+            )
+            // 续播与试看结束都是播放器自己做的事，读屏焦点不在浮层上；各通告一次（同一次续播按 token，试看结束按这句话）。
+            .accessibilityAnnouncement(
+                model.resumeNotice == nil
+                    ? nil : AppStrings.localized("已从上次看到的位置继续播放"),
+                trigger: model.resumeNotice?.token
+            )
+            .accessibilityAnnouncement(
+                model.previewEndedMessage,
+                trigger: model.previewEndedMessage
             )
             // 占位的收起计时挂在一直在的根视图上，不挂在占位徽章上：徽章在退出全屏或结果到达时被移除，计时随之取消，
             // 占位就会留在模型里，再进全屏时又冒出来。
@@ -521,6 +533,7 @@ struct PlayerOverlayView: View {
                     proxy.frame(in: .named(PlayerOverlayLayout.coordinateSpace))
                 } action: { frame in
                     model.danmakuComposerFrame = frame
+                    danmakuComposerHeight = frame.height
                 }
                 .padding(.horizontal, PlayerOverlayLayout.edgeInset)
                 .padding(.bottom, PlayerOverlayLayout.bottomInset)
@@ -530,12 +543,18 @@ struct PlayerOverlayView: View {
         }
     }
 
+    /// 试看结束徽章与弹幕输入胶囊都在底部正中：胶囊呼出时徽章排到它上方，不叠在一起。
     @ViewBuilder
     private var previewEndedBadge: some View {
         if let message = model.previewEndedMessage {
             PlayerPreviewEndedBadge(message: message)
                 .padding(.horizontal, PlayerOverlayLayout.edgeInset)
-                .padding(.bottom, PlayerOverlayLayout.bottomInset)
+                .padding(
+                    .bottom,
+                    PlayerOverlayLayout.bottomInset
+                        + (model.danmakuComposer?.isPresented == true
+                            ? danmakuComposerHeight + PlayerOverlayLayout.badgeSpacing : 0)
+                )
         }
     }
 }
