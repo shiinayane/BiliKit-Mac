@@ -20,7 +20,7 @@ enum LiveAPIClients {
 
     static let mainAccountReadAllowedPaths: Set<String> = [
         BiliAccountReadPath.playURL,
-        BiliAccountReadPath.subtitleCatalog,
+        BiliAccountReadPath.playerInfo,
         BiliAccountReadPath.danmakuSegment,
         BiliAccountReadPath.danmakuView,
         BiliAccountReadPath.commentReplies,

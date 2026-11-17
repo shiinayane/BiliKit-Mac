@@ -7,8 +7,8 @@
 public enum BiliAccountReadPath {
     /// 主播放与 AI 配音、测速样本共用的 WBI playurl。
     public static let playURL = "/x/player/wbi/playurl"
-    /// 字幕目录（只按账户读取）。
-    public static let subtitleCatalog = "/x/player/wbi/v2"
+    /// 播放器信息：字幕目录只按账户读取，分段章节有凭据时按账户读取、无凭据时匿名请求。
+    public static let playerInfo = "/x/player/wbi/v2"
     /// 弹幕分段。
     public static let danmakuSegment = "/x/v2/dm/wbi/web/seg.so"
     /// 互动弹幕（评分、投票、UP 主弹幕等）；不签 WBI。

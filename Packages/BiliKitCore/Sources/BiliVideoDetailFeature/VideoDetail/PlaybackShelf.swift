@@ -7,19 +7,24 @@ import SwiftUI
 enum PlaybackShelfTab: Hashable, CaseIterable {
     case related
     case recent
+    case chapters
     case collection
 }
 
-/// 播放页下方的横排：「相关视频」「刚才看过」「合集」三个分页，默认相关视频；视频不属于合集时没有「合集」。
+/// 播放页下方的横排：「相关视频」「刚才看过」「章节」「合集」分页，默认相关视频；没有分段章节时没有「章节」，视频不属于
+/// 合集时没有「合集」。
 ///
 /// 持有用户选的分页、正在浏览的分区、“再点一次当前分页”的滚动请求与换视频途中停住的「刚才看过」（都是视图状态）；
-/// 不拥有推荐请求、「刚才看过」列表、选集分 P 解析或导航，选择意图经回调交出。合集只读选集投影，“当前是哪一集”
-/// 不在这里另算。
+/// 不拥有推荐请求、「刚才看过」列表、章节读取、选集分 P 解析、跳转或导航，选择意图经回调交出。用户选的分页在下一个视频
+/// 没有时显示相关视频，但选择保留，到有这一页的视频时回到它。合集只读选集投影，章节只读章节模型，“当前是哪一集”“当前是
+/// 哪一章”都不在这里另算。
 struct PlaybackShelf: View {
     private typealias Shelf = VideoCardShelfGeometry
 
     /// 选集投影；视频不属于合集（`showsCollection` 为 false）时由调用方传 nil。
     let collection: PlaybackSelectionProjection?
+    /// 当前分 P 的分段章节；没有章节时为 nil，「章节」分页不出现。
+    let chapters: ChapterShelfInput?
     /// 「刚才看过」的全部卡片，第一项是正在播放的视频。
     let recentlyWatched: [RecentlyWatchedVideo]
     /// 已请求另一个视频、详情还是旧的：这段时间「刚才看过」停在换之前的样子。
@@ -77,6 +82,7 @@ struct PlaybackShelf: View {
             switch tab {
             case .related: true
             case .recent: !shownRecent.isEmpty
+            case .chapters: chapters != nil
             case .collection: collection != nil
             }
         }
@@ -181,13 +187,16 @@ struct PlaybackShelf: View {
         )
     }
 
-    /// 再点一次当前分页：合集分页且看的是当前一集所在的分区时回到当前一集，其余回到开头，都用翻页同一份动画。
+    /// 再点一次当前分页：合集分页且看的是当前一集所在的分区时回到当前一集，章节分页回到当前章节（还在第一章之前时回到
+    /// 开头），其余回到开头，都用翻页同一份动画。
     private func reselectCurrentTab() {
         let target: NativeVideoShelfScrollCommand.Target
         if tab == .collection, let collection,
             let section = displayedSection(collection),
             section.id == collection.selectedEpisodeSectionID
         {
+            target = .anchor
+        } else if tab == .chapters {
             target = .anchor
         } else {
             target = .leading
@@ -204,6 +213,15 @@ struct PlaybackShelf: View {
         case .collection:
             if let collection {
                 collectionContent(collection)
+            }
+        case .chapters:
+            if let chapters {
+                ChapterShelfContent(
+                    input: chapters,
+                    imageLoader: imageLoader,
+                    scrollCommand: scrollCommand,
+                    fadesInOnCreation: fadesInNewShelf
+                )
             }
         case .recent:
             recentContent

@@ -28,6 +28,8 @@ final class WindowComposition {
     let videoModel: VideoViewModel
     let commentsModel: PlaybackCommentsViewModel
     let danmakuModel: DanmakuControlsViewModel
+    /// 播放页的分段章节与当前章节；停止播放（`AppPlaybackSession.stop`，关窗也经它）时 reset。
+    let chapterModel: VideoChapterModel
     let authenticationModel: AuthenticationViewModel
     let watchLaterModel: WatchLaterViewModel
     /// 稍后再看的排序、筛选与关键词；关窗与账户变化时由稍后再看来源的描述恢复默认。
@@ -103,6 +105,10 @@ final class WindowComposition {
             ),
             playbackAuthenticationInvalidations: adapters.makePlaybackAuthenticationInvalidations()
         )
+        let chapterModel = VideoChapterModel(
+            useCase: VideoChapterUseCase(repository: adapters.chapterRepository),
+            timeline: adapters.playbackTimeline
+        )
         let danmakuModel = Self.makeDanmakuModel(adapters: adapters)
         let authenticationModel = AuthenticationViewModel(
             service: adapters.authenticationService,
@@ -133,6 +139,7 @@ final class WindowComposition {
             playback: Self.makePlaybackSession(
                 videoModel: videoModel,
                 danmakuModel: danmakuModel,
+                chapterModel: chapterModel,
                 adapters: adapters,
                 pictureInPicture: playerHostOwner.pictureInPicture
             ),
@@ -170,6 +177,7 @@ final class WindowComposition {
         self.videoModel = videoModel
         self.commentsModel = commentsModel
         self.danmakuModel = danmakuModel
+        self.chapterModel = chapterModel
         self.watchLaterModel = watchLaterModel
         let watchLaterSession = WatchLaterSession(model: watchLaterModel)
         self.watchLaterSession = watchLaterSession
@@ -284,7 +292,7 @@ final class WindowComposition {
         // 发出成功的弹幕交给同一个弹幕会话上屏；发送时刻取同一个播放器的时间线。
         let danmakuComposer = DanmakuComposerModel(
             presentation: adapters.danmakuPresentation,
-            timeline: adapters.currentTimeline,
+            timeline: { adapters.playbackTimeline.currentTimelineSnapshot },
             canPost: { accountWrites.isWritable },
             post: { request, completion in
                 accountWrites.postDanmaku(request, completion: completion)
@@ -343,6 +351,7 @@ final class WindowComposition {
         playerContent = adapters.makePlayerContent(
             videoModel,
             danmakuModel,
+            chapterModel,
             PlayerEngagementShortcuts.make(
                 accountWrites: accountWrites,
                 engagementModel: engagementModel,
@@ -497,34 +506,38 @@ final class WindowComposition {
     private static func makePlaybackSession(
         videoModel: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
+        chapterModel: VideoChapterModel,
         adapters: WindowAdapters,
         pictureInPicture: PlayerPictureInPicture
     ) -> AppPlaybackSession {
         let playback = adapters.playback
-        let currentTimeline = adapters.currentTimeline
+        let timeline = adapters.playbackTimeline
         return AppPlaybackSession(
             start: { videoModel.select($0) },
             stop: {
                 videoModel.reset()
                 danmakuModel.reset()
+                chapterModel.reset()
             },
             pauseKeepingPicture: {
-                guard videoModel.isPresenting(currentTimeline()) else { return false }
+                guard videoModel.isPresenting(timeline.currentTimelineSnapshot) else {
+                    return false
+                }
                 playback.pause()
                 return true
             },
             isPlaying: {
-                let snapshot = currentTimeline()
+                let snapshot = timeline.currentTimelineSnapshot
                 guard videoModel.isPresenting(snapshot) else { return false }
                 return snapshot.state == .playing || snapshot.state == .buffering
             },
             resume: { playback.play() },
             presentedPosition: {
-                let snapshot = currentTimeline()
+                let snapshot = timeline.currentTimelineSnapshot
                 return videoModel.isPresenting(snapshot) ? snapshot.positionSeconds : nil
             },
             resumePoint: {
-                let snapshot = currentTimeline()
+                let snapshot = timeline.currentTimelineSnapshot
                 guard videoModel.isPresenting(snapshot), let identity = snapshot.identity else {
                     return nil
                 }

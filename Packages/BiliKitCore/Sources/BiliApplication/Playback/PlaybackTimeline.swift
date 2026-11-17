@@ -85,7 +85,7 @@ public enum PlaybackTimelineState: Sendable, Equatable {
 
 /// 平台无关的媒体时间事实。
 ///
-/// `discontinuityGeneration` 在换项、seek 或时间跳变时前进；需要识别 seek 的消费者（Now Playing）用它，
+/// `discontinuityGeneration` 在换项、seek 或时间跳变时前进；需要识别 seek 的消费者（Now Playing、章节提示）用它，
 /// 不能只比较秒数。弹幕不识别 seek，只按位置是否离开上次对齐后的一个步长对齐（见 docs/ARCHITECTURE.md
 /// 「弹幕」）。
 public struct PlaybackTimelineSnapshot: Sendable, Equatable {
@@ -158,7 +158,7 @@ public struct PlaybackTimelineSnapshot: Sendable, Equatable {
     }
 }
 
-/// 播放器之外各消费方（弹幕、观看进度、播放器浮层与 Now Playing）共用的播放时钟。
+/// 播放器之外各消费方（弹幕、观看进度、播放器浮层、播放页章节与 Now Playing）共用的播放时钟。
 ///
 /// 实现是 BiliPlayback 的 `AVPlayerEngine`，见 docs/ARCHITECTURE.md「媒体时间轴」。
 /// 新订阅者应先得到当前快照；消费者不自建计时器。需要识别 seek 的消费者用 `discontinuityGeneration`

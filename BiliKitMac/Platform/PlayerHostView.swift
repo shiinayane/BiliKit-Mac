@@ -31,6 +31,8 @@ struct PlayerHostView: View {
     let openDanmakuLinkedVideo: ((String) -> Void)?
     let actionMenu: PlayerActionMenuActions
     let playbackEnd: PlayerPlaybackEndActions
+    /// 订阅章节模型的「进入第几章」提示（`VideoChapterModel.observeAnnouncements`）。
+    let chapterAnnouncements: NativePlayerHostView.ChapterAnnouncementObserving
     let timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)?
     /// 登记宿主视图，供加载时按播放器所在屏幕判断 HDR。
     let hdrEnvironment: PlaybackHDREnvironment
@@ -54,6 +56,7 @@ struct PlayerHostView: View {
         openDanmakuLinkedVideo: ((String) -> Void)? = nil,
         actionMenu: PlayerActionMenuActions,
         playbackEnd: PlayerPlaybackEndActions,
+        chapterAnnouncements: @escaping NativePlayerHostView.ChapterAnnouncementObserving,
         timelineUpdates: (() -> AsyncStream<PlaybackTimelineSnapshot>)? = nil,
         hdrEnvironment: PlaybackHDREnvironment,
         hostOwner: PlayerHostOwner
@@ -74,6 +77,7 @@ struct PlayerHostView: View {
         self.openDanmakuLinkedVideo = openDanmakuLinkedVideo
         self.actionMenu = actionMenu
         self.playbackEnd = playbackEnd
+        self.chapterAnnouncements = chapterAnnouncements
         self.timelineUpdates = timelineUpdates
         self.hdrEnvironment = hdrEnvironment
         self.hostOwner = hostOwner
@@ -100,6 +104,7 @@ struct PlayerHostView: View {
             openDanmakuLinkedVideo: openDanmakuLinkedVideo,
             actionMenu: actionMenu,
             playbackEnd: playbackEnd,
+            chapterAnnouncements: chapterAnnouncements,
             focusIdentity: videoModel?.presentedBVID,
             hdrEnvironment: hdrEnvironment,
             hostOwner: hostOwner
@@ -156,20 +161,29 @@ struct PlayerHostView: View {
 /// 用 AppKit：原生控制条、画中画与全屏都来自 `AVPlayerView`，弹幕与浮层要放进它的 content overlay
 /// 才能随 detached 全屏一起移动，见 docs/ARCHITECTURE.md「播放页布局」。拥有键盘快捷键
 /// controller（本地 key monitor）、浮层模型、player 的三个 KVO 观察与在途 seek 通知观察、当前 item 的
-/// 两个 KVO 观察与时间跳转观察，以及失焦通知观察；不拥有 player、弹幕 renderer 与弹幕 controller，它们由
-/// 窗口组装持有。
+/// 两个 KVO 观察与时间跳转观察、失焦通知观察，以及章节提示的订阅（挂上播放页时订阅，摘下与拆除时取消）；不拥有
+/// player、弹幕 renderer、弹幕 controller 与章节模型，它们由窗口组装持有。
 /// 宿主随窗口常驻（owner 是 `PlayerHostOwner`）：播放页挂上与摘下时由 `AVPlayerContainerView` 调用
-/// `mountInPage(playbackEnd:)` 与 `unmountFromPage()`，只开关逐页的观察与提示，player 与弹幕绑定不动；拆除经
+/// `mountInPage(playbackEnd:chapterAnnouncements:)` 与 `unmountFromPage()`，只开关逐页的观察与提示，player 与弹幕绑定
+/// 不动；拆除经
 /// `tearDown()`，见它的说明。`currentItem` 变化时先让弹幕 overlay 换绑时钟（见 `DanmakuOverlayView.bind(to:)`）。
 /// `momentaryRatePressID` 记录当前临时倍速对应的按压，结束回调按它比对，旧按压迟到的结束不影响新的
 /// 临时倍速。
 @MainActor
 final class NativePlayerHostView: AVPlayerView {
+    /// 订阅章节提示，返回取消订阅的函数（`VideoChapterModel.observeAnnouncements`）。
+    typealias ChapterAnnouncementObserving =
+        @MainActor (
+            @escaping @MainActor (VideoChapterAnnouncement) -> Void
+        ) -> @MainActor () -> Void
+
     let danmakuOverlay: DanmakuOverlayView
     private let keyboardShortcuts = PlayerKeyboardShortcutController()
     private let overlayModel = PlayerOverlayModel()
     private let actionMenu = PlayerActionMenuController()
     private let playbackEndObserver = PlayerPlaybackEndObserver()
+    /// 章节提示的订阅；挂上播放页时订阅，摘下与拆除时取消。
+    private var cancelChapterAnnouncements: (@MainActor () -> Void)?
     private let overlayHostingView: PassthroughHostingView<PlayerOverlayView>
     private var installedDanmakuOverlay = false
     private var isPresentingFullScreen = false
@@ -389,6 +403,21 @@ final class NativePlayerHostView: AVPlayerView {
         playbackEndObserver.stop()
     }
 
+    /// 章节模型的提示接到 AVKit 的章节浮层：在画面上短暂显示章节号与标题，全屏时也在画面上。
+    ///
+    /// 提示何时发出由 `VideoChapterModel` 决定，这里不再判断。
+    private func startChapterAnnouncements(_ observe: ChapterAnnouncementObserving) {
+        stopChapterAnnouncements()
+        cancelChapterAnnouncements = observe { [weak self] announcement in
+            self?.flashChapterNumber(announcement.number, chapterTitle: announcement.title)
+        }
+    }
+
+    private func stopChapterAnnouncements() {
+        cancelChapterAnnouncements?()
+        cancelChapterAnnouncements = nil
+    }
+
     func setPreviewEndedNotice(_ message: String?) {
         overlayModel.setPreviewEndedMessage(message)
     }
@@ -450,13 +479,14 @@ final class NativePlayerHostView: AVPlayerView {
     /// 拆除宿主：常驻宿主由 `PlayerHostOwner.close()` 在关窗时调用一次，关窗后迟到挂载的不留住宿主由
     /// `AVPlayerContainerView` 在卸载时调用。
     ///
-    /// 按顺序：写入结果交回窗口、清除提示、停止播完的处理、撤销弹幕 surface、解开弹幕时钟与 item timebase 的绑定、停止失焦与 player
+    /// 按顺序：写入结果交回窗口、清除提示、停止播完的处理与章节提示、撤销弹幕 surface、解开弹幕时钟与 item timebase 的绑定、停止失焦与 player
     /// 观察、停止键盘监听、结束临时倍速，最后断开 player，避免宿主继续呈现。
     func tearDown() {
         writeResults?.presentOnPlayer(false)
         setResumeNotice(nil, restartFromBeginning: {})
         setPreviewEndedNotice(nil)
         stopPlaybackEndObservation()
+        stopChapterAnnouncements()
         danmakuOverlay.detachSurface()
         danmakuOverlay.bind(to: nil)
         stopObservingFocusLoss()
@@ -466,24 +496,28 @@ final class NativePlayerHostView: AVPlayerView {
         player = nil
     }
 
-    /// 播放页挂上宿主时调用，在宿主进入窗口之前：开始这一页的播完观察与键盘监听，丢掉上一页留下的提示，按全屏状态取回
+    /// 播放页挂上宿主时调用，在宿主进入窗口之前：开始这一页的播完观察、章节提示与键盘监听，丢掉上一页留下的提示，按全屏状态取回
     /// 写入结果的位置，并清空初始焦点记录。
     ///
     /// 逐页的状态不随宿主常驻：清空焦点记录后，再次进入同一个视频时 `requestInitialKeyboardFocus` 照样把键盘焦点交给
     /// 播放器；上一页没消失的提示不会出现在新一页上。新容器可能先于旧容器卸载就把宿主取走，旧容器之后找不到宿主、
-    /// 不会调用 `unmountFromPage()`，所以这里先停掉上一页的播完观察再重新开始。键盘监听在弹幕层装上之前没有锚点
+    /// 不会调用 `unmountFromPage()`，所以这里先停掉上一页的播完观察与章节提示再重新开始。键盘监听在弹幕层装上之前没有锚点
     /// 窗口，不处理按键。
-    func mountInPage(playbackEnd: PlayerPlaybackEndActions) {
+    func mountInPage(
+        playbackEnd: PlayerPlaybackEndActions,
+        chapterAnnouncements: ChapterAnnouncementObserving
+    ) {
         lastInitialFocusIdentity = nil
         pendingInitialFocusIdentity = nil
         overlayModel.clearFeedback()
         writeResults?.presentOnPlayer(isPresentingFullScreen)
         stopPlaybackEndObservation()
         startPlaybackEndObservation(playbackEnd)
+        startChapterAnnouncements(chapterAnnouncements)
         keyboardShortcuts.startMonitoring()
     }
 
-    /// 播放页卸载、宿主被摘下时调用：停止播完观察（连同在途的处理，迟到的连播与提示不再落到这一页）与键盘监听，并把
+    /// 播放页卸载、宿主被摘下时调用：停止播完观察（连同在途的处理，迟到的连播与提示不再落到这一页）、章节提示与键盘监听，并把
     /// 写入结果交回窗口。
     ///
     /// player、弹幕绑定与 item 观察都保留，被换掉的页面带着画面离开；失焦观察与临时倍速在离开窗口时
@@ -492,6 +526,7 @@ final class NativePlayerHostView: AVPlayerView {
         // 全屏中离开播放页时 AVKit 是否先回调退出全屏不确定；不在播放页上就把结果交回窗口，挂上时按全屏状态再取回。
         writeResults?.presentOnPlayer(false)
         stopPlaybackEndObservation()
+        stopChapterAnnouncements()
         stopKeyboardMonitoring()
     }
 

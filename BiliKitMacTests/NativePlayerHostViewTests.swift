@@ -94,13 +94,13 @@ struct NativePlayerHostViewTests {
             handleEnded: { _, _ in nil }
         )
 
-        view.mountInPage(playbackEnd: playbackEnd)
+        view.mountInPage(playbackEnd: playbackEnd, chapterAnnouncements: { _ in {} })
         #expect(!surface.isOnPlayer)
         view.playerViewWillEnterFullScreen(view)
         #expect(surface.isOnPlayer)
         view.unmountFromPage()
         #expect(!surface.isOnPlayer)
-        view.mountInPage(playbackEnd: playbackEnd)
+        view.mountInPage(playbackEnd: playbackEnd, chapterAnnouncements: { _ in {} })
         #expect(surface.isOnPlayer)
         view.playerViewWillExitFullScreen(view)
         #expect(!surface.isOnPlayer)
@@ -147,12 +147,15 @@ struct NativePlayerHostViewTests {
                         bvid: { nil },
                         pausePlayback: {},
                         endBehavior: { .stop },
-                        setEndBehavior: { _ in }
+                        setEndBehavior: { _ in },
+                        chapters: { ([], nil) },
+                        seek: { _ in false }
                     ),
                     playbackEnd: PlayerPlaybackEndActions(
                         observeTimeline: { _ in {} },
                         handleEnded: { _, _ in nil }
                     ),
+                    chapterAnnouncements: { _ in {} },
                     focusIdentity: "BV1xx411c7mD",
                     hdrEnvironment: hdrEnvironment,
                     hostOwner: owner

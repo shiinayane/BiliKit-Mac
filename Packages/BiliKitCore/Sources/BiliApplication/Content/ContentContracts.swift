@@ -74,6 +74,13 @@ public protocol VideoRepository: Sendable {
     func playback(for bvid: String, cid: Int64) async throws -> VideoPlayback
 }
 
+/// 某个分 P 的分段章节的只读 port：有凭据时按账户读取，本地无凭据时匿名请求。
+///
+/// 没有章节时是空列表。
+public protocol VideoChapterRepository: Sendable {
+    func chapters(for identity: PlaybackItemIdentity) async throws -> [VideoChapter]
+}
+
 /// 当前视频相关推荐的只读 port：有凭据时按账户读取，本地无凭据时匿名请求同一 endpoint。
 public protocol RelatedVideoRepository: Sendable {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo]
