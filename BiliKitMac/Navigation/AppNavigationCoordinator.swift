@@ -71,6 +71,8 @@ struct AppPlaybackSession {
     let presentedPosition: () -> Double?
     /// 活视频此刻的分 P 与秒数，写成重建用的选择意图；没有呈现中的视频时为 nil。
     let resumePoint: () -> PlaybackSelectionIntent?
+    /// 把呈现中的视频写成「刚才看过」的一项（标题、封面等取自视频模型）；呈现的已不是这个 BVID 时为 nil。
+    let recentlyWatchedEntry: (PlaybackSelectionIntent) -> RecentlyWatchedVideo?
     /// 画中画是否进行中；被盖住时画中画里的视频继续播放，不暂停。
     let isPictureInPictureActive: () -> Bool
 }
@@ -99,6 +101,12 @@ final class AppNavigationCoordinator {
     }
     /// 右侧历史，栈顶在末尾。
     private(set) var history: [AppHistoryEntry] = []
+    /// 「刚才看过」：本窗口里被另一个视频取代的视频，最近离开的在前，按 BVID 去重，不含正在播放的这个。
+    ///
+    /// 只在内存里；清空历史（回来源首页、切来源、登出、关窗）时一起清空。
+    private(set) var recentlyWatched: [RecentlyWatchedVideo] = []
+    /// 「刚才看过」最多留几项；横排一屏放五六张，留多了只是往后翻不到的旧记录。
+    private static let recentlyWatchedLimit = 20
     var topDestination: AppDestination? {
         history.last?.destination
     }
@@ -260,6 +268,7 @@ final class AppNavigationCoordinator {
         }
         if let top = history.last, case .playback(let current) = top.destination {
             guard current != intent else { return }
+            rememberRecentlyWatched(replacingWith: intent.bvid)
             rememberResumePoint(excluding: top.id)
             history[history.count - 1].destination = .playback(intent)
             makeLive(intent, entryID: top.id)
@@ -286,6 +295,7 @@ final class AppNavigationCoordinator {
             }
             return
         }
+        rememberRecentlyWatched(replacingWith: intent.bvid)
         rememberResumePoint(excluding: nil)
         let entry = AppHistoryEntry(id: takeEntryID(), destination: .playback(intent))
         pushPage(entry)
@@ -347,6 +357,7 @@ final class AppNavigationCoordinator {
             if top.id == liveEntryID {
                 popStoppingLivePlayback(change)
             } else {
+                rememberRecentlyWatched(replacingWith: nil)
                 popPage(change)
                 stopLivePlayback()
             }
@@ -375,6 +386,7 @@ final class AppNavigationCoordinator {
         guard let top = history.last else { return }
         let change = {
             self.history.removeAll()
+            self.recentlyWatched.removeAll()
             self.closeSidebarContext()
         }
         if top.id == liveEntryID {
@@ -434,6 +446,7 @@ final class AppNavigationCoordinator {
         completePendingStop()
         guard !history.isEmpty || liveIntent != nil else { return }
         history.removeAll()
+        recentlyWatched.removeAll()
         closeSidebarContext()
         closeSpacePageIfUnused()
         stopLivePlayback()
@@ -484,6 +497,24 @@ final class AppNavigationCoordinator {
             return
         }
         playback.resume()
+    }
+
+    /// 活视频要被 `newBVID` 取代，或经「返回」离开（`newBVID` 为 nil）时记进「刚才看过」。
+    ///
+    /// 换的是另一个视频时把活视频此刻的位置记在最前，新视频自己移出列表；必须在清掉活视频之前调用。
+    private func rememberRecentlyWatched(replacingWith newBVID: String?) {
+        if let newBVID { recentlyWatched.removeAll { $0.id == newBVID } }
+        guard let live = liveIntent, live.bvid != newBVID else { return }
+        // 还没开始播放就切走时没有播放位置，按离开的分 P 从头记；详情也还没到时记不了，跳过。
+        let point =
+            playback.resumePoint().flatMap { $0.bvid == live.bvid ? $0 : nil }
+            ?? PlaybackSelectionIntent(bvid: live.bvid, preferredCID: live.preferredCID)
+        guard let entry = playback.recentlyWatchedEntry(point) else { return }
+        recentlyWatched.removeAll { $0.id == entry.id }
+        recentlyWatched.insert(entry, at: 0)
+        if recentlyWatched.count > Self.recentlyWatchedLimit {
+            recentlyWatched.removeLast(recentlyWatched.count - Self.recentlyWatchedLimit)
+        }
     }
 
     /// 活视频要被新视频取代：把它此刻的分 P 与秒数写回历史里同一视频最近的播放项（`excluding` 是正被原地替换的那一项），
@@ -558,6 +589,8 @@ final class AppNavigationCoordinator {
             popPage(change)
             return
         }
+        // 经「返回」离开的视频历史里已经没有它那一项，只剩「刚才看过」能回去。
+        rememberRecentlyWatched(replacingWith: nil)
         clearLive()
         guard playback.pauseKeepingPicture() else {
             popPage(change)

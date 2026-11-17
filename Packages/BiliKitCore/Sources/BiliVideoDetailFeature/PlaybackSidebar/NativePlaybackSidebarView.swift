@@ -68,7 +68,6 @@ public struct NativePlaybackSidebarView: View {
             isObscured: isObscured,
             composerClearance: composerClearance,
             actions: NativePlaybackSidebarActions(
-                selectEpisode: selectEpisode,
                 selectPage: selectPage,
                 retryPages: retryPages,
                 selectCommentSort: { commentsModel?.selectSort($0) },
@@ -215,23 +214,7 @@ public struct NativePlaybackSidebarView: View {
     private func selectionProjection(
         _ context: VideoContext
     ) -> PlaybackSelectionProjection {
-        let episodes = context.detail.collection?.sections.flatMap(\.episodes) ?? []
-        let pagesByEpisode = Dictionary(
-            uniqueKeysWithValues: episodes.compactMap { episode in
-                model.collectionEpisodePages(for: episode.id).map {
-                    (episode.id, $0)
-                }
-            }
-        )
-        return PlaybackSelectionProjection(
-            context: context,
-            selectedEpisodeID: model.selectedCollectionEpisode,
-            requestedBVID: model.requestedSelectionBVID,
-            requestedCID: model.requestedPreferredCID,
-            presentedIdentity: model.presentedPlaybackIdentity,
-            pageStates: model.collectionEpisodePageStates,
-            pagesByEpisode: pagesByEpisode
-        )
+        model.selectionProjection(for: context)
     }
 
     private func retry() {
@@ -242,26 +225,13 @@ public struct NativePlaybackSidebarView: View {
         }
     }
 
-    private func selectEpisode(_ identity: VideoCollectionEpisodeIdentity) {
-        guard
-            let episode = model.presentedContext?.detail.collection?.sections
-                .flatMap(\.episodes)
-                .first(where: { $0.id == identity })
-        else { return }
-        model.selectCollectionEpisode(episode) { bvid, preferredCID in
-            onSelectPlayback(bvid, preferredCID)
-        }
-    }
-
     private func selectPage(_ bvid: String, _ cid: Int64) {
         onSelectPlayback(bvid, cid)
     }
 
     private func retryPages() {
         guard let identity = model.selectedCollectionEpisode,
-            let episode = model.presentedContext?.detail.collection?.sections
-                .flatMap(\.episodes)
-                .first(where: { $0.id == identity })
+            let episode = model.presentedCollectionEpisode(identity)
         else { return }
         model.retryCollectionEpisodePages(episode)
     }
@@ -304,7 +274,6 @@ final class NativePlaybackComposerClearance {
 /// 两个空间入口为 nil 时不显示对应入口；`setFollowing` 收到关注按钮点按后的目标状态，`showFollowingMenu` 在已关注时
 /// 取而代之、弹出「已关注」菜单。
 struct NativePlaybackSidebarActions {
-    let selectEpisode: (VideoCollectionEpisodeIdentity) -> Void
     let selectPage: (String, Int64) -> Void
     let retryPages: () -> Void
     let selectCommentSort: (CommentSort) -> Void

@@ -48,19 +48,19 @@ enum PlaybackCollectionEpisodeResolver {
 extension VideoCollectionEpisode {
     /// 能作为播放目标的选集：身份一致、有 BV 号、分 P 不是已知为空。
     ///
-    /// 选集菜单是否可选、认出当前是哪一集与连播的下一集都按它判断。
+    /// 合集横排里这一集能否点、认出当前是哪一集与连播的下一集都按它判断。
     var isPlayableSelection: Bool {
         isIdentityConsistent && bvid?.isEmpty == false && knownPages != []
     }
 
-    /// 选集菜单与连播提示里的标题；接口没给标题时用“无法识别的选集”。
+    /// 合集横排卡片与连播提示里的标题；接口没给标题时用“无法识别的选集”。
     var displayTitle: String {
         title.isEmpty ? VideoDetailFeatureStrings.localized("无法识别的选集") : title
     }
 }
 
 extension VideoPage {
-    /// 分 P 在选集菜单与连播提示里的名字：「P1 · 标题」，标题为空时只有「P1」。
+    /// 分 P 在分 P 菜单与连播提示里的名字：「P1 · 标题」，标题为空时只有「P1」。
     static func displayLabel(index: Int, title: String) -> String {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return (["P\(index)"] + (title.isEmpty ? [] : [title])).joined(separator: " · ")
@@ -71,17 +71,19 @@ extension VideoPage {
     }
 }
 
-/// 选集菜单里的一项。
+/// 合集横排里的一集。
 public struct PlaybackEpisodeOption: Identifiable, Sendable, Equatable {
     public let id: VideoCollectionEpisodeIdentity
     public let sectionID: VideoCollectionSectionIdentity
     public let title: String
     public let bvid: String?
     public let preferredCID: Int64?
+    public let coverURL: URL?
+    public let durationSeconds: Int?
     public let isEnabled: Bool
 }
 
-/// 选集菜单里的一个分部。
+/// 合集横排里的一个分区。
 public struct PlaybackEpisodeSectionPresentation: Identifiable, Sendable, Equatable {
     public let id: VideoCollectionSectionIdentity
     public let title: String
@@ -106,21 +108,21 @@ public enum PlaybackSelectedEpisodePagesPresentation: Sendable, Equatable {
     case empty
 }
 
-/// 把真实 collection/page 状态投影为紧凑 Picker 所需的稳定语义，不拥有网络或播放状态。
+/// 把真实 collection/page 状态投影为合集横排与侧栏分 P 菜单所需的稳定语义，不拥有网络或播放状态。
+///
+/// “当前是哪一集、在哪个分区、第几集”只在这里判断；横排与侧栏都读它，不各自从原始合集再算一遍。
 public struct PlaybackSelectionProjection: Sendable, Equatable {
+    /// 合集身份；换合集时横排回到默认分页与分区。
+    public let collectionID: Int64?
     public let collectionTitle: String?
     public let episodeSections: [PlaybackEpisodeSectionPresentation]
     public let selectedEpisodeID: VideoCollectionEpisodeIdentity?
     public let episodePositionText: String?
-    public let episodePlaceholder: String?
     public let selectedPages: PlaybackSelectedEpisodePagesPresentation
     public let selectedPageCID: Int64?
 
-    public var episodeCount: Int {
-        episodeSections.reduce(into: 0) { $0 += $1.episodes.count }
-    }
-
-    public var showsEpisodePicker: Bool { episodeCount > 0 }
+    /// 有可显示的选集：横排出现「合集」分页。
+    public var showsCollection: Bool { !episodeSections.isEmpty }
 
     public var showsSectionPicker: Bool { episodeSections.count > 1 }
 
@@ -136,8 +138,13 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
         return pages.count > 1
     }
 
-    public var isHidden: Bool {
-        collectionTitle == nil && !showsPagePicker
+    /// 侧栏分 P 这一行是否出现：有多个分 P 可选，或所选选集的分 P 正在读取或读取失败（那里给出重试）。
+    public var showsPageRow: Bool {
+        switch selectedPages {
+        case .ready(let pages): pages.count > 1
+        case .loading, .failed: true
+        case .empty: false
+        }
     }
 
     public init(
@@ -150,6 +157,7 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
         pagesByEpisode: [VideoCollectionEpisodeIdentity: [VideoPage]]
     ) {
         let collection = context.detail.collection
+        collectionID = collection?.id
         collectionTitle = collection?.title
         episodeSections =
             collection?.sections.compactMap { section in
@@ -164,6 +172,8 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
                             title: episode.displayTitle,
                             bvid: episode.bvid,
                             preferredCID: episode.defaultCID,
+                            coverURL: episode.coverURL,
+                            durationSeconds: episode.durationSeconds,
                             isEnabled: episode.isPlayableSelection
                         )
                     }
@@ -192,10 +202,6 @@ public struct PlaybackSelectionProjection: Sendable, Equatable {
                 }
             }
         }
-        episodePlaceholder =
-            collection == nil || selectedEpisode != nil
-            ? nil : VideoDetailFeatureStrings.localized("当前视频不在合集目录中")
-
         let resolvedPages: [VideoPage]?
         if collection == nil || selectedEpisode?.bvid == context.detail.bvid {
             resolvedPages = context.pages

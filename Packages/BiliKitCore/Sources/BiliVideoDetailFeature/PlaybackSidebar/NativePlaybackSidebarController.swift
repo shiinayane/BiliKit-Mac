@@ -49,7 +49,6 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         )
     )
     private(set) var actions = NativePlaybackSidebarActions(
-        selectEpisode: { _ in },
         selectPage: { _, _ in },
         retryPages: {},
         selectCommentSort: { _ in },
@@ -73,11 +72,6 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     var commentRenderRevisions: [NativePlaybackSidebarItemID: UInt64] = [:]
     /// 简介是否展开：侧栏自己的界面状态，不进 ViewModel；换视频时复位。
     private(set) var summaryExpanded = false
-    /// 正在浏览的合集分区：用户可以翻看别的分区而不切换视频；换视频、所选选集变化或该分区不再存在时，
-    /// 回到所选选集所在的分区，没有所选时取第一个（见 `reconcileBrowsedSection`）。
-    private(set) var browsedSectionID: VideoCollectionSectionIdentity?
-    /// 上次协调浏览分区时的所选选集；选集变化才把浏览分区拉回所选分区，否则保留用户的浏览。
-    private var lastSelectedEpisodeID: VideoCollectionEpisodeIdentity?
     /// 上次按它重新布局的视口宽度；变化不足 0.5pt 的尺寸通知忽略，避免重复失效布局。
     var measuredViewportWidth: CGFloat = 0
     /// 快照的代次与在途数（含义见 `NativePlaybackSidebarSnapshotTracker`）。
@@ -166,14 +160,11 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             )
         if changesIdentity {
             summaryExpanded = false
-            browsedSectionID = nil
-            lastSelectedEpisodeID = nil
             commentsPagination.reset()
         }
         if changesCommentSort {
             commentsPagination.reset()
         }
-        reconcileBrowsedSection(with: presentation.content?.selection)
         let changedItemIDs = presentation.changedItemIDs(
             comparedTo: previousPresentation
         )
@@ -283,38 +274,9 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         rootView.scrollView.documentView = collectionView
     }
 
-    private func reconcileBrowsedSection(
-        with selection: PlaybackSelectionProjection?
-    ) {
-        guard let selection else {
-            browsedSectionID = nil
-            lastSelectedEpisodeID = nil
-            return
-        }
-        let selectedEpisodeChanged =
-            selection.selectedEpisodeID != lastSelectedEpisodeID
-        let requestedSectionIsAvailable =
-            browsedSectionID.map { requestedID in
-                selection.episodeSections.contains(where: { $0.id == requestedID })
-            } ?? false
-        if selectedEpisodeChanged || !requestedSectionIsAvailable {
-            browsedSectionID =
-                selection.selectedEpisodeSectionID
-                ?? selection.episodeSections.first?.id
-        }
-        lastSelectedEpisodeID = selection.selectedEpisodeID
-    }
-
     func toggleSummary() {
         mutateItem(.summary(bvid: presentation.content?.bvid ?? "")) {
             summaryExpanded.toggle()
-        }
-    }
-
-    func browseSection(_ sectionID: VideoCollectionSectionIdentity) {
-        guard let bvid = presentation.content?.bvid else { return }
-        mutateItem(.selection(bvid: bvid)) {
-            browsedSectionID = sectionID
         }
     }
 

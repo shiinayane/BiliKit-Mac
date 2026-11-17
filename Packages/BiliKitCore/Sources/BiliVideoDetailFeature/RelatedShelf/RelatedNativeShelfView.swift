@@ -11,26 +11,35 @@ struct RelatedNativeShelfView: View {
     let presentations: [RelatedVideoCardPresentation]
     let imagePipeline: any NativeVideoImageLoading
     let onSelect: (String) -> Void
+    let scrollCommand: NativeVideoShelfScrollCommand?
+    let fadesInOnCreation: Bool
 
     init(
         contentIdentity: String,
         presentations: [RelatedVideoCardPresentation],
         imagePipeline: any NativeVideoImageLoading,
-        onSelect: @escaping (String) -> Void
+        onSelect: @escaping (String) -> Void,
+        scrollCommand: NativeVideoShelfScrollCommand? = nil,
+        fadesInOnCreation: Bool = false
     ) {
         self.contentIdentity = contentIdentity
         self.presentations = presentations
         self.imagePipeline = imagePipeline
         self.onSelect = onSelect
+        self.scrollCommand = scrollCommand
+        self.fadesInOnCreation = fadesInOnCreation
     }
 
     var body: some View {
         NativeVideoShelfView(
             contentIdentity: contentIdentity,
             items: Self.makePresentations(presentations),
+            accessibilityLabel: PlaybackShelfTab.related.title,
             imagePipeline: imagePipeline,
             onSelect: onSelect,
-            cardMenu: { Self.cardMenu(for: $0, openURL: openURL, writing: accountWriting) }
+            cardMenu: { Self.cardMenu(for: $0, openURL: openURL, writing: accountWriting) },
+            scrollCommand: scrollCommand,
+            fadesInOnCreation: fadesInOnCreation
         )
         .ignoresSafeArea(.container, edges: .horizontal)
     }

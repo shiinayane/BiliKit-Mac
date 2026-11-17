@@ -84,15 +84,12 @@ struct RelatedVideoShelf: View {
     let onRetry: () -> Void
     let contentIdentity: String
     let imageLoader: any NativeVideoImageLoading
+    var scrollCommand: NativeVideoShelfScrollCommand? = nil
+    var fadesInOnCreation = false
 
-    var body: some View {
-        RelatedVideoShelfFrame {
-            content
-        }
-    }
-
+    /// 只有内容区；标题行由外层 `PlaybackShelf` 按分页给出。
     @ViewBuilder
-    private var content: some View {
+    var body: some View {
         switch state {
         case .loading:
             RelatedVideoShelfLoadingRow()
@@ -114,7 +111,9 @@ struct RelatedVideoShelf: View {
             contentIdentity: contentIdentity,
             presentations: items,
             imagePipeline: imageLoader,
-            onSelect: onSelect
+            onSelect: onSelect,
+            scrollCommand: scrollCommand,
+            fadesInOnCreation: fadesInOnCreation
         )
         .frame(height: Shelf.viewportHeight)
     }
@@ -122,7 +121,7 @@ struct RelatedVideoShelf: View {
     private var failureShelf: some View {
         VStack(spacing: 10) {
             Label(
-                VideoDetailFeatureStrings.localized("相关推荐加载失败"),
+                VideoDetailFeatureStrings.localized("相关视频加载失败"),
                 systemImage: "exclamationmark.triangle"
             )
             .font(.headline)
@@ -135,7 +134,7 @@ struct RelatedVideoShelf: View {
 
     private var unavailableShelf: some View {
         ContentUnavailableView(
-            VideoDetailFeatureStrings.localized("暂无相关推荐"),
+            VideoDetailFeatureStrings.localized("暂无相关视频"),
             systemImage: "rectangle.stack"
         )
         .frame(maxWidth: .infinity)
@@ -144,18 +143,24 @@ struct RelatedVideoShelf: View {
 }
 
 /// 横排的外框：标题行与下方内容区；真实横排与播放页加载骨架共用，两者的布局一致。
-struct RelatedVideoShelfFrame<Content: View>: View {
+struct RelatedVideoShelfFrame<Header: View, Content: View>: View {
     private typealias Shelf = VideoCardShelfGeometry
 
+    private let customHeader: Header
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder content: () -> Content
+    ) {
+        customHeader = header()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            customHeader
+                .frame(height: Shelf.headerHeight, alignment: .leading)
                 .padding(.horizontal, Shelf.contentInset)
 
             ZStack(alignment: .topLeading) {
@@ -163,19 +168,6 @@ struct RelatedVideoShelfFrame<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(VideoDetailFeatureStrings.localized("相关推荐"))
-                .font(.title3.weight(.semibold))
-
-            Text(VideoDetailFeatureStrings.localized("继续观看"))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-
-            Spacer(minLength: 0)
-        }
     }
 }
 
@@ -207,6 +199,6 @@ struct RelatedVideoShelfLoadingRow: View {
         }
         .frame(height: Shelf.viewportHeight, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(VideoDetailFeatureStrings.localized("正在加载相关推荐"))
+        .accessibilityLabel(VideoDetailFeatureStrings.localized("正在加载相关视频"))
     }
 }

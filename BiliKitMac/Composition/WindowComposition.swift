@@ -531,6 +531,11 @@ final class WindowComposition {
                     preferredStartSeconds: Int(snapshot.positionSeconds)
                 )
             },
+            recentlyWatchedEntry: { point in
+                videoModel.presentedContext.flatMap {
+                    RecentlyWatchedVideo(detail: $0.detail, resumePoint: point)
+                }
+            },
             isPictureInPictureActive: { pictureInPicture.isActive }
         )
     }

@@ -40,10 +40,31 @@ enum NativeVideoShelfGeometry {
         CGFloat(max(0, index)) * stride
     }
 
+    /// 锚点卡片前面露出的上一张卡片宽度比例：露出一部分让人知道左边还有，又把位置留给后面几集。
+    static let anchorLeadingPeekFraction: CGFloat = 0.3
+
+    /// 让第 `index` 张卡片靠前缘、前面露出上一张一部分的逻辑偏移。
+    static func anchorOffset(for index: Int) -> CGFloat {
+        guard index > 0 else { return 0 }
+        return offset(for: index) - Shelf.cardWidth * anchorLeadingPeekFraction
+    }
+
     static func nearestIndex(offset: CGFloat, itemCount: Int) -> Int {
         guard itemCount > 0 else { return 0 }
         return min(itemCount - 1, max(0, Int(round(max(0, offset) / stride))))
     }
+}
+
+/// 让横排滚到某处的一次性请求（再点一次当前分页）；`serial` 变化才执行，同一请求重复传入不再动。
+struct NativeVideoShelfScrollCommand: Equatable {
+    enum Target: Equatable {
+        /// 锚点卡片；没有锚点时回到起点。
+        case anchor
+        case leading
+    }
+
+    let serial: Int
+    let target: Target
 }
 
 /// 把横排挂进 SwiftUI：coordinator 拥有集合视图与滚动视图，`dismantleNSView` 时 `reset()`。
@@ -55,15 +76,29 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
     let contentIdentity: String
     let items: [NativeVideoCardPresentation]
+    /// 横排在读屏里的名字：这一排是哪个分页。
+    let accessibilityLabel: String
     let imagePipeline: any NativeVideoImageLoading
     let onSelect: (String) -> Void
     /// 卡片菜单，与网格同一份描述（`NativeVideoCardMenu`）；横排被遮挡（交互关闭）时不弹。
     let cardMenu: (NativeVideoCardPresentation) -> NativeVideoCardMenu?
+    /// 需要停靠的卡片（合集里正在播放的一集）。
+    ///
+    /// 换内容时直接定位；同一内容里锚点变化时，只在新锚点不完整可见、
+    /// 且用户没动过横排时平滑跟过去：点了眼前的下一张、或连播到旁边那张时横排不动。
+    var anchorID: String? = nil
+    var scrollCommand: NativeVideoShelfScrollCommand? = nil
+    /// 新建时淡入（切分页换上这一排）；只在建立时读一次，之后改它不起作用。
+    var fadesInOnCreation = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             contentIdentity: contentIdentity,
             items: items,
+            anchorID: anchorID,
+            scrollCommand: scrollCommand,
+            fadesInOnCreation: fadesInOnCreation,
+            accessibilityLabel: accessibilityLabel,
             imagePipeline: imagePipeline,
             reduceMotion: reduceMotion,
             isInteractionEnabled: isEnabled,
@@ -83,6 +118,9 @@ struct NativeVideoShelfView: NSViewRepresentable {
         context.coordinator.update(
             contentIdentity: contentIdentity,
             items: items,
+            anchorID: anchorID,
+            scrollCommand: scrollCommand,
+            accessibilityLabel: accessibilityLabel,
             reduceMotion: reduceMotion,
             isInteractionEnabled: isEnabled,
             onSelect: onSelect,
@@ -121,10 +159,29 @@ struct NativeVideoShelfView: NSViewRepresentable {
         private var operationGeneration: UInt64 = 0
         private var isResizingDocument = false
         private var isReset = false
+        private var anchorID: String?
+        /// 上次停靠后用户是否自己滚动或翻页过；动过就不再把横排拉回正在播放的一集，换内容时清零。
+        private var userMovedSinceAnchor = false
+        /// 视口还没有宽度时推迟的停靠，等第一次视口布局再做。
+        private var pendingAnchorScroll = false
+        /// 已执行过的滚动请求；建立时传入的请求视为已执行，不在打开横排时滚动。
+        private var handledScrollCommandSerial: Int?
+        /// 还没淡入：建立时透明，等定位完成（含推迟到第一次视口布局的停靠）再淡入，淡入过程中卡片不会再移动。
+        private var needsReveal = false
+        private var accessibilityLabel: String
+        /// 切分页时新一排的淡入时长：短到不拖慢切换，够盖住封面逐张出现。
+        ///
+        /// 淡入只改 AppKit 视图自己的透明度，
+        /// 不用 SwiftUI 过渡：后者会给横排套一层不传递安全区的容器，前缘边距归零、整排跳动。
+        private static let revealDuration: TimeInterval = 0.15
 
         init(
             contentIdentity: String,
             items: [NativeVideoCardPresentation],
+            anchorID: String?,
+            scrollCommand: NativeVideoShelfScrollCommand?,
+            fadesInOnCreation: Bool,
+            accessibilityLabel: String,
             imagePipeline: any NativeVideoImageLoading,
             reduceMotion: Bool,
             isInteractionEnabled: Bool,
@@ -133,6 +190,11 @@ struct NativeVideoShelfView: NSViewRepresentable {
         ) {
             self.contentIdentity = contentIdentity
             contents = NativeCardContents(items)
+            self.anchorID = anchorID
+            handledScrollCommandSerial = scrollCommand?.serial
+            // 减弱动态效果时直接出现，与翻页动画的处理一致。
+            needsReveal = fadesInOnCreation && !reduceMotion
+            self.accessibilityLabel = accessibilityLabel
             self.imagePipeline = imagePipeline
             self.reduceMotion = reduceMotion
             self.isInteractionEnabled = isInteractionEnabled
@@ -178,6 +240,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 }
                 return ids[index]
             }
+            collectionView.onKeyboardMove = { [weak self] in self?.userMovedSinceAnchor = true }
             collectionView.onFocusChange = { [weak scrollView] in
                 scrollView?.updateFocusWithinSoon()
             }
@@ -185,7 +248,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 NativeVideoCollectionItem.self,
                 forItemWithIdentifier: .nativeVideoCard
             )
-            collectionView.setAccessibilityLabel(VideoDetailFeatureStrings.localized("横向相关推荐"))
+            collectionView.setAccessibilityLabel(accessibilityLabel)
 
             dataSource = NativeCardDataSource<NativeVideoCollectionItem>.make(
                 collectionView: collectionView,
@@ -199,12 +262,14 @@ struct NativeVideoShelfView: NSViewRepresentable {
             )
 
             scrollView.install(collectionView: collectionView)
+            if needsReveal { scrollView.alphaValue = 0 }
             applyInteractionState(isInteractionEnabled, reconfiguresCards: false)
             scrollView.onViewportLayout = { [weak self] in
                 self?.viewportDidLayout()
             }
             scrollView.onPageBackward = { [weak self] in self?.page(by: -1) }
             scrollView.onPageForward = { [weak self] in self?.page(by: 1) }
+            scrollView.onUserScroll = { [weak self] in self?.userMovedSinceAnchor = true }
             scrollView.onWindowChange = { [weak self] window in
                 self?.observeWindow(window)
             }
@@ -223,7 +288,8 @@ struct NativeVideoShelfView: NSViewRepresentable {
                     self.operationGeneration == initialGeneration
                 else { return }
                 self.resizeDocument(invalidateLayout: true)
-                self.scrollToLeading()
+                self.scrollToAnchorOrLeading(animated: false)
+                self.revealIfReady()
                 self.updateHoverForCurrentPointerLocation()
             }
             return scrollView
@@ -232,12 +298,19 @@ struct NativeVideoShelfView: NSViewRepresentable {
         func update(
             contentIdentity: String,
             items: [NativeVideoCardPresentation],
+            anchorID: String?,
+            scrollCommand: NativeVideoShelfScrollCommand?,
+            accessibilityLabel: String,
             reduceMotion: Bool,
             isInteractionEnabled: Bool,
             onSelect: @escaping (String) -> Void,
             cardMenu: @escaping (NativeVideoCardPresentation) -> NativeVideoCardMenu?
         ) {
             guard !isReset else { return }
+            if self.accessibilityLabel != accessibilityLabel {
+                self.accessibilityLabel = accessibilityLabel
+                collectionView.setAccessibilityLabel(accessibilityLabel)
+            }
             self.reduceMotion = reduceMotion
             self.onSelect = onSelect
             self.cardMenu = cardMenu
@@ -252,6 +325,18 @@ struct NativeVideoShelfView: NSViewRepresentable {
             let resetsToLeading = self.contentIdentity != contentIdentity
             self.contentIdentity = contentIdentity
             contents = updatedContents
+            let previousAnchorID = self.anchorID
+            let anchorChanged = previousAnchorID != anchorID
+            // 用户动过横排、但上一集的卡片仍在视野里，算没有离开，照常跟到新的一集。
+            if resetsToLeading || (anchorChanged && isCardVisible(previousAnchorID)) {
+                userMovedSinceAnchor = false
+            }
+            self.anchorID = anchorID
+            // 同一内容里锚点暂时消失（换集途中认不出当前一集）时不动，避免先跳回第 1 集再滑回来；新锚点已经
+            // 整张在视野里时也不动，点眼前的卡片不该让整排滑走。
+            let followsAnchor =
+                !resetsToLeading && anchorChanged && anchorID != nil && !userMovedSinceAnchor
+                && !isCardFullyVisible(anchorID)
 
             // 换了父视频（内容身份变化）时即使 ID 序列相同也按替换处理：作废在途交互与图片请求、回到起点并重配
             // 可见卡片。
@@ -260,6 +345,10 @@ struct NativeVideoShelfView: NSViewRepresentable {
                 let generation = operationGeneration
                 if resetsToLeading {
                     invalidateInteractionAndImageRequestsForContentReplacement()
+                } else if !plan.changedExistingIDs.isEmpty {
+                    // 同一内容里换位置的卡片（「刚才看过」里正在播放的那张移到最前）先换上新的文字再移动，
+                    // 不然移动动画里带着旧的「正在播放」，结束后才换过来。可见卡片按 ID 对应，与位置无关。
+                    reconfigureVisibleCards(ids: plan.changedExistingIDs)
                 }
                 applySnapshot(animatingDifferences: !resetsToLeading) { [weak self] in
                     guard
@@ -268,12 +357,37 @@ struct NativeVideoShelfView: NSViewRepresentable {
                         self.operationGeneration == generation
                     else { return }
                     self.resizeDocument(invalidateLayout: true)
-                    if resetsToLeading { self.scrollToLeading() }
+                    if resetsToLeading {
+                        self.scrollToAnchorOrLeading(animated: false)
+                    } else if followsAnchor {
+                        self.scrollToAnchorOrLeading(animated: !self.reduceMotion)
+                    }
+                    // 这次快照作废了建立时那次快照的完成回调（代次已变），淡入改在这里接上。
+                    self.revealIfReady()
                     self.reconfigureVisibleCards()
                     self.updateHoverForCurrentPointerLocation()
                 }
-            } else if !plan.changedExistingIDs.isEmpty {
-                reconfigureVisibleCards(ids: plan.changedExistingIDs)
+            } else {
+                if !plan.changedExistingIDs.isEmpty {
+                    reconfigureVisibleCards(ids: plan.changedExistingIDs)
+                }
+                if followsAnchor { scrollToAnchorOrLeading(animated: !reduceMotion) }
+            }
+            if let scrollCommand, scrollCommand.serial != handledScrollCommandSerial {
+                handledScrollCommandSerial = scrollCommand.serial
+                perform(scrollCommand.target)
+            }
+        }
+
+        /// 用户明确要求的滚动，用翻页同一份动画：回到当前一集之后重新跟随它；回到开头算用户自己挪开，连播不再拉回去。
+        private func perform(_ target: NativeVideoShelfScrollCommand.Target) {
+            switch target {
+            case .anchor:
+                userMovedSinceAnchor = false
+                scrollToAnchorOrLeading(animated: !reduceMotion)
+            case .leading:
+                userMovedSinceAnchor = true
+                applyLogicalScrollOffset(0, animated: !reduceMotion)
             }
         }
 
@@ -289,6 +403,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             collectionView.onActivateSelection = nil
             collectionView.cardMenu = nil
             collectionView.itemIDAtIndex = nil
+            collectionView.onKeyboardMove = nil
             collectionView.onFocusChange = nil
             collectionView.delegate = nil
             collectionView.dataSource = nil
@@ -410,6 +525,12 @@ struct NativeVideoShelfView: NSViewRepresentable {
             guard !isReset else { return }
             let logicalOffset = currentLogicalOffsetX
             resizeDocument(invalidateLayout: false)
+            if pendingAnchorScroll {
+                scrollToAnchorOrLeading(animated: false)
+                revealIfReady()
+                updateHoverForCurrentPointerLocation()
+                return
+            }
             let clampedOffset = min(logicalOffset, maximumLogicalOffsetX)
             if abs(clampedOffset - logicalOffset) > 0.5 {
                 applyLogicalScrollOffset(clampedOffset, animated: false)
@@ -438,6 +559,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
         }
 
         private func page(by direction: Int) {
+            userMovedSinceAnchor = true
             let current = NativeVideoShelfGeometry.nearestIndex(
                 offset: currentLogicalOffsetX,
                 itemCount: contents.orderedIDs.count
@@ -455,6 +577,65 @@ struct NativeVideoShelfView: NSViewRepresentable {
 
         private func scrollToLeading() {
             applyLogicalScrollOffset(0, animated: false)
+        }
+
+        /// 卡片是否整张或部分落在当前视口里；ID 为 nil 或不在内容里时为 false。
+        private func isCardVisible(_ id: String?) -> Bool {
+            guard let span = visibleSpan(of: id) else { return false }
+            return span.end > span.visibleStart && span.start < span.visibleEnd
+        }
+
+        /// 卡片是否整张落在当前视口里；ID 为 nil 或不在内容里时为 false。
+        private func isCardFullyVisible(_ id: String?) -> Bool {
+            guard let span = visibleSpan(of: id) else { return false }
+            return span.start >= span.visibleStart && span.end <= span.visibleEnd
+        }
+
+        /// 卡片在逻辑坐标里的起止，和视口的起止（视口扣掉两侧内容边距，与翻页的“完整卡片”同一口径）。
+        private func visibleSpan(
+            of id: String?
+        ) -> (start: CGFloat, end: CGFloat, visibleStart: CGFloat, visibleEnd: CGFloat)? {
+            guard let id, let index = contents.orderedIDs.firstIndex(of: id) else { return nil }
+            let start = NativeVideoShelfGeometry.offset(for: index)
+            let visibleStart = currentLogicalOffsetX
+            let visibleWidth =
+                scrollView.contentSize.width - VideoCardShelfGeometry.contentInset * 2
+            return (
+                start,
+                start + VideoCardShelfGeometry.cardWidth,
+                visibleStart,
+                visibleStart + visibleWidth
+            )
+        }
+
+        private func revealIfReady() {
+            guard needsReveal, !pendingAnchorScroll, !isReset else { return }
+            needsReveal = false
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.revealDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                scrollView.animator().alphaValue = 1
+            }
+        }
+
+        /// 停到锚点卡片；没有锚点或锚点不在内容里时回到起点。
+        ///
+        /// 视口还没有宽度（尚未布局）时推迟到第一次视口布局；窄于一张卡片的视口照常停靠，偏移按可滚范围收住。
+        private func scrollToAnchorOrLeading(animated: Bool) {
+            guard let anchorID, let index = contents.orderedIDs.firstIndex(of: anchorID) else {
+                pendingAnchorScroll = false
+                scrollToLeading()
+                return
+            }
+            guard scrollView.contentSize.width > 0 else {
+                pendingAnchorScroll = true
+                return
+            }
+            pendingAnchorScroll = false
+            applyLogicalScrollOffset(
+                NativeVideoShelfGeometry.anchorOffset(for: index),
+                animated: animated
+            )
         }
 
         private func scroll(to index: Int, animated: Bool) {

@@ -5,7 +5,7 @@ import BiliVideoCollectionUI
 import Foundation
 import SwiftUI
 
-/// 已有详情时的播放页主区：播放器、相关推荐横排，以及工具栏标题、副标题和两组按钮：点赞投币收藏一组，
+/// 已有详情时的播放页主区：播放器、下方横排（`PlaybackShelf`），以及工具栏标题、副标题和两组按钮：点赞投币收藏一组，
 /// 发送弹幕与弹幕设置一组。
 ///
 /// macOS 26 起相邻的工具栏项会并进同一块玻璃，两组之间用固定宽度的 `ToolbarSpacer` 断开；更早的系统每项各自独立，
@@ -19,18 +19,34 @@ struct VideoDetailView<PlayerContent: View>: View {
     let relatedVideoState: RelatedVideoState
     let onSelectRelatedVideo: (String) -> Void
     let onRetryRelatedVideos: () -> Void
+    /// 选集投影；视频不属于合集时为 nil，横排没有「合集」分页。
+    let collectionShelf: PlaybackSelectionProjection?
+    let recentlyWatched: [RecentlyWatchedVideo]
+    let isReplacingVideo: Bool
+    let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
+    let onSelectCollectionEpisode: (VideoCollectionEpisodeIdentity) -> Void
     let relatedImageLoader: any NativeVideoImageLoading
+    /// 旧详情不可操作时挡住播放器的点击。
+    ///
+    /// 只挂在播放器上：挂在整页上时 SwiftUI 会给 AppKit 横排临时套一层不传递安全区的
+    /// 容器，横排的前缘边距在换视频途中归零又恢复，卡片左右跳一下；横排自己按 `isEnabled` 拦截点击、悬停与菜单。
+    let blocksPlayerHitTesting: Bool
     let playerContent: () -> PlayerContent
 
     var body: some View {
         PlaybackDetailLayout {
             player
         } related: {
-            RelatedVideoShelf(
-                state: shelfState,
-                onSelect: onSelectRelatedVideo,
-                onRetry: onRetryRelatedVideos,
-                contentIdentity: context.detail.bvid,
+            PlaybackShelf(
+                collection: collectionShelf,
+                recentlyWatched: recentlyWatched,
+                isReplacingVideo: isReplacingVideo,
+                relatedState: shelfState,
+                relatedContentIdentity: context.detail.bvid,
+                onSelectRelated: onSelectRelatedVideo,
+                onRetryRelated: onRetryRelatedVideos,
+                onSelectRecent: onSelectRecentlyWatched,
+                onSelectEpisode: onSelectCollectionEpisode,
                 imageLoader: relatedImageLoader
             )
         }
@@ -110,5 +126,6 @@ struct VideoDetailView<PlayerContent: View>: View {
     private var player: some View {
         playerContent()
             .background(.black)
+            .allowsHitTesting(!blocksPlayerHitTesting)
     }
 }

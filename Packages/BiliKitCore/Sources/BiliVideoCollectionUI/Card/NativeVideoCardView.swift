@@ -272,10 +272,15 @@ final class NativeVideoCardView: NativeInteractiveCardView {
     )
     private let footerFont = NSFont.preferredFont(forTextStyle: .body)
     private let textRenderer = NativeVideoCardTextRenderer()
+    /// 正在播放的强调底色，放在最底层，与悬停底色、描边互不覆盖。
+    private let nowPlayingFill = CALayer()
+    private var isNowPlaying = false
     private var showsAvatar = true
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        nowPlayingFill.cornerRadius = NativeInteractiveSurface.cornerRadius
+        layer?.insertSublayer(nowPlayingFill, at: 0)
         for subview in [cover, avatar] {
             subview.setAccessibilityElement(false)
             addSubview(subview)
@@ -307,13 +312,24 @@ final class NativeVideoCardView: NativeInteractiveCardView {
             badgeText: badgeText,
             isDimmed: !presentation.isActivatable
         )
-        textRenderer.configure(
-            title: presentation.title,
-            footerLeading: presentation.footerLeadingText,
-            footerTrailing: presentation.footerTrailingText,
-            footerTrailingSymbolName: presentation.footerTrailingSymbolName,
-            footerTrailingStyle: presentation.footerTrailingStyle
-        )
+        isNowPlaying = presentation.nowPlayingText != nil
+        if let nowPlayingText = presentation.nowPlayingText {
+            textRenderer.configure(
+                title: presentation.title,
+                footerLeading: presentation.footerLeadingText,
+                footerTrailing: nowPlayingText,
+                footerTrailingSymbolName: NativeNowPlayingAppearance.symbolName,
+                footerTrailingStyle: .nowPlaying
+            )
+        } else {
+            textRenderer.configure(
+                title: presentation.title,
+                footerLeading: presentation.footerLeadingText,
+                footerTrailing: presentation.footerTrailingText,
+                footerTrailingSymbolName: presentation.footerTrailingSymbolName,
+                footerTrailingStyle: presentation.footerTrailingStyle
+            )
+        }
         setContentActivatable(presentation.isActivatable)
         setAccessibilityLabel(presentation.accessibilityLabel)
         setAccessibilityHelp(presentation.accessibilityHelp)
@@ -330,6 +346,7 @@ final class NativeVideoCardView: NativeInteractiveCardView {
     }
 
     override func resetContent() {
+        isNowPlaying = false
         cover.reset()
         textRenderer.reset()
         avatar.isHidden = false
@@ -356,6 +373,15 @@ final class NativeVideoCardView: NativeInteractiveCardView {
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        nowPlayingFill.frame = bounds
+        CATransaction.commit()
+        NativeNowPlayingAppearance.applyFill(
+            isNowPlaying,
+            to: nowPlayingFill,
+            appearance: effectiveAppearance
+        )
         let coverHeight = VideoCardGeometry.coverHeight(forWidth: bounds.width)
         cover.frame = NSRect(x: 0, y: 0, width: bounds.width, height: coverHeight)
         let textX = VideoCardGeometry.textLeadingInset(showsAvatar: showsAvatar)

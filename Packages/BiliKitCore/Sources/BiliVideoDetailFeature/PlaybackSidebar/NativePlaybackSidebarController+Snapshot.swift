@@ -186,7 +186,6 @@ extension NativePlaybackSidebarController {
             hasher.combine(summaryExpanded)
         case .selection:
             hasher.combine(String(reflecting: content.selection))
-            hasher.combine(browsedSectionID)
         case .commentsHeader:
             hasher.combine(content.comments.sort)
             hasher.combine(content.comments.totalCount)
@@ -217,11 +216,7 @@ extension NativePlaybackSidebarController {
                 expanded: summaryExpanded
             )
         case .selection:
-            return NativePlaybackSidebarItemMeasurement.selection(
-                content.selection,
-                width: width,
-                browsedSectionID: browsedSectionID
-            )
+            return NativePlaybackSidebarItemMeasurement.selection
         case .commentsHeader:
             return NativePlaybackCommentsItemMeasurement.headerHeight
         case .commentsState(_, let kind):

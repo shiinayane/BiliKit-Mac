@@ -13,6 +13,8 @@ final class NativeVideoShelfScrollView: NSScrollView {
     var onPageBackward: (() -> Void)?
     var onPageForward: (() -> Void)?
     var onWindowChange: ((NSWindow?) -> Void)?
+    /// 用户用触控板或鼠标横向滚动横排；只算横向分量，页面的竖向滚动经过这里不算。
+    var onUserScroll: (() -> Void)?
 
     private let backwardButton = NativeVideoShelfPageButton()
     private let forwardButton = NativeVideoShelfPageButton()
@@ -200,7 +202,13 @@ final class NativeVideoShelfScrollView: NSScrollView {
         onPageBackward = nil
         onPageForward = nil
         onWindowChange = nil
+        onUserScroll = nil
         documentView = nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) { onUserScroll?() }
+        super.scrollWheel(with: event)
     }
 
     func clearFirstResponderIfNeeded() {
@@ -295,6 +303,8 @@ final class NativeVideoShelfPageButton: NSButton {
 @MainActor
 final class NativeVideoShelfCollectionView: NativeVideoCardCollectionView {
     var itemIDAtIndex: ((Int) -> String?)?
+    /// 用户用方向键移动了键盘选择（集合视图随之滚动）；横排据此不再把它拉回正在播放的一集。
+    var onKeyboardMove: (() -> Void)?
     var onFocusChange: (() -> Void)?
     var isInteractionEnabled = true
 
@@ -344,6 +354,7 @@ final class NativeVideoShelfCollectionView: NativeVideoCardCollectionView {
         if let delta = NativeVideoCollectionKeys.selectionDelta(for: event),
             moveSelection(by: delta)
         {
+            onKeyboardMove?()
             return
         }
         super.keyDown(with: event)

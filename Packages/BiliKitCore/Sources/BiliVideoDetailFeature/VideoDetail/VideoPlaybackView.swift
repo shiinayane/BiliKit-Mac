@@ -8,7 +8,8 @@ import SwiftUI
 ///
 /// 详情上下文一旦可用就选择同一 BVID/CID；状态回到 idle/loading/failed 时 identity 变为
 /// `nil`，由 `.task(id:)` 完整 reset 弹幕支线。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
-/// 相关推荐横排由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）。展示的详情变化时交给
+/// 下方横排（相关视频、刚才看过、合集）由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）、「刚才看过」
+/// 列表与选择回调。展示的详情变化时交给
 /// `VideoEngagementModel` 重读互动状态（窗口账户变化由 App 另行交给它）。
 public struct VideoPlaybackView<PlayerContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,6 +19,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
     private let onSelectRelatedVideo: (String) -> Void
+    private let onSelectPlayback: (String, Int64?) -> Void
+    private let recentlyWatched: [RecentlyWatchedVideo]
+    private let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
     private let relatedImageLoader: any NativeVideoImageLoading
     private let playerContent: () -> PlayerContent
 
@@ -28,6 +32,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
         onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
+        onSelectPlayback: @escaping (String, Int64?) -> Void = { _, _ in },
+        recentlyWatched: [RecentlyWatchedVideo] = [],
+        onSelectRecentlyWatched: @escaping (PlaybackSelectionIntent) -> Void = { _ in },
         relatedImageLoader: any NativeVideoImageLoading,
         @ViewBuilder playerContent: @escaping () -> PlayerContent
     ) {
@@ -37,6 +44,9 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         self.engagementModel = engagementModel
         self.onRetry = onRetry
         self.onSelectRelatedVideo = onSelectRelatedVideo
+        self.onSelectPlayback = onSelectPlayback
+        self.recentlyWatched = recentlyWatched
+        self.onSelectRecentlyWatched = onSelectRecentlyWatched
         self.relatedImageLoader = relatedImageLoader
         self.playerContent = playerContent
     }
@@ -85,6 +95,19 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         }
     }
 
+    private func collectionShelfInput(_ context: VideoContext) -> PlaybackSelectionProjection? {
+        let projection = model.selectionProjection(for: context)
+        return projection.showsCollection ? projection : nil
+    }
+
+    private func selectCollectionEpisode(_ identity: VideoCollectionEpisodeIdentity) {
+        let onSelectPlayback = onSelectPlayback
+        guard let episode = model.presentedCollectionEpisode(identity) else { return }
+        model.selectCollectionEpisode(episode) { bvid, preferredCID in
+            onSelectPlayback(bvid, preferredCID)
+        }
+    }
+
     private var detailSurface: some View {
         detailSurfaceContent
             .overlay {
@@ -103,11 +126,20 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 relatedVideoState: model.relatedVideoState,
                 onSelectRelatedVideo: onSelectRelatedVideo,
                 onRetryRelatedVideos: model.retryRelatedVideos,
+                collectionShelf: collectionShelfInput(currentContext),
+                // 正在播放的排最前；「返回」回到列表里的视频时它不会从协调器的列表移出，这里去掉重复的那一项。
+                recentlyWatched: [RecentlyWatchedVideo(nowPlaying: currentContext.detail)]
+                    + recentlyWatched.filter { $0.id != currentContext.detail.bvid },
+                isReplacingVideo: model.requestedSelectionBVID.map {
+                    $0 != currentContext.detail.bvid
+                } ?? false,
+                onSelectRecentlyWatched: onSelectRecentlyWatched,
+                onSelectCollectionEpisode: selectCollectionEpisode,
                 relatedImageLoader: relatedImageLoader,
+                blocksPlayerHitTesting: blocksRetainedContext,
                 playerContent: playerContent
             )
             .disabled(blocksRetainedContext)
-            .allowsHitTesting(!blocksRetainedContext)
             .accessibilityHidden(blocksRetainedContext)
         } else {
             VideoDetailSkeleton(loadingLabel: initialLoadingLabel)
