@@ -146,9 +146,6 @@ extension NativePlaybackSidebarController {
             else { return nil }
             item.configure(
                 projection: content.selection,
-                browsedSectionID: browsedSectionID,
-                onSelectSection: { [weak self] in self?.browseSection($0) },
-                onSelectEpisode: { [weak self] in self?.actions.selectEpisode($0) },
                 onSelectPage: { [weak self] cid in
                     guard self?.presentation.content?.bvid == content.bvid else { return }
                     self?.actions.selectPage(content.bvid, cid)

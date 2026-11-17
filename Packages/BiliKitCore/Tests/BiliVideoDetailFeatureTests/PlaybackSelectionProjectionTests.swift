@@ -7,20 +7,20 @@ import Testing
 
 /// 播放页的选集投影只呈现能确定的合集与分 P，认不准时不编造。
 ///
-/// 没有合集时只按分 P 数决定显示分 P 选择；有合集时显示选集，分部保留、空分部不成组，不可用的集仍可见但禁用；
+/// 没有合集时只按分 P 数决定侧栏是否出现分 P 行；有合集时横排出现合集，分部保留、空分部不成组，不可用的集仍可见但禁用；
 /// 位置按当前集所在分部计数；认不出当前集或分 P 尚未加载时不编造集与 CID；重复 BVID 用 CID 区分，区分不了时
 /// 不猜，显式选中的那一集优先。
 struct PlaybackSelectionProjectionTests {
     @Test
-    func noCollectionSinglePageHidesSelectionAndMultiplePagesShowOnlyPagePicker() {
+    func noCollectionShowsOnlyAPageRowAndOnlyForMultiplePages() {
         let single = projection(context: context(pages: [makeTestPage(1)]))
         let multiple = projection(context: context(pages: [makeTestPage(1), makeTestPage(2)]))
 
-        #expect(single.isHidden)
-        #expect(!single.showsEpisodePicker)
+        #expect(!single.showsPageRow)
+        #expect(!single.showsCollection)
         #expect(!single.showsPagePicker)
-        #expect(!multiple.isHidden)
-        #expect(!multiple.showsEpisodePicker)
+        #expect(multiple.showsPageRow)
+        #expect(!multiple.showsCollection)
         #expect(multiple.showsPagePicker)
     }
 
@@ -39,10 +39,10 @@ struct PlaybackSelectionProjectionTests {
         )
 
         #expect(single.collectionTitle == "合集")
-        #expect(single.showsEpisodePicker)
+        #expect(single.showsCollection)
         #expect(!single.showsSectionPicker)
         #expect(!single.showsPagePicker)
-        #expect(multiple.showsEpisodePicker)
+        #expect(multiple.showsCollection)
         #expect(multiple.showsPagePicker)
     }
 
@@ -61,8 +61,8 @@ struct PlaybackSelectionProjectionTests {
             )
         )
 
-        #expect(projection.showsEpisodePicker)
-        #expect(projection.episodeCount == 1)
+        #expect(projection.showsCollection)
+        #expect(projection.episodeSections.flatMap(\.episodes).count == 1)
         #expect(projection.episodeSections.map(\.title) == ["分区 2"])
     }
 
@@ -88,9 +88,9 @@ struct PlaybackSelectionProjectionTests {
             )
         )
 
-        #expect(projection.episodeCount == 80)
+        #expect(projection.episodeSections.flatMap(\.episodes).count == 80)
         #expect(projection.episodeSections.count == 4)
-        #expect(projection.showsEpisodePicker)
+        #expect(projection.showsCollection)
         #expect(projection.showsSectionPicker)
         #expect(projection.episodeSections.last?.episodes.last?.isEnabled == false)
     }
@@ -116,11 +116,11 @@ struct PlaybackSelectionProjectionTests {
 
         #expect(missing.selectedEpisodeID == nil)
         #expect(missing.episodePositionText == nil)
-        #expect(missing.episodePlaceholder != nil)
         #expect(missing.selectedPageCID == nil)
         #expect(pending.selectedEpisodeID == remote.id)
         #expect(pending.episodePositionText == "1/1")
         #expect(pending.selectedPages == .loading)
+        #expect(pending.showsPageRow)
         #expect(pending.selectedPageCID == nil)
     }
 
@@ -184,7 +184,6 @@ struct PlaybackSelectionProjectionTests {
         #expect(resolved.episodePositionText == "2/2")
         #expect(ambiguous.selectedEpisodeID == nil)
         #expect(ambiguous.episodePositionText == nil)
-        #expect(ambiguous.episodePlaceholder != nil)
     }
 
     @Test

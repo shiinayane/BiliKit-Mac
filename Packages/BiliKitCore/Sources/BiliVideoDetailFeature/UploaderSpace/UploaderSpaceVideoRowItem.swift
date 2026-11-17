@@ -164,11 +164,16 @@ final class UploaderSpaceVideoRowView: NSView {
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.cell?.truncatesLastVisibleLine = true
 
-        playingIcon.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
-        playingIcon.contentTintColor = .controlAccentColor
+        playingIcon.image = NSImage(
+            systemSymbolName: NativeNowPlayingAppearance.symbolName,
+            accessibilityDescription: nil
+        )
+        playingIcon.contentTintColor = NativeNowPlayingAppearance.markerColor
         playingIcon.symbolConfiguration = .init(textStyle: .caption1, scale: .small)
-        playingLabel.font = NSFont.preferredFont(forTextStyle: .caption1).withWeight(.semibold)
-        playingLabel.textColor = .controlAccentColor
+        playingLabel.font = NativeNowPlayingAppearance.markerFont(
+            for: .preferredFont(forTextStyle: .caption1)
+        )
+        playingLabel.textColor = NativeNowPlayingAppearance.markerColor
 
         collaborationLabel.font = .preferredFont(forTextStyle: .caption2)
         collaborationLabel.textColor = .secondaryLabelColor
@@ -422,14 +427,13 @@ final class UploaderSpaceVideoRowView: NSView {
     }
 
     private func refreshAppearance(animated: Bool) {
+        NativeNowPlayingAppearance.applyFill(
+            isCurrent,
+            to: currentHighlightLayer,
+            appearance: effectiveAppearance
+        )
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        currentHighlightLayer.backgroundColor =
-            isCurrent
-            ? NSColor.controlAccentColor.withAlphaComponent(
-                UploaderSpaceGeometry.currentRowFillOpacity
-            ).cgColor(for: effectiveAppearance)
-            : nil
         collaborationLabel.layer?.borderColor =
             NSColor.secondaryLabelColor.cgColor(for: effectiveAppearance)
         CATransaction.commit()
@@ -444,11 +448,5 @@ final class UploaderSpaceVideoRowView: NSView {
             appearance: effectiveAppearance,
             animated: animated
         )
-    }
-}
-
-extension NSFont {
-    fileprivate func withWeight(_ weight: NSFont.Weight) -> NSFont {
-        NSFont.systemFont(ofSize: pointSize, weight: weight)
     }
 }

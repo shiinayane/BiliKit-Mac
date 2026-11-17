@@ -29,8 +29,6 @@ public enum UploaderSpaceGeometry {
     static let rowPadding: CGFloat = 8
     static let rowSpacing: CGFloat = 2
     static let rowCornerRadius: CGFloat = 8
-    /// 正在播放那一行的强调色底色不透明度；比悬停底色明显，指针移开后仍能看出是哪一行。
-    static let currentRowFillOpacity: CGFloat = 0.15
     static let rowHeight: CGFloat = coverHeight + rowPadding * 2
 
     /// 封面右下角的时长角标。

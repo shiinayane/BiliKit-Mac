@@ -7,7 +7,7 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 侧栏快照按稳定的语义分区与行身份组织，内容变化只重载对应的行，分 P 时长变化只重载含时间戳的简介与评论；选集与分 P 只呈现所选目录，失败时保留恢复路径。
+/// 侧栏快照按稳定的语义分区与行身份组织，内容变化只重载对应的行，分 P 时长变化只重载含时间戳的简介与评论；分 P 只呈现所选视频的目录，失败时保留恢复路径。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
     @Test
@@ -29,52 +29,6 @@ struct PlaybackSidebarPresentationTests: PlaybackSidebarFixtures {
                     .commentsState(subject: nil, kind: .idle)
                 ]
         )
-    }
-
-    @Test
-    @MainActor
-    func browsingAnotherSectionKeepsPagesOnlyForTheSelectedEpisodeSection() {
-        let collection = makeTestCollection(sections: [
-            [
-                makeTestEpisode(
-                    ordinal: 0,
-                    bvid: "BVCurrent",
-                    pages: [makeTestPage(1)],
-                    title: "第一集"
-                )
-            ],
-            [
-                makeTestEpisode(
-                    ordinal: 1,
-                    bvid: "BVOther",
-                    pages: [makeTestPage(1)],
-                    section: 1,
-                    title: "幕后花絮"
-                )
-            ]
-        ])
-        let projection = selectionProjection(
-            context: context(bvid: "BVCurrent", collection: collection)
-        )
-        let selectedSectionHeight = NativePlaybackSidebarItemMeasurement.selection(
-            projection,
-            width: 328,
-            browsedSectionID: projection.selectedEpisodeSectionID
-        )
-        let otherSectionHeight = NativePlaybackSidebarItemMeasurement.selection(
-            projection,
-            width: 328,
-            browsedSectionID: collection.sections[1].id
-        )
-
-        #expect(projection.showsSectionPicker)
-        #expect(
-            projection.episodeSections.map { $0.episodes.map(\.title) }
-                == [["第一集"], ["幕后花絮"]]
-        )
-        #expect(projection.selectedEpisodeSectionID == collection.sections[0].id)
-        #expect(projection.showsPagePicker)
-        #expect(otherSectionHeight < selectedSectionHeight)
     }
 
     @Test

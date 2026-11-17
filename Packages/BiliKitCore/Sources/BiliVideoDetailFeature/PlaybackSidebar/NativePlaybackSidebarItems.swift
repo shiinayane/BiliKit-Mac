@@ -25,43 +25,9 @@ enum NativePlaybackSidebarItemMeasurement {
         NativePlaybackSummaryGeometry(summary: summary, width: width, expanded: expanded).height
     }
 
-    static func selection(
-        _ projection: PlaybackSelectionProjection,
-        width: CGFloat,
-        browsedSectionID: VideoCollectionSectionIdentity?
-    ) -> CGFloat {
-        var heights: [CGFloat] = []
-        if projection.collectionTitle != nil {
-            heights.append(22)
-        }
-        if projection.showsSectionPicker {
-            heights.append(rowHeight)
-        }
-        if projection.showsEpisodePicker {
-            heights.append(rowHeight)
-        }
-        if let placeholder = projection.episodePlaceholder {
-            heights.append(
-                NativePlaybackSidebarTextLayout.height(
-                    placeholder,
-                    width: width,
-                    font: .preferredFont(forTextStyle: .callout)
-                )
-            )
-        }
-        if browsedSectionID == projection.selectedEpisodeSectionID {
-            switch projection.selectedPages {
-            case .ready(let pages) where pages.count > 1:
-                heights.append(rowHeight)
-            case .loading, .failed:
-                heights.append(rowHeight)
-            case .ready, .empty:
-                break
-            }
-        }
-        guard !heights.isEmpty else { return 1 }
-        return sectionTopInset + heights.reduce(0, +)
-            + CGFloat(heights.count - 1) * sectionSpacing
+    /// 分 P 条目只有一行；条目只在 `PlaybackSelectionProjection.showsPageRow` 时出现。
+    static var selection: CGFloat {
+        sectionTopInset + rowHeight
     }
 }
 

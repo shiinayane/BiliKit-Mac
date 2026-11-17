@@ -20,7 +20,6 @@ extension PlaybackSidebarFixtures {
         loadNextComments: @escaping () -> Void = {}
     ) -> NativePlaybackSidebarActions {
         NativePlaybackSidebarActions(
-            selectEpisode: { _ in },
             selectPage: { _, _ in },
             retryPages: {},
             selectCommentSort: { _ in },

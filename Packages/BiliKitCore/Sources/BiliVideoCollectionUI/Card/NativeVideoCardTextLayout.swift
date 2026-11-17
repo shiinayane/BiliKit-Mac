@@ -198,10 +198,12 @@ final class NativeVideoCardTextRenderer {
 
     func trailingWidth(font: NSFont) -> CGFloat {
         guard let footerTrailing else { return 0 }
-        let font =
-            footerTrailingStyle == .brandOutlinedCapsule
-            ? resolvedCapsuleFont(for: font)
-            : resolvedFooterFont(for: font)
+        let font: CTFont =
+            switch footerTrailingStyle {
+            case .plain: resolvedFooterFont(for: font)
+            case .brandOutlinedCapsule: resolvedCapsuleFont(for: font)
+            case .nowPlaying: NativeNowPlayingAppearance.markerFont(for: font) as CTFont
+            }
         let measurementVariant =
             "\(footerTrailingStyle)|\(CTFontCopyPostScriptName(font))|\(CTFontGetSize(font))"
         let textWidth = footerTrailingWidthCache.width(
@@ -211,7 +213,7 @@ final class NativeVideoCardTextRenderer {
             NativeVideoCardTextLayout.singleLineWidth(footerTrailing, font: font)
         }
         switch footerTrailingStyle {
-        case .plain:
+        case .plain, .nowPlaying:
             guard let symbol = trailingSymbol(font: font) else { return textWidth }
             return textWidth + ceil(symbol.size.width)
                 + NativeVideoCardTextLayout.footerSymbolSpacing
@@ -255,10 +257,11 @@ final class NativeVideoCardTextRenderer {
         footerTrailingLayer.frame = footerTrailingFrame
         footerTrailingLayer.string = footerTrailing
         footerTrailingLayer.isHidden = footerTrailing == nil
+        let markerCTFont = NativeNowPlayingAppearance.markerFont(for: footerFont) as CTFont
         layoutTrailingIcon(
             in: footerTrailingFrame,
-            font: footerCTFont,
-            color: colors.footer,
+            font: footerTrailingStyle == .nowPlaying ? markerCTFont : footerCTFont,
+            color: footerTrailingStyle == .nowPlaying ? colors.accent : colors.footer,
             contentsScale: contentsScale
         )
         switch footerTrailingStyle {
@@ -285,13 +288,24 @@ final class NativeVideoCardTextRenderer {
             footerTrailingLayer.borderColor = colors.brand.cgColor
             footerTrailingLayer.borderWidth = 1 / max(1, contentsScale)
             footerTrailingLayer.cornerRadius = footerTrailingFrame.height / 2
+        case .nowPlaying:
+            footerTrailingLayer.font = markerCTFont
+            footerTrailingLayer.fontSize = CTFontGetSize(markerCTFont)
+            footerTrailingLayer.alignmentMode = .right
+            footerTrailingLayer.centersTextVertically = false
+            footerTrailingLayer.setNeedsDisplay()
+            footerTrailingLayer.foregroundColor = colors.accent.cgColor
+            footerTrailingLayer.backgroundColor = nil
+            footerTrailingLayer.borderColor = nil
+            footerTrailingLayer.borderWidth = 0
+            footerTrailingLayer.cornerRadius = 0
         }
 
         CATransaction.commit()
     }
 
     private func trailingSymbol(font: CTFont) -> NSImage? {
-        guard footerTrailingStyle == .plain, footerTrailing != nil,
+        guard footerTrailingStyle != .brandOutlinedCapsule, footerTrailing != nil,
             let footerTrailingSymbolName
         else { return nil }
         return NativeVideoCardTextLayout.footerSymbol(
@@ -387,9 +401,10 @@ final class NativeVideoCardTextRenderer {
 
     private static func resolvedColors(
         appearance: NSAppearance
-    ) -> (title: NSColor, footer: NSColor, brand: NSColor) {
+    ) -> (title: NSColor, footer: NSColor, brand: NSColor, accent: NSColor) {
         var title = NSColor.labelColor
         var footer = NSColor.secondaryLabelColor
+        var accent = NativeNowPlayingAppearance.markerColor
         var brand = NSColor(
             srgbRed: 0,
             green: 174.0 / 255.0,
@@ -400,7 +415,8 @@ final class NativeVideoCardTextRenderer {
             title = NSColor.labelColor.usingColorSpace(.deviceRGB) ?? .labelColor
             footer = NSColor.secondaryLabelColor.usingColorSpace(.deviceRGB) ?? .secondaryLabelColor
             brand = brand.usingColorSpace(.deviceRGB) ?? brand
+            accent = accent.usingColorSpace(.deviceRGB) ?? accent
         }
-        return (title, footer, brand)
+        return (title, footer, brand, accent)
     }
 }

@@ -26,6 +26,8 @@ public enum VideoCardShelfGeometry {
     /// 卡片下方仍在横排可视区内的留白；页面底边距要扣掉它，卡片到窗口底边才与设计值一致。
     public static let bottomInset: CGFloat = 22
     public static let viewportHeight = cardHeight + bottomInset
+    /// 标题行固定高度：放得下分段控件，有无合集、切换分页时横排总高不变，视频尺寸不跳。
+    public static let headerHeight: CGFloat = 28
 }
 
 /// 单张卡片的 16:9 封面与文字区；纵向偏移都从封面底边算起。

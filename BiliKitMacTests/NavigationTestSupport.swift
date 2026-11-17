@@ -13,6 +13,8 @@ func makeNavigationCoordinator(
     resumePlayback: @escaping () -> Void = {},
     presentedPosition: @escaping () -> Double? = { nil },
     resumePoint: @escaping () -> PlaybackSelectionIntent? = { nil },
+    recentlyWatchedEntry:
+        @escaping (PlaybackSelectionIntent) -> RecentlyWatchedVideo? = { _ in nil },
     isPictureInPictureActive: @escaping () -> Bool = { false },
     transitionPage:
         @escaping (
@@ -33,6 +35,7 @@ func makeNavigationCoordinator(
             resume: resumePlayback,
             presentedPosition: presentedPosition,
             resumePoint: resumePoint,
+            recentlyWatchedEntry: recentlyWatchedEntry,
             isPictureInPictureActive: isPictureInPictureActive
         ),
         transitionPage: transitionPage,

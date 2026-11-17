@@ -5,7 +5,7 @@ import Testing
 @testable import BiliKit
 
 /// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声（画中画除外），回来只恢复由盖住暂停、
-/// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建。
+/// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建，并按离开先后记进「刚才看过」。
 @MainActor
 struct AppNavigationHistoryTests {
     private let owner = VideoOwner(id: 7, name: "UP 主")
@@ -82,6 +82,78 @@ struct AppNavigationHistoryTests {
             ]
         )
         #expect(playback.lastStart == playback.resumePoint)
+    }
+
+    /// 「刚才看过」最近离开的在前、按 BVID 去重、不含正在播放的；从里面点回去的视频移出列表，回来源首页时清空。
+    @Test
+    func replacedVideosAreListedNewestFirstExceptTheOneNowPlaying() {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1A")
+        playback.resumePoint = Self.point("BV1A", seconds: 30)
+        coordinator.openPlayback("BV1B")
+        playback.resumePoint = Self.point("BV1B", seconds: 40)
+        coordinator.openPlayback("BV1C")
+
+        #expect(coordinator.recentlyWatched.map(\.id) == ["BV1B", "BV1A"])
+        #expect(
+            coordinator.recentlyWatched.map(\.resumePoint) == [
+                Self.point("BV1B", seconds: 40), Self.point("BV1A", seconds: 30)
+            ]
+        )
+
+        playback.resumePoint = Self.point("BV1C", seconds: 50)
+        coordinator.openPlayback(coordinator.recentlyWatched[1].resumePoint)
+        #expect(coordinator.recentlyWatched.map(\.id) == ["BV1C", "BV1B"])
+        #expect(playback.lastStart == Self.point("BV1A", seconds: 30))
+
+        coordinator.goHome()
+        #expect(coordinator.recentlyWatched.isEmpty)
+    }
+
+    /// 经「返回」离开的视频历史里已没有它那一项，也记进「刚才看过」，从离开的位置续播。
+    @Test
+    func aVideoLeftThroughBackIsListedToo() {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1A")
+        coordinator.openUploaderSpacePage(owner: owner)
+        coordinator.openPlayback("BV1B")
+        playback.resumePoint = Self.point("BV1B", seconds: 20)
+        coordinator.goBack()
+
+        #expect(coordinator.recentlyWatched.first?.resumePoint == Self.point("BV1B", seconds: 20))
+    }
+
+    /// 还没播起来就切走的按离开的视频从头记；离开时已到分 P 结尾的标为看完，点开也从头播。
+    @Test
+    func videosLeftBeforePlayingOrAtTheEndResumeFromTheStart() {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1A")
+        coordinator.openPlayback("BV1B")
+        playback.resumePoint = Self.point("BV1B", seconds: 115)
+        coordinator.openPlayback("BV1C")
+
+        let leftAtStart = coordinator.recentlyWatched.first { $0.id == "BV1A" }
+        let leftAtEnd = coordinator.recentlyWatched.first { $0.id == "BV1B" }
+        #expect(leftAtStart?.resumePoint.preferredStartSeconds == nil)
+        #expect(leftAtStart?.isFinished == false)
+        #expect(leftAtEnd?.resumePoint.preferredStartSeconds == nil)
+        #expect(leftAtEnd?.resumePoint.preferredCID == VideoFixture().page.cid)
+        #expect(leftAtEnd?.isFinished == true)
+    }
+
+    /// `VideoFixture` 的分 P（120 秒）上的一个离开位置。
+    private static func point(_ bvid: String, seconds: Int) -> PlaybackSelectionIntent {
+        PlaybackSelectionIntent(
+            bvid: bvid,
+            preferredCID: VideoFixture().page.cid,
+            preferredStartSeconds: seconds
+        )
     }
 
     /// 空间页里又点了被盖住的那个视频：不重新起播，继续同一个；从它返回空间页时下面还是同一个视频，又按被盖住处理。
@@ -223,8 +295,9 @@ struct AppNavigationHistoryTests {
     }
 }
 
-/// 本 Suite 的播放替身：记录开始、暂停、继续与停止，可设“有没有画面”“在不在播放”与续播点；经共用的
-/// `makeNavigationCoordinator` 构造协调器。
+/// 本 Suite 的播放替身：记录开始、暂停、继续与停止，可设“有没有画面”“在不在播放”与续播点。
+///
+/// 「刚才看过」的标题等取自同 BVID 的 `VideoFixture`；经共用的 `makeNavigationCoordinator` 构造协调器。
 @MainActor
 private final class PlaybackRecorder {
     var events: [String] = []
@@ -260,6 +333,12 @@ private final class PlaybackRecorder {
             resumePlayback: { [unowned self] in events.append("resume") },
             presentedPosition: { [unowned self] in isPresenting ? position : nil },
             resumePoint: { [unowned self] in resumePoint },
+            recentlyWatchedEntry: { point in
+                RecentlyWatchedVideo(
+                    detail: VideoFixture(bvid: point.bvid).detail,
+                    resumePoint: point
+                )
+            },
             isPictureInPictureActive: { [unowned self] in isPictureInPictureActive },
             transitionPage: transitionPage,
             uploaderSpacePage: uploaderSpacePage

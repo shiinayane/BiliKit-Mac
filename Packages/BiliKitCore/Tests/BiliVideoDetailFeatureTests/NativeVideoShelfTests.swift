@@ -1,12 +1,13 @@
 import AppKit
+import BiliUI
 import BiliVideoCollectionUI
 import Foundation
 import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 相关推荐横排按页滚动并露出下一张，任何滚动条样式下都不为滚动条让出卡片高度，视口通知推迟到布局之后；加载骨架按
-/// 可见宽度铺满；拆除时清掉横排里的第一响应者，键盘激活按稳定 ID 找卡片、不依赖可见项实例；换视频时整体替换并作废旧的封面请求；被遮挡时不给卡片菜单。
+/// 播放页横排按页滚动并露出下一张，任何滚动条样式下都不为滚动条让出卡片高度，视口通知推迟到布局之后；加载骨架按
+/// 可见宽度铺满；拆除时清掉横排里的第一响应者，键盘激活按稳定 ID 找卡片、不依赖可见项实例；换视频时整体替换并作废旧的封面请求；被遮挡时不给卡片菜单；停靠当前一集，只在它离开视野时跟随，再点分页时回到开头或当前一集。
 struct NativeVideoShelfTests {
     @Test
     @MainActor
@@ -56,6 +57,10 @@ struct NativeVideoShelfTests {
         let coordinator = NativeVideoShelfView.Coordinator(
             contentIdentity: "BV-parent",
             items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            fadesInOnCreation: false,
+            accessibilityLabel: "Shelf",
             imagePipeline: NativeVideoShelfPendingImageLoader(),
             reduceMotion: true,
             isInteractionEnabled: true,
@@ -83,6 +88,93 @@ struct NativeVideoShelfTests {
         #expect(Self.logicalOffset(of: scrollView) > 0)
         #expect(!scrollView.hasHorizontalScroller)
         #expect(scrollView.contentView.frame.height == scrollView.bounds.height)
+    }
+
+    /// 合集横排打开时停到当前一集（前面露出上一张）；当前一集换成视野里整张可见的卡片时不动，换到视野外时跟过去；
+    /// 再点一次分页时回到开头（之后不再跟随）或回到当前一集。
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func anchorPlacesTheCurrentCardFollowsItOutOfViewAndAnswersReselection() async {
+        let items = (0..<12).map { index in
+            NativeVideoCardPresentation(
+                id: "EP-\(index)",
+                title: "第 \(index + 1) 集",
+                coverURL: nil,
+                avatarURL: nil,
+                showsAvatar: false,
+                footerLeadingText: "",
+                accessibilityLabel: "第 \(index + 1) 集"
+            )
+        }
+        let coordinator = NativeVideoShelfView.Coordinator(
+            contentIdentity: "section",
+            items: items,
+            anchorID: "EP-5",
+            scrollCommand: nil,
+            fadesInOnCreation: false,
+            accessibilityLabel: "Shelf",
+            imagePipeline: NativeVideoShelfPendingImageLoader(),
+            reduceMotion: true,
+            isInteractionEnabled: true,
+            onSelect: { _ in },
+            cardMenu: { _ in nil }
+        )
+        let scrollView = coordinator.makeScrollView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = scrollView
+        defer {
+            coordinator.reset()
+            window.contentView = NSView()
+        }
+        func update(anchorID: String, command: NativeVideoShelfScrollCommand? = nil) {
+            coordinator.update(
+                contentIdentity: "section",
+                items: items,
+                anchorID: anchorID,
+                scrollCommand: command,
+                accessibilityLabel: "Shelf",
+                reduceMotion: true,
+                isInteractionEnabled: true,
+                onSelect: { _ in },
+                cardMenu: { _ in nil }
+            )
+        }
+        let placed = NativeVideoShelfGeometry.anchorOffset(for: 5)
+        scrollView.layoutSubtreeIfNeeded()
+        // 停靠在快照完成或第一次视口布局之后才发生（都是异步的）；以位置到达为准，测试时限兜底。
+        while abs(Self.logicalOffset(of: scrollView) - placed) > 0.5 {
+            await Task.yield()
+        }
+
+        update(anchorID: "EP-6")
+        #expect(abs(Self.logicalOffset(of: scrollView) - placed) < 0.5)
+
+        update(anchorID: "EP-10")
+        let followed = Self.logicalOffset(of: scrollView)
+        #expect(followed > placed)
+        let visibleWidth = scrollView.contentSize.width - VideoCardShelfGeometry.contentInset * 2
+        let followedCardStart = NativeVideoShelfGeometry.offset(for: 10)
+        #expect(followedCardStart >= followed)
+        #expect(followedCardStart + VideoCardShelfGeometry.cardWidth <= followed + visibleWidth)
+
+        update(
+            anchorID: "EP-10",
+            command: NativeVideoShelfScrollCommand(serial: 1, target: .leading)
+        )
+        #expect(Self.logicalOffset(of: scrollView) == 0)
+        // 回到开头算用户自己挪开：之后连播换集不再把横排拉回去。
+        update(anchorID: "EP-11")
+        #expect(Self.logicalOffset(of: scrollView) == 0)
+        update(
+            anchorID: "EP-11",
+            command: NativeVideoShelfScrollCommand(serial: 2, target: .anchor)
+        )
+        #expect(abs(Self.logicalOffset(of: scrollView) - followed) < 0.5)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -176,6 +268,10 @@ struct NativeVideoShelfTests {
         let coordinator = NativeVideoShelfView.Coordinator(
             contentIdentity: "BV-parent-a",
             items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            fadesInOnCreation: false,
+            accessibilityLabel: "Shelf",
             imagePipeline: loader,
             reduceMotion: true,
             isInteractionEnabled: true,
@@ -207,6 +303,9 @@ struct NativeVideoShelfTests {
         coordinator.update(
             contentIdentity: "BV-parent-b",
             items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            accessibilityLabel: "Shelf",
             reduceMotion: true,
             isInteractionEnabled: true,
             onSelect: { _ in },
@@ -250,6 +349,10 @@ struct NativeVideoShelfTests {
         let coordinator = NativeVideoShelfView.Coordinator(
             contentIdentity: "BV-parent",
             items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            fadesInOnCreation: false,
+            accessibilityLabel: "Shelf",
             imagePipeline: NativeVideoShelfPendingImageLoader(),
             reduceMotion: true,
             isInteractionEnabled: false,
@@ -287,6 +390,9 @@ struct NativeVideoShelfTests {
         coordinator.update(
             contentIdentity: "BV-parent",
             items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            accessibilityLabel: "Shelf",
             reduceMotion: true,
             isInteractionEnabled: true,
             onSelect: { _ in },

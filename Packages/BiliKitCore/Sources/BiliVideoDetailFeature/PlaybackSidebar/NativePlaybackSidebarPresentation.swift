@@ -188,7 +188,7 @@ extension NativePlaybackSidebarPresentation {
         if !content.summary.isEmpty {
             result.append((.summary, [.summary(bvid: content.bvid)]))
         }
-        if !content.selection.isHidden {
+        if content.selection.showsPageRow {
             result.append((.selection, [.selection(bvid: content.bvid)]))
         }
         result.append((.comments, commentItems(content.comments)))

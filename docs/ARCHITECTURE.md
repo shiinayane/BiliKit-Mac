@@ -186,7 +186,7 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   播放”只能按会话是否已报过 ended 判断，不能只看上一个快照；观看进度据此把重播当作新的一次观看。
 - 播完的处理（「播放结束后」）只在同一 item 刚进入 `ended` 时触发一次，由 `VideoViewModel.handlePlaybackEnded`
   核对快照仍属于此刻呈现、也是最新请求的那一项再动作；重播与断点浮层的「从头播放」共用引擎里同一条回到开头的 seek。
-  连播的下一项由视频模型决定（`PlaybackNextItem`），跳转由 App 经窗口导航执行，与侧栏选分 P、选集同一条路：视频模型
+  连播的下一项由视频模型决定（`PlaybackNextItem`），跳转由 App 经窗口导航执行，与侧栏选分 P、横排选集同一条路：视频模型
   不导航，否则导航层的去重、当前意图与上下文层会和真实播放对不上。
 - 弹幕时钟层（App `Platform/DanmakuTimebaseClock`，owner 是 `DanmakuOverlayView`）是普通 `CALayer`，本地时间
   跟随当前 item `timebase`，更新不经过主线程。跨文件必须守住的约束：
@@ -250,11 +250,11 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 原生 AppKit 集合视图
 
-- **播放侧栏**：上传者、简介、选集／分 P、评论与分页 footer 由一个 `NSScrollView + NSCollectionView`
+- **播放侧栏**：上传者、简介、分 P、评论与分页 footer 由一个 `NSScrollView + NSCollectionView`
   拥有，全部是原生 item。真实长评论下 `ScrollView + LazyVStack` 产生不收敛的 SwiftUI
   transaction／AttributeGraph 工作；逐行 `NSHostingView` + `fittingSize` 会把全表重测放大到秒级。
   `PlaybackCommentsViewModel` 仍唯一拥有 subject、排序、分页、并发上限与 generation。
-- **浏览网格与 shelf**：各来源的网格和相关推荐 shelf 使用 `NSCollectionView` + 复用的原生卡片。热门 50 卡 A/B
+- **浏览网格与 shelf**：各来源的网格和播放页横排使用 `NSCollectionView` + 复用的原生卡片。热门 50 卡 A/B
   表明 SwiftUI `LazyVGrid`/AttributeGraph 是主要滚动成本；卡片 overlay 与文字改为持久 `CALayer`／`CATextLayer`
   后，同样约 20 秒滚动 cycles 下降约 39%，0 hitch。网格只是已加载状态的呈现，loading／empty／failure 在同一个
   Feature 视图里。
@@ -345,12 +345,17 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
 
 ### 播放页布局
 
-- 主区固定不滚动：视频取剩余空间里最大的 16:9，下方是固定高度的相关推荐横排；真实页面与加载骨架
-  共用 `PlaybackDetailLayout`。布局交给 SwiftUI，不测量 frame。
+- 主区固定不滚动：视频取剩余空间里最大的 16:9，下方是固定高度的横排；真实页面与加载骨架
+  共用 `PlaybackDetailLayout`。布局交给 SwiftUI，不测量 frame。横排分「相关视频」「刚才看过」「合集」三页
+  （`PlaybackShelf`）：合集的分区与选集只在横排，侧栏只留分 P；“当前是哪一集”只由 `PlaybackSelectionProjection`
+  判断，横排与侧栏都读它。「刚才看过」由导航协调器按窗口持有（见下文历史栈）。
 - 骨架与内容切换只在外层交叉淡化，`PlaybackDetailLayout` 内部整体不参与动画：新建的 AppKit 视图会随布局
   动画从初始 frame 移到最终位置，看起来像“飞入”。
 - 横排用 `NSScrollView.automaticallyAdjustsContentInsets` 延伸到侧栏下。不用 SwiftUI 纵向 `ScrollView` 承载
-  详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。
+  详情：它延伸进安全区后不再向内容传递横向安全区，只能靠测量 frame 模拟。同一原因，横排外面不加会让 SwiftUI 给 AppKit
+  视图套容器的修饰符或过渡：换视频途中挡住旧详情的 `.allowsHitTesting(false)` 只挂在播放器上（挂在整页时横排被套进一层不
+  传递安全区的 `_NSGraphicsView`，前缘边距归零，整排卡片左右跳一下），横排靠 `isEnabled` 自己拦截点击、悬停与菜单；
+  切分页的淡入改横排自己 AppKit 视图的透明度，不用 SwiftUI 过渡。
 - 右侧不用 NavigationStack，`AppDetailColumn` 按 coordinator 只渲染历史栈顶（来源根页、播放页或整页空间页），工具栏左侧
   的「返回｜回到「来源名」」一组控件由 App 自绘，根页时整个工具栏项不放（控件组的按钮数在 1、2、3 之间增减会排版出错，只
   在 0 与 2 之间变化没有问题）。detail 视图必须是独立的 View：写在 `NavigationSplitView` 的 detail 闭包里时，闭包内读到
@@ -409,7 +414,8 @@ layer 挂在时钟层下，由 item timebase 直接驱动；哪些弹幕在屏�
   id 绑定。活视频所在的播放页被空间页盖住时暂停，回到它时只恢复由盖住暂停的（用户自己暂停或已播完的不动；被盖住期间
   经媒体键或控制中心播放、拖动过的，位置已不是盖住时的，也不动）；还在加载、没有画面的直接停止（暂停拦不住加载完成后
   的自动起播），回来重新加载。被新视频取代时，把离开时的分 P 与秒数写回历史里
-  同一视频最近的播放项，回到它时据此重建（秒数续播只对 DASH 生效）。空间页里又点了被盖住的那个视频，活视频改绑到新
+  同一视频最近的播放项，回到它时据此重建（秒数续播只对 DASH 生效）；换的是另一个视频时同时记进「刚才看过」，经「返回」离开活视频时也记
+  （`recentlyWatched`，最近离开的在前、按 BVID 去重、不含正在播放的，只在窗口内存里，清空历史时一起清空）。空间页里又点了被盖住的那个视频，活视频改绑到新
   压的一项，不重新起播。被盖住时连播不生效（只在栈顶就是活视频时生效），迟到的下一集解析也不会换片。
 - 画中画中被盖住时不暂停，继续播放；播到结尾停在结尾，不循环、不连播（宿主被摘下时播完观察随之停止，换集还会换掉
   item、结束画中画）。画中画被关掉（不是还原）时已没有可见的播放器，按被盖住处理。「还原」弹掉上面的层回到活视频的
