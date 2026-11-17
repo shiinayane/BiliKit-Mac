@@ -428,6 +428,12 @@ private final class NativePlaybackSidebarSummaryView: NSView {
     private var configuredText: NativePlaybackSidebarLinkedText?
     private var configuredMaximumLines: Int?
     private var hasConfiguredText = false
+    /// 简介文字除时间戳上限以外决定显示的部分；只有上限变化时时间戳的变色才淡入。
+    private struct SummaryTextContent: Equatable {
+        let text: String
+        let links: [CommentLink]
+        let maximumLines: Int?
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -480,6 +486,30 @@ private final class NativePlaybackSidebarSummaryView: NSView {
             || configuredText != text
             || configuredMaximumLines != maximumLines
         {
+            let previous = configuredText.map { configured in
+                (
+                    content: SummaryTextContent(
+                        text: configured.text,
+                        links: configured.links,
+                        maximumLines: configuredMaximumLines
+                    ),
+                    limits: configured.timestampLimits
+                )
+            }
+            let next = (
+                content: SummaryTextContent(
+                    text: text.text,
+                    links: text.links,
+                    maximumLines: maximumLines
+                ),
+                limits: text.timestampLimits
+            )
+            if NativePlaybackTextLinks.fadesTimestampChange(from: previous, to: next) {
+                NativePlaybackSidebarFade.crossfade(
+                    textView,
+                    key: "native-playback-summary.timestamp-links"
+                )
+            }
             hasConfiguredText = true
             configuredText = text
             configuredMaximumLines = maximumLines

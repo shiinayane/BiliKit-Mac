@@ -52,11 +52,17 @@ final class NativePlaybackCommentRowView: NSView {
     private var isReply = false
     private var textRenderer: NativePlaybackCommentTextRenderer?
     private var textScope: NativePlaybackCommentTextScope?
-    /// 正文此刻按哪条评论、哪个渲染作用域排好；同一条、同一作用域再次配置（只有点赞数或赞踩变了，见
-    /// `NativePlaybackCommentThreadPresentation.reactionRevision`）时不重新渲染正文。
+    /// 正文此刻按哪条评论、哪个渲染作用域、哪组时间戳上限排好；三者都没变时再次配置（只有点赞数或赞踩变了，见
+    /// `NativePlaybackCommentThreadPresentation.reactionRevision`）不重新渲染正文。
     ///
-    /// 放下离屏资源与复用时清空。
-    private var renderedBody: (commentID: CommentID, scope: NativePlaybackCommentTextScope)?
+    /// 时间戳上限不在渲染作用域里（它不改行高），必须单独比对：评论常在播放器就绪前就显示，就绪后侧栏只就地重新配置
+    /// 这一行，漏掉它时时间戳一直是普通文字。放下离屏资源与复用时清空。
+    private var renderedBody: (content: RenderedBodyContent, limits: TimestampSeekLimits?)?
+    /// 正文渲染所依据的评论与渲染作用域。
+    private struct RenderedBodyContent: Equatable {
+        let commentID: CommentID
+        let scope: NativePlaybackCommentTextScope
+    }
     private let authorEntry = NativePlaybackCommentAuthorEntry()
 
     override init(frame frameRect: NSRect) {
@@ -198,14 +204,24 @@ final class NativePlaybackCommentRowView: NSView {
             )
             authorEntry.configure(author: details.author, onOpen: onOpenAuthorSpace)
             authorBadges.configure(author: details.author, isReply: isReply)
-            if renderedBody?.commentID != comment.id || renderedBody?.scope != textScope {
+            let body = (
+                content: RenderedBodyContent(commentID: comment.id, scope: textScope),
+                limits: textRenderer.timestampLimits
+            )
+            if renderedBody?.content != body.content || renderedBody?.limits != body.limits {
+                if NativePlaybackTextLinks.fadesTimestampChange(from: renderedBody, to: body) {
+                    NativePlaybackSidebarFade.crossfade(
+                        bodyText,
+                        key: "native-playback-comment.timestamp-links"
+                    )
+                }
                 bodyText.setContent(
                     details.content,
                     renderer: textRenderer,
                     scope: textScope,
                     onLayoutChange: onTextLayoutChange
                 )
-                renderedBody = (comment.id, textScope)
+                renderedBody = body
             }
             pictures.configure(
                 images: details.content.pictures,

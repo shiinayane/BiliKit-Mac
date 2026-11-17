@@ -84,4 +84,17 @@ enum NativePlaybackTextLinks {
             return false
         }
     }
+
+    /// 已经显示的同一段文字只因时间戳上限变化而重新渲染：时间戳在普通文字与链接之间切换时用
+    /// `NativePlaybackSidebarFade.crossfade` 过渡，与 UP 主名片到达时的变色一致。
+    ///
+    /// `previous` 为 nil（首次配置、复用后）或文字本身变了（`content` 不同）时不过渡。评论正文与简介都按这条规则判断；
+    /// 链接只改颜色、不改行高，文字视图尺寸不变，满足交叉淡化的前提。
+    nonisolated static func fadesTimestampChange<Content: Equatable>(
+        from previous: (content: Content, limits: TimestampSeekLimits?)?,
+        to next: (content: Content, limits: TimestampSeekLimits?)
+    ) -> Bool {
+        guard let previous else { return false }
+        return previous.content == next.content && previous.limits != next.limits
+    }
 }
