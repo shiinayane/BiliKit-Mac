@@ -181,10 +181,12 @@ struct AccountWriteCoordinatorFollowTests {
         picker.setSelected(true, row: special)
         window.accountWrites.confirmFollowGroupPicker()
         await waitForObservedState { window.accountWrites.report != nil }
+        // 两次打开各发一次单人关系读取，各自经非隔离的用例到达替身，先后不定；丙那次的面板已关，读取仍会落地。
+        await waitForObservedState { window.followRelations.readPhase(of: 3) == nil }
 
         #expect(window.accountWrites.followGroupPicker == nil)
         #expect(await writes.calls == ["groups 1 [-10, 5] 7"])
-        #expect(await follows.relationReads == [3, 1])
+        #expect(await follows.relationReads.sorted() == [1, 3])
         #expect(counts(window) == [FollowGroup.specialID: 2, 5: 2, FollowGroup.defaultID: 3])
     }
 
