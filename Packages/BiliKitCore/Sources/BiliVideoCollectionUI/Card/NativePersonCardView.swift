@@ -106,6 +106,12 @@ package final class NativePersonCollectionItem: NativeInteractiveCardItem, Nativ
         avatarImage.cancel()
     }
 
+    package func releaseDisplayedImages() {
+        invalidateImageRequests()
+        avatarImage.clear()
+        card.setAvatar(nil, animated: false)
+    }
+
     package func invalidate() {
         invalidateImageRequests()
         generation &+= 1

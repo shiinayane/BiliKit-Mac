@@ -85,7 +85,18 @@ extension NativeGridView.Coordinator {
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.onWillLeaveWindow = { [weak self] in
             guard let self, self.isRetained, !self.isReset else { return }
-            self.images.hold(self.collectionView.visibleCardItems)
+            // 只替视野内的卡片留图：挂回时先看到的就是它们。视野外的卡片在这里放掉图：离开窗口时集合视图回收全部
+            // 卡片却不经 `didEndDisplaying`，`cardDidEndDisplaying` 管不到它们。
+            let viewport = self.collectionView.visibleRect
+            var onscreen: [any NativeCardCollectionItem] = []
+            for item in self.collectionView.visibleCardItems {
+                if item.view.frame.intersects(viewport) {
+                    onscreen.append(item)
+                } else {
+                    item.releaseDisplayedImages()
+                }
+            }
+            self.images.hold(onscreen)
         }
         scrollView.onViewportLayout = { [weak self] in
             // 重排 document 中途的 tile 不嵌套处理，视口在重排中又变了由 `resizeDocument` 自己再排一遍。

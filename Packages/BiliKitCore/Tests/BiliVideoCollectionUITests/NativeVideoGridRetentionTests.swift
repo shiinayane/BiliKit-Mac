@@ -32,11 +32,11 @@ struct NativeVideoGridRetentionTests {
         )
     }
 
-    /// 挂回后卡片不重新取已经显示过的封面。
+    /// 离开期间只有视野内的卡片留着图，挂回后视野内的卡片不重新取封面，视野外的卡片随后补齐。
     ///
-    /// 替身没有缓存命中：窗口图片缓存可能已被别的来源挤掉（见 ARCHITECTURE「原生 AppKit 集合视图」），挂回后任何一张
-    /// 重新请求加载，在真实 App 里都是先闪占位、重新下载。离开期间遇到内存压力时只释放留住的图：网格与位置照留，卡片
-    /// 重新取图。
+    /// 替身没有缓存命中：窗口图片缓存可能已被别的来源挤掉（见 ARCHITECTURE「原生 AppKit 集合视图」），挂回后视野内
+    /// 任何一张重新请求加载，在真实 App 里都是先闪占位、重新下载。离开期间遇到内存压力时只释放留住的图：网格与位置
+    /// 照留，卡片重新取图。
     @Test(arguments: [false, true])
     func gridSwitchedAwayInSwiftUIComesBackWithItsCovers(
         memoryPressureWhileAway: Bool
@@ -90,22 +90,32 @@ struct NativeVideoGridRetentionTests {
             }
         )
         let original = try #require(collectionView.firstVisibleItem()?.indexPath)
+        let viewport = collectionView.visibleRect
+        let instantiated = collectionView.visibleCardItems
+        let offscreen = instantiated.filter { !$0.view.frame.intersects(viewport) }
+        let viewportCovers = Set(
+            instantiated.filter { $0.view.frame.intersects(viewport) }
+                .flatMap(\.displayedImages.keys)
+        )
+        #expect(!offscreen.isEmpty)
         let requestsBeforeSwitch = loader.loadRequestCount
 
         source.showsGrid = false
         #expect(await Self.waitUntil { scrollView.window == nil })
+        // 离开窗口时集合视图回收全部卡片，回收的卡片视图仍活着；准备区域里视野外的那些不再拿着图。
+        #expect(offscreen.allSatisfy { $0.displayedImages.isEmpty })
         if memoryPressureWhileAway { retainer.releaseHeldImages() }
         source.showsGrid = true
         let returned = try #require(await Self.waitForGrid(in: window))
 
         #expect(returned === scrollView)
         #expect(collectionView.firstVisibleItem()?.indexPath == original)
+        #expect(await Self.waitUntil { Self.showsCovers(collectionView) })
+        let reloaded = Set(loader.requestedURLs(from: requestsBeforeSwitch))
         if memoryPressureWhileAway {
-            #expect(await Self.waitUntil { Self.showsCovers(collectionView) })
-            #expect(loader.loadRequestCount > requestsBeforeSwitch)
+            #expect(!reloaded.isDisjoint(with: viewportCovers))
         } else {
-            #expect(Self.showsCovers(collectionView))
-            #expect(loader.loadRequestCount == requestsBeforeSwitch)
+            #expect(reloaded.isDisjoint(with: viewportCovers))
         }
     }
 

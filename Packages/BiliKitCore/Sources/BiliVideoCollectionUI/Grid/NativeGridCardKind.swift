@@ -19,6 +19,11 @@ package protocol NativeCardCollectionItem: NativeHoverableCollectionItem,
 {
     /// 卡片此刻显示着的图，按图片地址；保活的网格摘下前经它取走（`NativeVideoGridHeldImages`）。
     var displayedImages: [URL: CGImage] { get }
+    /// 放掉正显示的图：取消取图、清空图片位与卡片上的图，展示值、配置代次与回调不变；再次配置时按缺图补发取图。
+    ///
+    /// 由 `NSCollectionView.cardDidEndDisplaying` 在卡片被回收时调用，保活的网格离开窗口之前也对视野外的卡片调用
+    /// （离开窗口的回收不经 `didEndDisplaying`）。
+    func releaseDisplayedImages()
     func setKeyboardFocusVisible(_ isVisible: Bool)
     /// 系统辅助功能显示选项（提高对比度、降低透明度）或外观变化后重画。
     func refreshEnvironmentAppearance()

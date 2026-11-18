@@ -214,6 +214,14 @@ package final class NativeVideoCollectionItem: NativeInteractiveCardItem, Native
         avatarImage.cancel()
     }
 
+    package func releaseDisplayedImages() {
+        invalidateImageRequests()
+        coverImage.clear()
+        avatarImage.clear()
+        card.setCover(nil, animated: false)
+        card.setAvatar(nil, animated: false)
+    }
+
     package func invalidate() {
         invalidateImageRequests()
         generation &+= 1
