@@ -711,8 +711,7 @@ struct NativeVideoShelfView: NSViewRepresentable {
             forRepresentedObjectAt indexPath: IndexPath
         ) {
             guard let item = item as? NativeVideoCollectionItem else { return }
-            guard collectionView.indexPath(for: item) == nil else { return }
-            hover.itemDidEndDisplaying(item)
+            collectionView.cardDidEndDisplaying(item, hover: hover)
         }
     }
 }

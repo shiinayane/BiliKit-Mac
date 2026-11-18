@@ -350,6 +350,20 @@ extension NSCollectionView {
         visibleItems().compactMap { $0 as? any NativeCardCollectionItem }
     }
 
+    /// 网格与横排的卡片结束显示（`didEndDisplaying`）时的唯一处理：已不在任何 index path（被回收）时撤销悬停、
+    /// 取消取图并放掉正显示的图；仍在显示的不动。
+    ///
+    /// 回收的卡片视图在下次复用之前一直活着，不放掉的话图仍留在图层上，而每张显示过的解码图另有一份系统的渲染副本
+    /// （见 ARCHITECTURE「原生 AppKit 集合视图」）。
+    package func cardDidEndDisplaying(
+        _ item: any NativeCardCollectionItem,
+        hover: NativeVideoHoverTracker
+    ) {
+        guard indexPath(for: item) == nil else { return }
+        hover.itemDidEndDisplaying(item)
+        item.releaseDisplayedImages()
+    }
+
     /// 键盘选择框只在键盘导航后显示，鼠标点击与失焦会隐藏。
     func updateVisibleKeyboardSelection(showsKeyboardSelection: Bool) {
         for item in visibleCardItems {

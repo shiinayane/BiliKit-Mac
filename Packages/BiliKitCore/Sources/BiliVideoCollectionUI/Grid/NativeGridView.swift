@@ -207,8 +207,7 @@ package struct NativeGridView<Kind: NativeGridCardKind>: NSViewRepresentable {
             forRepresentedObjectAt indexPath: IndexPath
         ) {
             guard let item = item as? Kind.Item else { return }
-            guard collectionView.indexPath(for: item) == nil else { return }
-            hover.itemDidEndDisplaying(item)
+            collectionView.cardDidEndDisplaying(item, hover: hover)
         }
     }
 }
