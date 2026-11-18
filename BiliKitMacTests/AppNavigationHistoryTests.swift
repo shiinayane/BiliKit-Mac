@@ -84,7 +84,7 @@ struct AppNavigationHistoryTests {
         #expect(playback.lastStart == playback.resumePoint)
     }
 
-    /// 「刚才看过」最近离开的在前、按 BVID 去重、不含正在播放的；从里面点回去的视频移出列表，回来源首页时清空。
+    /// 「刚才看过」最近离开的在前、按 BVID 去重、不含正在播放的；从里面点回去的视频移出列表。
     @Test
     func replacedVideosAreListedNewestFirstExceptTheOneNowPlaying() {
         let playback = PlaybackRecorder()
@@ -107,9 +107,36 @@ struct AppNavigationHistoryTests {
         coordinator.openPlayback(coordinator.recentlyWatched[1].resumePoint)
         #expect(coordinator.recentlyWatched.map(\.id) == ["BV1C", "BV1B"])
         #expect(playback.lastStart == Self.point("BV1A", seconds: 30))
+    }
 
-        coordinator.goHome()
+    /// 回到来源根页就结束这一段：不论经 ⌂、一路「返回」还是换来源，之后打开的视频看不到之前的「刚才看过」。
+    @Test(arguments: RootReturn.allCases)
+    func returningToTheSourceRootClearsTheList(_ route: RootReturn) {
+        let playback = PlaybackRecorder()
+        let coordinator = playback.makeCoordinator()
+
+        coordinator.openPlayback("BV1A")
+        coordinator.openPlayback("BV1B")
+        #expect(coordinator.recentlyWatched.map(\.id) == ["BV1A"])
+        switch route {
+        case .home:
+            coordinator.goHome()
+        case .back:
+            coordinator.goBack()
+            coordinator.goBack()
+        case .sidebar:
+            coordinator.closeForSidebarSelection()
+        }
+        #expect(!coordinator.canGoBack)
+        coordinator.openPlayback("BV1C")
+
         #expect(coordinator.recentlyWatched.isEmpty)
+    }
+
+    enum RootReturn: CaseIterable {
+        case home
+        case back
+        case sidebar
     }
 
     /// 经「返回」离开的视频历史里已没有它那一项，也记进「刚才看过」，从离开的位置续播。

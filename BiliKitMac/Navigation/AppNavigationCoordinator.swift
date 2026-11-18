@@ -99,11 +99,19 @@ final class AppNavigationCoordinator {
             closePlayback()
         }
     }
-    /// 右侧历史，栈顶在末尾。
-    private(set) var history: [AppHistoryEntry] = []
-    /// 「刚才看过」：本窗口里被另一个视频取代的视频，最近离开的在前，按 BVID 去重，不含正在播放的这个。
+    /// 右侧历史，栈顶在末尾；空时在来源根页。
     ///
-    /// 只在内存里；清空历史（回来源首页、切来源、登出、关窗）时一起清空。
+    /// 栈一空就清空「刚才看过」：它只属于这一段历史，不论经哪条路回到来源根页（⌂、一路「返回」、换来源、登出、关窗）
+    /// 都一起结束。各个回根页的入口因此不各自清空，新增入口也不会漏。
+    private(set) var history: [AppHistoryEntry] = [] {
+        didSet {
+            if history.isEmpty, !recentlyWatched.isEmpty { recentlyWatched.removeAll() }
+        }
+    }
+    /// 「刚才看过」：这一段历史里离开过的视频（被另一个视频取代，或经「返回」离开），最近离开的在前，按 BVID 去重，
+    /// 不含正在播放的这个。
+    ///
+    /// 只在内存里，生命周期与历史栈相同（见 `history`）。
     private(set) var recentlyWatched: [RecentlyWatchedVideo] = []
     /// 「刚才看过」最多留几项；横排一屏放五六张，留多了只是往后翻不到的旧记录。
     private static let recentlyWatchedLimit = 20
@@ -408,7 +416,6 @@ final class AppNavigationCoordinator {
         guard let top = history.last else { return }
         let change = {
             self.history.removeAll()
-            self.recentlyWatched.removeAll()
             self.closeSidebarContext()
         }
         if top.id == liveEntryID {
@@ -468,7 +475,6 @@ final class AppNavigationCoordinator {
         completePendingStop()
         guard !history.isEmpty || liveIntent != nil else { return }
         history.removeAll()
-        recentlyWatched.removeAll()
         closeSidebarContext()
         closeSpacePageIfUnused()
         stopLivePlayback()
@@ -611,7 +617,7 @@ final class AppNavigationCoordinator {
             popPage(change)
             return
         }
-        // 经「返回」离开的视频历史里已经没有它那一项，只剩「刚才看过」能回去。
+        // 经「返回」离开的视频历史里已经没有它那一项，只剩「刚才看过」能回去；回到的是来源根页时，它随历史一起清空。
         rememberRecentlyWatched(replacingWith: nil)
         clearLive()
         guard playback.pauseKeepingPicture() else {
