@@ -4,10 +4,10 @@ import BiliUI
 import BiliVideoCollectionUI
 import SwiftUI
 
-/// 把视频准备状态连接到弹幕与分段章节的播放 identity 生命周期。
+/// 把视频准备状态连接到弹幕、分段章节与「正在看」人数的播放 identity 生命周期。
 ///
-/// 详情上下文一旦可用就为同一 BVID/CID 选择弹幕与章节；状态回到 idle/loading/failed 时 identity 变为
-/// `nil`，由 `.task(id:)` 完整 reset 弹幕与章节。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
+/// 详情上下文一旦可用就为同一 BVID/CID 选择弹幕、章节与人数；状态回到 idle/loading/failed 时 identity 变为
+/// `nil`，由 `.task(id:)` 完整 reset 这三者。原生字幕由 AVPlayerEngine 随媒体 load 拥有。
 /// 下方横排（相关视频、刚才看过、章节、合集）由本 Feature 直接渲染，App 只注入窗口图片管线（经卡片取图 port）、「刚才看过」
 /// 列表、选择与跳转回调。展示的详情变化时交给
 /// `VideoEngagementModel` 重读互动状态（窗口账户变化由 App 另行交给它）。
@@ -16,6 +16,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let model: VideoViewModel
     private let danmakuModel: DanmakuControlsViewModel
     private let chapterModel: VideoChapterModel
+    private let onlineViewerModel: VideoOnlineViewerModel
     private let danmakuComposer: DanmakuComposerModel?
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
@@ -32,6 +33,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         model: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
         chapterModel: VideoChapterModel,
+        onlineViewerModel: VideoOnlineViewerModel,
         danmakuComposer: DanmakuComposerModel? = nil,
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
@@ -46,6 +48,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         self.model = model
         self.danmakuModel = danmakuModel
         self.chapterModel = chapterModel
+        self.onlineViewerModel = onlineViewerModel
         self.danmakuComposer = danmakuComposer
         self.engagementModel = engagementModel
         self.onRetry = onRetry
@@ -78,10 +81,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
             guard let playbackIdentity else {
                 danmakuModel.reset()
                 chapterModel.reset()
+                onlineViewerModel.reset()
                 return
             }
             danmakuModel.selectVideo(playbackIdentity)
             chapterModel.select(playbackIdentity)
+            onlineViewerModel.select(playbackIdentity)
         }
         .onChange(of: currentContext?.detail, initial: true) { _, detail in
             engagementModel.present(detail)
@@ -152,6 +157,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
                 onRetryRelatedVideos: model.retryRelatedVideos,
                 collectionShelf: collectionShelfInput(currentContext),
                 chapterShelf: chapterShelfInput(currentContext),
+                onlineViewerText: onlineViewerModel.text(
+                    for: PlaybackItemIdentity(
+                        bvid: currentContext.detail.bvid,
+                        cid: currentContext.selectedPage.cid
+                    )
+                ),
                 // 正在播放的排最前；「返回」回到列表里的视频时它不会从协调器的列表移出，这里去掉重复的那一项。
                 recentlyWatched: [RecentlyWatchedVideo(nowPlaying: currentContext.detail)]
                     + recentlyWatched.filter { $0.id != currentContext.detail.bvid },

@@ -39,6 +39,13 @@ struct VideoDetailLifecycleTests {
                         useCase: VideoChapterUseCase(repository: EmptyVideoChapterRepository()),
                         timeline: ManualTimeline()
                     ),
+                    onlineViewerModel: VideoOnlineViewerModel(
+                        useCase: VideoOnlineViewerUseCase(
+                            repository: EmptyVideoOnlineViewerRepository()
+                        ),
+                        timeline: ManualTimeline(),
+                        refreshTicks: { _ in AsyncStream { $0.finish() } }
+                    ),
                     engagementModel: VideoEngagementModel(
                         useCase: VideoEngagementUseCase(repository: AccountWriteRepositoryStub()),
                         accountID: { nil }

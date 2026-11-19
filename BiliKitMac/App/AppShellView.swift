@@ -21,6 +21,8 @@ struct AppShellView: View {
     let danmakuModel: DanmakuControlsViewModel
     /// 播放页的分段章节；呈现的分 P 由播放页选择，停止播放时由窗口组装 reset。
     let chapterModel: VideoChapterModel
+    /// 播放页的「正在看」人数；与章节同样由播放页选择分 P、停止播放时由窗口组装 reset。
+    let onlineViewerModel: VideoOnlineViewerModel
     let danmakuComposer: DanmakuComposerModel
     let commentWrite: PlaybackCommentWriteModel
     let authenticationModel: AuthenticationViewModel
@@ -366,6 +368,7 @@ struct AppShellView: View {
             model: videoModel,
             danmakuModel: danmakuModel,
             chapterModel: chapterModel,
+            onlineViewerModel: onlineViewerModel,
             danmakuComposer: danmakuComposer,
             engagementModel: engagementModel,
             playerContent: playerContent,
@@ -532,6 +535,7 @@ private struct PlaybackDestinationView: View {
     let model: VideoViewModel
     let danmakuModel: DanmakuControlsViewModel
     let chapterModel: VideoChapterModel
+    let onlineViewerModel: VideoOnlineViewerModel
     let danmakuComposer: DanmakuComposerModel
     let engagementModel: VideoEngagementModel
     let playerContent: AnyView
@@ -549,6 +553,7 @@ private struct PlaybackDestinationView: View {
             model: model,
             danmakuModel: danmakuModel,
             chapterModel: chapterModel,
+            onlineViewerModel: onlineViewerModel,
             danmakuComposer: danmakuComposer,
             engagementModel: engagementModel,
             onRetry: onRetry,

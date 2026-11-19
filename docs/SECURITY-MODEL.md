@@ -85,8 +85,9 @@
 
 防：凭据被带到预期之外的主机、路径或方法；写请求被构造成预期之外的操作。
 
-默认所有网络匿名，且不带任何 Cookie。搜索页的 B 站热搜（`/x/web-interface/search/square`）与
-搜索框联想（`/x/web-interface/suggest`）无论是否登录都匿名读取。联想是唯一会发送未提交输入的请求：
+默认所有网络匿名，且不带任何 Cookie。搜索页的 B 站热搜（`/x/web-interface/search/square`）、
+搜索框联想（`/x/web-interface/suggest`）与播放页的「正在看」人数（`/x/player/online/total`，只在播放中每分钟一次）
+无论是否登录都匿名读取。联想是唯一会发送未提交输入的请求：
 只在搜索框获得焦点或编辑、系统索取联想时停顿后发出，新输入、提交、选中或失去焦点都取消在途请求；输入按
 搜索规则规范化（≤ 100 字），结果只在内存中用于当次菜单。唯一的非凭据 Cookie 是 `buvid3`：搜索
 `/x/web-interface/wbi/search/type` 要求 Cookie 含它（缺它会触发风控），`BiliAPI` 为此在进程内存中随机生成一个

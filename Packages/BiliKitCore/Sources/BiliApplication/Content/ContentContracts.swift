@@ -81,6 +81,13 @@ public protocol VideoChapterRepository: Sendable {
     func chapters(for identity: PlaybackItemIdentity) async throws -> [VideoChapter]
 }
 
+/// 某个分 P 的「正在看」人数的只读 port：始终匿名读取。
+///
+/// 人数是服务端格式化好的文本，原样显示；B 站不显示时为 nil。
+public protocol VideoOnlineViewerRepository: Sendable {
+    func onlineViewerText(for identity: PlaybackItemIdentity) async throws -> String?
+}
+
 /// 当前视频相关推荐的只读 port：有凭据时按账户读取，本地无凭据时匿名请求同一 endpoint。
 public protocol RelatedVideoRepository: Sendable {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo]
