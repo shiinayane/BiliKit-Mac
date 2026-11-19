@@ -7,6 +7,11 @@ struct EmptyVideoChapterRepository: VideoChapterRepository {
     func chapters(for identity: PlaybackItemIdentity) async throws -> [VideoChapter] { [] }
 }
 
+/// 「正在看」人数 port 的唯一测试替身：B 站不显示。
+struct EmptyVideoOnlineViewerRepository: VideoOnlineViewerRepository {
+    func onlineViewerText(for identity: PlaybackItemIdentity) async throws -> String? { nil }
+}
+
 /// 本 target 唯一的 `PlaybackTimelineProviding` 替身：手动推进，订阅时先补发当前快照，与真实时间线的 `observe` 一致。
 @MainActor
 final class ManualTimeline: PlaybackTimelineProviding {

@@ -32,25 +32,8 @@ public final class WatchProgressSession {
                 sessionID: {
                     UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
                 },
-                periodicTicks: { Self.systemPeriodicTicks(every: $0) }
+                periodicTicks: { PeriodicTicks.system(every: .seconds($0)) }
             )
-        }
-
-        private static func systemPeriodicTicks(every interval: Double) -> AsyncStream<Void> {
-            AsyncStream { continuation in
-                let task = Task {
-                    do {
-                        while !Task.isCancelled {
-                            try await Task.sleep(for: .seconds(interval))
-                            try Task.checkCancellation()
-                            continuation.yield(())
-                        }
-                    } catch {
-                        continuation.finish()
-                    }
-                }
-                continuation.onTermination = { _ in task.cancel() }
-            }
         }
     }
 

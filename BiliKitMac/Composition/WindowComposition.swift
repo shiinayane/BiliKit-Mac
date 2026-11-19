@@ -30,6 +30,8 @@ final class WindowComposition {
     let danmakuModel: DanmakuControlsViewModel
     /// 播放页的分段章节与当前章节；停止播放（`AppPlaybackSession.stop`，关窗也经它）时 reset。
     let chapterModel: VideoChapterModel
+    /// 播放页的「正在看」人数；停止播放（`AppPlaybackSession.stop`，关窗也经它）时 reset。
+    let onlineViewerModel: VideoOnlineViewerModel
     let authenticationModel: AuthenticationViewModel
     let watchLaterModel: WatchLaterViewModel
     /// 稍后再看的排序、筛选与关键词；关窗与账户变化时由稍后再看来源的描述恢复默认。
@@ -109,6 +111,11 @@ final class WindowComposition {
             useCase: VideoChapterUseCase(repository: adapters.chapterRepository),
             timeline: adapters.playbackTimeline
         )
+        let onlineViewerModel = VideoOnlineViewerModel(
+            useCase: VideoOnlineViewerUseCase(repository: adapters.onlineViewerRepository),
+            timeline: adapters.playbackTimeline,
+            refreshTicks: PeriodicTicks.system(every:)
+        )
         let danmakuModel = Self.makeDanmakuModel(adapters: adapters)
         let authenticationModel = AuthenticationViewModel(
             service: adapters.authenticationService,
@@ -140,6 +147,7 @@ final class WindowComposition {
                 videoModel: videoModel,
                 danmakuModel: danmakuModel,
                 chapterModel: chapterModel,
+                onlineViewerModel: onlineViewerModel,
                 adapters: adapters,
                 pictureInPicture: playerHostOwner.pictureInPicture
             ),
@@ -178,6 +186,7 @@ final class WindowComposition {
         self.commentsModel = commentsModel
         self.danmakuModel = danmakuModel
         self.chapterModel = chapterModel
+        self.onlineViewerModel = onlineViewerModel
         self.watchLaterModel = watchLaterModel
         let watchLaterSession = WatchLaterSession(model: watchLaterModel)
         self.watchLaterSession = watchLaterSession
@@ -507,6 +516,7 @@ final class WindowComposition {
         videoModel: VideoViewModel,
         danmakuModel: DanmakuControlsViewModel,
         chapterModel: VideoChapterModel,
+        onlineViewerModel: VideoOnlineViewerModel,
         adapters: WindowAdapters,
         pictureInPicture: PlayerPictureInPicture
     ) -> AppPlaybackSession {
@@ -518,6 +528,7 @@ final class WindowComposition {
                 videoModel.reset()
                 danmakuModel.reset()
                 chapterModel.reset()
+                onlineViewerModel.reset()
             },
             pauseKeepingPicture: {
                 guard videoModel.isPresenting(timeline.currentTimelineSnapshot) else {

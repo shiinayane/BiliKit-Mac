@@ -25,6 +25,7 @@ struct WindowAdapters {
     let videoRepository: any VideoRepository
     let relatedVideoRepository: any RelatedVideoRepository
     let chapterRepository: any VideoChapterRepository
+    let onlineViewerRepository: any VideoOnlineViewerRepository
     let trendingSearchRepository: any TrendingSearchRepository
     let searchSuggestionRepository: any SearchSuggestionRepository
     let uploaderProfileRepository: any UploaderProfileRepository
@@ -148,6 +149,7 @@ extension WindowAdapters {
             videoRepository: contentRepository,
             relatedVideoRepository: contentRepository,
             chapterRepository: contentRepository,
+            onlineViewerRepository: contentRepository,
             trendingSearchRepository: contentRepository,
             searchSuggestionRepository: contentRepository,
             uploaderProfileRepository: contentRepository,

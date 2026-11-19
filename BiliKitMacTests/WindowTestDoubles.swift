@@ -279,6 +279,7 @@ func makeTestAdapters(
         videoRepository: video,
         relatedVideoRepository: EmptyRelatedVideoRepository(),
         chapterRepository: EmptyVideoChapterRepository(),
+        onlineViewerRepository: EmptyVideoOnlineViewerRepository(),
         trendingSearchRepository: EmptyTrendingSearchRepository(),
         searchSuggestionRepository: EmptySearchSuggestionRepository(),
         uploaderProfileRepository: uploaderProfile,

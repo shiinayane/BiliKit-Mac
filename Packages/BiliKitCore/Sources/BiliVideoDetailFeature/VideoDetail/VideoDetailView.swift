@@ -23,6 +23,8 @@ struct VideoDetailView<PlayerContent: View>: View {
     let collectionShelf: PlaybackSelectionProjection?
     /// 正在呈现的分 P 的分段章节；没有章节时为 nil，横排没有「章节」分页。
     let chapterShelf: ChapterShelfInput?
+    /// 正在呈现的分 P 的「正在看」人数文本（`VideoOnlineViewerModel`）；没有时副标题不带这一项。
+    let onlineViewerText: String?
     let recentlyWatched: [RecentlyWatchedVideo]
     let isReplacingVideo: Bool
     let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
@@ -90,14 +92,24 @@ struct VideoDetailView<PlayerContent: View>: View {
         }
     }
 
-    /// 工具栏副标题：播放 · 弹幕 · 发布时间，有访问限制时接上充电／试看提示。
+    /// 工具栏副标题：播放 · 弹幕 · 发布时间，有访问限制时接上充电／试看提示，最后是「正在看」人数。
+    ///
+    /// 「正在看」排在最后：它比详情晚到、之后还会刷新，放在别的项前面会在出现与变化时把后面各项推来推去；读不到时这一项
+    /// 不出现。
     private var toolbarSubtitle: String {
         let statistics = context.detail.statistics
         return [
             VideoMetadataFormatting.viewCountText(statistics.viewCount),
             VideoMetadataFormatting.danmakuCountText(statistics.danmakuCount),
             VideoMetadataFormatting.fullPublishedDate(context.detail.publishedAt),
-            accessNotice
+            accessNotice,
+            onlineViewerText.map {
+                String(
+                    format: VideoDetailFeatureStrings.localized("%@ 人正在看", locale: locale),
+                    locale: locale,
+                    $0
+                )
+            }
         ].compactMap { $0 }.joined(separator: " · ")
     }
 
