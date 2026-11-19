@@ -13,6 +13,14 @@ public enum PlaybackCommentsRootState: Sendable, Equatable {
     case failed(CommentReadError)
 }
 
+/// 原地刷新根列表（再点当前排序）的进度；刷新期间与失败之后，已显示的列表都留着。
+public enum PlaybackCommentsRefreshState: Sendable, Equatable {
+    case idle
+    case refreshing
+    /// 刷新失败；说明留到下一次操作（再刷新、换排序、重试、翻页或换评论区）。
+    case failed(CommentReadError)
+}
+
 /// 单条 root 评论的楼中楼展开、分页与失败状态，由 `PlaybackCommentsViewModel` 按 root ID 持有。
 ///
 /// `dialog` 非 nil 时面板显示那串对话；当前页的回复与页码保留，关掉对话回到原页。
@@ -94,6 +102,9 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
     public private(set) var paginationTermination: CommentPaginationTermination?
     public private(set) var reachedEnd = false
     public private(set) var reachedMemoryLimit = false
+    public private(set) var refreshState = PlaybackCommentsRefreshState.idle
+    /// 原地刷新成功、整体换上新的第一页时递增；侧栏据此让翻页从头算（不移动视口），换排序与换评论区不经它。
+    public private(set) var refreshGeneration = 0
     public internal(set) var replyStates: [CommentID: PlaybackCommentReplyState] = [:]
     /// 评论区能否发新评论与接口给的占位文字，取自最近一页根评论；换排序或重载期间沿用，换评论区或 reset 时回到缺省。
     public private(set) var inputPolicy = CommentInputPolicy.open
@@ -150,19 +161,70 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         replaceRootWorkset(subject: newSubject, sort: sort)
     }
 
+    /// 选中排序；选的就是当前排序时原地刷新（`refreshRoot`），与横排再点当前分页同一手势。
     public func selectSort(_ newSort: CommentSort) {
-        guard sort != newSort else { return }
+        guard sort != newSort else {
+            refreshRoot()
+            return
+        }
         sort = newSort
         guard let subject else { return }
         replaceRootWorkset(subject: subject, sort: newSort)
     }
 
     public func loadNextPage() {
+        // 刷新进行中不翻页：两者共用 `rootTask`，翻页会取消刷新，刷新落地时又整体替换掉翻到的这一页。
         guard subject != nil, !isLoadingNextPage, !reachedEnd,
             continuation != nil, paginationTermination == nil,
-            rootState == .loaded
+            rootState == .loaded, refreshState != .refreshing
         else { return }
         loadRootPage(isInitial: false)
+    }
+
+    /// 再点当前排序：原地重读这个排序的第一页。
+    ///
+    /// 已有列表（含空列表）时，请求期间旧列表、展开的楼中楼与对话都留着；成功后整体替换、递增 `refreshGeneration`，
+    /// 失败时什么都不换，只记下 `refreshState.failed`。第一页失败后再点等于重试，正在加载第一页或刷新中时忽略。
+    /// 进行中的翻页被取消，翻页位置留给刷新失败后再翻。
+    public func refreshRoot() {
+        guard let subject else { return }
+        switch rootState {
+        case .loaded, .empty:
+            break
+        case .failed:
+            loadInitialPage()
+            return
+        case .idle, .loading:
+            return
+        }
+        guard refreshState != .refreshing else { return }
+        refreshState = .refreshing
+        isLoadingNextPage = false
+        let requestedSort = sort
+        let useCase = self.useCase
+        rootTask.replace { [weak self, useCase] isCurrent in
+            do {
+                let batch = try await useCase.loadRoots(
+                    for: subject,
+                    sort: requestedSort,
+                    after: nil,
+                    excluding: []
+                )
+                try Task.checkCancellation()
+                guard let self, isCurrent(), self.subject == subject,
+                    self.sort == requestedSort
+                else { return }
+                replaceWithRefreshedRoots(batch)
+            } catch is CancellationError {
+                guard let self, isCurrent() else { return }
+                refreshState = .idle
+            } catch {
+                guard let self, isCurrent() else { return }
+                let readError = error as? CommentReadError ?? .unavailable
+                recordAuthenticationInvalidationIfNeeded(readError)
+                refreshState = .failed(readError)
+            }
+        }
     }
 
     public func retryRoot() {
@@ -300,8 +362,18 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         loadRootPage(isInitial: true)
     }
 
-    /// 清空 root 列表、分页与楼中楼展示状态；`rootState` 与请求取消由调用方决定。
+    /// 原地刷新的第一页到达：与换排序同样作废旧的楼中楼请求、清空展开状态，再换上这一页。
+    private func replaceWithRefreshedRoots(_ batch: CommentRootBatch) {
+        rootGeneration += 1
+        cancelAllReplyTasks()
+        clearRootState()
+        appendRootBatch(batch)
+        refreshGeneration &+= 1
+    }
+
+    /// 清空 root 列表、分页、楼中楼展示状态与刷新进度；`rootState` 与请求取消由调用方决定。
     private func clearRootState() {
+        refreshState = .idle
         threads = []
         totalCount = 0
         continuation = nil
@@ -321,6 +393,8 @@ public final class PlaybackCommentsViewModel: AccountRevalidationParticipant {
         if !isInitial {
             isLoadingNextPage = true
             paginationError = nil
+            // 翻页是下一次操作，上一次刷新失败的说明到此为止。
+            if case .failed = refreshState { refreshState = .idle }
         }
         let useCase = self.useCase
         rootTask.replace { [weak self, useCase] isCurrent in

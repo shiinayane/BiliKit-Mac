@@ -139,6 +139,8 @@ struct NativePlaybackCommentsPresentation: Equatable {
     let paginationTermination: CommentPaginationTermination?
     let reachedEnd: Bool
     let reachedMemoryLimit: Bool
+    let refreshState: PlaybackCommentsRefreshState
+    let refreshGeneration: Int
 
     /// `canWrite` 是窗口此刻能否写入；与评论区是否接受新评论一起决定每一楼行上的操作是否可用。
     ///
@@ -154,6 +156,8 @@ struct NativePlaybackCommentsPresentation: Equatable {
         paginationTermination = model?.paginationTermination
         reachedEnd = model?.reachedEnd ?? false
         reachedMemoryLimit = model?.reachedMemoryLimit ?? false
+        refreshState = model?.refreshState ?? .idle
+        refreshGeneration = model?.refreshGeneration ?? 0
         guard let model, let subject = model.subject else {
             threads = []
             return
@@ -169,6 +173,13 @@ struct NativePlaybackCommentsPresentation: Equatable {
                 )
             )
         }
+    }
+
+    /// 原地刷新失败的说明：标题条显示它、读屏通告它，两处同一句；没有失败时为 nil。
+    var refreshFailureText: String? {
+        guard case .failed(let error) = refreshState else { return nil }
+        return error.isRetryable
+            ? VideoDetailFeatureStrings.localized("评论刷新失败") : error.nonRetryableDescription
     }
 
     var sortIsEnabled: Bool {

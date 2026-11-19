@@ -148,11 +148,17 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             previousBVID: previousBVID,
             nextBVID: nextBVID
         )
+        let previousComments = previousPresentation.content?.comments
+        let nextComments = presentation.content?.comments
+        // 换排序与原地刷新成功都是同一评论区整体换上新的第一页，翻页从头算。只有换排序把视口带回评论区标题：
+        // 刷新是点着屏幕上的标题条发起的，标题条本来就在视野里，不再移动视口。
         let changesCommentSort =
-            previousPresentation.content?.comments.subject
-            == presentation.content?.comments.subject
-            && previousPresentation.content?.comments.sort
-                != presentation.content?.comments.sort
+            previousComments?.subject == nextComments?.subject
+            && previousComments?.sort != nextComments?.sort
+        let replacesCommentRoots =
+            changesCommentSort
+            || (previousComments?.subject == nextComments?.subject
+                && previousComments?.refreshGeneration != nextComments?.refreshGeneration)
         let preservesCommentPaginationPosition =
             NativePlaybackCommentsAnchorPolicy.preservesRelativePosition(
                 previous: previousPresentation.content?.comments,
@@ -162,7 +168,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
             summaryExpanded = false
             commentsPagination.reset()
         }
-        if changesCommentSort {
+        if replacesCommentRoots {
             commentsPagination.reset()
         }
         let changedItemIDs = presentation.changedItemIDs(

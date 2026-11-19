@@ -40,6 +40,11 @@ extension NativePlaybackSidebarController {
             subject: subject,
             lastRootID: comments.threads.last?.thread.id
         )
+        // 原地刷新期间 ViewModel 不翻页（与翻页共用一个请求）；按加载中处理，近尾判断不把这个尾部记成已触发，
+        // 刷新失败、列表留着时照常为它翻页。
+        if comments.refreshState == .refreshing {
+            return .init(canLoadMore: true, tailIdentity: identity, isLoading: true)
+        }
         switch comments.footer {
         case .loadMore:
             return .init(canLoadMore: true, tailIdentity: identity, isLoading: false)

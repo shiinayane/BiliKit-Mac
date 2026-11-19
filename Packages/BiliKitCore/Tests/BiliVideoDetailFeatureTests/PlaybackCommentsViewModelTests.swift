@@ -7,7 +7,8 @@ import Testing
 /// 评论区 ViewModel 的根评论、楼中楼与对话只写回当前意图的结果，迟到结果一律丢弃。
 ///
 /// 根评论沿同一 continuation 追加到服务端末页，重复页停止自动翻页但显式重试照常请求，保留条数有内存上限；同一评论
-/// 对象不重复请求，换排序或评论对象后旧结果不写回。楼中楼按页码直接跳转，越界与同页不请求，失败页不能跳过、重试
+/// 对象不重复请求，换排序或评论对象后旧结果不写回；再选当前排序原地刷新，请求期间与失败后旧列表都留着，成功才整体
+/// 替换，失败说明留到下一次操作。楼中楼按页码直接跳转，越界与同页不请求，失败页不能跳过、重试
 /// 同一页；收起、换对象或进入对话后迟到的回复不写回，回复请求的并发有上限，面板还有回复时加载提示延迟露出。对话
 /// 只对回复别人的回复生效，按楼层加载到底，失败按同一起点重试，关闭后回到原页。根评论与回复的认证失效都发出重新
 /// 校验意图。
@@ -163,6 +164,66 @@ struct PlaybackCommentsViewModelTests {
 
         #expect(model.sort == .latest)
         #expect(model.threads.map(\.id.rawValue) == [2])
+    }
+
+    /// 再选当前排序：请求期间旧列表与展开的楼中楼留着、不能翻页，成功后整体换上新的第一页。
+    @Test
+    @MainActor
+    func reselectingTheSortRefreshesInPlaceAndReplacesOnSuccess() async {
+        let repository = CommentRepositoryStub(
+            rootPages: [continuedPage([thread(1)])],
+            holdsRoots: true,
+            answeredRootRequestCount: 1
+        )
+        let model = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: repository)
+        )
+        model.activate(subject: .video(aid: 700_001))
+        await model.waitForCurrentRootTask()
+        model.expandReplies(for: CommentID(rawValue: 1))
+
+        model.selectSort(.hot)
+        await repository.waitForRootRequestCount(2)
+        model.loadNextPage()
+        #expect(model.refreshState == .refreshing)
+        #expect(model.threads.map(\.id.rawValue) == [1])
+        #expect(model.replyStates[CommentID(rawValue: 1)]?.isExpanded == true)
+        #expect(await repository.rootRequestCount == 2)
+
+        await repository.releaseRoot(0, page: endPage([thread(2), thread(3)]))
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [2, 3])
+        #expect(model.refreshState == .idle)
+        #expect(model.refreshGeneration == 1)
+        #expect(model.replyStates.isEmpty)
+    }
+
+    /// 刷新失败：什么都不换，只记下原因；下一次操作（这里是换排序）清掉它。
+    @Test
+    @MainActor
+    func failedRefreshKeepsTheListUntilTheNextOperation() async {
+        let repository = CommentRepositoryStub(
+            rootPages: [endPage([thread(1)])],
+            rootFailure: .transportFailure,
+            answeredRootRequestCount: 1
+        )
+        let model = PlaybackCommentsViewModel(
+            useCase: CommentUseCase(repository: repository)
+        )
+        model.activate(subject: .video(aid: 700_001))
+        await model.waitForCurrentRootTask()
+
+        model.selectSort(.hot)
+        await model.waitForCurrentRootTask()
+
+        #expect(model.threads.map(\.id.rawValue) == [1])
+        #expect(model.rootState == .loaded)
+        #expect(model.refreshState == .failed(.transportFailure))
+        #expect(model.refreshGeneration == 0)
+
+        model.selectSort(.latest)
+        #expect(model.refreshState == .idle)
     }
 
     @Test
@@ -601,6 +662,17 @@ private func reply(_ id: Int64, root: Int64, parent: Int64, dialog: Int64) -> Bi
         parentID: CommentID(rawValue: parent),
         dialogID: CommentID(rawValue: dialog),
         payload: .unavailable(.unavailable)
+    )
+}
+
+/// 还有下一页的一页：翻页条件成立，用来确认刷新期间不翻页。
+private func continuedPage(_ threads: [CommentThread]) -> CommentRootPage {
+    CommentRootPage(
+        threads: threads,
+        totalCount: threads.count + 1,
+        continuation: CommentContinuation(rawValue: "next"),
+        isEnd: false,
+        inputPolicy: .open
     )
 }
 
