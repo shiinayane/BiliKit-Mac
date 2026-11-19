@@ -265,6 +265,7 @@ extension NativePlaybackSidebarPresentation {
         if previousContent.comments.sort != content.comments.sort
             || previousContent.comments.totalCount != content.comments.totalCount
             || previousContent.comments.sortIsEnabled != content.comments.sortIsEnabled
+            || previousContent.comments.refreshState != content.comments.refreshState
         {
             changed.insert(.commentsHeader(subject: content.comments.subject))
         }

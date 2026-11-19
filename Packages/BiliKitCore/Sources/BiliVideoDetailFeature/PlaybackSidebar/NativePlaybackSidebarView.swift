@@ -134,6 +134,11 @@ public struct NativePlaybackSidebarView: View {
             }
         }
         .onChange(of: commentsModel?.subject) { commentWrite?.subjectDidChange() }
+        // 原地刷新的失败只显示在评论区标题条上，读屏焦点多半不在那里；刷新状态变成失败时通告一次。
+        .accessibilityAnnouncement(
+            presentation.content?.comments.refreshFailureText,
+            trigger: presentation.content?.comments.refreshState
+        )
         .navigationTitle(VideoDetailFeatureStrings.localized("观看辅助"))
         // UP 主已关注时预读关系，「已关注」菜单弹出时就有状态。
         .task(id: engagementModel.isFollowingUploader == true ? engagementModel.uploaderID : nil) {

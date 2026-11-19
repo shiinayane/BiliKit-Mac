@@ -3,7 +3,7 @@ import BiliApplication
 import BiliModels
 import BiliVideoCollectionUI
 
-/// 评论区标题条目：标题、评论总数与热门／最新排序；排序变化经回调交给 ViewModel。
+/// 评论区标题条目：标题、评论总数、原地刷新的进度或失败说明与热门／最新排序；排序变化经回调交给 ViewModel。
 @MainActor
 final class NativePlaybackCommentsHeaderItem: NativeLayoutSizedCollectionItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier(
@@ -31,7 +31,10 @@ final class NativePlaybackCommentsHeaderItem: NativeLayoutSizedCollectionItem {
     }
 }
 
-/// 评论区标题的内容视图：持有排序回调，排序不可用时禁用分段控件。
+/// 评论区标题的内容视图：持有排序回调与刷新转圈的延迟露出，排序不可用时禁用分段控件。
+///
+/// 点当前排序也经 `onSelectSort` 交出，由 ViewModel 当作原地刷新（`PlaybackCommentsViewModel.selectSort`）。刷新中在
+/// 总数后面延迟露出转圈，失败时在同一位置显示说明，直到下一次操作；两者都不改变条目高度。
 @MainActor
 private final class NativePlaybackCommentsHeaderView: NSView {
     override var isFlipped: Bool { true }
@@ -46,6 +49,11 @@ private final class NativePlaybackCommentsHeaderView: NSView {
         action: nil
     )
     private var onSelectSort: ((CommentSort) -> Void)?
+    private let refreshSpinner = NSProgressIndicator.sidebarLoadingSpinner(controlSize: .small)
+    private let refreshFailureLabel = NSTextField(labelWithString: "")
+    private lazy var refreshReveal = NativeLoadingReveal { [weak self] revealed in
+        self?.refreshSpinner.setSpinning(revealed)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -62,8 +70,16 @@ private final class NativePlaybackCommentsHeaderView: NSView {
         sortControl.target = self
         sortControl.action = #selector(selectSort)
         sortControl.setAccessibilityLabel(VideoDetailFeatureStrings.localized("评论排序"))
+        refreshFailureLabel.font = .systemFont(
+            ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize
+        )
+        refreshFailureLabel.textColor = .secondaryLabelColor
+        refreshFailureLabel.lineBreakMode = .byTruncatingTail
+        refreshFailureLabel.isHidden = true
         addSubview(titleLabel)
         addSubview(countLabel)
+        addSubview(refreshSpinner)
+        addSubview(refreshFailureLabel)
         addSubview(sortControl)
         setAccessibilityElement(false)
     }
@@ -78,6 +94,10 @@ private final class NativePlaybackCommentsHeaderView: NSView {
         self.onSelectSort = onSelectSort
         sortControl.selectedSegment = presentation.sort == .hot ? 0 : 1
         sortControl.isEnabled = presentation.sortIsEnabled
+        refreshReveal.setLoading(presentation.refreshState == .refreshing)
+        let failureText = presentation.refreshFailureText
+        refreshFailureLabel.stringValue = failureText ?? ""
+        refreshFailureLabel.isHidden = failureText == nil
         switch presentation.rootState {
         case .loaded, .empty:
             let count = CommentPresentationFormatting.compactCount(
@@ -115,6 +135,16 @@ private final class NativePlaybackCommentsHeaderView: NSView {
             width: countWidth,
             height: 20
         )
+        let statusX = countLabel.frame.maxX + 6
+        refreshSpinner.frame = refreshSpinner.centeredFrame(
+            in: NSRect(x: statusX, y: 11, width: 20, height: 20)
+        )
+        refreshFailureLabel.frame = NSRect(
+            x: statusX,
+            y: 11,
+            width: max(0, sortX - 8 - statusX),
+            height: 20
+        )
         sortControl.frame = NSRect(
             x: sortX,
             y: 6,
@@ -125,6 +155,9 @@ private final class NativePlaybackCommentsHeaderView: NSView {
 
     func reset() {
         onSelectSort = nil
+        refreshReveal.setLoading(false)
+        refreshFailureLabel.stringValue = ""
+        refreshFailureLabel.isHidden = true
         countLabel.stringValue = ""
         countLabel.setAccessibilityLabel(nil)
         countLabel.setAccessibilityElement(false)
