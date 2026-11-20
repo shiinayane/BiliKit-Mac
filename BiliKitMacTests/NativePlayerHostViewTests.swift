@@ -65,6 +65,43 @@ struct NativePlayerHostViewTests {
         #expect(!view.isAccessibilityHidden())
     }
 
+    /// 换视频时把键盘焦点交给播放器，但不从正在输入的文本框里抢走：自动连播时用户可能正在打字，抢走后按键会落成播放快捷键。
+    @Test
+    @MainActor
+    func newVideoFocusDoesNotStealFromEditableText() {
+        let renderer = CoreAnimationDanmakuRenderer(
+            beginTimeAtMediaZero: DanmakuTimebaseClock.beginTimeAtMediaZero
+        )
+        let controller = DanmakuPresentationController(backend: renderer)
+        let host = NativePlayerHostView(
+            renderer: renderer,
+            controller: controller,
+            beginMomentaryPlaybackRate: nil,
+            endMomentaryPlaybackRate: nil
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 180)
+        let textField = NSTextField(frame: NSRect(x: 0, y: 200, width: 200, height: 24))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
+        container.addSubview(host)
+        container.addSubview(textField)
+        let window = NSWindow(
+            contentRect: container.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+
+        host.requestInitialKeyboardFocus(for: "BV1xx411c7mD")
+        #expect(Self.focusIsInside(host, of: window))
+
+        #expect(window.makeFirstResponder(textField))
+        #expect(PlayerKeyboardShortcutController.focusedResponderOwnsKeys(window.firstResponder))
+        host.requestInitialKeyboardFocus(for: "BV1Q541167Qg")
+        #expect(!Self.focusIsInside(host, of: window))
+        #expect(PlayerKeyboardShortcutController.focusedResponderOwnsKeys(window.firstResponder))
+    }
+
     /// 播放器宿主随窗口常驻：页面卸载只摘下，关窗才拆除。
     ///
     /// 播放页卸载时宿主只被摘下，player 仍挂着；再次进入同一个视频拿到同一个宿主，键盘焦点照样交给播放器；关窗时由

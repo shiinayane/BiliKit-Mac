@@ -243,12 +243,15 @@ struct PlaybackCommentComposerView: View {
 
 /// 记住评论入口所在的窗口（弱引用）；由 `CommentComposerWindowReader` 在挂上窗口时写入。
 @MainActor
-private final class CommentComposerWindowReference {
+final class CommentComposerWindowReference {
     weak var window: NSWindow?
 }
 
-/// 读取评论入口所在窗口的零尺寸 AppKit 视图：SwiftUI 没有公开的办法拿到所在窗口，收起时又只能放下这个窗口的焦点。
-private struct CommentComposerWindowReader: NSViewRepresentable {
+/// 读取评论入口所在窗口的 AppKit 视图：SwiftUI 没有公开的办法拿到所在窗口，收起时又只能放下这个窗口的焦点。
+///
+/// 它铺在入口整宽的背景上，叠在 AppKit 评论列表之上，所以不参与命中测试；否则收起时圆钮旁边那一条的点击与滚轮
+/// 都落在这个空视图上，到不了下面的评论。
+struct CommentComposerWindowReader: NSViewRepresentable {
     let reference: CommentComposerWindowReference
 
     func makeNSView(context: Context) -> ReaderView {
@@ -269,6 +272,8 @@ private struct CommentComposerWindowReader: NSViewRepresentable {
             super.viewDidMoveToWindow()
             reference?.window = window
         }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 
