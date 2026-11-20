@@ -39,6 +39,9 @@ public struct UploaderFollowingMenu: Sendable {
     ///
     /// 弹出前先 `prefetch`：页面出现时的预读失败过、或还没读到时再读一次，这次菜单里依赖它的两项仍不可用，下次弹出就有。
     /// `view` 的坐标可能不是翻转的（SwiftUI 按钮背后的锚点视图），按它是否翻转换算“下方”。
+    ///
+    /// 菜单按点按此刻的关系构造，推到下一轮 runloop 再弹：菜单的跟踪循环会一直阻塞到菜单关闭，在按钮动作或读屏按下里
+    /// 同步弹出会让读屏等到超时（与卡片菜单的 `presentCardMenu` 同一原因）。届时锚点已离开窗口就不弹。
     @MainActor
     func popUp(mid: Int64, below view: NSView, unfollow: @escaping @MainActor () -> Void) {
         prefetch(mid)
@@ -54,8 +57,11 @@ public struct UploaderFollowingMenu: Sendable {
             }
         }
         guard let menu = NativeVideoCardMenu(sections: [items])?.makeMenu() else { return }
-        let below = view.isFlipped ? view.bounds.height + Self.menuOffset : -Self.menuOffset
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: view)
+        DispatchQueue.main.async { [weak view] in
+            guard let view, view.window != nil else { return }
+            let below = view.isFlipped ? view.bounds.height + Self.menuOffset : -Self.menuOffset
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: view)
+        }
     }
 
     /// 菜单顶边与按钮底边之间的间距。
