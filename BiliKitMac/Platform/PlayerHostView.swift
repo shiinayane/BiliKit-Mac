@@ -459,6 +459,11 @@ final class NativePlayerHostView: AVPlayerView {
         applyPendingInitialKeyboardFocus()
     }
 
+    /// 换视频（`identity` 变化）时把键盘焦点交给播放器，同一视频只交一次；由 `AVPlayerContainerView` 每次更新时调用。
+    ///
+    /// 正在输入的文本（`PlayerKeyboardShortcutController.focusedResponderOwnsKeys`）持有焦点时不抢：自动连播时用户可能
+    /// 正在侧栏上下文层的空间搜索框里打字，抢走后接下来的按键会落成播放快捷键（Q 是点赞，真实账户写入）。这一次照样
+    /// 记为已交，离开文本框后不再补交；播放快捷键由按窗口截获的本地监听处理，不需要播放器是第一响应者。
     func requestInitialKeyboardFocus(for identity: String?) {
         guard let identity, identity != lastInitialFocusIdentity else { return }
         pendingInitialFocusIdentity = identity
@@ -472,6 +477,9 @@ final class NativePlayerHostView: AVPlayerView {
         else { return }
         pendingInitialFocusIdentity = nil
         lastInitialFocusIdentity = identity
+        guard
+            !PlayerKeyboardShortcutController.focusedResponderOwnsKeys(window.firstResponder)
+        else { return }
         // 评论图片预览在自己的子窗口面板里，这里只改播放窗口的第一响应者，不影响已打开的预览。
         window.makeFirstResponder(self)
     }
