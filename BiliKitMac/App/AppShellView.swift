@@ -313,7 +313,7 @@ struct AppShellView: View {
         .onChange(of: page.order) { spaceGridScroll.reset.request() }
         .onChange(of: page.searchKeyword) { spaceGridScroll.reset.request() }
         .onChange(of: page.owner == nil) { _, isClosed in
-            if isClosed { navigationCoordinator.restoreTopSpaceIfClosed() }
+            if isClosed { navigationCoordinator.restoreTopPageIfClosed() }
         }
     }
 

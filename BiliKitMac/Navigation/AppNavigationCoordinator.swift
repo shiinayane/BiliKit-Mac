@@ -84,8 +84,9 @@ private struct CoveredPause {
 
 /// 协调窗口内的顶层 Tab、右侧历史、播放生命周期副作用与侧栏上下文层。
 ///
-/// 拥有右侧的历史栈（`history`，栈顶决定显示什么，空栈是来源根页）、活视频绑定在哪一项（`liveEntryID`）、整页空间模型
-/// 属于哪一项（`liveSpaceEntryID`）与一次延后的停止；不拥有播放器（经 `AppPlaybackSession`）与转场（经 `transitionPage`）。
+/// 拥有右侧的历史栈（`history`，栈顶决定显示什么，空栈是来源根页）、活视频绑定在哪一项（`liveEntryID`）、每种浏览类
+/// 页面那一份活模型属于哪一项（`HistoryPageSlot`）与一次延后的停止；不拥有播放器（经 `AppPlaybackSession`）与转场
+/// （经 `transitionPage`）。
 /// 压一层、原地替换、盖住与恢复的规则见 docs/ARCHITECTURE.md「动线与侧栏上下文层」。侧栏类别、侧栏宽度、右侧页面与评论
 /// 图片预览看栈顶，评论激活看活视频。切换来源、登出与关窗经 `closePlayback()` 清空历史并立即停止。侧栏上下文层（UP 主
 /// 空间预览）的打开与关闭入口都在这里，是否打开从预览模型的 `owner` 派生；它自己在返回按钮或账户会话切换时关闭，同样
@@ -135,12 +136,18 @@ final class AppNavigationCoordinator {
     }
     /// 侧栏上下文层（UP 主空间预览）的内容模型；每个窗口都有，空间入口与空间链接都在这里打开。
     @ObservationIgnored let uploaderSpace: UploaderSpaceViewModel
-    /// 整页空间页的内容模型，属于最上面的空间项。
-    @ObservationIgnored let uploaderSpacePage: UploaderSpaceViewModel
+    /// 整页空间页的那一份活模型与占用它的空间项。
+    @ObservationIgnored private let spacePages: HistoryPageSlot<UploaderSpaceViewModel>
+    /// 整页空间页的内容模型。
+    var uploaderSpacePage: UploaderSpaceViewModel {
+        spacePages.model
+    }
     /// 此刻占用整页空间模型的空间项；没有时为 nil。
     ///
     /// 视图按它区分网格保活与滚动位置。
-    private(set) var liveSpaceEntryID: UInt64?
+    var liveSpaceEntryID: UInt64? {
+        spacePages.liveEntryID
+    }
     /// 上下文层是否打开：底层要隐藏、侧栏要叠上空间列表。
     var isSidebarContextOpen: Bool {
         uploaderSpace.owner != nil
@@ -194,7 +201,14 @@ final class AppNavigationCoordinator {
         self.transitionPage = transitionPage
         self.transitionSidebarContext = transitionSidebarContext
         self.uploaderSpace = uploaderSpace
-        self.uploaderSpacePage = uploaderSpacePage
+        spacePages = HistoryPageSlot(
+            model: uploaderSpacePage,
+            extract: { destination in
+                guard case .uploaderSpace(let space) = destination else { return nil }
+                return space
+            },
+            embed: AppDestination.uploaderSpace
+        )
     }
 
     /// 在侧栏上下文层打开某位 UP 主的空间（播放侧栏的 UP 主行、评论作者与 @ 提及）。
@@ -233,24 +247,16 @@ final class AppNavigationCoordinator {
         let destination = UploaderSpaceDestination(owner: owner, order: .newest, searchKeyword: nil)
         if let top = history.last, case .uploaderSpace(let current) = top.destination {
             guard current.owner.id != owner.id else { return }
-            history[history.count - 1].destination = .uploaderSpace(destination)
-            showSpace(destination, entryID: top.id)
+            replaceTopPage(with: .uploaderSpace(destination))
             return
         }
-        completePendingStop()
-        coverLivePlayback()
-        let entry = AppHistoryEntry(id: takeEntryID(), destination: .uploaderSpace(destination))
-        pushPage(entry)
-        showSpace(destination, entryID: entry.id)
+        pushBrowsePage(.uploaderSpace(destination))
     }
 
-    /// 整页空间模型被认证会话切换关掉、而栈顶仍是它时（会话切换通常会清空历史，这里兜底），按栈顶那一项重新打开。
-    func restoreTopSpaceIfClosed() {
-        guard uploaderSpacePage.owner == nil,
-            let top = history.last,
-            case .uploaderSpace(let destination) = top.destination
-        else { return }
-        showSpace(destination, entryID: top.id)
+    /// 栈顶浏览类页面的模型被认证会话切换关掉时（会话切换通常会清空历史，这里兜底），按栈顶那一项重新打开。
+    func restoreTopPageIfClosed() {
+        guard let top = history.last, pageSlotNeedsShowing(top) else { return }
+        showPage(top.destination, entryID: top.id)
     }
 
     /// 栈顶不是播放页时压一层播放页；栈顶是播放页时只替换它的媒体 identity。
@@ -306,7 +312,7 @@ final class AppNavigationCoordinator {
         }
         // 返回的转场还没结束就又进了播放页：先完成上一次停止，与立即停止后再开始一样，不让旧视频的停止晚到。
         completePendingStop()
-        captureSpaceState()
+        capturePages()
         if let live = liveIntent, live.bvid == intent.bvid {
             // 被盖住的就是这个视频（空间页里又点了它）：活视频改绑到新压的这一项，不重新起播；意图明确指向另一个分 P
             // 时按换分 P 处理（视频模型在已有分 P 里切换）。
@@ -354,7 +360,7 @@ final class AppNavigationCoordinator {
         case .playback(let intent)?:
             completePendingStop()
             popPage(change)
-            closeSpacePageIfUnused()
+            closeUnusedPages()
             guard let newTop else { return }
             if newTop.id == liveEntryID {
                 resumeIfPausedByCovering()
@@ -362,7 +368,8 @@ final class AppNavigationCoordinator {
                 stopLivePlayback()
                 makeLive(intent, entryID: newTop.id)
             }
-        case .uploaderSpace(let destination)?:
+        case let destination?:
+            // 浏览类页面（整页空间页）。
             guard let newTop else { return }
             if top.id == liveEntryID, let lower = nearestPlaybackEntry(below: newTop.id),
                 case .playback(let lowerIntent) = lower.destination,
@@ -379,9 +386,8 @@ final class AppNavigationCoordinator {
             } else {
                 popPage(change)
             }
-            // 模型被会话切换关掉时，即使仍属于这一项也重新打开，否则回来只看到骨架屏。
-            if liveSpaceEntryID != newTop.id || uploaderSpacePage.owner == nil {
-                showSpace(destination, entryID: newTop.id)
+            if pageSlotNeedsShowing(newTop) {
+                showPage(destination, entryID: newTop.id)
             }
         case nil:
             if top.id == liveEntryID {
@@ -390,7 +396,7 @@ final class AppNavigationCoordinator {
                 popPage(change)
                 stopLivePlayback()
             }
-            closeSpacePageIfUnused()
+            closeUnusedPages()
         }
     }
 
@@ -423,7 +429,7 @@ final class AppNavigationCoordinator {
             popPage(change)
             stopLivePlayback()
         }
-        closeSpacePageIfUnused()
+        closeUnusedPages()
     }
 
     /// 侧栏选了另一个来源或同一来源里的另一行（另一个收藏夹）：清空历史并停止播放，回到那个来源的根页。
@@ -447,7 +453,7 @@ final class AppNavigationCoordinator {
             history.removeSubrange((index + 1)...)
             closeSidebarContext()
         }
-        closeSpacePageIfUnused()
+        closeUnusedPages()
         return true
     }
 
@@ -475,7 +481,7 @@ final class AppNavigationCoordinator {
         guard !history.isEmpty || liveIntent != nil else { return }
         history.removeAll()
         closeSidebarContext()
-        closeSpacePageIfUnused()
+        closeUnusedPages()
         stopLivePlayback()
     }
 
@@ -572,37 +578,45 @@ final class AppNavigationCoordinator {
         history.firstIndex { $0.id == entryID } ?? history.count
     }
 
-    /// 让整页空间模型显示这一项：先把它当前的排序与搜索词写回原来占用它的那一项，再按这一项的条件从第一批重建。
-    ///
-    /// 模型仍属于这一项时（原地换人、关掉后重开）不写回：那一项已经是新的条件，模型里的是旧人或已关闭的默认值。
-    private func showSpace(_ destination: UploaderSpaceDestination, entryID: UInt64) {
-        if liveSpaceEntryID != entryID { captureSpaceState() }
-        uploaderSpacePage.open(
-            owner: destination.owner,
-            order: destination.order,
-            searchKeyword: destination.searchKeyword
-        )
-        liveSpaceEntryID = entryID
+    /// 压一层浏览类页面：被盖住的活视频暂停，还在加载的直接停止。
+    private func pushBrowsePage(_ destination: AppDestination) {
+        completePendingStop()
+        coverLivePlayback()
+        let entry = AppHistoryEntry(id: takeEntryID(), destination: destination)
+        pushPage(entry)
+        showPage(destination, entryID: entry.id)
     }
 
-    /// 把整页空间模型此刻的排序与搜索词写回占用它的那一项；那一项已不在历史里时不动作。
-    private func captureSpaceState() {
-        guard let liveSpaceEntryID,
-            let index = history.firstIndex(where: { $0.id == liveSpaceEntryID }),
-            case .uploaderSpace(var destination) = history[index].destination
-        else { return }
-        destination.order = uploaderSpacePage.order
-        destination.searchKeyword = uploaderSpacePage.searchKeyword
-        history[index].destination = .uploaderSpace(destination)
+    /// 栈顶已是同类浏览类页面时原地换内容：保留这一项的 id，不转场。
+    private func replaceTopPage(with destination: AppDestination) {
+        guard let top = history.last else { return }
+        history[history.count - 1].destination = destination
+        showPage(destination, entryID: top.id)
     }
 
-    /// 占用整页空间模型的那一项已不在历史里（被弹出或清空）时关闭模型，放开投稿；外壳随 `liveSpaceEntryID` 变为 nil
-    /// 丢弃保活里的那份网格。
-    private func closeSpacePageIfUnused() {
-        guard let liveSpaceEntryID, !history.contains(where: { $0.id == liveSpaceEntryID })
-        else { return }
-        self.liveSpaceEntryID = nil
-        uploaderSpacePage.close()
+    /// 让这种页面的模型显示这一项；播放页不由这里显示。
+    private func showPage(_ destination: AppDestination, entryID: UInt64) {
+        apply(spacePages.show(destination, entryID: entryID, history: history))
+    }
+
+    /// 回到这一项时它所属那种页面的模型要不要重建；播放页为 false。
+    private func pageSlotNeedsShowing(_ entry: AppHistoryEntry) -> Bool {
+        spacePages.owns(entry.destination) && spacePages.needsShowing(entryID: entry.id)
+    }
+
+    /// 被盖住之前，把各种页面模型此刻的条件写回占用它们的那一项。
+    private func capturePages() {
+        apply(spacePages.capture(from: history))
+    }
+
+    /// 关闭占用者已不在历史里的页面模型。
+    private func closeUnusedPages() {
+        spacePages.closeIfUnused(history: history)
+    }
+
+    private func apply(_ update: HistoryDestinationUpdate?) {
+        guard let update else { return }
+        history[update.index].destination = update.destination
     }
 
     private func takeEntryID() -> UInt64 {
