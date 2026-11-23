@@ -9,21 +9,30 @@ struct NativeVideoCardSymbolRaster {
     let size: NSSize
 }
 
-/// 封面指标图标的栅格化与缓存：按名字、字号、字重、缩放与外观画成 `CGImage`，直接作为 layer 内容。
+/// 卡片上 SF Symbol 的栅格化与缓存：封面指标图标与封面、头像的占位图按名字、字号、字重、配色、缩放与外观画成
+/// `CGImage`，直接作为 layer 内容。
+///
+/// 占位图也走这里，是因为保活的网格挂回窗口时每张卡片都会收到一次外观变化：直接给 layer 一个 `NSImage`，提交时
+/// 每个 layer 都要各自解析符号、栅格化一遍；缓存后几十张卡片共用同一张位图，换页时不再为此占用主线程。
 @MainActor
 enum NativeVideoCardSymbolRasterizer {
     private struct Key: Hashable {
         let name: String
+        /// 0 表示不指定字号与字重，用符号的默认尺寸（占位图）。
         let pointSize: CGFloat
         let weight: CGFloat
+        /// 配色的标识：指标图标按名字决定配色，占位图是调用方给的颜色。
+        let palette: String
         let scale: CGFloat
         let appearanceName: String
     }
 
-    /// 只防止无界增长：实际用到的图标、缩放与外观组合远少于此，满了随意淘汰一项即可。
-    private static let maximumRasterCount = 32
+    /// 只防止无界增长：实际用到的图标、占位、缩放与外观组合远少于此，满了随意淘汰一项即可；调小会在明暗切换或
+    /// 跨屏时反复重画。
+    private static let maximumRasterCount = 64
     private static var rasters: [Key: NativeVideoCardSymbolRaster] = [:]
 
+    /// 封面左下角的指标图标：白色，弹幕图标两层分别上色。
     static func raster(
         named name: String,
         pointSize: CGFloat,
@@ -31,33 +40,59 @@ enum NativeVideoCardSymbolRasterizer {
         scale requestedScale: CGFloat,
         appearance: NSAppearance
     ) -> NativeVideoCardSymbolRaster? {
-        let scale = max(1, requestedScale)
+        // 弹幕图标是多层符号，两层分别上色，文字线条才不会与气泡融成一块；其他图标单层白色。
+        let paletteColors: [NSColor] =
+            name == "text.bubble.fill" ? [.black, .white] : [.white]
         let key = Key(
             name: name,
             pointSize: pointSize,
             weight: weight.rawValue,
-            scale: scale,
+            palette: paletteColors.map(\.description).joined(separator: "|"),
+            scale: max(1, requestedScale),
             appearanceName: appearance.name.rawValue
         )
+        return raster(for: key, appearance: appearance) {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: paletteColors))
+            )
+        }
+    }
+
+    /// 封面与头像的占位：符号默认尺寸、单色；动态颜色在 `appearance` 下取值。
+    static func placeholder(
+        named name: String,
+        color: NSColor,
+        scale requestedScale: CGFloat,
+        appearance: NSAppearance
+    ) -> NativeVideoCardSymbolRaster? {
+        let key = Key(
+            name: name,
+            pointSize: 0,
+            weight: 0,
+            palette: color.description,
+            scale: max(1, requestedScale),
+            appearanceName: appearance.name.rawValue
+        )
+        return raster(for: key, appearance: appearance) {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(paletteColors: [color])
+            )
+        }
+    }
+
+    private static func raster(
+        for key: Key,
+        appearance: NSAppearance,
+        makeImage: () -> NSImage?
+    ) -> NativeVideoCardSymbolRaster? {
         if let cached = rasters[key] { return cached }
 
+        let scale = key.scale
         var raster: NativeVideoCardSymbolRaster?
         appearance.performAsCurrentDrawingAppearance {
-            let pointConfiguration = NSImage.SymbolConfiguration(
-                pointSize: pointSize,
-                weight: weight
-            )
-            // 弹幕图标是多层符号，两层分别上色，文字线条才不会与气泡融成一块；其他图标单层白色。
-            let paletteColors: [NSColor] =
-                name == "text.bubble.fill" ? [.black, .white] : [.white]
-            let colorConfiguration = NSImage.SymbolConfiguration(
-                paletteColors: paletteColors
-            )
             guard
-                let image = NSImage(
-                    systemSymbolName: name,
-                    accessibilityDescription: nil
-                )?.withSymbolConfiguration(pointConfiguration.applying(colorConfiguration)),
+                let image = makeImage(),
                 image.size.width > 0,
                 image.size.height > 0
             else { return }
@@ -309,6 +344,7 @@ final class NativeVideoMergedCoverView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateContentsScale()
+        refreshPlaceholderImage()
         refreshMetricIcons()
         needsLayout = true
     }
@@ -316,6 +352,7 @@ final class NativeVideoMergedCoverView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         updateContentsScale()
+        refreshPlaceholderImage()
         refreshMetricIcons()
     }
 
@@ -437,13 +474,13 @@ final class NativeVideoMergedCoverView: NSView {
     }
 
     private func refreshPlaceholderImage() {
-        let configuration = NSImage.SymbolConfiguration(
-            paletteColors: [.tertiaryLabelColor]
+        let raster = NativeVideoCardSymbolRasterizer.placeholder(
+            named: "photo",
+            color: .tertiaryLabelColor,
+            scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
+            appearance: effectiveAppearance
         )
-        placeholderLayer.contents = NSImage(
-            systemSymbolName: "photo",
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(configuration)
+        placeholderLayer.contents = raster?.image
     }
 
     private func updateContentsScale() {
@@ -573,6 +610,13 @@ package final class NativeVideoLayerImageView: NSView {
 
     package override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        refreshPlaceholderImage()
+        needsLayout = true
+    }
+
+    package override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        refreshPlaceholderImage()
         needsLayout = true
     }
 
@@ -581,13 +625,13 @@ package final class NativeVideoLayerImageView: NSView {
     }
 
     private func refreshPlaceholderImage() {
-        let colorConfiguration = NSImage.SymbolConfiguration(
-            paletteColors: [placeholderTintColor]
+        let raster = NativeVideoCardSymbolRasterizer.placeholder(
+            named: placeholderSystemSymbolName,
+            color: placeholderTintColor,
+            scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
+            appearance: effectiveAppearance
         )
-        placeholderLayer.contents = NSImage(
-            systemSymbolName: placeholderSystemSymbolName,
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(colorConfiguration)
+        placeholderLayer.contents = raster?.image
     }
 }
 
