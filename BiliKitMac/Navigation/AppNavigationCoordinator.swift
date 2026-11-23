@@ -375,7 +375,7 @@ final class AppNavigationCoordinator {
                 popPage(change)
                 coverLivePlayback()
             } else if top.id == liveEntryID {
-                popStoppingLivePlayback(change)
+                popStoppingLivePlayback(returningToRoot: false, change)
             } else {
                 popPage(change)
             }
@@ -385,9 +385,8 @@ final class AppNavigationCoordinator {
             }
         case nil:
             if top.id == liveEntryID {
-                popStoppingLivePlayback(change)
+                popStoppingLivePlayback(returningToRoot: true, change)
             } else {
-                rememberRecentlyWatched(replacingWith: nil)
                 popPage(change)
                 stopLivePlayback()
             }
@@ -419,7 +418,7 @@ final class AppNavigationCoordinator {
             self.closeSidebarContext()
         }
         if top.id == liveEntryID {
-            popStoppingLivePlayback(change)
+            popStoppingLivePlayback(returningToRoot: true, change)
         } else {
             popPage(change)
             stopLivePlayback()
@@ -612,13 +611,16 @@ final class AppNavigationCoordinator {
     }
 
     /// 离开活视频所在的页面：有画面可留时先暂停，转场结束后再停止；没有时转场照常、立即停止。
-    private func popStoppingLivePlayback(_ change: () -> Void) {
+    ///
+    /// `returningToRoot` 为 true 时历史随这次换页清空。
+    private func popStoppingLivePlayback(returningToRoot: Bool, _ change: () -> Void) {
         guard liveIntent != nil else {
             popPage(change)
             return
         }
-        // 经「返回」离开的视频历史里已经没有它那一项，只剩「刚才看过」能回去；回到的是来源根页时，它随历史一起清空。
-        rememberRecentlyWatched(replacingWith: nil)
+        // 经「返回」离开的视频历史里已经没有它那一项，只剩「刚才看过」能回去。回到来源根页时不记：「刚才看过」随历史
+        // 一起清空，记了也立即作废；而这次修改会让即将移除的播放页在换页前按新列表重算一遍横排，平白拖慢换页。
+        if !returningToRoot { rememberRecentlyWatched(replacingWith: nil) }
         clearLive()
         guard playback.pauseKeepingPicture() else {
             popPage(change)
