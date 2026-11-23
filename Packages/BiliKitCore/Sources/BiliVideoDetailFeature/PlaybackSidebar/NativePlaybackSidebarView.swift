@@ -27,6 +27,10 @@ public struct NativePlaybackSidebarView: View {
     /// 被空间层盖住时真正隐藏原生视图：SwiftUI 的透明度与 hit testing 管不到 AppKit 的
     /// cursor rect 与 tracking area，只设透明会让评论正文继续改变指针形状。
     var isObscured: Bool
+    /// 侧栏拆除与重新挂上之间保存阅读位置的那一格；由宿主持有，跨侧栏重建存活。
+    let readingPosition: NativePlaybackSidebarReadingPosition
+    /// 当前播放项的标识（宿主的历史项），栈顶不是播放页时为 nil；同一视频的两次打开不同，回到的是同一项才恢复阅读位置。
+    let readingPositionPlacement: AnyHashable?
     /// 把评论入口逐帧的高度转给侧栏滚动视图的「返回顶部」；随视图身份保留，不是 SwiftUI 状态（逐帧写入不能触发重渲染）。
     @State private var composerClearance = NativePlaybackComposerClearance()
 
@@ -42,7 +46,9 @@ public struct NativePlaybackSidebarView: View {
         onOpenCommentLink: @escaping (CommentLinkTarget) -> Void,
         onOpenCommentPictures: @escaping (NativePlaybackCommentPictureGallery) -> Void,
         onOpenUploaderSpace: @escaping (VideoOwner) -> Void,
-        isObscured: Bool = false
+        isObscured: Bool = false,
+        readingPosition: NativePlaybackSidebarReadingPosition,
+        readingPositionPlacement: AnyHashable?
     ) {
         self.model = model
         self.engagementModel = engagementModel
@@ -56,6 +62,8 @@ public struct NativePlaybackSidebarView: View {
         self.onOpenCommentPictures = onOpenCommentPictures
         self.onOpenUploaderSpace = onOpenUploaderSpace
         self.isObscured = isObscured
+        self.readingPosition = readingPosition
+        self.readingPositionPlacement = readingPositionPlacement
     }
 
     public var body: some View {
@@ -66,6 +74,8 @@ public struct NativePlaybackSidebarView: View {
             commentAssetURLResolver: commentAssetURLResolver,
             commentImagePipeline: commentImagePipeline,
             isObscured: isObscured,
+            readingPosition: readingPosition,
+            readingPositionPlacement: readingPositionPlacement,
             composerClearance: composerClearance,
             actions: NativePlaybackSidebarActions(
                 selectPage: selectPage,
@@ -304,13 +314,16 @@ struct NativePlaybackSidebarActions {
     var replyToComment: ((BiliModels.Comment) -> Void)? = nil
 }
 
-/// 把侧栏控制器挂进 SwiftUI：控制器作为 coordinator 随视图创建，`dismantleNSView` 时 `tearDown`；
+/// 把侧栏控制器挂进 SwiftUI：控制器作为 coordinator 随视图创建，挂上时取出阅读位置，`dismantleNSView` 时
+/// `tearDown`（其中写回阅读位置）；
 /// 被空间层盖住时直接隐藏 AppKit 根视图（理由见 `NativePlaybackSidebarView.isObscured`）。
 private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
     let presentation: NativePlaybackSidebarPresentation
     let commentAssetURLResolver: CommentAssetURLResolver
     let commentImagePipeline: any VideoDetailImageLoading
     let isObscured: Bool
+    let readingPosition: NativePlaybackSidebarReadingPosition
+    let readingPositionPlacement: AnyHashable?
     /// 让侧栏给评论入口让位；挂上视图时把侧栏的滚动视图与布局交给它。
     let composerClearance: NativePlaybackComposerClearance
     let actions: NativePlaybackSidebarActions
@@ -323,6 +336,11 @@ private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NativePlaybackSidebarRootView {
+        // 先于第一次 update：第一份内容要知道是不是在恢复阅读位置。
+        context.coordinator.attachReadingPosition(
+            readingPosition,
+            placement: readingPositionPlacement
+        )
         context.coordinator.update(presentation: presentation, actions: actions)
         context.coordinator.rootView.isHidden = isObscured
         composerClearance.scrollView = context.coordinator.rootView.scrollView
@@ -334,6 +352,10 @@ private struct NativePlaybackSidebarRepresentable: NSViewRepresentable {
         _ view: NativePlaybackSidebarRootView,
         context: Context
     ) {
+        // 拆除前栈顶可能已经换成盖上来的页面（标识为 nil）；只记播放项的标识，写回时仍属于这一项。
+        if let readingPositionPlacement {
+            context.coordinator.readingPositionPlacement = readingPositionPlacement
+        }
         context.coordinator.update(presentation: presentation, actions: actions)
         if view.isHidden != isObscured {
             view.isHidden = isObscured
