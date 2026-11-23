@@ -1,6 +1,7 @@
 import AppKit
 import BiliApplication
 import BiliModels
+import BiliVideoCollectionUI
 import CoreText
 
 /// 评论作者名字后的标记：性别、等级（硬核会员带闪电）与 UP 主，用 Core Text 绘制，不为每个标记建子视图。
@@ -133,8 +134,8 @@ final class NativePlaybackCommentAuthorBadgesView: NSView {
                 Segment(
                     text: "⚡︎",
                     foreground: .systemOrange,
-                    background: NSColor.systemOrange.withAlphaComponent(0.12),
-                    stroke: NSColor.systemOrange.withAlphaComponent(0.45),
+                    background: NSColor.systemOrange.withDynamicAlpha(0.12),
+                    stroke: NSColor.systemOrange.withDynamicAlpha(0.45),
                     horizontalPadding: 3
                 )
             )
@@ -273,17 +274,17 @@ final class NativePlaybackCommentProvenanceBadgesView: NSView {
     private static let pinnedSegment = RenderedSegment(
         text: VideoDetailFeatureStrings.localized("置顶"),
         foreground: .systemPink,
-        background: NSColor.systemPink.withAlphaComponent(0.14)
+        background: NSColor.systemPink.withDynamicAlpha(0.14)
     )
     private static let uploaderLikedSegment = RenderedSegment(
         text: VideoDetailFeatureStrings.localized("UP 主觉得很赞"),
         foreground: .secondaryLabelColor,
-        background: NSColor.secondaryLabelColor.withAlphaComponent(0.12)
+        background: NSColor.secondaryLabelColor.withDynamicAlpha(0.12)
     )
     private static let postedByViewerSegment = RenderedSegment(
         text: VideoDetailFeatureStrings.localized("我发布的"),
         foreground: .controlAccentColor,
-        background: NSColor.controlAccentColor.withAlphaComponent(0.14)
+        background: NSColor.controlAccentColor.withDynamicAlpha(0.14)
     )
     private var segments: [RenderedSegment] = []
     private(set) var displayedTexts: [String] = []

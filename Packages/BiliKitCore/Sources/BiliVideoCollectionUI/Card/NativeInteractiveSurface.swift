@@ -51,7 +51,7 @@ package enum NativeInteractiveSurface {
             state.isPressed ? pressedFillOpacity : (state.isHovered ? hoveredFillOpacity : 0)
         let showsStroke = state.isHovered || state.showsFocusRing
         let targetBackground = NSColor.labelColor
-            .withAlphaComponent(fillOpacity).cgColor(for: appearance)
+            .withDynamicAlpha(fillOpacity).cgColor(for: appearance)
         let targetBorder =
             showsStroke
             ? (state.showsFocusRing ? NSColor.controlAccentColor : .secondaryLabelColor)
