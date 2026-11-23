@@ -58,6 +58,8 @@ struct AppShellView: View {
     @State private var gridScroll = SourceGridScrollStates()
     /// 整页空间页网格的滚动位置；换空间项、换排序或搜索时回顶。
     @State private var spaceGridScroll = SourceGridScrollState()
+    /// 压栈搜索页的网格滚动位置与回顶请求，与侧栏「搜索」的分开。
+    @State private var searchPageGridScroll = SourceGridScrollState()
     /// 侧栏「收藏夹」组是否展开；只在窗口内存里，默认展开。
     ///
     /// 放在这里而不是侧栏里：进入、退出播放时导航侧栏会重建。
@@ -118,7 +120,8 @@ struct AppShellView: View {
                 rootTitle: sources[navigationCoordinator.selectedTab].title,
                 root: { selectedSourceRoot },
                 playback: { playbackDestination },
-                space: { spacePage }
+                space: { spacePage },
+                search: { searchPage }
             )
         }
         // 来源网格、相关推荐横排与它们的卡片菜单都在这棵树里；写入口只转发意图，门槛与请求在 `AccountWriteCoordinator`。
@@ -187,6 +190,11 @@ struct AppShellView: View {
             // 滚动位置；空间页已关闭（占用它的那一项不在历史里了）时它的网格不会再挂回，不留在保活里。
             spaceGridScroll = SourceGridScrollState()
             if entryID == nil { gridRetainer.discard(key: Self.spaceGridRetentionKey) }
+        }
+        .onChange(of: navigationCoordinator.liveSearchEntryID) { _, entryID in
+            // 同空间项：新的搜索项不沿用上一项的滚动位置，搜索页关闭时它的网格不留在保活里。
+            searchPageGridScroll = SourceGridScrollState()
+            if entryID == nil { gridRetainer.discard(key: Self.searchPageGridRetentionKey) }
         }
         .onChange(of: navigationCoordinator.currentPlaybackBVID) {
             previousBVID,
@@ -316,6 +324,47 @@ struct AppShellView: View {
             if isClosed { navigationCoordinator.restoreTopPageIfClosed() }
         }
     }
+
+    /// 压栈搜索页：与侧栏「搜索」是同一个 `SearchTabRoot`，会话与 Browse 模型取自协调器的那一份；网格保活按占用它的
+    /// 搜索项区分，换项或换条件时回顶。
+    ///
+    /// 激活挂在页面上：被盖住时页面移除、任务取消，Browse 模型保留工作集（与侧栏来源被播放页盖住时一样）；回来时以同一
+    /// 条件再激活不会重新请求。
+    private var searchPage: some View {
+        let page = navigationCoordinator.searchPage
+        return SearchTabRoot(
+            title: sources[.search].title,
+            session: page.session,
+            model: page.browseModel,
+            gridHost: NativeVideoGridHostContext(
+                scrollOffsetY: $searchPageGridScroll.offsetY,
+                scrollReset: $searchPageGridScroll.reset,
+                imageLoader: imagePipeline,
+                retention: NativeVideoGridRetention(
+                    retainer: gridRetainer,
+                    key: Self.searchPageGridRetentionKey,
+                    contentIdentity: navigationCoordinator.liveSearchEntryID
+                )
+            ),
+            imagePipeline: imagePipeline,
+            trendingSearchModel: trendingSearchModel,
+            searchHistory: searchHistory,
+            searchSuggestionSource: searchSuggestionSource,
+            onSelect: navigationCoordinator.openPlayback
+        )
+        .historyPageBackground()
+        .task(id: page.session.browseActivation) {
+            await page.browseModel.activate(page.session.browseActivation)
+        }
+        // 换条件与同条件原地刷新成功都回顶，与侧栏「搜索」相同（侧栏经 `successfulRefreshGenerations`）。
+        .onChange(of: page.session.submittedCriteria) { searchPageGridScroll.reset.request() }
+        .onChange(of: page.browseModel.successfulRefreshGeneration(for: .search)) {
+            searchPageGridScroll.reset.request()
+        }
+    }
+
+    /// 压栈搜索页的网格在窗口保活里只占一个位置，规则同空间页。
+    private static let searchPageGridRetentionKey = "searchPage"
 
     /// 整页空间页的网格在窗口保活里只占一个位置：内容身份是空间项，新的一项出现时旧的那份被替换，最多留一个；空间页
     /// 关闭时丢弃。

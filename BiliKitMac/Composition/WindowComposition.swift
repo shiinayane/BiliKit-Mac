@@ -141,6 +141,17 @@ final class WindowComposition {
             profileUseCase: UploaderProfileUseCase(repository: adapters.uploaderProfileRepository),
             accountID: { writableAccount()?.accountID }
         )
+        // 压栈搜索页自己的一份 Browse 模型与搜索会话：与侧栏「搜索」各自分页、各自记住条件，页内提交照常写搜索历史。
+        let searchPageBrowseModel = BrowseViewModel(
+            useCase: FeedUseCase(repository: adapters.feedRepository)
+        )
+        let searchPage = SearchPageModel(
+            session: VideoSearchSession(
+                browseModel: searchPageBrowseModel,
+                recordHistory: process.searchHistory.record
+            ),
+            browseModel: searchPageBrowseModel
+        )
         let playerHostOwner = PlayerHostOwner()
         let navigationCoordinator = AppNavigationCoordinator(
             playback: Self.makePlaybackSession(
@@ -158,7 +169,8 @@ final class WindowComposition {
                 pageTransitions.performSidebarContext(direction, change: change)
             },
             uploaderSpace: uploaderSpace,
-            uploaderSpacePage: uploaderSpacePage
+            uploaderSpacePage: uploaderSpacePage,
+            searchPage: searchPage
         )
         playerHostOwner.pictureInPicture.onRestore = { [weak navigationCoordinator] in
             navigationCoordinator?.restoreLivePlaybackPage() ?? false
@@ -347,7 +359,8 @@ final class WindowComposition {
         self.sources = sources
         // 收藏夹列表与关注分组是侧栏常驻的元数据，窗口已登录就读取，不绑定来源；夹内页面与关注页经各自来源的描述绑定。
         let windowWide: [any AccountRevalidationParticipant] = [
-            videoModel, browseModel, danmakuModel, commentsModel, uploaderSpace, uploaderSpacePage,
+            videoModel, browseModel, searchPageBrowseModel, danmakuModel, commentsModel,
+            uploaderSpace, uploaderSpacePage,
             favoriteFolderList, followGroupList,
             accountWrites, engagementModel
         ]

@@ -40,9 +40,11 @@ struct PopularTabRoot: View {
     }
 }
 
-/// 搜索来源的 App 接线：起始页、结果呈现与原生网格在 Browse 的 `VideoSearchView`，草稿、筛选与提交在 Browse 的
-/// `VideoSearchSession`；这里转交窗口级网格依赖，用热搜模型、窗口图片管线（实现热搜图标 port）与进程级搜索历史
-/// 构造起始页输入，并宿主绑定会话的工具栏搜索框（AppKit）与排序、筛选控件。
+/// 搜索页的 App 接线，侧栏「搜索」与压栈搜索页共用。
+///
+/// 起始页、结果呈现与原生网格在 Browse 的 `VideoSearchView`，草稿、筛选与提交在 Browse 的 `VideoSearchSession`；
+/// 这里转交窗口级网格依赖，用热搜模型、窗口图片管线（实现热搜图标 port）与进程级搜索历史构造起始页输入，并宿主绑定
+/// 会话的工具栏搜索框（AppKit）与排序、筛选控件。两处只差传进来的会话、Browse 模型与网格依赖，不另写一份搜索页。
 struct SearchTabRoot: View {
     let title: LocalizedStringResource
     @Bindable var session: VideoSearchSession

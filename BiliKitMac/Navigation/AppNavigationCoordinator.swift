@@ -1,3 +1,4 @@
+import BiliBrowseFeature
 import BiliModels
 import BiliVideoDetailFeature
 import Foundation
@@ -28,12 +29,14 @@ enum AppPageTransition {
 
 /// 右侧历史里一页的内容；来源根页不在历史里。
 ///
-/// 播放页是内容类页面（侧栏是它的详情），空间页是浏览类页面（侧栏是来源导航）。
+/// 播放页是内容类页面（侧栏是它的详情），空间页与搜索页是浏览类页面（侧栏是来源导航）。
 enum AppDestination: Equatable {
     /// 播放页：选择意图。活视频被新视频取代时，换成带离开时分 P 与秒数的意图，回到这一页时按它重建。
     case playback(PlaybackSelectionIntent)
     /// 整页 UP 主空间：回到这一页时按记下的排序与搜索词重建。
     case uploaderSpace(UploaderSpaceDestination)
+    /// 压栈的搜索结果页：回到这一页时按记下的草稿、排序与筛选重建。
+    case search(VideoSearchSession.Snapshot)
 }
 
 /// 整页空间页这一项记下的内容条件；页面上改排序或搜索时，在模型被另一项占用之前写回这里。
@@ -148,6 +151,18 @@ final class AppNavigationCoordinator {
     var liveSpaceEntryID: UInt64? {
         spacePages.liveEntryID
     }
+    /// 压栈搜索页的那一份活模型与占用它的搜索项。
+    @ObservationIgnored private let searchPages: HistoryPageSlot<SearchPageModel>
+    /// 压栈搜索页的内容模型。
+    var searchPage: SearchPageModel {
+        searchPages.model
+    }
+    /// 此刻占用压栈搜索模型的搜索项；没有时为 nil。
+    ///
+    /// 视图按它区分网格保活与滚动位置。
+    var liveSearchEntryID: UInt64? {
+        searchPages.liveEntryID
+    }
     /// 上下文层是否打开：底层要隐藏、侧栏要叠上空间列表。
     var isSidebarContextOpen: Bool {
         uploaderSpace.owner != nil
@@ -187,6 +202,7 @@ final class AppNavigationCoordinator {
     ///   - uploaderSpace: 侧栏上下文层（UP 主空间预览）的模型。上下文层只在播放页上存在，离开播放页、或从
     ///     上下文层以外的入口换视频时关闭它。
     ///   - uploaderSpacePage: 整页空间页的模型。
+    ///   - searchPage: 压栈搜索页的模型，与侧栏「搜索」的会话与 Browse 模型分开。
     init(
         playback: AppPlaybackSession,
         transitionPage:
@@ -195,7 +211,8 @@ final class AppNavigationCoordinator {
             ) -> Void,
         transitionSidebarContext: @escaping (AppPageTransition, _ change: () -> Void) -> Void,
         uploaderSpace: UploaderSpaceViewModel,
-        uploaderSpacePage: UploaderSpaceViewModel
+        uploaderSpacePage: UploaderSpaceViewModel,
+        searchPage: SearchPageModel
     ) {
         self.playback = playback
         self.transitionPage = transitionPage
@@ -208,6 +225,14 @@ final class AppNavigationCoordinator {
                 return space
             },
             embed: AppDestination.uploaderSpace
+        )
+        searchPages = HistoryPageSlot(
+            model: searchPage,
+            extract: { destination in
+                guard case .search(let snapshot) = destination else { return nil }
+                return snapshot
+            },
+            embed: AppDestination.search
         )
     }
 
@@ -251,6 +276,19 @@ final class AppNavigationCoordinator {
             return
         }
         pushBrowsePage(.uploaderSpace(destination))
+    }
+
+    /// 压一层搜索结果页，以默认排序与筛选搜索 `keyword`（按搜索规则规范化）；被盖住的活视频暂停，还在加载的直接停止。
+    ///
+    /// 栈顶已是搜索页时原地换成新的搜索；页内再搜不经过这里，由搜索会话在这一页里原地替换。
+    func openSearchPage(keyword: String) {
+        closeSidebarContext()
+        let destination = AppDestination.search(.submitted(keyword))
+        if let top = history.last, case .search = top.destination {
+            replaceTopPage(with: destination)
+            return
+        }
+        pushBrowsePage(destination)
     }
 
     /// 栈顶浏览类页面的模型被认证会话切换关掉时（会话切换通常会清空历史，这里兜底），按栈顶那一项重新打开。
@@ -369,7 +407,7 @@ final class AppNavigationCoordinator {
                 makeLive(intent, entryID: newTop.id)
             }
         case let destination?:
-            // 浏览类页面（整页空间页）。
+            // 浏览类页面（整页空间页、搜索页）。
             guard let newTop else { return }
             if top.id == liveEntryID, let lower = nearestPlaybackEntry(below: newTop.id),
                 case .playback(let lowerIntent) = lower.destination,
@@ -597,21 +635,25 @@ final class AppNavigationCoordinator {
     /// 让这种页面的模型显示这一项；播放页不由这里显示。
     private func showPage(_ destination: AppDestination, entryID: UInt64) {
         apply(spacePages.show(destination, entryID: entryID, history: history))
+        apply(searchPages.show(destination, entryID: entryID, history: history))
     }
 
     /// 回到这一项时它所属那种页面的模型要不要重建；播放页为 false。
     private func pageSlotNeedsShowing(_ entry: AppHistoryEntry) -> Bool {
-        spacePages.owns(entry.destination) && spacePages.needsShowing(entryID: entry.id)
+        (spacePages.owns(entry.destination) && spacePages.needsShowing(entryID: entry.id))
+            || (searchPages.owns(entry.destination) && searchPages.needsShowing(entryID: entry.id))
     }
 
     /// 被盖住之前，把各种页面模型此刻的条件写回占用它们的那一项。
     private func capturePages() {
         apply(spacePages.capture(from: history))
+        apply(searchPages.capture(from: history))
     }
 
     /// 关闭占用者已不在历史里的页面模型。
     private func closeUnusedPages() {
         spacePages.closeIfUnused(history: history)
+        searchPages.closeIfUnused(history: history)
     }
 
     private func apply(_ update: HistoryDestinationUpdate?) {

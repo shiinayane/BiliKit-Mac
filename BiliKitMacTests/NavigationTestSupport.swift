@@ -1,3 +1,5 @@
+import BiliApplication
+import BiliBrowseFeature
 import BiliVideoDetailFeature
 
 @testable import BiliKit
@@ -26,7 +28,8 @@ func makeNavigationCoordinator(
     transitionSidebarContext:
         @escaping (AppPageTransition, _ change: () -> Void) -> Void = { _, change in change() },
     uploaderSpace: UploaderSpaceViewModel = makeUploaderSpace(),
-    uploaderSpacePage: UploaderSpaceViewModel = makeUploaderSpace()
+    uploaderSpacePage: UploaderSpaceViewModel = makeUploaderSpace(),
+    searchPage: SearchPageModel = makeSearchPage()
 ) -> AppNavigationCoordinator {
     AppNavigationCoordinator(
         playback: AppPlaybackSession(
@@ -43,6 +46,19 @@ func makeNavigationCoordinator(
         transitionPage: transitionPage,
         transitionSidebarContext: transitionSidebarContext,
         uploaderSpace: uploaderSpace,
-        uploaderSpacePage: uploaderSpacePage
+        uploaderSpacePage: uploaderSpacePage,
+        searchPage: searchPage
+    )
+}
+
+/// 压栈搜索页的测试构造：搜索请求按 `FeedRepositoryStub` 的默认结果完成，搜索历史的写入交给 `recordHistory`。
+@MainActor
+func makeSearchPage(
+    recordHistory: @escaping @MainActor (String) -> Void = { _ in }
+) -> SearchPageModel {
+    let browseModel = BrowseViewModel(useCase: FeedUseCase(repository: FeedRepositoryStub()))
+    return SearchPageModel(
+        session: VideoSearchSession(browseModel: browseModel, recordHistory: recordHistory),
+        browseModel: browseModel
     )
 }
