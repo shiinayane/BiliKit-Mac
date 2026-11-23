@@ -128,7 +128,7 @@ struct BiliShortLinkResolverTests {
         let resolved = await BiliShortLinkResolver(transport: transport).resolve(try shortLink())
 
         switch resolved {
-        case .video, .member, .space, .shortLink, .timestamp:
+        case .video, .member, .space, .shortLink, .timestamp, .search:
             Issue.record("不安全或仍在短链主机的 Location 不应得到站内目标")
         case .external(let reference):
             #expect(BiliCommentLinkResolver().externalURL(for: reference) == nil)

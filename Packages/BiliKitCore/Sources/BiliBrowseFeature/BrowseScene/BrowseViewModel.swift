@@ -56,6 +56,8 @@ struct FeedPaginationPresentation: Sendable, Equatable {
 
 /// 拥有首页推荐、热门与最后一次搜索三份独立工作集，以及当前路由的请求 Task。
 ///
+/// 每个窗口两份：侧栏来源共用的一份，压栈搜索页专用的一份（只激活搜索工作集）。
+///
 /// 工作集是唯一的状态来源，路由级的 `state` 等只是当前路由工作集的投影。`LatestTask` 与
 /// `activeRequestIdentity` 共同阻止已取消或已切路由的结果写回；进入播放页时普通 deactivate 会保留三份
 /// 工作集，`reset` 则清空它们；不同请求会替换对应工作集。分页规则由各工作集的 `FeedListing` 承担。

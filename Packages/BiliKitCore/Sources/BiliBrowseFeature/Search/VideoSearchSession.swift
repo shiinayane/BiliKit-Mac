@@ -4,7 +4,8 @@ import Observation
 
 /// 搜索来源的会话：工具栏草稿、排序与筛选、已提交的搜索条件，以及它们到 Browse 搜索工作集的映射。
 ///
-/// 每个窗口一份，由 App 的窗口组装（`WindowComposition`）构造。拥有草稿、筛选选择、已应用的筛选与已提交的条件；不拥有请求、分页与
+/// 由 App 的窗口组装（`WindowComposition`）构造，每个窗口两份：侧栏「搜索」一份，压栈的搜索页一份（各配一个
+/// `BrowseViewModel`，互不覆盖）。拥有草稿、筛选选择、已应用的筛选与已提交的条件；不拥有请求、分页与
 /// generation（`BrowseViewModel`），也不拥有搜索历史的存储：提交时经 App 注入的 `recordHistory` 写入（历史的
 /// 读取、删除与清除经 `SearchStartPageContext`）。工具栏控件的 AppKit/SwiftUI 宿主在 App，只绑定这里的状态。
 @MainActor
@@ -97,6 +98,26 @@ public final class VideoSearchSession {
         draft = ""
     }
 
+    /// 此刻的全部会话状态；压栈搜索页被另一项占用前由 App 记进历史项。
+    public var snapshot: Snapshot {
+        Snapshot(
+            draft: draft,
+            filterSelection: filterSelection,
+            appliedFilters: appliedFilters,
+            submittedCriteria: submittedCriteria
+        )
+    }
+
+    /// 回到历史里的搜索页时按记下的状态重建；不写搜索历史，那次提交当时已经写过（或按入口约定不写）。
+    ///
+    /// 先设草稿：草稿为空时 `didSet` 会撤回已提交的条件，之后再写回快照里的条件。
+    public func restore(_ snapshot: Snapshot) {
+        draft = snapshot.draft
+        filterSelection = snapshot.filterSelection
+        appliedFilters = snapshot.appliedFilters
+        submittedCriteria = snapshot.submittedCriteria
+    }
+
     private func updateSubmittedCriteria() {
         guard let submittedCriteria else { return }
         self.submittedCriteria = appliedFilters.criteria(query: submittedCriteria.query)
@@ -104,5 +125,29 @@ public final class VideoSearchSession {
 
     private static func normalized(_ draft: String) -> String {
         SearchText.normalized(draft)
+    }
+}
+
+extension VideoSearchSession {
+    /// 一份会话的全部状态，作为压栈搜索页历史项的内容。
+    ///
+    /// 不能只记已提交的条件：自定义日期的筛选选择无法从解析后的时间范围反推，草稿也可能改过还没提交。
+    public struct Snapshot: Hashable, Sendable {
+        let draft: String
+        let filterSelection: SearchFilterSelection
+        let appliedFilters: AppliedVideoSearchFilters
+        let submittedCriteria: VideoSearchCriteria?
+
+        /// 以默认排序与筛选提交 `keyword` 的新会话；规范化后为空时停在起始页。
+        public static func submitted(_ keyword: String) -> Snapshot {
+            let query = SearchText.normalized(keyword)
+            let filters = AppliedVideoSearchFilters()
+            return Snapshot(
+                draft: query,
+                filterSelection: SearchFilterSelection(),
+                appliedFilters: filters,
+                submittedCriteria: query.isEmpty ? nil : filters.criteria(query: query)
+            )
+        }
     }
 }

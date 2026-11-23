@@ -59,11 +59,23 @@ struct CommentContentPayload: Decodable, Sendable {
         let jumpLinks = jumpURLs.flatMap { rawLabel, payload -> [CommentLink] in
             // 键是正文里的一段原文；正文已还原实体，键也还原一次才能在正文里定位，键本身没有转义时不受影响。
             let label = RemoteHTMLText.plainText(rawLabel)
-            guard !payload.isWordSearch,
-                let target = CommentRemoteLink.target(payload.destination(label: label))
-            else { return [] }
-            let title = payload.displayTitle(label: label, target: target)
-            let icon = payload.icon
+            let target: CommentLinkTarget
+            let title: String?
+            let icon: CommentAssetReference?
+            if payload.isWordSearch {
+                // 搜的就是正文里看到的这段文字，不取 `pc_url` 里的参数；接口给的标题与图标也不用，看到什么就搜什么
+                // （见 SECURITY-MODEL §4）。
+                guard let keyword = CommentRemoteLink.searchKeyword(label: label) else { return [] }
+                target = .search(keyword: keyword)
+                title = nil
+                icon = nil
+            } else {
+                guard let linkTarget = CommentRemoteLink.target(payload.destination(label: label))
+                else { return [] }
+                target = linkTarget
+                title = payload.displayTitle(label: label, target: linkTarget)
+                icon = payload.icon
+            }
             return ranges(of: label).prefix(payload.matchesOnce ? 1 : .max).map {
                 CommentLink(range: $0, target: target, title: title, icon: icon)
             }

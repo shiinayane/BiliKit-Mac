@@ -62,14 +62,15 @@ struct AccountRevalidationParticipantsTests {
         #expect(history.events == (currentRoute == .history ? delivered : []))
     }
 
-    /// 窗口组装登记了全部参与者（含侧栏空间预览与整页空间页两个空间模型），只有稍后再看、观看历史与收藏夹的夹内页面绑定
-    /// 来源，收藏夹列表是窗口级；漏登记会让那一页的凭据失效静默不复核。
+    /// 窗口组装登记了全部参与者（含侧栏空间预览与整页空间页两个空间模型、压栈搜索页的 Browse 模型），只有稍后再看、
+    /// 观看历史与收藏夹的夹内页面绑定来源，收藏夹列表是窗口级；漏登记会让那一页的凭据失效静默不复核。
     @Test
     func windowCompositionRegistersEveryParticipant() {
         let owner = WindowComposition(process: makeTestProcess(), adapters: makeTestAdapters())
         let expected: [(AnyObject, AppTab?)] = [
             (owner.videoModel, nil),
             (owner.browseModel, nil),
+            (owner.navigationCoordinator.searchPage.browseModel, nil),
             (owner.danmakuModel, nil),
             (owner.commentsModel, nil),
             (owner.navigationCoordinator.uploaderSpace, nil),

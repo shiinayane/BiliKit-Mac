@@ -56,13 +56,13 @@ enum NativePlaybackTextLinks {
 
     /// 站外链接与 b23.tv 短链提示真实地址，应用内目标不提示。
     ///
-    /// 点开前能看到要去的域名；短链的文字常被换成视频标题，只有提示能看出它是短链。视频、@、空间与时间戳
+    /// 点开前能看到要去的域名；短链的文字常被换成视频标题，只有提示能看出它是短链。视频、@、空间、时间戳与搜索词
     /// 都在应用内打开，文字已说明去处，提示网页地址反而像要打开浏览器。
     private static func toolTip(for target: CommentLinkTarget) -> String? {
         switch target {
         case .external(let reference), .shortLink(let reference):
             reference.remoteURL.absoluteString
-        case .video, .timestamp, .member, .space:
+        case .video, .timestamp, .member, .space, .search:
             nil
         }
     }

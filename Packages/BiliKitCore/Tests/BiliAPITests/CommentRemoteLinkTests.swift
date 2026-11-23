@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliModels
 import Foundation
 import Testing
@@ -112,12 +113,14 @@ struct CommentRemoteLinkTests {
         #expect(CommentRemoteLink.shortLinkRequestURL(url)?.absoluteString == requestURL)
     }
 
-    /// 搜索词链接（标记为布尔或 0／1）与没有网页地址的条目不生成链接，正文按普通文字显示。
+    /// 搜索词（标记为布尔或 0／1）搜的是正文里显示的那段文字，不是 `pc_url` 里的参数；超过搜索长度上限的搜索词与
+    /// 没有网页地址的条目不生成链接，正文按普通文字显示。
     @Test
-    func wordSearchAndAddresslessJumpURLsStayPlainText() throws {
+    func wordSearchLinksSearchTheVisibleTextAndAddresslessJumpURLsStayPlainText() throws {
+        let tooLong = String(repeating: "长", count: SearchText.maximumLength + 1)
         let data = try JSONSerialization.data(
             withJSONObject: [
-                "message": "关键词 热词 网页 应用 视频",
+                "message": "关键词 热词 网页 应用 视频 \(tooLong)",
                 "jump_url": [
                     "关键词": [
                         "pc_url": "//search.bilibili.com/all?keyword=%E5%85%B3",
@@ -132,6 +135,10 @@ struct CommentRemoteLinkTests {
                     "视频": [
                         "pc_url": "https://www.bilibili.com/video/BV1FixtureA1",
                         "extra": ["is_word_search": false]
+                    ],
+                    tooLong: [
+                        "pc_url": "//search.bilibili.com/all?keyword=x",
+                        "extra": ["is_word_search": true]
                     ]
                 ]
             ]
@@ -140,8 +147,21 @@ struct CommentRemoteLinkTests {
 
         let links = try payload.model().links
 
-        #expect(links.map(\.target) == [.video(bvid: "BV1FixtureA1", page: nil, startSeconds: nil)])
-        #expect(links.map(\.range) == [CommentTextRange(location: 13, length: 2)])
+        #expect(
+            links.map(\.target) == [
+                .search(keyword: "关键词"),
+                .search(keyword: "热词"),
+                .video(bvid: "BV1FixtureA1", page: nil, startSeconds: nil)
+            ]
+        )
+        #expect(
+            links.map(\.range) == [
+                CommentTextRange(location: 0, length: 3),
+                CommentTextRange(location: 4, length: 2),
+                CommentTextRange(location: 13, length: 2)
+            ]
+        )
+        #expect(links.allSatisfy { $0.title == nil && $0.icon == nil })
     }
 
     /// 正文里的网址本身作键、`pc_url` 为空（实测 b23.tv 短链就是这种形状）时退回用键；键不是

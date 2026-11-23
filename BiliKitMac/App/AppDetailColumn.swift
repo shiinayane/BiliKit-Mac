@@ -1,14 +1,14 @@
 import BiliUI
 import SwiftUI
 
-/// 右侧只渲染历史栈顶：空栈是来源根页，否则是栈顶那一页（播放页或整页空间页），各页不同时存在。
+/// 右侧只渲染历史栈顶：空栈是来源根页，否则是栈顶那一页（播放页、整页空间页或压栈搜索页），各页不同时存在。
 ///
 /// 必须是独立的 View 结构体并在自己的 `body` 里读 coordinator：写在 `NavigationSplitView` 的 detail 闭包里时，
 /// 闭包内读到的 Observable 状态不会让 detail 列刷新。写入结果胶囊与工具栏「返回｜回到「来源名」」只挂在这一层：胶囊
 /// 不随页面替换而消失或重复（读屏不会把同一条结果通告两次）；这组按钮只在不在根页时出现，根页时整个工具栏项不放（理由
 /// 见 docs/ARCHITECTURE.md「播放页布局」）。各页放在 `ZStack` 而不是 `Group` 里：`Group` 把修饰符分发给每个分支，
 /// 换页时挂在这一层的视图会随分支重建。
-struct AppDetailColumn<Root: View, Playback: View, Space: View>: View {
+struct AppDetailColumn<Root: View, Playback: View, Space: View, Search: View>: View {
     let navigationCoordinator: AppNavigationCoordinator
     let accountWrites: AccountWriteCoordinator
     let pageTransitions: NavigationPageTransitions
@@ -17,6 +17,7 @@ struct AppDetailColumn<Root: View, Playback: View, Space: View>: View {
     @ViewBuilder let root: () -> Root
     @ViewBuilder let playback: () -> Playback
     @ViewBuilder let space: () -> Space
+    @ViewBuilder let search: () -> Search
     /// 栈顶页面底部分页胶囊的高度，写入结果胶囊据此避开它。
     @State private var paginationLaneHeight: CGFloat = 0
 
@@ -29,6 +30,8 @@ struct AppDetailColumn<Root: View, Playback: View, Space: View>: View {
                 playback()
             case .uploaderSpace:
                 space()
+            case .search:
+                search()
             }
         }
         .onPreferenceChange(PaginationStatusLaneHeightKey.self) { height in

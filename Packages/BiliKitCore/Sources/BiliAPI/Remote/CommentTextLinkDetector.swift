@@ -123,7 +123,7 @@ enum CommentTextLinkDetector {
         let (secure, isInsecure) = RemoteURLString.upgradingInsecureHTTP(text)
         guard let target = CommentRemoteLink.target(secure) else { return nil }
         switch target {
-        case .video, .member, .space, .shortLink, .timestamp:
+        case .video, .member, .space, .shortLink, .timestamp, .search:
             return target
         case .external(let reference):
             guard !isInsecure, BiliCommentLinkResolver().externalURL(for: reference) != nil

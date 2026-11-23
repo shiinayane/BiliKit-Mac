@@ -211,6 +211,16 @@ public enum CommentLinkTarget: Sendable, Equatable, Hashable {
     case shortLink(CommentExternalLinkReference)
     /// 其他 HTTPS 外链；只在用户点击后经公开 HTTPS 复核交给系统打开。
     case external(CommentExternalLinkReference)
+    /// B 站在正文里标出的搜索词；`keyword` 就是正文里显示的那段文字（已按搜索规则规范化），点击后在应用内搜索。
+    case search(keyword: String)
+}
+
+extension CommentLinkTarget {
+    /// 是否是搜索词；渲染要在关键词后面加放大镜。
+    public var isSearch: Bool {
+        if case .search = self { return true }
+        return false
+    }
 }
 
 /// 正文里一段链接：UTF-16 范围与去向，可带接口给的显示标题和前置图标。

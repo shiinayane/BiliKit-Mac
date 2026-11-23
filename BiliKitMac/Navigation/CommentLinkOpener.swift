@@ -2,7 +2,8 @@ import BiliVideoDetailFeature
 import Foundation
 
 /// 执行评论与简介正文链接的路由（`CommentLinkRoute`，由 Composition 的 `CommentLinkRouting` 翻译）：视频（含分 P）
-/// 在应用内播放，时间戳在当前视频里跳转（带分 P 序号时跳到那个分 P），空间链接在侧栏空间层打开，其余交给系统浏览器。
+/// 在应用内播放，时间戳在当前视频里跳转（带分 P 序号时跳到那个分 P），空间链接在侧栏空间层打开，搜索词压一层搜索
+/// 结果页，其余交给系统浏览器。
 ///
 /// 只持有窗口级依赖的引用，不拥有状态：导航与上下文层归 `AppNavigationCoordinator`，链接起播能否原地跳转由
 /// `VideoViewModel` 判断，短链的在途解析归窗口级 `CommentShortLinkResolution`（换视频与关窗时取消）。
@@ -42,6 +43,8 @@ struct CommentLinkOpener {
             }
         case .space(let memberID):
             navigationCoordinator.openUploaderSpace(ownerID: memberID)
+        case .search(let keyword):
+            navigationCoordinator.openSearchPage(keyword: keyword)
         case .web(let url):
             openURL(url)
         case .shortLink(let resolve, let webFallback):

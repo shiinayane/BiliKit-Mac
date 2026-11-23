@@ -1,24 +1,43 @@
+import BiliApplication
+import BiliBrowseFeature
 import BiliModels
 import BiliVideoDetailFeature
 import Testing
 
 @testable import BiliKit
 
-/// 右侧历史栈里活视频被空间页盖住、回来与被取代后重建的规则：被盖住时不出声（画中画除外），回来只恢复由盖住暂停、
+/// 右侧历史栈里活视频被浏览类页面（空间页、搜索页）盖住、回来与被取代后重建的规则：被盖住时不出声（画中画除外），回来只恢复由盖住暂停、
 /// 被盖住期间用户也没动过的，被取代的按离开时的分 P 与秒数重建，并按离开先后记进「刚才看过」。
 @MainActor
 struct AppNavigationHistoryTests {
     private let owner = VideoOwner(id: 7, name: "UP 主")
     private let anotherOwner = VideoOwner(id: 8, name: "另一位 UP 主")
 
-    @Test(arguments: [true, false])
-    func coveringPausesAndReturningResumesOnlyWhatCoveringPaused(wasPlaying: Bool) {
+    /// 盖住活视频的浏览类页面；两种页面共用协调器里同一支盖住与返回。
+    enum CoveringPage: CaseIterable {
+        case space
+        case search
+
+        @MainActor
+        func open(on coordinator: AppNavigationCoordinator) {
+            switch self {
+            case .space: coordinator.openUploaderSpacePage(owner: VideoOwner(id: 7, name: "UP 主"))
+            case .search: coordinator.openSearchPage(keyword: "关键词")
+            }
+        }
+    }
+
+    @Test(arguments: [true, false], CoveringPage.allCases)
+    func coveringPausesAndReturningResumesOnlyWhatCoveringPaused(
+        wasPlaying: Bool,
+        covering: CoveringPage
+    ) {
         let playback = PlaybackRecorder()
         playback.isPlaying = wasPlaying
         let coordinator = playback.makeCoordinator()
 
         coordinator.openPlayback("BV1Covered")
-        coordinator.openUploaderSpacePage(owner: owner)
+        covering.open(on: coordinator)
         #expect(coordinator.currentPlaybackBVID == nil)
         #expect(coordinator.livePlaybackBVID == "BV1Covered")
         coordinator.goBack()
@@ -235,6 +254,31 @@ struct AppNavigationHistoryTests {
         #expect(page.order == .mostPlayed)
     }
 
+    /// 压栈搜索模型被后来的搜索项占用过，回到更早的搜索项时按它当时的查询词与排序重建；重建不是用户的提交，不写搜索历史。
+    @Test
+    func returningToAnEarlierSearchRestoresItsConditionsWithoutRecordingHistory() {
+        let playback = PlaybackRecorder()
+        let recorded = KeywordRecorder()
+        let page = makeSearchPage(recordHistory: { recorded.keywords.append($0) })
+        let coordinator = playback.makeCoordinator(searchPage: page)
+
+        coordinator.openPlayback("BV1First")
+        coordinator.openSearchPage(keyword: "  关键词  ")
+        page.session.filterSelection.order = .mostPlayed
+        page.session.selectOrder(.mostPlayed)
+        coordinator.openPlayback("BV1Second")
+        coordinator.openSearchPage(keyword: "另一个")
+        #expect(page.session.submittedCriteria == VideoSearchCriteria(query: "另一个"))
+        coordinator.goBack()
+        coordinator.goBack()
+
+        #expect(
+            page.session.submittedCriteria == VideoSearchCriteria(query: "关键词", order: .mostPlayed)
+        )
+        #expect(page.session.filterSelection.order == .mostPlayed)
+        #expect(recorded.keywords.isEmpty)
+    }
+
     /// 整页空间模型在空间页被盖住时被关掉（认证会话切换），回到这一项时按它记下的条件重新打开，不停在骨架屏。
     @Test
     func returningToASpaceWhoseModelWasClosedReopensIt() {
@@ -337,6 +381,7 @@ private final class PlaybackRecorder {
 
     func makeCoordinator(
         uploaderSpacePage: UploaderSpaceViewModel = makeUploaderSpace(),
+        searchPage: SearchPageModel = makeSearchPage(),
         transitionPage:
             @escaping (
                 AppPageTransition, _ change: () -> Void, _ completion: @escaping () -> Void
@@ -368,7 +413,14 @@ private final class PlaybackRecorder {
             },
             isPictureInPictureActive: { [unowned self] in isPictureInPictureActive },
             transitionPage: transitionPage,
-            uploaderSpacePage: uploaderSpacePage
+            uploaderSpacePage: uploaderSpacePage,
+            searchPage: searchPage
         )
     }
+}
+
+/// 记下写入搜索历史的查询词。
+@MainActor
+private final class KeywordRecorder {
+    var keywords: [String] = []
 }
