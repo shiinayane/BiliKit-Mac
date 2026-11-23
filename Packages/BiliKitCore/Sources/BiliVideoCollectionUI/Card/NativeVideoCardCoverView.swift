@@ -503,7 +503,7 @@ final class NativeVideoMergedCoverView: NSView {
     ]
 
     private static var backgroundColor: NSColor {
-        NSColor.secondaryLabelColor.withAlphaComponent(0.12)
+        NSColor.secondaryLabelColor.withDynamicAlpha(0.12)
     }
 }
 

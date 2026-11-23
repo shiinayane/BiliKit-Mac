@@ -27,7 +27,7 @@ package enum NativeNowPlayingAppearance {
         CATransaction.setDisableActions(true)
         layer.backgroundColor =
             isNowPlaying
-            ? markerColor.withAlphaComponent(fillOpacity).cgColor(for: appearance)
+            ? markerColor.withDynamicAlpha(fillOpacity).cgColor(for: appearance)
             : nil
         CATransaction.commit()
     }

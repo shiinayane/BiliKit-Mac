@@ -277,6 +277,36 @@ struct PlaybackSidebarCommentRowTests: PlaybackSidebarFixtures {
         focusWindow.contentView = NSView()
     }
 
+    /// 来源标记的胶囊底色按视图当前的外观解析：明暗切换后不沿用第一次绘制时的外观。
+    @Test
+    @MainActor
+    func provenanceBadgeBackgroundFollowsAppearance() throws {
+        let light = try capsuleBackgroundBrightness(in: try #require(NSAppearance(named: .aqua)))
+        let dark = try capsuleBackgroundBrightness(in: try #require(NSAppearance(named: .darkAqua)))
+
+        #expect(light < 0.5)
+        #expect(dark > 0.5)
+    }
+
+    @MainActor
+    private func capsuleBackgroundBrightness(in appearance: NSAppearance) throws -> CGFloat {
+        let view = NativePlaybackCommentProvenanceBadgesView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 18)
+        )
+        view.appearance = appearance
+        view.configure([.uploaderLiked])
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        // 胶囊左端水平内边距里的一点，只有底色、没有文字。
+        let pixelsPerPoint = CGFloat(bitmap.pixelsWide) / view.bounds.width
+        let color = try #require(
+            bitmap.colorAt(x: Int(4 * pixelsPerPoint), y: bitmap.pixelsHigh / 2)?
+                .usingColorSpace(.sRGB)
+        )
+        #expect(color.alphaComponent > 0)
+        return color.redComponent
+    }
+
     @Test
     @MainActor
     func crowdedAuthorBadgesMergeHardcoreIntoLevelAndStatusBadgesStayOrdered() {
