@@ -7,7 +7,8 @@ import Testing
 
 @testable import BiliVideoDetailFeature
 
-/// 评论分页、上方内容变化与改变宽度时保持阅读位置：高度先估后分批精测，换视频回到顶部，近尾分页不被短内容误判。
+/// 评论分页、上方内容变化、改变宽度与侧栏拆除后重新挂上同一播放项时保持阅读位置：高度先估后分批精测，换视频回到顶部，
+/// 近尾分页不被短内容误判。
 @Suite(.serialized, .timeLimit(.minutes(1)))
 struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
     @Test
@@ -567,5 +568,87 @@ struct PlaybackSidebarScrollAnchorTests: PlaybackSidebarFixtures {
         #expect(controller.rootView.scrollView.documentVisibleRect.minY <= 1)
         #expect(nextPageRequests == 0)
         controller.tearDown()
+    }
+
+    /// 播放页被浏览类页面盖住时侧栏拆除、返回时重建：同一播放项重新挂上回到原来那条评论，另一个播放项回到顶部。
+    @Test
+    @MainActor
+    func remountingTheSamePlaybackEntryRestoresTheCommentReadingPosition() async throws {
+        let subject = CommentSubjectIdentity.video(aid: 700_002)
+        let comments = await commentsPresentation(
+            subject: subject,
+            threads: (1...60).map {
+                commentThread(id: Int64($0), message: "第 \($0) 条评论")
+            }
+        )
+        let shown = presentation(bvid: "BVRemount", comments: comments)
+        let readingPosition = NativePlaybackSidebarReadingPosition()
+        let anchorPath = IndexPath(item: 31, section: 3)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.contentView = nil }
+        // 与 SwiftUI 挂上的顺序一致：先取出阅读位置、给内容，有尺寸之前还会用同一内容再 update，最后放进窗口得到尺寸。
+        func mount(placement: UInt64) -> NativePlaybackSidebarController {
+            let controller = makeSidebarController()
+            controller.attachReadingPosition(readingPosition, placement: placement)
+            controller.update(presentation: shown, actions: actions)
+            controller.update(presentation: shown, actions: actions)
+            window.contentView = controller.rootView
+            window.contentView?.layoutSubtreeIfNeeded()
+            return controller
+        }
+        func layout(
+            of controller: NativePlaybackSidebarController
+        ) throws -> NativePlaybackSidebarLayout {
+            let collectionView = try #require(
+                controller.rootView.scrollView.documentView as? NSCollectionView
+            )
+            return try #require(collectionView.collectionViewLayout as? NativePlaybackSidebarLayout)
+        }
+        func anchorOffset(in controller: NativePlaybackSidebarController) throws -> CGFloat? {
+            try layout(of: controller).layoutAttributesForItem(at: anchorPath).map {
+                $0.frame.minY - controller.rootView.scrollView.documentVisibleRect.minY
+            }
+        }
+
+        let first = mount(placement: 1)
+        let firstLayout = try layout(of: first)
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                firstLayout.collectionViewContentSize.height > 600
+                    && firstLayout.pendingRefinementIndexes.isEmpty
+            }
+        )
+        let anchorFrame = try #require(firstLayout.layoutAttributesForItem(at: anchorPath)?.frame)
+        first.scroll(to: anchorFrame.minY - 24)
+        let relativeY = try #require(try anchorOffset(in: first))
+        first.tearDown()
+
+        let remounted = mount(placement: 1)
+        let remountedLayout = try layout(of: remounted)
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                guard remountedLayout.pendingRefinementIndexes.isEmpty,
+                    let offset = try? anchorOffset(in: remounted)
+                else { return false }
+                return abs(offset - relativeY) <= 1
+            }
+        )
+        remounted.tearDown()
+
+        let otherEntry = mount(placement: 2)
+        let otherLayout = try layout(of: otherEntry)
+        #expect(
+            await waitUntil(timeout: .seconds(5)) {
+                otherLayout.collectionViewContentSize.height > 600
+                    && otherLayout.pendingRefinementIndexes.isEmpty
+            }
+        )
+        #expect(otherEntry.rootView.scrollView.documentVisibleRect.minY <= 1)
+        otherEntry.tearDown()
     }
 }

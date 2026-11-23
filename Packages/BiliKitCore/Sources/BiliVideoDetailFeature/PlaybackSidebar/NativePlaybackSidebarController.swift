@@ -10,8 +10,9 @@ import BiliVideoCollectionUI
 /// 单元格（`+Items`）、快照与行高（`+Snapshot`）、视口与锚点（`+Viewport`）、遮挡与焦点（`+Focus`）、
 /// 评论近尾分页（`+Pagination`）。
 ///
-/// 只在主线程使用（`@MainActor`）。`tearDown` 由 `NativePlaybackSidebarView` 在视图拆除时调用一次：先递增
-/// 快照代次并取消精测与分页 Task，再交出焦点、移除 observer、释放可见项资源，最后丢掉数据源与 document view；
+/// 只在主线程使用（`@MainActor`）。`tearDown` 由 `NativePlaybackSidebarView` 在视图拆除时调用一次：先把阅读位置
+/// 写进宿主给的 `NativePlaybackSidebarReadingPosition`，再递增快照代次并取消精测与分页 Task，再交出焦点、移除
+/// observer、释放可见项资源，最后丢掉数据源与 document view；
 /// 之后的 `update` 与回调都直接返回。用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
 @MainActor
 final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate {
@@ -93,6 +94,15 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
     ///
     /// 每次快照应用完成时执行，这一楼不再加载后清掉；回到顶部与跳到评论区优先并清掉它，用户开始拖动滚动时作废。
     var pendingThreadAlignment: NativePlaybackSidebarThreadAlignment?
+    /// 拆除时把阅读位置写进这里，挂上时从这里取出；由 representable 在挂上时设置（见 `attachReadingPosition`）。
+    var readingPosition: NativePlaybackSidebarReadingPosition?
+    /// 宿主给的当前播放项标识；栈顶的播放项原地换成另一项时随 `updateNSView` 更新。
+    var readingPositionPlacement: AnyHashable?
+    /// 挂上时取出、还没恢复的阅读位置。
+    ///
+    /// 第一份内容是同一 BVID 时代替“换视频回到顶部”，否则丢弃。快照应用完、视口有了宽度才恢复：挂上时 SwiftUI 先给
+    /// 内容、后给尺寸，没有尺寸时滚动会被夹到 0。恢复后、条目已不在时（回到顶部）或用户开始拖动滚动时清掉。
+    var pendingReadingPosition: NativePlaybackSidebarReadingPosition.Saved?
     /// 滚动与实时滚动的通知观察；`tearDown` 时移除。
     private var observers = NativeVideoNotificationObservers()
     private(set) var isTornDown = false
@@ -117,6 +127,7 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         ) { [weak self] in
             self?.isLiveScrolling = true
             self?.pendingThreadAlignment = nil
+            self?.pendingReadingPosition = nil
             self?.commentsPagination.releaseBackpressure()
             self?.scheduleNextCommentsPageIfNeeded()
         }
@@ -144,10 +155,19 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
         let previousPresentation = self.presentation
         let previousBVID = previousPresentation.content?.bvid
         let nextBVID = presentation.content?.bvid
-        let changesIdentity = NativePlaybackSidebarIdentityPolicy.resetsToTop(
+        var changesIdentity = NativePlaybackSidebarIdentityPolicy.resetsToTop(
             previousBVID: previousBVID,
             nextBVID: nextBVID
         )
+        if let pending = pendingReadingPosition, let nextBVID {
+            if pending.bvid != nextBVID {
+                pendingReadingPosition = nil
+            } else {
+                // 重新挂上同一个视频：按留下的阅读位置恢复（快照完成、有了尺寸后执行），不回到顶部。挂上后到给出尺寸前
+                // SwiftUI 还会用同一视频再 update 几次，这期间要一直保留。
+                changesIdentity = false
+            }
+        }
         let previousComments = previousPresentation.content?.comments
         let nextComments = presentation.content?.comments
         // 换排序与原地刷新成功都是同一评论区整体换上新的第一页，翻页从头算。只有换排序把视口带回评论区标题：
@@ -205,6 +225,8 @@ final class NativePlaybackSidebarController: NSObject, NSCollectionViewDelegate 
 
     func tearDown() {
         guard !isTornDown else { return }
+        // 先于一切清理：要用数据源与布局把视野换成锚点。
+        saveReadingPosition()
         isTornDown = true
         snapshots.invalidate()
         cancelRefinement()

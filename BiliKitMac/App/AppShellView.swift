@@ -66,6 +66,8 @@ struct AppShellView: View {
     @State private var isFavoritesExpanded = true
     /// 侧栏「关注」组是否展开；同收藏夹组。
     @State private var isFollowsExpanded = true
+    /// 播放页被浏览类页面盖住时播放侧栏随导航侧栏替换而拆除；这一格留住评论的阅读位置，返回同一播放项时恢复。
+    @State private var playbackSidebarReadingPosition = NativePlaybackSidebarReadingPosition()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -394,6 +396,12 @@ struct AppShellView: View {
         }
     }
 
+    /// 栈顶播放项的历史项标识；栈顶不是播放页时为 nil（侧栏拆除前的最后一次更新不会拿到盖上来的那一项）。
+    private var playbackEntryID: UInt64? {
+        guard navigationCoordinator.currentPlaybackIntent != nil else { return nil }
+        return navigationCoordinator.history.last?.id
+    }
+
     private var playbackSidebar: some View {
         NativePlaybackSidebarView(
             model: videoModel,
@@ -407,7 +415,9 @@ struct AppShellView: View {
             onOpenCommentLink: { commentLinkOpener.open(commentLinkRouter($0)) },
             onOpenCommentPictures: openCommentPictures,
             onOpenUploaderSpace: { navigationCoordinator.openUploaderSpace(owner: $0) },
-            isObscured: isSidebarContextOpen
+            isObscured: isSidebarContextOpen,
+            readingPosition: playbackSidebarReadingPosition,
+            readingPositionPlacement: playbackEntryID
         )
         .ignoresSafeArea(.container, edges: .top)
     }

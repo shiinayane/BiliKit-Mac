@@ -3,7 +3,7 @@ import BiliApplication
 import BiliModels
 import BiliVideoCollectionUI
 
-/// 视口：语义锚点的捕获与恢复、宽度变化后的分批精测、回到顶部与跳到评论区。
+/// 视口：语义锚点的捕获与恢复、拆除与重新挂上之间的阅读位置、宽度变化后的分批精测、回到顶部与跳到评论区。
 extension NativePlaybackSidebarController {
     func viewportSizeDidChange(_ size: CGSize) {
         guard !isTornDown, size.width > 0,
@@ -16,11 +16,56 @@ extension NativePlaybackSidebarController {
         layout.invalidateLayout()
         collectionView.layoutSubtreeIfNeeded()
         synchronizeDocumentFrame()
-        if let anchor {
+        let restored = applyPendingReadingPosition()
+        if restored == nil, let anchor {
             restore(anchor)
         }
-        refineDisplayedItems(keeping: anchor)
+        refineDisplayedItems(keeping: restored ?? anchor)
         scheduleRefinement(after: NativePlaybackSidebarLayout.refinementSettleDelay)
+    }
+
+    /// 挂上侧栏、第一次 `update` 之前由 representable 调用：取出这一播放项留下的阅读位置。
+    func attachReadingPosition(
+        _ store: NativePlaybackSidebarReadingPosition,
+        placement: AnyHashable?
+    ) {
+        readingPosition = store
+        readingPositionPlacement = placement
+        pendingReadingPosition = placement.flatMap { store.take(placement: $0) }
+    }
+
+    /// 恢复挂上时取出的阅读位置并清掉，返回恢复用的锚点。
+    ///
+    /// 快照还在应用、视口还没有宽度时不动作、保留待恢复；锚点条目已不在列表里时回到顶部并清掉，返回 nil。
+    @discardableResult
+    func applyPendingReadingPosition() -> Anchor? {
+        guard let pending = pendingReadingPosition, measuredViewportWidth > 0,
+            snapshots.applicationsInFlight == 0, !itemIDs.isEmpty
+        else { return nil }
+        pendingReadingPosition = nil
+        guard dataSource?.indexPath(for: pending.anchor.itemID) != nil else {
+            scrollToTop()
+            return nil
+        }
+        restore(pending.anchor)
+        refineDisplayedItems(keeping: pending.anchor)
+        return pending.anchor
+    }
+
+    /// 把视野写成锚点交给宿主；还没恢复的位置原样交回。
+    ///
+    /// 由 `tearDown` 在任何清理之前调用。没有挂上过时不动作，没有内容时清空那一格。
+    func saveReadingPosition() {
+        guard let readingPosition else { return }
+        guard let placement = readingPositionPlacement,
+            let bvid = presentation.content?.bvid,
+            let anchor = pendingReadingPosition?.anchor
+                ?? captureAnchor(allowsBottomFollowing: false)
+        else {
+            readingPosition.save(nil)
+            return
+        }
+        readingPosition.save(.init(placement: placement, bvid: bvid, anchor: anchor))
     }
 
     /// 当场精测会被画出来的行：视野内的行与集合视图已建出视图的行；
@@ -162,6 +207,11 @@ extension NativePlaybackSidebarController {
     }
 
     func applyPendingViewportIntent(fallbackAnchor: Anchor?) {
+        // 重新挂上时恢复阅读位置优先；它只在挂上之后、恢复之前存在，其余意图此时都还没有。
+        if pendingReadingPosition != nil {
+            applyPendingReadingPosition()
+            return
+        }
         let threadAlignment = pendingThreadAlignment
         if pendingResetToTop {
             pendingThreadAlignment = nil
