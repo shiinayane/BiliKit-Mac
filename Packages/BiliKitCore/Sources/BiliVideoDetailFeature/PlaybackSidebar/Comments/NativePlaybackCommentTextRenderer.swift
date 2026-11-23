@@ -102,13 +102,13 @@ final class NativePlaybackCommentTextRenderer {
             timestampLimits: timestampLimits
         )
 
-        // 表情与带标题或图标的链接都要替换原文；从后往前替换，前面的位置不受影响，重叠的跳过。
+        // 表情、带标题或图标的链接与搜索词都要替换原文；从后往前替换，前面的位置不受影响，重叠的跳过。
         // 表情优先：与表情重叠的链接不替换，避免表情被拆开。
         var attachments: [CommentAssetReference: [NSTextAttachment]] = [:]
         var pendingByReference: [CommentAssetReference: PendingAsset] = [:]
         let spoken = NSMutableString(string: content.message)
         let decoratedLinks = appliedLinks.filter { link in
-            (link.title != nil || link.icon != nil)
+            (link.title != nil || link.icon != nil || link.target.isSearch)
                 && !content.emotes.contains { Self.overlaps($0.range, link.range) }
         }
         let replacements =
@@ -296,9 +296,10 @@ final class NativePlaybackCommentTextRenderer {
         return NSAttributedString(attachment: attachment)
     }
 
-    /// 接口给了标题或图标的链接：原文（多为网址）换成「图标 + 标题」。
+    /// 接口给了标题或图标的链接：原文（多为网址）换成「图标 + 标题」；搜索词保留原文，后面跟一个放大镜，与官方一致。
     ///
-    /// 沿用原文的链接与字体属性，点图标也能打开链接；图标不可用时只显示标题。
+    /// 沿用原文的链接与字体属性，点图标也能打开链接；图标不可用时只显示标题。放大镜是系统符号，不朗读（读屏读到的
+    /// 仍是关键词本身，是不是链接由系统说明）。
     private func linkText(
         _ link: CommentLink,
         original: NSAttributedString,
@@ -323,9 +324,42 @@ final class NativePlaybackCommentTextRenderer {
             text.append(NSAttributedString(attachment: attachment))
         }
         text.append(NSAttributedString(string: link.title ?? original.string))
+        if link.target.isSearch, let symbol = Self.searchSymbolAttachment(font: font) {
+            text.append(NSAttributedString(string: Self.searchSymbolSpacing))
+            text.append(NSAttributedString(attachment: symbol))
+        }
         text.addAttributes(attributes, range: NSRange(location: 0, length: text.length))
         return text
     }
+
+    /// 搜索词后面的放大镜：按正文字号缩小一档、链接色，与关键词之间隔一个细空格（`searchSymbolSpacing`）。
+    private static func searchSymbolAttachment(font: NSFont) -> NSTextAttachment? {
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: font.pointSize * searchSymbolScale,
+            weight: .regular
+        )
+        .applying(NSImage.SymbolConfiguration(paletteColors: [.linkColor]))
+        guard
+            let image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+                .withSymbolConfiguration(configuration)
+        else { return nil }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        let size = image.size
+        // 与正文的小写字母等高居中：附件基线在文字基线上，下移到 x 高度的中线。
+        attachment.bounds = CGRect(
+            x: 0,
+            y: (font.xHeight - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
+        return attachment
+    }
+
+    /// 放大镜相对正文字号的比例；大了会比汉字还显眼，小了在高分屏上看不出是放大镜。
+    private static let searchSymbolScale: CGFloat = 0.85
+    /// 关键词与放大镜之间的细空格（U+2009）：普通空格在中文里太宽，不留又贴在最后一个字上。
+    private static let searchSymbolSpacing = "\u{2009}"
 
     /// 小图片附件：已缓存时直接显示，否则先放占位并登记待加载；本作用域内已标记不可用时为 nil。
     private func assetAttachment(

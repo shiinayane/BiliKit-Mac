@@ -48,7 +48,8 @@ public struct BiliShortLinkResolver: Sendable {
             let resolved = CommentRemoteLink.target(location)
         else { return nil }
         switch resolved {
-        case .shortLink, .timestamp:
+        // 地址分类从不产生时间戳与搜索词，列出只为穷尽。
+        case .shortLink, .timestamp, .search:
             return nil
         case .external(let reference) where CommentRemoteLink.isOnShortLinkHost(reference.remoteURL):
             return nil

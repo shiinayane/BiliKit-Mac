@@ -1,4 +1,5 @@
 import BiliApplication
+import BiliBrowseFeature
 import BiliModels
 import BiliVideoDetailFeature
 import Foundation
@@ -7,7 +8,7 @@ import Testing
 @testable import BiliKit
 
 /// 评论链接的执行：视频在应用内播放或原地跳转，时间戳只在有播放时跳转（带分 P 序号时跳到当前视频的那个分 P），
-/// 空间链接在侧栏打开，网页与解析不出的短链交给浏览器。
+/// 空间链接在侧栏打开，搜索词在右侧压一层搜索结果页（不离开播放链路），网页与解析不出的短链交给浏览器。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct CommentLinkOpenerTests {
@@ -84,6 +85,21 @@ struct CommentLinkOpenerTests {
 
         #expect(harness.coordinator.uploaderSpace.owner?.id == 42)
         #expect(harness.coordinator.isSidebarContextOpen)
+        #expect(harness.recorder.openedURLs.isEmpty)
+    }
+
+    /// 搜索词不切到侧栏「搜索」（那会清空历史、停止播放），而是盖在播放页上，搜正文里的那个词。
+    @Test
+    func searchWordsPushASearchPageOverPlayback() {
+        let harness = OpenerHarness(fixture: fixture)
+        harness.coordinator.openPlayback(fixture.bvid)
+
+        harness.opener.open(.search(keyword: "关键词"))
+
+        #expect(harness.coordinator.selectedTab == .home)
+        #expect(harness.coordinator.history.count == 2)
+        #expect(harness.coordinator.livePlaybackBVID == fixture.bvid)
+        #expect(harness.coordinator.searchPage.session.submittedCriteria?.query == "关键词")
         #expect(harness.recorder.openedURLs.isEmpty)
     }
 

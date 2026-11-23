@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliModels
 import BiliNetworking
 import Foundation
@@ -5,7 +6,7 @@ import Foundation
 /// 评论 `jump_url` 的一项：键是正文里被替换的文字，值给出去向。
 struct CommentJumpURLPayload: Decodable, Sendable {
     let pcURL: String?
-    /// 搜索词链接：点击会离开播放去搜索页，与应用动线冲突，不生成链接。
+    /// 搜索词链接：去向是正文里这段文字本身（`CommentRemoteLink.searchKeyword`），点击后压一层搜索结果页。
     let isWordSearch: Bool
     /// 官方客户端显示的标题（如短链指向的视频名），已还原 HTML 实体（见 `RemoteHTMLText`）。
     let title: String?
@@ -83,6 +84,15 @@ struct CommentJumpURLPayload: Decodable, Sendable {
 /// 精确匹配，不带端口；BVID 原样校验或由 av 号本地换算，空间只认正整数 MID；形状不符时不猜测，
 /// 按外链处理（见 SECURITY-MODEL §4）。
 enum CommentRemoteLink {
+    /// 搜索词链接的关键词：正文里这段文字按搜索规则规范化；为空或超过长度上限时不生成链接。
+    ///
+    /// 超长不截断：截断后搜的就不是正文里看到的那段文字了（见 SECURITY-MODEL §4）。
+    static func searchKeyword(label: String) -> String? {
+        let keyword = SearchText.normalized(label)
+        guard !keyword.isEmpty, SearchText.isWithinLimit(keyword) else { return nil }
+        return keyword
+    }
+
     /// 视频页所在的主机：桌面版、手机版与不带 `www` 的裸域。
     private static let videoHosts: Set<String> = [
         "www.bilibili.com", "m.bilibili.com", "bilibili.com"

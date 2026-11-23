@@ -12,6 +12,8 @@ enum CommentLinkRoute: Sendable {
     case seek(seconds: Int, page: Int?)
     /// 在侧栏空间层打开。
     case space(memberID: Int64)
+    /// 压一层搜索结果页，搜这个关键词；不写本机搜索历史，这个词不是用户自己输入的。
+    case search(keyword: String)
     case web(URL)
     /// 短链：点击后由 `resolve` 解析出真正的去向；解析不出时打开 `webFallback`（原短链）。
     case shortLink(resolve: @Sendable () async -> CommentLinkRoute?, webFallback: URL?)
@@ -47,6 +49,8 @@ struct CommentLinkRouting: Sendable {
             return user.id.memberID.map { .space(memberID: $0) }
         case .external(let reference):
             return linkResolver.externalURL(for: reference).map(CommentLinkRoute.web)
+        case .search(let keyword):
+            return .search(keyword: keyword)
         case .shortLink(let reference):
             let routing = self
             return .shortLink(

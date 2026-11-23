@@ -171,7 +171,7 @@ final class AppNavigationCoordinator {
     private var liveIntent: PlaybackSelectionIntent?
     /// 活视频所在的历史项；没有活视频时为 nil。
     @ObservationIgnored private var liveEntryID: UInt64?
-    /// 活视频被空间页盖住时由我们暂停的，记下暂停时的秒数；回到它时只恢复这种，用户自己暂停或已播完的保持不动。
+    /// 活视频被浏览类页面盖住时由我们暂停的，记下暂停时的秒数；回到它时只恢复这种，用户自己暂停或已播完的保持不动。
     ///
     /// 被盖住期间用户仍能经媒体键、控制中心播放、暂停或拖动（照常播放）；回来时位置与记下的相差超过
     /// `coveredPositionTolerance`，说明用户动过，按用户此刻的状态保持不动。nil 表示没有要恢复的。
@@ -352,7 +352,7 @@ final class AppNavigationCoordinator {
         completePendingStop()
         capturePages()
         if let live = liveIntent, live.bvid == intent.bvid {
-            // 被盖住的就是这个视频（空间页里又点了它）：活视频改绑到新压的这一项，不重新起播；意图明确指向另一个分 P
+            // 被盖住的就是这个视频（空间页或搜索页里又点了它）：活视频改绑到新压的这一项，不重新起播；意图明确指向另一个分 P
             // 时按换分 P 处理（视频模型在已有分 P 里切换）。
             let switchesPage =
                 intent.preferredCID != nil && intent.preferredCID != live.preferredCID
@@ -384,7 +384,7 @@ final class AppNavigationCoordinator {
     /// 工具栏「返回」：弹出栈顶一页，按新的栈顶恢复；在根页时不动作，所以连点只停止一次。
     ///
     /// - 回到播放页：是被盖住的活视频就接着它（只恢复盖住暂停的）；不是就按这一项记下的意图重建。
-    /// - 离开活视频所在的播放页、回到空间页：下面最近的播放项是同一个视频时按被盖住处理，活视频改绑过去；否则先暂停、
+    /// - 离开活视频所在的播放页、回到浏览类页面（空间页、搜索页）：下面最近的播放项是同一个视频时按被盖住处理，活视频改绑过去；否则先暂停、
     ///   转场结束后再停止（停止播放会立即清空画面，放在换页的同一次提交里时，旧页面带着黑掉的视频区离开）。
     /// - 回到根页：同上，先暂停、转场后停止；还没有画面可留时照样转场，但立即停止。
     func goBack() {
@@ -454,7 +454,7 @@ final class AppNavigationCoordinator {
 
     /// 工具栏 ⌂：清空历史回到来源根页并停止播放。
     ///
-    /// 栈顶就是活视频时先暂停、转场后停止（旧页面带着画面离开）；栈顶是空间页时没有画面可留，立即停止。
+    /// 栈顶就是活视频时先暂停、转场后停止（旧页面带着画面离开）；栈顶是浏览类页面时没有画面可留，立即停止。
     func goHome() {
         guard let top = history.last else { return }
         let change = {
