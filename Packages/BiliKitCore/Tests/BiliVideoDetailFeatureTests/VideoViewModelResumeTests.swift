@@ -63,10 +63,10 @@ struct VideoViewModelResumeTests {
         #expect(player.loadedStartPositions.suffix(2) == [90, nil])
     }
 
-    /// 链接起播时间开播成功后即用过：之后播放失败的重试按续播规则，不跳回链接时间。
+    /// 开播后播放失败，重试从失败时的位置继续：不从头开始，也不跳回已经用过的链接时间。
     @Test
     @MainActor
-    func retryAfterALinkStartedPlaybackDoesNotJumpBack() async throws {
+    func retryAfterPlaybackStartedResumesAtTheFailurePosition() async throws {
         let fixture = ContentFixtures()
         let repository = VideoRepositoryStub(fixture, pages: fixture.twoPages)
         let player = PlayerStub()
@@ -78,12 +78,50 @@ struct VideoViewModelResumeTests {
         await waitUntilSettled(model)
         let identity = try #require(model.presentedPlaybackIdentity)
 
-        await player.fail(identity)
+        await player.fail(identity, at: 123.4)
         await player.waitForStopCallCount(1)
         model.retry()
         await waitUntilSettled(model)
 
-        #expect(player.loadedStartPositions == [90, nil])
+        #expect(player.loadedStartPositions == [90, 123])
+    }
+
+    /// 换源时重取 playurl 失败：停下播放器、在原视频上呈现分 P 失败，重试从换源时的位置继续。
+    @Test
+    @MainActor
+    func failedSourceRefreshRetriesAtTheRefreshPosition() async throws {
+        let fixture = ContentFixtures()
+        let repository = VideoRepositoryStub(
+            fixture,
+            pages: fixture.twoPages,
+            playback: { _, attempt in
+                guard attempt != 2 else { throw ContentApplicationError.unavailable }
+                return fixture.playback
+            }
+        )
+        let player = PlayerStub()
+        let model = makeVideoViewModel(
+            useCase: VideoUseCase(repository: repository),
+            playback: player
+        )
+        model.loadVideo(fixture.bvid, preferredCID: 900_002)
+        await waitUntilSettled(model)
+        let identity = try #require(model.presentedPlaybackIdentity)
+
+        player.expireSource(identity, at: 75.8)
+        await player.waitForStopCallCount(1)
+
+        guard case .failedPage(_, let targetPage, .content(.unavailable)) = model.state else {
+            Issue.record("换源失败没有呈现为分 P 失败")
+            return
+        }
+        #expect(targetPage.cid == identity.cid)
+        #expect(player.refreshedIdentities.isEmpty)
+        model.retry()
+        await waitUntilSettled(model)
+
+        #expect(player.loadedStartPositions == [nil, 75])
+        #expect(model.presentedPlaybackIdentity == identity)
     }
 
     /// 同一分 P 还在加载时收到带起播秒数的链接：取消在途加载，从链接时间重开，不被去重吞掉。

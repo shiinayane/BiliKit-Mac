@@ -6,7 +6,62 @@ struct NativeSubtitleSelectionPreference: Sendable {
     let propertyListData: Data?
 }
 
+/// 原生字幕的开关与选项恢复；只写本 engine 的字幕切换操作 ID 与上次选中的字幕。
 extension AVPlayerEngine {
+    public func toggleNativeSubtitles() async -> NativeSubtitleToggleResult {
+        guard let item = player.currentItem else {
+            return .unavailable
+        }
+        let operationID = UUID()
+        let generation = loadGeneration
+        subtitleToggleOperationID = operationID
+
+        do {
+            guard
+                let group = try await item.asset.loadMediaSelectionGroup(
+                    for: .legible
+                ),
+                !Task.isCancelled,
+                subtitleToggleOperationID == operationID,
+                loadGeneration == generation,
+                player.currentItem === item
+            else {
+                finishSubtitleToggle(operationID)
+                return .unavailable
+            }
+
+            if let selected = item.currentMediaSelection.selectedMediaOption(
+                in: group
+            ) {
+                guard group.allowsEmptySelection else {
+                    finishSubtitleToggle(operationID)
+                    return .unavailable
+                }
+                lastSubtitleSelection = Self.subtitlePreference(for: selected)
+                item.select(nil, in: group)
+                finishSubtitleToggle(operationID)
+                return .disabled
+            }
+
+            guard
+                let option = Self.subtitleOption(
+                    in: group,
+                    restoring: lastSubtitleSelection
+                )
+            else {
+                finishSubtitleToggle(operationID)
+                return .unavailable
+            }
+            item.select(option, in: group)
+            lastSubtitleSelection = Self.subtitlePreference(for: option)
+            finishSubtitleToggle(operationID)
+            return .enabled(label: option.displayName)
+        } catch {
+            finishSubtitleToggle(operationID)
+            return .unavailable
+        }
+    }
+
     static func subtitlePreference(
         for option: AVMediaSelectionOption
     ) -> NativeSubtitleSelectionPreference {

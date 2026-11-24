@@ -23,8 +23,9 @@ public enum NativeSubtitleToggleResult: Sendable, Equatable {
 
 /// AVPlayer、DASH→HLS 会话与统一播放时间线的唯一资源 owner。
 ///
-/// 每次 load 用 UUID generation 取代旧准备流程；迟到 bridge/readiness 结果必须自毁而不能
+/// 每次 load 与换源都用 UUID generation 取代旧准备流程；迟到 bridge/readiness 结果必须自毁而不能
 /// 安装到当前 player。`stop` 同时释放 item、任务、loopback server、observer 与时间线 identity。
+/// seek、原生字幕与换源分在同目录的扩展文件里，它们读写的状态因此不是 `private`，只由本类型及这些扩展使用。
 @MainActor
 public final class AVPlayerEngine:
     PlaybackControlling,
@@ -36,25 +37,27 @@ public final class AVPlayerEngine:
     private let subtitleUseCase: SubtitleUseCase
     private let loadPreferencesProvider: @MainActor @Sendable () -> PlaybackLoadPreferences
     private let failureEvents = AsyncBroadcast<PlaybackFailureEvent>()
-    private let timeline: AVPlayerTimelineAdapter
+    let sourceExpiryEvents = AsyncBroadcast<PlaybackSourceExpiryEvent>()
+    let timeline: AVPlayerTimelineAdapter
     private var loadTask: Task<PreparedPlaybackAsset, any Error>?
     private var readinessTask: Task<Void, any Error>?
-    /// 每次 load、停止、失败与 item 失败都由 `releaseCurrentPlayback` 换新。
+    /// 每次 load、换源、停止、失败与 item 失败都由 `releaseCurrentPlayback` 换新。
     ///
     /// 准备、就绪、seek 完成与字幕切换在 await 之后比对，不一致时停止迟到的 loopback
     /// 会话或丢弃回调。
-    private var loadGeneration = UUID()
-    private var loadIntent: PlaybackLoadIntent?
+    var loadGeneration = UUID()
+    /// 当前 item 的 load intent；换源沿用同一个。
+    var loadIntent: PlaybackLoadIntent?
     /// `beginPlayback` 报告续播时发出；只有持同一 token 的“从头播放”才执行，从头开始、release
     /// 或重新开始成功后清除。
     private var activeResumeToken: PlaybackResumeToken?
     /// 在途“从头播放”的操作 ID，同时只允许一个；新的 transport 或精确 seek 清掉它，旧的 restart
     /// 收尾时按被取代处理。
-    private var restartOperation: UUID?
+    var restartOperation: UUID?
     /// 当前拥有时间线待定 seek 的操作（从头播放、transport 或精确 seek），新 seek 覆盖它。
     ///
     /// 只有仍匹配的操作才能经 `settleSeek` 写回时间线；release 与外部时间跳变取代时清除。
-    private var activeSeekOperationID: UUID?
+    var activeSeekOperationID: UUID?
     private var preparedAsset: PreparedPlaybackAsset?
     private var subtitleIdentity: PlaybackItemIdentity?
     /// 字幕缓存按 identity 重置，重置 Task 串成链；新 load 先等上一次重置完成再取字幕目录，
@@ -62,9 +65,19 @@ public final class AVPlayerEngine:
     private var subtitleResetTask: Task<Void, Never>?
     /// 最近一次字幕切换的操作 ID；await 字幕组之后比对，不一致（被新切换或 release 取代）时返回
     /// `.unavailable`、不改选择。
-    private var subtitleToggleOperationID: UUID?
-    private var lastSubtitleSelection: NativeSubtitleSelectionPreference?
-    private var transportSeek = TransportSeekOperationState()
+    var subtitleToggleOperationID: UUID?
+    var lastSubtitleSelection: NativeSubtitleSelectionPreference?
+    var transportSeek = TransportSeekOperationState()
+    /// 当前 item 的地址有效期，就绪时建立；release 时换回不检查。
+    var sourceExpiry = PlaybackSourceExpiry.unchecked
+    /// 已发出换源事件、等待 `refreshSource` 期间被推迟的播放意图；release 时清除。
+    var pendingSourceRefresh: PendingSourceRefresh?
+    /// 正在重建的换源 item 就绪后是否继续播放。
+    ///
+    /// 换源释放旧 item 后按被推迟的意图设置，重建期间的 `pause` 把它清掉（例如播放页此时被盖住），release 时清除。
+    var sourceRefreshResumesPlayback = false
+    /// 当前 item 的音频与字幕选项组，就绪时读取；release 时清除。
+    var mediaSelectionGroups = NativeMediaSelectionGroups.none
 
     public init(
         player: AVPlayer,
@@ -84,6 +97,12 @@ public final class AVPlayerEngine:
         timeline = AVPlayerTimelineAdapter(player: player)
         timeline.onFailed = { [weak self] in
             self?.handleCurrentItemFailure()
+        }
+        timeline.recoversFromFailure = { [weak self] snapshot in
+            self?.recoverFromExpiredSourceFailure(snapshot) ?? false
+        }
+        timeline.onPlaybackStartedOutsideEngine = { [weak self] in
+            self?.deferToSourceRefresh(resumesPlayback: true, targetSeconds: nil) ?? false
         }
         timeline.onSeekSupersededByExternalJump = {
             [weak self] operationID in
@@ -108,60 +127,6 @@ public final class AVPlayerEngine:
         timeline.currentSnapshot
     }
 
-    public func toggleNativeSubtitles() async -> NativeSubtitleToggleResult {
-        guard let item = player.currentItem else {
-            return .unavailable
-        }
-        let operationID = UUID()
-        let generation = loadGeneration
-        subtitleToggleOperationID = operationID
-
-        do {
-            guard
-                let group = try await item.asset.loadMediaSelectionGroup(
-                    for: .legible
-                ),
-                !Task.isCancelled,
-                subtitleToggleOperationID == operationID,
-                loadGeneration == generation,
-                player.currentItem === item
-            else {
-                finishSubtitleToggle(operationID)
-                return .unavailable
-            }
-
-            if let selected = item.currentMediaSelection.selectedMediaOption(
-                in: group
-            ) {
-                guard group.allowsEmptySelection else {
-                    finishSubtitleToggle(operationID)
-                    return .unavailable
-                }
-                lastSubtitleSelection = Self.subtitlePreference(for: selected)
-                item.select(nil, in: group)
-                finishSubtitleToggle(operationID)
-                return .disabled
-            }
-
-            guard
-                let option = Self.subtitleOption(
-                    in: group,
-                    restoring: lastSubtitleSelection
-                )
-            else {
-                finishSubtitleToggle(operationID)
-                return .unavailable
-            }
-            item.select(option, in: group)
-            lastSubtitleSelection = Self.subtitlePreference(for: option)
-            finishSubtitleToggle(operationID)
-            return .enabled(label: option.displayName)
-        } catch {
-            finishSubtitleToggle(operationID)
-            return .unavailable
-        }
-    }
-
     public func timelineUpdates() -> AsyncStream<PlaybackTimelineSnapshot> {
         timeline.updates()
     }
@@ -176,11 +141,25 @@ public final class AVPlayerEngine:
         failureEvents.subscribe(startingWith: nil)
     }
 
+    public func playbackSourceExpiryEvents() -> AsyncStream<PlaybackSourceExpiryEvent> {
+        sourceExpiryEvents.subscribe(startingWith: nil)
+    }
+
     /// 准备并安装一个新播放项目；调用方取消会沿 generation 边界清理本次全部资源。
     public func load(
         _ request: PlaybackRequest,
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent = PlaybackLoadIntent()
+    ) async throws {
+        try await install(request, identity: identity, intent: intent, continuing: nil)
+    }
+
+    /// load 与换源（`continuation` 非 nil）共用的安装入口；调用方取消时按 generation 清理。
+    func install(
+        _ request: PlaybackRequest,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        continuing continuation: PlaybackSourceContinuation?
     ) async throws {
         let generation = UUID()
         try await withTaskCancellationHandler {
@@ -189,7 +168,8 @@ public final class AVPlayerEngine:
                 request,
                 identity: identity,
                 intent: intent,
-                generation: generation
+                generation: generation,
+                continuing: continuation
             )
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -208,7 +188,8 @@ public final class AVPlayerEngine:
             PlaybackRequest(
                 media: playback.media,
                 mediaHeaders: playback.mediaHeaders,
-                startPositionSeconds: startPositionSeconds
+                startPositionSeconds: startPositionSeconds,
+                mediaExpiresAt: playback.mediaExpiresAt
             ),
             identity: identity,
             intent: intent
@@ -219,7 +200,8 @@ public final class AVPlayerEngine:
         _ request: PlaybackRequest,
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent,
-        generation: UUID
+        generation: UUID,
+        continuing continuation: PlaybackSourceContinuation?
     ) async throws {
         // 每次新 load 只在准备前读取一次；设置变化不会触碰当前 AVPlayerItem。
         let preferences = loadPreferencesProvider()
@@ -260,17 +242,22 @@ public final class AVPlayerEngine:
             progressiveSource == nil && $0.isFinite && $0 > 0 ? $0 : nil
         }
         releaseCurrentPlayback(nextGeneration: generation, nextIntent: intent)
-        let pendingSubtitleReset = enqueueSubtitleReset()
-        timeline.begin(
-            identity: identity,
-            loadIntent: intent,
-            startPositionSeconds: startPositionSeconds ?? 0
-        )
-
-        await pendingSubtitleReset?.value
-        try Task.checkCancellation()
-        guard loadGeneration == generation else {
-            throw CancellationError()
+        if let continuation {
+            // 换源沿用同一 identity，字幕目录缓存仍然有效，不重置；时间线保留位置并记为暂停。
+            sourceRefreshResumesPlayback = continuation.resumesPlayback
+            timeline.beginReplacement(startPositionSeconds: continuation.positionSeconds)
+        } else {
+            let pendingSubtitleReset = enqueueSubtitleReset()
+            timeline.begin(
+                identity: identity,
+                loadIntent: intent,
+                startPositionSeconds: startPositionSeconds ?? 0
+            )
+            await pendingSubtitleReset?.value
+            try Task.checkCancellation()
+            guard loadGeneration == generation else {
+                throw CancellationError()
+            }
         }
         let subtitleSource =
             progressiveSource == nil
@@ -319,7 +306,13 @@ public final class AVPlayerEngine:
                 throw CancellationError()
             }
             self.readinessTask = nil
-            timeline.markReady(duration: item.duration)
+            try await finishInstalling(
+                item,
+                expiresAt: request.mediaExpiresAt,
+                isProgressive: progressiveSource != nil,
+                continuing: continuation,
+                generation: generation
+            )
         } catch is CancellationError {
             if loadGeneration == generation {
                 resetToIdle()
@@ -403,7 +396,8 @@ public final class AVPlayerEngine:
             player.currentItem != nil,
             let positionSeconds = Self.validSeconds(player.currentTime())
         else { return .rejected }
-        play()
+        // 不经 `play` 的过期检查：地址刚取得，这时已在余量内只可能是本机时钟偏快，重取也不会更新。
+        timeline.play()
         guard positionSeconds > SeekPolicy.beginningThresholdSeconds else {
             activeResumeToken = nil
             return .startedAtBeginning
@@ -483,12 +477,17 @@ public final class AVPlayerEngine:
         return true
     }
 
+    /// 继续播放；地址将过期时改为停住并请求换源，换源后再播放。
     public func play() {
         guard player.currentItem != nil else { return }
+        if deferToSourceRefresh(resumesPlayback: true, targetSeconds: nil) { return }
         timeline.play()
     }
 
+    /// 暂停；等待换源或换源重建期间也记下“换源后不播放”。
     public func pause() {
+        pendingSourceRefresh?.resumesPlayback = false
+        sourceRefreshResumesPlayback = false
         guard player.currentItem != nil else { return }
         timeline.pause()
     }
@@ -521,177 +520,13 @@ public final class AVPlayerEngine:
         timeline.endMomentaryRate(sessionID: sessionID)
     }
 
-    /// 在当前 VOD item 上累计执行播放器 transport 的相对跳转。
-    @discardableResult
-    public func seekByTransportOffset(_ offsetSeconds: Double) -> Bool {
-        guard let item = player.currentItem,
-            let currentSeconds = Self.validSeconds(player.currentTime()),
-            let durationSeconds = Self.validSeconds(item.duration)
-        else { return false }
-        let generation = loadGeneration
-        let itemIdentity = ObjectIdentifier(item)
-        guard
-            let operation = transportSeek.prepare(
-                offsetSeconds: offsetSeconds,
-                currentSeconds: currentSeconds,
-                durationSeconds: durationSeconds,
-                generation: generation,
-                itemIdentity: itemIdentity
-            )
-        else { return false }
-
-        restartOperation = nil
-        activeSeekOperationID = operation.id
-        timeline.prepareObservedSeek(
-            operationID: operation.id,
-            to: operation.targetSeconds
-        )
-        issueSeek(
-            to: operation.targetSeconds,
-            tolerance: SeekPolicy.relativeSeekTolerance,
-            generation: generation,
-            item: item
-        ) { engine, finished in
-            let isOwned =
-                engine.activeSeekOperationID == operation.id
-                && engine.transportSeek.matches(operation)
-            var landing: Double?
-            if isOwned,
-                case .completed(let positionSeconds) = engine.transportSeek.complete(
-                    operation,
-                    finished: finished,
-                    resolvedPositionSeconds: finished
-                        ? Self.validSeconds(engine.player.currentTime()) : nil
-                )
-            {
-                landing = positionSeconds
-            }
-            engine.settleSeek(
-                operation.id,
-                didSeek: finished,
-                isOwned: isOwned,
-                item: item
-            ) { landing }
-        }
-        return true
-    }
-
-    /// 同步接受当前 item 上的精确 seek，并在 engine 内完成 generation-safe 的异步收尾。
-    ///
-    /// 返回 `true` 表示 AVPlayer 已经收到请求；系统远程命令的同步 handler 无法等待完成回调。
-    @discardableResult
-    public func requestSeek(to time: Duration) -> Bool {
-        guard let item = player.currentItem,
-            let duration = currentTimelineSnapshot.durationSeconds
-        else { return false }
-        let seconds = time / .seconds(1)
-        guard seconds.isFinite, seconds >= 0, seconds <= duration else {
-            return false
-        }
-
-        let generation = loadGeneration
-        let operation = UUID()
-        restartOperation = nil
-        supersedeTransportSeek()
-        activeSeekOperationID = operation
-        timeline.prepareObservedSeek(operationID: operation, to: seconds)
-        issueSeek(
-            to: seconds,
-            tolerance: .zero,
-            generation: generation,
-            item: item
-        ) { engine, didSeek in
-            engine.settleSeek(
-                operation,
-                didSeek: didSeek,
-                isOwned: engine.activeSeekOperationID == operation,
-                item: item
-            ) { seconds }
-        }
-        return true
-    }
-
-    /// 以 AVPlayer 的异步接口等待 seek 完成。
-    private func seek(to seconds: Double, tolerance: CMTime) async -> Bool {
-        await player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: SeekPolicy.timescale),
-            toleranceBefore: tolerance,
-            toleranceAfter: tolerance
-        )
-    }
-
-    /// 同步向 AVPlayer 发出 seek，调用方可立即返回；完成回调回到 main actor，旧 load 或旧 item
-    /// 的回调静默丢弃。
-    private func issueSeek(
-        to seconds: Double,
-        tolerance: CMTime,
-        generation: UUID,
-        item: AVPlayerItem,
-        settle: @escaping @MainActor (AVPlayerEngine, Bool) -> Void
-    ) {
-        player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: SeekPolicy.timescale),
-            toleranceBefore: tolerance,
-            toleranceAfter: tolerance
-        ) { [weak self, weak item] finished in
-            Task { @MainActor [weak self, weak item] in
-                guard let self, let item,
-                    self.loadGeneration == generation,
-                    self.player.currentItem === item
-                else { return }
-                settle(self, finished)
-            }
-        }
-    }
-
-    /// 所有 seek 入口共用的收尾：只有仍拥有该操作的调用方才能写回时间线并结束 `activeSeekOperationID`。
-    ///
-    /// 被取代的操作只丢弃失败落点；等待期间上下文变化时，仅当 item 仍在播放器上才撤销时间线的
-    /// 待定 seek；`landing` 返回 nil 表示落点不合格。
-    @discardableResult
-    private func settleSeek(
-        _ operationID: UUID,
-        didSeek: Bool,
-        isOwned: Bool,
-        item: AVPlayerItem,
-        contextIsValid: Bool = true,
-        landing: () -> Double?
-    ) -> SeekSettlement {
-        guard isOwned else {
-            if !didSeek {
-                timeline.discardStaleSeekLanding(operationID: operationID)
-            }
-            return .superseded
-        }
-        guard didSeek else {
-            timeline.seekFailed(operationID: operationID)
-            activeSeekOperationID = nil
-            return .failed
-        }
-        guard contextIsValid else {
-            if player.currentItem === item {
-                timeline.seekFailed(operationID: operationID)
-            }
-            activeSeekOperationID = nil
-            return .contextChanged
-        }
-        guard let positionSeconds = landing() else {
-            timeline.seekFailed(operationID: operationID)
-            activeSeekOperationID = nil
-            return .failed
-        }
-        timeline.seekCompleted(operationID: operationID, at: positionSeconds)
-        activeSeekOperationID = nil
-        return .landed(positionSeconds: positionSeconds)
-    }
-
     /// 幂等终止当前及在途播放，将唯一时间线恢复为 `.idle` 状态。
     public func stop() {
         resetToIdle()
     }
 
     /// 使当前 load 世代失效，并释放播放项目及其派生状态：在途加载／就绪任务、
-    /// 字幕切换、seek、恢复与重新开始操作，以及 loopback 资源。
+    /// 字幕切换、seek、恢复与重新开始操作、地址有效期与待换源意图，以及 loopback 资源。
     ///
     /// 先移除 AVPlayerItem 再停止 loopback 资源，避免旧项目因资源消失而触发失败回调。
     /// 时间线终态、字幕重置与对外事件由调用方决定。
@@ -710,6 +545,10 @@ public final class AVPlayerEngine:
         loadTask = nil
         readinessTask?.cancel()
         readinessTask = nil
+        sourceExpiry = .unchecked
+        pendingSourceRefresh = nil
+        sourceRefreshResumesPlayback = false
+        mediaSelectionGroups = .none
         player.pause()
         player.replaceCurrentItem(with: nil)
         preparedAsset?.stop()
@@ -722,7 +561,7 @@ public final class AVPlayerEngine:
         _ = enqueueSubtitleReset()
     }
 
-    private func finishSubtitleToggle(_ operationID: UUID) {
+    func finishSubtitleToggle(_ operationID: UUID) {
         guard subtitleToggleOperationID == operationID else { return }
         subtitleToggleOperationID = nil
     }
@@ -735,38 +574,19 @@ public final class AVPlayerEngine:
     }
 
     private func handleCurrentItemFailure() {
-        guard let identity = timeline.currentSnapshot.identity,
+        let snapshot = timeline.currentSnapshot
+        guard let identity = snapshot.identity,
             let intent = loadIntent
         else { return }
         releaseCurrentPlayback()
         _ = enqueueSubtitleReset()
-        failureEvents.yield(PlaybackFailureEvent(identity: identity, intent: intent))
-    }
-
-    private func invalidateTransportSeek() {
-        guard let operation = transportSeek.invalidate() else { return }
-        timeline.seekFailed(operationID: operation.id)
-        if activeSeekOperationID == operation.id {
-            activeSeekOperationID = nil
-        }
-    }
-
-    private func supersedeTransportSeek() {
-        guard let operation = transportSeek.invalidate() else { return }
-        if activeSeekOperationID == operation.id {
-            activeSeekOperationID = nil
-        }
-    }
-
-    private func handleSeekSupersededByExternalJump(_ operationID: UUID) {
-        guard activeSeekOperationID == operationID else { return }
-        activeSeekOperationID = nil
-        if restartOperation == operationID {
-            restartOperation = nil
-        }
-        if transportSeek.current?.id == operationID {
-            transportSeek.invalidate()
-        }
+        failureEvents.yield(
+            PlaybackFailureEvent(
+                identity: identity,
+                intent: intent,
+                positionSeconds: snapshot.positionSeconds
+            )
+        )
     }
 
     @discardableResult

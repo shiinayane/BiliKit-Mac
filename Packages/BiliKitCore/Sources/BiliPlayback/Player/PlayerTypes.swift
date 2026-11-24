@@ -3,7 +3,7 @@ import BiliApplication
 import BiliModels
 import Foundation
 
-/// 一次 load 的输入：媒体（DASH 或 progressive）、媒体请求 header 与起播位置。
+/// 一次 load 的输入：媒体（DASH 或 progressive）、媒体请求 header、起播位置与媒体地址的过期时刻。
 public struct PlaybackRequest: Sendable, Equatable {
     public let media: PlaybackMedia
     public let mediaHeaders: [String: String]
@@ -11,15 +11,19 @@ public struct PlaybackRequest: Sendable, Equatable {
     ///
     /// 写入 master playlist 的 `EXT-X-START`；progressive 单文件没有 playlist，忽略此值、从头播放。
     public let startPositionSeconds: Double?
+    /// 媒体地址最早的过期时刻（`VideoPlayback.mediaExpiresAt`）；nil 时不做过期检查。
+    public let mediaExpiresAt: Date?
 
     public init(
         media: PlaybackMedia,
         mediaHeaders: [String: String] = [:],
-        startPositionSeconds: Double? = nil
+        startPositionSeconds: Double? = nil,
+        mediaExpiresAt: Date? = nil
     ) {
         self.media = media
         self.mediaHeaders = mediaHeaders
         self.startPositionSeconds = startPositionSeconds
+        self.mediaExpiresAt = mediaExpiresAt
     }
 }
 

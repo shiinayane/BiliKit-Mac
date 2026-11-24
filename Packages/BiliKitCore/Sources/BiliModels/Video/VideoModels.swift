@@ -538,15 +538,21 @@ public struct VideoPlayback: Sendable, Equatable {
     public let mediaHeaders: [String: String]
     /// 已认证 playurl 返回的账户级断点；匿名响应与异常字段保持为 nil。
     public let resumeMetadata: PlaybackResumeMetadata?
+    /// 媒体地址里最早的 `deadline`（CDN 签名的有效期）；没有任何地址带它时为 nil，播放器不做主动检查。
+    ///
+    /// 播放器在继续播放或拖动前据此判断是否需要先重取 playurl，见 BiliPlayback 的 `PlaybackSourceExpiry`。
+    public let mediaExpiresAt: Date?
 
     public init(
         media: PlaybackMedia,
         mediaHeaders: [String: String],
-        resumeMetadata: PlaybackResumeMetadata? = nil
+        resumeMetadata: PlaybackResumeMetadata? = nil,
+        mediaExpiresAt: Date? = nil
     ) {
         self.media = media
         self.mediaHeaders = mediaHeaders
         self.resumeMetadata = resumeMetadata
+        self.mediaExpiresAt = mediaExpiresAt
     }
 }
 

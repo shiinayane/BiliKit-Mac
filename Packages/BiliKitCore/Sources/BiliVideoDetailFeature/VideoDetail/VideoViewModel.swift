@@ -102,8 +102,10 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     public private(set) var requestedPreferredCID: Int64?
     /// 外部链接给出的分 P 序号；详情到达前只用于重试，到达后换算为 `requestedPreferredCID`。
     private var requestedPreferredPageNumber: Int?
-    /// 外部链接给出的起播秒数（`t=`）；开播前失败的重试沿用，开播成功后即用过、清除，之后的重试
-    /// 不再跳回链接时间。
+    /// 重试的起播秒数。
+    ///
+    /// 外部链接给出的 `t=`，开播前失败的重试沿用；开播成功后即用过、清除。开播后的失败（含换源失败）改记为
+    /// 失败时的播放位置，重试从那里继续而不是从头开始。
     private var requestedStartSeconds: Int?
     /// 已经由播放器成功安装的媒体身份；切换开始和失败后必须为 nil。
     public private(set) var presentedPlaybackIdentity: PlaybackItemIdentity?
@@ -121,19 +123,26 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     /// 只在当前 item 从续播位置就绪并开始播放后出现。
     public private(set) var resumeNotice: PlaybackResumeNotice?
 
-    @ObservationIgnored private let useCase: VideoUseCase
-    @ObservationIgnored private let playback: any PlaybackControlling
+    @ObservationIgnored let useCase: VideoUseCase
+    @ObservationIgnored let playback: any PlaybackControlling
     @ObservationIgnored private let relatedVideoUseCase: RelatedVideoUseCase
     @ObservationIgnored private let uploaderProfileUseCase: UploaderProfileUseCase
-    @ObservationIgnored private let loadTask = LatestTask()
+    /// 内容准备、开播与换源共用的唯一 Task；新视频、换分 P、重试与 reset 都取代它。
+    @ObservationIgnored let loadTask = LatestTask()
     @ObservationIgnored private let relatedVideoTask = LatestTask()
     @ObservationIgnored private let uploaderProfileTask = LatestTask()
     /// 最近一次成功取得的名片；离开播放（reset）时清空。
     @ObservationIgnored private var lastUploaderProfile: (ownerID: Int64, profile: UploaderProfile)?
     @ObservationIgnored private var playbackFailureTask: Task<Void, Never>?
+    @ObservationIgnored private var playbackSourceExpiryTask: Task<Void, Never>?
     @ObservationIgnored private var playbackAuthenticationTask: Task<Void, Never>?
     @ObservationIgnored private let resumeActionTask = LatestTask()
-    @ObservationIgnored private var playbackIntent: PlaybackLoadIntent?
+    @ObservationIgnored private(set) var playbackIntent: PlaybackLoadIntent?
+    /// 正在换源的 load intent。
+    ///
+    /// 换源开始时记下，结束（成功或失败）时清除；同一 intent 的重复换源事件据此忽略。换源被新的视频、分 P 或
+    /// reset 取代时不必清除，它们都会换掉 `playbackIntent`。
+    @ObservationIgnored var sourceRefreshIntent: PlaybackLoadIntent?
     @ObservationIgnored private let collectionEpisodes: CollectionEpisodePagesController
 
     public init(
@@ -151,12 +160,19 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         collectionEpisodes.onAuthenticationInvalid = { [weak self] in
             self?.recordAuthenticationInvalidationIfNeeded(.authenticationInvalid)
         }
-        // 在 init 内同步订阅：失败事件不回放，订阅晚于首个 load 会漏掉它。
+        // 在 init 内同步订阅：失败与换源事件都不回放，订阅晚于首个 load 会漏掉它们。
         let playbackFailures = playback.playbackFailureEvents()
         playbackFailureTask = Task { [weak self] in
             for await event in playbackFailures {
                 guard !Task.isCancelled else { return }
                 self?.handlePlaybackFailure(event)
+            }
+        }
+        let sourceExpiries = playback.playbackSourceExpiryEvents()
+        playbackSourceExpiryTask = Task { [weak self] in
+            for await event in sourceExpiries {
+                guard !Task.isCancelled else { return }
+                self?.handlePlaybackSourceExpiry(event)
             }
         }
         // 播放附带的账户读取（字幕目录）发现凭据失效：不影响播放，只请求窗口复核。
@@ -170,6 +186,7 @@ public final class VideoViewModel: AccountRevalidationParticipant {
 
     deinit {
         playbackFailureTask?.cancel()
+        playbackSourceExpiryTask?.cancel()
         playbackAuthenticationTask?.cancel()
     }
 
@@ -631,36 +648,61 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     }
 
     /// adapter 已拒绝旧 item token；Feature 再以当前请求 identity 与状态拒绝跨意图失败。
-    private func handlePlaybackFailure(_ event: PlaybackFailureEvent) {
+    ///
+    /// 开播前（`.preparingPlayback`）的失败沿用链接的起播秒数重试；开播后的失败从失败位置重试。
+    func handlePlaybackFailure(_ event: PlaybackFailureEvent) {
         guard requestedPlaybackIdentity == event.identity,
             playbackIntent == event.intent
         else { return }
+        let retryPositionSeconds: Double?
         switch state {
-        case .preparingPlayback, .ready:
-            break
+        case .preparingPlayback:
+            retryPositionSeconds = nil
+        case .ready:
+            retryPositionSeconds = event.positionSeconds
         case .idle, .loading, .loadingPage, .failed, .failedPage:
             return
         }
+        presentPlaybackFailure(
+            of: event.identity,
+            failure: .playback,
+            retryPositionSeconds: retryPositionSeconds
+        )
+    }
+
+    /// 停下播放器，把 `identity` 所在分 P 呈现为失败，保留已呈现的视频。
+    ///
+    /// `retryPositionSeconds` 非 nil 时重试从那里继续。播放中失败与换源失败共用。
+    func presentPlaybackFailure(
+        of identity: PlaybackItemIdentity,
+        failure: VideoLoadFailure,
+        retryPositionSeconds: Double?
+    ) {
         guard
             let context = presentedContext,
             let targetPage = context.pages.first(where: {
-                $0.cid == event.identity.cid
+                $0.cid == identity.cid
             })
         else { return }
 
         loadTask.cancel()
         playback.stop()
         clearResumeNotice()
-        requestedPlaybackIdentity = event.identity
+        requestedPlaybackIdentity = identity
         presentedPlaybackIdentity = nil
+        if let retryPositionSeconds {
+            requestedStartSeconds =
+                retryPositionSeconds.isFinite && retryPositionSeconds >= 1
+                ? Int(retryPositionSeconds) : nil
+        }
         state = .failedPage(
             context: context,
             targetPage: targetPage,
-            failure: .playback
+            failure: failure
         )
     }
 
-    private func recordAuthenticationInvalidationIfNeeded(
+    func recordAuthenticationInvalidationIfNeeded(
         _ error: ContentApplicationError
     ) {
         guard error.requiresAccountRevalidation else { return }
@@ -679,7 +721,7 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         }
     }
 
-    private func clearResumeNotice() {
+    func clearResumeNotice() {
         resumeActionTask.cancel()
         resumeNotice = nil
     }

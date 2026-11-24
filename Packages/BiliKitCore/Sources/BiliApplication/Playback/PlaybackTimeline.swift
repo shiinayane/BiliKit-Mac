@@ -54,17 +54,46 @@ public enum PlaybackResumePolicy {
     public static let completedThresholdSeconds = 5.0
 }
 
-/// 播放器 adapter 发布的终态失败，带失败时的 identity 与 load intent。
+/// 播放器 adapter 发布的终态失败，带失败时的 identity、load intent 与播放位置。
 ///
-/// 订阅方（播放页的 `VideoViewModel`）必须同时比对两者，只处理仍是当前加载意图的失败，丢弃旧 item
+/// 订阅方（播放页的 `VideoViewModel`）必须同时比对 identity 与 intent，只处理仍是当前加载意图的失败，丢弃旧 item
 /// 的事件。
 public struct PlaybackFailureEvent: Sendable, Equatable {
     public let identity: PlaybackItemIdentity
     public let intent: PlaybackLoadIntent
+    /// 失败时时间线上的播放位置；重试据此从原处继续。
+    public let positionSeconds: Double
 
-    public init(identity: PlaybackItemIdentity, intent: PlaybackLoadIntent) {
+    public init(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        positionSeconds: Double
+    ) {
         self.identity = identity
         self.intent = intent
+        self.positionSeconds = positionSeconds
+    }
+}
+
+/// 当前 item 的媒体地址已过期或即将过期，adapter 已停住播放器等待换源。
+///
+/// 带 identity、load intent 与此刻的播放位置。订阅方（播放页的 `VideoViewModel`）与 `PlaybackFailureEvent` 一样比对 identity 与 intent；接受后重取同一分 P 的
+/// playurl 并调用 `PlaybackControlling.refreshSource`，不能换源时必须 `stop` 并呈现失败，否则播放器一直停在原处。
+/// 等待换源期间用户再继续播放或拖动，adapter 会再发一次同样的事件，订阅方按“已在换源”忽略。
+public struct PlaybackSourceExpiryEvent: Sendable, Equatable {
+    public let identity: PlaybackItemIdentity
+    public let intent: PlaybackLoadIntent
+    /// 发出事件时要从哪里继续：当前位置，或被推迟的拖动的目标位置。
+    public let positionSeconds: Double
+
+    public init(
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent,
+        positionSeconds: Double
+    ) {
+        self.identity = identity
+        self.intent = intent
+        self.positionSeconds = positionSeconds
     }
 }
 
@@ -183,6 +212,20 @@ public protocol PlaybackControlling: AnyObject {
     /// 只发布 adapter 已按当前 item token／generation 验证过的终态失败。每次调用得到独立订阅，
     /// 只收到此后的事件；一个订阅者结束不影响其他订阅者。
     func playbackFailureEvents() -> AsyncStream<PlaybackFailureEvent>
+    /// 当前 item 需要换源时发布；订阅语义与 `playbackFailureEvents` 相同。
+    ///
+    /// 地址已过期或即将过期时，继续播放、拖动与播放中的失败都改发这个事件，而不是直接播放或报告失败。
+    func playbackSourceExpiryEvents() -> AsyncStream<PlaybackSourceExpiryEvent>
+    /// 用新取得的同一分 P 播放数据替换当前 item：从原位置（或被推迟的拖动目标）继续，保留暂停或播放状态、
+    /// 音轨与字幕选择，identity 与 intent 不变。
+    ///
+    /// identity 或 intent 已不是当前 item 时抛 `CancellationError`，什么也不动；重建失败时抛错，此时当前 item
+    /// 已经释放，调用方按播放失败处理。
+    func refreshSource(
+        _ playback: VideoPlayback,
+        identity: PlaybackItemIdentity,
+        intent: PlaybackLoadIntent
+    ) async throws
     /// 准备并安装播放项目；`startPositionSeconds` 为续播位置，就绪时 item 即位于该处
     /// （不支持起播位置的媒体忽略它、从头播放）。
     func load(
@@ -222,8 +265,8 @@ package struct PlaybackTimelineItemToken: Sendable, Equatable {
 /// 以不可复用 item token 拒绝旧 AVPlayer observer 写回的时间线状态容器。
 ///
 /// 由 BiliPlayback 的 `AVPlayerTimelineAdapter` 持有并写入，它在每个新 item 时调用 `beginItem`
-/// 取得 token。拥有当前快照、当前 token、`AsyncBroadcast` 订阅与同步 observer 表，不拥有 AVPlayer
-/// 或 KVO observation。只有当前 token 的写入生效，`clear(token: nil)` 不比对 token；
+/// 取得 token，换源时调用 `beginReplacementItem`。拥有当前快照、当前 token、`AsyncBroadcast` 订阅与同步 observer 表，
+/// 不拥有 AVPlayer 或 KVO observation。只有当前 token 的写入生效，`clear(token: nil)` 不比对 token；
 /// 相同快照不重复发布。`discontinuityGeneration` 在 `beginItem`、`markDiscontinuity` 与 `clear`
 /// 时递增。
 @MainActor
@@ -271,6 +314,18 @@ package final class PlaybackTimelineStore {
                 loadIntent: loadIntent
             )
         )
+        return token
+    }
+
+    /// 换源：为当前 identity 与 intent 的新 item 领取 token，保留位置与时长，速率归零、状态记为暂停。
+    ///
+    /// 不像 `beginItem` 那样回到 0 秒与 loading：观看进度与 Now Playing 把换源看作同一次观看里的一次暂停，换源后
+    /// 开播按“暂停 → 播放”继续，而不是另起一段。旧 token 的写入随之失效；不推进 `discontinuityGeneration`，新 item
+    /// 就绪时由 adapter 按实际位置标记。
+    package func beginReplacementItem() -> PlaybackTimelineItemToken {
+        let token = PlaybackTimelineItemToken(value: UUID())
+        currentToken = token
+        publish(currentSnapshot.replacing(rate: 0, state: .paused))
         return token
     }
 
