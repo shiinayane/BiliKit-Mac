@@ -43,16 +43,14 @@ struct BrowseVideoCardMenuTests {
                 )
             ),
             SearchNativeGridView.makePresentation(
-                SearchVideoCardPresentation(
-                    video: SearchVideo(
-                        bvid: "BV1Search",
-                        title: "搜索结果",
-                        coverURL: nil,
-                        owner: Self.owner,
-                        statistics: Self.statistics,
-                        durationSeconds: 60,
-                        publishedAt: Self.publishedAt
-                    )
+                SearchVideo(
+                    bvid: "BV1Search",
+                    title: "搜索结果",
+                    coverURL: nil,
+                    owner: Self.owner,
+                    statistics: Self.statistics,
+                    durationSeconds: 60,
+                    publishedAt: Self.publishedAt
                 )
             )
         ]
