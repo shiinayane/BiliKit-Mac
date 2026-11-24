@@ -82,7 +82,8 @@ public protocol DeviceIdentityStoring: Sendable {
 
 /// 请求管线取设备 Cookie 的 port；`BiliAPIClient` 只在网页端读取（`anonymous`、`accountRead`）时调用。
 ///
-/// 返回授权器之后并入的 Cookie 片段；永远不失败，取不到下发值时由实现给出本地值。
+/// 返回授权器之后并入的 Cookie 片段；取不到下发值时由实现给出本地值。只在调用方任务取消时抛出
+/// `CancellationError`，并且必须立即响应取消，不能让被取消的请求等到准备结束。
 public protocol DeviceCookieProviding: Sendable {
-    func deviceCookie() async -> String
+    func deviceCookie() async throws -> String
 }

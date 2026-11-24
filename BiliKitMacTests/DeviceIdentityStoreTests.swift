@@ -46,7 +46,9 @@ struct DeviceIdentityStoreTests {
                 "deviceIdentity.issuedAt": 1
             ],
             // 缺 buvid3。
-            ["deviceIdentity.schema": 1, "deviceIdentity.issuedAt": 1]
+            ["deviceIdentity.schema": 1, "deviceIdentity.issuedAt": 1],
+            // 缺版本键，只剩残留的值。
+            ["deviceIdentity.buvid3": "FIXTURE-3infoc", "deviceIdentity.issuedAt": 1]
         ] as [[String: any Sendable]]
     )
     func unreadableStoredIdentityIsDeletedOnLoad(stored: [String: any Sendable]) {

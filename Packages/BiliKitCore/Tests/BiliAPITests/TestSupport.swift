@@ -267,7 +267,7 @@ extension BiliAPIClient {
 struct StubDeviceCookies: DeviceCookieProviding {
     static let cookie = "buvid3=FIXTURE_DEVICE; b_nut=1"
 
-    func deviceCookie() async -> String { Self.cookie }
+    func deviceCookie() async throws -> String { Self.cookie }
 }
 
 /// 设备标识存储的替身：只在内存，并记录写入与清除的次数。

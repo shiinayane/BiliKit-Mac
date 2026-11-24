@@ -23,7 +23,6 @@ final class UserDefaultsDeviceIdentityStore: DeviceIdentityStoring, @unchecked S
     }
 
     func load() -> DeviceIdentity? {
-        guard defaults.object(forKey: Key.schema) != nil else { return nil }
         guard defaults.integer(forKey: Key.schema) == Self.schemaVersion,
             let buvid3 = defaults.string(forKey: Key.buvid3),
             let issuedAt = defaults.object(forKey: Key.issuedAt) as? Int64,

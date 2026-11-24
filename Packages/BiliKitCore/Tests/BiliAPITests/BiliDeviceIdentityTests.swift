@@ -17,8 +17,8 @@ struct BiliDeviceIdentityTests {
         let transport = StubTransport(responses: [activationResponse()])
         let deviceIdentity = makeIdentity(store: MemoryDeviceIdentityStore(stored), transport)
 
-        let first = await deviceIdentity.deviceCookie()
-        let second = await deviceIdentity.deviceCookie()
+        let first = try await deviceIdentity.deviceCookie()
+        let second = try await deviceIdentity.deviceCookie()
 
         #expect(first == "buvid3=STORED-3infoc; b_nut=\(Self.now - 60); buvid4=STORED-4")
         #expect(second == first)
@@ -46,7 +46,7 @@ struct BiliDeviceIdentityTests {
         async let second = deviceIdentity.deviceCookie()
         await transport.waitForRequests(1)
         transport.resumeSuspendedRequest()
-        let cookies = await [first, second]
+        let cookies = try await [first, second]
 
         let expected = "buvid3=ISSUED-3infoc; b_nut=\(Self.now); buvid4=ISSUED-4"
         #expect(cookies == [expected, expected])
@@ -56,6 +56,35 @@ struct BiliDeviceIdentityTests {
         #expect(requests.first?.headers["Cookie"] == nil)
         #expect(requests.last?.headers["Cookie"] == expected)
         #expect(store.identity == (try identity("ISSUED", issuedAt: Self.now)))
+        #expect(store.saveCount == 1)
+    }
+
+    /// 未激活的标识会让搜索收到 `v_voucher`，所以调用方要等激活返回；等待中的取消立即结束这个调用方，
+    /// 但不取消共享的准备，后来者照常拿到同一组。
+    @Test(.timeLimit(.minutes(1)))
+    func callersWaitForActivationAndTheirCancellationLeavesThePreparationRunning() async throws {
+        let transport = StubTransport([
+            .response(spiResponse("ISSUED")),
+            .suspended(activationResponse())
+        ])
+        let store = MemoryDeviceIdentityStore()
+        let deviceIdentity = makeIdentity(store: store, transport)
+
+        let cancelled = Task { try await deviceIdentity.deviceCookie() }
+        await transport.waitForRequests(2)
+        cancelled.cancel()
+        // 激活仍挂起：这个调用方没有提前拿到标识，取消也不必等准备结束。
+        await #expect(throws: CancellationError.self) {
+            try await cancelled.value
+        }
+
+        async let later = deviceIdentity.deviceCookie()
+        transport.resumeSuspendedRequest()
+
+        #expect(try await later == "buvid3=ISSUED-3infoc; b_nut=\(Self.now); buvid4=ISSUED-4")
+        #expect(
+            transport.capturedRequests().map(\.url.path) == [Self.spiPath, Self.activationPath]
+        )
         #expect(store.saveCount == 1)
     }
 
@@ -72,7 +101,7 @@ struct BiliDeviceIdentityTests {
         let transport = StubTransport(responses: [response, activationResponse()])
         let deviceIdentity = makeIdentity(store: store, transport)
 
-        let cookie = await deviceIdentity.deviceCookie()
+        let cookie = try await deviceIdentity.deviceCookie()
 
         let local =
             /buvid3=[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{17}infoc; b_nut=1700000000/
@@ -80,7 +109,7 @@ struct BiliDeviceIdentityTests {
         #expect(store.saveCount == 0)
         #expect(transport.capturedRequests().last?.headers["Cookie"] == cookie)
         // 同一进程内沿用这一个本地值，不再反复请求 spi 或激活。
-        #expect(await deviceIdentity.deviceCookie() == cookie)
+        #expect(try await deviceIdentity.deviceCookie() == cookie)
         #expect(transport.capturedRequests().count == 2)
     }
 
@@ -94,7 +123,7 @@ struct BiliDeviceIdentityTests {
         let transport = StubTransport(responses: [spiResponse("RENEWED"), activationResponse()])
         let deviceIdentity = makeIdentity(store: store, transport)
 
-        let cookie = await deviceIdentity.deviceCookie()
+        let cookie = try await deviceIdentity.deviceCookie()
 
         #expect(cookie.hasPrefix("buvid3=RENEWED-3infoc;"))
         #expect(store.identity == (try identity("RENEWED", issuedAt: Self.now)))
@@ -115,7 +144,7 @@ struct BiliDeviceIdentityTests {
         await deviceIdentity.invalidateAuthenticatedSession()
 
         // 旧会话发起的准备被取消、不激活；等待者按新代次重新准备，旧值既不返回也不写回。
-        #expect(await cookie.hasPrefix("buvid3=NEW-3infoc;"))
+        #expect(try await cookie.hasPrefix("buvid3=NEW-3infoc;"))
         #expect(
             transport.capturedRequests().map(\.url.path)
                 == [Self.spiPath, Self.spiPath, Self.activationPath]

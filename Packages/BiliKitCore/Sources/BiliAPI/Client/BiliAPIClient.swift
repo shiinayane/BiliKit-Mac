@@ -310,8 +310,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         access: RequestAccess,
         maximumResponseSize: Int
     ) async throws -> AuthorizedHTTPResponse {
-        // 在第一个 await 之前取出 client：授权期间会话失效换入的新 transport 不会被这次请求使用。
-        let requestClient = httpClient
         // 只有可能带凭据的访问绑定会话 epoch；匿名请求不比对。
         let requestSessionEpoch =
             access.bindsAuthenticatedSession ? authenticatedSessionEpoch : nil
@@ -357,7 +355,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             authorizationProvenance = .anonymous
         }
         if access.carriesDeviceCookie, let deviceCookies {
-            let deviceCookie = await deviceCookies.deviceCookie()
+            let deviceCookie = try await deviceCookies.deviceCookie()
             var headers = request.headers
             headers["Cookie"] = [headers["Cookie"], deviceCookie]
                 .compactMap { $0 }
@@ -376,6 +374,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw CancellationError()
         }
 
+        // 发送前才取 client：绑定会话的请求刚确认 epoch 未变，取到的仍是授权时那一个，授权期间换入的 transport 不会被
+        // 它使用；匿名请求在等设备标识期间遇到会话失效时改用换入的 transport，不在已失效的旧 transport 上以网络失败结束。
+        let requestClient = httpClient
         let response: HTTPResponse
         do {
             response = try await requestClient.send(request)

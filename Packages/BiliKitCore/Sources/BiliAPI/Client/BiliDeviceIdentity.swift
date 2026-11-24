@@ -38,18 +38,38 @@ public actor BiliDeviceIdentity: DeviceCookieProviding, AuthenticatedSessionInva
     static let preparationTimeout: TimeInterval = 5
 
     /// `transport` 必须是不保存 Cookie 的 ephemeral transport（`credentialFreeEphemeral`），spi 与激活都只带这里写入的头。
-    public init(
+    public init(store: any DeviceIdentityStoring, transport: any HTTPTransport) {
+        self.init(
+            store: store,
+            transport: transport,
+            clock: { Int64(Date().timeIntervalSince1970) }
+        )
+    }
+
+    init(
         store: any DeviceIdentityStoring,
         transport: any HTTPTransport,
-        clock: @escaping @Sendable () -> Int64 = { Int64(Date().timeIntervalSince1970) }
+        clock: @escaping @Sendable () -> Int64
     ) {
         self.store = store
         httpClient = HTTPClient(transport: transport)
         self.clock = clock
     }
 
-    public func deviceCookie() async -> String {
-        await identity().cookieHeader
+    /// 等待者取消时立即以 `CancellationError` 结束，共享的准备照常完成。
+    ///
+    /// `Task.value` 不响应等待者的取消，所以经一个 `AsyncStream` 转交：等待者取消时迭代立即结束；中继 Task 仍等准备
+    /// 完成并记下当前值，准备只由会话失效取消，不因任何一个等待者离开而中断。
+    public func deviceCookie() async throws -> String {
+        try Task.checkCancellation()
+        if let current { return current.cookieHeader }
+        let (cookies, continuation) = AsyncStream.makeStream(of: String.self)
+        Task {
+            continuation.yield(await identity().cookieHeader)
+            continuation.finish()
+        }
+        for await cookie in cookies { return cookie }
+        throw CancellationError()
     }
 
     /// 登出与凭据失效：丢弃当前与持久化的标识，取消在途准备；下一个网页端读取重新准备一组。
