@@ -26,7 +26,7 @@ public struct WatchLaterItem: Identifiable, Sendable, Equatable {
     public let addedAt: Date?
     /// nil 表示可以进入播放。
     public let unavailability: LibraryItemUnavailability?
-    /// 列表给出的第一个分 P 的 CID（实测各来源都是第一个分 P）；只用来提前请求播放清单，打开后以详情核对。
+    /// 列表给出的第一个分 P 的 CID，只作提前请求播放清单的提示（见 docs/ARCHITECTURE.md「播放页布局」）。
     public let firstPageCID: Int64?
 
     public init(
