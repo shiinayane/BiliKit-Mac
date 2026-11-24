@@ -22,6 +22,16 @@ public enum LibraryVideoListState<Item: Sendable & Equatable, Cursor: Equatable 
         continuation: Cursor
     )
     case failed(ContentApplicationError)
+
+    /// 已经显示的条目；没有加载完成的列表时为空。
+    var loadedItems: [Item] {
+        switch self {
+        case .loaded(let items, _, _), .loadingMore(let items, _):
+            items
+        case .idle, .loading, .failed:
+            []
+        }
+    }
 }
 
 /// 资料库里只按账户读取的分页列表（观看历史、稍后再看、关注）共用的 ViewModel：拥有当前登录会话的列表

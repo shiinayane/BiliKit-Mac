@@ -91,7 +91,7 @@ public struct PopularVideo: Identifiable, Sendable, Equatable {
     public let statistics: VideoStatistics
     public let durationSeconds: Int
     public let publishedAt: Date
-    /// 列表给出的第一个分 P 的 CID（多 P 视频也是第一个分 P，实测）；只用来提前请求播放清单，打开后以详情核对。
+    /// 列表给出的第一个分 P 的 CID（实测各来源都是第一个分 P）；只用来提前请求播放清单，打开后以详情核对。
     public let firstPageCID: Int64?
 
     public init(
@@ -164,6 +164,8 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
     public let recommendationReason: String?
     /// 卡片给出的「不感兴趣」原因，按卡片顺序；为空时这一条不提供反馈。
     public let dislikeReasons: [RecommendationDislikeReason]
+    /// 列表给出的第一个分 P 的 CID（实测各来源都是第一个分 P）；只用来提前请求播放清单，打开后以详情核对。
+    public let firstPageCID: Int64?
 
     public init(
         bvid: String,
@@ -175,7 +177,8 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
         durationSeconds: Int,
         publishedAt: Date?,
         recommendationReason: String?,
-        dislikeReasons: [RecommendationDislikeReason] = []
+        dislikeReasons: [RecommendationDislikeReason] = [],
+        firstPageCID: Int64? = nil
     ) {
         self.bvid = bvid
         self.title = title
@@ -187,6 +190,7 @@ public struct RecommendedVideo: Identifiable, Sendable, Equatable {
         self.publishedAt = publishedAt
         self.recommendationReason = recommendationReason
         self.dislikeReasons = dislikeReasons
+        self.firstPageCID = firstPageCID
     }
 }
 
@@ -237,6 +241,8 @@ public struct RelatedVideo: Identifiable, Sendable, Equatable {
     public let viewCount: Int64
     public let danmakuCount: Int64
     public let durationSeconds: Int?
+    /// 列表给出的第一个分 P 的 CID（实测各来源都是第一个分 P）；只用来提前请求播放清单，打开后以详情核对。
+    public let firstPageCID: Int64?
 
     public init(
         bvid: String,
@@ -245,7 +251,8 @@ public struct RelatedVideo: Identifiable, Sendable, Equatable {
         ownerName: String,
         viewCount: Int64,
         danmakuCount: Int64,
-        durationSeconds: Int?
+        durationSeconds: Int?,
+        firstPageCID: Int64? = nil
     ) {
         self.bvid = bvid
         self.title = title
@@ -254,6 +261,7 @@ public struct RelatedVideo: Identifiable, Sendable, Equatable {
         self.viewCount = viewCount
         self.danmakuCount = danmakuCount
         self.durationSeconds = durationSeconds
+        self.firstPageCID = firstPageCID
     }
 }
 

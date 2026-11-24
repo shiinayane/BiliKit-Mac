@@ -9,7 +9,7 @@ import Testing
 /// 固定首页推荐与热门的响应契约：推荐走 App 端接口、经 App 授权器签名并过滤不支持的卡片，游标沿最后一张卡片的
 /// `idx` 续传；-101 只在请求带了凭据时是凭据失效；HTML 风控页、API 拒绝与缺少必需字段分别报非 JSON、保留错误码与解码失败。
 ///
-/// 热门的 `cid` 只作第一个分 P 的提示：缺失或非正时为 nil，不影响整页。
+/// 热门的 `cid` 与推荐的 `player_args.cid` 只作第一个分 P 的提示：缺失或非正时为 nil，不影响整页。
 struct BiliAPIClientFeedTests {
     /// 一批里：可播放的视频（有 BV 号与只有 av 号各一张）、商业推广（`card_goto` 与 `ad_info` 两种）、没有
     /// `player_args` 的视频与直播；最后一张卡片的 `idx` 是下一批游标。
@@ -17,7 +17,7 @@ struct BiliAPIClientFeedTests {
     /// 第一张卡片的「不感兴趣」原因里混有重复 id、空名字与形状不对的原因，另有不解码的举报类 `feedbacks`。
     static let appFeedBody = #"""
         {"code":0,"message":"0","data":{"items":[
-          {"goto":"av","card_goto":"av","param":"170001","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","cover":"//i0.hdslb.com/a.jpg","args":{"up_id":10001,"up_name":"作者"},"avatar":{"cover":"//i1.hdslb.com/a.jpg"},"player_args":{"aid":170001,"duration":125},"cover_left_text_1":"2:05","cover_left_text_2":"25.4万观看","cover_left_text_3":"13弹幕","desc":"作者 · 6月11日","bottom_rcmd_reason":"已关注","three_point":{"dislike_reasons":[{"id":4,"name":"UP主:作者"},{"id":12,"name":" 此类内容过多 "},{"id":4,"name":"重复"},{"id":13,"name":""},{"id":"x","name":"坏"}],"feedbacks":[{"id":1,"name":"恐怖血腥"}]},"idx":1700000001},
+          {"goto":"av","card_goto":"av","param":"170001","bvid":"BV1FixtureA1","title":"推荐 &amp; 视频","cover":"//i0.hdslb.com/a.jpg","args":{"up_id":10001,"up_name":"作者"},"avatar":{"cover":"//i1.hdslb.com/a.jpg"},"player_args":{"aid":170001,"cid":900001,"duration":125},"cover_left_text_1":"2:05","cover_left_text_2":"25.4万观看","cover_left_text_3":"13弹幕","desc":"作者 · 6月11日","bottom_rcmd_reason":"已关注","three_point":{"dislike_reasons":[{"id":4,"name":"UP主:作者"},{"id":12,"name":" 此类内容过多 "},{"id":4,"name":"重复"},{"id":13,"name":""},{"id":"x","name":"坏"}],"feedbacks":[{"id":1,"name":"恐怖血腥"}]},"idx":1700000001},
           {"goto":"av","card_goto":"av","param":"170002","title":"只有 av 号","cover":"//i0.hdslb.com/b.jpg","args":{"up_id":10002,"up_name":"另一位"},"player_args":{"aid":170002,"duration":60},"desc":"另一位","idx":1700000002},
           {"goto":"av","card_goto":"ad_av","param":"3","title":"广告","args":{"up_id":3,"up_name":"广告主"},"player_args":{"duration":10},"idx":1700000003},
           {"goto":"av","card_goto":"av","param":"4","title":"推广","args":{"up_id":4,"up_name":"推广主"},"player_args":{"duration":10},"ad_info":{"creative_id":1},"idx":1700000004},
@@ -56,6 +56,7 @@ struct BiliAPIClientFeedTests {
         #expect(first.viewCount == 254_000)
         #expect(first.danmakuCount == 13)
         #expect(first.durationSeconds == 125)
+        #expect(page.videos.map(\.firstPageCID) == [900_001, nil])
         #expect(first.publishedAt != nil)
         #expect(first.recommendationReason == "已关注")
         #expect(

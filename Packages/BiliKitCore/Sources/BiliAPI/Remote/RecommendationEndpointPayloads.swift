@@ -44,6 +44,7 @@ struct AppFeedItemPayload: Decodable, Sendable {
     let uploaderName: String?
     let avatar: String?
     let durationSeconds: Int?
+    let firstPageCID: Int64?
     let hasPlayerArguments: Bool
     let coverTexts: [String]
     let description: String?
@@ -103,6 +104,7 @@ struct AppFeedItemPayload: Decodable, Sendable {
 
     private struct PlayerArguments: Decodable, Sendable {
         let duration: Int?
+        let cid: LossyDecodable<FlexibleInt64>?
     }
 
     init(from decoder: any Decoder) throws {
@@ -128,6 +130,7 @@ struct AppFeedItemPayload: Decodable, Sendable {
         )
         hasPlayerArguments = playerArguments != nil
         durationSeconds = playerArguments?.duration
+        firstPageCID = firstPageCIDHint(playerArguments?.cid?.value?.value)
         coverTexts = [.coverLeftText1, .coverLeftText2, .coverLeftText3].compactMap {
             container.decodeLossyIfPresent(String.self, forKey: $0)
         }
@@ -177,7 +180,8 @@ struct AppFeedItemPayload: Decodable, Sendable {
                 AppFeedCardText.publishedDate(inDescription: $0, now: now)
             },
             recommendationReason: reason,
-            dislikeReasons: Self.models(of: dislikeReasons)
+            dislikeReasons: Self.models(of: dislikeReasons),
+            firstPageCID: firstPageCID
         )
     }
 

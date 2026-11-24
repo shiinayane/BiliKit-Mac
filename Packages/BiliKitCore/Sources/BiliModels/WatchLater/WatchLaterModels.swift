@@ -26,6 +26,8 @@ public struct WatchLaterItem: Identifiable, Sendable, Equatable {
     public let addedAt: Date?
     /// nil 表示可以进入播放。
     public let unavailability: LibraryItemUnavailability?
+    /// 列表给出的第一个分 P 的 CID（实测各来源都是第一个分 P）；只用来提前请求播放清单，打开后以详情核对。
+    public let firstPageCID: Int64?
 
     public init(
         bvid: String,
@@ -35,7 +37,8 @@ public struct WatchLaterItem: Identifiable, Sendable, Equatable {
         durationSeconds: Int?,
         progress: WatchLaterProgress,
         addedAt: Date?,
-        unavailability: LibraryItemUnavailability? = nil
+        unavailability: LibraryItemUnavailability? = nil,
+        firstPageCID: Int64? = nil
     ) {
         self.bvid = bvid
         self.title = title
@@ -45,5 +48,6 @@ public struct WatchLaterItem: Identifiable, Sendable, Equatable {
         self.progress = progress
         self.addedAt = addedAt
         self.unavailability = unavailability
+        self.firstPageCID = firstPageCID
     }
 }
