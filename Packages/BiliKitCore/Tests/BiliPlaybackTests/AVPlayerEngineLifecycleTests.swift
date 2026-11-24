@@ -15,7 +15,8 @@ enum AVPlayerEngineSuites {}
 extension AVPlayerEngineSuites {
     /// 固定引擎生命周期契约：时间线随播放、倍速、seek、替换与停止发布，就绪后的失败通知去重，
     /// 每次 `playbackFailureEvents()` 是独立订阅、取消其中一个不影响其他订阅，progressive item 就绪时
-    /// 带有效的正向结束时间，替换 load 取消旧媒体请求，替换与释放停止此前所有 loopback 会话。
+    /// 带有效的正向结束时间，替换 load 取消旧媒体请求，替换与释放停止此前所有 loopback 会话；地址过期后
+    /// 播放中的失败与拖动改为请求换源，换源在原处接续且每个 item 只兜底一次。
     @Suite(.serialized, .timeLimit(.minutes(2)))
     struct AVPlayerEngineLifecycleTests {
         @Test
@@ -252,6 +253,236 @@ extension AVPlayerEngineSuites {
 
             #expect(await first.next()?.identity == identity)
             #expect(await second.next()?.identity == identity)
+        }
+
+        /// 地址过期后的播放中失败先换源，换源后的 item 再失败才报告失败。
+        ///
+        /// 第一次失败不发失败事件、不释放 item、时间线不写 failed，换源后的 item 继续播放。换源得到的地址一就绪就在余量内（本机时钟偏快），它再失败就按原来的失败路径报告，不再换源。
+        @Test
+        @MainActor
+        func expiredSourceFailureRefreshesOnceThenReportsFailure() async throws {
+            let fixture = try makeFourSecondMedia(host: "expired-failure.fixture.bilivideo.com")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
+            )
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            var expiries = engine.playbackSourceExpiryEvents().makeAsyncIterator()
+            var failures = engine.playbackFailureEvents().makeAsyncIterator()
+            let identity = PlaybackItemIdentity(bvid: "BV1ExpiredFailure", cid: 900_030)
+            let intent = PlaybackLoadIntent()
+            let expiredPlayback = VideoPlayback(
+                media: .dash(
+                    PlaybackManifest(
+                        videoRepresentations: [fixture.video],
+                        audioTracks: [.original(representations: [fixture.audio])]
+                    )
+                ),
+                mediaHeaders: [:],
+                mediaExpiresAt: Date(timeIntervalSinceNow: -60)
+            )
+
+            try await engine.load(
+                expiredPlayback,
+                identity: identity,
+                intent: intent,
+                startPositionSeconds: nil
+            )
+            #expect(
+                await engine.beginPlayback(identity: identity, intent: intent)
+                    == .startedAtBeginning
+            )
+            let expiredItem = try #require(engine.player.currentItem)
+            NotificationCenter.default.post(
+                name: AVPlayerItem.failedToPlayToEndTimeNotification,
+                object: expiredItem
+            )
+            let expiry = await expiries.next()
+
+            #expect(expiry?.identity == identity)
+            #expect(expiry?.intent == intent)
+            #expect(engine.player.currentItem === expiredItem)
+            #expect(engine.currentTimelineSnapshot.state == .paused)
+
+            try await engine.refreshSource(expiredPlayback, identity: identity, intent: intent)
+            let refreshedItem = try #require(engine.player.currentItem)
+            #expect(refreshedItem !== expiredItem)
+            #expect(engine.currentTimelineSnapshot.identity == identity)
+            #expect(engine.currentTimelineSnapshot.loadIntent == intent)
+            #expect(
+                [.playing, .buffering].contains(engine.currentTimelineSnapshot.state)
+            )
+
+            NotificationCenter.default.post(
+                name: AVPlayerItem.failedToPlayToEndTimeNotification,
+                object: refreshedItem
+            )
+            let failure = await failures.next()
+
+            #expect(failure?.identity == identity)
+            #expect(failure?.intent == intent)
+            #expect(engine.player.currentItem == nil)
+            #expect(engine.currentTimelineSnapshot.state == .failed)
+        }
+
+        /// 地址过期后暂停中的拖动不发给旧 item：先停住并请求换源；换源后的新 item 落在拖动目标、仍然暂停，
+        /// 选中的 AI 配音与打开的字幕都保留。
+        @Test
+        @MainActor
+        func deferredSeekLandsOnTheRefreshedItemKeepingPauseAudioAndSubtitles() async throws {
+            let fixture = try makeFourSecondMedia(host: "expired-seek.fixture.bilivideo.com")
+            let dubData = try fixtureBase64Data(named: "audio-aac-4s-global-sidx.mp4")
+            let dubURL = try #require(URL(string: "https://expired-seek.fixture.bilivideo.com/dub"))
+            let dub = try makeFixtureTrack(
+                id: 30_216,
+                kind: .audio,
+                codecs: "mp4a.40.2",
+                bandwidth: 32_000,
+                data: dubData,
+                primaryURL: dubURL
+            ).representation
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(
+                    FixtureRangeTransport(media: fixture.media.merging([dubURL: dubData]) { $1 })
+                ),
+                subtitleRepository: FixtureSubtitleRepository(
+                    catalog: .tracks([
+                        SubtitleTrack(
+                            id: "standard-zh",
+                            languageCode: "zh",
+                            displayName: "中文",
+                            kind: .standard
+                        )
+                    ])
+                )
+            )
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            var expiries = engine.playbackSourceExpiryEvents().makeAsyncIterator()
+            let identity = PlaybackItemIdentity(bvid: "BV1ExpiredSeek", cid: 900_031)
+            let intent = PlaybackLoadIntent()
+            let media = PlaybackMedia.dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    audioTracks: [
+                        .original(representations: [fixture.audio]),
+                        PlaybackAudioTrack(
+                            id: "machine-generated:en",
+                            displayName: "English（AI）",
+                            languageTag: "en",
+                            role: .machineGenerated,
+                            isDefault: false,
+                            isAutoselect: false,
+                            representations: [dub]
+                        )
+                    ]
+                )
+            )
+            try await engine.load(
+                VideoPlayback(
+                    media: media,
+                    mediaHeaders: [:],
+                    mediaExpiresAt: Date(timeIntervalSinceNow: -60)
+                ),
+                identity: identity,
+                intent: intent,
+                startPositionSeconds: nil
+            )
+            guard case .enabled = await engine.toggleNativeSubtitles() else {
+                Issue.record("fixture 字幕没有打开")
+                return
+            }
+            let expiredItem = try #require(engine.player.currentItem)
+            let expiredAudio = try #require(
+                try await expiredItem.asset.loadMediaSelectionGroup(for: .audible)
+            )
+            let dubOption = try #require(
+                expiredAudio.options.first { $0.extendedLanguageTag == "en" }
+            )
+            expiredItem.select(dubOption, in: expiredAudio)
+
+            #expect(engine.requestSeek(to: .seconds(2)))
+            let expiry = await expiries.next()
+
+            #expect(expiry?.positionSeconds == 2)
+            #expect(engine.player.currentItem === expiredItem)
+            #expect(expiredItem.currentTime().seconds < 0.5)
+
+            try await engine.refreshSource(
+                VideoPlayback(media: media, mediaHeaders: [:]),
+                identity: identity,
+                intent: intent
+            )
+            let refreshedItem = try #require(engine.player.currentItem)
+            let subtitles = try #require(
+                try await refreshedItem.asset.loadMediaSelectionGroup(for: .legible)
+            )
+            let audio = try #require(
+                try await refreshedItem.asset.loadMediaSelectionGroup(for: .audible)
+            )
+
+            #expect(refreshedItem !== expiredItem)
+            #expect(engine.currentTimelineSnapshot.state == .paused)
+            #expect(abs(engine.currentTimelineSnapshot.positionSeconds - 2) < 0.25)
+            #expect(engine.player.rate == 0)
+            #expect(refreshedItem.currentMediaSelection.selectedMediaOption(in: subtitles) != nil)
+            #expect(
+                refreshedItem.currentMediaSelection.selectedMediaOption(in: audio)?
+                    .extendedLanguageTag == "en"
+            )
+        }
+
+        /// 地址过期后从暂停继续播放不碰旧 item，经 engine 的 `play` 与 AVPlayerView 控件直接让 AVPlayer 播放都一样：
+        /// 先停住并请求换源，换源后在原位置继续播放。
+        @Test(arguments: [false, true])
+        @MainActor
+        func resumingAnExpiredSourceRefreshesBeforePlaying(bypassesEngine: Bool) async throws {
+            let fixture = try makeFourSecondMedia(host: "expired-resume.fixture.bilivideo.com")
+            let engine = makeFixtureEngine(
+                bridge: makeFixtureBridge(FixtureRangeTransport(media: fixture.media))
+            )
+            engine.player.isMuted = true
+            defer { engine.stop() }
+            var expiries = engine.playbackSourceExpiryEvents().makeAsyncIterator()
+            let identity = PlaybackItemIdentity(bvid: "BV1ExpiredResume", cid: 900_032)
+            let intent = PlaybackLoadIntent()
+            let media = PlaybackMedia.dash(
+                PlaybackManifest(
+                    videoRepresentations: [fixture.video],
+                    audioTracks: [.original(representations: [fixture.audio])]
+                )
+            )
+            try await engine.load(
+                VideoPlayback(
+                    media: media,
+                    mediaHeaders: [:],
+                    mediaExpiresAt: Date(timeIntervalSinceNow: -60)
+                ),
+                identity: identity,
+                intent: intent,
+                startPositionSeconds: 1
+            )
+
+            if bypassesEngine {
+                engine.player.play()
+            } else {
+                engine.play()
+            }
+            let expiry = await expiries.next()
+
+            #expect(expiry?.identity == identity)
+            #expect(abs((expiry?.positionSeconds ?? 0) - 1) < 0.25)
+            #expect(engine.player.rate == 0)
+            #expect(engine.currentTimelineSnapshot.state == .paused)
+
+            try await engine.refreshSource(
+                VideoPlayback(media: media, mediaHeaders: [:]),
+                identity: identity,
+                intent: intent
+            )
+
+            #expect([.playing, .buffering].contains(engine.currentTimelineSnapshot.state))
+            #expect(abs(engine.currentTimelineSnapshot.positionSeconds - 1) < 0.25)
         }
 
         @Test

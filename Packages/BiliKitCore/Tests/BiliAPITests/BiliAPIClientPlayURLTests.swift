@@ -84,6 +84,45 @@ struct BiliAPIClientPlayURLTests {
         #expect(queryItems?.contains(URLQueryItem(name: "cid", value: "900001")) == true)
     }
 
+    /// 播放器按 `mediaExpiresAt` 决定何时重取 playurl：取所有媒体地址（含备用地址与音频）里最早的
+    /// `deadline`，不合法的值不算；没有任何地址带它时为 nil。
+    @Test
+    func playURLRecordsTheEarliestMediaDeadline() async throws {
+        let response = try mutatedFixture("playurl") { data in
+            var dash = try #require(data["dash"] as? [String: Any])
+            var videos = try #require(dash["video"] as? [[String: Any]])
+            videos[0]["base_url"] =
+                "https://media.fixture.bilivideo.com/video-avc-primary.m4s?deadline=2000000000"
+            videos[0]["backup_url"] = [
+                "https://backup.fixture.bilivideo.com/video-avc.m4s?deadline=1900000000",
+                "https://media.fixture.bilivideo.com/video-avc-primary.m4s?deadline=soon"
+            ]
+            dash["video"] = videos
+            var audios = try #require(dash["audio"] as? [[String: Any]])
+            for index in audios.indices {
+                for key in ["base_url", "baseUrl"] {
+                    if let url = audios[index][key] as? String {
+                        audios[index][key] = url + "?deadline=1950000000"
+                    }
+                }
+            }
+            dash["audio"] = audios
+            data["dash"] = dash
+        }
+        let expiring = try await BiliAPIClient(
+            transport: StubTransport(responses: [response], answersWBINavOnce: true)
+        ).playback(for: "BV1FixtureA1", cid: 900_001)
+        let unmarked = try await BiliAPIClient(
+            transport: StubTransport(
+                responses: [try fixtureResponse("playurl")],
+                answersWBINavOnce: true
+            )
+        ).playback(for: "BV1FixtureA1", cid: 900_001)
+
+        #expect(expiring.mediaExpiresAt == Date(timeIntervalSince1970: 1_900_000_000))
+        #expect(unmarked.mediaExpiresAt == nil)
+    }
+
     @Test
     func voucherBesideRealDataIsNotTreatedAsChallenge() async throws {
         let response = try mutatedFixture("playurl") {

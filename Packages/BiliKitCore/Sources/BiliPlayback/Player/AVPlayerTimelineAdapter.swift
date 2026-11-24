@@ -43,6 +43,14 @@ final class AVPlayerTimelineAdapter {
 
     var onFailed: (@MainActor () -> Void)?
     var onSeekSupersededByExternalJump: (@MainActor (UUID) -> Void)?
+    /// 当前 item 失败时、写 failed 之前调用，参数是失败前的快照；返回 true 表示 engine 改为换源接手，时间线不写
+    /// failed、也不调用 `onFailed`，失败前的位置与状态留给 engine 读取。
+    var recoversFromFailure: (@MainActor (PlaybackTimelineSnapshot) -> Bool)?
+    /// 播放器绕过 engine 开始播放或等数据时调用。
+    ///
+    /// AVPlayerView 自带的控件直接让 AVPlayer 播放，时间线并未经 `play` 记为播放。返回 true 表示 engine 已停住
+    /// 播放器接管这次开播，这次状态变化不写进时间线。
+    var onPlaybackStartedOutsideEngine: (@MainActor () -> Bool)?
 
     var currentSnapshot: PlaybackTimelineSnapshot {
         store.currentSnapshot
@@ -76,6 +84,11 @@ final class AVPlayerTimelineAdapter {
     private var staleSeekLandings: [SeekLanding] = []
     private var interactionTracker = PlaybackInteractionTracker()
     private var startPositionSeconds: Double = 0
+    /// 当前 item 已开始准备、还没 `markReady`。
+    ///
+    /// 期间的失败由 engine 的就绪等待处理（含回退阶梯），time-jump 不是播放中的不连续。不看时间线状态：换源的
+    /// item 准备期间时间线是 paused。
+    private var isAwaitingReadiness = false
 
     init(player: AVPlayer) {
         self.player = player
@@ -99,6 +112,18 @@ final class AVPlayerTimelineAdapter {
         loadIntent: PlaybackLoadIntent = PlaybackLoadIntent(),
         startPositionSeconds: Double = 0
     ) {
+        resetItemState(startPositionSeconds: startPositionSeconds)
+        token = store.beginItem(identity: identity, loadIntent: loadIntent)
+    }
+
+    /// 换源：同一 identity 与 intent 的新 item 从 `startPositionSeconds` 起播，时间线保留位置并记为暂停（见
+    /// `PlaybackTimelineStore.beginReplacementItem`），就绪时按实际位置标记不连续。
+    func beginReplacement(startPositionSeconds: Double) {
+        resetItemState(startPositionSeconds: startPositionSeconds)
+        token = store.beginReplacementItem()
+    }
+
+    private func resetItemState(startPositionSeconds: Double) {
         momentaryRateSession = nil
         observers.reset()
         pendingSeek = nil
@@ -108,8 +133,8 @@ final class AVPlayerTimelineAdapter {
         interactionTracker = PlaybackInteractionTracker(
             startPositionSeconds: startPositionSeconds
         )
-        token = store.beginItem(identity: identity, loadIntent: loadIntent)
         failedToken = nil
+        isAwaitingReadiness = true
     }
 
     /// 为当前 item 安装位置、速率、状态、结束、失败与时间跳变观察，并替换旧观察集合。
@@ -164,6 +189,14 @@ final class AVPlayerTimelineAdapter {
                 }
                 let currentState = self.store.currentSnapshot.state
                 guard currentState != .failed else { return }
+                // engine 自己的 `play` 已同步把时间线写成 buffering 或 playing，到这里只剩绕过 engine 的开播。
+                if observedStatus != .paused,
+                    currentState != .playing, currentState != .buffering,
+                    !self.isAwaitingReadiness,
+                    self.onPlaybackStartedOutsideEngine?() == true
+                {
+                    return
+                }
                 switch observedStatus {
                 case .paused:
                     guard currentState != .ended,
@@ -285,6 +318,7 @@ final class AVPlayerTimelineAdapter {
 
     func markReady(duration: CMTime) {
         guard let token else { return }
+        isAwaitingReadiness = false
         store.markReady(
             token: token,
             durationSeconds: Self.seconds(from: duration)
@@ -431,7 +465,7 @@ final class AVPlayerTimelineAdapter {
 
     func observeTimeJump(at positionSeconds: Double) {
         interactionTracker.observeTimeJump(at: positionSeconds)
-        guard store.currentSnapshot.state != .loading, let token else { return }
+        guard !isAwaitingReadiness, let token else { return }
         if var pendingSeek {
             let currentDistance = abs(
                 pendingSeek.targetSeconds - positionSeconds
@@ -543,6 +577,7 @@ final class AVPlayerTimelineAdapter {
         store.clear(token: token)
         token = nil
         failedToken = nil
+        isAwaitingReadiness = false
     }
 
     private func appendStaleSeekLanding(
@@ -591,12 +626,13 @@ final class AVPlayerTimelineAdapter {
         guard player.currentItem === item,
             self.token == token,
             failedToken != token,
-            store.currentSnapshot.state != .loading
+            !isAwaitingReadiness
         else { return }
 
         failedToken = token
         momentaryRateSession = nil
         observers.reset()
+        if recoversFromFailure?(store.currentSnapshot) == true { return }
         store.markFailed(token: token)
         onFailed?()
     }

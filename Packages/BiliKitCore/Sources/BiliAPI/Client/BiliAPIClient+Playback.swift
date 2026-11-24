@@ -115,15 +115,17 @@ extension BiliAPIClient {
         if resolved.authorizationProvenance == .authenticated {
             try requireAuthenticatedSessionEpoch(playbackSessionEpoch)
         }
+        let media = PlaybackMedia.progressive(try segment.model())
         return VideoPlayback(
-            media: .progressive(try segment.model()),
+            media: media,
             mediaHeaders: [
                 "Referer": referer,
                 "User-Agent": userAgent
             ],
             resumeMetadata:
                 resolved.authorizationProvenance == .authenticated
-                ? payload.resumeMetadata : nil
+                ? payload.resumeMetadata : nil,
+            mediaExpiresAt: Self.mediaExpiry(of: media)
         )
     }
 
@@ -259,22 +261,24 @@ extension BiliAPIClient {
             }
         }
 
+        let media = PlaybackMedia.dash(
+            PlaybackManifest(
+                videoRepresentations: video.primary,
+                fallbackVideoRepresentations: video.fallback,
+                hdrVideoCandidates: video.hdrCandidates,
+                audioTracks: audioTracks
+            )
+        )
         return VideoPlayback(
-            media: .dash(
-                PlaybackManifest(
-                    videoRepresentations: video.primary,
-                    fallbackVideoRepresentations: video.fallback,
-                    hdrVideoCandidates: video.hdrCandidates,
-                    audioTracks: audioTracks
-                )
-            ),
+            media: media,
             mediaHeaders: [
                 "Referer": referer,
                 "User-Agent": userAgent
             ],
             resumeMetadata:
                 authorizationProvenance == .authenticated
-                ? payload.resumeMetadata : nil
+                ? payload.resumeMetadata : nil,
+            mediaExpiresAt: Self.mediaExpiry(of: media)
         )
     }
 
@@ -358,6 +362,42 @@ extension BiliAPIClient {
             )
         }
         return tracks
+    }
+
+    /// CDN 媒体地址里表示签名到期时刻（Unix 秒）的 query 参数。
+    private static let mediaDeadlineQueryName = "deadline"
+
+    /// 清单里所有媒体地址中最早的 `deadline`；没有任何地址带合法的 `deadline` 时为 nil。
+    ///
+    /// 取每条表示（主阶梯、回退阶梯、HDR、各音轨及其杜比与无损版本）的全部候选，而不只是主地址：线路偏好
+    /// 会重排候选，loopback 转发用的是读到 SIDX 的那一条，取最早的才不会在它过期后仍以为有效。
+    static func mediaExpiry(of media: PlaybackMedia) -> Date? {
+        let urls: [URL]
+        switch media {
+        case .dash(let manifest):
+            let representations =
+                manifest.videoRepresentations
+                + manifest.fallbackVideoRepresentations
+                + manifest.hdrVideoCandidates
+                + manifest.audioTracks.flatMap { track in
+                    track.representations
+                        + [track.dolbyRepresentation, track.losslessRepresentation]
+                        .compactMap { $0 }
+                }
+            urls = representations.flatMap(\.urlCandidates)
+        case .progressive(let source):
+            urls = source.urlCandidates
+        }
+        return urls.compactMap(mediaDeadline(of:)).min()
+    }
+
+    private static func mediaDeadline(of url: URL) -> Date? {
+        guard
+            let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == mediaDeadlineQueryName })?.value,
+            let seconds = Int64(value), seconds > 0
+        else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
     }
 
     private static func mediaResourcePaths(
