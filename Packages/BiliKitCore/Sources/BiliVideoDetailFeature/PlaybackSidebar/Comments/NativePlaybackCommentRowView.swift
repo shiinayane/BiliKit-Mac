@@ -334,15 +334,19 @@ final class NativePlaybackCommentRowView: NSView {
     /// `footerGroupSpacing`，眼睛先看出两块、再看块里的项。操作的点击区左右各外延操作间距的一半，相邻操作正好相接。
     /// 放不下时依次退让：先把组间距与操作间距缩到各自的最小值，再截断时间，剩不到 `minimumFooterTimeWidth` 时整个不显示
     /// 时间，还放不下才截断属地；各个操作始终完整，最后一个操作的点击区不越出这一行（越出的部分点不到）。标签宽度取
-    /// `fittingSize`（`intrinsicContentSize` 不含文本框两侧约 2pt 的内边距，按它排会把日期截掉）；标签与操作的内容都在
-    /// 行框里垂直居中，落在同一条中线上。
+    /// `fittingSize`（`intrinsicContentSize` 不含文本框两侧约 2pt 的内边距，按它排会把日期截掉），经
+    /// `NativePlaybackCommentLabelMeasurement` 缓存；标签与操作的内容都在行框里垂直居中，落在同一条中线上。
     private func layoutFooter(y: CGFloat, contentX: CGFloat) {
         typealias Geometry = NativePlaybackCommentRowGeometry
         let height = Geometry.footerHeight
         let buttons = [likeButton, dislikeButton, replyButton, dialogButton].filter { !$0.isHidden }
         let buttonWidths = buttons.map(\.contentWidth)
-        let locationWidth = locationLabel.isHidden ? 0 : ceil(locationLabel.fittingSize.width)
-        let fullTimeWidth = ceil(metadataLabel.fittingSize.width)
+        let locationWidth =
+            locationLabel.isHidden
+            ? 0 : ceil(NativePlaybackCommentLabelMeasurement.fittingSize(of: locationLabel).width)
+        let fullTimeWidth = ceil(
+            NativePlaybackCommentLabelMeasurement.fittingSize(of: metadataLabel).width
+        )
         let available = bounds.width - contentX
         func trailingWidth(group: CGFloat, action: CGFloat) -> CGFloat {
             (locationLabel.isHidden ? 0 : Geometry.footerInfoSpacing + locationWidth)

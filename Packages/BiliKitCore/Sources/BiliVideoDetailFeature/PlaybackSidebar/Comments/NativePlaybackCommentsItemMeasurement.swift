@@ -187,12 +187,13 @@ enum NativePlaybackCommentsItemMeasurement {
     static let authorBadgeSpacing: CGFloat = 4
 
     /// 作者名字体：比正文小一号、中等字重，配合次要色，让每条评论的视觉起点落在正文上；行视图与宽度测量共用。
-    static var authorFont: NSFont {
-        .systemFont(
-            ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
-            weight: .medium
-        )
-    }
+    ///
+    /// 进程内只取一次：行视图在创建时设好字体后不再更新，测量必须用同一个字号；每次现取 `preferredFont` 要重新解析
+    /// 字体描述，改宽度时每条可见评论每帧都会取。
+    static let authorFont = NSFont.systemFont(
+        ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
+        weight: .medium
+    )
 
     /// 作者名单行文字宽度，不超过 `maximumWidth`。
     ///
