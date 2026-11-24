@@ -58,7 +58,7 @@ public struct ContentFailureText: Sendable, Equatable {
         // 短码说明是哪一种拒绝（IP 拦截、指纹校验、挑战或拦截页），用户转述时才能区分；见 SECURITY-MODEL §8。
         case .requestRestricted(let restriction):
             BiliUIStrings.localized(
-                "服务可能返回了风控页，请降低请求频率后重试（代码 \(restriction.code)）。",
+                "服务可能返回了风控页（代码 \(restriction.code)），请降低请求频率后重试。",
                 locale: locale
             )
         case .contentUnavailable:

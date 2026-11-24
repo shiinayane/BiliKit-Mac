@@ -2,7 +2,7 @@
 ///
 /// 只是分类，不含 URL、正文、服务端 message 或请求参数；`code` 是给用户转述的固定短码，让报告能区分
 /// IP 层面的拦截（HTTP 412）、指纹校验（-352）、挑战响应与代理拦截页（非 JSON）。见 SECURITY-MODEL §8。
-public enum RequestRestriction: Sendable, Equatable, CaseIterable {
+public enum RequestRestriction: Sendable, Equatable {
     case httpStatus403
     case httpStatus412
     case serviceCode352
