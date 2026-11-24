@@ -59,9 +59,14 @@ struct ContentFailureTextTests {
             message: localized("无法安全读取或确认本地登录状态，请稍后重试。")
         ),
         Expectation(
-            .requestRestricted,
+            .requestRestricted(.httpStatus412),
             title: localized("请求受到限制"),
-            message: localized("服务可能返回了风控页，请降低请求频率后重试。")
+            message: localized("服务可能返回了风控页（代码 \("HTTP 412")），请降低请求频率后重试。")
+        ),
+        Expectation(
+            .requestRestricted(.serviceCode352),
+            title: localized("请求受到限制"),
+            message: localized("服务可能返回了风控页（代码 \("-352")），请降低请求频率后重试。")
         ),
         Expectation(
             .contentUnavailable,

@@ -299,7 +299,7 @@ struct BiliAPIClientFavoritesTests {
             )
         )
 
-        await #expect(throws: ContentApplicationError.requestRestricted) {
+        await #expect(throws: ContentApplicationError.requestRestricted(.serviceCode352)) {
             try await repository.favoriteFolders(ownerID: 10_001)
         }
     }

@@ -23,11 +23,17 @@ struct BiliContentRepositoryTests {
     }
 
     @Test(arguments: [
-        (HTTPResponse(statusCode: 403, body: Data()), ContentApplicationError.requestRestricted),
-        (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted),
-        (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted),
-        (htmlRiskControlResponse(), .requestRestricted),
-        (jsonResponse(#"{"code":0,"data":{"v_voucher":"voucher_fixture"}}"#), .requestRestricted),
+        (
+            HTTPResponse(statusCode: 403, body: Data()),
+            ContentApplicationError.requestRestricted(.httpStatus403)
+        ),
+        (HTTPResponse(statusCode: 412, body: Data()), .requestRestricted(.httpStatus412)),
+        (jsonResponse(#"{"code":-352,"message":"blocked"}"#), .requestRestricted(.serviceCode352)),
+        (htmlRiskControlResponse(), .requestRestricted(.nonJSONBody)),
+        (
+            jsonResponse(#"{"code":0,"data":{"v_voucher":"voucher_fixture"}}"#),
+            .requestRestricted(.voucherChallenge)
+        ),
         (jsonResponse(#"{"code":-500,"message":"fixture"}"#), .serviceRejected(code: -500)),
         // 匿名请求收到 -101：需要登录，不是业务拒绝，也不是凭据失效。
         (jsonResponse(#"{"code":-101,"message":"fixture"}"#), .authenticationRequired),

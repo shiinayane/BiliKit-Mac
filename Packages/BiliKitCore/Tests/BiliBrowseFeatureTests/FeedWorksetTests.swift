@@ -45,7 +45,7 @@ struct FeedWorksetTests {
             useCase: FeedUseCase(
                 repository: FeedRepositoryStub(search: { request, attempt in
                     if attempt == 1 {
-                        throw ContentApplicationError.requestRestricted
+                        throw ContentApplicationError.requestRestricted(.httpStatus412)
                     }
                     return fixture.searchPage(page: request.page)
                 })
@@ -58,7 +58,7 @@ struct FeedWorksetTests {
             model.state
                 == .failed(
                     request: .search(query: "macOS", page: 1),
-                    error: .requestRestricted
+                    error: .requestRestricted(.httpStatus412)
                 )
         )
 

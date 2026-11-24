@@ -55,8 +55,12 @@ public struct ContentFailureText: Sendable, Equatable {
         // 账户复核失败（网络或 Keychain 不可用）也落到这一态，措辞不能只说读取凭据。
         case .authenticationUnavailable:
             BiliUIStrings.localized("无法安全读取或确认本地登录状态，请稍后重试。", locale: locale)
-        case .requestRestricted:
-            BiliUIStrings.localized("服务可能返回了风控页，请降低请求频率后重试。", locale: locale)
+        // 短码说明是哪一种拒绝（IP 拦截、指纹校验、挑战或拦截页），用户转述时才能区分；见 SECURITY-MODEL §8。
+        case .requestRestricted(let restriction):
+            BiliUIStrings.localized(
+                "服务可能返回了风控页（代码 \(restriction.code)），请降低请求频率后重试。",
+                locale: locale
+            )
         case .contentUnavailable:
             BiliUIStrings.localized("该内容可能已被删除、仍在审核，或只对部分用户可见。", locale: locale)
         case .serviceRejected(let code):

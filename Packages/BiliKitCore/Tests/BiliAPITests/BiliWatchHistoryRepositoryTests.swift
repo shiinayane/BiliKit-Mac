@@ -26,11 +26,11 @@ struct BiliWatchHistoryRepositoryTests {
             ),
             MappingCase(
                 scenario: .apiRejected(code: -412),
-                expected: .requestRestricted
+                expected: .requestRestricted(.serviceCode412)
             ),
             MappingCase(
                 scenario: .apiRejected(code: -403),
-                expected: .requestRestricted
+                expected: .requestRestricted(.serviceCode403)
             ),
             MappingCase(
                 scenario: .invalidRequest,

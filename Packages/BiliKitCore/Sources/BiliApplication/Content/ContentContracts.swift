@@ -16,7 +16,8 @@ public enum ContentApplicationError: Error, Sendable, Equatable {
     case authenticationRequired
     case authenticationInvalid
     case authenticationUnavailable
-    case requestRestricted
+    /// 远端拒绝或拦截了请求；带上观察到的信号，失败文案据此给出短码。
+    case requestRestricted(RequestRestriction)
     /// 内容不存在、已删除或对当前身份不可见；重试不会改变结果。
     case contentUnavailable
     case serviceRejected(code: Int)
