@@ -144,12 +144,11 @@ extension BiliAPIClient {
             path: BiliAccountReadPath.videoSearch,
             parameters: { parameters },
             send: { url in
-                // 该接口要求 Cookie 含 buvid3；匿名与账户读取两条路径都在授权后附加。
+                // 该接口缺 buvid3 会触发风控；网页端读取的设备 Cookie 由请求管线在授权后附加。
                 try await getWithAuthorizationProvenance(
                     url: url,
                     referer: "https://www.bilibili.com/",
-                    access: .accountRead(missingCredential: .useAnonymousRequest),
-                    additionalCookie: Self.buvid3Cookie
+                    access: .accountRead(missingCredential: .useAnonymousRequest)
                 ).payload
             }
         )

@@ -746,35 +746,6 @@ actor WatchProgressRepositoryStub: WatchProgressRepository {
     }
 }
 
-/// 测试用的进程级组装：与生产同一个类型，换成不碰网络、系统 Now Playing 与真实偏好的替身。
-///
-/// 搜索历史用一份 `ScratchDefaults`，搜索历史在构造时读完初值后即丢弃。经它构造的窗口不写入搜索历史
-/// （测试的搜索会话各自注入写入闭包）。
-@MainActor
-func makeTestProcess() -> ProcessComposition {
-    guard let scratch = ScratchDefaults() else {
-        preconditionFailure("无法创建隔离的 UserDefaults")
-    }
-    defer { scratch.discard() }
-    return ProcessComposition(
-        accountSession: AccountSessionCoordinator(),
-        watchProgressRepository: WatchProgressRepositoryStub(holdsReports: false),
-        settings: AppSettingsModel(
-            store: MemoryPlaybackSourcePreferenceStore(),
-            discover: { _ in [] },
-            resetDiscovery: {},
-            run: { _, _ in [] }
-        ),
-        nowPlaying: SystemNowPlayingController(
-            center: RecordingNowPlayingCenter(),
-            remoteCommands: RecordingRemoteCommands(),
-            artworkLoader: { _ in nil }
-        ),
-        searchHistory: SearchHistoryStore(defaults: scratch.defaults),
-        updater: AppUpdater()
-    )
-}
-
 /// 相关推荐 port 的唯一测试替身：恒为空。
 struct EmptyRelatedVideoRepository: RelatedVideoRepository {
     func relatedVideos(to bvid: String) async throws -> [RelatedVideo] { [] }

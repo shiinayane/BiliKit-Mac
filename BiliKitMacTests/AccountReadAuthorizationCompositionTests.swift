@@ -189,7 +189,11 @@ struct AccountWriteAuthorizationCompositionTests {
             ]
         )
         // 测速与观看进度 writer 没有账户写授权器：在发请求前就失败。
-        for client in [LiveAPIClients.cdnBenchmark(), LiveAPIClients.watchProgressWriter()] {
+        let deviceIdentity = makeOfflineDeviceIdentity()
+        for client in [
+            LiveAPIClients.cdnBenchmark(deviceIdentity: deviceIdentity),
+            LiveAPIClients.watchProgressWriter(deviceIdentity: deviceIdentity)
+        ] {
             await #expect(throws: BiliAPIError.authorizationRequired) {
                 try await client.addToWatchLater(bvid: "BV17x411w7KC", accountID: 7)
             }

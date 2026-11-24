@@ -7,7 +7,8 @@ extension BiliAPIClient {
     /// 接口在没有任何联想时以这个状态码回复，而不是返回空列表。
     static let noSearchSuggestionsCode = 3
 
-    /// 始终匿名读取：不带账号 Cookie、不签 WBI，也不附加搜索专用的 buvid3。
+    /// 始终匿名读取：不带账号 Cookie、不签 WBI，也不带设备 Cookie（`unlinkedAnonymous`）：联想会发出未提交的输入，
+    /// 不与账户请求共用设备标识，见 SECURITY-MODEL §3。
     public func searchSuggestions(for term: String) async throws -> [String] {
         guard !term.isEmpty, SearchText.isWithinLimit(term),
             let query = URLQueryUnreservedEncoding.query([("term", term)])
@@ -20,7 +21,8 @@ extension BiliAPIClient {
                     path: "/x/web-interface/suggest",
                     percentEncodedQuery: query
                 ),
-                referer: "https://www.bilibili.com/"
+                referer: "https://www.bilibili.com/",
+                access: .unlinkedAnonymous
             )
             return payload.model()
         } catch BiliAPIError.apiRejected(let code, _) where code == Self.noSearchSuggestionsCode {

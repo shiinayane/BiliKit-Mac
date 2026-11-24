@@ -85,8 +85,12 @@ enum LiveAPIClients {
     /// 窗口主 API：内容、播放、评论、弹幕、观看历史、稍后再看与收藏夹的读取，以及用户发起的账户写入。
     ///
     /// `isConfirmedSignedOut` 只给它的读取授权器：已确认未登录时 Keychain 不可用不影响游客浏览；写授权器不读它。
-    static func main(isConfirmedSignedOut: @escaping @Sendable () -> Bool) -> BiliAPIClient {
+    static func main(
+        deviceIdentity: BiliDeviceIdentity,
+        isConfirmedSignedOut: @escaping @Sendable () -> Bool
+    ) -> BiliAPIClient {
         make(
+            deviceIdentity: deviceIdentity,
             accountReadAllowedPaths: mainAccountReadAllowedPaths,
             accountWriteAllowedPaths: mainAccountWriteAllowedPaths,
             appReadAllowedPaths: mainAppReadAllowedPaths,
@@ -97,8 +101,9 @@ enum LiveAPIClients {
     }
 
     /// 线路测速：只读样本的详情与 playurl。
-    static func cdnBenchmark() -> BiliAPIClient {
+    static func cdnBenchmark(deviceIdentity: BiliDeviceIdentity) -> BiliAPIClient {
         make(
+            deviceIdentity: deviceIdentity,
             accountReadAllowedPaths: cdnBenchmarkAccountReadAllowedPaths,
             accountWriteAllowedPaths: nil,
             appReadAllowedPaths: nil,
@@ -109,8 +114,9 @@ enum LiveAPIClients {
     }
 
     /// 进程唯一的观看进度 writer：不做账户读取，只开 heartbeat 写授权。
-    static func watchProgressWriter() -> BiliAPIClient {
+    static func watchProgressWriter(deviceIdentity: BiliDeviceIdentity) -> BiliAPIClient {
         make(
+            deviceIdentity: deviceIdentity,
             accountReadAllowedPaths: watchProgressAccountReadAllowedPaths,
             accountWriteAllowedPaths: nil,
             appReadAllowedPaths: nil,
@@ -121,6 +127,7 @@ enum LiveAPIClients {
     }
 
     private static func make(
+        deviceIdentity: BiliDeviceIdentity,
         accountReadAllowedPaths: Set<String>?,
         accountWriteAllowedPaths: Set<String>?,
         appReadAllowedPaths: Set<String>?,
@@ -154,6 +161,7 @@ enum LiveAPIClients {
             accountWriteAuthorizer: accountWriteAuthorizer,
             appRequestAuthorizer: appRequestAuthorizer,
             appWriteAuthorizer: appWriteAuthorizer,
+            deviceCookies: deviceIdentity,
             transportFactory: transportFactory
         )
     }

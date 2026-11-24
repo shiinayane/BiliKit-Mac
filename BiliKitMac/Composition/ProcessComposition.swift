@@ -13,6 +13,8 @@ import Foundation
 @MainActor
 final class ProcessComposition {
     let accountSession: AccountSessionCoordinator
+    /// 进程唯一的设备标识：所有 API client 的网页端读取共用它，登出与凭据失效时随账户会话轮换。
+    let deviceIdentity: BiliDeviceIdentity
     /// 进程内唯一的观看进度写入通道（串行、单并发），窗口的进度会话都经它上报。
     let watchProgressRepository: any WatchProgressRepository
     let settings: AppSettingsModel
@@ -26,6 +28,7 @@ final class ProcessComposition {
 
     init(
         accountSession: AccountSessionCoordinator,
+        deviceIdentity: BiliDeviceIdentity,
         watchProgressRepository: any WatchProgressRepository,
         settings: AppSettingsModel,
         nowPlaying: SystemNowPlayingController,
@@ -33,6 +36,7 @@ final class ProcessComposition {
         updater: AppUpdater
     ) {
         self.accountSession = accountSession
+        self.deviceIdentity = deviceIdentity
         self.watchProgressRepository = watchProgressRepository
         self.settings = settings
         self.nowPlaying = nowPlaying
@@ -42,8 +46,11 @@ final class ProcessComposition {
 
     /// 生产进程：测速与观看进度各用一个专用 API client，都登记进账户会话，登出与凭据失效时一并失效。
     static func live() -> ProcessComposition {
+        let deviceIdentity = BiliDeviceIdentity(store: UserDefaultsDeviceIdentityStore())
         let accountSession = AccountSessionCoordinator()
-        let writeAPI = LiveAPIClients.watchProgressWriter()
+        // 设备标识也随账户会话失效：登出后匿名阶段的请求不与上一个账户共用它，见 SECURITY-MODEL §3。
+        _ = accountSession.registerSessionInvalidator(deviceIdentity)
+        let writeAPI = LiveAPIClients.watchProgressWriter(deviceIdentity: deviceIdentity)
         let watchProgressRepository = installWatchProgressWriter(
             base: BiliWatchProgressRepository(client: writeAPI),
             transport: writeAPI,
@@ -51,8 +58,12 @@ final class ProcessComposition {
         )
         return ProcessComposition(
             accountSession: accountSession,
+            deviceIdentity: deviceIdentity,
             watchProgressRepository: watchProgressRepository,
-            settings: liveSettings(accountSession: accountSession),
+            settings: liveSettings(
+                accountSession: accountSession,
+                deviceIdentity: deviceIdentity
+            ),
             nowPlaying: SystemNowPlayingController(),
             searchHistory: SearchHistoryStore(),
             updater: AppUpdater()
@@ -74,9 +85,11 @@ final class ProcessComposition {
     }
 
     /// 设置窗口的模型；线路测速只用自己的 client，样本发现只读详情与 playurl。
-    private static func liveSettings(accountSession: AccountSessionCoordinator) -> AppSettingsModel
-    {
-        let api = LiveAPIClients.cdnBenchmark()
+    private static func liveSettings(
+        accountSession: AccountSessionCoordinator,
+        deviceIdentity: BiliDeviceIdentity
+    ) -> AppSettingsModel {
+        let api = LiveAPIClients.cdnBenchmark(deviceIdentity: deviceIdentity)
         _ = accountSession.registerSessionInvalidator(api)
         let discoverer = CDNBenchmarkSampleDiscoverer(client: api)
         let benchmark = BilivideoRouteBenchmark()

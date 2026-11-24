@@ -7,7 +7,8 @@ import Testing
 @testable import BiliAPI
 
 /// 固定认证会话边界契约：带凭据的请求被拒或本地凭据失败时不匿名重试，
-/// 任务取消或会话失效后，在途的授权、请求与响应都以取消结束，既不补发也不写回。
+/// 任务取消或会话失效后，在途的授权、请求与响应都以取消结束，既不补发也不写回；不绑定会话的匿名读取
+/// 改走换入的 transport，不因会话失效报告网络失败。
 struct BiliAPIClientSessionBoundaryTests {
     @Test(arguments: [
         (HTTPResponse(statusCode: 412, body: Data()), BiliAPIError.httpStatus(412)),
@@ -196,4 +197,43 @@ struct BiliAPIClientSessionBoundaryTests {
         #expect(replacementTransport.capturedRequests().isEmpty)
         #expect(firstTransport.wasInvalidated)
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    func anonymousReadWaitingForTheDeviceIdentityUsesTheReplacementTransport() async throws {
+        let identityTransport = StubTransport([
+            .suspended(
+                jsonResponse(#"{"code":0,"data":{"b_3":"ISSUED-3infoc","b_4":"ISSUED-4"}}"#)
+            ),
+            .response(jsonResponse(#"{"code":0,"data":{}}"#))
+        ])
+        let deviceIdentity = BiliDeviceIdentity(
+            store: MemoryDeviceIdentityStore(),
+            transport: identityTransport
+        )
+        // 旧 transport 没有任何回放：请求落到它上面就以网络失败结束。
+        let firstTransport = StubTransport(responses: [])
+        let replacementTransport = StubTransport(responses: [jsonResponse(#"{"code":0,"data":{}}"#)]
+        )
+        let transportFactory = SequentialTransportFactory(
+            transports: [firstTransport, replacementTransport]
+        )
+        let client = BiliAPIClient(
+            deviceCookies: deviceIdentity,
+            transportFactory: { transportFactory.makeTransport() }
+        )
+        let url = try await client.endpoint(path: "/x/fixture", queryItems: [])
+
+        let read = Task { () async throws -> EmptyFixturePayload in
+            try await client.get(url: url, referer: nil)
+        }
+        await identityTransport.waitForRequests(1)
+        await client.invalidateAuthenticatedSession()
+        identityTransport.resumeSuspendedRequest()
+
+        _ = try await read.value
+        #expect(firstTransport.capturedRequests().isEmpty)
+        #expect(replacementTransport.capturedRequests().count == 1)
+    }
 }
+
+private struct EmptyFixturePayload: Decodable, Sendable {}

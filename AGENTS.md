@@ -21,7 +21,8 @@ BiliKit 是原生、macOS-first、非官方 B 站浏览与播放客户端：Swif
 - `BiliApplication` 不出现 endpoint DTO、UI／播放框架、具体 client、Keychain 或 Cookie。
 - 没有真实边界时不新增 Package、target 或 `Common`／`Shared`／`Utils`；新增 target 或 App 目录先在
   `check-architecture.py` 里登记。`references/` 不进入产品或 fixture。
-- Cookie、QR key、token 与完整认证 URL 只存在于 `BiliAuth` 的短生命周期内存和 Keychain。
+- 认证 Cookie、QR key、token 与完整认证 URL 只存在于 `BiliAuth` 的短生命周期内存和 Keychain；设备 Cookie
+  不是凭据，见 `docs/SECURITY-MODEL.md` §3。
 - 可变网络、认证与播放会话必须有 owner、取消与清理点；旧结果用 identity 或 generation 隔离。
 - 认证、远端来源、重定向、本地服务器、字幕、弹幕、图片或缓存改动先对照 `docs/SECURITY-MODEL.md`。
 

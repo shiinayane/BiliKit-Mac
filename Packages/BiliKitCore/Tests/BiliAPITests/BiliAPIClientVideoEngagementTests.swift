@@ -79,7 +79,11 @@ struct BiliAPIClientVideoEngagementTests {
         let transport = StubTransport(responses: [statusResponse(code: 0)])
         let authorizer = StubSubjectBoundAuthorizer()
         let repository = BiliVideoEngagementRepository(
-            client: BiliAPIClient(transport: transport, accountWriteAuthorizer: authorizer)
+            client: BiliAPIClient(
+                transport: transport,
+                accountWriteAuthorizer: authorizer,
+                deviceCookies: StubDeviceCookies()
+            )
         )
 
         try await repository.setFollowing(isFollowing, uploader: try uploader(), accountID: 42)
@@ -90,8 +94,9 @@ struct BiliAPIClientVideoEngagementTests {
         #expect(authorized.headers["Referer"] == "https://www.bilibili.com/")
         #expect(authorized.headers["Origin"] == "https://www.bilibili.com")
         #expect(formFields(authorized) == ["fid": "7", "act": act, "re_src": "11"])
+        // 写入不附加设备 Cookie：发出的就是授权器给出的请求。
         let sent = try #require(transport.capturedRequests().last)
-        #expect(sent.headers["Cookie"]?.contains("buvid3=") != true)
+        #expect(sent.headers["Cookie"] == StubAuthorizer.cookie)
     }
 
     /// 重复关注按成功处理；取消关注时同一码仍是失败；关注上限与 -403 映射为对应的写入错误。
@@ -149,7 +154,11 @@ struct BiliAPIClientVideoEngagementTests {
         let transport = StubTransport(responses: [statusResponse(code: 0)])
         let authorizer = StubSubjectBoundAuthorizer()
         let repository = BiliVideoEngagementRepository(
-            client: BiliAPIClient(transport: transport, appWriteAuthorizer: authorizer)
+            client: BiliAPIClient(
+                transport: transport,
+                appWriteAuthorizer: authorizer,
+                deviceCookies: StubDeviceCookies()
+            )
         )
 
         try await repository.setLiked(isLiked, target: try target(), accountID: 42)
@@ -161,7 +170,7 @@ struct BiliAPIClientVideoEngagementTests {
         #expect(formFields(authorized) == ["aid": "170001", "like": like])
         #expect(authorized.headers["Referer"] == nil)
         #expect(authorized.headers["Origin"] == nil)
-        // 发出的就是授权器给出的请求，client 不再附加 `buvid3` 等 Cookie。
+        // 发出的就是授权器给出的请求，client 不再附加设备 Cookie。
         let sent = try #require(transport.capturedRequests().last)
         #expect(sent.headers["Cookie"] == StubAuthorizer.cookie)
     }

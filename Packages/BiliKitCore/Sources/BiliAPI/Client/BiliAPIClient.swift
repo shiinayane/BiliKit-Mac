@@ -5,8 +5,9 @@ import Foundation
 
 /// Bilibili endpoint 与 DTO 的 adapter：把远端协议限制在 `BiliAPI`，对外只返回稳定模型。
 ///
-/// 请求默认匿名、不带 Cookie；只有 `RequestAccess.accountRead`、`.historyWrite` 与 `.accountWrite`
-/// 经过各自注入的授权器，允许游客增强的读取只在本地明确无凭据时匿名请求同一个 endpoint（见
+/// 请求默认匿名、不带凭据；只有 `RequestAccess.accountRead`、`.historyWrite` 与 `.accountWrite`
+/// 经过各自注入的授权器，允许游客增强的读取只在本地明确无凭据时匿名请求同一个 endpoint。网页端读取
+/// （`anonymous`、`accountRead`）另在授权之后附加注入的设备 Cookie，`unlinkedAnonymous` 什么 Cookie 都不带（见
 /// SECURITY-MODEL §3）。响应在解码前还要满足状态、大小与 Content-Type 边界。
 ///
 /// 拥有当前 transport 与 `HTTPClient`、WBI key 缓存和认证 epoch，都由 actor 隔离；跨 `await`
@@ -32,7 +33,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 一次请求的授权方式，由 endpoint 扩展逐请求选择；Repository adapter 不得构造（见
     /// docs/ARCHITECTURE.md「认证」）。
     ///
-    /// `anonymous` 不经授权器；`accountRead` 经账户读取授权器，path 必须来自 `BiliAccountReadPath`
+    /// `anonymous` 不经授权器；`unlinkedAnonymous` 同样匿名，但连设备 Cookie 也不带，只用于不应与账户请求共用设备
+    /// 标识的读取（热搜、联想、「正在看」人数）；`accountRead` 经账户读取授权器，path 必须来自 `BiliAccountReadPath`
     /// 并在 Composition 的 allowlist 内；`historyWrite` 只用于观看进度 heartbeat，
     /// 经独立的写授权器；`accountWrite` 是用户发起的账户写入，path 来自 `BiliAccountWritePath`，经账户写授权器并绑定
     /// 预期账户 mid（凭据属于其他账户时按凭据失效拒绝）。`appRead` 是 App 端（`app.bilibili.com`）读取，path 来自
@@ -41,6 +43,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 访问与 `appRead` 都绑定认证 epoch，见 `authenticatedSessionEpoch`。
     enum RequestAccess: Sendable {
         case anonymous
+        case unlinkedAnonymous
         case accountRead(missingCredential: MissingCredentialBehavior)
         case historyWrite
         case accountWrite(expectedAccountID: Int64)
@@ -49,7 +52,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
         var requiresAuthentication: Bool {
             switch self {
-            case .anonymous, .appRead: false
+            case .anonymous, .unlinkedAnonymous, .appRead: false
             case .accountRead, .historyWrite, .accountWrite, .appWrite: true
             }
         }
@@ -57,8 +60,16 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         /// 可能带凭据发出的访问：发出前后都比对认证 epoch。
         var bindsAuthenticatedSession: Bool {
             switch self {
-            case .anonymous: false
+            case .anonymous, .unlinkedAnonymous: false
             case .accountRead, .historyWrite, .accountWrite, .appRead, .appWrite: true
+            }
+        }
+
+        /// 网页端读取附加设备 Cookie；写入、App 端与 `unlinkedAnonymous` 不附加，见 SECURITY-MODEL §3。
+        var carriesDeviceCookie: Bool {
+            switch self {
+            case .anonymous, .accountRead: true
+            case .unlinkedAnonymous, .historyWrite, .accountWrite, .appRead, .appWrite: false
             }
         }
 
@@ -121,12 +132,6 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     /// 调小可能误拒较大的正常列表，调大放宽单次解码的输入规模。
     private static let maximumResponseSize = 5 * 1_024 * 1_024
 
-    /// 搜索接口要求的 `buvid3`，进程内随机生成一次，只附加到搜索请求。
-    ///
-    /// 只在内存中，不持久化、不关联账户；格式与 yt-dlp 相同（小写 UUID + `infoc`）。见
-    /// SECURITY-MODEL §3。
-    static let buvid3Cookie = "buvid3=\(UUID().uuidString.lowercased())infoc"
-
     private var httpClient: HTTPClient
     private var transport: any HTTPTransport
     private let transportFactory: @Sendable () -> any HTTPTransport
@@ -135,6 +140,8 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
     private let accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
     private let appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)?
     private let appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)?
+    /// 网页端读取的设备 Cookie 来源；未注入的 client 不带设备 Cookie。
+    private let deviceCookies: (any DeviceCookieProviding)?
     let userAgent = HTTPUserAgent.browserCompatible
     let decoder: JSONDecoder
     let timestampProvider: @Sendable () -> Int64
@@ -164,6 +171,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
         appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
+        deviceCookies: (any DeviceCookieProviding)? = nil,
         transportFactory: @escaping @Sendable () -> any HTTPTransport,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
@@ -178,6 +186,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         self.accountWriteAuthorizer = accountWriteAuthorizer
         self.appRequestAuthorizer = appRequestAuthorizer
         self.appWriteAuthorizer = appWriteAuthorizer
+        self.deviceCookies = deviceCookies
         self.timestampProvider = timestampProvider
         decoder = JSONDecoder()
     }
@@ -220,15 +229,13 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String?,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
-        additionalCookie: String? = nil
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> AuthorizedResponse<Payload> {
         let authorizedResponse = try await response(
             url: url,
             referer: referer,
             access: access,
-            maximumResponseSize: maximumResponseSize,
-            additionalCookie: additionalCookie
+            maximumResponseSize: maximumResponseSize
         )
         let response = authorizedResponse.response
 
@@ -277,8 +284,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         url: URL,
         referer: String?,
         access: RequestAccess = .anonymous,
-        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize,
-        additionalCookie: String? = nil
+        maximumResponseSize: Int = BiliAPIClient.maximumResponseSize
     ) async throws -> AuthorizedHTTPResponse {
         var headers = ["Accept": "application/json", "User-Agent": userAgent]
         headers["Referer"] = referer
@@ -286,8 +292,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         let response = try await response(
             baseRequest: baseRequest,
             access: access,
-            maximumResponseSize: maximumResponseSize,
-            additionalCookie: additionalCookie
+            maximumResponseSize: maximumResponseSize
         )
         guard response.response.looksLikeJSON(allowsTopLevelArray: true) else {
             throw BiliAPIError.nonJSONResponse
@@ -295,20 +300,16 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
         return response
     }
 
-    /// 所有请求的唯一管线：按 `access` 选择授权器并授权，附加非秘密 Cookie，
+    /// 所有请求的唯一管线：按 `access` 选择授权器并授权，网页端读取再附加设备 Cookie，
     /// 发送并检查状态码与大小。
     ///
-    /// 返回实际授权来源；认证 epoch 的比对规则见 `authenticatedSessionEpoch`。`additionalCookie`
-    /// 只承载 endpoint 要求的非秘密 Cookie，在授权之后并入请求，因此不会绕过授权器对调用方自带
-    /// Cookie 的拒绝（见 SECURITY-MODEL §3）。
+    /// 返回实际授权来源；认证 epoch 的比对规则见 `authenticatedSessionEpoch`。设备 Cookie 在授权之后并入、排在
+    /// 授权器给出的 Cookie 之后，因此不会绕过授权器对调用方自带 Cookie 的拒绝（见 SECURITY-MODEL §3）。
     func response(
         baseRequest: HTTPRequest,
         access: RequestAccess,
-        maximumResponseSize: Int,
-        additionalCookie: String? = nil
+        maximumResponseSize: Int
     ) async throws -> AuthorizedHTTPResponse {
-        // 在第一个 await 之前取出 client：授权期间会话失效换入的新 transport 不会被这次请求使用。
-        let requestClient = httpClient
         // 只有可能带凭据的访问绑定会话 epoch；匿名请求不比对。
         let requestSessionEpoch =
             access.bindsAuthenticatedSession ? authenticatedSessionEpoch : nil
@@ -353,9 +354,10 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             request = baseRequest
             authorizationProvenance = .anonymous
         }
-        if let additionalCookie {
+        if access.carriesDeviceCookie, let deviceCookies {
+            let deviceCookie = try await deviceCookies.deviceCookie()
             var headers = request.headers
-            headers["Cookie"] = [headers["Cookie"], additionalCookie]
+            headers["Cookie"] = [headers["Cookie"], deviceCookie]
                 .compactMap { $0 }
                 .joined(separator: "; ")
             request = HTTPRequest(
@@ -372,6 +374,9 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
             throw CancellationError()
         }
 
+        // 发送前才取 client：绑定会话的请求刚确认 epoch 未变，取到的仍是授权时那一个，授权期间换入的 transport 不会被
+        // 它使用；匿名请求在等设备标识期间遇到会话失效时改用换入的 transport，不在已失效的旧 transport 上以网络失败结束。
+        let requestClient = httpClient
         let response: HTTPResponse
         do {
             response = try await requestClient.send(request)
@@ -432,7 +437,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
 
     private func hasAuthorizer(for access: RequestAccess) -> Bool {
         switch access {
-        case .anonymous, .appRead: false
+        case .anonymous, .unlinkedAnonymous, .appRead: false
         case .accountRead: requestAuthorizer != nil
         case .historyWrite: historyWriteAuthorizer != nil
         case .accountWrite: accountWriteAuthorizer != nil
@@ -465,7 +470,7 @@ public actor BiliAPIClient: AuthenticatedSessionInvalidating {
                 request,
                 boundTo: String(expectedAccountID)
             )
-        case .anonymous, .appRead:
+        case .anonymous, .unlinkedAnonymous, .appRead:
             break
         }
         preconditionFailure("调用方先用 hasAuthorizer(for:) 确认已注入对应授权器")

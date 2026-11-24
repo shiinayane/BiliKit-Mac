@@ -245,6 +245,7 @@ extension BiliAPIClient {
         accountWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
         appRequestAuthorizer: (any HTTPSigningRequestAuthorizing)? = nil,
         appWriteAuthorizer: (any HTTPSubjectBoundRequestAuthorizing)? = nil,
+        deviceCookies: (any DeviceCookieProviding)? = nil,
         timestampProvider: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970)
         }
@@ -255,9 +256,52 @@ extension BiliAPIClient {
             accountWriteAuthorizer: accountWriteAuthorizer,
             appRequestAuthorizer: appRequestAuthorizer,
             appWriteAuthorizer: appWriteAuthorizer,
+            deviceCookies: deviceCookies,
             transportFactory: { transport },
             timestampProvider: timestampProvider
         )
+    }
+}
+
+/// 设备 Cookie 的固定替身：请求管线只关心它在哪些请求上、排在哪里。
+struct StubDeviceCookies: DeviceCookieProviding {
+    static let cookie = "buvid3=FIXTURE_DEVICE; b_nut=1"
+
+    func deviceCookie() async throws -> String { Self.cookie }
+}
+
+/// 设备标识存储的替身：只在内存，并记录写入与清除的次数。
+final class MemoryDeviceIdentityStore: DeviceIdentityStoring, Sendable {
+    private struct State {
+        var identity: DeviceIdentity?
+        var saveCount = 0
+        var clearCount = 0
+    }
+
+    private let state: Mutex<State>
+
+    init(_ identity: DeviceIdentity? = nil) {
+        state = Mutex(State(identity: identity))
+    }
+
+    var identity: DeviceIdentity? { state.withLock { $0.identity } }
+    var saveCount: Int { state.withLock { $0.saveCount } }
+    var clearCount: Int { state.withLock { $0.clearCount } }
+
+    func load() -> DeviceIdentity? { identity }
+
+    func save(_ identity: DeviceIdentity) {
+        state.withLock {
+            $0.identity = identity
+            $0.saveCount += 1
+        }
+    }
+
+    func clear() {
+        state.withLock {
+            $0.identity = nil
+            $0.clearCount += 1
+        }
     }
 }
 

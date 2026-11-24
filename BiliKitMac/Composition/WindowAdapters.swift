@@ -92,6 +92,7 @@ extension WindowAdapters {
         let settings = process.settings
         let signedOutConfirmation = AccountSignedOutConfirmation()
         let api = LiveAPIClients.main(
+            deviceIdentity: process.deviceIdentity,
             isConfirmedSignedOut: { signedOutConfirmation.isConfirmed }
         )
         let sessionRegistration = WindowSessionRegistration(
