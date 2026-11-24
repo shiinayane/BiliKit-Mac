@@ -399,24 +399,40 @@ final class NativeVideoCardTextRenderer {
         layer.actions = NativeVideoCardTextLayout.disabledLayerActions
     }
 
+    /// 解析到 `appearance` 下的文字颜色：标题、页脚按外观名缓存，品牌色只换算一次，强调色每次现取。
+    ///
+    /// 每张卡片每次 `layout()` 都要取，改宽度时每帧都排；每次在外观里逐个换算颜色空间是可观的开销。标题与页脚色只随外观
+    /// （深浅色、高对比度，名字各不相同）变化；强调色跟系统设置走，运行中可以改而外观名不变，所以不缓存。
     private static func resolvedColors(
         appearance: NSAppearance
     ) -> (title: NSColor, footer: NSColor, brand: NSColor, accent: NSColor) {
-        var title = NSColor.labelColor
-        var footer = NSColor.secondaryLabelColor
+        let labels: (title: NSColor, footer: NSColor)
+        if let cached = labelColors[appearance.name] {
+            labels = cached
+        } else {
+            var title = NSColor.labelColor
+            var footer = NSColor.secondaryLabelColor
+            appearance.performAsCurrentDrawingAppearance {
+                title = NSColor.labelColor.usingColorSpace(.deviceRGB) ?? .labelColor
+                footer =
+                    NSColor.secondaryLabelColor.usingColorSpace(.deviceRGB) ?? .secondaryLabelColor
+            }
+            labels = (title, footer)
+            labelColors[appearance.name] = labels
+        }
         var accent = NativeNowPlayingAppearance.markerColor
-        var brand = NSColor(
-            srgbRed: 0,
-            green: 174.0 / 255.0,
-            blue: 236.0 / 255.0,
-            alpha: 1
-        )
         appearance.performAsCurrentDrawingAppearance {
-            title = NSColor.labelColor.usingColorSpace(.deviceRGB) ?? .labelColor
-            footer = NSColor.secondaryLabelColor.usingColorSpace(.deviceRGB) ?? .secondaryLabelColor
-            brand = brand.usingColorSpace(.deviceRGB) ?? brand
             accent = accent.usingColorSpace(.deviceRGB) ?? accent
         }
-        return (title, footer, brand, accent)
+        return (labels.title, labels.footer, brandColor, accent)
     }
+
+    /// 按外观名缓存的标题与页脚色；外观名只有深浅色与高对比度几种，条目数有界。
+    private static var labelColors: [NSAppearance.Name: (title: NSColor, footer: NSColor)] = [:]
+
+    /// 品牌色：固定的 sRGB 值，与外观无关。
+    private static let brandColor: NSColor = {
+        let color = NSColor(srgbRed: 0, green: 174.0 / 255.0, blue: 236.0 / 255.0, alpha: 1)
+        return color.usingColorSpace(.deviceRGB) ?? color
+    }()
 }

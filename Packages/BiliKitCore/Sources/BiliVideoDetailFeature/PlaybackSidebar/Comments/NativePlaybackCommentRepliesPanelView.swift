@@ -67,6 +67,11 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
     private var onLoadMoreDialog: (() -> Void)?
     private var onCloseDialog: (() -> Void)?
     private var onRetry: (() -> Void)?
+    /// 各文字按钮最近一次量出的宽度与当时的标题；标题不变时 `layout()` 直接沿用。
+    ///
+    /// 按钮的图标、字体与样式在创建后都不变，宽度只随标题变；`fittingSize` 每次都要为按钮临时建一个 Auto Layout 引擎，
+    /// 改侧栏宽度时每帧都会排一遍所有可见的回复面板。
+    private var buttonWidths: [ObjectIdentifier: (title: String, width: CGFloat)] = [:]
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -310,7 +315,7 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
             backButton.frame = NSRect(
                 x: padding,
                 y: y - 2,
-                width: min(max(1, width - 62), ceil(backButton.fittingSize.width)),
+                width: min(max(1, width - 62), fittingWidth(of: backButton)),
                 height: 24
             )
             collapseButton.frame = NSRect(
@@ -378,7 +383,7 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
                 loadMoreButton.frame = NSRect(
                     x: padding,
                     y: y,
-                    width: min(width, ceil(loadMoreButton.fittingSize.width)),
+                    width: min(width, fittingWidth(of: loadMoreButton)),
                     height: NativePlaybackCommentsItemMeasurement.dialogLoadMoreHeight
                 )
             case .none:
@@ -392,11 +397,20 @@ final class NativePlaybackCommentRepliesPanelView: NSView {
                 expandButton.frame = NSRect(
                     x: padding,
                     y: y,
-                    width: min(width, ceil(expandButton.fittingSize.width)),
+                    width: min(width, fittingWidth(of: expandButton)),
                     height: 24
                 )
             }
         }
+    }
+
+    /// 按钮按当前标题的固有宽度（向上取整），标题与上次相同时沿用记下的值。
+    private func fittingWidth(of button: NSButton) -> CGFloat {
+        let id = ObjectIdentifier(button)
+        if let memo = buttonWidths[id], memo.title == button.title { return memo.width }
+        let width = ceil(button.fittingSize.width)
+        buttonWidths[id] = (button.title, width)
+        return width
     }
 
     func releaseOffscreenResources() {
