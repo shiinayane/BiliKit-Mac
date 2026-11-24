@@ -149,6 +149,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         if let currentContext {
             VideoDetailView(
                 context: currentContext,
+                accessNotice: model.playableVideo?.accessNotice,
                 danmakuModel: danmakuModel,
                 danmakuComposer: danmakuComposer,
                 engagementModel: engagementModel,
@@ -264,15 +265,19 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var playbackIdentity: PlaybackItemIdentity? {
+        let context: VideoContext
         switch model.state {
-        case .preparingPlayback(let context), .ready(let context):
-            PlaybackItemIdentity(
-                bvid: context.detail.bvid,
-                cid: context.selectedPage.cid
-            )
+        case .preparingPlayback(let preparing):
+            context = preparing
+        case .ready(let playable):
+            context = playable.context
         case .idle, .loading, .loadingPage, .failed, .failedPage:
-            nil
+            return nil
         }
+        return PlaybackItemIdentity(
+            bvid: context.detail.bvid,
+            cid: context.selectedPage.cid
+        )
     }
 
     private func failureView(_ failure: VideoLoadFailure) -> ContentFailureView {

@@ -9,12 +9,13 @@ extension VideoViewModel {
     /// 与失败事件一样先按 identity 与 intent 丢弃旧 item 的事件，同一 intent 已在换源时忽略重复事件。
     ///
     /// 页面还没就绪（开播前）不能就地换源，按播放失败处理。重取或重建失败时进入 `.failedPage`，重试从事件给出的
-    /// 位置继续。换源成功后不替换 `presentedContext`：详情与分 P 不变，旧 context 里的播放数据不再被读取。
+    /// 位置继续。换源成功后不替换 `presentedContext` 与 `ready` 里的那一项：详情与分 P 不变，充电提示与可跳转时长
+    /// 只取决于同一分 P 的媒体时长，新清单不会改变它们。
     func handlePlaybackSourceExpiry(_ event: PlaybackSourceExpiryEvent) {
         guard requestedPlaybackIdentity == event.identity,
             playbackIntent == event.intent
         else { return }
-        guard case .ready(let context) = state,
+        guard case .ready(let playable) = state,
             presentedPlaybackIdentity == event.identity
         else {
             handlePlaybackFailure(
@@ -33,7 +34,7 @@ extension VideoViewModel {
         loadTask.replace { [weak self] isCurrent in
             do {
                 let replacement = try await useCase.preparePage(
-                    in: context,
+                    in: playable.context,
                     cid: event.identity.cid
                 )
                 try Task.checkCancellation()

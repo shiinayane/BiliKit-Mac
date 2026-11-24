@@ -322,24 +322,12 @@ func makeVideoDetail(
     )
 }
 
-/// 合成的视频上下文：选中第一个分 P，播放地址缺省为空清单；构造 `VideoContext` 的唯一入口。
-func makeVideoContext(
-    detail: VideoDetail,
-    playback: VideoPlayback = VideoPlayback(
-        media: .dash(
-            PlaybackManifest(
-                videoRepresentations: [],
-                audioTracks: []
-            )
-        ),
-        mediaHeaders: [:]
-    )
-) -> VideoContext {
+/// 合成的视频上下文：选中第一个分 P；构造 `VideoContext` 的唯一入口。
+func makeVideoContext(detail: VideoDetail) -> VideoContext {
     VideoContext(
         detail: detail,
         pages: detail.pages,
-        selectedPage: detail.pages[0],
-        playback: playback
+        selectedPage: detail.pages[0]
     )
 }
 

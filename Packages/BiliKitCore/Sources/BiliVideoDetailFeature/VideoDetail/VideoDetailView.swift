@@ -13,6 +13,8 @@ import SwiftUI
 struct VideoDetailView<PlayerContent: View>: View {
     @Environment(\.locale) private var locale
     let context: VideoContext
+    /// 充电专属或试看提示；取决于播放清单，开播前为 nil，副标题这时不带这一项。
+    let accessNotice: PlaybackAccessNotice?
     let danmakuModel: DanmakuControlsViewModel
     let danmakuComposer: DanmakuComposerModel?
     let engagementModel: VideoEngagementModel
@@ -102,7 +104,7 @@ struct VideoDetailView<PlayerContent: View>: View {
             VideoMetadataFormatting.viewCountText(statistics.viewCount),
             VideoMetadataFormatting.danmakuCountText(statistics.danmakuCount),
             VideoMetadataFormatting.fullPublishedDate(context.detail.publishedAt),
-            accessNotice,
+            accessNoticeText,
             onlineViewerText.map {
                 String(
                     format: VideoDetailFeatureStrings.localized("%@ 人正在看", locale: locale),
@@ -113,8 +115,8 @@ struct VideoDetailView<PlayerContent: View>: View {
         ].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private var accessNotice: String? {
-        switch context.accessNotice {
+    private var accessNoticeText: String? {
+        switch accessNotice {
         case .none:
             return nil
         case .upowerExclusive:
