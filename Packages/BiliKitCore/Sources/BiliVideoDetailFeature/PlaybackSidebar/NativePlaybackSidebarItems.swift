@@ -263,7 +263,11 @@ struct NativePlaybackUploaderGeometry {
         button.imagePosition = .imageLeading
     }
 
-    static var followButtonSize: NSSize {
+    /// 关注按钮未关注与已关注两种标题里较大的尺寸。
+    ///
+    /// 进程内只量一次：标题随界面语言（重启才变），字号是固定的小号控件字号，运行中都不变；每次排名字行都现量，要套两遍
+    /// 标题并为测量按钮临时建 Auto Layout 引擎（`fittingSize`）。
+    static let followButtonSize: NSSize = {
         var size = NSSize.zero
         for isFollowing in [false, true] {
             applyFollowLabel(isFollowing: isFollowing, to: followSizingButton)
@@ -272,7 +276,7 @@ struct NativePlaybackUploaderGeometry {
             size.height = max(size.height, ceil(fitting.height))
         }
         return size
-    }
+    }()
 }
 
 /// 简介区的唯一几何来源；正文最多测量两次（完整与五行），测量与布局共用结果。

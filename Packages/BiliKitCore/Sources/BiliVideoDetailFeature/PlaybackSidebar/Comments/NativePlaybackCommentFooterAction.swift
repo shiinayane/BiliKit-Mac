@@ -35,6 +35,12 @@ final class NativePlaybackCommentFooterAction: NSView {
     private let imageView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let font: NSFont
+    /// 当前图标的 SF Symbol 名；与上次相同时 `configure` 不重设图片。
+    private var symbolName: String?
+    /// 图标与文字的固有尺寸，在 `configure` 内容变化时取一次，`contentWidth` 与 `layout()` 直接取用；文字尺寸经
+    /// `NativePlaybackCommentLabelMeasurement` 缓存，理由见那里。
+    private var imageSize = NSSize.zero
+    private var titleSize = NSSize.zero
     /// 按住且指针仍在点击区内；松开或拖出点击区时复位。
     private var isPressed = false {
         didSet { if isPressed != oldValue { updateColors() } }
@@ -50,6 +56,7 @@ final class NativePlaybackCommentFooterAction: NSView {
         imageView.imageScaling = .scaleNone
         imageView.setAccessibilityElement(false)
         titleLabel.font = font
+        titleLabel.isHidden = true
         titleLabel.setAccessibilityElement(false)
         addSubview(imageView)
         addSubview(titleLabel)
@@ -62,20 +69,30 @@ final class NativePlaybackCommentFooterAction: NSView {
     required init?(coder: NSCoder) { nil }
 
     /// 设定图标（SF Symbol 名，nil 为没有）与文字（空串为没有）。
+    ///
+    /// 与上次相同的部分不重设：复用的评论行每次配置都会给同样的图标与文字，重设图片会让图片视图重新计算对齐与约束。
     func configure(symbolName: String?, title: String) {
-        imageView.image = symbolName.flatMap {
-            NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+        if symbolName != self.symbolName {
+            self.symbolName = symbolName
+            imageView.image = symbolName.flatMap {
+                NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+            }
+            imageView.isHidden = imageView.image == nil
+            imageSize = imageView.isHidden ? .zero : imageView.intrinsicContentSize
+            needsLayout = true
         }
-        imageView.isHidden = imageView.image == nil
-        titleLabel.stringValue = title
-        titleLabel.isHidden = title.isEmpty
-        needsLayout = true
+        if title != titleLabel.stringValue {
+            titleLabel.stringValue = title
+            titleLabel.isHidden = title.isEmpty
+            titleSize = NativePlaybackCommentLabelMeasurement.fittingSize(of: titleLabel)
+            needsLayout = true
+        }
     }
 
     /// 看得见的内容宽度：图标、间距与文字，不含点击区的外延。
     var contentWidth: CGFloat {
-        let imageWidth = imageView.isHidden ? 0 : ceil(imageView.intrinsicContentSize.width)
-        let titleWidth = titleLabel.isHidden ? 0 : ceil(titleLabel.fittingSize.width)
+        let imageWidth = imageView.isHidden ? 0 : ceil(imageSize.width)
+        let titleWidth = titleLabel.isHidden ? 0 : ceil(titleSize.width)
         let spacing = imageWidth > 0 && titleWidth > 0 ? Self.iconTitleSpacing : 0
         return imageWidth + spacing + titleWidth
     }
@@ -84,7 +101,7 @@ final class NativePlaybackCommentFooterAction: NSView {
         super.layout()
         var x = hitPadding
         if !imageView.isHidden {
-            let size = imageView.intrinsicContentSize
+            let size = imageSize
             imageView.frame = NSRect(
                 x: x,
                 y: floor((bounds.height - size.height) / 2),
@@ -94,7 +111,7 @@ final class NativePlaybackCommentFooterAction: NSView {
             x = imageView.frame.maxX + (titleLabel.isHidden ? 0 : Self.iconTitleSpacing)
         }
         if !titleLabel.isHidden {
-            let size = titleLabel.fittingSize
+            let size = titleSize
             titleLabel.frame = NSRect(
                 x: x,
                 y: floor((bounds.height - size.height) / 2),
