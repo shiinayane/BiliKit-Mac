@@ -6,8 +6,8 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定请求授权与 WBI 签名契约：账户读取 endpoint 只授权自己的请求、取 key 的 nav 保持匿名，
-/// 搜索带签名与进程内唯一的 buvid3，本地凭据失败时失败关闭，签名被拒只刷新一次 key、
+/// 固定请求授权与 WBI 签名契约：账户读取 endpoint 只授权自己的请求、取 key 的 nav 不带凭据，
+/// 网页端读取在授权器的 Cookie 之后带设备 Cookie，本地凭据失败时失败关闭，签名被拒只刷新一次 key、
 /// HTTP 403 不刷新，-101 只对实际带凭据的请求算凭据失效。
 struct BiliAPIClientTests {
     @Test(arguments: AccountReadCase.all)
@@ -19,6 +19,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: authorizer,
+            deviceCookies: StubDeviceCookies(),
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -27,16 +28,15 @@ struct BiliAPIClientTests {
         let requests = transport.capturedRequests()
         #expect(await authorizer.capturedPaths() == [testCase.path])
         #expect(requests.last?.url.path == testCase.path)
-        let cookies = requests.last?.headers["Cookie"]?.components(separatedBy: "; ")
-        #expect(cookies?.first == StubAuthorizer.cookie)
-        // buvid3 只附加到搜索 endpoint。
+        // 设备 Cookie 排在授权器给出的 Cookie 之后，不经授权器。
         #expect(
-            cookies.map { Array($0.dropFirst()) }
-                == (testCase.path == "/x/web-interface/wbi/search/type"
-                    ? [BiliAPIClient.buvid3Cookie] : [])
+            requests.last?.headers["Cookie"]
+                == "\(StubAuthorizer.cookie); \(StubDeviceCookies.cookie)"
         )
-        // WBI key 的 nav 请求始终匿名。
-        #expect(requests.dropLast().allSatisfy { $0.headers["Cookie"] == nil })
+        // WBI key 的 nav 请求不带凭据，只带设备 Cookie。
+        #expect(
+            requests.dropLast().allSatisfy { $0.headers["Cookie"] == StubDeviceCookies.cookie }
+        )
     }
 
     @Test
@@ -74,7 +74,7 @@ struct BiliAPIClientTests {
     }
 
     @Test
-    func searchCarriesOneBuvid3OnAnonymousAndAuthorizedPaths() async throws {
+    func webReadsCarryTheDeviceCookieOnAnonymousAndAuthorizedPaths() async throws {
         let transport = StubTransport(
             responses: [
                 try fixtureResponse("nav"),
@@ -85,6 +85,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: StubAuthorizer(.fail(.missingCredential), .authorize),
+            deviceCookies: StubDeviceCookies(),
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -93,12 +94,40 @@ struct BiliAPIClientTests {
 
         let requests = transport.capturedRequests()
         #expect(requests.count == 3)
-        #expect(requests[0].headers["Cookie"] == nil)
-        // 无凭据时只有 buvid3；登录后与授权器给出的 Cookie 并列，且同一进程内不变。
-        let anonymousCookie = try #require(requests[1].headers["Cookie"])
-        let buvid3 = /buvid3=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}infoc/
-        #expect(anonymousCookie.wholeMatch(of: buvid3) != nil)
-        #expect(requests[2].headers["Cookie"] == "\(StubAuthorizer.cookie); \(anonymousCookie)")
+        // 无凭据时（nav 与匿名回退）只有设备 Cookie；登录后排在授权器给出的 Cookie 之后。
+        #expect(requests[0].headers["Cookie"] == StubDeviceCookies.cookie)
+        #expect(requests[1].headers["Cookie"] == StubDeviceCookies.cookie)
+        #expect(
+            requests[2].headers["Cookie"]
+                == "\(StubAuthorizer.cookie); \(StubDeviceCookies.cookie)"
+        )
+    }
+
+    /// 热搜、联想与「正在看」人数不与账户请求共用设备标识，注入了设备 Cookie 也什么都不带。
+    @Test
+    func unlinkedReadsCarryNoCookieEvenWithADeviceIdentity() async throws {
+        let transport = StubTransport(
+            responses: [
+                jsonResponse(#"{"code":0,"data":{"trending":{"list":[]}}}"#),
+                jsonResponse(#"{"code":0,"data":{"tag":[]}}"#),
+                jsonResponse(#"{"code":0,"data":{"total":"1","count":"1"}}"#)
+            ]
+        )
+        let client = BiliAPIClient(
+            transport: transport,
+            requestAuthorizer: StubAuthorizer(),
+            deviceCookies: StubDeviceCookies()
+        )
+
+        _ = try? await client.trendingSearchKeywords(limit: 10)
+        _ = try? await client.searchSuggestions(for: "macOS")
+        _ = try? await client.onlineViewerText(
+            for: PlaybackItemIdentity(bvid: "BV1FixtureA1", cid: 900_001)
+        )
+
+        let requests = transport.capturedRequests()
+        #expect(requests.count == 3)
+        #expect(requests.allSatisfy { $0.headers["Cookie"] == nil })
     }
 
     @Test(arguments: [
@@ -196,6 +225,7 @@ struct BiliAPIClientTests {
         let client = BiliAPIClient(
             transport: transport,
             requestAuthorizer: StubAuthorizer(),
+            deviceCookies: StubDeviceCookies(),
             timestampProvider: { 1_700_000_000 }
         )
 
@@ -215,7 +245,7 @@ struct BiliAPIClientTests {
         #expect(
             searches.allSatisfy {
                 $0.headers["Cookie"]
-                    == "\(StubAuthorizer.cookie); \(BiliAPIClient.buvid3Cookie)"
+                    == "\(StubAuthorizer.cookie); \(StubDeviceCookies.cookie)"
             }
         )
         let signatures = searches.map {
