@@ -399,7 +399,14 @@ extension AVPlayerEngineSuites {
             let dubOption = try #require(
                 expiredAudio.options.first { $0.extendedLanguageTag == "en" }
             )
-            expiredItem.select(dubOption, in: expiredAudio)
+            // 换源记下的是旧 item 当时报告的选择；配音还没应用完就拖动，engine 可能记成原声。
+            try await waitForAppliedMediaSelection {
+                expiredItem.select(dubOption, in: expiredAudio)
+            } where: { item in
+                item === expiredItem
+                    && item.currentMediaSelection.selectedMediaOption(in: expiredAudio)?
+                        .extendedLanguageTag == "en"
+            }
 
             #expect(engine.requestSeek(to: .seconds(2)))
             let expiry = await expiries.next()
@@ -408,11 +415,21 @@ extension AVPlayerEngineSuites {
             #expect(engine.player.currentItem === expiredItem)
             #expect(expiredItem.currentTime().seconds < 0.5)
 
-            try await engine.refreshSource(
-                VideoPlayback(media: media, mediaHeaders: [:]),
-                identity: identity,
-                intent: intent
-            )
+            // 新 item 上先选音轨再选字幕，两者都应用完才读选择，否则可能读到字幕还没打开的中间状态。
+            try await waitForAppliedMediaSelection {
+                try await engine.refreshSource(
+                    VideoPlayback(media: media, mediaHeaders: [:]),
+                    identity: identity,
+                    intent: intent
+                )
+            } where: { item in
+                let groups = engine.mediaSelectionGroups
+                let selection = item.currentMediaSelection
+                return item !== expiredItem && item === engine.player.currentItem
+                    && groups.audible.flatMap(selection.selectedMediaOption(in:))?
+                        .extendedLanguageTag == "en"
+                    && groups.legible.flatMap(selection.selectedMediaOption(in:)) != nil
+            }
             let refreshedItem = try #require(engine.player.currentItem)
             let subtitles = try #require(
                 try await refreshedItem.asset.loadMediaSelectionGroup(for: .legible)
