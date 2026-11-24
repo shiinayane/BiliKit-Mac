@@ -199,11 +199,14 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
+    ///
+    /// `firstPageCIDHint` 是来源列表给的第一个分 P 的 CID，只在没有指定分 P 时用来与详情并行预取播放清单。
     public func loadVideo(
         _ bvid: String,
         preferredCID: Int64? = nil,
         preferredPageNumber: Int? = nil,
-        startSeconds: Int? = nil
+        startSeconds: Int? = nil,
+        firstPageCIDHint: Int64? = nil
     ) {
         loadTask.cancel()
         collectionEpisodes.cancelRequests()
@@ -233,6 +236,9 @@ public final class VideoViewModel: AccountRevalidationParticipant {
                 preferredCID: preferredCID,
                 preferredPageNumber: preferredPageNumber,
                 startSeconds: startSeconds,
+                // 指定了分 P 时第一个要请求的不是第一个分 P，预取用不上。
+                firstPageCIDHint: preferredCID == nil && preferredPageNumber == nil
+                    ? firstPageCIDHint : nil,
                 isCurrent: isCurrent
             )
         }
@@ -483,8 +489,12 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         preferredCID: Int64?,
         preferredPageNumber: Int?,
         startSeconds: Int?,
+        firstPageCIDHint: Int64?,
         isCurrent: LatestTask.IsCurrent
     ) async {
+        // 与详情并行预取播放清单；取代、离开或失败退出时随本任务取消。CID 与详情核对不一致时结果不用。
+        let useCase = useCase
+        async let prefetched = useCase.prefetchPlayback(bvid: bvid, cid: firstPageCIDHint)
         do {
             let preparation = try await useCase.prepareDetail(
                 bvid: bvid,
@@ -501,7 +511,11 @@ public final class VideoViewModel: AccountRevalidationParticipant {
                 )
             }
 
-            let playable = try await useCase.preparePlayback(for: preparation)
+            let usesPrefetch = firstPageCIDHint == preparation.firstPlaybackCID
+            let playable = try await useCase.preparePlayback(
+                for: preparation,
+                prefetched: usesPrefetch ? await prefetched : nil
+            )
             try Task.checkCancellation()
             guard isCurrent() else { return }
             let explicitCID = Self.explicitCID(

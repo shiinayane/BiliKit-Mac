@@ -7,6 +7,8 @@ import Testing
 
 /// 播放选择策略：链接的分 P 序号与起播秒数落到当前视频上（就地换分 P、原地跳转或重新加载），失败后的重试由模型
 /// 承担或交回导航。
+///
+/// 来源列表给的第一个分 P 的 CID 只在没有指定分 P 时与详情并行请求播放清单；离开时预取随之取消，详情失败照常失败。
 @Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct VideoViewModelPlaybackSelectionTests {
@@ -14,6 +16,121 @@ struct VideoViewModelPlaybackSelectionTests {
     private let initialPage = VideoPage(cid: 910_001, index: 1, title: "P1", durationSeconds: 60)
     private let secondPage = VideoPage(cid: 910_002, index: 2, title: "P2", durationSeconds: 60)
     private let thirdPage = VideoPage(cid: 910_003, index: 3, title: "P3", durationSeconds: 60)
+
+    @Test
+    func listCIDHintRequestsThePlaybackListAlongsideTheDetail() async throws {
+        let detailGate = TestGate()
+        let playbackGate = TestGate()
+        let fixture = fixture
+        let repository = VideoRepositoryStub(
+            detail: { _, _ in
+                await detailGate.pass()
+                return fixture.detail
+            },
+            pages: { _, _ in [fixture.page] },
+            playback: { _, _ in
+                await playbackGate.pass()
+                return fixture.playback
+            }
+        )
+        let model = makeVideoViewModel(
+            useCase: VideoUseCase(repository: repository),
+            playback: PlayerStub()
+        )
+
+        model.select(
+            PlaybackSelectionIntent(bvid: fixture.bvid, firstPageCIDHint: fixture.page.cid)
+        )
+        try await detailGate.waitForEntries()
+        try await playbackGate.waitForEntries()
+        await detailGate.open()
+        await playbackGate.open()
+        await waitUntilSettled(model)
+
+        #expect(model.playableVideo?.context.selectedPage.cid == fixture.page.cid)
+        #expect(
+            await repository.playbackRequests
+                == [PlaybackItemIdentity(bvid: fixture.bvid, cid: fixture.page.cid)]
+        )
+    }
+
+    @Test
+    func explicitPartIgnoresTheListCIDHint() async {
+        let repository = VideoRepositoryStub(fixture)
+        let model = makeVideoViewModel(
+            useCase: VideoUseCase(repository: repository),
+            playback: PlayerStub()
+        )
+
+        model.select(
+            PlaybackSelectionIntent(
+                bvid: fixture.bvid,
+                preferredCID: fixture.page.cid,
+                firstPageCIDHint: 999_999
+            )
+        )
+        await waitUntilSettled(model)
+
+        #expect(
+            await repository.playbackRequests
+                == [PlaybackItemIdentity(bvid: fixture.bvid, cid: fixture.page.cid)]
+        )
+    }
+
+    @Test
+    func leavingDuringThePrefetchNeverLoadsThePlayer() async throws {
+        let gate = TestGate()
+        let fixture = fixture
+        let player = PlayerStub()
+        let model = makeVideoViewModel(
+            useCase: VideoUseCase(
+                repository: VideoRepositoryStub(
+                    fixture,
+                    playback: { _, _ in
+                        await gate.pass()
+                        return fixture.playback
+                    }
+                )
+            ),
+            playback: player
+        )
+
+        let load = SpawnedTasks {
+            model.select(
+                PlaybackSelectionIntent(bvid: fixture.bvid, firstPageCIDHint: fixture.page.cid)
+            )
+        }
+        try await gate.waitForEntries()
+        model.reset()
+        await gate.open()
+        await load.finished()
+
+        #expect(model.state == .idle)
+        #expect(player.loadedPlaybacks.isEmpty)
+    }
+
+    @Test
+    func detailFailureWinsOverASuccessfulPrefetch() async {
+        let fixture = fixture
+        let model = makeVideoViewModel(
+            useCase: VideoUseCase(
+                repository: VideoRepositoryStub(
+                    detail: { _, _ in throw ContentApplicationError.invalidResponse },
+                    pages: { _, _ in [fixture.page] },
+                    playback: { _, _ in fixture.playback }
+                )
+            ),
+            playback: PlayerStub()
+        )
+
+        model.select(
+            PlaybackSelectionIntent(bvid: fixture.bvid, firstPageCIDHint: fixture.page.cid)
+        )
+        await waitUntilSettled(model)
+
+        #expect(model.state == .failed(bvid: fixture.bvid, failure: .content(.invalidResponse)))
+        #expect(model.presentedContext == nil)
+    }
 
     @Test
     func linkPageNumbersSelectTheirParts() async {

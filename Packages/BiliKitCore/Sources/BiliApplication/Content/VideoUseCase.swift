@@ -34,6 +34,19 @@ public struct VideoDetailPreparation: Sendable, Equatable {
     public var context: VideoContext? {
         selectedPage.map { VideoContext(detail: detail, pages: pages, selectedPage: $0) }
     }
+
+    /// `preparePlayback` 第一个要请求播放清单的 CID：已定的分 P，未定时是第一个分 P（先取它读续播记录）。
+    public var firstPlaybackCID: Int64 {
+        (selectedPage ?? pages[0]).cid
+    }
+}
+
+/// 详情到达前按来源列表给的 CID 预取的播放清单请求结果，成功或失败都原样保留。
+///
+/// 只交给 `VideoUseCase.preparePlayback(for:prefetched:)`：CID 与详情核对一致才采用，失败也在那时才按详情权益解释。
+public struct PrefetchedPlayback: Sendable {
+    let cid: Int64
+    let result: Result<VideoPlayback, any Error>
 }
 
 /// 播放页准备视频的用例，分两步：取得详情并尽量选定分 P（`prepareDetail`），再取得选定分 P 的播放清单
@@ -93,9 +106,11 @@ public struct VideoUseCase: Sendable {
 
     /// 取得 `preparation` 选定分 P 的播放清单；分 P 未定时先取第一个分 P 的播放信息，按其中的续播记录选定。
     ///
-    /// 应用内显式选中的分 P 从头播放；链接给的分 P 与普通打开一样续播该分 P 的上次位置。
+    /// 应用内显式选中的分 P 从头播放；链接给的分 P 与普通打开一样续播该分 P 的上次位置。`prefetched` 的 CID 等于
+    /// 要请求的那个分 P 时直接采用它（含失败），不再请求；不等时忽略。
     public func preparePlayback(
-        for preparation: VideoDetailPreparation
+        for preparation: VideoDetailPreparation,
+        prefetched: PrefetchedPlayback? = nil
     ) async throws -> PlayableVideo {
         let detail = preparation.detail
         let pages = preparation.pages
@@ -104,7 +119,8 @@ public struct VideoUseCase: Sendable {
             let playback = try await playback(
                 detail: detail,
                 bvid: detail.bvid,
-                cid: selectedPage.cid
+                cid: selectedPage.cid,
+                prefetched: prefetched
             )
             try Task.checkCancellation()
             return PlayableVideo(
@@ -120,7 +136,8 @@ public struct VideoUseCase: Sendable {
         let provisionalPlayback = try await playback(
             detail: detail,
             bvid: detail.bvid,
-            cid: firstPage.cid
+            cid: firstPage.cid,
+            prefetched: prefetched
         )
         try Task.checkCancellation()
 
@@ -186,12 +203,32 @@ public struct VideoUseCase: Sendable {
         )
     }
 
+    /// 在详情到达之前请求 `cid` 的播放清单，与详情并行；结果交给 `preparePlayback(for:prefetched:)` 核对后才采用。
+    ///
+    /// `cid` 来自来源列表，不可信：请求本身只是一次读取，采用前以详情核对。调用方取消时在途请求随之取消；没有 `cid`
+    /// 时不请求，返回 nil。
+    public func prefetchPlayback(bvid: String, cid: Int64?) async -> PrefetchedPlayback? {
+        guard let cid else { return nil }
+        do {
+            return PrefetchedPlayback(
+                cid: cid,
+                result: .success(try await repository.playback(for: bvid, cid: cid))
+            )
+        } catch {
+            return PrefetchedPlayback(cid: cid, result: .failure(error))
+        }
+    }
+
     private func playback(
         detail: VideoDetail,
         bvid: String,
-        cid: Int64
+        cid: Int64,
+        prefetched: PrefetchedPlayback? = nil
     ) async throws -> VideoPlayback {
         do {
+            if let prefetched, prefetched.cid == cid {
+                return try prefetched.result.get()
+            }
             return try await repository.playback(for: bvid, cid: cid)
         } catch ContentApplicationError.serviceRejected(code: _)
             where detail.access.isUPowerExclusive == true

@@ -17,7 +17,8 @@ extension VideoViewModel {
                 intent.bvid,
                 preferredCID: intent.preferredCID,
                 preferredPageNumber: intent.preferredPageNumber,
-                startSeconds: intent.preferredStartSeconds
+                startSeconds: intent.preferredStartSeconds,
+                firstPageCIDHint: intent.firstPageCIDHint
             )
             return
         }

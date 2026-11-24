@@ -7,6 +7,9 @@ import Testing
 ///
 /// 分 P 已定（显式 cid、命中的链接序号或只有一个分 P）时，详情这一步就给出选定的分 P，播放页不等 playurl 就能呈现；
 /// 多 P 且没有指定时由续播记录决定。
+///
+/// 来源列表给的 CID 可以在详情之前预取播放清单（会先发出一次请求），但只在与要请求的分 P 一致时采用，失败也在那时
+/// 才按详情权益解释；不一致时丢弃、照常请求。
 /// 选择依次取显式 cid、链接分 P 序号、服务器的续播记录；续播位置为零、已看完或越界时从头播；
 /// 充电提示、可跳转时长与链接起播位置跟随实际下发的媒体。
 @Suite(.timeLimit(.minutes(1)))
@@ -62,6 +65,47 @@ struct VideoUseCaseTests {
         let video = try await singlePartUseCase.preparePlayback(for: preparation)
         #expect(video.resumePositionSeconds == 42.5)
         #expect(await singlePart.playbackCIDs() == [900_001])
+    }
+
+    @Test
+    func prefetchIsUsedOnlyWhenItMatchesTheFirstRequestedPart() async throws {
+        let matching = ContentRepositoryStub()
+        let matchingUseCase = VideoUseCase(repository: matching)
+        let prefetched = await matchingUseCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_001)
+        let preparation = try await matchingUseCase.prepareDetail(bvid: "BV1FixtureA1")
+        let video = try await matchingUseCase.preparePlayback(
+            for: preparation,
+            prefetched: prefetched
+        )
+        #expect(video.context.selectedPage.cid == 900_001)
+        #expect(await matching.playbackCIDs() == [900_001])
+
+        let mismatched = ContentRepositoryStub()
+        let mismatchedUseCase = VideoUseCase(repository: mismatched)
+        let stale = await mismatchedUseCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_002)
+        let undecided = try await mismatchedUseCase.prepareDetail(bvid: "BV1FixtureA1")
+        _ = try await mismatchedUseCase.preparePlayback(for: undecided, prefetched: stale)
+        #expect(await mismatched.playbackCIDs() == [900_002, 900_001])
+    }
+
+    @Test
+    func validatedPrefetchFailureIsInterpretedByTheDetailAndNotRetried() async throws {
+        let repository = ContentRepositoryStub(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: false,
+                isUPowerPlayable: false
+            ),
+            playbackFailure: .serviceRejected(code: -10403)
+        )
+        let useCase = VideoUseCase(repository: repository)
+        let prefetched = await useCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_001)
+        let preparation = try await useCase.prepareDetail(bvid: "BV1FixtureA1")
+
+        await #expect(throws: ContentApplicationError.fullViewingEntitlementRequired) {
+            try await useCase.preparePlayback(for: preparation, prefetched: prefetched)
+        }
+        #expect(await repository.playbackCIDs() == [900_001])
     }
 
     @Test

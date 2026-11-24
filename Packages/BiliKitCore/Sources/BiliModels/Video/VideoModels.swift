@@ -91,6 +91,8 @@ public struct PopularVideo: Identifiable, Sendable, Equatable {
     public let statistics: VideoStatistics
     public let durationSeconds: Int
     public let publishedAt: Date
+    /// 列表给出的第一个分 P 的 CID（多 P 视频也是第一个分 P，实测）；只用来提前请求播放清单，打开后以详情核对。
+    public let firstPageCID: Int64?
 
     public init(
         bvid: String,
@@ -99,7 +101,8 @@ public struct PopularVideo: Identifiable, Sendable, Equatable {
         owner: VideoOwner,
         statistics: VideoStatistics,
         durationSeconds: Int,
-        publishedAt: Date
+        publishedAt: Date,
+        firstPageCID: Int64? = nil
     ) {
         self.bvid = bvid
         self.title = title
@@ -108,6 +111,7 @@ public struct PopularVideo: Identifiable, Sendable, Equatable {
         self.statistics = statistics
         self.durationSeconds = durationSeconds
         self.publishedAt = publishedAt
+        self.firstPageCID = firstPageCID
     }
 }
 

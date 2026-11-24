@@ -8,6 +8,8 @@ import Testing
 
 /// 固定首页推荐与热门的响应契约：推荐走 App 端接口、经 App 授权器签名并过滤不支持的卡片，游标沿最后一张卡片的
 /// `idx` 续传；-101 只在请求带了凭据时是凭据失效；HTML 风控页、API 拒绝与缺少必需字段分别报非 JSON、保留错误码与解码失败。
+///
+/// 热门的 `cid` 只作第一个分 P 的提示：缺失或非正时为 nil，不影响整页。
 struct BiliAPIClientFeedTests {
     /// 一批里：可播放的视频（有 BV 号与只有 av 号各一张）、商业推广（`card_goto` 与 `ad_info` 两种）、没有
     /// `player_args` 的视频与直播；最后一张卡片的 `idx` 是下一批游标。
@@ -131,6 +133,25 @@ struct BiliAPIClientFeedTests {
             ).recommendations()
         }
         #expect(unavailable.capturedRequests().isEmpty)
+    }
+
+    @Test
+    func popularCIDBecomesAnOptionalFirstPageHint() async throws {
+        let item =
+            #""title":"热门","pic":"//i0.hdslb.com/a.jpg","owner":{"mid":1,"name":"作者"},"#
+            + #""stat":{"view":1,"danmaku":1,"like":1},"duration":60,"pubdate":1700000000"#
+        let response = jsonResponse(
+            #"{"code":0,"message":"0","data":{"no_more":true,"list":["#
+                + #"{"bvid":"BV1FixtureA1","cid":900001,"# + item + "},"
+                + #"{"bvid":"BV1FixtureB2","cid":0,"# + item + "},"
+                + #"{"bvid":"BV1FixtureC3","# + item + "}"
+                + "]}}"
+        )
+        let client = BiliAPIClient(transport: StubTransport(responses: [response]))
+
+        let page = try await client.popular(page: 1, pageSize: 20)
+
+        #expect(page.videos.map(\.firstPageCID) == [900_001, nil, nil])
     }
 
     @Test

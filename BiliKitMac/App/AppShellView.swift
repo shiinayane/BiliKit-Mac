@@ -522,7 +522,11 @@ struct AppShellView: View {
                 title: sources[.popular].title,
                 model: browseModel,
                 gridHost: gridHost(.popular),
-                onSelect: navigationCoordinator.openPlayback
+                onSelect: { bvid, firstPageCID in
+                    navigationCoordinator.openPlayback(
+                        PlaybackSelectionIntent(bvid: bvid, firstPageCIDHint: firstPageCID)
+                    )
+                }
             )
         case .watchLater:
             WatchLaterTabRoot(

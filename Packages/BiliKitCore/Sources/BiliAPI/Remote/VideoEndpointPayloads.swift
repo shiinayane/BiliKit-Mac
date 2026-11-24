@@ -25,6 +25,8 @@ struct PopularVideoPayload: Decodable, Sendable {
     let stat: StatisticsPayload
     let duration: Int
     let pubdate: Int64
+    /// 第一个分 P 的 CID；缺失或非正时不作提示，不影响整页。
+    let cid: Int64?
 
     func model() throws -> PopularVideo {
         guard bvid.hasPrefix("BV"), !title.isEmpty, duration >= 0, pubdate >= 0 else {
@@ -37,7 +39,8 @@ struct PopularVideoPayload: Decodable, Sendable {
             owner: owner.model(),
             statistics: stat.model(),
             durationSeconds: duration,
-            publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate))
+            publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate)),
+            firstPageCID: cid.flatMap { $0 > 0 ? $0 : nil }
         )
     }
 }

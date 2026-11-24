@@ -28,7 +28,8 @@ struct PopularTabRoot: View {
     let title: LocalizedStringResource
     let model: BrowseViewModel
     let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    /// BV 号与列表给的第一个分 P 的 CID（见 `PopularFeedView`）。
+    let onSelect: (String, Int64?) -> Void
 
     var body: some View {
         PopularFeedView(
