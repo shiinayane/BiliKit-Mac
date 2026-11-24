@@ -15,7 +15,10 @@ struct UploaderSpaceSidebarPresentationTests {
             (.loaded(videos(0)), .empty),
             // 失败带上原因，由视图分开说明风控、凭据与网络。
             (.failed(.authenticationInvalid), .failure(.authenticationInvalid)),
-            (.failed(.requestRestricted), .failure(.requestRestricted)),
+            (
+                .failed(.requestRestricted(.httpStatus412)),
+                .failure(.requestRestricted(.httpStatus412))
+            ),
             (.failed(.transportFailure), .failure(.transportFailure))
         ]
     )

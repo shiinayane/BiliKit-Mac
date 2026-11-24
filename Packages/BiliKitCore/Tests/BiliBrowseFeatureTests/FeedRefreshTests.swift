@@ -49,7 +49,7 @@ struct FeedRefreshTests {
     func failedRefreshKeepsMatchingLoadedContentVisible() async {
         let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(popular: { request, attempt in
-            if attempt == 2 { throw ContentApplicationError.requestRestricted }
+            if attempt == 2 { throw ContentApplicationError.requestRestricted(.httpStatus412) }
             return fixture.popularPage(request, hasMore: true)
         })
         let model = BrowseViewModel(
@@ -77,7 +77,7 @@ struct FeedRefreshTests {
         #expect(model.state == loadedState)
         #expect(model.pagination(for: request) == loadedPagination)
         #expect(!model.isRefreshing)
-        #expect(model.refreshError == .requestRestricted)
+        #expect(model.refreshError == .requestRestricted(.httpStatus412))
         #expect(
             model.successfulRefreshGeneration(for: .popular)
                 == successfulRefreshGeneration
@@ -90,7 +90,7 @@ struct FeedRefreshTests {
     func onlySuccessfulSameQueryRefreshAdvancesSearchGeneration() async {
         let fixture = ContentFixtures()
         let repository = FeedRepositoryStub(search: { request, attempt in
-            if attempt == 3 { throw ContentApplicationError.requestRestricted }
+            if attempt == 3 { throw ContentApplicationError.requestRestricted(.httpStatus412) }
             return fixture.searchPage(page: request.page)
         })
         let model = BrowseViewModel(
@@ -110,7 +110,7 @@ struct FeedRefreshTests {
         await model.waitForCurrentTask()
 
         #expect(model.successfulRefreshGeneration(for: .search) == 1)
-        #expect(model.refreshError == .requestRestricted)
+        #expect(model.refreshError == .requestRestricted(.httpStatus412))
         #expect(await repository.searchRequests.count == 3)
     }
 

@@ -8,7 +8,7 @@ struct ContentApplicationErrorTests {
             (ContentApplicationError.authenticationInvalid, true),
             (.authenticationRequired, false),
             (.authenticationUnavailable, false),
-            (.requestRestricted, false),
+            (.requestRestricted(.httpStatus412), false),
             (.contentUnavailable, false),
             (.serviceRejected(code: -500), false)
         ]
@@ -29,7 +29,7 @@ struct ContentApplicationErrorTests {
             (.fullViewingEntitlementRequired, false),
             (.authenticationUnavailable, true),
             (.authenticationInvalid, true),
-            (.requestRestricted, true),
+            (.requestRestricted(.httpStatus412), true),
             (.serviceRejected(code: -500), true),
             (.transportFailure, true)
         ]

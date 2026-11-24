@@ -1,3 +1,4 @@
+import BiliApplication
 import BiliNetworking
 
 /// `BiliAPI` 的远端与请求失败；adapter 只经 `failure` 分类后映射为各域 Application 错误。
@@ -110,8 +111,9 @@ extension BiliAPIError {
         case transport
         /// 403/412 以外、非 2xx 的 HTTP 状态。
         case unexpectedHTTPStatus
-        /// HTTP 403/412、业务 -352/-403/-412、`v_voucher` 挑战，以及 HTML 风控页等非预期格式的正文。
-        case restricted
+        /// HTTP 403/412、业务 -352/-403/-412、`v_voucher` 挑战，以及 HTML 风控页等非预期格式的正文；
+        /// 带上是哪一种，内容域据此在失败文案里给出短码。
+        case restricted(RequestRestriction)
         /// 业务码表明请求的内容不存在、已删除或对当前身份不可见（-404、62002、62004）；重试不会改变结果。
         case contentUnavailable(code: Int)
         case rejected(code: Int)
@@ -141,11 +143,22 @@ extension BiliAPIError {
             .authorizationUnavailable
         case .transportFailure:
             .transport
-        case .httpStatus(403), .httpStatus(412),
-            .apiRejected(code: -352, _), .apiRejected(code: -403, _),
-            .apiRejected(code: -412, _), .riskControlVoucher,
-            .nonJSONResponse, .nonProtobufResponse:
-            .restricted
+        case .httpStatus(403):
+            .restricted(.httpStatus403)
+        case .httpStatus(412):
+            .restricted(.httpStatus412)
+        case .apiRejected(code: -352, _):
+            .restricted(.serviceCode352)
+        case .apiRejected(code: -403, _):
+            .restricted(.serviceCode403)
+        case .apiRejected(code: -412, _):
+            .restricted(.serviceCode412)
+        case .riskControlVoucher:
+            .restricted(.voucherChallenge)
+        case .nonJSONResponse:
+            .restricted(.nonJSONBody)
+        case .nonProtobufResponse:
+            .restricted(.nonProtobufBody)
         case .httpStatus:
             .unexpectedHTTPStatus
         case .apiRejected(let code, _) where Self.contentUnavailableCodes.contains(code):
@@ -168,7 +181,9 @@ extension BiliAPIError {
     private static let contentUnavailableCodes: Set<Int> = [-404, 62_002, 62_004]
 
     /// 远端风控或限流；供没有 Application 错误域的 App 流程（线路测速）区分提示。
-    public var isRiskControlRestriction: Bool { failure == .restricted }
+    public var isRiskControlRestriction: Bool {
+        if case .restricted = failure { true } else { false }
+    }
 
     /// 把 adapter 捕获的错误映射为领域错误：取消原样传播，`BiliAPIError` 按 `failure` 交给
     /// 领域映射，其余错误一律为该领域的 `fallback`。

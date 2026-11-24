@@ -449,30 +449,30 @@
         }
       }
     },
-    "服务可能返回了风控页，请降低请求频率后重试。" : {
+    "服务可能返回了风控页，请降低请求频率后重试（代码 %@）。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The service may have returned a risk-control page. Wait and try again less frequently."
+            "value" : "The service may have returned a risk-control page. Wait and try again less frequently (code %@)."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サービスがアクセス制限ページを返した可能性があります。間隔を空けてやり直してください。"
+            "value" : "サービスがアクセス制限ページを返した可能性があります。間隔を空けてやり直してください（コード %@）。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务可能返回了风控页，请降低请求频率后重试。"
+            "value" : "服务可能返回了风控页，请降低请求频率后重试（代码 %@）。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服務可能傳回了風險控管頁面，請降低要求頻率後再試。"
+            "value" : "服務可能傳回了風險控管頁面，請降低要求頻率後再試（代碼 %@）。"
           }
         }
       }

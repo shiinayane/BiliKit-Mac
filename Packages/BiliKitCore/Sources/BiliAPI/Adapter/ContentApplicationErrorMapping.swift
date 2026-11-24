@@ -33,8 +33,8 @@ extension ContentApplicationError {
                 .transportFailure
             case .unexpectedHTTPStatus:
                 .unavailable
-            case .restricted:
-                .requestRestricted
+            case .restricted(let restriction):
+                .requestRestricted(restriction)
             case .contentUnavailable:
                 .contentUnavailable
             case .rejected(let code):

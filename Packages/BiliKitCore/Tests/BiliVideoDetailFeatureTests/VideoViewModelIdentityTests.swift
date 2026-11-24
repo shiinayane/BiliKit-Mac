@@ -12,7 +12,7 @@ struct VideoViewModelIdentityTests {
         ContentApplicationError.authenticationInvalid,
         .authenticationRequired,
         .authenticationUnavailable,
-        .requestRestricted
+        .requestRestricted(.httpStatus412)
     ])
     @MainActor
     func onlyInvalidAuthenticationRequestsAppRevalidation(

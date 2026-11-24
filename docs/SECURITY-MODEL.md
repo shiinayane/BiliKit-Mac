@@ -349,6 +349,9 @@ Sparkle 更新网络，以及任何 redirect 后的主机。只认精确主机�
   Referer、query/body、Cookie、CSRF、账号标识、完整 URL 或响应正文。
 - 现有的产品日志只有一处：弹幕时钟的平台前提不成立时，Release 构建记一条固定的英文分类字符串
   （`DanmakuClock` 类别，public），不带任何时间值、位置或参数。
+- 内容类失败文案在「请求受到限制」时附带受限信号的固定短码（`RequestRestriction.code`：`HTTP 403`／`HTTP 412`、
+  `-352`／`-403`／`-412`、`v_voucher`、`non-JSON`、`non-protobuf`），让用户报告时能区分 IP 拦截、指纹校验、挑战与
+  拦截页。短码只来自这张固定表，不含服务端 message、URL、请求参数或响应正文，也不写进任何日志。
 - fixture 只用手写假值与 `example.invalid`（媒体地址用虚构的 `*.fixture.bilivideo.com`，生产 allowlist 不为测试开口），不录制现场响应；`Scripts/check-secrets.sh` 在 static Gate
   中扫描已知秘密模式。
 - 现场探针只输出字段名、类型、长度、计数、状态与分类。
