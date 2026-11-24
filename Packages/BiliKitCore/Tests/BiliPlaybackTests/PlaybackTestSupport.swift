@@ -303,6 +303,38 @@ func waitUntilTimeControlStatus(
     _ = try await awaitFirst(in: statuses) { $0 == expected }
 }
 
+/// 执行 `action`，等到系统应用媒体选择后发出的某次 `mediaSelectionDidChangeNotification` 满足 `predicate`。
+///
+/// 依赖实测、文档没写的系统行为：`select(_:in:)` 返回时 `currentMediaSelection` 先报告请求的选择，系统随后按请求
+/// 顺序逐个应用，每应用一个就把它换成已应用的选择并发一次通知。连续两次请求时，应用前一个后报告的选择里还没有
+/// 后一个（先开字幕再选 AI 配音，中间会报告一次原声），所以直接读当前值可能读到中间状态。订阅在 `action` 之前，
+/// `predicate` 在通知送达时于主线程判断。
+@MainActor
+func waitForAppliedMediaSelection(
+    after action: () async throws -> Void,
+    where predicate: @escaping @MainActor (AVPlayerItem) -> Bool
+) async throws {
+    let (matches, continuation) = AsyncStream.makeStream(of: Void.self)
+    let observer = NotificationCenter.default.addObserver(
+        forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+        object: nil,
+        queue: .main
+    ) { notification in
+        let item = notification.object as? AVPlayerItem
+        MainActor.assumeIsolated {
+            if let item, predicate(item) {
+                continuation.yield()
+            }
+        }
+    }
+    defer {
+        NotificationCenter.default.removeObserver(observer)
+        continuation.finish()
+    }
+    try await action()
+    _ = try await awaitFirst(in: matches) { _ in true }
+}
+
 // MARK: - 原始 TCP 客户端
 
 /// 直连 loopback 端口的进程内 TCP 客户端，用来观察 server 主动关闭连接的时机。
