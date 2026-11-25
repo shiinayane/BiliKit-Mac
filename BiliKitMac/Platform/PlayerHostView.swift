@@ -114,18 +114,18 @@ struct PlayerHostView: View {
             // 只有充电试看会出现这条提示，其他视频不订阅时间线：时间线按媒体时间刷新（倍速时更频繁），每次写入
             // 都会让整个播放器区域重新求值一次。
             guard let timelineUpdates,
-                let context = videoModel?.presentedContext,
-                PlaybackPreviewEndPolicy.canPresentNotice(for: context.accessNotice)
+                let playable = videoModel?.playableVideo,
+                PlaybackPreviewEndPolicy.canPresentNotice(for: playable.accessNotice)
             else { return }
             let identity = PlaybackItemIdentity(
-                bvid: context.detail.bvid,
-                cid: context.selectedPage.cid
+                bvid: playable.context.detail.bvid,
+                cid: playable.context.selectedPage.cid
             )
             for await snapshot in timelineUpdates() {
                 guard !Task.isCancelled else { return }
                 let notice =
                     PlaybackPreviewEndPolicy.shouldPresentNotice(
-                        accessNotice: context.accessNotice,
+                        accessNotice: playable.accessNotice,
                         expectedIdentity: identity,
                         timeline: snapshot
                     )
@@ -149,9 +149,10 @@ struct PlayerHostView: View {
     }
 
     private var previewProjectionIdentity: String? {
-        guard let context = videoModel?.presentedContext else { return nil }
+        guard let playable = videoModel?.playableVideo else { return nil }
+        let context = playable.context
         return
-            "\(context.detail.bvid):\(context.selectedPage.cid):\(String(describing: context.accessNotice))"
+            "\(context.detail.bvid):\(context.selectedPage.cid):\(String(describing: playable.accessNotice))"
     }
 }
 

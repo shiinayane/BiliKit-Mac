@@ -143,6 +143,7 @@ struct BiliAPIClientWatchLaterTests {
             ]
         )
         let first = page.items[0]
+        #expect(first.firstPageCID == 900_001)
         #expect(first.title == "稍后 & 再看 一")
         #expect(first.coverURL?.absoluteString == "https://images.example.invalid/a.jpg")
         #expect(

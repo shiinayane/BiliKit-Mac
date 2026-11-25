@@ -10,14 +10,15 @@ public struct WatchHistoryView: View {
     private let model: WatchHistoryViewModel
     private let accountState: AccountPresentationState
     private let gridHost: NativeVideoGridHostContext
-    private let onSelect: (String) -> Void
+    /// 选中一个视频：BV 号与列表给的第一个分 P 的 CID（没有时为 nil），后者交给播放页提前请求播放清单。
+    private let onSelect: (String, Int64?) -> Void
     private let onPresentAuthentication: () -> Void
 
     public init(
         model: WatchHistoryViewModel,
         accountState: AccountPresentationState,
         gridHost: NativeVideoGridHostContext,
-        onSelect: @escaping (String) -> Void,
+        onSelect: @escaping (String, Int64?) -> Void,
         onPresentAuthentication: @escaping () -> Void
     ) {
         self.model = model
@@ -35,7 +36,12 @@ public struct WatchHistoryView: View {
             watchLaterAction: .add,
             accountState: accountState,
             gridHost: gridHost,
-            onSelect: onSelect,
+            onSelect: { bvid in
+                onSelect(
+                    bvid,
+                    model.state.loadedItems.first(where: { $0.bvid == bvid })?.firstPageCID
+                )
+            },
             onPresentAuthentication: onPresentAuthentication
         )
     }

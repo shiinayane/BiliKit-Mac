@@ -5,6 +5,11 @@ import Testing
 
 /// 打开视频只为选定的一个分 P 请求播放，选择不合法或详情请求被取消时不请求播放。
 ///
+/// 分 P 已定（显式 cid、命中的链接序号或只有一个分 P）时，详情这一步就给出选定的分 P，播放页不等 playurl 就能呈现；
+/// 多 P 且没有指定时由续播记录决定。
+///
+/// 来源列表给的 CID 可以在详情之前预取播放清单（会先发出一次请求），但只在与要请求的分 P 一致时采用，失败也在那时
+/// 才按详情权益解释；不一致时丢弃、照常请求。
 /// 选择依次取显式 cid、链接分 P 序号、服务器的续播记录；续播位置为零、已看完或越界时从头播；
 /// 充电提示、可跳转时长与链接起播位置跟随实际下发的媒体。
 @Suite(.timeLimit(.minutes(1)))
@@ -14,15 +19,91 @@ struct VideoUseCaseTests {
         let repository = ContentRepositoryStub()
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+        let video = try await prepare(useCase, bvid: "BV1FixtureA1")
 
-        #expect(context.detail.bvid == "BV1FixtureA1")
-        #expect(context.pages.map(\.index) == [1, 2])
-        #expect(context.selectedPage.index == 1)
-        if case .dash(let manifest) = context.playback.media {
+        #expect(video.context.detail.bvid == "BV1FixtureA1")
+        #expect(video.context.pages.map(\.index) == [1, 2])
+        #expect(video.context.selectedPage.index == 1)
+        if case .dash(let manifest) = video.playback.media {
             #expect(manifest.videoRepresentations.first?.id == 32)
         } else {
             Issue.record("应得到 DASH 播放清单")
+        }
+        #expect(await repository.playbackCIDs() == [900_001])
+    }
+
+    @Test
+    func detailStepSelectsThePartOnlyWhenItIsAlreadyDecided() async throws {
+        let repository = ContentRepositoryStub()
+        let useCase = VideoUseCase(repository: repository)
+
+        let bvid = "BV1FixtureA1"
+        let undecided = try await useCase.prepareDetail(bvid: bvid)
+        let explicit = try await useCase.prepareDetail(bvid: bvid, preferredCID: 900_002)
+        let linked = try await useCase.prepareDetail(bvid: bvid, preferredPageNumber: 2)
+        let outOfRange = try await useCase.prepareDetail(bvid: bvid, preferredPageNumber: 3)
+
+        #expect(undecided.context == nil)
+        #expect(explicit.context?.selectedPage.cid == 900_002)
+        #expect(linked.context?.selectedPage.cid == 900_002)
+        #expect(outOfRange.context == nil)
+        #expect(await repository.playbackCIDs().isEmpty)
+
+        let singlePart = ContentRepositoryStub(
+            singlePage: true,
+            resumeMetadata: PlaybackResumeMetadata(
+                lastPlayedCID: 900_001,
+                positionMilliseconds: 42_500
+            )
+        )
+        let singlePartUseCase = VideoUseCase(repository: singlePart)
+        let preparation = try await singlePartUseCase.prepareDetail(bvid: "BV1FixtureA1")
+        #expect(preparation.context?.selectedPage.cid == 900_001)
+        #expect(await singlePart.playbackCIDs().isEmpty)
+
+        // 提前选定不改变续播：只有一个分 P 时照样从服务器记录的位置继续。
+        let video = try await singlePartUseCase.preparePlayback(for: preparation)
+        #expect(video.resumePositionSeconds == 42.5)
+        #expect(await singlePart.playbackCIDs() == [900_001])
+    }
+
+    @Test
+    func prefetchIsUsedOnlyWhenItMatchesTheFirstRequestedPart() async throws {
+        let matching = ContentRepositoryStub()
+        let matchingUseCase = VideoUseCase(repository: matching)
+        let prefetched = await matchingUseCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_001)
+        let preparation = try await matchingUseCase.prepareDetail(bvid: "BV1FixtureA1")
+        let video = try await matchingUseCase.preparePlayback(
+            for: preparation,
+            prefetched: prefetched
+        )
+        #expect(video.context.selectedPage.cid == 900_001)
+        #expect(await matching.playbackCIDs() == [900_001])
+
+        let mismatched = ContentRepositoryStub()
+        let mismatchedUseCase = VideoUseCase(repository: mismatched)
+        let stale = await mismatchedUseCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_002)
+        let undecided = try await mismatchedUseCase.prepareDetail(bvid: "BV1FixtureA1")
+        _ = try await mismatchedUseCase.preparePlayback(for: undecided, prefetched: stale)
+        #expect(await mismatched.playbackCIDs() == [900_002, 900_001])
+    }
+
+    @Test
+    func validatedPrefetchFailureIsInterpretedByTheDetailAndNotRetried() async throws {
+        let repository = ContentRepositoryStub(
+            access: VideoAccess(
+                isUPowerExclusive: true,
+                isUPowerPreviewAvailable: false,
+                isUPowerPlayable: false
+            ),
+            playbackFailure: .serviceRejected(code: -10403)
+        )
+        let useCase = VideoUseCase(repository: repository)
+        let prefetched = await useCase.prefetchPlayback(bvid: "BV1FixtureA1", cid: 900_001)
+        let preparation = try await useCase.prepareDetail(bvid: "BV1FixtureA1")
+
+        await #expect(throws: ContentApplicationError.fullViewingEntitlementRequired) {
+            try await useCase.preparePlayback(for: preparation, prefetched: prefetched)
         }
         #expect(await repository.playbackCIDs() == [900_001])
     }
@@ -53,7 +134,7 @@ struct VideoUseCaseTests {
         let useCase = VideoUseCase(repository: repository)
 
         await #expect(throws: ContentApplicationError.invalidResponse) {
-            try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+            try await prepare(useCase, bvid: "BV1FixtureA1")
         }
         #expect(await repository.playbackCIDs().isEmpty)
     }
@@ -62,16 +143,16 @@ struct VideoUseCaseTests {
     func replacesOnlyTheSelectedCIDWithinPreparedContext() async throws {
         let repository = ContentRepositoryStub()
         let useCase = VideoUseCase(repository: repository)
-        let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+        let initial = try await prepare(useCase, bvid: "BV1FixtureA1")
 
         let replacement = try await useCase.preparePage(
-            in: initial,
+            in: initial.context,
             cid: 900_002
         )
 
-        #expect(replacement.detail == initial.detail)
-        #expect(replacement.pages == initial.pages)
-        #expect(replacement.selectedPage.cid == 900_002)
+        #expect(replacement.context.detail == initial.context.detail)
+        #expect(replacement.context.pages == initial.context.pages)
+        #expect(replacement.context.selectedPage.cid == 900_002)
         #expect(await repository.playbackCIDs() == [900_001, 900_002])
     }
 
@@ -79,10 +160,10 @@ struct VideoUseCaseTests {
     func rejectsCIDOutsidePreparedPagesWithoutPlaybackRequest() async throws {
         let repository = ContentRepositoryStub()
         let useCase = VideoUseCase(repository: repository)
-        let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+        let initial = try await prepare(useCase, bvid: "BV1FixtureA1")
 
         await #expect(throws: ContentApplicationError.invalidRequest) {
-            try await useCase.preparePage(in: initial, cid: 999_999)
+            try await useCase.preparePage(in: initial.context, cid: 999_999)
         }
         #expect(await repository.playbackCIDs() == [900_001])
     }
@@ -97,13 +178,14 @@ struct VideoUseCaseTests {
         )
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(
+        let video = try await prepare(
+            useCase,
             bvid: "BV1FixtureA1",
             preferredCID: 900_002
         )
 
-        #expect(context.selectedPage.cid == 900_002)
-        #expect(context.resumePositionSeconds == nil)
+        #expect(video.context.selectedPage.cid == 900_002)
+        #expect(video.resumePositionSeconds == nil)
         #expect(await repository.playbackCIDs() == [900_002])
     }
 
@@ -118,13 +200,14 @@ struct VideoUseCaseTests {
         )
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(
+        let video = try await prepare(
+            useCase,
             bvid: "BV1FixtureA1",
             preferredPageNumber: 2
         )
 
-        #expect(context.selectedPage.cid == 900_002)
-        #expect(context.resumePositionSeconds == nil)
+        #expect(video.context.selectedPage.cid == 900_002)
+        #expect(video.resumePositionSeconds == nil)
         #expect(await repository.playbackCIDs() == [900_002])
     }
 
@@ -139,13 +222,14 @@ struct VideoUseCaseTests {
         )
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(
+        let video = try await prepare(
+            useCase,
             bvid: "BV1FixtureA1",
             preferredPageNumber: 2
         )
 
-        #expect(context.selectedPage.cid == 900_002)
-        #expect(context.resumePositionSeconds == 42.5)
+        #expect(video.context.selectedPage.cid == 900_002)
+        #expect(video.resumePositionSeconds == 42.5)
     }
 
     /// 链接给出的分 P 序号不可信：超出范围时按默认规则选择，不报错。
@@ -154,12 +238,13 @@ struct VideoUseCaseTests {
         let repository = ContentRepositoryStub()
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(
+        let video = try await prepare(
+            useCase,
             bvid: "BV1FixtureA1",
             preferredPageNumber: number
         )
 
-        #expect(context.selectedPage.cid == 900_001)
+        #expect(video.context.selectedPage.cid == 900_001)
     }
 
     @Test
@@ -167,13 +252,14 @@ struct VideoUseCaseTests {
         let repository = ContentRepositoryStub()
         let useCase = VideoUseCase(repository: repository)
 
-        let context = try await useCase.prepareVideo(
+        let video = try await prepare(
+            useCase,
             bvid: "BV1FixtureA1",
             preferredCID: 900_001,
             preferredPageNumber: 2
         )
 
-        #expect(context.selectedPage.cid == 900_001)
+        #expect(video.context.selectedPage.cid == 900_001)
     }
 
     @Test
@@ -182,7 +268,8 @@ struct VideoUseCaseTests {
         let useCase = VideoUseCase(repository: repository)
 
         await #expect(throws: ContentApplicationError.invalidRequest) {
-            try await useCase.prepareVideo(
+            try await prepare(
+                useCase,
                 bvid: "BV1FixtureA1",
                 preferredCID: 999_999
             )
@@ -196,7 +283,7 @@ struct VideoUseCaseTests {
         let repository = ContentRepositoryStub(blocksDetail: true)
         let useCase = VideoUseCase(repository: repository)
         let task = Task {
-            try await useCase.prepareVideo(bvid: "BV1FixtureA1")
+            try await prepare(useCase, bvid: "BV1FixtureA1")
         }
 
         await repository.waitForDetailRequest()
@@ -220,11 +307,10 @@ struct VideoUseCaseTests {
             )
         )
 
-        let context = try await VideoUseCase(repository: repository)
-            .prepareVideo(bvid: "BV1FixtureA1")
+        let video = try await prepare(VideoUseCase(repository: repository), bvid: "BV1FixtureA1")
 
-        #expect(context.selectedPage.cid == 900_001)
-        #expect(context.resumePositionSeconds == nil)
+        #expect(video.context.selectedPage.cid == 900_001)
+        #expect(video.resumePositionSeconds == nil)
     }
 
     @Test
@@ -236,12 +322,12 @@ struct VideoUseCaseTests {
             )
         )
         let useCase = VideoUseCase(repository: repository)
-        let initial = try await useCase.prepareVideo(bvid: "BV1FixtureA1")
-        #expect(initial.selectedPage.cid == 900_002)
+        let initial = try await prepare(useCase, bvid: "BV1FixtureA1")
+        #expect(initial.context.selectedPage.cid == 900_002)
 
-        let selected = try await useCase.preparePage(in: initial, cid: 900_002)
+        let selected = try await useCase.preparePage(in: initial.context, cid: 900_002)
 
-        #expect(selected.selectedPage.cid == 900_002)
+        #expect(selected.context.selectedPage.cid == 900_002)
         #expect(selected.resumePositionSeconds == nil)
     }
 
@@ -284,14 +370,16 @@ struct VideoUseCaseTests {
                     )
                 }
         let page = VideoPage(cid: 900_001, index: 1, title: "P1", durationSeconds: pageDuration)
-        let context = VideoContext(
-            detail: makeAccessDetail(access: access),
-            pages: [page],
-            selectedPage: page,
+        let video = PlayableVideo(
+            context: VideoContext(
+                detail: makeAccessDetail(access: access),
+                pages: [page],
+                selectedPage: page
+            ),
             playback: playback
         )
 
-        #expect(context.accessNotice == expected)
+        #expect(video.accessNotice == expected)
     }
 
     /// 可跳转时长是时间戳与链接起播的唯一规则：充电试看取试看时长；只有 DASH 采用链接起播位置。
@@ -304,22 +392,26 @@ struct VideoUseCaseTests {
             VideoPage(cid: 900_002, index: 2, title: "P2", durationSeconds: 600),
             VideoPage(cid: 900_003, index: 3, title: "P3", durationSeconds: 0)
         ]
-        let previewContext = VideoContext(
-            detail: makeAccessDetail(
-                access: VideoAccess(
-                    isUPowerExclusive: true,
-                    isUPowerPreviewAvailable: true,
-                    isUPowerPlayable: false
-                )
+        let previewContext = PlayableVideo(
+            context: VideoContext(
+                detail: makeAccessDetail(
+                    access: VideoAccess(
+                        isUPowerExclusive: true,
+                        isUPowerPreviewAvailable: true,
+                        isUPowerPlayable: false
+                    )
+                ),
+                pages: [page] + otherPages,
+                selectedPage: page
             ),
-            pages: [page] + otherPages,
-            selectedPage: page,
             playback: try progressivePreview()
         )
-        let dashContext = VideoContext(
-            detail: makeAccessDetail(access: VideoAccess()),
-            pages: [page],
-            selectedPage: page,
+        let dashContext = PlayableVideo(
+            context: VideoContext(
+                detail: makeAccessDetail(access: VideoAccess()),
+                pages: [page],
+                selectedPage: page
+            ),
             playback: try makeFixturePlayback(resumeMetadata: nil)
         )
 
@@ -331,7 +423,7 @@ struct VideoUseCaseTests {
         #expect(dashContext.linkStartPosition(seconds: 60) == 60)
         #expect(dashContext.linkStartPosition(seconds: 2_255) == nil)
         #expect(dashContext.linkStartPosition(seconds: nil) == nil)
-        #expect(!VideoContext.accepts(seconds: 0, seekableDurationSeconds: nil))
+        #expect(!PlayableVideo.accepts(seconds: 0, seekableDurationSeconds: nil))
         let limits = previewContext.timestampSeekLimits
         #expect(limits.accepts(seconds: 883, page: nil))
         #expect(!limits.accepts(seconds: 884, page: 1))
@@ -364,10 +456,23 @@ struct VideoUseCaseTests {
         )
 
         await #expect(throws: expected) {
-            try await VideoUseCase(repository: repository).prepareVideo(
-                bvid: "BV1FixtureA1"
-            )
+            try await prepare(VideoUseCase(repository: repository), bvid: "BV1FixtureA1")
         }
+    }
+
+    /// 按播放页的顺序走完两步：先取详情，再取播放清单。
+    private func prepare(
+        _ useCase: VideoUseCase,
+        bvid: String,
+        preferredCID: Int64? = nil,
+        preferredPageNumber: Int? = nil
+    ) async throws -> PlayableVideo {
+        let preparation = try await useCase.prepareDetail(
+            bvid: bvid,
+            preferredCID: preferredCID,
+            preferredPageNumber: preferredPageNumber
+        )
+        return try await useCase.preparePlayback(for: preparation)
     }
 
     private func progressivePreview() throws -> VideoPlayback {
@@ -400,6 +505,7 @@ struct VideoUseCaseTests {
 
 private actor ContentRepositoryStub: VideoRepository {
     private let hasPages: Bool
+    private let singlePage: Bool
     private let resumeMetadata: PlaybackResumeMetadata?
     private let access: VideoAccess
     private let playbackFailure: ContentApplicationError?
@@ -411,12 +517,14 @@ private actor ContentRepositoryStub: VideoRepository {
 
     init(
         hasPages: Bool = true,
+        singlePage: Bool = false,
         resumeMetadata: PlaybackResumeMetadata? = nil,
         access: VideoAccess = VideoAccess(),
         playbackFailure: ContentApplicationError? = nil,
         blocksDetail: Bool = false
     ) {
         self.hasPages = hasPages
+        self.singlePage = singlePage
         self.resumeMetadata = resumeMetadata
         self.access = access
         self.playbackFailure = playbackFailure
@@ -471,6 +579,10 @@ private actor ContentRepositoryStub: VideoRepository {
         observedPlaybackCIDs
     }
 
+    private var pages: [VideoPage] {
+        singlePage ? fixturePages.filter { $0.index == 1 } : fixturePages
+    }
+
     private func makeDetail(bvid: String) -> VideoDetail {
         VideoDetail(
             bvid: bvid,
@@ -485,7 +597,7 @@ private actor ContentRepositoryStub: VideoRepository {
             ),
             durationSeconds: 360,
             publishedAt: Date(timeIntervalSince1970: 1_720_000_000),
-            pages: hasPages ? fixturePages : [],
+            pages: hasPages ? pages : [],
             access: access
         )
     }

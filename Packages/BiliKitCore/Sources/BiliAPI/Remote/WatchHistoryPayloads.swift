@@ -137,7 +137,8 @@ struct WatchHistoryItemPayload: Decodable, Sendable {
             progressSeconds: normalizedProgress,
             durationSeconds: duration,
             viewedAt: Date(timeIntervalSince1970: TimeInterval(viewedAt)),
-            device: history.device
+            device: history.device,
+            firstPageCID: history.firstPageCID
         )
     }
 }
@@ -148,10 +149,19 @@ struct WatchHistoryIdentityPayload: Decodable, Sendable {
     let business: String
     /// 观看设备 `dt`；缺失或形状不对时为 nil，不影响整条历史。
     let deviceType: LossyDecodable<FlexibleInt64>?
+    /// 上次看到的那一 P 的 CID 与序号（从 1 开始）。
+    let cid: LossyDecodable<FlexibleInt64>?
+    let page: LossyDecodable<FlexibleInt64>?
 
     private enum CodingKeys: String, CodingKey {
-        case bvid, business
+        case bvid, business, cid, page
         case deviceType = "dt"
+    }
+
+    /// 上次看到的正是第一个分 P 时，它的 CID 就是第一个分 P 的 CID；否则不作提示。
+    var firstPageCID: Int64? {
+        guard page?.value?.value == 1 else { return nil }
+        return firstPageCIDHint(cid?.value?.value)
     }
 
     /// `dt`：1/3/5/7 手机端，2 网页端，4/6 平板端，33 电视端；其他取值不显示设备。

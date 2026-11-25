@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定相关推荐契约：解码推荐架所需字段，缺少可交互字段时整页解码失败。
+/// 固定相关推荐契约：解码推荐架所需字段与可选的第一个分 P 的 CID，缺少可交互字段时整页解码失败。
 struct BiliAPIClientRelatedVideoTests {
     @Test
     func relatedVideosDecodeShelfFields() async throws {
@@ -23,6 +23,7 @@ struct BiliAPIClientRelatedVideoTests {
         #expect(videos[0].viewCount == 22_222)
         #expect(videos[0].durationSeconds == 222)
         #expect(videos[1].durationSeconds == nil)
+        #expect(videos.map(\.firstPageCID) == [900_101, nil])
         let request = try #require(transport.capturedRequests().first)
         #expect(request.url.path == "/x/web-interface/archive/related")
         #expect(

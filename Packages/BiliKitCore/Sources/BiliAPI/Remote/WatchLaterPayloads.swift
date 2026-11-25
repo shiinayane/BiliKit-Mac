@@ -55,6 +55,7 @@ struct WatchLaterItemPayload: Decodable, Sendable {
     let isPGC: Bool?
     let pgcLabel: String?
     let isPUGV: Bool?
+    let cid: Int64?
 
     private enum CodingKeys: String, CodingKey {
         case aid, bvid, title, duration, owner, progress, state
@@ -63,6 +64,7 @@ struct WatchLaterItemPayload: Decodable, Sendable {
         case isPGC = "is_pgc"
         case pgcLabel = "pgc_label"
         case isPUGV = "is_pugv"
+        case cid
     }
 
     init(from decoder: any Decoder) throws {
@@ -79,6 +81,7 @@ struct WatchLaterItemPayload: Decodable, Sendable {
         isPGC = container.decodeLossyBool(forKey: .isPGC)
         pgcLabel = container.decodeLossyIfPresent(String.self, forKey: .pgcLabel)
         isPUGV = container.decodeLossyBool(forKey: .isPUGV)
+        cid = container.decodeLossyIfPresent(Int64.self, forKey: .cid)
     }
 
     func model() throws -> WatchLaterItem? {
@@ -106,7 +109,8 @@ struct WatchLaterItemPayload: Decodable, Sendable {
             durationSeconds: duration,
             progress: Self.progress(progress, durationSeconds: duration),
             addedAt: Date(timeIntervalSince1970: TimeInterval(addedAt)),
-            unavailability: nil
+            unavailability: nil,
+            firstPageCID: firstPageCIDHint(cid)
         )
     }
 

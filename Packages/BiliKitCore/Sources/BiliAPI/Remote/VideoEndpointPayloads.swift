@@ -15,6 +15,12 @@ struct PopularPayload: Decodable, Sendable {
     }
 }
 
+/// 来源列表给的第一个分 P 的 CID 提示：只收正数；缺失、形状不对或非正时为 nil，不影响条目本身。
+func firstPageCIDHint(_ cid: Int64?) -> Int64? {
+    guard let cid, cid > 0 else { return nil }
+    return cid
+}
+
 /// 热门列表的一项，映射为 `PopularVideo`；BVID 不以 `BV` 开头、标题为空或时长、
 /// 发布时间为负时整页失败。
 struct PopularVideoPayload: Decodable, Sendable {
@@ -25,6 +31,7 @@ struct PopularVideoPayload: Decodable, Sendable {
     let stat: StatisticsPayload
     let duration: Int
     let pubdate: Int64
+    let cid: LossyDecodable<FlexibleInt64>?
 
     func model() throws -> PopularVideo {
         guard bvid.hasPrefix("BV"), !title.isEmpty, duration >= 0, pubdate >= 0 else {
@@ -37,7 +44,8 @@ struct PopularVideoPayload: Decodable, Sendable {
             owner: owner.model(),
             statistics: stat.model(),
             durationSeconds: duration,
-            publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate))
+            publishedAt: Date(timeIntervalSince1970: TimeInterval(pubdate)),
+            firstPageCID: firstPageCIDHint(cid?.value?.value)
         )
     }
 }
@@ -53,6 +61,7 @@ struct RelatedVideoPayload: Decodable, Sendable {
     let owner: RelatedVideoOwnerPayload?
     let stat: RelatedVideoStatisticsPayload?
     let duration: Int?
+    let cid: LossyDecodable<FlexibleInt64>?
 
     func model() throws -> RelatedVideo {
         guard let bvid,
@@ -76,7 +85,8 @@ struct RelatedVideoPayload: Decodable, Sendable {
             ownerName: owner.name,
             viewCount: stat.view,
             danmakuCount: stat.danmaku,
-            durationSeconds: duration
+            durationSeconds: duration,
+            firstPageCID: firstPageCIDHint(cid?.value?.value)
         )
     }
 }

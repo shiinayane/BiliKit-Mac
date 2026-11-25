@@ -11,7 +11,8 @@ struct RecommendedTabRoot: View {
     let title: LocalizedStringResource
     let model: BrowseViewModel
     let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    /// BV 号与列表给的第一个分 P 的 CID（没有时为 nil），后者只用来提前请求播放清单。
+    let onSelect: (String, Int64?) -> Void
 
     var body: some View {
         RecommendedFeedView(
@@ -28,7 +29,8 @@ struct PopularTabRoot: View {
     let title: LocalizedStringResource
     let model: BrowseViewModel
     let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    /// BV 号与列表给的第一个分 P 的 CID（见 `PopularFeedView`）。
+    let onSelect: (String, Int64?) -> Void
 
     var body: some View {
         PopularFeedView(
@@ -121,7 +123,8 @@ struct WatchLaterTabRoot: View {
     @Bindable var session: WatchLaterSession
     let accountState: AccountPresentationState
     let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    /// BV 号与列表给的第一个分 P 的 CID（没有时为 nil），后者只用来提前请求播放清单。
+    let onSelect: (String, Int64?) -> Void
     let onPresentAuthentication: () -> Void
 
     var body: some View {
@@ -286,7 +289,8 @@ struct HistoryTabRoot: View {
     let model: WatchHistoryViewModel
     let accountState: AccountPresentationState
     let gridHost: NativeVideoGridHostContext
-    let onSelect: (String) -> Void
+    /// BV 号与列表给的第一个分 P 的 CID（没有时为 nil），后者只用来提前请求播放清单。
+    let onSelect: (String, Int64?) -> Void
     let onPresentAuthentication: () -> Void
 
     var body: some View {

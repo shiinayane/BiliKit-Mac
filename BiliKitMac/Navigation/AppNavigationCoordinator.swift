@@ -302,6 +302,11 @@ final class AppNavigationCoordinator {
         openPlayback(PlaybackSelectionIntent(bvid: bvid))
     }
 
+    /// 来源列表与相关推荐打开视频：`firstPageCIDHint` 是列表给的第一个分 P 的 CID，只用来与详情并行请求播放清单。
+    func openPlayback(_ bvid: String, firstPageCIDHint: Int64?) {
+        openPlayback(PlaybackSelectionIntent(bvid: bvid, firstPageCIDHint: firstPageCIDHint))
+    }
+
     /// 播放页侧栏的选分 P、选集：在当前视频里换分 P，或换到合集里的另一集；离开侧栏上下文层。
     func openPlayback(_ bvid: String, preferredCID: Int64?) {
         openPlayback(PlaybackSelectionIntent(bvid: bvid, preferredCID: preferredCID))

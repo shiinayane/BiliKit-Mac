@@ -208,8 +208,7 @@ public struct NativePlaybackSidebarView: View {
 
     /// 播放器就绪时各分 P 的可跳转上限；加载、切换分 P 或失败时为 nil，时间戳按普通文字显示。
     private var timestampLimits: TimestampSeekLimits? {
-        guard case .ready(let context) = model.state else { return nil }
-        return context.timestampSeekLimits
+        model.playableVideo?.timestampSeekLimits
     }
 
     private func commentsPresentation(

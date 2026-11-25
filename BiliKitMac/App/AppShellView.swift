@@ -433,7 +433,7 @@ struct AppShellView: View {
             playerContent: playerContent,
             imagePipeline: imagePipeline,
             onRetry: retryPlayback,
-            onSelectRelatedVideo: navigationCoordinator.openPlayback,
+            onSelectRelatedVideo: navigationCoordinator.openPlayback(_:firstPageCIDHint:),
             onSelectPlayback: navigationCoordinator.openPlayback(_:preferredCID:),
             recentlyWatched: { navigationCoordinator.recentlyWatched },
             onSelectRecentlyWatched: navigationCoordinator.openPlayback,
@@ -503,7 +503,7 @@ struct AppShellView: View {
                 title: sources[.home].title,
                 model: browseModel,
                 gridHost: gridHost(.home),
-                onSelect: navigationCoordinator.openPlayback
+                onSelect: navigationCoordinator.openPlayback(_:firstPageCIDHint:)
             )
         case .search:
             SearchTabRoot(
@@ -522,7 +522,7 @@ struct AppShellView: View {
                 title: sources[.popular].title,
                 model: browseModel,
                 gridHost: gridHost(.popular),
-                onSelect: navigationCoordinator.openPlayback
+                onSelect: navigationCoordinator.openPlayback(_:firstPageCIDHint:)
             )
         case .watchLater:
             WatchLaterTabRoot(
@@ -531,7 +531,7 @@ struct AppShellView: View {
                 session: watchLaterSession,
                 accountState: authenticationModel.accountPresentationState,
                 gridHost: gridHost(.watchLater),
-                onSelect: navigationCoordinator.openPlayback,
+                onSelect: navigationCoordinator.openPlayback(_:firstPageCIDHint:),
                 onPresentAuthentication: {
                     isAuthenticationPresented = true
                 }
@@ -542,7 +542,7 @@ struct AppShellView: View {
                 model: historyModel,
                 accountState: authenticationModel.accountPresentationState,
                 gridHost: gridHost(.history),
-                onSelect: navigationCoordinator.openPlayback,
+                onSelect: navigationCoordinator.openPlayback(_:firstPageCIDHint:),
                 onPresentAuthentication: {
                     isAuthenticationPresented = true
                 }
@@ -600,7 +600,7 @@ private struct PlaybackDestinationView: View {
     let playerContent: AnyView
     let imagePipeline: NativeVideoImagePipeline
     let onRetry: () -> Void
-    let onSelectRelatedVideo: (String) -> Void
+    let onSelectRelatedVideo: (String, Int64?) -> Void
     let onSelectPlayback: (String, Int64?) -> Void
     /// 在本视图的 body 里读，让「刚才看过」的变化只刷新播放页（见 ARCHITECTURE「播放页」对 detail 观察的要求）。
     let recentlyWatched: () -> [RecentlyWatchedVideo]

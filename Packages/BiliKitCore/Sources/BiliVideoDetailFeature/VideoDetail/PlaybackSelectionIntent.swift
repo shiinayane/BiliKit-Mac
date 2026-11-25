@@ -10,16 +10,37 @@ public struct PlaybackSelectionIntent: Hashable, Sendable {
     public let preferredPageNumber: Int?
     /// 外部链接给出的起播秒数（`t=`）；超出分 P 时长时忽略。
     public let preferredStartSeconds: Int?
+    /// 来源列表给出的第一个分 P 的 CID，只用来与详情并行请求播放清单。
+    ///
+    /// 不选择分 P、不影响续播；详情到达后核对不一致就丢弃。不参与相等与哈希：同一个视频从不同列表打开仍是同一意图，
+    /// 导航的去重与历史比较不受它影响。
+    public let firstPageCIDHint: Int64?
 
     public init(
         bvid: String,
         preferredCID: Int64? = nil,
         preferredPageNumber: Int? = nil,
-        preferredStartSeconds: Int? = nil
+        preferredStartSeconds: Int? = nil,
+        firstPageCIDHint: Int64? = nil
     ) {
         self.bvid = bvid
         self.preferredCID = preferredCID
         self.preferredPageNumber = preferredPageNumber
         self.preferredStartSeconds = preferredStartSeconds
+        self.firstPageCIDHint = firstPageCIDHint
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.bvid == rhs.bvid
+            && lhs.preferredCID == rhs.preferredCID
+            && lhs.preferredPageNumber == rhs.preferredPageNumber
+            && lhs.preferredStartSeconds == rhs.preferredStartSeconds
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(bvid)
+        hasher.combine(preferredCID)
+        hasher.combine(preferredPageNumber)
+        hasher.combine(preferredStartSeconds)
     }
 }

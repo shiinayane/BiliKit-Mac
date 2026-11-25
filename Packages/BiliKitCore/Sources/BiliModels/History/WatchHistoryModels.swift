@@ -24,6 +24,10 @@ public struct WatchHistoryItem: Identifiable, Sendable, Equatable {
     public let viewedAt: Date
     /// 接口未给出或无法识别时为 nil。
     public let device: WatchHistoryDevice?
+    /// 第一个分 P 的 CID，只作提前请求播放清单的提示（见 docs/ARCHITECTURE.md「播放页布局」）。
+    ///
+    /// 历史里的 CID 是上次看到的那一 P，只在那一 P 是第一个分 P 时给出，其余为 nil。
+    public let firstPageCID: Int64?
 
     public init(
         bvid: String,
@@ -33,7 +37,8 @@ public struct WatchHistoryItem: Identifiable, Sendable, Equatable {
         progressSeconds: Int,
         durationSeconds: Int,
         viewedAt: Date,
-        device: WatchHistoryDevice? = nil
+        device: WatchHistoryDevice? = nil,
+        firstPageCID: Int64? = nil
     ) {
         self.bvid = bvid
         self.title = title
@@ -43,5 +48,6 @@ public struct WatchHistoryItem: Identifiable, Sendable, Equatable {
         self.durationSeconds = durationSeconds
         self.viewedAt = viewedAt
         self.device = device
+        self.firstPageCID = firstPageCID
     }
 }

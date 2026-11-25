@@ -20,7 +20,7 @@
         "progress": 125,
         "duration": 600,
         "history": {
-          "bvid": "BV1HistoryA1",
+          "bvid": "BV1HistoryA1", "cid": 900201, "page": 1,
           "business": "archive",
           "dt": 1
         }
@@ -49,7 +49,7 @@
         "progress": -1,
         "duration": 300,
         "history": {
-          "bvid": "BV1HistoryB2",
+          "bvid": "BV1HistoryB2", "cid": 900302, "page": 2,
           "business": "archive",
           "dt": 2
         }

@@ -144,7 +144,12 @@ struct VideoViewModelEnhancementTests {
 
         #expect(
             model.state
-                == .ready(makeVideoContext(detail: fixture.detail, playback: fixture.playback))
+                == .ready(
+                    PlayableVideo(
+                        context: makeVideoContext(detail: fixture.detail),
+                        playback: fixture.playback
+                    )
+                )
         )
         #expect(model.uploaderProfileState == .loaded(UploaderProfile()))
     }

@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定观看历史契约：只映射可播放的稿件并沿游标翻页，设备按 `dt` 区分，
+/// 固定观看历史契约：只映射可播放的稿件并沿游标翻页，设备按 `dt` 区分，上次看到第一个分 P 时带出它的 CID，
 /// 页大小越界、游标损坏或没有授权器时在发请求前失败。
 struct BiliAPIClientHistoryTests {
     @Test
@@ -32,6 +32,8 @@ struct BiliAPIClientHistoryTests {
         #expect(page.items[0].owner.avatarURL?.scheme == "https")
         #expect(page.items[1].owner.avatarURL == nil)
         #expect(page.items.map(\.device) == [.phone, .web])
+        // 历史的 CID 是上次看到的那一 P，只在那一 P 是第一个分 P 时作为提示。
+        #expect(page.items.map(\.firstPageCID) == [900_201, nil])
         let continuation = try #require(page.continuation)
         _ = try await client.watchHistory(
             after: continuation,

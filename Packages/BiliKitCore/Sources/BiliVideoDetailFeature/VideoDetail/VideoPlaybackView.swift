@@ -20,7 +20,8 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     private let danmakuComposer: DanmakuComposerModel?
     private let engagementModel: VideoEngagementModel
     private let onRetry: () -> Void
-    private let onSelectRelatedVideo: (String) -> Void
+    /// 选中一条相关推荐：BV 号与相关推荐给的第一个分 P 的 CID（没有时为 nil），后者交给播放页提前请求播放清单。
+    private let onSelectRelatedVideo: (String, Int64?) -> Void
     private let onSelectPlayback: (String, Int64?) -> Void
     private let recentlyWatched: [RecentlyWatchedVideo]
     private let onSelectRecentlyWatched: (PlaybackSelectionIntent) -> Void
@@ -37,7 +38,7 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         danmakuComposer: DanmakuComposerModel? = nil,
         engagementModel: VideoEngagementModel,
         onRetry: @escaping () -> Void,
-        onSelectRelatedVideo: @escaping (String) -> Void = { _ in },
+        onSelectRelatedVideo: @escaping (String, Int64?) -> Void = { _, _ in },
         onSelectPlayback: @escaping (String, Int64?) -> Void = { _, _ in },
         recentlyWatched: [RecentlyWatchedVideo] = [],
         onSelectRecentlyWatched: @escaping (PlaybackSelectionIntent) -> Void = { _ in },
@@ -129,6 +130,14 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         return projection.showsCollection ? projection : nil
     }
 
+    private func selectRelatedVideo(_ bvid: String) {
+        guard case .loaded(_, let videos) = model.relatedVideoState else {
+            onSelectRelatedVideo(bvid, nil)
+            return
+        }
+        onSelectRelatedVideo(bvid, videos.first(where: { $0.bvid == bvid })?.firstPageCID)
+    }
+
     private func selectCollectionEpisode(_ identity: VideoCollectionEpisodeIdentity) {
         let onSelectPlayback = onSelectPlayback
         guard let episode = model.presentedCollectionEpisode(identity) else { return }
@@ -149,11 +158,12 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
         if let currentContext {
             VideoDetailView(
                 context: currentContext,
+                accessNotice: model.playableVideo?.accessNotice,
                 danmakuModel: danmakuModel,
                 danmakuComposer: danmakuComposer,
                 engagementModel: engagementModel,
                 relatedVideoState: model.relatedVideoState,
-                onSelectRelatedVideo: onSelectRelatedVideo,
+                onSelectRelatedVideo: selectRelatedVideo,
                 onRetryRelatedVideos: model.retryRelatedVideos,
                 collectionShelf: collectionShelfInput(currentContext),
                 chapterShelf: chapterShelfInput(currentContext),
@@ -264,15 +274,19 @@ public struct VideoPlaybackView<PlayerContent: View>: View {
     }
 
     private var playbackIdentity: PlaybackItemIdentity? {
+        let context: VideoContext
         switch model.state {
-        case .preparingPlayback(let context), .ready(let context):
-            PlaybackItemIdentity(
-                bvid: context.detail.bvid,
-                cid: context.selectedPage.cid
-            )
+        case .preparingPlayback(let preparing):
+            context = preparing
+        case .ready(let playable):
+            context = playable.context
         case .idle, .loading, .loadingPage, .failed, .failedPage:
-            nil
+            return nil
         }
+        return PlaybackItemIdentity(
+            bvid: context.detail.bvid,
+            cid: context.selectedPage.cid
+        )
     }
 
     private func failureView(_ failure: VideoLoadFailure) -> ContentFailureView {

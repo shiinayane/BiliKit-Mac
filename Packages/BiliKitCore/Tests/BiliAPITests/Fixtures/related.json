@@ -3,7 +3,7 @@
   "message": "0",
   "data": [
     {
-      "bvid": "BV1RelatedA1",
+      "bvid": "BV1RelatedA1", "cid": 900101,
       "title": "合成相关推荐 &#39;A&#39; &lt;测试&gt;",
       "pic": "//image.example.invalid/related-a.jpg",
       "owner": { "name": "相关作者甲" },

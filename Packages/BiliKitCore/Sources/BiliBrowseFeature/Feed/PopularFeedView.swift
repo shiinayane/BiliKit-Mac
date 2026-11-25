@@ -18,14 +18,15 @@ public struct PopularFeedView: View {
     private let initialPage: Int
     private let pageSize: Int
     private let gridHost: NativeVideoGridHostContext
-    private let onSelect: (String) -> Void
+    /// 选中一个视频：BV 号与列表给的第一个分 P 的 CID（没有时为 nil），后者交给播放页提前请求播放清单。
+    private let onSelect: (String, Int64?) -> Void
 
     public init(
         model: BrowseViewModel,
         page: Int = 1,
         pageSize: Int = BrowseViewModel.popularPageSize,
         gridHost: NativeVideoGridHostContext,
-        onSelect: @escaping (String) -> Void
+        onSelect: @escaping (String, Int64?) -> Void
     ) {
         self.model = model
         request = .popular(page: page, pageSize: pageSize)
@@ -103,7 +104,9 @@ public struct PopularFeedView: View {
                 items: videos,
                 tailState: pagination.gridTailState,
                 loadMore: { model.loadMore(.popular) },
-                select: onSelect
+                select: { bvid in
+                    onSelect(bvid, videos.first(where: { $0.bvid == bvid })?.firstPageCID)
+                }
             ),
             host: gridHost
         )

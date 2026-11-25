@@ -9,12 +9,15 @@ public enum VideoLoadFailure: Sendable, Equatable {
 }
 
 /// 当前视频意图的阶段；`loadingPage`／`failedPage` 保留已呈现的视频，只针对目标分 P。
+///
+/// `preparingPlayback` 是页面已能呈现、播放器还没开播：详情已到而播放清单还在取，或播放器正在安装 item；
+/// `ready` 才带播放清单（`PlayableVideo`）。
 public enum VideoLoadState: Sendable, Equatable {
     case idle
     case loading(bvid: String)
     case loadingPage(context: VideoContext, targetPage: VideoPage)
     case preparingPlayback(VideoContext)
-    case ready(VideoContext)
+    case ready(PlayableVideo)
     case failed(bvid: String, failure: VideoLoadFailure)
     case failedPage(
         context: VideoContext,
@@ -67,9 +70,14 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         .loaded(UploaderProfile())
     /// 供播放主区与上下文 Sidebar 共享的最近有效详情。
     ///
-    /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；取得新
-    /// context 后原子替换，最终 reset 或当前请求取消回到 idle 时清空。
+    /// 新视频加载或失败期间保留旧值，使同一个播放 surface 不因短暂状态拆除；新视频的分 P 一确定就原子替换
+    /// （分 P 已定时在详情到达时，不等播放清单），最终 reset 或当前请求取消回到 idle 时清空。
     public private(set) var presentedContext: VideoContext?
+    /// 已开播的那一项（`ready`）；充电提示、可跳转时长与时间戳上限只按它判断，其余阶段为 nil。
+    public var playableVideo: PlayableVideo? {
+        guard case .ready(let playable) = state else { return nil }
+        return playable
+    }
     /// App 层只用这个稳定身份协调详情 surface 的滚动重置，不需要跨越 Feature 边界读取模型。
     public var presentedBVID: String? { presentedContext?.detail.bvid }
     /// 保留显示的旧详情此刻不可操作：换视频正在加载或失败（替换失败页盖在上面）。
@@ -191,11 +199,14 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     }
 
     /// 取代当前播放意图；已有非 idle 会话会先停止，避免两个 bridge/server 并存。
+    ///
+    /// `firstPageCIDHint` 是来源列表给的第一个分 P 的 CID，只在没有指定分 P 时用来与详情并行预取播放清单。
     public func loadVideo(
         _ bvid: String,
         preferredCID: Int64? = nil,
         preferredPageNumber: Int? = nil,
-        startSeconds: Int? = nil
+        startSeconds: Int? = nil,
+        firstPageCIDHint: Int64? = nil
     ) {
         loadTask.cancel()
         collectionEpisodes.cancelRequests()
@@ -225,6 +236,9 @@ public final class VideoViewModel: AccountRevalidationParticipant {
                 preferredCID: preferredCID,
                 preferredPageNumber: preferredPageNumber,
                 startSeconds: startSeconds,
+                // 指定了分 P 时第一个要请求的不是第一个分 P，预取用不上。
+                firstPageCIDHint: preferredCID == nil && preferredPageNumber == nil
+                    ? firstPageCIDHint : nil,
                 isCurrent: isCurrent
             )
         }
@@ -257,11 +271,11 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     /// `pageNumber` 为 nil 视为当前分 P，否则须与它相同；秒数按可跳转时长判断。还在加载、失败或没有
     /// 视频时为 false。
     func canSeekPresentedPage(number pageNumber: Int?, toSeconds seconds: Int) -> Bool {
-        guard let context = presentedContext,
-            presentedPlaybackIdentity?.cid == context.selectedPage.cid,
-            pageNumber.map({ $0 == context.selectedPage.index }) ?? true
+        guard let playable = playableVideo,
+            presentedPlaybackIdentity?.cid == playable.context.selectedPage.cid,
+            pageNumber.map({ $0 == playable.context.selectedPage.index }) ?? true
         else { return false }
-        return context.acceptsSeek(toSeconds: seconds)
+        return playable.acceptsSeek(toSeconds: seconds)
     }
 
     /// 当前视频里分 P 序号（从 1 开始）对应的 CID；没有当前视频或序号超出范围时为 nil。
@@ -387,12 +401,13 @@ public final class VideoViewModel: AccountRevalidationParticipant {
     ) async -> PlaybackEndHandling {
         guard snapshot.state == .ended,
             isPresenting(snapshot),
-            case .ready(let context) = state,
+            case .ready(let playable) = state,
             let identity = presentedPlaybackIdentity,
             let intent = playbackIntent
         else { return .none }
+        let context = playable.context
         let next: PlaybackNextItem?
-        switch PlaybackEndPolicy.action(behavior: behavior, accessNotice: context.accessNotice) {
+        switch PlaybackEndPolicy.action(behavior: behavior, accessNotice: playable.accessNotice) {
         case .none:
             return .none
         case .replay:
@@ -442,30 +457,6 @@ public final class VideoViewModel: AccountRevalidationParticipant {
             && snapshot.loadIntent == intent
     }
 
-    /// 正在播放的分 P 是合集里的哪一集；认不出时为 nil。
-    ///
-    /// 选集菜单的选择只在同一 BV 时才算数：另选的一集可能还在解析或已失败，不代表正在播放的这一集。同一 BV 的各集
-    /// 各是一个分 P 时，按 CID 认出的那一集优先：在当前视频里换分 P 不更新选择，否则会一直按进入时的那一集算，
-    /// 播完最后一个分 P 又跳回已经播过的分 P。
-    private func currentCollectionEpisode(
-        for identity: PlaybackItemIdentity,
-        in context: VideoContext
-    ) -> VideoCollectionEpisode? {
-        guard let collection = context.detail.collection else { return nil }
-        let episodes = collection.sections.flatMap(\.episodes)
-        let byCID = episodes.filter { $0.bvid == identity.bvid && $0.defaultCID == identity.cid }
-        if byCID.count == 1 { return byCID[0] }
-        let explicit = selectedCollectionEpisode.flatMap { id in
-            episodes.first(where: { $0.id == id && $0.bvid == identity.bvid })?.id
-        }
-        return PlaybackCollectionEpisodeResolver.resolve(
-            episodes: episodes,
-            explicitlySelectedID: explicit,
-            bvid: identity.bvid,
-            cid: identity.cid
-        )
-    }
-
     private func loadRelatedVideos(for bvid: String) {
         let relatedVideoUseCase = relatedVideoUseCase
         relatedVideoState = .loading(bvid: bvid)
@@ -498,43 +489,56 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         preferredCID: Int64?,
         preferredPageNumber: Int?,
         startSeconds: Int?,
+        firstPageCIDHint: Int64?,
         isCurrent: LatestTask.IsCurrent
     ) async {
+        // 与详情并行预取播放清单；取代、离开或失败退出时随本任务取消。CID 与详情核对不一致时结果不用。
+        let useCase = useCase
+        async let prefetched = useCase.prefetchPlayback(bvid: bvid, cid: firstPageCIDHint)
         do {
-            let context = try await useCase.prepareVideo(
+            let preparation = try await useCase.prepareDetail(
                 bvid: bvid,
                 preferredCID: preferredCID,
                 preferredPageNumber: preferredPageNumber
             )
             try Task.checkCancellation()
             guard isCurrent() else { return }
+            // 分 P 已定时详情一到就呈现页面，页面与评论不等 playurl 往返；播放器在播放清单到达前保持准备中。
+            if let context = preparation.context {
+                present(
+                    context,
+                    explicitCID: Self.explicitCID(preferredCID, preferredPageNumber, in: context)
+                )
+            }
 
-            // 链接里的分 P 序号命中时与显式选择等价；没命中（超出范围）则按默认分 P，不算显式。
-            let explicitCID =
-                preferredCID
-                ?? preferredPageNumber.flatMap { number in
-                    context.selectedPage.index == number ? context.selectedPage.cid : nil
-                }
-            presentedContext = context
-            collectionEpisodes.reconcile(
-                with: context,
-                preferredCID: explicitCID
+            let usesPrefetch = firstPageCIDHint == preparation.firstPlaybackCID
+            let playable = try await useCase.preparePlayback(
+                for: preparation,
+                prefetched: usesPrefetch ? await prefetched : nil
             )
-            loadUploaderProfile(for: context.detail.owner.id)
-            let identity = PlaybackItemIdentity(
-                bvid: context.detail.bvid,
-                cid: context.selectedPage.cid
+            try Task.checkCancellation()
+            guard isCurrent() else { return }
+            let explicitCID = Self.explicitCID(
+                preferredCID,
+                preferredPageNumber,
+                in: playable.context
             )
-            requestedPlaybackIdentity = identity
-            requestedSelectionBVID = context.detail.bvid
+            // 分 P 要按续播记录选定时，页面到这里才呈现。
+            if preparation.selectedPage == nil {
+                present(playable.context, explicitCID: explicitCID)
+            }
+            // 取得播放清单后才把链接的分 P 序号换算成显式 CID：在此之前失败时，重试仍按序号打开、照常续播。
             requestedPreferredCID = explicitCID
             requestedPreferredPageNumber = nil
+            let identity = PlaybackItemIdentity(
+                bvid: playable.context.detail.bvid,
+                cid: playable.context.selectedPage.cid
+            )
             let intent = PlaybackLoadIntent()
             playbackIntent = intent
-            state = .preparingPlayback(context)
             guard
                 try await startPlayback(
-                    context,
+                    playable,
                     identity: identity,
                     intent: intent,
                     startSeconds: startSeconds,
@@ -543,11 +547,36 @@ public final class VideoViewModel: AccountRevalidationParticipant {
             else { return }
             presentedPlaybackIdentity = requestedPlaybackIdentity
             requestedStartSeconds = nil
-            state = .ready(context)
+            state = .ready(playable)
         } catch {
             guard isCurrent() else { return }
             handleLoadFailure(error) { .failed(bvid: bvid, failure: $0) }
         }
+    }
+
+    /// 呈现新视频的页面：替换详情、对齐合集选择、取 UP 主名片，记下这次请求的分 P，进入准备开播。
+    private func present(_ context: VideoContext, explicitCID: Int64?) {
+        presentedContext = context
+        collectionEpisodes.reconcile(with: context, preferredCID: explicitCID)
+        loadUploaderProfile(for: context.detail.owner.id)
+        requestedPlaybackIdentity = PlaybackItemIdentity(
+            bvid: context.detail.bvid,
+            cid: context.selectedPage.cid
+        )
+        requestedSelectionBVID = context.detail.bvid
+        state = .preparingPlayback(context)
+    }
+
+    /// 链接里的分 P 序号命中时与显式选择等价；没命中（超出范围）则按默认分 P，不算显式。
+    private static func explicitCID(
+        _ preferredCID: Int64?,
+        _ preferredPageNumber: Int?,
+        in context: VideoContext
+    ) -> Int64? {
+        preferredCID
+            ?? preferredPageNumber.flatMap { number in
+                context.selectedPage.index == number ? context.selectedPage.cid : nil
+            }
     }
 
     private func performPageLoad(
@@ -565,11 +594,11 @@ public final class VideoViewModel: AccountRevalidationParticipant {
             try Task.checkCancellation()
             guard isCurrent() else { return }
 
-            presentedContext = replacement
-            state = .preparingPlayback(replacement)
+            presentedContext = replacement.context
+            state = .preparingPlayback(replacement.context)
             let identity = PlaybackItemIdentity(
-                bvid: replacement.detail.bvid,
-                cid: replacement.selectedPage.cid
+                bvid: replacement.context.detail.bvid,
+                cid: replacement.context.selectedPage.cid
             )
             guard
                 try await startPlayback(
@@ -591,23 +620,23 @@ public final class VideoViewModel: AccountRevalidationParticipant {
         }
     }
 
-    /// 安装并开播已准备好的 context；返回 false 表示意图已被取代，调用方不得再写状态。
+    /// 安装并开播已取得播放清单的一项；返回 false 表示意图已被取代，调用方不得再写状态。
     ///
-    /// 链接给的起播秒数优先于续播位置；按 `VideoContext.linkStartPosition` 判断能否采用，采用时不显示
+    /// 链接给的起播秒数优先于续播位置；按 `PlayableVideo.linkStartPosition` 判断能否采用，采用时不显示
     /// 续播提示。
     private func startPlayback(
-        _ context: VideoContext,
+        _ playable: PlayableVideo,
         identity: PlaybackItemIdentity,
         intent: PlaybackLoadIntent,
         startSeconds: Int?,
         isCurrent: LatestTask.IsCurrent
     ) async throws -> Bool {
-        let linkStartSeconds = context.linkStartPosition(seconds: startSeconds)
+        let linkStartSeconds = playable.linkStartPosition(seconds: startSeconds)
         try await playback.load(
-            context.playback,
+            playable.playback,
             identity: identity,
             intent: intent,
-            startPositionSeconds: linkStartSeconds ?? context.resumePositionSeconds
+            startPositionSeconds: linkStartSeconds ?? playable.resumePositionSeconds
         )
         try Task.checkCancellation()
         guard isCurrent() else { return false }
