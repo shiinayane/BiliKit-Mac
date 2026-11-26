@@ -32,13 +32,14 @@ struct PlaybackSourceExpiry {
             return
         }
         let refreshDeadline = expiresAt.addingTimeInterval(-Self.refreshLeadTime)
+        // `Date` 只用 `<` 比较（见 ARCHITECTURE「平台与命名」）；这里与下面的取反都包含相等。
         self.init(
-            refreshDeadline: isReplacement && refreshDeadline <= now ? nil : refreshDeadline
+            refreshDeadline: isReplacement && !(now < refreshDeadline) ? nil : refreshDeadline
         )
     }
 
     func requiresRefresh(at now: Date) -> Bool {
-        refreshDeadline.map { now >= $0 } ?? false
+        refreshDeadline.map { !(now < $0) } ?? false
     }
 }
 
