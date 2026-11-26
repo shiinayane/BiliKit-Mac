@@ -123,17 +123,24 @@ class NativeInteractiveCardView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
+        // tracking area 按整块 bounds 发事件，不管卡片有没有被别的视图盖住；进入与移动时都按点击判定
+        // （`isHitByPointer`）决定悬停，指针从被盖住的部分移到露出的部分时才能画上。
         let updated = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow],
             owner: self
         )
         addTrackingArea(updated)
         trackingArea = updated
     }
 
-    override func mouseEntered(with event: NSEvent) { setHovered(true) }
+    override func mouseEntered(with event: NSEvent) { updateHover(for: event) }
+    override func mouseMoved(with event: NSEvent) { updateHover(for: event) }
     override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func updateHover(for event: NSEvent) {
+        setHovered(isHitByPointer(atWindowPoint: event.locationInWindow))
+    }
 
     override func accessibilityPerformPress() -> Bool {
         guard isActivatable, let activation else { return false }

@@ -159,11 +159,13 @@ package final class NativeVideoHoverTracker {
         guard let windowPoint = collectionView.window?.mouseLocationOutsideOfEventStream
         else { return nil }
         let collectionPoint = collectionView.convert(windowPoint, from: nil)
+        // 与卡片自己的进出事件同一判断（`isHitByPointer`）：被侧栏、工具栏盖住或滚出视口的部分都不算。
         guard
-            collectionView.visibleRect.contains(collectionPoint),
-            let indexPath = collectionView.indexPathForItem(at: collectionPoint)
+            let indexPath = collectionView.indexPathForItem(at: collectionPoint),
+            let item = collectionView.item(at: indexPath) as? any NativeHoverableCollectionItem,
+            item.view.isHitByPointer(atWindowPoint: windowPoint)
         else { return nil }
-        return collectionView.item(at: indexPath) as? any NativeHoverableCollectionItem
+        return item
     }
 }
 
