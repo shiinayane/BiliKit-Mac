@@ -7,7 +7,7 @@ import Testing
 @testable import BiliVideoDetailFeature
 
 /// 播放页横排按页滚动并露出下一张，任何滚动条样式下都不为滚动条让出卡片高度，视口通知推迟到布局之后；加载骨架按
-/// 可见宽度铺满；拆除时清掉横排里的第一响应者，键盘激活按稳定 ID 找卡片、不依赖可见项实例；换视频时整体替换并作废旧的封面请求；被遮挡时不给卡片菜单；停靠当前一集，只在它离开视野时跟随，再点分页时回到开头或当前一集。
+/// 可见宽度铺满；拆除时清掉横排里的第一响应者，键盘激活按稳定 ID 找卡片、不依赖可见项实例；换视频时整体替换并作废旧的封面请求；被遮挡时不给卡片菜单；被侧栏盖住的部分不算指针在横排上；停靠当前一集，只在它离开视野时跟随，再点分页时回到开头或当前一集。
 struct NativeVideoShelfTests {
     @Test
     @MainActor
@@ -401,6 +401,104 @@ struct NativeVideoShelfTests {
 
         #expect(collectionView.cardMenu?("BV1Menu0") != nil)
         #expect(card.accessibilityCustomActions()?.map(\.name) == ["菜单项"])
+    }
+
+    /// 横排伸到侧栏底下：指针停在被侧栏盖住的部分时不显示翻页按钮，移到露出的部分才显示。
+    @Test
+    @MainActor
+    func coveredPartOfTheShelfShowsNoPageButtons() throws {
+        let items = (0..<12).map { index in
+            NativeVideoCardPresentation(
+                id: "BV-\(index)",
+                title: "相关推荐 \(index)",
+                coverURL: nil,
+                avatarURL: nil,
+                showsAvatar: false,
+                footerLeadingText: "作者",
+                accessibilityLabel: "相关推荐 \(index)"
+            )
+        }
+        let coordinator = NativeVideoShelfView.Coordinator(
+            contentIdentity: "BV-parent",
+            items: items,
+            anchorID: nil,
+            scrollCommand: nil,
+            fadesInOnCreation: false,
+            accessibilityLabel: "Shelf",
+            imagePipeline: NativeVideoShelfPendingImageLoader(),
+            reduceMotion: true,
+            isInteractionEnabled: true,
+            onSelect: { _ in },
+            cardMenu: { _ in nil }
+        )
+        let scrollView = coordinator.makeScrollView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        // 布局时横排按真实指针位置判断一次；把窗口放到屏幕之外，真实指针不会落进来。
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 300))
+        window.contentView = root
+        defer {
+            coordinator.reset()
+            window.contentView = NSView()
+        }
+        scrollView.frame = root.bounds
+        root.addSubview(scrollView)
+        // 后加的兄弟视图排在上面，代替播放页侧栏盖住横排左边一段。
+        root.addSubview(NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300)))
+        scrollView.layoutSubtreeIfNeeded()
+        let pageButtons = scrollView.subviews.compactMap { $0 as? NativeVideoShelfPageButton }
+        try #require(pageButtons.count == 2)
+
+        scrollView.mouseEntered(
+            with: Self.pointerEvent(.mouseEntered, at: NSPoint(x: 150, y: 150), in: window)
+        )
+        let hiddenOverSidebar = pageButtons.allSatisfy(\.isHidden)
+        #expect(hiddenOverSidebar)
+
+        scrollView.mouseMoved(
+            with: Self.pointerEvent(.mouseMoved, at: NSPoint(x: 600, y: 150), in: window)
+        )
+        let shownOverShelf = pageButtons.allSatisfy { !$0.isHidden }
+        #expect(shownOverShelf)
+    }
+
+    @MainActor
+    private static func pointerEvent(
+        _ type: NSEvent.EventType,
+        at location: NSPoint,
+        in window: NSWindow
+    ) -> NSEvent {
+        let event =
+            type == .mouseMoved
+            ? NSEvent.mouseEvent(
+                with: type,
+                location: location,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 0,
+                pressure: 0
+            )
+            : NSEvent.enterExitEvent(
+                with: type,
+                location: location,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                trackingNumber: 0,
+                userData: nil
+            )
+        guard let event else { preconditionFailure("无法构造指针事件") }
+        return event
     }
 
     @MainActor

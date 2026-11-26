@@ -4,6 +4,10 @@ import BiliVideoCollectionUI
 /// 相关推荐横排的滚动视图：不带滚动条的横向滚动、指针悬停或键盘焦点在横排内时淡入的左右翻页按钮
 /// （`NativeFadingVisibility`）。
 ///
+/// 横排伸到播放页侧栏底下；“指针在横排上”在进入、移动与布局后重新判断时都按点击判定（`isHitByPointer`），
+/// 被侧栏盖住的部分不算。只看几何的话，按钮淡出完成引起的布局会在指针停在侧栏上时把按钮重新显示出来，
+/// 而离开事件已经发过，按钮就一直留着。
+///
 /// 视口布局与焦点变化各自合并到下一轮主队列再通知（`DispatchQueue.main.async`），不在当前布局过程中改动
 /// 集合视图；两个“已安排”标志保证每轮最多一次，`reset()` 清掉视口那一个并断开回调。按钮隐藏前若持有焦点，先把焦点交给集合视图。
 /// 用 AppKit 的理由见 ARCHITECTURE「原生 AppKit 集合视图」。
@@ -138,6 +142,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
             rect: .zero,
             options: [
                 .mouseEnteredAndExited,
+                .mouseMoved,
                 .activeInKeyWindow,
                 .inVisibleRect
             ],
@@ -148,7 +153,12 @@ final class NativeVideoShelfScrollView: NSScrollView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        updatePointerInside(true)
+        updatePointerInside(isHitByPointer(atWindowPoint: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updatePointerInside(isHitByPointer(atWindowPoint: event.locationInWindow))
+        super.mouseMoved(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -241,12 +251,7 @@ final class NativeVideoShelfScrollView: NSScrollView {
     }
 
     private func updatePointerInsideFromWindow() {
-        guard let window else {
-            updatePointerInside(false)
-            return
-        }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        updatePointerInside(bounds.contains(point))
+        updatePointerInside(isHitByCurrentPointer)
     }
 
     private var keyboardShowsControls: Bool {
