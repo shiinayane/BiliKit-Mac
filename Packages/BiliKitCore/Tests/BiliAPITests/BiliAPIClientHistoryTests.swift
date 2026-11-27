@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定观看历史契约：只映射可播放的稿件并沿游标翻页，设备按 `dt` 区分，上次看到第一个分 P 时带出它的 CID，
+/// 固定观看历史契约：只请求并只映射可播放的稿件，沿游标翻页，设备按 `dt` 区分，上次看到第一个分 P 时带出它的 CID，
 /// 页大小越界、游标损坏或没有授权器时在发请求前失败。
 struct BiliAPIClientHistoryTests {
     @Test
@@ -50,6 +50,7 @@ struct BiliAPIClientHistoryTests {
         )?.queryItems
         #expect(query?.contains(URLQueryItem(name: "max", value: "0")) == true)
         #expect(query?.contains(URLQueryItem(name: "ps", value: "2")) == true)
+        #expect(query?.contains(URLQueryItem(name: "type", value: "archive")) == true)
         let continuationQuery = URLComponents(
             url: requests[1].url,
             resolvingAgainstBaseURL: false

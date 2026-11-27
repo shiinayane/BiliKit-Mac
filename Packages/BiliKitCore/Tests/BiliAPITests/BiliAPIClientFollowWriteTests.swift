@@ -6,7 +6,8 @@ import Foundation
 import Testing
 
 /// 固定特别关注与设置分组的请求形状：都是网页表单，经账户写授权器绑定账户，Referer 与 Origin 同关注；特别关注只发单个
-/// `fid`；设置分组只发单个 `fids` 与完整的 `tagids`（-10 与自定义分组 id，只在默认分组时是单独的 0）。
+/// `fid`；设置分组只发单个 `fids` 与完整的 `tagids`（-10 与自定义分组 id，只在默认分组时是单独的 0）；分组不存在与
+/// 未关注（22104／22105）提示关系已在别处改变，其他业务码按普通拒绝。
 @Suite(.timeLimit(.minutes(1)))
 struct BiliAPIClientFollowWriteTests {
     @Test(arguments: [
@@ -56,6 +57,36 @@ struct BiliAPIClientFollowWriteTests {
         )
         #expect(authorized.headers["Referer"] == "https://www.bilibili.com/")
         #expect(formFields(authorized) == ["fids": "7", "tagids": tagids])
+    }
+
+    @Test(arguments: [
+        (22_104, AccountWriteError.followStateChanged),
+        (22_105, .followStateChanged),
+        (22_001, .rejected(code: 22_001))
+    ])
+    func stateChangedCodesAreNotPlainRejections(
+        code: Int,
+        expected: AccountWriteError
+    ) async throws {
+        for write in [true, false] {
+            let repository = BiliFollowRelationWriteRepository(
+                client: BiliAPIClient(
+                    transport: StubTransport(responses: [statusResponse(code: code)]),
+                    accountWriteAuthorizer: StubSubjectBoundAuthorizer()
+                )
+            )
+            await #expect(throws: expected) {
+                if write {
+                    try await repository.setSpecial(true, uploader: try uploader(), accountID: 42)
+                } else {
+                    try await repository.assignGroups(
+                        .defaultGroupOnly,
+                        uploader: try uploader(),
+                        accountID: 42
+                    )
+                }
+            }
+        }
     }
 
     private func uploader() throws -> UploaderWriteTarget {

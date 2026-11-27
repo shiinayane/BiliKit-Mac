@@ -9,7 +9,7 @@ import Foundation
 /// 稍后再看的业务码 90000 为 `unsupportedContent`，90001 为 `listFull`，90003 与内容不存在类业务码为 `contentUnavailable`；
 /// 弹幕的业务码 36703（发送太频繁）为 `restricted`、36704 为 `contentUnavailable`；收藏的业务码 11203 为 `listFull`，11010（收藏夹不存在）为 `contentUnavailable`；投币的 -104 为 `coinsInsufficient`，
 /// 34005 为 `coinLimitReached`，34002 为 `ownVideo`，34004 为 `restricted`；点赞、投币、三连的 -403（账号异常）为
-/// `declinedForClient`，三连报告的风控为 `restricted`；关注的业务码 22009（关注数已达上限）为 `listFull`；其他非零
+/// `declinedForClient`，三连报告的风控为 `restricted`；关注的业务码 22009（关注数已达上限）为 `listFull`，特别关注与设置分组的 22104／22105 为 `followStateChanged`；其他非零
 /// 业务码为 `rejected`，不回显服务端 message；网络与无法判定结果的响应为 `unavailable`。是否复核账户只读
 /// `requiresAccountRevalidation`，调用方不各自判断；提示措辞按 case 由写入结果胶囊的文案决定（写入从不自动重试，没有
 /// 另一个需要“是否可重试”的调用方）。写入不自动重试、不排队、不持久化（见 SECURITY-MODEL §3）。
@@ -49,6 +49,10 @@ public enum AccountWriteError: Error, Sendable, Equatable {
     case commentRejected
     /// B 站要求先完成验证（业务码 12015）：这里无法完成，可以在网页上发表。
     case verificationRequired
+    /// 特别关注或设置分组时，关系已在别处改变：要放入的分组已被删除（业务码 22104），或已不再关注这个人（22105）。
+    ///
+    /// 菜单里看到的是打开时读到的关系；重新打开会重读，所以提示用户重新打开再试，不自动重试。
+    case followStateChanged
     /// 其他业务拒绝。
     case rejected(code: Int)
     /// 网络失败或无法判定结果。
@@ -66,7 +70,7 @@ extension AccountWriteError {
         case .invalidRequest, .authenticationUnavailable, .restricted, .listFull,
             .unsupportedContent, .contentUnavailable, .coinsInsufficient, .coinLimitReached,
             .ownVideo, .declinedForClient, .commentsClosed, .blockedByUploader, .commentRejected,
-            .verificationRequired, .rejected, .unavailable:
+            .verificationRequired, .followStateChanged, .rejected, .unavailable:
             false
         }
     }

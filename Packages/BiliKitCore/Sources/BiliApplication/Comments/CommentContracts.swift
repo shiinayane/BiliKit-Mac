@@ -13,7 +13,7 @@ public enum CommentReadError: Error, Sendable, Hashable {
     case authenticationUnavailable
     case requestRestricted
     case serviceRejected(code: Int)
-    /// 稿件或根评论不存在、已删除或不可见（业务码 -404／62002／62004），与内容域同一分类。
+    /// 稿件或根评论不存在、已删除或不可见（业务码 -404／62002／62004／62012），与内容域同一分类。
     case contentUnavailable
     /// 评论区已关闭；不是可重试的失败。
     case closed

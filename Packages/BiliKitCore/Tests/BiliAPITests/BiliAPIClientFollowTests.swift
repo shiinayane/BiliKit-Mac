@@ -6,7 +6,7 @@ import Testing
 
 @testable import BiliAPI
 
-/// 固定关注读取的契约：都是账户读取、本地无凭据时不发请求；只有关注内搜索签 WBI；全部关注带排序；列表里的 `tag`、
+/// 固定关注读取的契约：都是账户读取、本地无凭据时不发请求；只有关注内搜索签 WBI，超过可翻页数（22007）按到底；全部关注带排序；列表里的 `tag`、
 /// `special`、`attribute` 映射为分组关系与互关，分组成员里不读它们（为未知）；分组列表丢弃认不出的 tagid；单人关系在
 /// 没有关注时为 nil、缺 `attribute` 时按解码失败。
 struct BiliAPIClientFollowTests {
@@ -86,6 +86,25 @@ struct BiliAPIClientFollowTests {
         #expect(fields["name"] == "极客")
         #expect(fields["vmid"] == "7")
         #expect(fields["w_rid"] != nil)
+    }
+
+    /// 关注内搜索只能翻 5 页（文档 user/relation.md 的 22007）；命中更多人时第 6 页按空页到底，不当成失败。
+    @Test
+    func searchBeyondThePageLimitEndsTheList() async throws {
+        let transport = StubTransport(
+            responses: [jsonResponse(#"{"code":22007,"message":"访问超过5页","ttl":1}"#)],
+            answersWBINavOnce: true
+        )
+        let client = BiliAPIClient(transport: transport, requestAuthorizer: StubAuthorizer())
+
+        let page = try await client.followPage(
+            FollowListCursor(query: .search("a"), page: 6),
+            ownerID: 7,
+            pageSize: 50
+        )
+
+        #expect(page.users.isEmpty)
+        #expect(page.rowCount == 0)
     }
 
     /// 分组成员接口里这三个字段对每个人都是 0／null，不能当成“不在任何分组”。

@@ -121,19 +121,28 @@ extension BiliAPIClient {
             "ps": String(pageSize),
             "name": keyword
         ]
-        let payload: FollowingListPayload = try await signedRequest(
-            path: BiliAccountReadPath.followingSearch,
-            parameters: { parameters },
-            send: { url in
-                try await get(
-                    url: url,
-                    referer: Self.followReferer(ownerID),
-                    access: .accountRead(missingCredential: .fail)
-                )
-            }
-        )
+        let payload: FollowingListPayload
+        do {
+            payload = try await signedRequest(
+                path: BiliAccountReadPath.followingSearch,
+                parameters: { parameters },
+                send: { url in
+                    try await get(
+                        url: url,
+                        referer: Self.followReferer(ownerID),
+                        access: .accountRead(missingCredential: .fail)
+                    )
+                }
+            )
+        } catch BiliAPIError.apiRejected(code: Self.followingSearchPageLimitCode, _) {
+            // 只能翻 5 页（文档 user/relation.md）：命中超过 5 页时，第 6 页按空页到底，不显示成失败。
+            return FollowListRemotePage(users: [], rowCount: 0, totalCount: nil)
+        }
         return payload.model()
     }
+
+    /// 关注内搜索翻过可翻页数时的业务码（22007：访问超过 5 页）。
+    private static let followingSearchPageLimitCode = 22_007
 
     /// 分组成员：`data` 直接是数组，没有总数；成员里的关系字段无效，不读（见 `FollowedUserPayload`）。
     private func followGroupMembers(
