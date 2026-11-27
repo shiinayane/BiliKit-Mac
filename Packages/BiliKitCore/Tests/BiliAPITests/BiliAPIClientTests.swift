@@ -184,6 +184,34 @@ struct BiliAPIClientTests {
         #expect(page.videos[0].durationSeconds == nil)
     }
 
+    /// 弹幕数缺 `danmaku` 时取旧字段 `video_review`，两者都缺按 0；一条结果缺字段不让整页失败。
+    @Test
+    func searchDanmakuFallsBackWithoutFailingThePage() async throws {
+        let response = try fixtureResponse("search")
+        let source = try #require(String(data: response.body, encoding: .utf8))
+        let body = try #require(
+            source
+                .replacingOccurrences(of: "\"danmaku\": 56", with: "\"video_review\": 56")
+                .replacingOccurrences(of: "\"danmaku\": 90", with: "\"unrelated\": 90")
+                .data(using: .utf8)
+        )
+        let transport = StubTransport(
+            responses: [
+                HTTPResponse(
+                    statusCode: response.statusCode,
+                    headers: response.headers,
+                    body: body
+                )
+            ],
+            answersWBINavOnce: true
+        )
+        let client = BiliAPIClient(transport: transport, timestampProvider: { 1_700_000_000 })
+
+        let page = try await search(client, "macOS")
+
+        #expect(page.videos.map(\.statistics.danmakuCount).prefix(2) == [56, 0])
+    }
+
     /// HTTP 403 是风控而不是 key 过期：按受限失败关闭，不换 key 再请求。
     @Test
     func httpForbiddenFailsClosedWithoutRefreshingWBIKey() async throws {

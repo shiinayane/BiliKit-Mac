@@ -50,8 +50,16 @@ struct SearchVideoPayload: Decodable, Sendable {
     let duration: String
     let pubdate: Int64
     let play: Int64
-    let danmaku: Int64
+    /// 弹幕数：现网 `danmaku` 与旧字段 `video_review` 都有（2026-11 实测），文档只记旧字段；先取前者，两者都缺时
+    /// 才按 0，不因为一条结果缺字段让整页失败。
+    let danmaku: Int64?
+    let videoReview: Int64?
     let like: Int64?
+
+    private enum CodingKeys: String, CodingKey {
+        case bvid, title, pic, author, mid, upic, duration, pubdate, play, danmaku, like
+        case videoReview = "video_review"
+    }
 
     /// `BV` 开头、总长 ≤ 24 的 ASCII 字母数字；不合规的结果在映射前丢弃，不算整页错误。
     var hasUsableBVID: Bool {
@@ -77,7 +85,7 @@ struct SearchVideoPayload: Decodable, Sendable {
             ),
             statistics: VideoStatistics(
                 viewCount: play,
-                danmakuCount: danmaku,
+                danmakuCount: danmaku ?? videoReview ?? 0,
                 likeCount: like ?? 0
             ),
             durationSeconds: RemoteClockDuration.seconds(duration),

@@ -226,6 +226,8 @@ public enum AccountWriteStatusText {
             BiliUIStrings.localized("评论内容未通过：可能含敏感信息或与之前的评论重复。")
         case .verificationRequired:
             BiliUIStrings.localized("B 站要求先完成验证，可以在网页上发表。")
+        case .followStateChanged:
+            BiliUIStrings.localized("关注状态或分组已在别处改变，请重新打开菜单后再试。")
         case .rejected(let code):
             BiliUIStrings.localized("服务拒绝了这次操作（错误码 \(code)）。")
         case .unavailable:

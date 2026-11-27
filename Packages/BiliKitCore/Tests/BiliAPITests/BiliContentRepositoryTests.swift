@@ -41,6 +41,8 @@ struct BiliContentRepositoryTests {
         (jsonResponse(#"{"code":-404,"message":"fixture"}"#), .contentUnavailable),
         (jsonResponse(#"{"code":62002,"message":"fixture"}"#), .contentUnavailable),
         (jsonResponse(#"{"code":62004,"message":"fixture"}"#), .contentUnavailable),
+        // 仅 UP 主自己可见（文档 video/info.md）：同属不可见，不是普通业务拒绝。
+        (jsonResponse(#"{"code":62012,"message":"fixture"}"#), .contentUnavailable),
         (HTTPResponse(statusCode: 500, body: Data()), .unavailable),
         (jsonResponse("{"), .invalidResponse)
     ])

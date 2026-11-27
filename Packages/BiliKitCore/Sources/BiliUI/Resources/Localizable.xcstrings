@@ -2633,6 +2633,34 @@
         }
       }
     },
+    "关注状态或分组已在别处改变，请重新打开菜单后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your follow status or groups changed elsewhere. Reopen the menu and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォロー状態またはグループが別の場所で変更されました。メニューを開き直してから、もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关注状态或分组已在别处改变，请重新打开菜单后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關注狀態或分組已在別處改變，請重新打開選單後再試。"
+          }
+        }
+      }
+    },
     "UP 主不存在或已注销。" : {
       "localizations" : {
         "en" : {

@@ -23,10 +23,13 @@ extension BiliAPIClient {
         } else {
             cursor = .initial
         }
+        // 只请求稿件（`type=archive`，网页历史的「视频」分页）：直播、专栏等条目字段不全，混在页里会让整页解码失败，
+        // 也会让一页里的稿件变少。映射时仍只认 `business == archive`。
         let payload: WatchHistoryPayload = try await get(
             url: try endpoint(
                 path: BiliAccountReadPath.watchHistory,
                 queryItems: [
+                    URLQueryItem(name: "type", value: "archive"),
                     URLQueryItem(name: "max", value: String(cursor.maximum)),
                     URLQueryItem(name: "view_at", value: String(cursor.viewedAt)),
                     URLQueryItem(name: "business", value: cursor.business),
